@@ -5,13 +5,17 @@
  */
 
 import { PGlite } from "@electric-sql/pglite";
+import { IndexedDbTabularStorage } from "@workglow/indexeddb/storage";
 import { PostgresTabularStorage } from "@workglow/postgres/storage";
 import { Sqlite, SqliteTabularStorage } from "@workglow/sqlite/storage";
 import { InMemoryTabularStorage, StorageError } from "@workglow/storage";
+import { SupabaseTabularStorage } from "@workglow/supabase/storage";
 import { uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
+import "fake-indexeddb/auto";
 import type { Pool } from "pg";
 import { afterAll, describe, expect, it } from "vitest";
+import { createSupabaseMockClient } from "../helpers/SupabaseMockClient";
 
 /**
  * Contract for the `uniqueIndexes` constructor parameter wired through
@@ -24,6 +28,10 @@ import { afterAll, describe, expect, it } from "vitest";
  *   - SqliteTabularStorage emits `CREATE UNIQUE INDEX IF NOT EXISTS`; the
  *     SQLite driver throws on collision.
  *   - PostgresTabularStorage emits the same DDL via PGlite.
+ *   - SupabaseTabularStorage emits the same DDL via the `exec_sql` bootstrap
+ *     (PGlite-backed mock here); PostgREST surfaces the collision.
+ *   - IndexedDbTabularStorage creates native UNIQUE IDB indexes; a colliding
+ *     `put` rejects with a `ConstraintError`.
  *
  * NULL semantics follow SQL's "NULL never collides with NULL" rule across
  * all backends — only complete tuples participate in the constraint.
@@ -247,6 +255,49 @@ runContract({
     );
     await storage.setupDatabase();
     return storage as unknown as InstanceType<typeof InMemoryTabularStorage>;
+  },
+});
+
+// Supabase backend — exercises the `CREATE UNIQUE INDEX` exec_sql bootstrap
+// path against the same PGlite-backed mock the Supabase suite uses elsewhere.
+const supabaseClient = createSupabaseMockClient();
+afterAll(async () => {
+  await supabaseClient.close();
+});
+
+runContract({
+  name: "SupabaseTabularStorage",
+  create: async (suffix) => {
+    const storage = new SupabaseTabularStorage<typeof PersonSchema, typeof PersonPK>(
+      supabaseClient,
+      `unique_${suffix}_${uuid4().replace(/-/g, "_")}`,
+      PersonSchema,
+      PersonPK,
+      [],
+      "if-missing",
+      [["email"], ["org_id", "name"]]
+    );
+    await storage.setupDatabase();
+    return storage;
+  },
+});
+
+// IndexedDB backend — exercises native UNIQUE IDB indexes via fake-indexeddb.
+runContract({
+  name: "IndexedDbTabularStorage",
+  create: async (suffix) => {
+    const storage = new IndexedDbTabularStorage<typeof PersonSchema, typeof PersonPK>(
+      `unique_${suffix}_${uuid4().replace(/-/g, "_")}`,
+      PersonSchema,
+      PersonPK,
+      [],
+      {},
+      "if-missing",
+      undefined,
+      [["email"], ["org_id", "name"]]
+    );
+    await storage.setupDatabase();
+    return storage;
   },
 });
 

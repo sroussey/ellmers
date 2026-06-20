@@ -23,7 +23,6 @@ export const JsonObject: React.FC<JsonObjectProps> = ({ data, expandLevel = 1 })
     setManualExpanded(undefined);
   }
   const isExpanded = manualExpanded ?? expandLevel > 0;
-  const keys = Object.keys(data);
 
   const toggleExpand = () => {
     setManualExpanded(!isExpanded);
@@ -33,6 +32,7 @@ export const JsonObject: React.FC<JsonObjectProps> = ({ data, expandLevel = 1 })
     return null;
   }
 
+  const keys = Object.keys(data);
   const keyCount = keys.length;
 
   return (

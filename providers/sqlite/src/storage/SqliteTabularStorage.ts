@@ -583,14 +583,19 @@ export class SqliteTabularStorage<
         .filter((c) => !pkColumns.includes(c))
         .map((c) => `\`${c}\` = excluded.\`${c}\``)
         .join(", ");
-      // No non-PK columns to update → DO NOTHING + RETURNING * still echoes
-      // the original row on a PK collision, which is what the contract returns
-      // ("the row that's there"). With non-PK columns, the standard upsert
-      // applies and RETURNING * yields the post-update row.
+      // When there are non-PK columns, the standard upsert applies and
+      // RETURNING * yields the post-update row. When every column is part of
+      // the PK there is nothing to update, but `DO NOTHING` skips the row on a
+      // conflict and `RETURNING *` then yields NO row (SQLite only returns rows
+      // it actually inserts/updates), so the caller would dereference
+      // `undefined`. Use a no-op self-assignment of the PK columns instead:
+      // `DO UPDATE` always produces a RETURNING row, so a re-save of an
+      // existing all-PK row echoes the existing row as the contract expects.
+      const pkSelfAssign = pkColumns.map((c) => `\`${c}\` = excluded.\`${c}\``).join(", ");
       const conflictClause =
         updateAssignments.length > 0
           ? `ON CONFLICT(${pkList}) DO UPDATE SET ${updateAssignments}`
-          : `ON CONFLICT(${pkList}) DO NOTHING`;
+          : `ON CONFLICT(${pkList}) DO UPDATE SET ${pkSelfAssign}`;
       sql = `
         INSERT INTO \`${this.table}\` (${columnList})
         VALUES (${placeholders})
@@ -765,9 +770,14 @@ export class SqliteTabularStorage<
    * The Proxy returned by {@link createTxView} routes back to the private
    * `_*Internal` methods directly, so calls made *through* the `tx` handle
    * inside `fn` do not deadlock against the mutex held by `withTransaction`.
+   *
+   * `protected` so subclasses that fully override `put`/`putBulk` (e.g.
+   * {@link SqliteAiVectorStorage}, which builds its own vector-encoding SQL)
+   * can serialize through the same lock instead of running their statements
+   * on the shared connection while a `withTransaction` BEGIN is open.
    */
   private mutexChain: Promise<void> = Promise.resolve();
-  private async mutex<T>(fn: () => Promise<T>): Promise<T> {
+  protected async mutex<T>(fn: () => Promise<T>): Promise<T> {
     const prev = this.mutexChain;
     let release!: () => void;
     this.mutexChain = new Promise<void>((resolve) => {

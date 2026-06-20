@@ -417,12 +417,18 @@ export class SqliteAiVectorStorage<
       return super.put(entity);
     }
 
-    const { sql, params } = this.buildVectorInsertSql(entity);
-    const stmt = this.database.prepare(sql);
-    const updatedEntity = this.decodeReturnedEntity(stmt.get(...params) as Entity);
+    // Serialize through the base per-instance mutex so this custom INSERT does
+    // not run on the shared connection while a `withTransaction` BEGIN is open
+    // (which would silently splice the row into the outer transaction). Emit
+    // through `emitPut` so a nested transaction can defer the event until COMMIT.
+    return this.mutex(async () => {
+      const { sql, params } = this.buildVectorInsertSql(entity);
+      const stmt = this.database.prepare(sql);
+      const updatedEntity = this.decodeReturnedEntity(stmt.get(...params) as Entity);
 
-    this.events.emit("put", updatedEntity);
-    return updatedEntity;
+      this.emitPut(updatedEntity);
+      return updatedEntity;
+    });
   }
 
   /**
@@ -448,19 +454,27 @@ export class SqliteAiVectorStorage<
       return super.putBulk(entities);
     }
 
-    const updatedEntities: Entity[] = [];
-    const transaction = this.database.transaction((items: any[]) => {
-      for (const item of items) {
-        const { sql, params } = this.buildVectorInsertSql(item);
-        const stmt = this.database.prepare(sql);
-        const row = stmt.get(...params) as Entity;
-        updatedEntities.push(this.decodeReturnedEntity(row));
-      }
-    });
-    transaction(entities);
+    // Serialize through the base per-instance mutex. Without this, a concurrent
+    // `withTransaction` (which holds the mutex and an open BEGIN on the shared
+    // connection) would collide with this method's own `db.transaction(...)`,
+    // which issues a nested BEGIN and throws "cannot start a transaction within
+    // a transaction". Emit through `emitPut` so events defer to COMMIT when
+    // nested inside an outer transaction.
+    return this.mutex(async () => {
+      const updatedEntities: Entity[] = [];
+      const transaction = this.database.transaction((items: any[]) => {
+        for (const item of items) {
+          const { sql, params } = this.buildVectorInsertSql(item);
+          const stmt = this.database.prepare(sql);
+          const row = stmt.get(...params) as Entity;
+          updatedEntities.push(this.decodeReturnedEntity(row));
+        }
+      });
+      transaction(entities);
 
-    for (const entity of updatedEntities) this.events.emit("put", entity);
-    return updatedEntities;
+      for (const entity of updatedEntities) this.emitPut(entity);
+      return updatedEntities;
+    });
   }
 
   /**

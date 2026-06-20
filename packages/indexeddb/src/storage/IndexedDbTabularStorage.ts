@@ -119,6 +119,11 @@ export class IndexedDbTabularStorage<
    *                    while each array creates a compound index with columns in the specified order.
    * @param migrationOptions - Options for handling database schema migrations
    * @param clientProvidedKeys - How to handle client-provided values for auto-generated keys
+   * @param tabularMigrations - Declarative migrations evolving the store schema
+   * @param uniqueIndexes - Compound column tuples enforced as native IDB UNIQUE
+   *                        indexes (`store.createIndex(..., { unique: true })`).
+   *                        A `put` whose tuple collides with another record's
+   *                        rejects with a `ConstraintError`.
    */
   constructor(
     public table: string = "tabular_store",
@@ -130,9 +135,18 @@ export class IndexedDbTabularStorage<
       readonly backupPollingIntervalMs?: number;
     } = {},
     clientProvidedKeys: ClientProvidedKeysOption = "if-missing",
-    tabularMigrations?: ReadonlyArray<ITabularMigration>
+    tabularMigrations?: ReadonlyArray<ITabularMigration>,
+    uniqueIndexes: readonly (readonly (keyof NoInfer<Entity>)[])[] = []
   ) {
-    super(schema, primaryKeyNames, indexes, clientProvidedKeys, tabularMigrations, table);
+    super(
+      schema,
+      primaryKeyNames,
+      indexes,
+      clientProvidedKeys,
+      tabularMigrations,
+      table,
+      uniqueIndexes
+    );
     this.migrationOptions = migrationOptions;
     this.hybridOptions = {
       useBroadcastChannel: migrationOptions.useBroadcastChannel ?? true,
@@ -250,6 +264,25 @@ export class IndexedDbTabularStorage<
         name: indexName,
         keyPath: columnNames.length === 1 ? columnNames[0] : columnNames,
         options: { unique: false },
+      });
+    }
+
+    // Declared unique tuples become native IDB UNIQUE indexes so a colliding
+    // `put` is rejected with a `ConstraintError` — the browser-tier equivalent
+    // of the `CREATE UNIQUE INDEX` the SQL backends emit. The base class has
+    // already dropped any regular index whose tuple exactly matches a unique
+    // tuple, so reusing the plain `cols.join("_")` name cannot collide; it also
+    // lets the query planner narrow on the unique index (see
+    // {@link getCursorSafeIndexes}). IDB excludes records with an
+    // undefined/invalid keyPath component from an index, so NULL/undefined tuple
+    // values never trip the constraint — matching SQL's "NULL is distinct".
+    for (const columns of this.uniqueIndexes) {
+      const columnNames = (columns as Array<keyof Entity>).map((col) => String(col));
+      const indexName = columnNames.join("_");
+      expectedIndexes.push({
+        name: indexName,
+        keyPath: columnNames.length === 1 ? columnNames[0] : columnNames,
+        options: { unique: true },
       });
     }
 
@@ -491,17 +524,27 @@ export class IndexedDbTabularStorage<
       // the version). Drop the stale handle so `getDb()` re-opens, then
       // retry exactly once.
       if (err instanceof DOMException && err.name === "InvalidStateError") {
-        // Per-row `put` events fire inside `tx.oncomplete`, which never runs
-        // on a rollback path, so by definition no committed row was visible to
-        // subscribers. Emit `ids: []` to make that explicit.
-        safeEmit(this.events, "rollback", { op: "putBulkInTransaction", error: err, ids: [] });
+        // The first attempt's transaction never reached `tx.oncomplete` (where
+        // per-row `put` events fire), so no committed row was visible. Do NOT
+        // emit a `rollback` here: the retry below may succeed and commit the
+        // whole batch, in which case a rollback event would falsely signal that
+        // nothing landed. Only emit rollback if the retry itself fails.
         try {
           this.db?.close();
         } catch {
           // best-effort: connection may already be closed.
         }
         this.db = undefined;
-        return await run();
+        try {
+          return await run();
+        } catch (retryErr) {
+          safeEmit(this.events, "rollback", {
+            op: "putBulkInTransaction",
+            error: retryErr,
+            ids: [],
+          });
+          throw retryErr;
+        }
       }
       safeEmit(this.events, "rollback", { op: "putBulkInTransaction", error: err, ids: [] });
       throw err;
@@ -644,7 +687,11 @@ export class IndexedDbTabularStorage<
   private getCursorSafeIndexes(): Array<Array<keyof Entity>> {
     if (this.cursorSafeIndexes) return this.cursorSafeIndexes;
     const required = new Set(this.schema.required ?? []);
-    this.cursorSafeIndexes = this.indexes.filter((columns) =>
+    // Unique tuples are materialized as real IDB indexes (see `performSetup`)
+    // under the same `cols.join("_")` name the planner derives, so they can
+    // narrow scans exactly like regular indexes. The base class guarantees no
+    // tuple appears in both lists, so the union has no duplicate.
+    this.cursorSafeIndexes = [...this.indexes, ...this.uniqueIndexes].filter((columns) =>
       columns.every((column) => required.has(String(column)))
     );
     return this.cursorSafeIndexes;

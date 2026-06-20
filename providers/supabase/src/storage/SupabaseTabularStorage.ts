@@ -95,6 +95,12 @@ export class SupabaseTabularStorage<
    * @param indexes - Array of columns or column arrays to make searchable. Each string or single column creates a single-column index,
    *                    while each array creates a compound index with columns in the specified order.
    * @param clientProvidedKeys - How to handle client-provided values for auto-generated keys
+   * @param uniqueIndexes - Compound column tuples enforced as DB-level UNIQUE
+   *                        indexes. Emitted as `CREATE UNIQUE INDEX IF NOT
+   *                        EXISTS` when the table is bootstrapped via `exec_sql`
+   *                        (local dev / test); in production the table is owned
+   *                        by Supabase migrations, which must declare the same
+   *                        constraints.
    */
   constructor(
     client: unknown,
@@ -102,9 +108,19 @@ export class SupabaseTabularStorage<
     schema: Schema,
     primaryKeyNames: PrimaryKeyNames,
     indexes: readonly (keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[])[] = [],
-    clientProvidedKeys: ClientProvidedKeysOption = "if-missing"
+    clientProvidedKeys: ClientProvidedKeysOption = "if-missing",
+    uniqueIndexes: readonly (readonly (keyof NoInfer<Entity>)[])[] = []
   ) {
-    super(table, schema, primaryKeyNames, indexes, clientProvidedKeys);
+    super(
+      table,
+      schema,
+      primaryKeyNames,
+      indexes,
+      clientProvidedKeys,
+      undefined,
+      table,
+      uniqueIndexes
+    );
     this.client = client as SupabaseClient;
   }
 
@@ -196,6 +212,20 @@ export class SupabaseTabularStorage<
           console.warn(`Failed to create index ${indexName}:`, indexError);
         }
         createdIndexes.add(columnKey);
+      }
+    }
+
+    // DB-level UNIQUE indexes for declared unique tuples. Named `${table}_uniq_…`
+    // to match the SQLite/Postgres convention and stay distinct from the plain
+    // `${table}_…` search-index names above.
+    for (const columns of this.uniqueIndexes) {
+      const cols = columns as Array<keyof Entity>;
+      const indexName = `${this.table}_uniq_${cols.map(String).join("_")}`;
+      const columnList = cols.map((col) => `"${String(col)}"`).join(", ");
+      const indexSql = `CREATE UNIQUE INDEX IF NOT EXISTS "${indexName}" ON "${this.table}" (${columnList})`;
+      const { error: indexError } = await this.client.rpc("exec_sql", { query: indexSql });
+      if (indexError && !indexError.message?.includes("already exists")) {
+        console.warn(`Failed to create unique index ${indexName}:`, indexError);
       }
     }
 
