@@ -1,5 +1,17 @@
 # @workglow/test
 
+## 0.3.17
+
+### Features
+
+#### util
+
+- add Hmac utility
+
+### Updated Dependencies
+
+- `@cloudflare/workers-types`: ^4.20260621.1
+
 ## 0.3.16
 
 ### Bug Fixes

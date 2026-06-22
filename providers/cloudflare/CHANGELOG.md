@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.17
+
+### Updated Dependencies
+
+- `@cloudflare/workers-types`: ^4.20260621.1
+
 ## 0.3.16
 
 ### Chores

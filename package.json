@@ -1,7 +1,7 @@
 {
   "name": "@workglow-dev/libs",
   "type": "module",
-  "version": "0.3.16",
+  "version": "0.3.17",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git"
@@ -63,7 +63,7 @@
     "@mediapipe/tasks-vision": "^0.10.35",
     "@mediapipe/tasks-audio": "^0.10.35",
     "@mediapipe/tasks-genai": "^0.10.27",
-    "@anthropic-ai/sdk": "^0.104.2",
+    "@anthropic-ai/sdk": "^0.105.0",
     "electron": "^42.4.1",
     "@google/generative-ai": "^0.24.1",
     "node-llama-cpp": "^3.18.1",
@@ -98,7 +98,7 @@
     "@types/node": "^24.13.2",
     "@typescript-eslint/eslint-plugin": "^8.61.1",
     "@typescript-eslint/parser": "^8.61.1",
-    "@typescript/native-preview": "=7.0.0-dev.20260619.1",
+    "@typescript/native-preview": "=7.0.0-dev.20260622.1",
     "@vitest/coverage-v8": "^4.1.9",
     "@vitest/ui": "4.1.9",
     "bunset": "^1.0.13",
@@ -110,7 +110,7 @@
     "eslint-plugin-regexp": "^3.1.0",
     "globals": "^17.6.0",
     "husky": "^9.1.7",
-    "lint-staged": "^17.0.7",
+    "lint-staged": "^17.0.8",
     "nyc": "^18.0.0",
     "pkg-pr-new": "^0.0.75",
     "prettier": "^3.8.4",

@@ -1,5 +1,11 @@
 # @workglow/cli
 
+## 0.3.17
+
+### Updated Dependencies
+
+- `smol-toml`: ^1.7.0
+
 ## 0.3.16
 
 ### Chores

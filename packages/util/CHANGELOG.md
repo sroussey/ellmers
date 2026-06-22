@@ -1,5 +1,13 @@
 # @workglow/util
 
+## 0.3.17
+
+### Features
+
+#### util
+
+- add Hmac utility
+
 ## 0.3.16
 
 ### Chores

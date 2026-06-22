@@ -1,5 +1,11 @@
 # @workglow/web
 
+## 0.3.17
+
+### Updated Dependencies
+
+- `@xyflow/react`: ^12.11.1
+
 ## 0.3.16
 
 ### Refactors

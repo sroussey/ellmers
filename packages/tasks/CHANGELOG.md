@@ -1,5 +1,7 @@
 # @workglow/tasks
 
+## 0.3.17
+
 ## 0.3.16
 
 ### Chores
