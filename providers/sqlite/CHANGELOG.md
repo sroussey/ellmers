@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.16
+
+### Bug Fixes
+
+#### providers/sqlite
+
+- vector encoding inside withTransaction + nested-BEGIN deadlock (#594)
+
+### Refactors
+
+#### storage
+
+- enhance unique index handling and event emission
+
 ## 0.3.15
 
 ### Features

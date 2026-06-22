@@ -1,5 +1,30 @@
 # @workglow/test
 
+## 0.3.16
+
+### Bug Fixes
+
+#### providers/sqlite
+
+- vector encoding inside withTransaction + nested-BEGIN deadlock (#594)
+
+### Refactors
+
+#### storage
+
+- enhance unique index handling and event emission
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1073.0
+- `@cloudflare/workers-types`: ^4.20260619.1
+- `miniflare`: ^4.20260617.1
+- `vitest`: ^4.1.9
+
 ## 0.3.15
 
 ### Features

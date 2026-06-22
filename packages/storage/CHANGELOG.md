@@ -1,5 +1,13 @@
 # @workglow/storage
 
+## 0.3.16
+
+### Refactors
+
+#### storage
+
+- enhance unique index handling and event emission
+
 ## 0.3.15
 
 ### Features

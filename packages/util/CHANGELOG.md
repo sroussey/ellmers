@@ -1,5 +1,11 @@
 # @workglow/util
 
+## 0.3.16
+
+### Chores
+
+- update deps
+
 ## 0.3.15
 
 ### Bug Fixes
