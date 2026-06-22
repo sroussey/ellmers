@@ -1,5 +1,13 @@
 # @workglow/test
 
+## 0.3.18
+
+### Tests
+
+#### fix
+
+- hmac
+
 ## 0.3.17
 
 ### Features

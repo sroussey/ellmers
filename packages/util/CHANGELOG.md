@@ -1,5 +1,7 @@
 # @workglow/util
 
+## 0.3.18
+
 ## 0.3.17
 
 ### Features
