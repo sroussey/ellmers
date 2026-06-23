@@ -18,8 +18,8 @@ describe("resolveHftPipelineDevice", () => {
     }
   });
 
-  it("passes auto through on the server", () => {
-    expect(resolveHftPipelineDevice("auto")).toBe("auto");
+  it("resolves auto to undefined on the server", () => {
+    expect(resolveHftPipelineDevice("auto")).toBeUndefined();
     expect(resolveHftPipelineDevice("cpu")).toBe("cpu");
     expect(resolveHftPipelineDevice("gpu")).toBe("gpu");
     expect(resolveHftPipelineDevice(undefined)).toBeUndefined();
