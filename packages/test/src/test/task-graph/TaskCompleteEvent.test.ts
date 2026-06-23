@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { StreamEvent } from "@workglow/task-graph";
 import { Dataflow, GraphAsTask, Task, TaskGraph, TaskRegistry } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
@@ -57,6 +58,35 @@ class TCEFails extends Task<{ value: number }, { value: number }> {
   }
 }
 TaskRegistry.registerTask(TCEFails as never);
+
+class TCEStream extends Task<{ value: number }, { text: string }> {
+  static override readonly type = "TCEStream";
+  static override readonly category = "Test";
+  static override title = "Stream";
+  static override description = "Streams text";
+  static override inputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { value: { type: "number" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+  static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { text: { type: "string", "x-stream": "append" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+  async *executeStream(): AsyncIterable<StreamEvent<{ text: string }>> {
+    yield { type: "text-delta", port: "text", textDelta: "hi" };
+    yield { type: "finish", data: { text: "hi" } };
+  }
+  override async execute(): Promise<{ text: string }> {
+    return { text: "hi" };
+  }
+}
+TaskRegistry.registerTask(TCEStream as never);
 
 describe("task_complete graph event", () => {
   it("emits task_complete for every completed task with its output", async () => {
@@ -116,5 +146,26 @@ describe("task_complete graph event", () => {
     // The compound node itself AND its inner child both surface on the top graph.
     expect(seen).toContain("group");
     expect(seen).toContain("inner");
+  });
+
+  it("bubbles task_complete from a streaming group's children (executeStream path)", async () => {
+    const subGraph = new TaskGraph();
+    subGraph.addTask(new TCEStream({ id: "sinner" }));
+    // A streaming ending node makes the group streamable -> executeStream path.
+    const group = new GraphAsTask({ id: "sgroup", subGraph });
+
+    const top = new TaskGraph();
+    top.addTask(group);
+
+    const seen: string[] = [];
+    const unsub = top.subscribe("task_complete", (taskId) => {
+      seen.push(String(taskId));
+    });
+
+    await top.run({ value: 5 });
+    unsub();
+
+    expect(seen).toContain("sgroup");
+    expect(seen).toContain("sinner");
   });
 });

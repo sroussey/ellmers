@@ -262,6 +262,26 @@ export class GraphAsTask<
         },
       });
 
+      // Bubble inner-task events up to the parent graph so subgraph children of
+      // a streaming group surface as individual task events on the top-level
+      // stream (previews + progress). Mirrors GraphAsTaskRunner for the
+      // non-streaming path; bubbles recursively for nested compound tasks.
+      const parentGraph = this.parentGraph;
+      let bridgeUnsub: () => void = () => {};
+      if (parentGraph) {
+        const offs = [
+          this.subGraph.subscribeToTaskStreaming({
+            onStreamStart: (id) => parentGraph.emit("task_stream_start", id),
+            onStreamChunk: (id, ev) => parentGraph.emit("task_stream_chunk", id, ev),
+            onStreamEnd: (id, out) => parentGraph.emit("task_stream_end", id, out),
+          }),
+          this.subGraph.subscribe("task_complete", (id, out) =>
+            parentGraph.emit("task_complete", id, out)
+          ),
+        ];
+        bridgeUnsub = () => offs.forEach((off) => off());
+      }
+
       const runPromise = this.subGraph
         .run<Output>(input, { parentSignal: context.signal, accumulateLeafOutputs: false })
         .then(
@@ -298,6 +318,7 @@ export class GraphAsTask<
       }
 
       unsub();
+      bridgeUnsub();
 
       const results = await runPromise;
       const mergedOutput = this.subGraph.mergeExecuteOutputsToRunOutput(
