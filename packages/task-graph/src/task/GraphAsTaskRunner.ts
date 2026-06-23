@@ -34,6 +34,22 @@ export class GraphAsTaskRunner<
         void this.handleProgress(progress, message, ...args);
       }
     );
+
+    // Bubble inner-task events up to the parent graph so subgraph children
+    // surface as individual task events on the top-level stream (used for
+    // previews and progress colors). Bubbles recursively: a nested compound
+    // task forwards its own subgraph to us, and we forward it onward.
+    const parent = this.task.parentGraph;
+    const sub = this.task.subGraph!;
+    const bridges = parent
+      ? [
+          sub.subscribe("task_complete", (id, out) => parent.emit("task_complete", id, out)),
+          sub.subscribe("task_stream_start", (id) => parent.emit("task_stream_start", id)),
+          sub.subscribe("task_stream_chunk", (id, ev) => parent.emit("task_stream_chunk", id, ev)),
+          sub.subscribe("task_stream_end", (id, out) => parent.emit("task_stream_end", id, out)),
+        ]
+      : [];
+
     const results = await this.task.subGraph!.run<Output>(input, {
       parentSignal: this.currentCtx?.abortController.signal,
       outputCache: this.outputCache,
@@ -41,6 +57,7 @@ export class GraphAsTaskRunner<
       resourceScope: this.resourceScope,
     });
     unsubscribe();
+    bridges.forEach((off) => off());
     return results;
   }
   /**

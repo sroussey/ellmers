@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Dataflow, Task, TaskGraph, TaskRegistry } from "@workglow/task-graph";
+import { Dataflow, GraphAsTask, Task, TaskGraph, TaskRegistry } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 
@@ -95,5 +95,26 @@ describe("task_complete graph event", () => {
 
     expect(seen).toContain("ok");
     expect(seen).not.toContain("bad");
+  });
+
+  it("bubbles task_complete from subgraph children up to the top-level graph", async () => {
+    const subGraph = new TaskGraph();
+    subGraph.addTask(new TCEAddOne({ id: "inner" }));
+    const group = new GraphAsTask({ id: "group", subGraph });
+
+    const top = new TaskGraph();
+    top.addTask(group);
+
+    const seen: string[] = [];
+    const unsub = top.subscribe("task_complete", (taskId) => {
+      seen.push(String(taskId));
+    });
+
+    await top.run({ value: 5 });
+    unsub();
+
+    // The compound node itself AND its inner child both surface on the top graph.
+    expect(seen).toContain("group");
+    expect(seen).toContain("inner");
   });
 });
