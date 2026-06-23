@@ -18,7 +18,7 @@ export function isHftBrowserEnv(): boolean {
  * Browser builds only accept `wasm` or `webgpu`; `auto` is our cross-platform
  * stored default, and should prefer WebGPU in the browser.
  */
-export function resolveHftPipelineDevice(raw: string | undefined): string {
+export function resolveHftPipelineDevice(raw: string | undefined): string | undefined {
   if (isHftBrowserEnv()) {
     if (raw === "gpu") return "webgpu";
     if (raw === "cpu") return "wasm";
@@ -27,7 +27,10 @@ export function resolveHftPipelineDevice(raw: string | undefined): string {
     return raw;
   }
 
-  // On the server, let transformers.js/onnxruntime-node choose the best EP.
-  if (raw === "wasm" || raw === "webgpu") return "auto";
-  return raw || "auto";
+  // On the server, resolve to undefined so onnxruntime-node defaults to the CPU
+  // execution provider instead of probing CUDA (which throws when the CUDA
+  // shared libraries are absent, e.g. CPU-only CI runners). "wasm"/"webgpu" are
+  // browser-only and stripped here as well.
+  if (!raw || raw === "auto" || raw === "wasm" || raw === "webgpu") return undefined;
+  return raw;
 }
