@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.19
+
+### Features
+
+#### huggingface-transformers
+
+- add HFT_Device module and related tests
+
 ## 0.3.18
 
 ## 0.3.17

@@ -1,5 +1,21 @@
 # @workglow/test
 
+## 0.3.19
+
+### Features
+
+#### huggingface-transformers
+
+- add HFT_Device module and related tests
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1074.0
+
 ## 0.3.18
 
 ### Tests

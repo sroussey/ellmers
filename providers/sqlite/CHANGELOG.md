@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.19
+
+### Features
+
+#### sqlite
+
+- set default busy_timeout and enable WAL mode for database connections
+
 ## 0.3.18
 
 ## 0.3.17
