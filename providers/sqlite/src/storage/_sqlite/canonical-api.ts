@@ -13,6 +13,15 @@
  * **Generic order:** `prepare<BindParameters, Result>(sql)` — bindings first,
  * row/result second (better-sqlite3 order), not `bun:sqlite`’s reversed order.
  */
+
+/**
+ * Default `busy_timeout` (ms) applied to every file-backed connection. Several
+ * connections (job queue host, per-table storages, per-worker storages) open
+ * the same DB file concurrently; without a busy timeout a contended write fails
+ * immediately with `SQLITE_BUSY` instead of waiting for the lock to clear.
+ */
+export const SQLITE_BUSY_TIMEOUT_MS = 5000;
+
 // eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace SqliteApi {
   export interface RunResult {

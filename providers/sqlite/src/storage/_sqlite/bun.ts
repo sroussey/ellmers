@@ -7,6 +7,7 @@
 import type { Database as BunDatabaseCtor, Statement as BunStatementType } from "bun:sqlite";
 
 import type { SqliteApi } from "./canonical-api";
+import { SQLITE_BUSY_TIMEOUT_MS } from "./canonical-api";
 
 export type { SqliteApi };
 
@@ -81,6 +82,15 @@ export class BunSqliteDatabase implements SqliteApi.Database {
   constructor(filename?: string, options?: number | import("bun:sqlite").DatabaseOptions) {
     const { Database } = getBunSqlite();
     this.#db = new Database(filename, options);
+    // bun:sqlite has no default busy_timeout; set our shared default so a
+    // contended write waits for the lock instead of failing with SQLITE_BUSY.
+    this.#db.run(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
+    // WAL gives readers and writers concurrency across the several connections
+    // that open the same DB file. It needs a real file — skip in-memory dbs,
+    // where journal_mode stays "memory".
+    if (filename && filename !== ":memory:") {
+      this.#db.run("PRAGMA journal_mode = WAL");
+    }
   }
 
   exec(sql: string): void {

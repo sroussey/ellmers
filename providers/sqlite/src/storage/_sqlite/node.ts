@@ -7,6 +7,7 @@
 import type BetterSqlite3 from "better-sqlite3";
 
 import type { SqliteApi } from "./canonical-api";
+import { SQLITE_BUSY_TIMEOUT_MS } from "./canonical-api";
 
 export type { SqliteApi };
 
@@ -52,7 +53,19 @@ export class NodeSqliteDatabase implements SqliteApi.Database {
 
   constructor(filename?: string, options?: BetterSqlite3.Options) {
     const Ctor = assertLoaded();
-    this.#inner = new Ctor(filename ?? ":memory:", options);
+    const resolved = filename ?? ":memory:";
+    this.#inner = new Ctor(resolved, options);
+    // better-sqlite3 maps `options.timeout` to busy_timeout; when the caller
+    // didn't specify one, set our shared default so it matches the Bun driver.
+    if (options?.timeout === undefined) {
+      this.#inner.pragma(`busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
+    }
+    // WAL gives readers and writers concurrency across the several connections
+    // that open the same DB file. It needs a real file — skip in-memory dbs,
+    // where journal_mode stays "memory".
+    if (resolved !== ":memory:") {
+      this.#inner.pragma("journal_mode = WAL");
+    }
   }
 
   exec(sql: string): void {
