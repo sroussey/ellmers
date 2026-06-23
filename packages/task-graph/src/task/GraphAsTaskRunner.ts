@@ -50,15 +50,20 @@ export class GraphAsTaskRunner<
         ]
       : [];
 
-    const results = await this.task.subGraph!.run<Output>(input, {
-      parentSignal: this.currentCtx?.abortController.signal,
-      outputCache: this.outputCache,
-      registry: this.registry,
-      resourceScope: this.resourceScope,
-    });
-    unsubscribe();
-    bridges.forEach((off) => off());
-    return results;
+    try {
+      return await this.task.subGraph!.run<Output>(input, {
+        parentSignal: this.currentCtx?.abortController.signal,
+        outputCache: this.outputCache,
+        registry: this.registry,
+        resourceScope: this.resourceScope,
+      });
+    } finally {
+      // Always tear down — if subGraph.run() rejects (timeout/abort/inner
+      // failure) and this task is later re-run on the same instance, leaked
+      // subscriptions would double-emit every inner event to the parent.
+      unsubscribe();
+      bridges.forEach((off) => off());
+    }
   }
   /**
    * Protected method for preview execution delegation

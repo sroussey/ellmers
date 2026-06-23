@@ -297,28 +297,33 @@ export class GraphAsTask<
           }
         );
 
-      // Yield events as they arrive from ending nodes
-      while (!subgraphDone) {
-        if (eventQueue.length === 0) {
-          if (hasPending) {
-            // A notification arrived while we were active; consume it without blocking.
-            hasPending = false;
-          } else {
-            isWaiting = true;
-            await notifyPromise;
+      // Yield events as they arrive from ending nodes. Wrapped in try/finally so
+      // the subscriptions are torn down even if the consumer terminates this
+      // generator early (.return()/.throw()) — otherwise the parentGraph bridge
+      // would leak and double-emit on a later run of the same streaming group.
+      try {
+        while (!subgraphDone) {
+          if (eventQueue.length === 0) {
+            if (hasPending) {
+              // A notification arrived while we were active; consume it without blocking.
+              hasPending = false;
+            } else {
+              isWaiting = true;
+              await notifyPromise;
+            }
+          }
+          while (eventQueue.length > 0) {
+            yield eventQueue.shift()!;
           }
         }
+        // Drain any remaining events
         while (eventQueue.length > 0) {
           yield eventQueue.shift()!;
         }
+      } finally {
+        unsub();
+        bridgeUnsub();
       }
-      // Drain any remaining events
-      while (eventQueue.length > 0) {
-        yield eventQueue.shift()!;
-      }
-
-      unsub();
-      bridgeUnsub();
 
       const results = await runPromise;
       const mergedOutput = this.subGraph.mergeExecuteOutputsToRunOutput(
