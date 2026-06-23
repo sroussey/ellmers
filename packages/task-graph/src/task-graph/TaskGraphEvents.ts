@@ -27,6 +27,13 @@ export type TaskGraphStatusListeners = {
   task_stream_chunk: (taskId: TaskIdType, event: StreamEvent) => void;
   /** Fired when a task in the graph finishes streaming */
   task_stream_end: (taskId: TaskIdType, output: Record<string, any>) => void;
+  /**
+   * Fired when any task in the graph completes successfully, carrying its
+   * output. Mirrors `task_stream_end` but fires for every task — streaming or
+   * not — so consumers can observe authoritative outputs incrementally rather
+   * than only at graph completion.
+   */
+  task_complete: (taskId: TaskIdType, output: Record<string, any>) => void;
   /** Fired when the aggregated entitlements of the graph change */
   entitlementChange: (entitlements: TaskEntitlements) => void;
 };

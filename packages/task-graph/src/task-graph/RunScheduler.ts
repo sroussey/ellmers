@@ -295,6 +295,12 @@ export class RunScheduler {
               this.pushStatusFromNodeToEdges(task, ctx);
               edgeMat.pushErrorFromNodeToEdges(task);
             }
+            // Emit a per-task completion event carrying the authoritative output
+            // so external consumers can react incrementally. Only on success —
+            // failures route through edges / failedTaskErrors above.
+            if (task.status === TaskStatus.COMPLETED) {
+              this.graph.emit("task_complete", task.id, task.runOutputData);
+            }
             this.processScheduler.onTaskCompleted(task.id);
           }
         };
