@@ -22,12 +22,12 @@ describe("resolveHftPipelineDevice", () => {
     expect(resolveHftPipelineDevice("auto")).toBe("auto");
     expect(resolveHftPipelineDevice("cpu")).toBe("cpu");
     expect(resolveHftPipelineDevice("gpu")).toBe("gpu");
-    expect(resolveHftPipelineDevice(undefined)).toBeUndefined();
+    expect(resolveHftPipelineDevice(undefined)).toBe("auto");
   });
 
-  it("strips browser-only devices on the server", () => {
-    expect(resolveHftPipelineDevice("webgpu")).toBeUndefined();
-    expect(resolveHftPipelineDevice("wasm")).toBeUndefined();
+  it("normalizes browser-only devices to auto on the server", () => {
+    expect(resolveHftPipelineDevice("webgpu")).toBe("auto");
+    expect(resolveHftPipelineDevice("wasm")).toBe("auto");
   });
 
   it("defaults auto to WebGPU in the browser", () => {

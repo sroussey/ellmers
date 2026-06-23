@@ -16,7 +16,9 @@ export function isHftBrowserEnv(): boolean {
  * Resolve the stored high-level HFT device into the concrete value passed to transformers.js.
  *
  * Browser builds only accept `wasm` or `webgpu`; `auto` is our cross-platform
- * stored default, and should prefer WebGPU in the browser.
+ * stored default, and should prefer WebGPU in the browser. On the server,
+ * missing/browser-only inputs normalize to `"auto"`, which transformers.js
+ * delegates to onnxruntime-node for EP auto-selection.
  */
 export function resolveHftPipelineDevice(raw: string | undefined): string {
   if (isHftBrowserEnv()) {
