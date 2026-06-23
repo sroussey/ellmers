@@ -7,6 +7,7 @@
 import type { DynamicCache, PretrainedModelOptions, ProgressInfo } from "@huggingface/transformers";
 import type { StreamPhase } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util/worker";
+import { resolveHftPipelineDevice } from "./HFT_Device";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 
 type TransformersSDKModule = typeof import("@huggingface/transformers");
@@ -333,16 +334,6 @@ export async function removeCachedPipeline(cacheKey: string): Promise<boolean> {
   return deleted;
 }
 
-/** True when running in a browser or Web Worker. Transformers.js only accepts device "wasm" or "webgpu" in the browser build. */
-function isBrowserEnv(): boolean {
-  if (typeof globalThis === "undefined") return false;
-  // Main thread
-  if (typeof (globalThis as any).window !== "undefined") return true;
-  // Web Worker (has self but no window)
-  if (typeof (globalThis as any).WorkerGlobalScope !== "undefined") return true;
-  return false;
-}
-
 /**
  * Generate a cache key for a pipeline that includes all configuration options
  * that affect pipeline creation (model_path, pipeline, dtype, device)
@@ -489,24 +480,7 @@ const doGetPipeline = async (
     }
   };
 
-  let device = model.provider_config.device as string | undefined;
-  if (isBrowserEnv()) {
-    // we must make a choice for the device in the browser
-    if (device === "gpu") {
-      device = "webgpu";
-    }
-    if (device === "cpu") {
-      device = "wasm";
-    }
-    if (device !== "wasm" && device !== "webgpu") {
-      device = "wasm";
-    }
-  } else {
-    // we can trust the lib to make a choice for the device on the server
-    if (device === "wasm" || device === "webgpu") {
-      device = undefined;
-    }
-  }
+  const device = resolveHftPipelineDevice(model.provider_config.device);
 
   const dtype = model.provider_config.dtype || "";
   const pipelineOptions: PretrainedModelOptions = {
