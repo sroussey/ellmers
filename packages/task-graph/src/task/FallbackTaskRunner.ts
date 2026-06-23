@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { bridgeSubGraphTaskEvents } from "../task-graph/SubGraphEventBridge";
 import type { FallbackTask, FallbackTaskConfig } from "./FallbackTask";
 import { GraphAsTaskRunner } from "./GraphAsTaskRunner";
 import type { ITask } from "./ITask";
@@ -147,6 +148,14 @@ export class FallbackTaskRunner<
       onSubgraphProgress
     );
 
+    // Bubble inner-task events up so subgraph children of a Fallback group
+    // surface on the top-level stream (previews + progress). The same subGraph
+    // instance is re-run per alternative, so bridge once and tear down in finally.
+    const parentGraph = this.task.parentGraph;
+    const unbridge = parentGraph
+      ? bridgeSubGraphTaskEvents(this.task.subGraph, parentGraph)
+      : () => {};
+
     try {
       for (let i = 0; i < alternatives.length; i++) {
         if (this.currentCtx?.abortController.signal.aborted) {
@@ -198,6 +207,7 @@ export class FallbackTaskRunner<
       }
     } finally {
       unsubscribeSubgraphProgress();
+      unbridge();
     }
 
     // All alternatives failed

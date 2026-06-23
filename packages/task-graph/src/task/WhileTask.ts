@@ -5,6 +5,7 @@
  */
 
 import type { DataPortSchema } from "@workglow/util/schema";
+import { bridgeSubGraphTaskEvents } from "../task-graph/SubGraphEventBridge";
 import { Workflow } from "../task-graph/Workflow";
 import { CreateEndLoopWorkflow, CreateLoopWorkflow } from "../task-graph/WorkflowFactories";
 import { evaluateCondition, getNestedValue } from "./ConditionUtils";
@@ -369,6 +370,12 @@ export class WhileTask<
       onInnerGraphProgress
     );
 
+    // Bubble inner-task events up so subgraph children of a While loop surface
+    // on the top-level stream (previews + progress). The same subGraph re-runs
+    // per iteration, so bridge once and tear down in finally.
+    const parentGraph = this.parentGraph;
+    const unbridge = parentGraph ? bridgeSubGraphTaskEvents(this.subGraph, parentGraph) : () => {};
+
     try {
       // Execute iterations until condition returns false or max iterations reached
       while (this._currentIteration < effectiveMax) {
@@ -447,6 +454,7 @@ export class WhileTask<
       }
     } finally {
       unsubscribeInnerProgress();
+      unbridge();
     }
 
     return currentOutput;
@@ -499,6 +507,12 @@ export class WhileTask<
       "graph_progress",
       onInnerGraphProgress
     );
+
+    // Bubble inner-task events up so subgraph children of a While loop surface
+    // on the top-level stream (previews + progress). The same subGraph re-runs
+    // per iteration, so bridge once and tear down in finally.
+    const parentGraph = this.parentGraph;
+    const unbridge = parentGraph ? bridgeSubGraphTaskEvents(this.subGraph, parentGraph) : () => {};
 
     try {
       while (this._currentIteration < effectiveMax) {
@@ -556,6 +570,7 @@ export class WhileTask<
       }
     } finally {
       unsubscribeInnerProgress();
+      unbridge();
     }
 
     yield { type: "finish", data: currentOutput } as StreamFinish<Output>;

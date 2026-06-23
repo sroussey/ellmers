@@ -11,6 +11,7 @@ import { compileSchema } from "@workglow/util/schema";
 import { registerGraphWrapperFactory } from "../task-graph/Conversions";
 import { computeGraphEntitlements } from "../task-graph/GraphEntitlementUtils";
 import { computeGraphInputSchema, computeGraphOutputSchema } from "../task-graph/GraphSchemaUtils";
+import { bridgeSubGraphTaskEvents } from "../task-graph/SubGraphEventBridge";
 import { TaskGraph } from "../task-graph/TaskGraph";
 import { CompoundMergeStrategy, PROPERTY_ARRAY } from "../task-graph/TaskGraphRunner";
 import type { CreateLoopWorkflow } from "../task-graph/WorkflowFactories";
@@ -267,23 +268,9 @@ export class GraphAsTask<
       // stream (previews + progress). Mirrors GraphAsTaskRunner for the
       // non-streaming path; bubbles recursively for nested compound tasks.
       const parentGraph = this.parentGraph;
-      let bridgeUnsub: () => void = () => {};
-      if (parentGraph) {
-        const offs = [
-          this.subGraph.subscribeToTaskStreaming({
-            onStreamStart: (id) => parentGraph.emit("task_stream_start", id),
-            onStreamChunk: (id, ev) => parentGraph.emit("task_stream_chunk", id, ev),
-            onStreamEnd: (id, out) => parentGraph.emit("task_stream_end", id, out),
-          }),
-          this.subGraph.subscribe("task_complete", (id, out) =>
-            parentGraph.emit("task_complete", id, out)
-          ),
-          this.subGraph.subscribe("task_progress", (id, p, m, ...a) =>
-            parentGraph.emit("task_progress", id, p, m, ...a)
-          ),
-        ];
-        bridgeUnsub = () => offs.forEach((off) => off());
-      }
+      const bridgeUnsub = parentGraph
+        ? bridgeSubGraphTaskEvents(this.subGraph, parentGraph)
+        : () => {};
 
       const runPromise = this.subGraph
         .run<Output>(input, { parentSignal: context.signal, accumulateLeafOutputs: false })

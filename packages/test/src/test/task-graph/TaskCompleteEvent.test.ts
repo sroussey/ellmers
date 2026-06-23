@@ -5,7 +5,15 @@
  */
 
 import type { StreamEvent } from "@workglow/task-graph";
-import { Dataflow, GraphAsTask, Task, TaskGraph, TaskRegistry } from "@workglow/task-graph";
+import {
+  Dataflow,
+  FallbackTask,
+  GraphAsTask,
+  Task,
+  TaskGraph,
+  TaskRegistry,
+  WhileTask,
+} from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 
@@ -58,6 +66,33 @@ class TCEFails extends Task<{ value: number }, { value: number }> {
   }
 }
 TaskRegistry.registerTask(TCEFails as never);
+
+// Permissive child: While injects `_iterationIndex`, so the body must allow
+// additional properties.
+class TCEPassthrough extends Task<{ value: number }, { value: number }> {
+  static override readonly type = "TCEPassthrough";
+  static override readonly category = "Test";
+  static override title = "Passthrough add one";
+  static override description = "Adds one, permissive input";
+  static override inputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { value: { type: "number" } },
+      additionalProperties: true,
+    } as const satisfies DataPortSchema;
+  }
+  static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { value: { type: "number" } },
+      additionalProperties: true,
+    } as const satisfies DataPortSchema;
+  }
+  override async execute(input: { value: number }): Promise<{ value: number }> {
+    return { value: (input.value ?? 0) + 1 };
+  }
+}
+TaskRegistry.registerTask(TCEPassthrough as never);
 
 class TCEStream extends Task<{ value: number }, { text: string }> {
   static override readonly type = "TCEStream";
@@ -187,5 +222,46 @@ describe("task_complete graph event", () => {
 
     expect(seen).toContain("sgroup");
     expect(seen).toContain("sinner");
+  });
+
+  it("bubbles task_complete from a While loop's children", async () => {
+    const body = new TCEPassthrough({ id: "wbody" });
+    let iters = 0;
+    const whileTask = new WhileTask({
+      id: "wgroup",
+      maxIterations: 3,
+      condition: () => iters++ < 1,
+    });
+    const subGraph = new TaskGraph();
+    subGraph.addTask(body);
+    whileTask.subGraph = subGraph;
+
+    const top = new TaskGraph();
+    top.addTask(whileTask);
+
+    const seen: string[] = [];
+    const unsub = top.subscribe("task_complete", (taskId) => seen.push(String(taskId)));
+    await top.run({ value: 5 });
+    unsub();
+
+    expect(seen).toContain("wbody");
+  });
+
+  it("bubbles task_complete from a Fallback (data mode) group's children", async () => {
+    const child = new TCEPassthrough({ id: "fbody" });
+    const fallback = new FallbackTask({ id: "fgroup", fallbackMode: "data", alternatives: [{}] });
+    const subGraph = new TaskGraph();
+    subGraph.addTask(child);
+    fallback.subGraph = subGraph;
+
+    const top = new TaskGraph();
+    top.addTask(fallback);
+
+    const seen: string[] = [];
+    const unsub = top.subscribe("task_complete", (taskId) => seen.push(String(taskId)));
+    await top.run({ value: 5 });
+    unsub();
+
+    expect(seen).toContain("fbody");
   });
 });

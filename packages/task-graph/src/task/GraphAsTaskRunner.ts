@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { bridgeSubGraphTaskEvents } from "../task-graph/SubGraphEventBridge";
 import { GraphResultArray } from "../task-graph/TaskGraphRunner";
 import type { GraphAsTaskConfig } from "./GraphAsTask";
 import { GraphAsTask } from "./GraphAsTask";
@@ -40,18 +41,7 @@ export class GraphAsTaskRunner<
     // previews and progress colors). Bubbles recursively: a nested compound
     // task forwards its own subgraph to us, and we forward it onward.
     const parent = this.task.parentGraph;
-    const sub = this.task.subGraph!;
-    const bridges = parent
-      ? [
-          sub.subscribe("task_complete", (id, out) => parent.emit("task_complete", id, out)),
-          sub.subscribe("task_progress", (id, p, m, ...a) =>
-            parent.emit("task_progress", id, p, m, ...a)
-          ),
-          sub.subscribe("task_stream_start", (id) => parent.emit("task_stream_start", id)),
-          sub.subscribe("task_stream_chunk", (id, ev) => parent.emit("task_stream_chunk", id, ev)),
-          sub.subscribe("task_stream_end", (id, out) => parent.emit("task_stream_end", id, out)),
-        ]
-      : [];
+    const unbridge = parent ? bridgeSubGraphTaskEvents(this.task.subGraph!, parent) : () => {};
 
     try {
       return await this.task.subGraph!.run<Output>(input, {
@@ -65,7 +55,7 @@ export class GraphAsTaskRunner<
       // failure) and this task is later re-run on the same instance, leaked
       // subscriptions would double-emit every inner event to the parent.
       unsubscribe();
-      bridges.forEach((off) => off());
+      unbridge();
     }
   }
   /**
