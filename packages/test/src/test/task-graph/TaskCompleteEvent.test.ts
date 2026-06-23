@@ -33,6 +33,31 @@ class TCEAddOne extends Task<{ value: number }, { value: number }> {
 }
 TaskRegistry.registerTask(TCEAddOne as never);
 
+class TCEFails extends Task<{ value: number }, { value: number }> {
+  static override readonly type = "TCEFails";
+  static override readonly category = "Test";
+  static override title = "Fails";
+  static override description = "Always throws";
+  static override inputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { value: { type: "number" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+  static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { value: { type: "number" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+  override async execute(): Promise<{ value: number }> {
+    throw new Error("boom");
+  }
+}
+TaskRegistry.registerTask(TCEFails as never);
+
 describe("task_complete graph event", () => {
   it("emits task_complete for every completed task with its output", async () => {
     const graph = new TaskGraph();
@@ -53,5 +78,22 @@ describe("task_complete graph event", () => {
     const byId = new Map(seen.map((e) => [String(e.taskId), e.output as { value: number }]));
     expect(byId.get("a")).toEqual({ value: 11 });
     expect(byId.get("b")).toEqual({ value: 12 });
+  });
+
+  it("does not emit task_complete for a failed task", async () => {
+    const graph = new TaskGraph();
+    graph.addTask(new TCEAddOne({ id: "ok" }));
+    graph.addTask(new TCEFails({ id: "bad" }));
+
+    const seen: string[] = [];
+    const unsub = graph.subscribe("task_complete", (taskId) => {
+      seen.push(String(taskId));
+    });
+
+    await graph.run({ value: 1 }).catch(() => {});
+    unsub();
+
+    expect(seen).toContain("ok");
+    expect(seen).not.toContain("bad");
   });
 });

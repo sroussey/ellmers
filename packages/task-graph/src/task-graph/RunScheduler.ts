@@ -296,10 +296,20 @@ export class RunScheduler {
               edgeMat.pushErrorFromNodeToEdges(task);
             }
             // Emit a per-task completion event carrying the authoritative output
-            // so external consumers can react incrementally. Only on success —
-            // failures route through edges / failedTaskErrors above.
+            // so external consumers can react incrementally. Only successful
+            // tasks emit — failures route through edges / failedTaskErrors above.
+            // Guarded so a throwing listener cannot stall the scheduler (the
+            // emit precedes onTaskCompleted) or escape the Promise.allSettled
+            // loop unobserved.
             if (task.status === TaskStatus.COMPLETED) {
-              this.graph.emit("task_complete", task.id, task.runOutputData);
+              try {
+                this.graph.emit("task_complete", task.id, task.runOutputData);
+              } catch (err) {
+                getLogger().error("task_complete listener threw", {
+                  taskId: task.id,
+                  error: err,
+                });
+              }
             }
             this.processScheduler.onTaskCompleted(task.id);
           }
