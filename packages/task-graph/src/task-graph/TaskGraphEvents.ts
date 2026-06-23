@@ -34,6 +34,17 @@ export type TaskGraphStatusListeners = {
    * than only at graph completion.
    */
   task_complete: (taskId: TaskIdType, output: Record<string, any>) => void;
+  /**
+   * Fired with a single task's own progress (not the aggregate `graph_progress`)
+   * whenever that task reports progress. Lets consumers observe per-task
+   * progress — including tasks nested in subgraphs, which bridge it up.
+   */
+  task_progress: (
+    taskId: TaskIdType,
+    progress: number | undefined,
+    message?: string,
+    ...args: any[]
+  ) => void;
   /** Fired when the aggregated entitlements of the graph change */
   entitlementChange: (entitlements: TaskEntitlements) => void;
 };

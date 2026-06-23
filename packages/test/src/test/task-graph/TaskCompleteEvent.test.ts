@@ -148,6 +148,26 @@ describe("task_complete graph event", () => {
     expect(seen).toContain("inner");
   });
 
+  it("bubbles task_progress from subgraph children to the top-level graph", async () => {
+    const subGraph = new TaskGraph();
+    subGraph.addTask(new TCEAddOne({ id: "pinner" }));
+    const group = new GraphAsTask({ id: "pgroup", subGraph });
+
+    const top = new TaskGraph();
+    top.addTask(group);
+
+    const seen: string[] = [];
+    const unsub = top.subscribe("task_progress", (taskId) => {
+      seen.push(String(taskId));
+    });
+
+    await top.run({ value: 5 });
+    unsub();
+
+    // Inner task emits progress (at least the terminal-100 tick) which bridges up.
+    expect(seen).toContain("pinner");
+  });
+
   it("bubbles task_complete from a streaming group's children (executeStream path)", async () => {
     const subGraph = new TaskGraph();
     subGraph.addTask(new TCEStream({ id: "sinner" }));

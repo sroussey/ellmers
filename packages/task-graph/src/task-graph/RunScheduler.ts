@@ -171,6 +171,11 @@ export class RunScheduler {
     message?: string,
     ...args: any[]
   ): Promise<void> {
+    // Emit the task's OWN progress (before `progress` is reassigned to the
+    // graph-wide aggregate below) so consumers can track per-task progress —
+    // including subgraph children, which bridge this up to the parent graph.
+    this.graph.emit("task_progress", task.id, progress, message, ...args);
+
     const contributors = this.graph.getTasks().filter(taskPrototypeHasOwnExecute);
     if (contributors.length > 1) {
       const determinate = contributors.filter((t) => t.progress !== undefined);

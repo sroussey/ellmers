@@ -44,6 +44,9 @@ export class GraphAsTaskRunner<
     const bridges = parent
       ? [
           sub.subscribe("task_complete", (id, out) => parent.emit("task_complete", id, out)),
+          sub.subscribe("task_progress", (id, p, m, ...a) =>
+            parent.emit("task_progress", id, p, m, ...a)
+          ),
           sub.subscribe("task_stream_start", (id) => parent.emit("task_stream_start", id)),
           sub.subscribe("task_stream_chunk", (id, ev) => parent.emit("task_stream_chunk", id, ev)),
           sub.subscribe("task_stream_end", (id, out) => parent.emit("task_stream_end", id, out)),

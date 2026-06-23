@@ -278,6 +278,9 @@ export class GraphAsTask<
           this.subGraph.subscribe("task_complete", (id, out) =>
             parentGraph.emit("task_complete", id, out)
           ),
+          this.subGraph.subscribe("task_progress", (id, p, m, ...a) =>
+            parentGraph.emit("task_progress", id, p, m, ...a)
+          ),
         ];
         bridgeUnsub = () => offs.forEach((off) => off());
       }
