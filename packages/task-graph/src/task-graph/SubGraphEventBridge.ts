@@ -19,6 +19,11 @@ import type { TaskGraph } from "./TaskGraph";
  *   run cannot leak subscriptions (which would double-emit on a later run).
  */
 export function bridgeSubGraphTaskEvents(subGraph: TaskGraph, parentGraph: TaskGraph): () => void {
+  // A subgraph bridging to itself would re-emit each event back onto the same
+  // graph it just observed, looping forever. This cannot arise from normal
+  // composition (a compound task's subGraph and parentGraph are distinct
+  // instances) but guard anyway so a malformed hierarchy degrades to a no-op.
+  if (subGraph === parentGraph) return () => {};
   const offs = [
     subGraph.subscribe("task_complete", (id, out) => parentGraph.emit("task_complete", id, out)),
     subGraph.subscribe("task_progress", (id, p, m, ...a) =>
