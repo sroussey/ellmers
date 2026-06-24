@@ -171,22 +171,6 @@ export class RunScheduler {
     message?: string,
     ...args: any[]
   ): Promise<void> {
-    // Emit the task's OWN progress (before `progress` is reassigned to the
-    // graph-wide aggregate below) so consumers can track per-task progress —
-    // including subgraph children, which bridge this up to the parent graph.
-    // Only while the task is actively running: terminal handlers (complete /
-    // abort / error / disable) set the terminal status before calling
-    // handleProgress(100), and emitting then would paint a finished/skipped/
-    // failed task as "running at 100%". Guarded so a throwing listener can't
-    // escape a terminal handler (mirrors the task_complete emit).
-    if (task.status === TaskStatus.PROCESSING || task.status === TaskStatus.STREAMING) {
-      try {
-        this.graph.emit("task_progress", task.id, progress, message, ...args);
-      } catch (err) {
-        getLogger().error("task_progress listener threw", { taskId: task.id, error: err });
-      }
-    }
-
     const contributors = this.graph.getTasks().filter(taskPrototypeHasOwnExecute);
     if (contributors.length > 1) {
       const determinate = contributors.filter((t) => t.progress !== undefined);
@@ -272,6 +256,27 @@ export class RunScheduler {
 
         const runAsync = async () => {
           let errorRouted = false;
+          // Forward this task's own progress — from ctx.updateProgress OR a
+          // direct task.emit("progress") — as a graph-level task_progress while
+          // it is actively running. Terminal 100% ticks fire after the status
+          // is set terminal, so the guard skips them (a finished/failed/skipped
+          // task must not look like it's "running"). Guarded so a throwing
+          // listener can't break the run loop.
+          const offProgress = task.subscribe(
+            "progress",
+            (progress: number | undefined, message?: string, ...args: any[]) => {
+              if (task.status === TaskStatus.PROCESSING || task.status === TaskStatus.STREAMING) {
+                try {
+                  this.graph.emit("task_progress", task.id, progress, message, ...args);
+                } catch (err) {
+                  getLogger().error("task_progress listener threw", {
+                    taskId: task.id,
+                    error: err,
+                  });
+                }
+              }
+            }
+          );
           try {
             // Root tasks (no incoming dataflows) receive the graph run input so e.g.
             // InputTask can seed the graph. Downstream tasks rely only on dataflow
@@ -303,6 +308,7 @@ export class RunScheduler {
               ctx.failedTaskErrors.set(task.id, error as TaskError);
             }
           } finally {
+            offProgress();
             // IMPORTANT: Push status to edges BEFORE notifying scheduler
             // This ensures dataflow statuses (including DISABLED) are set
             // before the scheduler checks which tasks are ready.
