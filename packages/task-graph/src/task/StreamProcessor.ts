@@ -87,6 +87,18 @@ export interface StreamProcessorDeps {
 export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput> {
   constructor(private readonly task: ITask<Input, Output, any>) {}
 
+  /**
+   * A `replace`-mode stream finished with an empty payload and no preceding
+   * snapshot — the producer delivered no value. Returning the empty object
+   * would silently clear the output, so surface a clear error instead.
+   */
+  private replaceModeNoValueError(): TaskError {
+    return new TaskError(
+      `Task ${this.task.type} declares replace streaming but finished with no value: ` +
+        `a replace-mode task must emit a final snapshot or a non-empty finish payload.`
+    );
+  }
+
   async run(
     input: Input,
     ctx: TaskRunContext,
@@ -344,6 +356,11 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
                   } as StreamEvent);
                   break;
                 }
+                // No accumulated deltas, no explicit finish payload, and no
+                // snapshot to fall back on — the producer never delivered a
+                // value. A binary port may still have written a ref; only the
+                // truly empty case is a bug.
+                if (refs.size === 0) throw this.replaceModeNoValueError();
               }
               // The emitted finish event always carries the materialized payload
               // (from accumulators) so edge consumers see Blob/ArrayBuffer.
@@ -382,6 +399,7 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
                   } as StreamEvent);
                   break;
                 }
+                throw this.replaceModeNoValueError();
               }
               finalOutput = event.data as Output;
               this.task.emit("stream_chunk", event as StreamEvent);
