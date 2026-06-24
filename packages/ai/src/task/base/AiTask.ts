@@ -111,8 +111,11 @@ export class AiTask<
 
   /**
    * Capabilities this task requires from the model selected at execution time.
-   * Gates strictly: throws unless `model.capabilities ⊇ task.requires`.
-   * An empty array passes vacuously (pure-compute subclasses that don't dispatch).
+   * A model that declares capabilities must include every required one, or
+   * dispatch throws. A model that declares NO capabilities passes (treated as
+   * unverified-allow), so inline ModelConfigs without a capabilities list still
+   * run — matching {@link validateInput} / {@link narrowInput}. An empty
+   * `requires` passes vacuously (pure-compute subclasses that don't dispatch).
    */
   public static readonly requires: readonly Capability[] = [];
 
@@ -149,21 +152,23 @@ export class AiTask<
   }
 
   /**
-   * Throws TaskConfigurationError if the model lacks any capability listed in
-   * the task class's static `requires`. Both execute() and executeStream() must
-   * call this before dispatch — gating is task-side, not strategy-side.
+   * Throws TaskConfigurationError when the model declares capabilities that omit
+   * one required by the task class's static `requires`. A model that declares no
+   * capabilities passes (see {@link requires}). Both execute() and
+   * executeStream() must call this before dispatch — gating is task-side, not
+   * strategy-side. Shares {@link modelMeetsRequires} with validateInput /
+   * narrowInput so all three gates apply one policy.
    */
   protected gateOrThrow(model: ModelConfig): void {
     const taskClass = this.constructor as typeof AiTask;
     const requires = taskClass.requires;
+    if (modelMeetsRequires(model, requires)) return;
     const modelCaps = (model.capabilities as readonly Capability[] | undefined) ?? [];
     const missing = requires.filter((r) => !modelCaps.includes(r));
-    if (missing.length > 0) {
-      throw new TaskConfigurationError(
-        `Model "${model.model_id ?? "(inline config)"}" is missing capabilities required by ` +
-          `${taskClass.type}: ${missing.join(", ")}.`
-      );
-    }
+    throw new TaskConfigurationError(
+      `Model "${model.model_id ?? "(inline config)"}" is missing capabilities required by ` +
+        `${taskClass.type}: ${missing.join(", ")}.`
+    );
   }
 
   override async execute(
