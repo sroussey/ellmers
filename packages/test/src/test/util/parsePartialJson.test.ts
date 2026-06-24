@@ -70,6 +70,22 @@ describe("parsePartialJson", () => {
       const result = parsePartialJson('{"tags":["a","b"');
       expect(result).toEqual({ tags: ["a", "b"] });
     });
+
+    it("should yield a partial object when the only property has an incomplete keyword value", () => {
+      // First-property streaming: single key, value still arriving.
+      expect(parsePartialJson('{"a": tru')).toEqual({});
+      expect(parsePartialJson('{"flag": fal')).toEqual({});
+      expect(parsePartialJson('{"x": nul')).toEqual({});
+    });
+
+    it("should yield a partial object when the only property has an incomplete number value", () => {
+      // A bare `1.` is not valid JSON yet; drop the incomplete pair.
+      expect(parsePartialJson('{"n": 1.')).toEqual({});
+    });
+
+    it("should keep a single property whose number value is already complete", () => {
+      expect(parsePartialJson('{"n": 30')).toEqual({ n: 30 });
+    });
   });
 
   describe("progressive parsing", () => {

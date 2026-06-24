@@ -54,6 +54,28 @@ export class NodeDoesntExistError extends BaseError {
 }
 
 /**
+ * # GraphInvariantError
+ *
+ * Thrown when an internal graph structural invariant is violated — for example
+ * when the node map, adjacency matrix, and positional index bookkeeping have
+ * desynced. This indicates corruption (e.g. mutating shared backing state) and
+ * names which structure was inconsistent so the failure is debuggable rather
+ * than a bare "this should never happen".
+ *
+ * @category Errors
+ */
+export class GraphInvariantError extends BaseError {
+  public static override type: string = "GraphInvariantError";
+  constructor(message: string) {
+    super(message);
+    this.name = "GraphInvariantError";
+
+    // This bs is due to a limitation of Typescript: https://github.com/facebook/jest/issues/8279
+    Object.setPrototypeOf(this, GraphInvariantError.prototype);
+  }
+}
+
+/**
  * # CycleError
  *
  * This error is thrown when attempting to create or update a Directed Acyclic Graph that contains a cycle.

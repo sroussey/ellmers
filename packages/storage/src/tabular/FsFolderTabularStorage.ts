@@ -15,6 +15,7 @@ import {
 import { DataPortSchemaObject, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { safeEmit } from "../events/safeEmit";
 import { type ITabularMigration, type ITabularMigrationApplier } from "../migrations";
 import { PollingSubscriptionManager } from "../util/PollingSubscriptionManager";
 import {
@@ -189,7 +190,9 @@ export class FsFolderTabularStorage<
         );
       }
     }
-    this.events.emit("put", entityToStore);
+    // Post-commit emit (the file is already written): a throwing subscriber
+    // must not turn a durable write into a thrown error.
+    safeEmit(this.events, "put", entityToStore);
     return entityToStore;
   }
 
@@ -205,10 +208,10 @@ export class FsFolderTabularStorage<
       const buf = await readFile(filePath);
       const data = buf.toString("utf8");
       const entity = JSON.parse(data) as Entity;
-      this.events.emit("get", key, entity);
+      safeEmit(this.events, "get", key, entity);
       return entity;
     } catch (error) {
-      this.events.emit("get", key, undefined);
+      safeEmit(this.events, "get", key, undefined);
       return undefined;
     }
   }
@@ -220,9 +223,12 @@ export class FsFolderTabularStorage<
     try {
       await rm(filePath);
     } catch (error) {
-      console.error("Error deleting file", filePath, error);
+      // Missing file is an idempotent no-op; surface other errors for diagnosis.
+      if ((error as { code?: string })?.code !== "ENOENT") {
+        getLogger().error("Error deleting file", { filePath, error });
+      }
     }
-    this.events.emit("delete", key as Partial<Entity>);
+    safeEmit(this.events, "delete", key as Partial<Entity>);
   }
 
   async getAll(): Promise<Entity[] | undefined> {
@@ -249,7 +255,7 @@ export class FsFolderTabularStorage<
 
       return values.length > 0 ? values : undefined;
     } catch (error) {
-      console.error("Error in getAll:", error);
+      getLogger().error("Error in getAll:", { error });
       throw error;
     }
   }
@@ -259,10 +265,10 @@ export class FsFolderTabularStorage<
     try {
       await rm(this.folderPath, { recursive: true, force: true });
     } catch (error) {
-      console.error("Error deleting folder", this.folderPath, error);
+      getLogger().error("Error deleting folder", { folderPath: this.folderPath, error });
       await rm(this.folderPath, { recursive: true, force: true });
     }
-    this.events.emit("clearall");
+    safeEmit(this.events, "clearall");
   }
 
   async size(): Promise<number> {
@@ -274,6 +280,10 @@ export class FsFolderTabularStorage<
   }
 
   async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
+    // Match the validation the query paths already enforce (and that the
+    // IndexedDb backend applies) so a negative offset or non-positive limit
+    // fails the same way across backends instead of silently slicing.
+    this.validateGetAllOptions({ offset, limit });
     await this.setupDirectory();
     const files = await readdir(this.folderPath);
     // Exclude internal bookkeeping files (prefixed with "_").

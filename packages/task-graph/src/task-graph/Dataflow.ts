@@ -474,7 +474,11 @@ export class Dataflow {
  */
 export class DataflowArrow extends Dataflow {
   constructor(dataflow: DataflowIdType) {
-    const pattern = /^([a-z0-9-]+)\[([a-z0-9-]+)\] ==> ([a-z0-9-]+)\[([a-z0-9-]+)\]$/i;
+    // Match the id grammar `id[port] ==> id[port]` produced by Dataflow.createId,
+    // which imposes no character restriction on ids/ports (underscores, camelCase,
+    // and the `*` all-ports sentinel are all valid). Accept any character except
+    // the structural delimiters so the parser is the exact inverse of createId.
+    const pattern = /^([^[\]]+)\[([^[\]]*)\] ==> ([^[\]]+)\[([^[\]]*)\]$/;
     const match = dataflow.match(pattern);
 
     if (!match) {

@@ -41,6 +41,13 @@ import { getLastTask } from "./WorkflowPipe";
 export interface IWorkflowBuilderHandle {
   readonly loopContext: LoopBuilderContext | undefined;
   setError(message: string): void;
+  /**
+   * Records that the chain currently terminates at a multi-arm conditional
+   * (then + else) whose branches are mutually-exclusive leaf nodes. A
+   * subsequent `.addTask(...)` has no unambiguous single predecessor to wire
+   * from, so the next add throws instead of silently wiring off one arm.
+   */
+  markBranchTerminus(branchCount: number): void;
 }
 
 export class WorkflowBuilder implements IWorkflowBuilderHandle {
@@ -49,6 +56,12 @@ export class WorkflowBuilder implements IWorkflowBuilderHandle {
   private _error: string = "";
   private readonly _registry?: ServiceRegistry;
   private readonly _loopContext?: LoopBuilderContext;
+  /**
+   * Number of leaf arms the chain currently terminates at after a two-arm
+   * `.endIf()`. >1 means continuation is ambiguous (no single join node), so
+   * the next add is rejected. Reset to 0 by any successful add.
+   */
+  private _branchTerminusArms: number = 0;
 
   constructor(
     facade: Workflow<any, any>,
@@ -81,10 +94,60 @@ export class WorkflowBuilder implements IWorkflowBuilderHandle {
     this._error = message;
   }
 
+  public markBranchTerminus(branchCount: number): void {
+    this._branchTerminusArms = branchCount;
+  }
+
+  /**
+   * Throws if the chain terminates at a multi-arm conditional, where there is
+   * no single, unambiguous predecessor to auto-connect a continuation from.
+   * Callers must explicitly merge the branch outputs (e.g. via `connect()`)
+   * before continuing the chain.
+   */
+  private assertNoAmbiguousBranchTerminus(): void {
+    if (this._branchTerminusArms > 1) {
+      throw new WorkflowError(
+        "Cannot add a task after a two-arm .if().then().else().endIf(): the then/else arms are " +
+          "separate leaf nodes with no join, so auto-connect cannot pick a single predecessor. " +
+          "Merge the branch outputs explicitly with connect() before continuing the chain."
+      );
+    }
+  }
+
   /** Clears pending state. Called by the facade's graph setter and reset(). */
   public resetState(): void {
     this._dataFlows = [];
     this._error = "";
+    this._branchTerminusArms = 0;
+  }
+
+  /**
+   * Drains pending dataflows queued by `.rename(...)` onto the newly-added task:
+   * validates each against the task's input schema (boolean-schema handling,
+   * additionalProperties, and the DATAFLOW_ALL_PORTS sentinel), sets the error
+   * on mismatch, fills in the target task id, and adds the dataflow. Shared by
+   * the regular and loop add paths so the validation predicate lives in one place.
+   */
+  private drainPendingDataflows(task: ITask): void {
+    if (this._dataFlows.length === 0) return;
+    this._dataFlows.forEach((dataflow) => {
+      const taskSchema = task.inputSchema();
+      if (
+        (typeof taskSchema !== "boolean" &&
+          taskSchema.properties?.[dataflow.targetTaskPortId] === undefined &&
+          taskSchema.additionalProperties !== true) ||
+        (taskSchema === true && dataflow.targetTaskPortId !== DATAFLOW_ALL_PORTS)
+      ) {
+        this._error = `Input ${dataflow.targetTaskPortId} not found on task ${task.id}`;
+        getLogger().error(this._error);
+        return;
+      }
+
+      dataflow.targetTaskId = task.id;
+      this._facade.graph.addDataflow(dataflow);
+    });
+
+    this._dataFlows = [];
   }
 
   /**
@@ -124,8 +187,11 @@ export class WorkflowBuilder implements IWorkflowBuilderHandle {
     taskClass: ITaskConstructor<I, O, C>,
     input: Partial<I> = {},
     config: Partial<C> = {},
-    runConfig?: Partial<IRunConfig>
+    runConfig?: Partial<IRunConfig>,
+    options?: { readonly throwOnAutoConnectError?: boolean }
   ): Workflow<any, any> {
+    this.assertNoAmbiguousBranchTerminus();
+    this._branchTerminusArms = 0;
     this._error = "";
 
     const parent = getLastTask(this._facade);
@@ -141,26 +207,7 @@ export class WorkflowBuilder implements IWorkflowBuilderHandle {
     );
 
     // Process any pending data flows
-    if (this._dataFlows.length > 0) {
-      this._dataFlows.forEach((dataflow) => {
-        const taskSchema = task.inputSchema();
-        if (
-          (typeof taskSchema !== "boolean" &&
-            taskSchema.properties?.[dataflow.targetTaskPortId] === undefined &&
-            taskSchema.additionalProperties !== true) ||
-          (taskSchema === true && dataflow.targetTaskPortId !== DATAFLOW_ALL_PORTS)
-        ) {
-          this._error = `Input ${dataflow.targetTaskPortId} not found on task ${task.id}`;
-          getLogger().error(this._error);
-          return;
-        }
-
-        dataflow.targetTaskId = task.id;
-        this._facade.graph.addDataflow(dataflow);
-      });
-
-      this._dataFlows = [];
-    }
+    this.drainPendingDataflows(task);
 
     // Auto-connect to parent if needed
     if (parent) {
@@ -188,7 +235,9 @@ export class WorkflowBuilder implements IWorkflowBuilderHandle {
 
       if (result.error) {
         // In loop builder mode, don't remove the task - allow manual connection
-        // In normal mode, remove the task since auto-connect is required
+        // In normal mode, remove the task since auto-connect is required, and
+        // throw so the failure surfaces at the call site instead of being
+        // silently swallowed into `.error` (consistent with connect/rename/onError).
         if (this._loopContext !== undefined) {
           this._error = result.error;
           getLogger().warn(this._error);
@@ -196,6 +245,9 @@ export class WorkflowBuilder implements IWorkflowBuilderHandle {
           this._error = result.error + " Task not added.";
           getLogger().error(this._error);
           this._facade.graph.removeTask(task.id);
+          if (options?.throwOnAutoConnectError) {
+            throw new WorkflowError(this._error);
+          }
         }
       }
     }
@@ -222,6 +274,8 @@ export class WorkflowBuilder implements IWorkflowBuilderHandle {
     config: Partial<C> = {},
     runConfig?: Partial<IRunConfig>
   ): Workflow<I, O> {
+    this.assertNoAmbiguousBranchTerminus();
+    this._branchTerminusArms = 0;
     this._error = "";
 
     const parent = getLastTask(this._facade);
@@ -250,26 +304,7 @@ export class WorkflowBuilder implements IWorkflowBuilderHandle {
     );
 
     // Process any pending data flows (same as addTaskWithAutoConnect)
-    if (this._dataFlows.length > 0) {
-      this._dataFlows.forEach((dataflow) => {
-        const taskSchema = task.inputSchema();
-        if (
-          (typeof taskSchema !== "boolean" &&
-            taskSchema.properties?.[dataflow.targetTaskPortId] === undefined &&
-            taskSchema.additionalProperties !== true) ||
-          (taskSchema === true && dataflow.targetTaskPortId !== DATAFLOW_ALL_PORTS)
-        ) {
-          this._error = `Input ${dataflow.targetTaskPortId} not found on task ${task.id}`;
-          getLogger().error(this._error);
-          return;
-        }
-
-        dataflow.targetTaskId = task.id;
-        this._facade.graph.addDataflow(dataflow);
-      });
-
-      this._dataFlows = [];
-    }
+    this.drainPendingDataflows(task);
 
     // Defer auto-connect until endMap/endReduce/endWhile, when the iterator task
     // has its template graph populated and its dynamic inputSchema is available.
@@ -343,6 +378,9 @@ export class WorkflowBuilder implements IWorkflowBuilderHandle {
 
     const dataflow = new Dataflow(sourceTaskId, sourceTaskPortId, targetTaskId, targetTaskPortId);
     this._facade.graph.addDataflow(dataflow);
+    // An explicit connect resolves the ambiguity left by a two-arm endIf:
+    // the caller has now wired the branch outputs to a join of their choosing.
+    this._branchTerminusArms = 0;
   }
 
   /**
@@ -358,14 +396,20 @@ export class WorkflowBuilder implements IWorkflowBuilderHandle {
     const transforms = typeof indexOrOptions === "number" ? undefined : indexOrOptions.transforms;
 
     const nodes = this._facade.graph.getTasks();
-    if (-index > nodes.length) {
-      const errorMsg = `Back index greater than number of tasks`;
+    // `index` is a back-offset from the end (default -1 = last task). Validate
+    // the resolved position fully: the old `-index > nodes.length` guard only
+    // caught the too-negative side, so index 0 / any non-negative index fell
+    // through to `nodes[nodes.length + index]` === undefined and crashed with a
+    // cryptic TypeError instead of a WorkflowError.
+    const resolvedIndex = nodes.length + index;
+    if (index >= 0 || resolvedIndex < 0 || resolvedIndex >= nodes.length) {
+      const errorMsg = `rename() index ${index} out of range; use a negative back-offset from the end (e.g. -1 for the last task) within [-${nodes.length}, -1]`;
       this._error = errorMsg;
       getLogger().error(this._error);
       throw new WorkflowError(errorMsg);
     }
 
-    const lastNode = nodes[nodes.length + index];
+    const lastNode = nodes[resolvedIndex];
     const outputSchema = lastNode.outputSchema();
 
     // Handle boolean schemas

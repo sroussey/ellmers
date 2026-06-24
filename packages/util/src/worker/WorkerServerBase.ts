@@ -96,13 +96,11 @@ function extractTransferables(obj: any) {
  * All fields are optional and safe to omit — defaults match the previous
  * hard-coded values.
  *
- * Reachable only via `new WorkerServerBase(...)` directly (used by tests
- * that exercise eviction-path behaviour with a tiny cap). The platform-
- * specific `WorkerServer` subclasses (`Worker.bun.ts`, `Worker.node.ts`,
- * `Worker.browser.ts`) currently have zero-arg constructors and use the
- * defaults; `new WorkerServer({ pendingAbortHardCap: ... })` will NOT
- * compile against those subclasses. To override in production either
- * bypass the subclass or extend it with a forwarding constructor.
+ * The platform-specific `WorkerServer` subclasses (`Worker.bun.ts`,
+ * `Worker.node.ts`, `Worker.browser.ts`) forward an optional
+ * {@link WorkerServerBaseOptions} argument to this base constructor, so
+ * `new WorkerServer({ pendingAbortHardCap: ... })` is configurable in
+ * production as well as in tests.
  */
 export interface WorkerServerBaseOptions {
   /**
@@ -111,10 +109,10 @@ export interface WorkerServerBaseOptions {
    * evicted in one pass — a memory safety-net for pathological abort bursts
    * that outrun the per-id TTL timers. Defaults to `10_000`.
    *
-   * Exposed as an option primarily as a test seam: tests that exercise the
-   * overflow eviction path can use a tiny cap (e.g. `100`) and insert ~110
-   * entries in milliseconds instead of pushing 10,010 entries through
-   * vitest's fake-timer heap.
+   * Configurable on the platform `WorkerServer` subclasses as well; it also
+   * serves as a test seam, letting tests exercise the overflow eviction path
+   * with a tiny cap (e.g. `100`) and ~110 entries instead of pushing 10,010
+   * entries through vitest's fake-timer heap.
    */
   readonly pendingAbortHardCap?: number;
 }
@@ -251,6 +249,18 @@ export class WorkerServerBase {
     });
   }
 
+  /**
+   * Register a callable worker function.
+   *
+   * Cancellation is cooperative: an `abort` only fires the `AbortSignal` passed
+   * to `fn` (the 4th argument). The worker does NOT interrupt or terminate a
+   * running function, so `fn` MUST poll `signal.aborted` (or listen for the
+   * `abort` event) and return early to stop consuming CPU/GPU. A function that
+   * ignores the signal runs to completion even after the caller has aborted.
+   *
+   * @param name - The function name (e.g., task type identifier)
+   * @param fn - Async function: (input, model, postProgress, signal) => Promise<output>
+   */
   registerFunction(name: string, fn: (...args: any[]) => Promise<any>) {
     this.functions[name] = fn;
   }
@@ -273,6 +283,11 @@ export class WorkerServerBase {
    * iterates the generator and sends each yielded value as a `stream_chunk`
    * message, followed by a `complete` message when the generator finishes.
    *
+   * Cancellation is cooperative: an `abort` fires the `signal` but does not
+   * terminate the generator. The generator MUST check `signal.aborted` and
+   * return promptly; otherwise the underlying compute keeps running even though
+   * the server stops forwarding chunks once the request is marked complete.
+   *
    * @param name - The function name (e.g., task type identifier)
    * @param fn - Async generator function: (input, model, signal) => AsyncIterable
    */
@@ -285,6 +300,12 @@ export class WorkerServerBase {
    * receives an `emit` callback that posts events as `stream_chunk` messages on
    * the worker port and resolves with no value when complete. Use this in place
    * of {@link registerStreamFunction} for newly-ported provider run-fns.
+   *
+   * Cancellation is cooperative: an `abort` fires the supplied `signal` but the
+   * worker neither interrupts nor terminates the run-fn. The run-fn MUST honor
+   * `signal.aborted` (e.g. stop generating tokens / abort the network request)
+   * to actually release CPU/GPU; ignoring it lets the work run to completion
+   * after the caller has moved on.
    */
   registerRunFunction(
     name: string,
@@ -320,6 +341,15 @@ export class WorkerServerBase {
     }
   }
 
+  /**
+   * Handle an `abort` message for a request id. This only fires the request's
+   * {@link AbortController} (so a cooperative fn can observe `signal.aborted`)
+   * and posts the terminal "Operation aborted" error to the caller. It does NOT
+   * interrupt or terminate an in-flight function: non-cooperative fns that
+   * ignore the signal continue running to completion. If the abort beats the
+   * call to the worker, the id is recorded as a pending abort so the imminent
+   * handler aborts its controller as soon as it is constructed.
+   */
   async handleAbort(id: string) {
     if (this.requestControllers.has(id)) {
       const controller = this.requestControllers.get(id);
@@ -571,16 +601,24 @@ export class WorkerServerBase {
   }
 
   /**
-   * Schedule cleanup of a completed request ID. Uses a 5-second delay to
-   * handle late-arriving abort messages, and caps the completed set size at
-   * {@link COMPLETED_REQUESTS_HARD_CAP} entries to prevent unbounded growth. As in
-   * {@link recordPendingAbort}, the eviction list is snapshotted via
-   * `Array.from` before deletion to avoid iterating-while-deleting.
+   * Schedule cleanup of a completed request ID. The delay matches
+   * {@link PENDING_ABORT_TTL_MS} so a completed/aborted id stays in
+   * {@link completedRequests} at least as long as a pending-abort marker can
+   * live. Otherwise a `call` that arrives between the old 5s cleanup and the
+   * 30s abort TTL would be aborted by `consumePendingAbort` yet still post a
+   * SECOND terminal response (the dedupe guard in {@link postResult} /
+   * {@link postError} had already forgotten the id) — violating the
+   * "at most one terminal message per requestId" wire invariant.
+   *
+   * Caps the completed set size at {@link COMPLETED_REQUESTS_HARD_CAP} entries
+   * to prevent unbounded growth. As in {@link recordPendingAbort}, the eviction
+   * list is snapshotted via `Array.from` before deletion to avoid
+   * iterating-while-deleting.
    */
   private scheduleCompletedRequestCleanup(id: string): void {
     setTimeout(() => {
       this.completedRequests.delete(id);
-    }, 5000);
+    }, WorkerServerBase.PENDING_ABORT_TTL_MS);
 
     // Safety cap: if the set grows too large, clear the oldest entries (FIFO).
     if (this.completedRequests.size > COMPLETED_REQUESTS_HARD_CAP) {

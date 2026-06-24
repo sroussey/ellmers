@@ -16,7 +16,7 @@ import type { TaskIdType, TaskInput, TaskOutput, TaskStatus } from "../task/Task
 import type { PipeFunction } from "./Conversions";
 import { ensureTask } from "./Conversions";
 import type { DataflowIdType } from "./Dataflow";
-import { Dataflow } from "./Dataflow";
+import { Dataflow, DataflowArrow } from "./Dataflow";
 import { computeGraphEntitlements } from "./GraphEntitlementUtils";
 import { addBoundaryNodesToDependencyJson, addBoundaryNodesToGraphJson } from "./GraphSchemaUtils";
 import type { ITaskGraph } from "./ITaskGraph";
@@ -289,6 +289,23 @@ export class TaskGraph implements ITaskGraph {
    * @returns The data flow with the given id, or undefined if not found
    */
   public getDataflow(id: DataflowIdType): Dataflow | undefined {
+    // The id encodes the target task, so scan only that node's in-edges instead
+    // of rebuilding the entire adjacency matrix via getEdges(). Falls back to a
+    // full scan if the id cannot be parsed or the target task is not present.
+    let targetTaskId: TaskIdType | undefined;
+    try {
+      targetTaskId = new DataflowArrow(id).targetTaskId;
+    } catch {
+      targetTaskId = undefined;
+    }
+    if (targetTaskId !== undefined && this.getTask(targetTaskId) !== undefined) {
+      for (const [, , edge] of this._dag.inEdges(targetTaskId)) {
+        if (edge.id === id) {
+          return edge;
+        }
+      }
+      return undefined;
+    }
     for (const [, , edge] of this._dag.getEdges()) {
       if (edge.id === id) {
         return edge;
@@ -759,7 +776,7 @@ function serialGraphEdges(
 ): Dataflow[] {
   const edges: Dataflow[] = [];
   for (let i = 0; i < tasks.length - 1; i++) {
-    edges.push(new Dataflow(tasks[i].id, inputHandle, tasks[i + 1].id, outputHandle));
+    edges.push(new Dataflow(tasks[i].id, outputHandle, tasks[i + 1].id, inputHandle));
   }
   return edges;
 }

@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { FsFolderKvStorage } from "@workglow/storage";
+import { FsFolderKvStorage, StorageUnsupportedError } from "@workglow/storage";
 import { setLogger } from "@workglow/util";
 import { mkdirSync, rmSync } from "fs";
-import { afterEach, beforeEach, describe } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 import { runGenericKvRepositoryTests } from "./genericKvRepositoryTests";
 
@@ -40,5 +40,35 @@ describe("FsFolderKvStorage", () => {
       keyType,
       valueType
     );
+  });
+
+  describe("contract symmetry", () => {
+    const makeStore = () => new FsFolderKvStorage(testDir, (key) => `${String(key)}.data`);
+
+    it("delete of a never-written key is an idempotent no-op (swallows ENOENT)", async () => {
+      const store = makeStore();
+      // Must not reject the way unlink() would on a missing path.
+      await expect(store.delete("never-written")).resolves.toBeUndefined();
+    });
+
+    it("delete still emits a delete event for a missing key", async () => {
+      const store = makeStore();
+      let emitted: unknown;
+      store.on("delete", (key) => {
+        emitted = key;
+      });
+      await store.delete("missing");
+      expect(emitted).toBe("missing");
+    });
+
+    it("getAll throws the typed StorageUnsupportedError", async () => {
+      const store = makeStore();
+      await expect(store.getAll()).rejects.toBeInstanceOf(StorageUnsupportedError);
+    });
+
+    it("size throws the typed StorageUnsupportedError", async () => {
+      const store = makeStore();
+      await expect(store.size()).rejects.toBeInstanceOf(StorageUnsupportedError);
+    });
   });
 });

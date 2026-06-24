@@ -49,6 +49,36 @@ describe("Container", () => {
     it("should throw for unregistered service", () => {
       expect(() => container.get("unknown")).toThrow("Service not registered: unknown");
     });
+
+    it("should honor re-registration after a singleton was instantiated", () => {
+      container.register("svc", () => ({ value: "first" }));
+      // Force instantiation so the instance is cached in services.
+      expect(container.get<{ value: string }>("svc").value).toBe("first");
+
+      // Re-register with a new factory; the new factory must take effect.
+      container.register("svc", () => ({ value: "second" }));
+      expect(container.get<{ value: string }>("svc").value).toBe("second");
+    });
+
+    it("should drop the singleton flag when re-registering as transient", () => {
+      container.register("svc", () => ({ value: "first" }));
+      container.get("svc");
+
+      let callCount = 0;
+      container.register(
+        "svc",
+        () => {
+          callCount++;
+          return { value: callCount };
+        },
+        false
+      );
+
+      const a = container.get<{ value: number }>("svc");
+      const b = container.get<{ value: number }>("svc");
+      expect(a).not.toBe(b);
+      expect(callCount).toBe(2);
+    });
   });
 
   describe("registerInstance", () => {
@@ -179,6 +209,52 @@ describe("Container", () => {
       child.register("childOnly", () => ({ x: 1 }));
       expect(child.has("childOnly")).toBe(true);
       expect(container.has("childOnly")).toBe(false);
+    });
+
+    it("should not dispose parent-owned singleton instances on child disposal", async () => {
+      let disposed = 0;
+      const instance = {
+        dispose() {
+          disposed++;
+        },
+      };
+      container.registerInstance("shared", instance);
+
+      const child = container.createChildContainer();
+      // Child shares the parent's instance.
+      expect(child.get("shared")).toBe(instance);
+
+      await child.dispose();
+
+      // The inherited instance must NOT be disposed by the child...
+      expect(disposed).toBe(0);
+      // ...and must still be usable from the parent.
+      expect(container.get("shared")).toBe(instance);
+
+      // The parent still owns it and disposes it when the parent is disposed.
+      await container.dispose();
+      expect(disposed).toBe(1);
+    });
+
+    it("should dispose a child's own instances even when it inherits from parent", async () => {
+      const parentDisposed = { count: 0 };
+      container.registerInstance("shared", {
+        dispose() {
+          parentDisposed.count++;
+        },
+      });
+
+      const child = container.createChildContainer();
+      let childDisposed = 0;
+      child.registerInstance("childOwned", {
+        dispose() {
+          childDisposed++;
+        },
+      });
+
+      await child.dispose();
+      expect(childDisposed).toBe(1);
+      expect(parentDisposed.count).toBe(0);
     });
   });
 });

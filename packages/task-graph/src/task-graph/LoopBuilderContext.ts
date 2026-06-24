@@ -74,10 +74,19 @@ export class LoopBuilderContext {
 
   /**
    * Promotes a populated child template graph into the iterator task's
-   * subGraph. No-op on empty graphs.
+   * subGraph. No-op on empty graphs (an empty loop body is almost certainly a
+   * mistake — the iterator keeps its default/empty subGraph and the failure
+   * surfaces later at run as iteration-over-nothing — so warn to make it
+   * diagnosable at the point of the mistake).
    */
   public finalizeTemplate(childGraph: TaskGraph): void {
-    if (childGraph.getTasks().length === 0) return;
+    if (childGraph.getTasks().length === 0) {
+      getLogger().warn(
+        `Loop body for iterator task ${this.iteratorTask.config.id} is empty; ` +
+          "the loop has no tasks to iterate. Add at least one task inside the loop builder."
+      );
+      return;
+    }
     this.iteratorTask.subGraph = childGraph;
     this.iteratorTask.validateAcyclic();
   }

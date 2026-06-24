@@ -216,6 +216,11 @@ export interface IQueueStorage<Input, Output> {
    * writes the terminal result fields WITHOUT touching `attempts` — a successful
    * ack must not consume a retry attempt that was already accounted for by
    * the lease-expiry reclaim or by the wrapper's retry path.
+   *
+   * Missing-id contract: if no row matches `job.id` (already deleted, foreign,
+   * or concurrently reclaimed), implementations MUST silently no-op rather than
+   * throw. The forgiving semantics are required because lease-expiry races can
+   * legitimately make the target row disappear between claim and complete.
    * @param job - The job to complete
    */
   complete(job: JobStorageFormat<Input, Output>): Promise<void>;
@@ -234,6 +239,16 @@ export interface IQueueStorage<Input, Output> {
    * The `lease_owner` / progress fields are also writable here so the
    * atomic `disable` path can release the lease and clear progress in the
    * same single write.
+   *
+   * `finalize` (plus {@link markDisabled}) is the ONLY interface-level
+   * terminal-write primitive. The atomic convenience wrappers
+   * `completeWithResult` / `failWithError` (and `saveStatus` / `getMany`) live
+   * on the concrete `InMemoryQueueStorage` and on the `IJobStore` facade
+   * produced by {@link wrapQueueStorage}, NOT on this interface — callers
+   * holding an `IQueueStorage` should reach those via the wrapper's
+   * `IJobStore`, or compose the field bag and call `finalize` directly. Kept
+   * off the interface so cloud adapters aren't forced to reimplement sugar
+   * that the wrapper already provides on top of `finalize`.
    *
    * @param id - The ID of the job to finalize
    * @param fields - Terminal fields to write
@@ -321,7 +336,12 @@ export interface IQueueStorage<Input, Output> {
   getByRunId(runId: string): Promise<Array<JobStorageFormat<Input, Output>>>;
 
   /**
-   * Saves progress updates for a job in the queue storage
+   * Saves progress updates for a job in the queue storage.
+   *
+   * Missing-id contract: if no row matches `id` (already finalized, deleted,
+   * or foreign), implementations MUST silently no-op rather than throw —
+   * progress is best-effort and a finalized/lost job must not turn a progress
+   * report into an exception. Matches {@link complete}'s forgiving semantics.
    * @param id - The ID of the job to save the progress for
    * @param progress - The progress of the job
    * @param message - The message of the job

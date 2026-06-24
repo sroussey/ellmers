@@ -31,7 +31,9 @@ const VALID_RESULT: SchemaValidationResult = Object.freeze({
 
 /**
  * Pattern for format annotations used in dataflow compatibility checking.
- * Format: /\w+(:\w+)?/ where first part is the "name" and optional second part narrows the type.
+ * A base "name" (letter-led) optionally followed by one or more colon-separated
+ * narrowing segments (each may start with a digit), e.g. `model`,
+ * `model:EmbeddingTask`, `points:3d:meters`.
  * Reused from SchemaUtils.ts areFormatStringsCompatible().
  */
 export const FORMAT_PATTERN = /^[a-z][\w-]*(?::[a-z0-9][\w-]*)*$/i;
@@ -122,6 +124,12 @@ function collectJsonSchemaErrors(
     return;
   }
 
+  // Arrays are `typeof === "object"` but are not valid schema objects.
+  if (Array.isArray(schema)) {
+    errors.push({ path, message: `Expected schema object, got array` });
+    return;
+  }
+
   if (schema.type !== undefined) {
     if (typeof schema.type === "string") {
       if (!VALID_JSON_SCHEMA_TYPES.has(schema.type)) {
@@ -179,8 +187,11 @@ function collectJsonSchemaErrors(
 /**
  * Validates that all `format` annotations in a schema match the expected pattern.
  *
- * Format annotations use the pattern `/^[a-zA-Z][a-zA-Z0-9_-]*(:[a-zA-Z][a-zA-Z0-9_-]*)?$/`
- * (e.g., `"model"`, `"model:EmbeddingTask"`, `"storage:tabular"`).
+ * Format annotations are validated against {@link FORMAT_PATTERN}
+ * (`/^[a-z][\w-]*(?::[a-z0-9][\w-]*)*$/i`): a letter-led base name optionally
+ * followed by one or more colon-separated narrowing segments, where a narrowing
+ * segment may begin with a digit (e.g., `"model"`, `"model:EmbeddingTask"`,
+ * `"storage:tabular"`, `"points:3d:meters"`).
  *
  * Standard JSON Schema formats (e.g., `"date-time"`, `"uri"`, `"email"`) also pass
  * since they match the pattern.

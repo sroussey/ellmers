@@ -37,6 +37,21 @@ describe("ConditionalTask with serialized conditionConfig", () => {
       expect(task.isBranchActive("low")).toBe(false);
     });
 
+    it("treats a non-numeric field as a non-match for ordering operators (no silent NaN)", async () => {
+      const task = new ConditionalTask({ branches: [] });
+
+      const conditionConfig: UIConditionConfig = {
+        branches: [{ id: "high", field: "value", operator: "greater_than", value: "100" }],
+        exclusive: true,
+      };
+
+      // `value` is a non-numeric string; greater_than must evaluate to false
+      // (and not silently treat NaN as a never-firing comparison).
+      await task.run({ value: "not-a-number", conditionConfig });
+
+      expect(task.isBranchActive("high")).toBe(false);
+    });
+
     it("should route to second branch when first does not match", async () => {
       const task = new ConditionalTask({
         branches: [],

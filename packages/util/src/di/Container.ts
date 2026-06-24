@@ -12,6 +12,12 @@ export class Container {
   private factories: Map<string, () => any> = new Map();
   private singletons: Set<string> = new Set();
   private resolving: string[] = [];
+  /**
+   * Tokens whose cached instance was inherited from a parent container (via
+   * {@link createChildContainer}). These instances are owned by the parent, so
+   * disposing this container must NOT dispose them.
+   */
+  private inheritedServices: Set<string> = new Set();
 
   /**
    * Register a service factory
@@ -21,8 +27,15 @@ export class Container {
    */
   register<T>(token: string, factory: () => T, singleton = true): void {
     this.factories.set(token, factory);
+    // Evict any previously instantiated singleton so the new factory actually
+    // takes effect on the next get(). Otherwise get() would keep returning the
+    // stale cached instance and the re-registration would be silently dead.
+    this.services.delete(token);
+    this.inheritedServices.delete(token);
     if (singleton) {
       this.singletons.add(token);
+    } else {
+      this.singletons.delete(token);
     }
   }
 
@@ -48,6 +61,8 @@ export class Container {
   registerInstance<T>(token: string, instance: T): void {
     this.services.set(token, instance);
     this.singletons.add(token);
+    // An explicitly registered instance is owned by this container.
+    this.inheritedServices.delete(token);
   }
 
   /**
@@ -101,6 +116,7 @@ export class Container {
     this.services.delete(token);
     this.factories.delete(token);
     this.singletons.delete(token);
+    this.inheritedServices.delete(token);
   }
 
   /**
@@ -110,8 +126,11 @@ export class Container {
   async dispose(): Promise<void> {
     const errors: unknown[] = [];
     try {
-      for (const service of this.services.values()) {
+      for (const [token, service] of this.services) {
         if (service == null) continue;
+        // Instances inherited from a parent container are owned by the parent;
+        // disposing them here would leave the parent holding a disposed object.
+        if (this.inheritedServices.has(token)) continue;
         try {
           if (typeof service[Symbol.asyncDispose] === "function") {
             await service[Symbol.asyncDispose]();
@@ -128,6 +147,7 @@ export class Container {
       this.services.clear();
       this.factories.clear();
       this.singletons.clear();
+      this.inheritedServices.clear();
     }
     if (errors.length > 0) {
       throw new AggregateError(errors, "One or more services failed to dispose");
@@ -156,6 +176,9 @@ export class Container {
       if (this.singletons.has(token)) {
         child.services.set(token, service);
         child.singletons.add(token);
+        // Mark the shared instance as parent-owned so child.dispose() does not
+        // dispose an instance the parent still hands out.
+        child.inheritedServices.add(token);
       }
     });
 

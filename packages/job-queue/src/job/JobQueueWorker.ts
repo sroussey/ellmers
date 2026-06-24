@@ -42,6 +42,21 @@ import { storageToClass } from "./JobStorageConverters";
 const MAX_LIMITER_WAKE_MS = 30_000;
 
 /**
+ * Minimum interval between {@link JobQueueWorker.processJobs} loop-error logs.
+ * A persistent storage failure throws every iteration; without rate-limiting
+ * that would flood the log at the poll rate. We still log the first occurrence
+ * immediately so operators get a prompt signal.
+ */
+const LOOP_ERROR_LOG_INTERVAL_MS = 5_000;
+
+/**
+ * Size of the recent-window ring buffer feeding
+ * {@link JobQueueWorker.getAverageProcessingTime}. Bounds memory and keeps the
+ * reported average representative of recent throughput.
+ */
+const MAX_PROCESSING_TIME_SAMPLES = 1_000;
+
+/**
  * Events emitted by JobQueueWorker
  */
 export type JobQueueWorkerEventListeners<Input, Output> = {
@@ -179,9 +194,19 @@ export class JobQueueWorker<
   protected readonly activeJobAbortControllers: Map<unknown, AbortController> = new Map();
 
   /**
-   * Processing times for statistics
+   * Recent per-job processing durations (ms) used for
+   * {@link getAverageProcessingTime}. Bounded to the most recent
+   * {@link MAX_PROCESSING_TIME_SAMPLES} entries so a long-lived worker doesn't
+   * accumulate one entry per distinct job id forever, and so the reported
+   * average reflects a recent window rather than all-time.
    */
-  protected readonly processingTimes: Map<unknown, number> = new Map();
+  protected readonly processingTimes: number[] = [];
+
+  /**
+   * Timestamp (ms) of the last loop-error log, used to rate-limit the
+   * {@link processJobs} catch-path logging. See {@link LOOP_ERROR_LOG_INTERVAL_MS}.
+   */
+  private lastLoopErrorLogAt = 0;
 
   constructor(jobClass: JobClass<Input, Output>, options: JobQueueWorkerOptions<Input, Output>) {
     this.queueName = options.queueName;
@@ -324,10 +349,13 @@ export class JobQueueWorker<
   }
 
   /**
-   * Get average processing time
+   * Average processing time over the most recent
+   * {@link MAX_PROCESSING_TIME_SAMPLES} completed jobs (a recent window, not
+   * the worker's all-time history). Returns undefined until at least one job
+   * has completed.
    */
   public getAverageProcessingTime(): number | undefined {
-    const times = Array.from(this.processingTimes.values());
+    const times = this.processingTimes;
     if (times.length === 0) return undefined;
     return times.reduce((a, b) => a + b, 0) / times.length;
   }
@@ -558,8 +586,21 @@ export class JobQueueWorker<
         if (dispatched === 0 && limiterFull) {
           await this.waitForWakeOrTimeout(await this.getLimiterWakeDelay());
         }
-      } catch {
-        // Don't let transient errors kill the loop
+      } catch (err) {
+        // Don't let transient errors kill the loop, but never swallow them
+        // silently — a persistent storage failure (lost connection, schema
+        // mismatch, serialization error) would otherwise sleep-loop forever
+        // producing no work and no diagnostics. Rate-limit the log so a hot
+        // failure doesn't flood while still surfacing the problem.
+        const now = Date.now();
+        if (now - this.lastLoopErrorLogAt >= LOOP_ERROR_LOG_INTERVAL_MS) {
+          this.lastLoopErrorLogAt = now;
+          getLogger().error("JobQueueWorker processing loop error", {
+            error: err,
+            queueName: this.queueName,
+            workerId: this.workerId,
+          });
+        }
         await sleep(this.pollIntervalMs);
       }
     }
@@ -731,7 +772,10 @@ export class JobQueueWorker<
       await this.completeJob(job, output);
 
       const elapsed = Date.now() - startTime;
-      this.processingTimes.set(job.id, elapsed);
+      this.processingTimes.push(elapsed);
+      if (this.processingTimes.length > MAX_PROCESSING_TIME_SAMPLES) {
+        this.processingTimes.shift();
+      }
 
       if (span) {
         span.setAttributes({ "workglow.job.duration_ms": elapsed });

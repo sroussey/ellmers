@@ -121,6 +121,23 @@ describe("EventEmitter", () => {
       expect(listener1).toHaveBeenCalledTimes(1);
       expect(listener2).toHaveBeenCalledTimes(1);
     });
+
+    it("should not drop a once listener added re-entrantly during emit", () => {
+      const added = mock((_value: string) => {});
+      emitter.once("test", () => {
+        // Re-subscribe a once listener while dispatching the same event.
+        emitter.once("test", added);
+      });
+
+      emitter.emit("test", "first");
+      // The re-entrantly added listener must not fire during the first emit...
+      expect(added).toHaveBeenCalledTimes(0);
+
+      emitter.emit("test", "second");
+      // ...but must survive and fire exactly once on the next emit.
+      expect(added).toHaveBeenCalledTimes(1);
+      expect(added).toHaveBeenCalledWith("second");
+    });
   });
 
   describe("removeAllListeners", () => {
@@ -138,6 +155,21 @@ describe("EventEmitter", () => {
 
       expect(testListener).toHaveBeenCalledTimes(0);
       expect(multipleArgsListener).toHaveBeenCalledTimes(1);
+    });
+
+    it("should not resurrect an event cleared by a listener during emit", () => {
+      const onceListener = mock((_value: string) => {});
+      emitter.once("test", () => {
+        emitter.removeAllListeners("test");
+      });
+      emitter.once("test", onceListener);
+
+      emitter.emit("test", "hello");
+
+      // The clearing listener tore down the event mid-dispatch; the event must
+      // stay empty rather than being resurrected by once-listener cleanup.
+      expect(emitter.listenerCount("test")).toBe(0);
+      expect(emitter.eventNames()).not.toContain("test");
     });
 
     it("should remove all listeners for all events when no event is specified", () => {

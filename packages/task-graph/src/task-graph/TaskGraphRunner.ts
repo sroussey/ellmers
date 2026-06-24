@@ -147,6 +147,14 @@ export class TaskGraphRunner {
   protected currentRunPrivate?: RunPrivateCacheRepo;
   protected baseRegistryForRun?: ServiceRegistry;
 
+  /**
+   * Registry to restore after a preview run completes. Captured in
+   * handleStartPreview when a preview installs its own registry, and restored in
+   * handleCompletePreview/handleErrorPreview/handleAbortPreview so a preview's
+   * registry never leaks into a subsequent run() that omits an explicit registry.
+   */
+  protected basePreviewRegistry?: ServiceRegistry;
+
   protected readonly edgeMaterializer: EdgeMaterializer;
 
   protected readonly streamPump: StreamPump;
@@ -708,8 +716,11 @@ export class TaskGraphRunner {
 
     this.running = true;
 
-    // Build per-run context (handles abortController + parentSignal wiring)
-    const ctx = new RunContext(config?.parentSignal);
+    // Build per-run context (handles abortController + parentSignal wiring).
+    // Thread the caller-supplied runId so ctx.runId — which becomes each task's
+    // runnerId via resetGraph — matches the id the caller uses for run-scoped
+    // queue operations. Falls back to a fresh uuid when no runId was provided.
+    const ctx = new RunContext(config?.parentSignal, this.runId);
     this.currentCtx = ctx;
 
     ctx.abortController.signal.addEventListener("abort", () => {
@@ -786,13 +797,19 @@ export class TaskGraphRunner {
   }
 
   protected async handleStartPreview(config?: TaskGraphRunConfig): Promise<void> {
-    if (this.previewRunning) {
+    // Reject if a real run() is in flight: preview and run drive the same shared
+    // graph/edge state (Dataflow.value/status, task.runInputData), so overlap
+    // produces torn reads and lets a preview clobber a live run's outputs.
+    if (this.running || this.previewRunning) {
       throw new TaskConfigurationError("Graph is already running in preview");
     }
 
     // Use explicit registry if provided; otherwise keep the existing one
     // (which is either globalServiceRegistry by default, or whatever handleStart set).
+    // Save the prior registry so it can be restored after the preview, preventing
+    // a preview-supplied registry from leaking into later run() calls.
     if (config?.registry !== undefined) {
+      this.basePreviewRegistry = this.registry;
       this.registry = config.registry;
     }
 
@@ -840,7 +857,19 @@ export class TaskGraphRunner {
   }
 
   protected async handleCompletePreview(): Promise<void> {
+    this.restorePreviewRegistry();
     this.previewRunning = false;
+  }
+
+  /**
+   * Restores the registry captured before a preview installed its own, so the
+   * preview's registry does not persist into subsequent run() calls.
+   */
+  protected restorePreviewRegistry(): void {
+    if (this.basePreviewRegistry !== undefined) {
+      this.registry = this.basePreviewRegistry;
+      this.basePreviewRegistry = undefined;
+    }
   }
 
   protected async handleError(error: TaskError): Promise<void> {
@@ -873,6 +902,7 @@ export class TaskGraphRunner {
   }
 
   protected async handleErrorPreview(): Promise<void> {
+    this.restorePreviewRegistry();
     this.previewRunning = false;
   }
 
@@ -915,6 +945,7 @@ export class TaskGraphRunner {
   }
 
   protected async handleAbortPreview(): Promise<void> {
+    this.restorePreviewRegistry();
     this.previewRunning = false;
   }
 

@@ -184,22 +184,46 @@ export class EventEmitter<EventListenerTypes extends Record<string, (...args: an
   ) {
     const listeners: EventListeners<EventListenerTypes, Event> | undefined = this.listeners[event];
     if (listeners) {
-      // Snapshot the listener array to avoid issues with concurrent modification
+      // Snapshot the listener entries to avoid issues with concurrent
+      // modification (a listener may add/remove listeners during dispatch).
       const snapshot = [...listeners];
       const errors: unknown[] = [];
-      for (const { listener } of snapshot) {
+      // Track the exact `once` entries we invoke so we can remove only those,
+      // by reference, after dispatch. Filtering the live array instead would
+      // (a) strip `once` listeners added re-entrantly before they ever fire and
+      // (b) resurrect the event if a listener called removeAllListeners().
+      const invokedOnce: Array<{
+        listener: EventListener<EventListenerTypes, Event>;
+        once?: boolean;
+      }> = [];
+      for (const entry of snapshot) {
+        if (entry.once) {
+          invokedOnce.push(entry);
+        }
         try {
-          listener(...args);
+          entry.listener(...args);
         } catch (e) {
           errors.push(e);
         }
       }
-      // Remove once listeners we just called
-      this.listeners[event] = listeners.filter((l) => !l.once);
+      // Remove only the `once` listeners we actually invoked, by reference,
+      // from whatever the live array is now — but only if the event still
+      // exists (a listener may have torn it down via removeAllListeners()).
+      if (invokedOnce.length > 0) {
+        const live = this.listeners[event];
+        if (live) {
+          for (const entry of invokedOnce) {
+            const index = live.indexOf(entry);
+            if (index >= 0) {
+              live.splice(index, 1);
+            }
+          }
+        }
+      }
       if (this.maxListeners > 0 && (this.listeners[event]?.length ?? 0) <= this.maxListeners) {
         this.warnedEvents.delete(event);
       }
-      // Re-throw errors after all listeners have been called
+      // Re-throw errors after all listeners have been called.
       if (errors.length > 1) {
         throw new AggregateError(
           errors,

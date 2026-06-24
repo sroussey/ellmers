@@ -364,6 +364,55 @@ describe("Graph", () => {
     expect((graph as any).adjacency[0][1]).toBeFalsy();
   });
 
+  it("does not emit edge-removed when no edge matched", () => {
+    interface NodeType {
+      a: number;
+      b: string;
+    }
+    interface EdgeType {
+      c: string;
+    }
+    const graph = new Graph<NodeType, EdgeType>((n: NodeType) => n.a.toFixed(2), edgeIdentity);
+
+    graph.insert({ a: 1, b: "b" });
+    graph.insert({ a: 2, b: "b" });
+    graph.addEdge("1.00", "2.00", { c: "c1" });
+
+    const removed: unknown[] = [];
+    graph.on("edge-removed", (id) => removed.push(id));
+
+    // No edge with this identity exists between the pair → no event.
+    graph.removeEdge("1.00", "2.00", "does-not-exist" as any);
+    expect(removed).toEqual([]);
+    expect(graph.getEdges().length).toBe(1);
+  });
+
+  it("emits edge-removed with real ids when removing all edges of a pair", () => {
+    interface NodeType {
+      a: number;
+      b: string;
+    }
+    interface EdgeType {
+      c: string;
+    }
+    const graph = new Graph<NodeType, EdgeType>((n: NodeType) => n.a.toFixed(2), edgeIdentity);
+
+    graph.insert({ a: 1, b: "b" });
+    graph.insert({ a: 2, b: "b" });
+    const id1 = graph.addEdge("1.00", "2.00", { c: "c1" });
+    const id2 = graph.addEdge("1.00", "2.00", { c: "c2" });
+
+    const removed: unknown[] = [];
+    graph.on("edge-removed", (id) => removed.push(id));
+
+    // Remove-all (no edgeIdentity): one event per removed edge, with real ids
+    // (never `undefined` cast to EdgeId).
+    graph.removeEdge("1.00", "2.00");
+    expect(removed.sort()).toEqual([id1, id2].sort());
+    expect(removed).not.toContain(undefined);
+    expect(graph.getEdges().length).toBe(0);
+  });
+
   it("can return the nodes", () => {
     interface NodeType {
       a: number;

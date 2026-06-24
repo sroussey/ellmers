@@ -97,14 +97,29 @@ export class DirectedGraph<Node, Edge = true, NodeId = unknown, EdgeId = unknown
    * @param sourceNodeIdentity The identity string of the node the edge should run from.
    * @param targetNodeIdentity The identity string of the node the edge should run to.
    * @param edge The edge to add to the graph. If not provided it defaults to `true`.
-   * @param skipUpdatingCyclicality This boolean indicates if the cache of the cyclicality of the graph should be updated.
-   * If `false` is passed the cycle cache will be invalidated because we can not assure that a cycle has not been created.
    */
-  override addEdge(
+  override addEdge(sourceNodeIdentity: NodeId, targetNodeIdentity: NodeId, edge?: Edge): EdgeId {
+    return this.addEdgeMaintainingCyclicality(sourceNodeIdentity, targetNodeIdentity, edge, false);
+  }
+
+  /**
+   * Internal edge-add that controls cyclicality-cache maintenance. Subclasses
+   * (e.g. {@link DirectedAcyclicGraph}) that have already validated acyclicity
+   * pass `skipUpdatingCyclicality = true` to avoid a redundant cycle check.
+   *
+   * This is intentionally `protected` (not a public positional boolean on
+   * {@link addEdge}) so external callers cannot silently desync the `hasCycle`
+   * cache.
+   *
+   * @param skipUpdatingCyclicality When `true`, the cycle cache is invalidated
+   * (set to `undefined`) instead of being updated, because the caller is
+   * responsible for cyclicality. When `false`, the cache is refreshed.
+   */
+  protected addEdgeMaintainingCyclicality(
     sourceNodeIdentity: NodeId,
     targetNodeIdentity: NodeId,
-    edge?: Edge,
-    skipUpdatingCyclicality: boolean = false
+    edge: Edge | undefined,
+    skipUpdatingCyclicality: boolean
   ): EdgeId {
     if (edge === undefined) {
       edge = true as Edge;
@@ -127,7 +142,15 @@ export class DirectedGraph<Node, Edge = true, NodeId = unknown, EdgeId = unknown
    * @param endNode The string identity of the node we are attempting to reach.
    */
   canReachFrom(startNode: NodeId, endNode: NodeId): boolean {
-    const nodeKeys = Array.from(this.nodes.keys());
+    return this.canReachFromInternal(startNode, endNode, new Set<NodeId>());
+  }
+
+  /**
+   * Internal DFS that threads a visited set so cyclic graphs (which
+   * {@link DirectedGraph} explicitly permits) terminate instead of recursing
+   * forever, and shared descendants are not re-walked exponentially.
+   */
+  private canReachFromInternal(startNode: NodeId, endNode: NodeId, visited: Set<NodeId>): boolean {
     const startNodeIndex = this.getNodeIndex(startNode);
     const endNodeIndex = this.getNodeIndex(endNode);
 
@@ -138,16 +161,22 @@ export class DirectedGraph<Node, Edge = true, NodeId = unknown, EdgeId = unknown
       return false;
     }
 
+    if (visited.has(startNode)) {
+      return false;
+    }
+    visited.add(startNode);
+
     if (this.adjacency[startNodeIndex][endNodeIndex] != null) {
       return true;
     }
 
+    const nodeKeys = Array.from(this.nodes.keys());
     return this.adjacency[startNodeIndex].reduce<boolean>((carry, edge, index) => {
       if (carry || edge === null) {
         return carry;
       }
 
-      return this.canReachFrom(nodeKeys[index], endNode);
+      return this.canReachFromInternal(nodeKeys[index], endNode, visited);
     }, false);
   }
 

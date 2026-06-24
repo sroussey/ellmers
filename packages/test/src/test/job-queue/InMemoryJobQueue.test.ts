@@ -4,9 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { DeadLetter, IJobExecuteContext } from "@workglow/job-queue";
+import type {
+  DeadLetter,
+  IJobExecuteContext,
+  IMessageQueue,
+  JobStorageFormat,
+  MessageId,
+  SendOptions,
+} from "@workglow/job-queue";
 import {
   ConcurrencyLimiter,
+  InMemoryMessageQueue,
   InMemoryQueueStorage,
   InMemoryRateLimiterStorage,
   Job,
@@ -163,6 +171,49 @@ describe("InMemoryQueueStorage — abort_requested_at & lease expiry", () => {
     await expect(storage.extendLease(id, "worker-y", 5000)).rejects.toThrow(/extendLease failed/);
   });
 
+  it("InMemoryClaim.ack(undefined) overwrites a stale output with null (matches WrappedClaim)", async () => {
+    // Seed a row that already carries an output from a prior attempt.
+    const id = await storage.add({
+      input: { data: "stale" },
+      output: { result: "prior-attempt" } as TO,
+      visible_at: null,
+      completed_at: null,
+    });
+
+    const mq = new InMemoryMessageQueue<TI, TO>(storage);
+    const claims = await mq.receive({ workerId: "w-ack", leaseMs: 30_000, max: 1 });
+    expect(claims).toHaveLength(1);
+
+    // ack with no result must NOT fall back to current.output — finalize()
+    // overwrites it with null, identical to WrappedClaim.ack.
+    await claims[0]!.ack();
+
+    const after = await storage.get(id);
+    expect(after?.status).toBe(JobStatus.COMPLETED);
+    expect(after?.output).toBeNull();
+  });
+
+  it("InMemoryClaim.fail() with no error overwrites stale error fields with null (matches WrappedClaim)", async () => {
+    const id = await storage.add({
+      input: { data: "stale-err" },
+      error: "prior error",
+      error_code: "PriorCode",
+      visible_at: null,
+      completed_at: null,
+    });
+
+    const mq = new InMemoryMessageQueue<TI, TO>(storage);
+    const claims = await mq.receive({ workerId: "w-fail", leaseMs: 30_000, max: 1 });
+    expect(claims).toHaveLength(1);
+
+    await claims[0]!.fail();
+
+    const after = await storage.get(id);
+    expect(after?.status).toBe(JobStatus.FAILED);
+    expect(after?.error).toBeNull();
+    expect(after?.error_code).toBeNull();
+  });
+
   it("abort PROCESSING worker observes abort_requested_at via checkForAbortingJobs", async () => {
     const { messageQueue, jobStore } = wrapQueueStorage(storage);
     const server = new JobQueueServer<TI, TO, SimpleTestJob>(SimpleTestJob, {
@@ -210,7 +261,7 @@ describe("InMemoryQueueStorage — abort_requested_at & lease expiry", () => {
 // Minimal in-memory IMessageQueue for DLQ testing
 // ---------------------------------------------------------------------------
 
-import type { IClaim, IMessageQueue, MessageId } from "@workglow/job-queue";
+import type { IClaim } from "@workglow/job-queue";
 
 class CollectingQueue<Body> implements IMessageQueue<Body> {
   public readonly scope = "process" as const;
@@ -335,6 +386,97 @@ describe("InMemoryJobQueue — dead-letter queue (PR 5)", () => {
 
     // DLQ was never passed to the server, so nothing was forwarded
     expect(dlq.messages).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Client sendBatch tests
+// ---------------------------------------------------------------------------
+
+describe("JobQueueClient.sendBatch", () => {
+  let storage: InMemoryQueueStorage<TI, TO>;
+  let queueName: string;
+
+  beforeEach(async () => {
+    queueName = `test-sendbatch-${uuid4()}`;
+    storage = new InMemoryQueueStorage(queueName);
+    await storage.migrate();
+  });
+
+  afterEach(async () => {
+    await storage.deleteAll();
+  });
+
+  it("inserts every body and returns a handle per input", async () => {
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
+    const client = new JobQueueClient<TI, TO>({ messageQueue, jobStore, queueName });
+
+    const handles = await client.sendBatch([{ data: "a" }, { data: "b" }, { data: "c" }]);
+    expect(handles).toHaveLength(3);
+    expect(await client.size()).toBe(3);
+  });
+
+  it("delegates to messageQueue.sendBatch once and forwards delaySeconds/timeoutSeconds (was silently dropped)", async () => {
+    // Capturing message queue: proves the client now (a) makes a single
+    // batched call instead of N per-item send()s, and (b) forwards the full
+    // option set including delaySeconds/timeoutSeconds, which the old
+    // per-item loop dropped.
+    const { jobStore } = wrapQueueStorage(storage);
+    const sendCalls: unknown[] = [];
+    const batchCalls: { count: number; opts: SendOptions | undefined }[] = [];
+
+    const capturing: IMessageQueue<JobStorageFormat<TI, TO>> = {
+      scope: "process",
+      async send(body, opts) {
+        sendCalls.push({ body, opts });
+        return await storage.add(body);
+      },
+      async sendBatch(bodies, opts) {
+        batchCalls.push({ count: bodies.length, opts });
+        const ids: MessageId[] = [];
+        for (const body of bodies) ids.push(await storage.add(body));
+        return ids;
+      },
+      async receive() {
+        return [];
+      },
+      async releaseClaim() {},
+      async migrate() {},
+      getMigrations() {
+        return [];
+      },
+    };
+
+    const client = new JobQueueClient<TI, TO>({
+      messageQueue: capturing,
+      jobStore,
+      queueName,
+    });
+
+    await client.sendBatch([{ data: "x" }, { data: "y" }], {
+      delaySeconds: 60,
+      timeoutSeconds: 120,
+      maxAttempts: 3,
+    });
+
+    // Exactly one batched call, never per-item send().
+    expect(batchCalls).toHaveLength(1);
+    expect(sendCalls).toHaveLength(0);
+    expect(batchCalls[0]!.count).toBe(2);
+    expect(batchCalls[0]!.opts?.delaySeconds).toBe(60);
+    expect(batchCalls[0]!.opts?.timeoutSeconds).toBe(120);
+    expect(batchCalls[0]!.opts?.maxAttempts).toBe(3);
+    // Batch-wide fingerprint must NOT be forwarded (would dedup all bodies).
+    expect(batchCalls[0]!.opts?.fingerprint).toBeUndefined();
+  });
+
+  it("returns an empty array for an empty input list without touching the queue", async () => {
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
+    const client = new JobQueueClient<TI, TO>({ messageQueue, jobStore, queueName });
+
+    const handles = await client.sendBatch([]);
+    expect(handles).toEqual([]);
+    expect(await client.size()).toBe(0);
   });
 });
 

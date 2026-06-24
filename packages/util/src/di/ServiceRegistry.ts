@@ -27,7 +27,7 @@ export function createServiceToken<T>(id: string): ServiceToken<T> {
  * Service registry for managing and accessing services
  */
 export class ServiceRegistry {
-  public container: Container;
+  public readonly container: Container;
 
   /**
    * Create a new service registry

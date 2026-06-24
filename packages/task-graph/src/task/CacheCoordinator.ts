@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { getPortCodec } from "@workglow/util";
+import { getLogger, getPortCodec } from "@workglow/util";
 import { type CachePolicy, isPolicyCached, isPolicyPrivate } from "../cache/CachePolicy";
 import type { CacheRegistry } from "../cache/CacheRegistry";
 import { RunPrivateCacheRepo } from "../cache/RunPrivateCacheRepo";
@@ -38,6 +38,13 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
    * resulting object is a stable, serialization-equivalent representation
    * suitable for use as a cache key. Properties without a format annotation are
    * passed through unchanged. No-op when no cache is configured.
+   *
+   * IMPORTANT: this relies on each `PortCodec.serialize` producing a
+   * DETERMINISTIC wire form for equal inputs. The PortCodec contract does not
+   * itself guarantee determinism — a codec that embeds a timestamp, a fresh id,
+   * or non-canonical ordering will fingerprint differently every run, so the
+   * deterministic cache silently never hits for that port. Codecs used on
+   * cacheable input ports MUST serialize deterministically.
    *
    * The reserved sentinel field `__cv` (cache version) is injected into the
    * normalized object before fingerprinting so that bumping a task's `static
@@ -89,17 +96,29 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
   ): Promise<Output | undefined> {
     if (!outputCache || !this.task.cacheable) return undefined;
 
-    const cached = await outputCache.getOutput(
-      this.cacheIdentityKey(policy, outputCache),
-      keyInputs
-    );
-    if (cached === undefined) return undefined;
+    // A corrupt stored value or a codec/schema drift can make getOutput or
+    // deserializeOutputPorts throw. Caching is a transparent optimization: a bad
+    // entry should cost at most a recompute, never convert a runnable task into a
+    // hard failure. Degrade any decode failure to a cache miss (the deterministic
+    // path is safe to recompute by definition).
+    let cached: unknown;
+    let outputs: Output;
+    try {
+      cached = await outputCache.getOutput(this.cacheIdentityKey(policy, outputCache), keyInputs);
+      if (cached === undefined) return undefined;
 
-    const outputSchema = (this.task.constructor as typeof Task).outputSchema();
-    const outputs = (await CacheCoordinator.deserializeOutputPorts(
-      cached as Record<string, unknown>,
-      outputSchema as unknown as SchemaProperties
-    )) as Output;
+      const outputSchema = (this.task.constructor as typeof Task).outputSchema();
+      outputs = (await CacheCoordinator.deserializeOutputPorts(
+        cached as Record<string, unknown>,
+        outputSchema as unknown as SchemaProperties
+      )) as Output;
+    } catch (err) {
+      getLogger().warn(
+        `CacheCoordinator: failed to read/decode cached output for ${this.task.type}; treating as cache miss`,
+        { error: err }
+      );
+      return undefined;
+    }
 
     ctx.telemetrySpan?.addEvent("workglow.task.cache_hit");
 

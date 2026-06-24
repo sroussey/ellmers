@@ -197,9 +197,12 @@ function cleanTrailing(text: string): string {
     }
 
     // Trailing incomplete value after a colon (e.g., `"key": tru` or `"key": 12`)
-    // Check if there's an incomplete bare token at the end
+    // Check if there's an incomplete bare token at the end. The pair may be
+    // preceded by a comma (subsequent property) OR an opening brace (the very
+    // first property of an object) — both must be detected so the first
+    // streamed property degrades to a partial `{}` instead of failing entirely.
     const bareTokenMatch = trimmed.match(
-      /,\s*"[^"]*"\s*:\s*(?:tru|fal|nul|true|false|null|[\d.eE+-]+)$/
+      /(,|\{)\s*"[^"]*"\s*:\s*(?:tru|fal|nul|true|false|null|[\d.eE+-]+)$/
     );
     if (bareTokenMatch) {
       // Check if the bare value is complete
@@ -208,9 +211,13 @@ function cleanTrailing(text: string): string {
         JSON.parse(valueStr);
         // Value is complete, keep it
       } catch {
-        // Value is incomplete, remove the whole key-value pair
-        s = trimmed.slice(0, bareTokenMatch.index!).trimEnd();
-        if (s.endsWith(",")) s = s.slice(0, -1);
+        // Value is incomplete, remove the whole key-value pair. Keep the leading
+        // boundary character (comma or brace) so the surrounding structure
+        // (and the closeStack pass) can still close the object/array correctly.
+        const boundary = bareTokenMatch[1];
+        const cut = trimmed.slice(0, bareTokenMatch.index!).trimEnd();
+        s = boundary === "{" ? `${cut}{` : cut;
+        if (boundary !== "{" && s.endsWith(",")) s = s.slice(0, -1);
         changed = true;
         continue;
       }

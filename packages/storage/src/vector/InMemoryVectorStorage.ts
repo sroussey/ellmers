@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { EventEmitter } from "@workglow/util";
 import type {
   DataPortSchemaObject,
   FromSchema,
@@ -37,6 +38,12 @@ export class InMemoryVectorStorage<
   private vectorPropertyName: keyof Entity;
   private metadataPropertyName: keyof Entity | undefined;
 
+  /**
+   * @param _vectorCtor Accepted for call-site parity with the cloud vector
+   *   backends (and `createKnowledgeBase`), but unused here: the in-memory
+   *   store always reconstructs vectors from whatever typed array the schema /
+   *   decoder produced, so it does not honor a custom constructor.
+   */
   constructor(
     schema: Schema,
     primaryKeyNames: PrimaryKeyNames,
@@ -117,31 +124,14 @@ export class InMemoryVectorStorage<
       this.vectorDimensions
     );
     if (values.length === 0) return [];
-    return this.mutex(async () => {
-      const snapshot = this.snapshotMutableState();
-      const results: Entity[] = [];
-      // Track the PKs of rows that actually committed before the throw, so the
-      // rollback event lets subscribers surgically invalidate caches instead of
-      // re-reading the whole table. Typed via `any` because the public PK type
-      // is computed from the schema and BaseTabularStorage holds its own
-      // PrimaryKey type parameter — the value still flows through the
-      // {@link TabularEventListeners} payload at the emit site below.
-      const committedIds: any[] = [];
-      try {
-        for (const value of values) {
-          const committed = await super.put(value);
-          results.push(committed);
-          // Extract the PK from the committed entity (handles auto-generated
-          // keys assigned during put).
-          committedIds.push(this.separateKeyValueFromCombined(committed).key);
-        }
-        return results;
-      } catch (error) {
-        this.restoreMutableState(snapshot);
-        safeEmit(this.events, "rollback", { op: "putBulk", error, ids: committedIds });
-        throw error;
-      }
-    });
+    // Reuse the base atomic batch (snapshot / serial write / restore +
+    // `rollback` emit), wrapped in this instance's mutex so a concurrent
+    // single-row `put` cannot slip into the Map between the snapshot and a
+    // rollback and get wiped along with the failed batch. Rows are written via
+    // the base `put` (validation already ran up front, and the overlay mutex is
+    // already held) — calling the overlay `put` here would deadlock on the
+    // mutex and re-validate every row.
+    return this.mutex(() => this.atomicPutBulk(values, (value) => super.put(value)));
   }
 
   async similaritySearch(
@@ -149,16 +139,20 @@ export class InMemoryVectorStorage<
     options: VectorSearchOptions<Record<string, unknown>> = {}
   ) {
     assertVectorShape(query, this.vectorDimensions, "query");
-    const { topK = 10, filter, scoreThreshold = 0 } = options;
+    // Default to no floor: cosine similarity ranges over [-1, 1], so a default
+    // of 0 would silently drop negatively-correlated hits and return fewer than
+    // `topK`. Callers opt into a relevance floor explicitly via `scoreThreshold`.
+    const { topK = 10, filter, scoreThreshold = -Infinity } = options;
     const results: Array<Entity & { score: number }> = [];
 
     const allEntities = (await this.getAll()) || [];
 
     for (const entity of allEntities) {
       const vector = entity[this.vectorPropertyName] as TypedArray;
-      const metadata = this.metadataPropertyName
-        ? (entity[this.metadataPropertyName] as Metadata)
-        : ({} as Metadata);
+      // A present-but-null metadata column value coalesces to `{}` so a filtered
+      // search treats the row as a non-match rather than dereferencing null.
+      const rawMetadata = this.metadataPropertyName ? entity[this.metadataPropertyName] : undefined;
+      const metadata = (rawMetadata ?? {}) as Metadata;
 
       if (filter && !matchesFilter(metadata, filter)) {
         continue;
@@ -177,6 +171,20 @@ export class InMemoryVectorStorage<
     }
 
     results.sort((a, b) => b.score - a.score);
-    return results.slice(0, topK);
+    const topResults = results.slice(0, topK);
+    // The inherited `events` emitter is typed for the tabular event surface;
+    // `similaritySearch` lives on the vector extension of that surface. The
+    // emitter instance is the same object, so widen the view to a record that
+    // carries the event so it can be emitted type-safely.
+    type SimilaritySearchEvents = {
+      similaritySearch: (query: TypedArray, results: (Entity & { score: number })[]) => void;
+    };
+    safeEmit(
+      this.events as unknown as EventEmitter<SimilaritySearchEvents>,
+      "similaritySearch",
+      query,
+      topResults
+    );
+    return topResults;
   }
 }

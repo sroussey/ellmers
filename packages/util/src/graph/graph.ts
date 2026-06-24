@@ -183,7 +183,10 @@ export class Graph<Node, Edge = true, NodeId = unknown, EdgeId = unknown> {
 
     this.nodeIndexMap.set(id, this.adjacency.length);
     this.nodes.set(id, node);
-    this.adjacency.map((adj) => adj.push(null));
+    // Append a new column (the new node) to every existing row, then push the
+    // new node's own row. forEach signals the side-effect intent and avoids the
+    // throwaway array that Array.prototype.map would allocate.
+    this.adjacency.forEach((adj) => adj.push(null));
     this.adjacency.push(new Array<AdjacencyValue<Edge>>(this.adjacency.length + 1).fill(null));
 
     this.emit("node-added", id);
@@ -227,7 +230,7 @@ export class Graph<Node, Edge = true, NodeId = unknown, EdgeId = unknown> {
 
     if (!isOverwrite) {
       this.nodeIndexMap.set(id, this.adjacency.length);
-      this.adjacency.map((adj) => adj.push(null));
+      this.adjacency.forEach((adj) => adj.push(null));
       this.adjacency.push(new Array<AdjacencyValue<Edge>>(this.adjacency.length + 1).fill(null));
       this.emit("node-added", id);
     } else {
@@ -263,15 +266,24 @@ export class Graph<Node, Edge = true, NodeId = unknown, EdgeId = unknown> {
     const node1Index = this.getNodeIndex(node1Identity);
     const node2Index = this.getNodeIndex(node2Identity);
 
+    const id = this.edgeIdentity(edge, node1Identity, node2Identity);
+
+    // De-duplicate by edgeIdentity (matching removeEdge), not raw value
+    // equality. Using includes() would conflate two edges that are distinct by
+    // identity but reference/value-equal, and would prevent a multigraph for
+    // the default `true` edge type since every edge value is identical.
     if (this.adjacency[node1Index][node2Index] === null) {
       this.adjacency[node1Index][node2Index] = [edge];
     } else {
-      if (!this.adjacency[node1Index][node2Index]!.includes(edge)) {
-        this.adjacency[node1Index][node2Index]!.push(edge);
+      const existing = this.adjacency[node1Index][node2Index]!;
+      const alreadyPresent = existing.some(
+        (e) => this.edgeIdentity(e, node1Identity, node2Identity) === id
+      );
+      if (!alreadyPresent) {
+        existing.push(edge);
       }
     }
 
-    const id = this.edgeIdentity(edge, node1Identity, node2Identity);
     this.emit("edge-added", id);
 
     return id;
@@ -414,9 +426,19 @@ export class Graph<Node, Edge = true, NodeId = unknown, EdgeId = unknown> {
     const node2Index = this.getNodeIndex(node2Identity);
 
     if (edgeIdentity === undefined) {
+      // Remove all edges between the pair. Emit one event per actually-removed
+      // edge carrying its real EdgeId, rather than a single event with
+      // `undefined` cast to EdgeId (which violates the listener contract).
+      const edgeList = this.adjacency[node1Index][node2Index];
       this.adjacency[node1Index][node2Index] = null;
+      if (edgeList !== null) {
+        for (const edge of edgeList) {
+          this.emit("edge-removed", this.edgeIdentity(edge, node1Identity, node2Identity));
+        }
+      }
     } else {
-      // Remove the specific edge matching edgeIdentity from this node pair
+      // Remove the specific edge matching edgeIdentity from this node pair.
+      // Only emit edge-removed if an edge was actually removed.
       const edgeList = this.adjacency[node1Index][node2Index];
       if (edgeList !== null) {
         for (let edgeIndex = 0; edgeIndex < edgeList.length; edgeIndex++) {
@@ -424,15 +446,15 @@ export class Graph<Node, Edge = true, NodeId = unknown, EdgeId = unknown> {
             this.edgeIdentity(edgeList[edgeIndex], node1Identity, node2Identity) === edgeIdentity
           ) {
             edgeList.splice(edgeIndex, 1);
+            if (edgeList.length === 0) {
+              this.adjacency[node1Index][node2Index] = null;
+            }
+            this.emit("edge-removed", edgeIdentity);
             break;
           }
         }
-        if (edgeList.length === 0) {
-          this.adjacency[node1Index][node2Index] = null;
-        }
       }
     }
-    this.emit("edge-removed", edgeIdentity as EdgeId);
   }
 
   /**

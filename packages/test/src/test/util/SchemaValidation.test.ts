@@ -194,6 +194,23 @@ describe("SchemaValidation", () => {
       ).toBe(true);
     });
 
+    it("should report array property values as errors", () => {
+      const schema = {
+        type: "object",
+        properties: {
+          field: [],
+        },
+      } as unknown as DataPortSchema;
+
+      const result = validateDataPortSchema(schema);
+      expect(result.valid).toBe(false);
+      expect(
+        result.errors.some(
+          (e) => e.path === "/properties/field" && e.message.includes("Expected schema object")
+        )
+      ).toBe(true);
+    });
+
     it("should detect unknown types in deeply nested schemas", () => {
       const schema = {
         type: "object",

@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createServiceToken } from "@workglow/util";
+import { createServiceToken, getLogger } from "@workglow/util";
 import { DataPortSchemaObject, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
+import { safeEmit } from "../events/safeEmit";
 import { type ITabularMigration, type ITabularMigrationApplier } from "../migrations";
 import { BaseTabularStorage, ClientProvidedKeysOption } from "./BaseTabularStorage";
 import {
@@ -99,7 +100,7 @@ export class SharedInMemoryTabularStorage<
 
   private initializeBroadcastChannel(): void {
     if (!this.isBroadcastChannelAvailable()) {
-      console.warn("BroadcastChannel is not available. Tab synchronization will not work.");
+      getLogger().warn("BroadcastChannel is not available. Tab synchronization will not work.");
       return;
     }
 
@@ -111,25 +112,27 @@ export class SharedInMemoryTabularStorage<
 
       this.syncFromOtherTabs();
     } catch (error) {
-      console.error("Failed to initialize BroadcastChannel:", error);
+      getLogger().error("Failed to initialize BroadcastChannel:", { error });
     }
   }
 
   private setupEventForwarding(): void {
+    // Forwarded events are post-commit (the inner repo already mutated), so a
+    // throwing subscriber must not derail the write — route through safeEmit.
     this.inMemoryRepo.on("put", (entity) => {
-      this.events.emit("put", entity);
+      safeEmit(this.events, "put", entity);
     });
     this.inMemoryRepo.on("get", (key, entity) => {
-      this.events.emit("get", key, entity);
+      safeEmit(this.events, "get", key, entity);
     });
     this.inMemoryRepo.on("query", (key, entities) => {
-      this.events.emit("query", key, entities);
+      safeEmit(this.events, "query", key, entities);
     });
     this.inMemoryRepo.on("delete", (key) => {
-      this.events.emit("delete", key);
+      safeEmit(this.events, "delete", key);
     });
     this.inMemoryRepo.on("clearall", () => {
-      this.events.emit("clearall");
+      safeEmit(this.events, "clearall");
     });
   }
 
@@ -215,7 +218,7 @@ export class SharedInMemoryTabularStorage<
         this.syncInProgress = false;
         void this.drainPendingMessages()
           .catch((error) => {
-            console.error("Failed to drain pending messages after sync timeout", error);
+            getLogger().error("Failed to drain pending messages after sync timeout", { error });
           })
           .finally(() => {
             this.resolveSyncSettled();

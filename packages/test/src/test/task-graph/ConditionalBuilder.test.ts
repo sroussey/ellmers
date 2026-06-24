@@ -4,12 +4,55 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ConditionalTask, Workflow, WorkflowError } from "@workglow/task-graph";
+import { ConditionalTask, Task, Workflow, WorkflowError } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 
 import { getTestingLogger } from "../../binding/TestingLogger";
 import { DoubleToDoubledTask, HalveTask } from "../task/TestTasks";
+
+/** Echoes its `value` input back out, used to drive a conditional's predicate from upstream. */
+class ValueSourceTask extends Task<{ value: number }, { value: number }> {
+  static override type = "ValueSourceTask";
+  static override category = "Test";
+  static override inputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { value: { type: "number" } },
+    } as const satisfies DataPortSchema;
+  }
+  static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { value: { type: "number" } },
+    } as const satisfies DataPortSchema;
+  }
+  override async execute(input: { value: number }): Promise<{ value: number }> {
+    return { value: input.value };
+  }
+}
+
+/** Consumes a `doubled` input, so it auto-connects from {@link DoubleToDoubledTask}'s output. */
+class DoubledConsumerTask extends Task<{ doubled: number }, { result: number }> {
+  static override type = "DoubledConsumerTask";
+  static override category = "Test";
+  static override inputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { doubled: { type: "number" } },
+    } as const satisfies DataPortSchema;
+  }
+  static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { result: { type: "number" } },
+    } as const satisfies DataPortSchema;
+  }
+  override async execute(input: { doubled: number }): Promise<{ result: number }> {
+    return { result: input.doubled };
+  }
+}
 
 describe("ConditionalBuilder (Workflow.if)", () => {
   let logger = getTestingLogger();
@@ -150,5 +193,64 @@ describe("ConditionalBuilder (Workflow.if)", () => {
     await conditional.run({});
     expect(conditional.isBranchActive("then")).toBe(false);
     expect(conditional.getActiveBranches().size).toBe(0);
+  });
+
+  it("wires the prior task's output INTO the conditional input (mid-chain .if)", async () => {
+    const workflow = new Workflow();
+    workflow
+      .addTask(ValueSourceTask, { value: 10 })
+      .if((input: any) => input.value > 5)
+      .then(DoubleToDoubledTask)
+      .else(HalveTask)
+      .endIf();
+
+    const tasks = workflow.graph.getTasks();
+    const source = tasks.find((t) => t instanceof ValueSourceTask)!;
+    const conditional = tasks.find((t) => t instanceof ConditionalTask) as ConditionalTask;
+
+    // An A -> conditional dataflow must exist so the predicate sees A's output.
+    const dataflows = workflow.graph.getDataflows();
+    const inEdge = dataflows.find(
+      (df) => df.sourceTaskId === source.id && df.targetTaskId === conditional.id
+    );
+    expect(inEdge).toBeDefined();
+
+    // The predicate must observe the upstream value (10 > 5 -> then active).
+    let observed: unknown;
+    const branches = conditional.config.branches!;
+    const original = branches[0].condition;
+    (branches[0] as any).condition = (input: any) => {
+      observed = input?.value;
+      return original(input);
+    };
+
+    await workflow.run({ value: 10 });
+
+    expect(observed).toBe(10);
+    expect(conditional.isBranchActive("then")).toBe(true);
+    expect(conditional.isBranchActive("else")).toBe(false);
+  });
+
+  it("throws on .addTask after a two-arm .endIf() (ambiguous join)", () => {
+    const workflow = new Workflow();
+    const continued = workflow
+      .if((input: any) => input.value > 5)
+      .then(DoubleToDoubledTask)
+      .else(HalveTask)
+      .endIf();
+
+    expect(() => continued.addTask(ValueSourceTask)).toThrow(WorkflowError);
+  });
+
+  it("allows .addTask after a then-only .endIf() (single leaf)", () => {
+    const workflow = new Workflow();
+    const continued = workflow
+      .if((input: any) => input.value > 5)
+      .then(DoubleToDoubledTask)
+      .endIf();
+
+    // The single then-arm is an unambiguous predecessor, and DoubledConsumerTask
+    // auto-connects from its `doubled` output — so continuation must not throw.
+    expect(() => continued.addTask(DoubledConsumerTask)).not.toThrow();
   });
 });

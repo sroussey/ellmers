@@ -59,6 +59,8 @@ export class TaskOutputTabularRepository extends TaskOutputRepository {
       await this.storage.put({
         taskType,
         key,
+        // Blob column: raw bytes stored under a string-typed schema (see
+        // TaskOutputRow.value); getOutput normalizes the round-tripped shape.
         value: compressedValue as unknown as string,
         createdAt: createdAt.toISOString(),
       });
@@ -77,8 +79,10 @@ export class TaskOutputTabularRepository extends TaskOutputRepository {
   async getOutput(taskType: string, inputs: TaskInput): Promise<TaskOutput | undefined> {
     const key = await this.keyFromInputs(inputs);
     const output = await this.storage.get({ key, taskType });
-    this.emit("output_retrieved", taskType);
     if (output?.value) {
+      // Emit only on an actual hit so hit-rate metrics keyed off this event are
+      // not inflated by misses.
+      this.emit("output_retrieved", taskType);
       if (this.outputCompression) {
         const raw: unknown = output.value as unknown;
         const bytes: Uint8Array =
@@ -122,6 +126,13 @@ export class TaskOutputTabularRepository extends TaskOutputRepository {
     this.emit("output_pruned");
   }
 
+  /**
+   * O(n) over the ENTIRE backing table: ITaskOutputStorage only exposes
+   * createdAt-keyed deleteSearch, so the taskType prefix must be filtered in JS
+   * here. Cost grows with all cached rows (not just the prefixed ones), so
+   * callers (e.g. RunPrivateCacheRepo.clearRun) should not schedule it on a hot
+   * path against a large shared store.
+   */
   override async deleteByTaskTypePrefix(prefix: string): Promise<void> {
     for await (const row of this.storage.records()) {
       if (typeof row.taskType === "string" && row.taskType.startsWith(prefix)) {
@@ -130,6 +141,12 @@ export class TaskOutputTabularRepository extends TaskOutputRepository {
     }
   }
 
+  /**
+   * O(n) over the ENTIRE backing table (see {@link deleteByTaskTypePrefix}).
+   * Used by the janitor to reap stale run-private rows. A row whose createdAt is
+   * missing or unparseable is treated as infinitely old and deleted — it is
+   * exactly the orphan the stale sweep exists to reap, so it must not be skipped.
+   */
   override async clearOlderThanWithTaskTypePrefix(
     prefix: string,
     olderThanInMs: number
@@ -138,13 +155,17 @@ export class TaskOutputTabularRepository extends TaskOutputRepository {
     for await (const row of this.storage.records()) {
       if (typeof row.taskType === "string" && row.taskType.startsWith(prefix)) {
         const ts = typeof row.createdAt === "string" ? new Date(row.createdAt).getTime() : NaN;
-        if (!isNaN(ts) && ts < cutoff) {
+        // NaN (missing/unparseable createdAt) -> treat as infinitely old and delete.
+        if (isNaN(ts) || ts < cutoff) {
           await this.storage.delete({ key: row.key, taskType: row.taskType });
         }
       }
     }
   }
 
+  /**
+   * O(n) over the ENTIRE backing table (see {@link deleteByTaskTypePrefix}).
+   */
   override async sizeByTaskTypePrefix(prefix: string): Promise<number> {
     let count = 0;
     for await (const row of this.storage.records()) {

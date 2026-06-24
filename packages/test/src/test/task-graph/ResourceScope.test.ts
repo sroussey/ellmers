@@ -97,6 +97,31 @@ describe("ResourceScope threading", () => {
   });
 });
 
+describe("ResourceScope.disposeAll error handling", () => {
+  it("runs every disposer and does not throw when one rejects", async () => {
+    const scope = new ResourceScope();
+    const ran: string[] = [];
+
+    scope.register("ok-1", async () => {
+      ran.push("ok-1");
+    });
+    scope.register("boom", async () => {
+      ran.push("boom");
+      throw new Error("disposer failed");
+    });
+    scope.register("ok-2", async () => {
+      ran.push("ok-2");
+    });
+
+    // Best-effort contract: must not throw even though "boom" rejects.
+    await expect(scope.disposeAll()).resolves.toBeUndefined();
+
+    // All disposers ran despite the failure, and the scope is cleared.
+    expect(ran.sort()).toEqual(["boom", "ok-1", "ok-2"]);
+    expect(scope.size).toBe(0);
+  });
+});
+
 describe("ResourceScope browser pattern", () => {
   it("BrowserSessionTask-style task registers a disposer keyed by session ID", async () => {
     const scope = new ResourceScope();
