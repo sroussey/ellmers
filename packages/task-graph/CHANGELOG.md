@@ -1,5 +1,13 @@
 # @workglow/task-graph
 
+## 0.3.21
+
+### Bug Fixes
+
+#### task-graph
+
+- emit task_progress from per-task progress subscription
+
 ## 0.3.20
 
 ### Features
