@@ -44,6 +44,7 @@ export * from "./task-graph/transforms";
 export * from "./task-graph/TransformTypes";
 
 export * from "./cache";
+export * from "./task/BackpressureGate";
 export * from "./task/CacheCoordinator";
 export * from "./task/StreamProcessor";
 export * from "./task/TaskRunContext";
