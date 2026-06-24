@@ -7,6 +7,7 @@
 import type { ResourceScope, ServiceRegistry } from "@workglow/util";
 import type { CacheRef } from "../cache/CacheRef";
 import type { Taskish } from "../task-graph/Conversions";
+import { BackpressureGate } from "./BackpressureGate";
 import type { ITask } from "./ITask";
 import type { StreamEvent, StreamMode, Usage } from "./StreamTypes";
 import {
@@ -478,18 +479,14 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
  */
 export class BinaryStreamRouter {
   private readonly buffer: Uint8Array[] = [];
-  private bufferedBytes = 0;
-  private finished = false;
-  private failure: Error | undefined;
   /** Resolver for the consumer side (iterable awaiting next chunk). */
   private chunkNotify: (() => void) | undefined;
-  /** Resolver for the producer side parked waiting for drain. */
-  private drainNotify: (() => void) | undefined;
   private readonly refPromise: Promise<CacheRef>;
-  private readonly highWaterMarkBytes: number;
+  /** Byte-bounded backpressure accounting + producer park/wake. */
+  private readonly gate: BackpressureGate;
 
   constructor(sink: BinaryRefSink, highWaterMarkBytes: number) {
-    this.highWaterMarkBytes = Math.max(1, highWaterMarkBytes);
+    this.gate = new BackpressureGate(highWaterMarkBytes);
     this.refPromise = sink(this.iterable());
     // Observe rejection so an unawaited refPromise (e.g. after fail() in an
     // error path) doesn't surface as an unhandled rejection. Subsequent
@@ -504,38 +501,23 @@ export class BinaryStreamRouter {
    * `end()` / `fail()` releases all parked callers).
    */
   push(chunk: Uint8Array): Promise<void> {
-    if (this.finished) return Promise.resolve();
+    if (this.gate.closed) return Promise.resolve();
     this.buffer.push(chunk);
-    this.bufferedBytes += chunk.byteLength;
     this.wakeChunk();
-    if (this.bufferedBytes < this.highWaterMarkBytes) return Promise.resolve();
-    return new Promise<void>((res) => {
-      // Chain resolvers so a long park doesn't lose earlier waiters.
-      const prev = this.drainNotify;
-      this.drainNotify = prev
-        ? () => {
-            prev();
-            res();
-          }
-        : res;
-    });
+    return this.gate.charge(chunk.byteLength);
   }
 
   end(): void {
-    if (this.finished) return;
-    this.finished = true;
+    // close() releases any producer parked at the high-water mark — abort
+    // mid-stream would otherwise orphan the parked Promise. wakeChunk lets the
+    // consumer iterable observe the close and return.
+    this.gate.close();
     this.wakeChunk();
-    // Release any producer parked at the high-water mark — abort mid-stream
-    // would otherwise orphan the parked Promise.
-    this.wakeDrain();
   }
 
   fail(err: Error): void {
-    if (this.finished) return;
-    this.failure = err;
-    this.finished = true;
+    this.gate.fail(err);
     this.wakeChunk();
-    this.wakeDrain();
   }
 
   ref(): Promise<CacheRef> {
@@ -544,12 +526,12 @@ export class BinaryStreamRouter {
 
   /** @internal Test hook: current buffered byte count (consumer-unread). */
   public get _bufferedBytes(): number {
-    return this.bufferedBytes;
+    return this.gate._bufferedCost;
   }
 
   /** @internal Test hook: high-water mark in effect. */
   public get _highWaterMarkBytes(): number {
-    return this.highWaterMarkBytes;
+    return this.gate._highWaterMark;
   }
 
   /**
@@ -559,17 +541,7 @@ export class BinaryStreamRouter {
    * been closed.
    */
   public _awaitDrain(): Promise<void> {
-    if (this.finished) return Promise.resolve();
-    if (this.bufferedBytes < this.highWaterMarkBytes) return Promise.resolve();
-    return new Promise<void>((res) => {
-      const prev = this.drainNotify;
-      this.drainNotify = prev
-        ? () => {
-            prev();
-            res();
-          }
-        : res;
-    });
+    return this.gate.awaitBelowMark();
   }
 
   private wakeChunk(): void {
@@ -578,27 +550,19 @@ export class BinaryStreamRouter {
     n?.();
   }
 
-  private wakeDrain(): void {
-    const n = this.drainNotify;
-    this.drainNotify = undefined;
-    n?.();
-  }
-
   private async *iterable(): AsyncIterable<Uint8Array> {
     while (true) {
       while (this.buffer.length > 0) {
         const chunk = this.buffer.shift()!;
-        this.bufferedBytes -= chunk.byteLength;
-        // Wake any parked producer once we drop back below the mark. We
-        // resolve as soon as we cross the threshold rather than waiting for
-        // the buffer to drain fully — that keeps the producer pipelined.
-        if (this.drainNotify && this.bufferedBytes < this.highWaterMarkBytes) {
-          this.wakeDrain();
-        }
+        // Credit the gate as we hand the chunk to the sink; this wakes any
+        // producer parked at the high-water mark once we drop below it. We
+        // resolve as soon as we cross the threshold rather than waiting for the
+        // buffer to drain fully — that keeps the producer pipelined.
+        this.gate.credit(chunk.byteLength);
         yield chunk;
       }
-      if (this.failure) throw this.failure;
-      if (this.finished) return;
+      if (this.gate.failure) throw this.gate.failure;
+      if (this.gate.closed) return;
       await new Promise<void>((res) => {
         this.chunkNotify = res;
       });
