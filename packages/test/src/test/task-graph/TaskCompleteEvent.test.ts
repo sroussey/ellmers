@@ -9,10 +9,12 @@ import {
   Dataflow,
   FallbackTask,
   GraphAsTask,
+  MapTask,
   Task,
   TaskGraph,
   TaskRegistry,
   WhileTask,
+  Workflow,
 } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
@@ -153,6 +155,35 @@ class TCEStream extends Task<{ value: number }, { text: string }> {
   }
 }
 TaskRegistry.registerTask(TCEStream as never);
+
+// Map-iterable: doubles a single `item`. Used to verify that MapTask iterations
+// (which run cloned subgraphs) bubble their inner task events to the top graph.
+class TCEMapItem extends Task<{ item: number }, { processed: number }> {
+  static override readonly type = "TCEMapItem";
+  static override readonly category = "Test";
+  static override title = "Map item double";
+  static override description = "Doubles a single item";
+  static override inputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { item: { type: "number" } },
+      required: ["item"],
+      additionalProperties: true,
+    } as const satisfies DataPortSchema;
+  }
+  static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { processed: { type: "number" } },
+      required: ["processed"],
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+  override async execute(input: { item: number }): Promise<{ processed: number }> {
+    return { processed: input.item * 2 };
+  }
+}
+TaskRegistry.registerTask(TCEMapItem as never);
 
 describe("task_complete graph event", () => {
   it("emits task_complete for every completed task with its output", async () => {
@@ -296,6 +327,28 @@ describe("task_complete graph event", () => {
     unsub();
 
     expect(seen).toContain("fbody");
+  });
+
+  it("bubbles task_complete from a Map loop's per-iteration children", async () => {
+    const workflow = new Workflow();
+    workflow.map({ maxIterations: "unbounded" }).addTask(TCEMapItem).endMap();
+    const mapTask = workflow.graph.getTasks()[0] as MapTask;
+
+    const innerOutputs: number[] = [];
+    const unsub = workflow.graph.subscribe("task_complete", (taskId, output) => {
+      // The map node itself emits the aggregated array output; inner iterations
+      // emit a scalar `processed`. Each cloned iteration gets a fresh uuid, so we
+      // count the inner completions rather than assert on their ids.
+      if (String(taskId) !== mapTask.id && typeof output?.processed === "number") {
+        innerOutputs.push(output.processed);
+      }
+    });
+
+    await workflow.run({ item: [1, 2, 3] });
+    unsub();
+
+    // One bridged inner task_complete per item, carrying the doubled value.
+    expect(innerOutputs.sort((a, b) => a - b)).toEqual([2, 4, 6]);
   });
 
   it("does not leak the subgraph bridge after a failed run (no double-emit on re-run)", async () => {
