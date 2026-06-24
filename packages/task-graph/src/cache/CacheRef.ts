@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { StreamMode } from "../task/StreamTypes";
+
 /**
  * Brand value for {@link CacheRef}. A literal string (not a Symbol) so the brand
  * survives JSON serialization across queue rows / IPC boundaries — a Symbol-based
@@ -34,6 +36,20 @@ export const CACHE_REF_KIND = "task-graph/CacheRef" as const;
 export interface ICacheRef {
   readonly kind: typeof CACHE_REF_KIND;
   readonly $ref: string;
+  /**
+   * Which output port produced these bytes. Optional for backward
+   * compatibility: refs written before per-port sinks (single binary port) have
+   * no `port`, and resolve exactly as before. When present, it lets a row carry
+   * more than one ref unambiguously and the resolver pick the right one without
+   * a schema lookup.
+   */
+  readonly port?: string;
+  /**
+   * Stream mode of the persisted bytes, so a reader knows the codec to replay
+   * (`binary` raw bytes, `append` text, `object` NDJSON deltas). Absent on
+   * legacy binary refs, which default to binary handling.
+   */
+  readonly mode?: StreamMode;
   readonly size?: number;
   readonly mime?: string;
 }
@@ -60,12 +76,16 @@ export function isCacheRef(value: unknown): value is CacheRef {
  */
 export function makeCacheRef(raw: {
   readonly $ref: string;
+  readonly port?: string;
+  readonly mode?: StreamMode;
   readonly size?: number;
   readonly mime?: string;
 }): CacheRef {
   return {
     kind: CACHE_REF_KIND,
     $ref: raw.$ref,
+    ...(raw.port !== undefined && { port: raw.port }),
+    ...(raw.mode !== undefined && { mode: raw.mode }),
     ...(raw.size !== undefined && { size: raw.size }),
     ...(raw.mime !== undefined && { mime: raw.mime }),
   };
