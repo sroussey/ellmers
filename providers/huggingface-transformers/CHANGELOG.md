@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.20
+
+### Bug Fixes
+
+#### huggingface-transformers
+
+- resolve server device to undefined instead of "auto" (#597)
+
 ## 0.3.19
 
 ### Features

@@ -1,5 +1,38 @@
 # @workglow/test
 
+## 0.3.20
+
+### Features
+
+#### task-graph
+
+- bubble subgraph events for While and Fallback (data) groups
+- emit and bubble per-task task_progress events
+- bubble subgraph events from streaming groups too
+- bubble subgraph task events up to the parent graph
+- emit graph-level task_complete event per finished task
+
+### Bug Fixes
+
+#### task-graph
+
+- only emit task_progress while a task is actively running
+- harden task_complete emit against throwing listeners
+
+#### huggingface-transformers
+
+- resolve server device to undefined instead of "auto" (#597)
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1075.0
+- `@cloudflare/workers-types`: ^4.20260624.1
+- `miniflare`: ^4.20260623.0
+
 ## 0.3.19
 
 ### Features

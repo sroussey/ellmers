@@ -1,5 +1,25 @@
 # @workglow/task-graph
 
+## 0.3.20
+
+### Features
+
+#### task-graph
+
+- bubble subgraph events for While and Fallback (data) groups
+- emit and bubble per-task task_progress events
+- bubble subgraph events from streaming groups too
+- bubble subgraph task events up to the parent graph
+- emit graph-level task_complete event per finished task
+
+### Bug Fixes
+
+#### task-graph
+
+- only emit task_progress while a task is actively running
+- tear down subgraph event bridges in finally
+- harden task_complete emit against throwing listeners
+
 ## 0.3.19
 
 ## 0.3.18

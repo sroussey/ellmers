@@ -11,6 +11,7 @@ import { compileSchema } from "@workglow/util/schema";
 import { registerGraphWrapperFactory } from "../task-graph/Conversions";
 import { computeGraphEntitlements } from "../task-graph/GraphEntitlementUtils";
 import { computeGraphInputSchema, computeGraphOutputSchema } from "../task-graph/GraphSchemaUtils";
+import { bridgeSubGraphTaskEvents } from "../task-graph/SubGraphEventBridge";
 import { TaskGraph } from "../task-graph/TaskGraph";
 import { CompoundMergeStrategy, PROPERTY_ARRAY } from "../task-graph/TaskGraphRunner";
 import type { CreateLoopWorkflow } from "../task-graph/WorkflowFactories";
@@ -262,6 +263,15 @@ export class GraphAsTask<
         },
       });
 
+      // Bubble inner-task events up to the parent graph so subgraph children of
+      // a streaming group surface as individual task events on the top-level
+      // stream (previews + progress). Mirrors GraphAsTaskRunner for the
+      // non-streaming path; bubbles recursively for nested compound tasks.
+      const parentGraph = this.parentGraph;
+      const bridgeUnsub = parentGraph
+        ? bridgeSubGraphTaskEvents(this.subGraph, parentGraph)
+        : () => {};
+
       const runPromise = this.subGraph
         .run<Output>(input, { parentSignal: context.signal, accumulateLeafOutputs: false })
         .then(
@@ -277,27 +287,33 @@ export class GraphAsTask<
           }
         );
 
-      // Yield events as they arrive from ending nodes
-      while (!subgraphDone) {
-        if (eventQueue.length === 0) {
-          if (hasPending) {
-            // A notification arrived while we were active; consume it without blocking.
-            hasPending = false;
-          } else {
-            isWaiting = true;
-            await notifyPromise;
+      // Yield events as they arrive from ending nodes. Wrapped in try/finally so
+      // the subscriptions are torn down even if the consumer terminates this
+      // generator early (.return()/.throw()) — otherwise the parentGraph bridge
+      // would leak and double-emit on a later run of the same streaming group.
+      try {
+        while (!subgraphDone) {
+          if (eventQueue.length === 0) {
+            if (hasPending) {
+              // A notification arrived while we were active; consume it without blocking.
+              hasPending = false;
+            } else {
+              isWaiting = true;
+              await notifyPromise;
+            }
+          }
+          while (eventQueue.length > 0) {
+            yield eventQueue.shift()!;
           }
         }
+        // Drain any remaining events
         while (eventQueue.length > 0) {
           yield eventQueue.shift()!;
         }
+      } finally {
+        unsub();
+        bridgeUnsub();
       }
-      // Drain any remaining events
-      while (eventQueue.length > 0) {
-        yield eventQueue.shift()!;
-      }
-
-      unsub();
 
       const results = await runPromise;
       const mergedOutput = this.subGraph.mergeExecuteOutputsToRunOutput(

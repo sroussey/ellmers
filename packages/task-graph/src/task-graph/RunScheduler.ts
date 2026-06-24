@@ -171,6 +171,22 @@ export class RunScheduler {
     message?: string,
     ...args: any[]
   ): Promise<void> {
+    // Emit the task's OWN progress (before `progress` is reassigned to the
+    // graph-wide aggregate below) so consumers can track per-task progress —
+    // including subgraph children, which bridge this up to the parent graph.
+    // Only while the task is actively running: terminal handlers (complete /
+    // abort / error / disable) set the terminal status before calling
+    // handleProgress(100), and emitting then would paint a finished/skipped/
+    // failed task as "running at 100%". Guarded so a throwing listener can't
+    // escape a terminal handler (mirrors the task_complete emit).
+    if (task.status === TaskStatus.PROCESSING || task.status === TaskStatus.STREAMING) {
+      try {
+        this.graph.emit("task_progress", task.id, progress, message, ...args);
+      } catch (err) {
+        getLogger().error("task_progress listener threw", { taskId: task.id, error: err });
+      }
+    }
+
     const contributors = this.graph.getTasks().filter(taskPrototypeHasOwnExecute);
     if (contributors.length > 1) {
       const determinate = contributors.filter((t) => t.progress !== undefined);
@@ -294,6 +310,22 @@ export class RunScheduler {
             if (!errorRouted) {
               this.pushStatusFromNodeToEdges(task, ctx);
               edgeMat.pushErrorFromNodeToEdges(task);
+            }
+            // Emit a per-task completion event carrying the authoritative output
+            // so external consumers can react incrementally. Only successful
+            // tasks emit — failures route through edges / failedTaskErrors above.
+            // Guarded so a throwing listener cannot stall the scheduler (the
+            // emit precedes onTaskCompleted) or escape the Promise.allSettled
+            // loop unobserved.
+            if (task.status === TaskStatus.COMPLETED) {
+              try {
+                this.graph.emit("task_complete", task.id, task.runOutputData);
+              } catch (err) {
+                getLogger().error("task_complete listener threw", {
+                  taskId: task.id,
+                  error: err,
+                });
+              }
             }
             this.processScheduler.onTaskCompleted(task.id);
           }
