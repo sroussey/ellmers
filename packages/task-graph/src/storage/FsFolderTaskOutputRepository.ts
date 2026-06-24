@@ -12,6 +12,7 @@ import { mkdir, open, readdir, readFile, rename, rm, stat } from "node:fs/promis
 import { join } from "node:path";
 import type { CacheRef } from "../cache/CacheRef";
 import { makeCacheRef } from "../cache/CacheRef";
+import type { StreamMode } from "../task/StreamTypes";
 import type { TaskInput } from "../task/TaskTypes";
 import { tabularTaskOutputStorage } from "./TabularTaskOutputStorage";
 import {
@@ -25,10 +26,10 @@ import {
  * (including in-flight `.tmp` files and foreign `$ref` schemes) never resolves.
  * The single-segment match also rules out path traversal through a crafted ref.
  */
-const REF_PATTERN = /^fsfolder:\/\/blobs\/([A-Za-z0-9._-]+\.bin)$/;
+const REF_PATTERN = /^fsfolder:\/\/blobs\/([\w.-]+\.bin)$/;
 
 function sanitize(s: string): string {
-  return s.replace(/[^A-Za-z0-9._-]/g, "-");
+  return s.replace(/[^\w.-]/g, "-");
 }
 
 /**
@@ -90,20 +91,46 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     chunks: AsyncIterable<Uint8Array>,
     metadata: Record<string, unknown>
   ): Promise<CacheRef> {
-    await mkdir(this.blobsDir, { recursive: true });
-    // The fingerprint covers the raw taskType too: `sanitize` is lossy, so two
-    // distinct task types can share a sanitized prefix — the hash keeps their
-    // blobs distinct while the prefix keeps names greppable and prefix-deletable.
-    // The per-write UUID suffix makes every blob path unique so two
-    // concurrent writers with the same `(taskType, inputs)` can't race on the
-    // same file (a row-commit failure on one writer must not delete the blob
-    // the other writer's row points at). Legacy un-suffixed names written by
-    // older versions of this repo still resolve through {@link REF_PATTERN}.
-    // Note (multi-tenant): there is no tenant axis here. Identical inputs from
-    // two tenants resolve to the same prefix and share an existence side-
-    // channel. See the class JSDoc for the deployment assumption.
     const fingerprint = await makeFingerprint({ __taskType: taskType, inputs });
     const name = `${sanitize(taskType)}_${fingerprint}_${randomUUID()}.bin`;
+    const size = await this.writeSidecar(name, chunks);
+    this.emit("output_saved", taskType);
+    const mime = typeof metadata.mime === "string" ? metadata.mime : undefined;
+    return makeCacheRef({ $ref: `fsfolder://blobs/${name}`, size, mime });
+  }
+
+  override async saveOutputStreamPort(
+    taskType: string,
+    inputs: TaskInput,
+    port: string,
+    mode: StreamMode,
+    chunks: AsyncIterable<Uint8Array>,
+    metadata: Record<string, unknown>
+  ): Promise<CacheRef> {
+    const fingerprint = await makeFingerprint({ __taskType: taskType, inputs });
+    // Port is part of the name so a multi-port task's sidecars are distinct and
+    // remain greppable / prefix-deletable; the file stays an opaque `.bin` so
+    // the existing readers resolve it unchanged — the codec to replay is named
+    // by the ref's `mode`, not the extension.
+    const name = `${sanitize(taskType)}_${fingerprint}_${sanitize(port)}_${randomUUID()}.bin`;
+    const size = await this.writeSidecar(name, chunks);
+    this.emit("output_saved", taskType);
+    const mime = typeof metadata.mime === "string" ? metadata.mime : undefined;
+    return makeCacheRef({ $ref: `fsfolder://blobs/${name}`, port, mode, size, mime });
+  }
+
+  /**
+   * Stream `chunks` to a uniquely-named sidecar under `blobsDir`, returning the
+   * byte count. Bytes go to a `.tmp` file, are fsync'd, then atomically renamed
+   * to `name` — a crash mid-write never publishes a readable partial blob. The
+   * directory entry is fsync'd best-effort so the rename itself survives a crash
+   * (FS-dependent); platforms that reject directory fsync fall through silently.
+   * Callers compute `name` (the prefix keeps names greppable and prefix-
+   * deletable; a per-write UUID suffix makes every path unique so two concurrent
+   * writers with the same `(taskType, inputs)` cannot race on one file).
+   */
+  private async writeSidecar(name: string, chunks: AsyncIterable<Uint8Array>): Promise<number> {
+    await mkdir(this.blobsDir, { recursive: true });
     const tmpPath = join(this.blobsDir, `${name}.tmp`);
     const handle = await open(tmpPath, "w");
     let size = 0;
@@ -113,22 +140,11 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
           await handle.write(chunk);
           size += chunk.byteLength;
         }
-        // Flush the file's data to the underlying storage before we publish
-        // it under the final name. Without this, a power loss between the
-        // rename and the OS flushing dirty pages can leave the published
-        // blob name pointing at zero bytes (FS-dependent).
         await handle.sync();
       } finally {
         await handle.close();
       }
       await rename(tmpPath, join(this.blobsDir, name));
-      // Flush the directory entry itself: on ext4 `data=ordered` and similar
-      // filesystems the rename is not durable until the parent directory's
-      // metadata is flushed, so a crash between the rename and that flush
-      // can leave the published name visible but pointing at stale (zero-
-      // byte) data. Best-effort: platforms that reject directory fsync fall
-      // through silently — recomputing on next read is the documented
-      // fallback.
       try {
         const dir = await open(this.blobsDir, "r");
         try {
@@ -147,9 +163,7 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
       await rm(tmpPath, { force: true });
       throw err;
     }
-    this.emit("output_saved", taskType);
-    const mime = typeof metadata.mime === "string" ? metadata.mime : undefined;
-    return makeCacheRef({ $ref: `fsfolder://blobs/${name}`, size, mime });
+    return size;
   }
 
   private blobPath(ref: CacheRef): string | undefined {

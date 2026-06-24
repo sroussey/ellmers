@@ -13,6 +13,7 @@ import type { StreamEvent, StreamMode, Usage } from "./StreamTypes";
 import {
   assertBinaryFormat,
   DEFAULT_BINARY_HIGH_WATER_BYTES,
+  foldObjectDelta,
   getOutputStreamMode,
   getStreamingPorts,
   materializeBinary,
@@ -220,27 +221,10 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
               this.task.emit("status", this.task.status);
             }
             if (accumulatedObjects) {
-              const existing = accumulatedObjects.get(event.port);
-              if (Array.isArray(event.objectDelta)) {
-                // Array delta: upsert items by `id` into accumulated array
-                const arr: unknown[] = Array.isArray(existing) ? [...existing] : [];
-                for (const item of event.objectDelta) {
-                  const itemObj = item as Record<string, unknown>;
-                  if (itemObj && typeof itemObj === "object" && "id" in itemObj) {
-                    const idx = arr.findIndex(
-                      (e) => (e as Record<string, unknown>).id === itemObj.id
-                    );
-                    if (idx >= 0) arr[idx] = item;
-                    else arr.push(item);
-                  } else {
-                    arr.push(item);
-                  }
-                }
-                accumulatedObjects.set(event.port, arr);
-              } else {
-                // Non-array (e.g. structured generation): replace semantics
-                accumulatedObjects.set(event.port, event.objectDelta);
-              }
+              accumulatedObjects.set(
+                event.port,
+                foldObjectDelta(accumulatedObjects.get(event.port), event.objectDelta)
+              );
             }
             // Update runOutputData with accumulated state so listeners see growing state
             this.task.runOutputData = {
