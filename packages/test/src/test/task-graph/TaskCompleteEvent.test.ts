@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { StreamEvent } from "@workglow/task-graph";
+import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import {
   Dataflow,
   FallbackTask,
@@ -93,6 +93,37 @@ class TCEPassthrough extends Task<{ value: number }, { value: number }> {
   }
 }
 TaskRegistry.registerTask(TCEPassthrough as never);
+
+// Reports progress DURING execution (while PROCESSING) so it produces a
+// non-terminal task_progress event (the terminal 100% tick is not emitted).
+class TCEProgress extends Task<{ value: number }, { value: number }> {
+  static override readonly type = "TCEProgress";
+  static override readonly category = "Test";
+  static override title = "Reports progress";
+  static override description = "Reports mid-run progress";
+  static override inputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { value: { type: "number" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+  static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { value: { type: "number" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+  override async execute(
+    input: { value: number },
+    ctx: IExecuteContext
+  ): Promise<{ value: number }> {
+    ctx.updateProgress(50, "halfway");
+    return { value: (input.value ?? 0) + 1 };
+  }
+}
+TaskRegistry.registerTask(TCEProgress as never);
 
 class TCEStream extends Task<{ value: number }, { text: string }> {
   static override readonly type = "TCEStream";
@@ -185,22 +216,24 @@ describe("task_complete graph event", () => {
 
   it("bubbles task_progress from subgraph children to the top-level graph", async () => {
     const subGraph = new TaskGraph();
-    subGraph.addTask(new TCEAddOne({ id: "pinner" }));
+    subGraph.addTask(new TCEProgress({ id: "pinner" }));
     const group = new GraphAsTask({ id: "pgroup", subGraph });
 
     const top = new TaskGraph();
     top.addTask(group);
 
-    const seen: string[] = [];
-    const unsub = top.subscribe("task_progress", (taskId) => {
-      seen.push(String(taskId));
+    const seen: Array<{ id: string; progress: number | undefined }> = [];
+    const unsub = top.subscribe("task_progress", (taskId, progress) => {
+      seen.push({ id: String(taskId), progress });
     });
 
     await top.run({ value: 5 });
     unsub();
 
-    // Inner task emits progress (at least the terminal-100 tick) which bridges up.
-    expect(seen).toContain("pinner");
+    // The inner task's mid-run progress (50) bridges up; its terminal 100% tick
+    // (fired after the task is COMPLETED) is NOT emitted as task_progress.
+    expect(seen).toContainEqual({ id: "pinner", progress: 50 });
+    expect(seen.filter((e) => e.id === "pinner").every((e) => e.progress !== 100)).toBe(true);
   });
 
   it("bubbles task_complete from a streaming group's children (executeStream path)", async () => {
@@ -263,5 +296,52 @@ describe("task_complete graph event", () => {
     unsub();
 
     expect(seen).toContain("fbody");
+  });
+
+  it("does not leak the subgraph bridge after a failed run (no double-emit on re-run)", async () => {
+    let attempt = 0;
+    class FailFirstThenPass extends Task<{ value: number }, { value: number }> {
+      static override readonly type = "TCEFailFirstThenPass";
+      static override readonly category = "Test";
+      static override title = "Fail then pass";
+      static override description = "Throws on first run, succeeds after";
+      static override inputSchema(): DataPortSchema {
+        return {
+          type: "object",
+          properties: { value: { type: "number" } },
+          additionalProperties: false,
+        } as const satisfies DataPortSchema;
+      }
+      static override outputSchema(): DataPortSchema {
+        return {
+          type: "object",
+          properties: { value: { type: "number" } },
+          additionalProperties: false,
+        } as const satisfies DataPortSchema;
+      }
+      override async execute(input: { value: number }): Promise<{ value: number }> {
+        attempt += 1;
+        if (attempt === 1) throw new Error("first attempt fails");
+        return { value: (input.value ?? 0) + 1 };
+      }
+    }
+    TaskRegistry.registerTask(FailFirstThenPass as never);
+
+    const subGraph = new TaskGraph();
+    subGraph.addTask(new FailFirstThenPass({ id: "leaky" }));
+    const group = new GraphAsTask({ id: "lgroup", subGraph });
+    const top = new TaskGraph();
+    top.addTask(group);
+
+    const seen: string[] = [];
+    const unsub = top.subscribe("task_complete", (taskId) => seen.push(String(taskId)));
+
+    // First run rejects (inner throws) — the bridge MUST be torn down in finally.
+    await top.run({ value: 5 }).catch(() => {});
+    // Second run succeeds. A leaked first-run bridge would double-emit "leaky".
+    await top.run({ value: 5 }).catch(() => {});
+    unsub();
+
+    expect(seen.filter((id) => id === "leaky")).toHaveLength(1);
   });
 });

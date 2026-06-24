@@ -174,7 +174,18 @@ export class RunScheduler {
     // Emit the task's OWN progress (before `progress` is reassigned to the
     // graph-wide aggregate below) so consumers can track per-task progress —
     // including subgraph children, which bridge this up to the parent graph.
-    this.graph.emit("task_progress", task.id, progress, message, ...args);
+    // Only while the task is actively running: terminal handlers (complete /
+    // abort / error / disable) set the terminal status before calling
+    // handleProgress(100), and emitting then would paint a finished/skipped/
+    // failed task as "running at 100%". Guarded so a throwing listener can't
+    // escape a terminal handler (mirrors the task_complete emit).
+    if (task.status === TaskStatus.PROCESSING || task.status === TaskStatus.STREAMING) {
+      try {
+        this.graph.emit("task_progress", task.id, progress, message, ...args);
+      } catch (err) {
+        getLogger().error("task_progress listener threw", { taskId: task.id, error: err });
+      }
+    }
 
     const contributors = this.graph.getTasks().filter(taskPrototypeHasOwnExecute);
     if (contributors.length > 1) {
