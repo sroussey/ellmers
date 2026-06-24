@@ -373,6 +373,39 @@ export function materializeBinary(
 }
 
 /**
+ * Folds one `object-delta` into the running accumulated value, matching the
+ * live accumulator semantics:
+ *  - **Array** delta: upsert each item by its `id` into the accumulated array
+ *    (replace an existing entry with the same `id`, otherwise append). Items
+ *    without an `id` are appended.
+ *  - **Non-array** delta (e.g. structured generation): replace the accumulated
+ *    value entirely with the latest snapshot.
+ *
+ * Shared by the live streaming accumulator and the object stream codec so a
+ * replayed/materialized cache value folds identically to a fresh run.
+ */
+export function foldObjectDelta(
+  existing: Record<string, unknown> | unknown[] | undefined,
+  delta: Record<string, unknown> | unknown[]
+): Record<string, unknown> | unknown[] {
+  if (Array.isArray(delta)) {
+    const arr: unknown[] = Array.isArray(existing) ? [...existing] : [];
+    for (const item of delta) {
+      const itemObj = item as Record<string, unknown>;
+      if (itemObj && typeof itemObj === "object" && "id" in itemObj) {
+        const idx = arr.findIndex((e) => (e as Record<string, unknown>).id === itemObj.id);
+        if (idx >= 0) arr[idx] = item;
+        else arr.push(item);
+      } else {
+        arr.push(item);
+      }
+    }
+    return arr;
+  }
+  return delta;
+}
+
+/**
  * Returns a map of port names to their JSON Schemas for every output port
  * that declares `"x-structured-output": true`.
  *

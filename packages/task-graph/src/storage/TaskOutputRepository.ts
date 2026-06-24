@@ -6,6 +6,7 @@
 
 import { createServiceToken, EventEmitter, EventParameters } from "@workglow/util";
 import type { CacheRef } from "../cache/CacheRef";
+import type { StreamMode } from "../task/StreamTypes";
 import { TaskInput, TaskOutput } from "../task/TaskTypes";
 
 export const TASK_OUTPUT_REPOSITORY = createServiceToken<TaskOutputRepository>(
@@ -104,6 +105,26 @@ export abstract class TaskOutputRepository {
   saveOutputStream?(
     taskType: string,
     inputs: TaskInput,
+    chunks: AsyncIterable<Uint8Array>,
+    metadata: Record<string, unknown>
+  ): Promise<CacheRef>;
+
+  /**
+   * OPTIONAL port-aware superset of {@link saveOutputStream}. Persists one
+   * output port's already-encoded byte stream (a stream codec applies the
+   * per-mode encoding before this call), keyed by `(taskType, inputs, port)` so
+   * a task with several streamable ports stores each independently. The
+   * returned {@link CacheRef} carries `port` and `mode` so the reader knows
+   * which codec to replay. Bytes are read back through {@link getOutputByRef} /
+   * {@link getOutputStreamByRef}, exactly like a binary ref. Backings that
+   * implement {@link saveOutputStream} but not this method support only the
+   * legacy single-binary-port path.
+   */
+  saveOutputStreamPort?(
+    taskType: string,
+    inputs: TaskInput,
+    port: string,
+    mode: StreamMode,
     chunks: AsyncIterable<Uint8Array>,
     metadata: Record<string, unknown>
   ): Promise<CacheRef>;

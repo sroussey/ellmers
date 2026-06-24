@@ -12,3 +12,4 @@ export * from "./CacheRegistry";
 export * from "./resolveJobOutput";
 export * from "./resolveRef";
 export * from "./RunPrivateCacheRepo";
+export * from "./streamCodec";
