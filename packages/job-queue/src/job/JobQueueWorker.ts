@@ -32,7 +32,7 @@ import {
 } from "./JobError";
 import { withJobErrorDiagnostics } from "./JobErrorDiagnostics";
 import type { StreamEventLike } from "./JobQueueEventListeners";
-import { classToStorage, storageToClass } from "./JobStorageConverters";
+import { storageToClass } from "./JobStorageConverters";
 
 /**
  * Upper bound on {@link JobQueueWorker.getLimiterWakeDelay}. Prevents a
