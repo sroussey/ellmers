@@ -460,24 +460,36 @@ export class AiChatWithKbTask extends StreamingAiTask<
               console.warn(`[AiChatWithKbTask] knowledge base "${kbId}" not registered`);
               return { kbId, kbLabel: kbId, kb: undefined, results: [] as ChunkSearchResult[] };
             }
-            let results: ChunkSearchResult[];
-            if (queryVector) {
-              results = await (kb as KnowledgeBase).similaritySearch(queryVector, { topK });
-            } else {
-              const search = context.own(new KbSearchTask());
-              const out = await search.run({
-                knowledgeBase: kb as KnowledgeBase,
-                query: lastUserText,
-                topK,
-              });
-              results = out.results;
+            try {
+              let results: ChunkSearchResult[];
+              if (queryVector) {
+                results = await (kb as KnowledgeBase).similaritySearch(queryVector, { topK });
+              } else {
+                const search = context.own(new KbSearchTask());
+                const out = await search.run({
+                  knowledgeBase: kb as KnowledgeBase,
+                  query: lastUserText,
+                  topK,
+                });
+                results = out.results;
+              }
+              return {
+                kbId,
+                kbLabel: kb.title || kbId,
+                kb: kb as KnowledgeBase,
+                results,
+              };
+            } catch (error) {
+              // A single KB's embedding/search failure must not abort the turn;
+              // degrade to empty results for that KB so other KBs still contribute.
+              console.warn(`[AiChatWithKbTask] knowledge base "${kbId}" search failed`, error);
+              return {
+                kbId,
+                kbLabel: kb.title || kbId,
+                kb: kb as KnowledgeBase,
+                results: [] as ChunkSearchResult[],
+              };
             }
-            return {
-              kbId,
-              kbLabel: kb.title || kbId,
-              kb: kb as KnowledgeBase,
-              results,
-            };
           })
         );
       }

@@ -113,7 +113,13 @@ export function classifyProviderError(err: unknown, taskType: string, provider: 
       : typeof (err as any)?.statusCode === "number"
         ? (err as any).statusCode
         : (() => {
-            const m = message.match(/\b([45]\d{2})\b/);
+            // Only treat a 4xx/5xx number as an HTTP status when it appears in
+            // an HTTP-shaped context (e.g. "HTTP 503", "status: 429"). A bare
+            // number like the "512" in "Sequence length 512 exceeds limit" or a
+            // model id must not be scavenged as a status, or it misclassifies.
+            const m = message.match(
+              /\b(?:HTTP\/?\d?\.?\d?\s*|status(?:\s*code)?\s*(?:[:=]\s*)?)([45]\d{2})\b/i
+            );
             return m ? parseInt(m[1], 10) : undefined;
           })();
 

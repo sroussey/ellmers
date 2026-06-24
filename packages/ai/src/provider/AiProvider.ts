@@ -191,6 +191,11 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
     const registry = getAiProviderRegistry();
     if (registry.getProvider(this.name)) {
       registry.unregisterProvider(this.name);
+      // unregisterProvider only clears registry maps; a worker-backed provider
+      // also has a worker (and, for factory workers, an idle timer) registered
+      // on the WorkerManager. Without removing it here, the re-registration
+      // below throws "Worker <name> is already registered."
+      await globalServiceRegistry.get(WORKER_MANAGER).terminateWorker(this.name);
     }
 
     await this.onInitialize(context);
@@ -254,7 +259,12 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
     } catch (err) {
       // Clean up the partially-registered provider so the registry isn't left
       // in an inconsistent state (e.g., functions registered but no queue).
+      // For worker-backed registration the worker (and its idle timer) was
+      // already registered above, so remove it too or it leaks under this name.
       registry.unregisterProvider(this.name);
+      if (!isInline && options.worker) {
+        await globalServiceRegistry.get(WORKER_MANAGER).terminateWorker(this.name);
+      }
       throw err;
     }
   }

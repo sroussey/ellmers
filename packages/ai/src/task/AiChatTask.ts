@@ -342,6 +342,15 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
         yield event;
       }
 
+      // A turn that produced no assistant content (provider emitted only
+      // non-text events, an immediate finish, or an empty/aborted response)
+      // must not append an empty assistant message to history nor count as a
+      // completed turn — doing so poisons multi-turn context and burns a turn.
+      // Treat it as end-of-conversation instead.
+      if (assistantText.length === 0) {
+        break;
+      }
+
       const assistantMsg: ChatMessage = {
         role: "assistant",
         content: [{ type: "text", text: assistantText }],

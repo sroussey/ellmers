@@ -346,17 +346,26 @@ export class ToolCallingTask extends StreamingAiTask<
     input: ToolCallingTaskInput,
     executeContext: IExecuteContext
   ): Promise<ToolCallingTaskOutput | undefined> {
-    const result = await super.execute(input, executeContext);
+    // Register the session disposer BEFORE running so it still fires if
+    // super.execute() throws or the stream aborts mid-iteration — the provider
+    // may already have allocated the session on the first run-fn invocation.
+    // The resourceScope is first-registration-wins and disposes via allSettled,
+    // so computing the session id up front and registering early is safe.
+    await this.getJobInput(input);
     this.registerSessionDispose(input, executeContext);
-    return result;
+    return super.execute(input, executeContext);
   }
 
   override async *executeStream(
     input: ToolCallingTaskInput,
     context: IExecuteContext
   ): AsyncIterable<StreamEvent<ToolCallingTaskOutput>> {
-    yield* super.executeStream(input, context);
+    // Register the session disposer BEFORE streaming for the same reason as
+    // execute(): an abort or throw mid-stream must still leave the disposer
+    // registered so disposeSession runs on scope teardown.
+    await this.getJobInput(input);
     this.registerSessionDispose(input, context);
+    yield* super.executeStream(input, context);
   }
 }
 

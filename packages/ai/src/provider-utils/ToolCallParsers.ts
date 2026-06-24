@@ -322,9 +322,13 @@ export const parseLlama: ParserFn = (text) => {
   // Uses balanced-brace scanning instead of regex to avoid ReDoS
   if (calls.length === 0) {
     const blocks = findBalancedBlocks(text, "{", "}");
+    let firstBlockStart: number | undefined;
     for (const block of blocks) {
       const parsed = tryParseJson(block.text) as Record<string, unknown> | undefined;
       if (parsed?.name && (parsed.parameters !== undefined || parsed.arguments !== undefined)) {
+        if (firstBlockStart === undefined) {
+          firstBlockStart = block.start;
+        }
         calls.push(
           makeToolCall(
             parsed.name as string,
@@ -334,8 +338,11 @@ export const parseLlama: ParserFn = (text) => {
         );
       }
     }
-    if (calls.length > 0) {
-      content = text.slice(0, text.indexOf(calls[0].name) - '{"name": "'.length).trim();
+    if (calls.length > 0 && firstBlockStart !== undefined) {
+      // Slice the leading content to the actual block start rather than
+      // reconstructing the offset from a literal `{"name": "` prefix, which
+      // breaks when the model emits a different key order or no space.
+      content = text.slice(0, firstBlockStart).trim();
     }
   }
 
