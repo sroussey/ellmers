@@ -23,8 +23,10 @@ const isNonEmptyObject = (v: unknown): v is Record<string, unknown> =>
  * - `finish` → captured separately via {@link observeFinish}; mandatory before
  *   {@link materialize}.
  *
- * Mixed-mode (both text-delta and object-delta on the same stream) is
- * rejected at materialise time.
+ * Text and object deltas on DISTINCT ports coexist and compose into one object
+ * (e.g. tool-calling streams text on `text` and tool calls on `toolCalls`);
+ * accumulated deltas take precedence over the finish payload, mirroring the
+ * task-graph StreamProcessor so `.run()` and streaming produce identical output.
  *
  * This accumulator is **only** instantiated at explicit terminal-consumer
  * sites (AiTask.execute, StreamProcessor `ctx.shouldAccumulate` branch). Do
@@ -125,13 +127,6 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
       err.lastEventType = lastEventType;
       throw err;
     }
-    if (this.hasTextDeltas && this.hasObjectDeltas) {
-      throw new Error(
-        "StreamEventAccumulator: stream mixed text-delta and object-delta events. " +
-          "Mixed-mode streams are not supported."
-      );
-    }
-
     // One-shot: finish carries the complete payload.
     if (!this.hasTextDeltas && !this.hasObjectDeltas && !this.hasSnapshots) {
       if (isNonEmptyObject(this.finishData)) return this.finishData;
@@ -146,18 +141,24 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
       return this.snapshotAccumulator as T;
     }
 
-    // Text-delta mode — per-port map → object.
-    if (this.hasTextDeltas && !this.hasObjectDeltas) {
-      const result: Record<string, unknown> = {};
-      for (const [port, text] of this.textAccumulator) result[port] = text;
-      if (isNonEmptyObject(this.finishData)) Object.assign(result, this.finishData);
-      return result as unknown as T;
+    // Delta mode — text and/or object deltas. Accumulated deltas take precedence
+    // over the finish payload, so a streaming finish (empty `{}` or a structural
+    // default scaffold like `{ text: "", toolCalls: [] }`) can never clobber
+    // streamed content. Text and object deltas on DISTINCT ports compose (e.g.
+    // tool-calling streams text on `text` and tool calls on `toolCalls`); a
+    // same-port collision resolves object-last. Mirrors the task-graph
+    // StreamProcessor so `.run()` and streaming produce identical output.
+    const fd = this.finishData;
+    const result: Record<string, unknown> =
+      fd !== null && typeof fd === "object" && !Array.isArray(fd)
+        ? { ...(fd as Record<string, unknown>) }
+        : {};
+    for (const [port, text] of this.textAccumulator) {
+      if (text.length > 0) result[port] = text;
     }
-
-    // Object-delta mode — per-port object → output, then merge finish.
-    const merged: Record<string, unknown> = {};
-    for (const [port, obj] of this.objectAccumulator) merged[port] = obj;
-    if (isNonEmptyObject(this.finishData)) Object.assign(merged, this.finishData as object);
-    return merged as unknown as T;
+    for (const [port, obj] of this.objectAccumulator) {
+      result[port] = obj;
+    }
+    return result as unknown as T;
   }
 }

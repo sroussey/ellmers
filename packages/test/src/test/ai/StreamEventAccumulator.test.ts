@@ -66,12 +66,32 @@ describe("StreamEventAccumulator", () => {
     });
   });
 
-  it("throws when both text-delta and object-delta were observed", () => {
+  it("composes text-delta and object-delta on distinct ports", () => {
     const acc = new StreamEventAccumulator<Out>();
     acc.observe({ type: "text-delta", port: "text", textDelta: "x" } as StreamEvent<Out>);
     acc.observe({ type: "object-delta", port: "obj", objectDelta: { a: 1 } } as StreamEvent<Out>);
     acc.observeFinish({ type: "finish", data: {} });
-    expect(() => acc.materialize()).toThrow(/mixed/i);
+    expect(acc.materialize()).toEqual({ text: "x", obj: { a: 1 } });
+  });
+
+  it("accumulated deltas win over a structural finish scaffold (no clobber)", () => {
+    // A tool-calling run-fn streams tool calls as object-delta then emits a
+    // structural default scaffold on finish. The streamed calls must survive,
+    // and the absent `text` port falls back to the scaffold default.
+    const acc = new StreamEventAccumulator<Out>();
+    acc.observe({
+      type: "object-delta",
+      port: "toolCalls",
+      objectDelta: [{ id: "call_0", name: "search", input: {} }],
+    } as StreamEvent<Out>);
+    acc.observeFinish({
+      type: "finish",
+      data: { text: "", toolCalls: [] },
+    } as StreamEvent<Out>);
+    expect(acc.materialize()).toEqual({
+      text: "",
+      toolCalls: [{ id: "call_0", name: "search", input: {} }],
+    });
   });
 
   it("throws on error event", () => {
