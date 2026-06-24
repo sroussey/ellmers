@@ -14,7 +14,7 @@ import type {
 } from "@workglow/job-queue";
 import { JobStatus, validateLeaseMs } from "@workglow/job-queue";
 import { HybridSubscriptionManager } from "@workglow/storage";
-import { createServiceToken, deepEqual, makeFingerprint, uuid4 } from "@workglow/util";
+import { createServiceToken, deepEqual, getLogger, makeFingerprint, uuid4 } from "@workglow/util";
 import { IndexedDbMigrationRunner } from "../migrations/IndexedDbMigrationRunner";
 import { indexedDbQueueMigrations } from "../migrations/indexedDbQueueMigrations";
 import { openIdb } from "../storage/openIdb";
@@ -419,9 +419,10 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
           | (JobStorageFormat<Input, Output> & Record<string, unknown>)
           | undefined;
         if (!existing || existing.queue !== this.queueName || !this.matchesPrefixes(existing)) {
-          reject(
-            new Error(`Job ${job.id} not found or does not belong to queue ${this.queueName}`)
-          );
+          // Contract: complete() must silently no-op (not throw) when the row is
+          // missing or belongs to another queue. Lease-expiry races can legitimately
+          // make the target row disappear between claim and complete, so the
+          // transaction is allowed to commit with no write and resolve.
           return;
         }
         const currentAttempts = existing.attempts ?? 0;
@@ -673,7 +674,12 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     details: Record<string, any> | null
   ): Promise<void> {
     const job = await this.get(id);
-    if (!job) throw new Error(`Job ${id} not found`);
+    if (!job) {
+      // Contract: progress updates for a missing job silently no-op — the job may
+      // have already completed/been removed, or a lease-expiry race removed it.
+      getLogger().warn("Job not found for progress update", { id });
+      return;
+    }
 
     job.progress = progress;
     job.progress_message = message;
