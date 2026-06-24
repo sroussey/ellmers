@@ -8,6 +8,13 @@ export default defineConfig({
   envDir: __dirname,
   test: {
     setupFiles: ["./vitest.setup.ts"],
+    // The nightly type-drift guard runs `.test-d.ts` files through vitest's
+    // `--typecheck` engine. Scope the tsc program to the package under test so
+    // unrelated source (example UIs needing `jsx`, providers relying on their
+    // own ambient `types`/`lib`) is not swept in and reported as drift.
+    typecheck: {
+      tsconfig: "./tsconfig.typecheck.json",
+    },
     testTimeout: 15000, // 15 second global timeout (WASM Postgres / PGlite init can be slow)
     // Vitest uses hookTimeout for beforeEach/afterAll separately from testTimeout; keep both aligned
     hookTimeout: 15000,

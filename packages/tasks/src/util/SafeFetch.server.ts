@@ -77,7 +77,7 @@ async function resolveAll(hostname: string): Promise<readonly ResolvedAddress[]>
 function isLiteralHost(host: string): boolean {
   // Literal IPv4 if it looks numeric/dotted, or IPv6 if it contains a colon.
   if (host.includes(":")) return true;
-  return /^[0-9a-fA-FxX.]+$/.test(host);
+  return /^[0-9a-fx.]+$/i.test(host);
 }
 
 function isRedirectStatus(status: number): boolean {

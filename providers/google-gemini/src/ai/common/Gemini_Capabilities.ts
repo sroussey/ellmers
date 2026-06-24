@@ -85,7 +85,7 @@ export function inferGeminiCapabilities(model: CapabilityHints): readonly Capabi
   }
 
   // gemini-1.0-pro (without -vision suffix) — no vision, no count-tokens.
-  if (/^gemini-1\.0-pro($|-(?!vision))/i.test(id)) {
+  if (/^gemini-1\.0-pro(?:$|-(?!vision))/i.test(id)) {
     return [
       "text.generation",
       "text.rewriter",
@@ -117,7 +117,7 @@ export function inferGeminiCapabilities(model: CapabilityHints): readonly Capabi
   //   gemini-2.5-flash, gemini-2.5-pro
   //   gemini-3-flash-preview, gemini-3-pro-image-preview (image handled above)
   //   gemini-3.1-pro-preview, gemini-3.1-flash-lite-preview, gemini-3.1-flash-image-preview (image above)
-  if (/^gemini-(?:1\.5|2\.[05]|2\.5|3(?:\.\d+)?-)/i.test(id)) {
+  if (/^gemini-(?:1\.5|2\.[05]|3(?:\.\d+)?-)/i.test(id)) {
     return [
       "text.generation",
       "text.rewriter",

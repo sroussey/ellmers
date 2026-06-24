@@ -8,9 +8,9 @@
 
 import {
   ClientCredentialsProvider,
+  createPrivateKeyJwtAuth,
   PrivateKeyJwtProvider,
   StaticPrivateKeyJwtProvider,
-  createPrivateKeyJwtAuth,
 } from "@modelcontextprotocol/sdk/client/auth-extensions.js";
 import type {
   AddClientAuthentication,
@@ -24,7 +24,7 @@ import type {
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { ICredentialStore } from "@workglow/util";
-import { getGlobalCredentialStore } from "@workglow/util";
+import { getGlobalCredentialStore, MissingCredentialError } from "@workglow/util";
 import type { McpAuthConfig } from "./McpAuthTypes";
 
 export { UnauthorizedError };
@@ -368,47 +368,65 @@ export function createAuthProvider(
 /**
  * Resolves credential-store keys in auth config to actual secret values.
  *
- * This is needed for the standalone MCP task path where config properties
- * are NOT auto-resolved by `resolveSchemaInputs`. For the AgentTask path,
- * credential resolution happens automatically via `format: "credential"`.
+ * Strictness defaults to whether the caller passed an explicit `credentialStore`:
+ * an explicit store implies the caller manages credentials and a missing key is
+ * an error (fail closed → throw `MissingCredentialError`); the no-argument form
+ * falls back to the global store and the legacy literal-passthrough behaviour
+ * (treat the value as a literal secret). Passing `{ strict: false }` together
+ * with a store is the documented escape hatch for callers that intentionally
+ * want literal passthrough.
+ *
+ * Failing closed matters: when a credential key is missing in strict mode, the
+ * literal key name (e.g. `"MY_API_KEY"`) used to flow through to the remote
+ * server as `Authorization: Bearer MY_API_KEY`, exposing the key name as if it
+ * were a bearer token. Resolution now either returns the real secret or throws.
  */
+export interface ResolveAuthSecretsOptions {
+  readonly strict?: boolean;
+}
+
 export async function resolveAuthSecrets(
   auth: McpAuthConfig,
-  credentialStore?: ICredentialStore
+  credentialStore?: ICredentialStore,
+  options: ResolveAuthSecretsOptions = {}
 ): Promise<McpAuthConfig> {
   if (auth.type === "none") return auth;
 
+  const explicitStore = credentialStore !== undefined;
   const store = credentialStore ?? getGlobalCredentialStore();
+  const strict = options.strict ?? explicitStore;
 
+  async function resolve(value: string): Promise<string>;
+  async function resolve(value: string | undefined): Promise<string | undefined>;
   async function resolve(value: string | undefined): Promise<string | undefined> {
     if (!value) return value;
     const resolved = await store.get(value);
-    // If the store returns a value, use it; otherwise keep the original
-    // (it may be a literal secret, not a key).
-    return resolved ?? value;
+    if (resolved !== undefined) return resolved;
+    if (strict) throw new MissingCredentialError(value);
+    // Non-strict (legacy) mode: treat the value as a literal secret.
+    return value;
   }
 
   switch (auth.type) {
     case "bearer":
-      return { ...auth, token: (await resolve(auth.token)) ?? auth.token };
+      return { ...auth, token: await resolve(auth.token) };
 
     case "client_credentials":
       return {
         ...auth,
-        client_secret: (await resolve(auth.client_secret)) ?? auth.client_secret,
+        client_secret: await resolve(auth.client_secret),
       };
 
     case "private_key_jwt":
       return {
         ...auth,
-        private_key: (await resolve(auth.private_key)) ?? auth.private_key,
+        private_key: await resolve(auth.private_key),
       };
 
     case "static_private_key_jwt":
       return {
         ...auth,
-        jwt_bearer_assertion:
-          (await resolve(auth.jwt_bearer_assertion)) ?? auth.jwt_bearer_assertion,
+        jwt_bearer_assertion: await resolve(auth.jwt_bearer_assertion),
       };
 
     case "authorization_code":

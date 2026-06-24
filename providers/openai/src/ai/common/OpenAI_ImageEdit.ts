@@ -4,16 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  AiProviderRunFn,
-  ImageEditTaskInput,
-  ImageEditTaskOutput,
-  ModelConfig,
-} from "@workglow/ai";
+import type { AiProviderRunFn, ImageEditTaskInput, ImageEditTaskOutput } from "@workglow/ai";
 import { ImageGenerationContentPolicyError, ImageGenerationProviderError } from "@workglow/ai";
 import type { ImageValue } from "@workglow/util/media";
 
-import { dataUriToImageValue, imageValueToPngBytes } from "@workglow/ai/provider-utils";
+import {
+  dataUriToImageValue,
+  imageValueToPngBytes,
+  modelIdForError,
+} from "@workglow/ai/provider-utils";
 import { getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
@@ -33,14 +32,6 @@ function aspectRatioToSize(
     default:
       return "1024x1024";
   }
-}
-
-function modelIdOf(model: ModelConfig | undefined): string {
-  return (
-    model?.model_id ??
-    (model?.provider_config as { model_name?: string } | undefined)?.model_name ??
-    "openai"
-  );
 }
 
 /**
@@ -122,10 +113,12 @@ export const OpenAI_ImageEdit_Stream: AiProviderRunFn<
 
   try {
     const payload = await buildEditPayload(input, model);
-    const stream = (await (client.images.edit as Function)(
-      { ...payload, stream: true, partial_images: 3 },
-      { signal }
-    )) as AsyncIterable<{ b64_json?: string }>;
+    const stream = await (
+      client.images.edit as unknown as (
+        body: Record<string, unknown>,
+        options: { signal: AbortSignal }
+      ) => Promise<AsyncIterable<{ b64_json?: string }>>
+    )({ ...payload, stream: true, partial_images: 3 }, { signal });
 
     for await (const event of stream) {
       if (signal.aborted) return;
@@ -144,8 +137,10 @@ export const OpenAI_ImageEdit_Stream: AiProviderRunFn<
     }
     const msg = err instanceof Error ? err.message : "unknown error";
     if (/safety|policy|moderation/i.test(msg)) {
-      throw new ImageGenerationContentPolicyError(modelIdOf(model), msg);
+      throw new ImageGenerationContentPolicyError(modelIdForError(model, "openai"), msg);
     }
-    throw new ImageGenerationProviderError(modelIdOf(model), msg, { cause: err as Error });
+    throw new ImageGenerationProviderError(modelIdForError(model, "openai"), msg, {
+      cause: err as Error,
+    });
   }
 };

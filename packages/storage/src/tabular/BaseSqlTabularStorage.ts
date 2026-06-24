@@ -52,7 +52,8 @@ export abstract class BaseSqlTabularStorage<
     indexes: readonly (keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[])[] = [],
     clientProvidedKeys: ClientProvidedKeysOption = "if-missing",
     tabularMigrations?: ReadonlyArray<import("../migrations").ITabularMigration>,
-    migrationName?: string
+    migrationName?: string,
+    uniqueIndexes: readonly (readonly (keyof NoInfer<Entity>)[])[] = []
   ) {
     super(
       schema,
@@ -60,7 +61,8 @@ export abstract class BaseSqlTabularStorage<
       indexes,
       clientProvidedKeys,
       tabularMigrations,
-      migrationName ?? table
+      migrationName ?? table,
+      uniqueIndexes
     );
     this.validateTableAndSchema();
   }
@@ -158,6 +160,23 @@ export abstract class BaseSqlTabularStorage<
       }
     }
     return typeDef;
+  }
+
+  /**
+   * Determines if a numeric field should be treated as unsigned, i.e. it is a
+   * `number`/`integer` schema with a `minimum` of zero or greater. Shared by
+   * the Postgres-shaped backends when selecting integer range types.
+   */
+  protected shouldBeUnsigned(typeDef: JsonSchema): boolean {
+    const actualType = this.getNonNullType(typeDef);
+    if (typeof actualType === "boolean") {
+      return false;
+    }
+    return (
+      (actualType.type === "number" || actualType.type === "integer") &&
+      typeof actualType.minimum === "number" &&
+      actualType.minimum >= 0
+    );
   }
 
   /** Returns value fields ordered to match the schema declaration. */
@@ -267,7 +286,7 @@ export abstract class BaseSqlTabularStorage<
    * DDL, and rejects schemas where PK and value keys collide.
    */
   protected validateTableAndSchema(): void {
-    if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(this.table)) {
+    if (!/^[a-z]\w*$/i.test(this.table)) {
       throw new Error(
         "Table name must start with a letter and contain only letters, digits, and underscores, got: " +
           this.table
@@ -276,7 +295,7 @@ export abstract class BaseSqlTabularStorage<
 
     const validateSchemaKeys = (schema: DataPortSchemaObject) => {
       for (const key in schema.properties) {
-        if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(key)) {
+        if (!/^[a-z]\w*$/i.test(key)) {
           throw new Error(
             "Schema keys must start with a letter and contain only letters, digits, and underscores, got: " +
               key

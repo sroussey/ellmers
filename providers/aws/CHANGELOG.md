@@ -1,5 +1,65 @@
 # Changelog
 
+## 0.3.21
+
+## 0.3.20
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1075.0
+
+## 0.3.19
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1074.0
+
+## 0.3.18
+
+## 0.3.17
+
+## 0.3.16
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1073.0
+
+## 0.3.15
+
+### Build
+
+- make timings easier to spot trouble
+
+### Chores
+
+- add homepage
+
+## 0.3.14
+
+### Features
+
+- add bugs URL to package.json files across all packages and providers
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1068.0
+
 ## 0.3.13
 
 ## 0.3.12

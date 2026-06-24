@@ -3825,9 +3825,8 @@ Interpreter.prototype.setStateStack = function (newStack) {
 
 /**
  * Typedef for JS values.
- * @typedef {!Interpreter.Object|boolean|number|string|undefined|null}
+ * @typedef {boolean|number|string|null|!Interpreter.Object} Interpreter.Value
  */
-Interpreter.Value;
 
 /**
  * Class for a state.

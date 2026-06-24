@@ -34,7 +34,7 @@ function escapeLinkText(text: string): string {
 // Built via RegExp constructor so the C0/DEL range is expressed as `\x00`
 // hex escapes in the string literal rather than as raw control bytes in
 // the regex literal source.
-// eslint-disable-next-line no-control-regex
+// eslint-disable-next-line no-control-regex, prefer-regex-literals
 const CONTROL_CHARS_RE = new RegExp("[\\x00-\\x1f\\x7f]", "g");
 
 /**
@@ -55,7 +55,7 @@ function escapeLinkDestination(url: string): string {
   // keyword), then have the control bytes stripped on the way out, emerging
   // as a literal `javascript:` destination in the rendered markdown.
   const stripped = url.replace(CONTROL_CHARS_RE, "");
-  if (/^\s*(javascript|data|vbscript)\s*:/i.test(stripped)) {
+  if (/^\s*(?:javascript|data|vbscript)\s*:/i.test(stripped)) {
     return "<>";
   }
   // Escape `>` and `\` so neither closes the bracketed destination nor

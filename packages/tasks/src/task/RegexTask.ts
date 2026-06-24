@@ -26,7 +26,7 @@ function hasNestedQuantifiers(pattern: string): boolean {
   // Strip character classes to avoid false positives on quantifiers inside [...]
   const withoutClasses = pattern.replace(/\[(?:[^\]\\]|\\.)*\]/g, "X");
   // Detect group with inner quantifier followed by outer quantifier
-  return /\([^)]*[+*][^)]*\)[+*?]|\([^)]*[+*][^)]*\)\{/.test(withoutClasses);
+  return /\([^)*+]*[*+][^)]*\)[+*?]|\([^)*+]*[*+][^)]*\)\{/.test(withoutClasses);
 }
 
 function executeRegex(input: { value: string; pattern: string; flags?: string }): {

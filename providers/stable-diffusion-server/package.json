@@ -2,7 +2,7 @@
   "name": "@workglow/stable-diffusion-server",
   "type": "module",
   "sideEffects": false,
-  "version": "0.3.13",
+  "version": "0.3.21",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
@@ -12,13 +12,14 @@
     "url": "https://github.com/workglow-dev/libs/issues"
   },
   "description": "Local sd.cpp HTTP client for an external or embedded stable-diffusion.cpp server",
+  "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
     "watch-code": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/ai.ts ./src/ai-runtime.ts",
     "watch-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/ai.browser.ts ./src/ai-runtime.browser.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "concurrently -c 'auto' -n 'code,browser,types' 'bun run build-code' 'bun run build-browser' 'bun run build-types'",
-    "build-js": "concurrently -c 'auto' -n 'code,browser' 'bun run build-code' 'bun run build-browser'",
+    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'code,browser' 'bun run build-code' 'bun run build-browser'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-code": "bun build --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/ai.ts ./src/ai-runtime.ts",
     "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/ai.browser.ts ./src/ai-runtime.browser.ts",

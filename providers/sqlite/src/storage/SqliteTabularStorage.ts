@@ -28,6 +28,7 @@ import {
   SqlTabularMigrationApplier,
   TabularChangePayload,
   TabularSubscribeOptions,
+  TYPED_ARRAY_CTORS,
   ValueOptionType,
 } from "@workglow/storage";
 import { createServiceToken, uuid4 } from "@workglow/util";
@@ -41,15 +42,6 @@ import {
 export const SQLITE_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
   "storage.tabularRepository.sqlite"
 );
-
-const TYPED_ARRAY_CTORS: Record<string, new (data: number[]) => ArrayBufferView> = {
-  Float32Array,
-  Float64Array,
-  Int8Array,
-  Uint8Array,
-  Int16Array,
-  Uint16Array,
-};
 
 /**
  * A SQLite-based key-value repository implementation.
@@ -93,9 +85,19 @@ export class SqliteTabularStorage<
     primaryKeyNames: PrimaryKeyNames,
     indexes: readonly (keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[])[] = [],
     clientProvidedKeys: ClientProvidedKeysOption = "if-missing",
-    tabularMigrations?: ReadonlyArray<ITabularMigration>
+    tabularMigrations?: ReadonlyArray<ITabularMigration>,
+    uniqueIndexes: readonly (readonly (keyof NoInfer<Entity>)[])[] = []
   ) {
-    super(table, schema, primaryKeyNames, indexes, clientProvidedKeys, tabularMigrations, table);
+    super(
+      table,
+      schema,
+      primaryKeyNames,
+      indexes,
+      clientProvidedKeys,
+      tabularMigrations,
+      table,
+      uniqueIndexes
+    );
     if (typeof dbOrPath === "string") {
       this.db = new Sqlite.Database(dbOrPath);
     } else {
@@ -198,8 +200,7 @@ export class SqliteTabularStorage<
     for (const searchSpec of this.indexes) {
       const columns = Array.isArray(searchSpec) ? searchSpec : [searchSpec];
       if (columns.length <= pkColumns.length) {
-        // @ts-ignore
-        const isPkPrefix = columns.every((col, idx) => col === pkColumns[idx]);
+        const isPkPrefix = columns.every((col, idx) => col === (pkColumns[idx] as string));
         if (isPkPrefix) continue;
       }
       const indexName = `${this.table}_${columns.join("_")}`;
@@ -219,6 +220,24 @@ export class SqliteTabularStorage<
         );
         createdIndexes.add(columnKey);
       }
+    }
+    this.createUniqueIndexes();
+  }
+
+  /**
+   * Emit `CREATE UNIQUE INDEX IF NOT EXISTS` for each declared unique tuple.
+   * Idempotent so re-runs (migration replays, ScopedTabularStorage probes) are
+   * safe. Naming: `${table}_uniq_${cols.join("_")}` — distinct from the
+   * non-unique `${table}_${cols.join("_")}` pattern above so a tuple can carry
+   * both a search index and a UNIQUE constraint without name collision.
+   */
+  private createUniqueIndexes(): void {
+    for (const columns of this.uniqueIndexes) {
+      const indexName = `${this.table}_uniq_${columns.map(String).join("_")}`;
+      const columnList = columns.map((col) => `\`${String(col)}\``).join(", ");
+      this.db.exec(
+        `CREATE UNIQUE INDEX IF NOT EXISTS \`${indexName}\` ON \`${this.table}\` (${columnList})`
+      );
     }
   }
 
@@ -549,11 +568,47 @@ export class SqliteTabularStorage<
     const columnList = columnsToInsert.map((c) => `\`${c}\``).join(", ");
     const placeholders = columnsToInsert.map(() => "?").join(", ");
 
-    const sql = `
-      INSERT OR REPLACE INTO \`${this.table}\` (${columnList})
-      VALUES (${placeholders})
-      RETURNING *
-    `;
+    // INSERT OR REPLACE silently *deletes* rows that conflict on any UNIQUE
+    // index (including the ones we now emit from `uniqueIndexes`), so a
+    // collision quietly mutates the table instead of throwing. When unique
+    // indexes are declared, switch to PK-scoped UPSERT via
+    // `ON CONFLICT(<pk>) DO UPDATE`, which preserves the upsert semantics
+    // callers rely on for re-saving the same row but lets SQLite raise a
+    // `SQLITE_CONSTRAINT_UNIQUE` for any non-PK uniqueness violation.
+    let sql: string;
+    if (this.uniqueIndexes.length > 0) {
+      const pkColumns = this.primaryKeyColumns() as string[];
+      const pkList = pkColumns.map((c) => `\`${c}\``).join(", ");
+      const updateAssignments = columnsToInsert
+        .filter((c) => !pkColumns.includes(c))
+        .map((c) => `\`${c}\` = excluded.\`${c}\``)
+        .join(", ");
+      // When there are non-PK columns, the standard upsert applies and
+      // RETURNING * yields the post-update row. When every column is part of
+      // the PK there is nothing to update, but `DO NOTHING` skips the row on a
+      // conflict and `RETURNING *` then yields NO row (SQLite only returns rows
+      // it actually inserts/updates), so the caller would dereference
+      // `undefined`. Use a no-op self-assignment of the PK columns instead:
+      // `DO UPDATE` always produces a RETURNING row, so a re-save of an
+      // existing all-PK row echoes the existing row as the contract expects.
+      const pkSelfAssign = pkColumns.map((c) => `\`${c}\` = excluded.\`${c}\``).join(", ");
+      const conflictClause =
+        updateAssignments.length > 0
+          ? `ON CONFLICT(${pkList}) DO UPDATE SET ${updateAssignments}`
+          : `ON CONFLICT(${pkList}) DO UPDATE SET ${pkSelfAssign}`;
+      sql = `
+        INSERT INTO \`${this.table}\` (${columnList})
+        VALUES (${placeholders})
+        ${conflictClause}
+        RETURNING *
+      `;
+    } else {
+      sql = `
+        INSERT OR REPLACE INTO \`${this.table}\` (${columnList})
+        VALUES (${placeholders})
+        RETURNING *
+      `;
+    }
     const stmt = db.prepare(sql);
 
     const params = paramsToInsert;
@@ -639,7 +694,6 @@ export class SqliteTabularStorage<
       );
     }
 
-    // @ts-ignore - SQLite typing for variadic bindings is overly strict for our union
     const updatedEntity = stmt.get(...params) as Entity;
 
     // Convert all columns according to schema
@@ -671,7 +725,7 @@ export class SqliteTabularStorage<
     return this.mutex(() => this._putInternal(entity));
   }
 
-  private async _putInternal(entity: InsertType): Promise<Entity> {
+  protected async _putInternal(entity: InsertType): Promise<Entity> {
     return this.executePutSync(entity);
   }
 
@@ -691,7 +745,7 @@ export class SqliteTabularStorage<
     return this.mutex(() => this._putBulkInternal(entities));
   }
 
-  private async _putBulkInternal(entities: InsertType[]): Promise<Entity[]> {
+  protected async _putBulkInternal(entities: InsertType[]): Promise<Entity[]> {
     if (entities.length === 0) return [];
 
     const updatedEntities: Entity[] = [];
@@ -716,9 +770,14 @@ export class SqliteTabularStorage<
    * The Proxy returned by {@link createTxView} routes back to the private
    * `_*Internal` methods directly, so calls made *through* the `tx` handle
    * inside `fn` do not deadlock against the mutex held by `withTransaction`.
+   *
+   * `protected` so subclasses that fully override `put`/`putBulk` (e.g.
+   * {@link SqliteAiVectorStorage}, which builds its own vector-encoding SQL)
+   * can serialize through the same lock instead of running their statements
+   * on the shared connection while a `withTransaction` BEGIN is open.
    */
   private mutexChain: Promise<void> = Promise.resolve();
-  private async mutex<T>(fn: () => Promise<T>): Promise<T> {
+  protected async mutex<T>(fn: () => Promise<T>): Promise<T> {
     const prev = this.mutexChain;
     let release!: () => void;
     this.mutexChain = new Promise<void>((resolve) => {
@@ -749,8 +808,7 @@ export class SqliteTabularStorage<
    *     `BEGIN`. Use SAVEPOINT directly for nested rollback boundaries.
    */
   private createTxView(deferredPutEvents: Entity[]): this {
-    const target = this;
-    return new Proxy(target, {
+    return new Proxy(this, {
       get(t, prop, receiver) {
         if (prop === "withTransaction") {
           return () => {
@@ -764,6 +822,12 @@ export class SqliteTabularStorage<
           return (entity: Entity) => deferredPutEvents.push(entity);
         }
         if (typeof prop === "string") {
+          // Bracket access walks the prototype chain, so a subclass override
+          // of `_${prop}Internal` (e.g. SqliteAiVectorStorage's
+          // vector-encoding `_putInternal` / `_putBulkInternal`) wins over
+          // the parent's implementation. `apply(receiver, ...)` then runs it
+          // bound to the proxy so nested `tx.foo()` calls keep routing
+          // through the proxy as well.
           const internal = (t as unknown as Record<string, unknown>)[`_${prop}Internal`];
           if (typeof internal === "function") {
             return (...args: unknown[]) =>
@@ -856,8 +920,7 @@ export class SqliteTabularStorage<
     `;
     const stmt = db.prepare(sql);
     const params = this.getPrimaryKeyAsOrderedArray(key);
-    // @ts-ignore - SQLite typing for variadic bindings is overly strict for our union
-    const value: Entity | null = stmt.get(...(params as ValueOptionType[]));
+    const value: Entity | null = stmt.get(...(params as ValueOptionType[])) as Entity | null;
     if (value) {
       const row = value as Record<string, unknown>;
       for (const k in this.schema.properties) {
@@ -923,8 +986,7 @@ export class SqliteTabularStorage<
 
     const sql = `SELECT * FROM \`${this.table}\` WHERE ${lhs} IN (${valuesClause})`;
     const stmt = db.prepare<ValueOptionType[], Entity>(sql);
-    // @ts-ignore - SQLite typing for variadic bindings is overly strict for our union
-    const rows: Entity[] = stmt.all(...(params as ValueOptionType[]));
+    const rows: Entity[] = stmt.all(...(params as ValueOptionType[])) as Entity[];
 
     for (const row of rows) {
       const record = row as Record<string, unknown>;
@@ -951,7 +1013,6 @@ export class SqliteTabularStorage<
       .join(" AND ");
     const params = this.getPrimaryKeyAsOrderedArray(key);
     const stmt = db.prepare(`DELETE FROM \`${this.table}\` WHERE ${whereClauses}`);
-    // @ts-ignore - SQLite typing for variadic bindings is overly strict for our union
     stmt.run(...(params as ValueOptionType[]));
     this.events.emit("delete", key as Partial<Entity>);
   }
@@ -990,8 +1051,7 @@ export class SqliteTabularStorage<
     }
 
     const stmt = db.prepare(sql);
-    // @ts-ignore
-    const value = params.length > 0 ? stmt.all(...params) : stmt.all();
+    const value = params.length > 0 ? stmt.all(...params) : (stmt.all() as Entity[]);
     if (!value.length) return undefined;
     // Convert all columns according to schema for each row
     for (const row of value) {
@@ -1145,7 +1205,6 @@ export class SqliteTabularStorage<
       },
       executeSelect: async (sql: string, params: ValueOptionType[]): Promise<Entity[]> => {
         const stmt = this.db.prepare(sql);
-        // @ts-ignore - generic spread on prepared statement
         const rows = stmt.all(...params) as Entity[];
         for (const row of rows) {
           const record = row as Record<string, unknown>;
@@ -1194,7 +1253,6 @@ export class SqliteTabularStorage<
     const db = this.db;
     const { whereClause, params } = this.buildDeleteSearchWhere(criteria);
     const stmt = db.prepare(`DELETE FROM \`${this.table}\` WHERE ${whereClause}`);
-    // @ts-ignore
     stmt.run(...params);
     this.events.emit("delete", this.deleteIdentity(criteria));
   }
@@ -1243,7 +1301,6 @@ export class SqliteTabularStorage<
     }
 
     const stmt = db.prepare(sql);
-    // @ts-ignore
     const result = stmt.all(...params) as Entity[];
 
     if (result.length > 0) {
@@ -1321,7 +1378,6 @@ export class SqliteTabularStorage<
     }
 
     const stmt = this.db.prepare(sql);
-    // @ts-ignore — Bun's sqlite stmt.all accepts spread params
     const rows = stmt.all(...params) as Record<string, unknown>[];
     for (const row of rows) {
       for (const k of Object.keys(row)) {

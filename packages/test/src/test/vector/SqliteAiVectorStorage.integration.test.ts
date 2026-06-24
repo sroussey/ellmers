@@ -171,6 +171,120 @@ describe.skipIf(!sqliteVectorAvailable)("SqliteAiVectorStorage", async () => {
     });
   });
 
+  describe("putBulk vector encoding", () => {
+    // Regression: previously, putBulk fell through to the base-class path which
+    // binds vectors as JSON strings (no vector_as_${suffix} wrap), so
+    // vector_full_scan could not decode them and similaritySearch silently
+    // fell back to in-memory cosine. These tests pin the
+    // vector_as_${suffix}(?)-wrapped INSERT and the round-trip via getAll().
+
+    it("putBulk + similaritySearch returns inserted vectors at distance 0", async () => {
+      await storage.putBulk([
+        {
+          chunk_id: "bulk1",
+          doc_id: "docB1",
+          vector: new Float32Array([1.0, 0.0, 0.0]),
+          metadata: { tag: "bulk" },
+        },
+        {
+          chunk_id: "bulk2",
+          doc_id: "docB2",
+          vector: new Float32Array([0.0, 1.0, 0.0]),
+          metadata: { tag: "bulk" },
+        },
+      ]);
+
+      const results = await storage.similaritySearch(new Float32Array([1.0, 0.0, 0.0]), {
+        topK: 2,
+      });
+
+      // The exact match must rank first with score ~1.0; if vectors had landed
+      // as JSON BLOBs, vector_full_scan would have failed and we'd silently
+      // fall back to the in-memory cosine path (which would happen to give the
+      // right ordering — so we pin the score to ensure the native path ran).
+      expect(results.length).toBeGreaterThanOrEqual(1);
+      expect(results[0].chunk_id).toBe("bulk1");
+      expect(results[0].score).toBeGreaterThanOrEqual(0.999);
+    });
+
+    it("putBulk persists vectors as Float32Array via getAll", async () => {
+      // Direct encoding check — vectors must come back as TypedArrays with
+      // their original values, not as raw JSON strings or Buffers.
+      await storage.putBulk([
+        {
+          chunk_id: "enc1",
+          doc_id: "docE1",
+          vector: new Float32Array([0.5, 0.5, 0.5]),
+          metadata: {},
+        },
+        {
+          chunk_id: "enc2",
+          doc_id: "docE2",
+          vector: new Float32Array([0.1, 0.2, 0.3]),
+          metadata: {},
+        },
+      ]);
+
+      const all = await storage.getAll();
+      expect(all).toBeDefined();
+      const byId = new Map(all!.map((r) => [r.chunk_id, r]));
+
+      const r1 = byId.get("enc1")!;
+      expect(r1).toBeDefined();
+      expect(r1.vector).toBeInstanceOf(Float32Array);
+      expect(r1.vector.length).toBe(3);
+      expect(r1.vector[0]).toBeCloseTo(0.5, 5);
+      expect(r1.vector[1]).toBeCloseTo(0.5, 5);
+      expect(r1.vector[2]).toBeCloseTo(0.5, 5);
+
+      const r2 = byId.get("enc2")!;
+      expect(r2).toBeDefined();
+      expect(r2.vector).toBeInstanceOf(Float32Array);
+      expect(r2.vector[0]).toBeCloseTo(0.1, 5);
+      expect(r2.vector[1]).toBeCloseTo(0.2, 5);
+      expect(r2.vector[2]).toBeCloseTo(0.3, 5);
+    });
+
+    it("mixed put + putBulk yields identical similaritySearch ordering", async () => {
+      // A row written through `put` and another through `putBulk` must encode
+      // their vectors identically — otherwise the bulk-encoded row would be
+      // unsearchable while the single-row write would rank correctly.
+      await storage.put({
+        chunk_id: "single",
+        doc_id: "docS",
+        vector: new Float32Array([1.0, 0.0, 0.0]),
+        metadata: { source: "put" },
+      });
+      await storage.putBulk([
+        {
+          chunk_id: "bulk-a",
+          doc_id: "docBA",
+          vector: new Float32Array([0.9, 0.1, 0.0]),
+          metadata: { source: "bulk" },
+        },
+        {
+          chunk_id: "bulk-b",
+          doc_id: "docBB",
+          vector: new Float32Array([0.0, 0.0, 1.0]),
+          metadata: { source: "bulk" },
+        },
+      ]);
+
+      const results = await storage.similaritySearch(new Float32Array([1.0, 0.0, 0.0]), {
+        topK: 3,
+      });
+
+      expect(results.length).toBe(3);
+      // Exact match first (from `put`), near-match second (from `putBulk`),
+      // orthogonal vector last.
+      expect(results[0].chunk_id).toBe("single");
+      expect(results[1].chunk_id).toBe("bulk-a");
+      expect(results[2].chunk_id).toBe("bulk-b");
+      expect(results[0].score).toBeGreaterThan(results[1].score);
+      expect(results[1].score).toBeGreaterThan(results[2].score);
+    });
+  });
+
   describe("similaritySearch", () => {
     beforeEach(async () => {
       await populateStorage();
@@ -259,6 +373,176 @@ describe.skipIf(!sqliteVectorAvailable)("SqliteAiVectorStorage", async () => {
       const results = await storage.similaritySearch(query, { topK: 10 });
 
       expect(results.length).toBe(0);
+    });
+  });
+
+  describe("withTransaction", () => {
+    // Regression: previously the createTxView proxy routed `tx.put`/`tx.putBulk`
+    // to the parent's `_putInternal`/`_putBulkInternal` (the subclass had no
+    // matching internals), so vectors written through `tx` landed as raw JSON
+    // BLOBs that vector_full_scan could not decode — similaritySearch silently
+    // fell back to the in-memory cosine path. The same path also deadlocked
+    // when callers reached for the original storage's putBulk from inside
+    // `withTransaction` (mutex held + nested BEGIN).
+
+    it("tx.put encodes vectors so similaritySearch hits the native path", async () => {
+      const vec = new Float32Array([1.0, 0.0, 0.0]);
+      await storage.withTransaction(async (tx) => {
+        await tx.put({
+          chunk_id: "tx-single",
+          doc_id: "docTX",
+          vector: vec,
+          metadata: { source: "tx.put" },
+        });
+      });
+
+      const results = await storage.similaritySearch(vec, { topK: 1 });
+      expect(results.length).toBe(1);
+      expect(results[0].chunk_id).toBe("tx-single");
+      // Score ~1.0 proves vector_full_scan decoded the row; if the vector had
+      // landed as a JSON blob the native path would have errored and the
+      // in-memory fallback would have run on an empty getAll() (since the row
+      // would have been unreadable as a Float32Array).
+      expect(results[0].score).toBeGreaterThanOrEqual(0.999);
+
+      const all = await storage.getAll();
+      expect(all).toBeDefined();
+      const row = all!.find((r) => r.chunk_id === "tx-single")!;
+      expect(row.vector).toBeInstanceOf(Float32Array);
+      expect(row.vector.length).toBe(3);
+      expect(row.vector[0]).toBeCloseTo(1.0, 5);
+    });
+
+    it("tx.putBulk encodes vectors so similaritySearch hits the native path", async () => {
+      await storage.withTransaction(async (tx) => {
+        await tx.putBulk([
+          {
+            chunk_id: "tx-bulk1",
+            doc_id: "docTB1",
+            vector: new Float32Array([1.0, 0.0, 0.0]),
+            metadata: { tag: "tx-bulk" },
+          },
+          {
+            chunk_id: "tx-bulk2",
+            doc_id: "docTB2",
+            vector: new Float32Array([0.0, 1.0, 0.0]),
+            metadata: { tag: "tx-bulk" },
+          },
+          {
+            chunk_id: "tx-bulk3",
+            doc_id: "docTB3",
+            vector: new Float32Array([0.9, 0.1, 0.0]),
+            metadata: { tag: "tx-bulk" },
+          },
+        ]);
+      });
+
+      const all = await storage.getAll();
+      expect(all).toBeDefined();
+      expect(all!.length).toBe(3);
+      for (const row of all!) {
+        expect(row.vector).toBeInstanceOf(Float32Array);
+        expect(row.vector.length).toBe(3);
+      }
+
+      const results = await storage.similaritySearch(new Float32Array([1.0, 0.0, 0.0]), {
+        topK: 3,
+      });
+      expect(results.length).toBe(3);
+      expect(results[0].chunk_id).toBe("tx-bulk1");
+      expect(results[0].score).toBeGreaterThanOrEqual(0.999);
+    });
+
+    it("does not deadlock external putBulk queued behind a running withTransaction", async () => {
+      // Public `storage.putBulk` (called from *outside* the callback, while
+      // withTransaction is mid-flight) must queue on the mutex and run after
+      // COMMIT/ROLLBACK — not slip into the open transaction and not hang.
+      // Calling it from *inside* the callback would deadlock the mutex on
+      // itself; that's documented user error. The Promise.race guards against
+      // a regression where the external call hangs even from outside.
+
+      let releaseInner: () => void = () => {};
+      const innerCanFinish = new Promise<void>((resolve) => {
+        releaseInner = resolve;
+      });
+
+      const txPromise = storage.withTransaction(async (tx) => {
+        await tx.put({
+          chunk_id: "tx-rb",
+          doc_id: "docRB",
+          vector: new Float32Array([1.0, 0.0, 0.0]),
+          metadata: {},
+        });
+        await innerCanFinish;
+        throw new Error("rollback");
+      });
+
+      // Yield so the queued external putBulk lands on the mutex chain.
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const externalBulk = storage.putBulk([
+        {
+          chunk_id: "external-bulk",
+          doc_id: "docEB",
+          vector: new Float32Array([0.0, 1.0, 0.0]),
+          metadata: {},
+        },
+      ]);
+
+      releaseInner();
+      await expect(txPromise).rejects.toThrow("rollback");
+
+      const deadlockGuard = new Promise<never>((_resolve, reject) =>
+        setTimeout(() => reject(new Error("deadlock-timeout")), 2000)
+      );
+
+      await Promise.race([externalBulk, deadlockGuard]);
+
+      // tx-rb rolled back, external-bulk committed independently.
+      expect(await storage.get({ chunk_id: "tx-rb" } as any)).toBeUndefined();
+      const ext = await storage.get({ chunk_id: "external-bulk" } as any);
+      expect(ext).toBeDefined();
+      expect(ext!.vector).toBeInstanceOf(Float32Array);
+    });
+
+    it("preserves insertion order across mixed tx.put + tx.putBulk", async () => {
+      await storage.withTransaction(async (tx) => {
+        await tx.put({
+          chunk_id: "mixed-1",
+          doc_id: "docM1",
+          vector: new Float32Array([1.0, 0.0, 0.0]),
+          metadata: { order: 1 },
+        });
+        await tx.putBulk([
+          {
+            chunk_id: "mixed-2",
+            doc_id: "docM2",
+            vector: new Float32Array([0.0, 1.0, 0.0]),
+            metadata: { order: 2 },
+          },
+          {
+            chunk_id: "mixed-3",
+            doc_id: "docM3",
+            vector: new Float32Array([0.0, 0.0, 1.0]),
+            metadata: { order: 3 },
+          },
+        ]);
+        await tx.put({
+          chunk_id: "mixed-4",
+          doc_id: "docM4",
+          vector: new Float32Array([0.5, 0.5, 0.0]),
+          metadata: { order: 4 },
+        });
+      });
+
+      const all = await storage.getAll();
+      expect(all).toBeDefined();
+      const ordered = all!
+        .filter((r) => r.chunk_id.startsWith("mixed-"))
+        .sort((a, b) => Number(a.metadata.order) - Number(b.metadata.order))
+        .map((r) => r.chunk_id);
+      expect(ordered).toEqual(["mixed-1", "mixed-2", "mixed-3", "mixed-4"]);
     });
   });
 });

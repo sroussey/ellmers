@@ -56,7 +56,7 @@ export function registerErrorCodeReconstructor(
     if (reconstructors[existingIdx]!.reconstructor === reconstructor) {
       return; // idempotent — same fn, same prefix
     }
-    // eslint-disable-next-line no-console
+
     console.warn(
       `registerErrorCodeReconstructor: overwriting existing reconstructor for prefix "${prefix}"`
     );

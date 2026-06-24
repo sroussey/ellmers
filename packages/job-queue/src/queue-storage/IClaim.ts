@@ -29,9 +29,7 @@ export interface ClaimFailOptions {
 }
 
 /** Optional shape passed by `IClaim.disable` (currently empty — kept for forward compat). */
-export interface ClaimDisableOptions {
-  // No options today. Kept as an explicit type so future opts don't break call sites.
-}
+export type ClaimDisableOptions = Record<string, never>;
 
 /**
  * A claim on a message from the queue.

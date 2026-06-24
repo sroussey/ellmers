@@ -11,10 +11,17 @@ import type {
   VectorIndexOptions,
   VectorSearchOptions,
 } from "@workglow/storage";
-import { getMetadataProperty, getVectorProperty } from "@workglow/storage";
+import {
+  assertVectorShape,
+  getMetadataProperty,
+  getVectorProperty,
+  matchesFilter,
+  validateVectorEntities,
+} from "@workglow/storage";
 import type {
   DataPortSchemaObject,
   FromSchema,
+  JsonSchema,
   TypedArray,
   TypedArrayConstructor,
   TypedArraySchemaOptions,
@@ -54,18 +61,6 @@ function getVectorTypeOption(vectorCtor: TypedArrayConstructor): string {
     Int16Array: "FLOAT16",
   };
   return typeMap[vectorCtor.name] || "FLOAT32";
-}
-
-/**
- * Check if metadata matches filter
- */
-function matchesFilter<Metadata>(metadata: Metadata, filter: Partial<Metadata>): boolean {
-  for (const [key, value] of Object.entries(filter)) {
-    if (metadata[key as keyof Metadata] !== value) {
-      return false;
-    }
-  }
-  return true;
 }
 
 /**
@@ -285,7 +280,7 @@ export class SqliteAiVectorStorage<
   /**
    * Override mapTypeToSQL to use BLOB for vector columns instead of TEXT
    */
-  protected override mapTypeToSQL(typeDef: any): string {
+  protected override mapTypeToSQL(typeDef: JsonSchema): string {
     if (typeof typeDef !== "boolean" && typeDef.type === "array") {
       const format = typeDef.format as string | undefined;
       if (format === "TypedArray" || format?.startsWith("TypedArray:")) {
@@ -296,17 +291,14 @@ export class SqliteAiVectorStorage<
   }
 
   /**
-   * Override put to use sqlite-vector encoding for vector data.
-   * Builds a custom INSERT OR REPLACE that wraps the vector column
-   * with vector_as_fXX() to encode as a native vector BLOB.
-   * Falls back to base class put() if the extension is not available.
+   * Build the INSERT OR REPLACE SQL + bound params for a single entity, wrapping
+   * the vector column with `vector_as_${suffix}(?)` so sqlite-vector encodes it
+   * as a native vector BLOB rather than a JSON string. Shared by `put` and
+   * `putBulk` so both paths go through the same encoding — without this, bulk
+   * vectors used to fall through `super.putBulk` and land as raw JSON, which
+   * `vector_full_scan` cannot decode.
    */
-  public override async put(entity: any): Promise<Entity> {
-    if (!this.extensionLoaded) {
-      return super.put(entity);
-    }
-
-    const db = this.database;
+  private buildVectorInsertSql(entity: any): { sql: string; params: any[] } {
     const vectorCol = String(this.vectorPropertyName);
 
     // Handle auto-generated keys (UUID generation)
@@ -344,7 +336,7 @@ export class SqliteAiVectorStorage<
         if (clientProvidedKeys === "if-missing" && clientValue != null) {
           allColumns.push(col);
           placeholders.push("?");
-          params.push((this as any).jsToSqlValue(col, clientValue));
+          params.push(this.jsToSqlValue(col, clientValue as Entity[keyof Entity]));
         }
         continue;
       }
@@ -393,18 +385,130 @@ export class SqliteAiVectorStorage<
       }
     }
 
-    const stmt = db.prepare(sql);
-    // @ts-ignore - SQLite typing for variadic bindings
-    const updatedEntity = stmt.get(...params) as Entity;
+    return { sql, params };
+  }
 
-    // Convert all columns according to schema
+  /**
+   * Decode all columns of a row returned from the vector INSERT's RETURNING
+   * clause via `sqlToJsValue`, so the vector column comes back as a TypedArray
+   * (not a raw Buffer) and any other JSON-encoded columns deserialize.
+   */
+  private decodeReturnedEntity(updatedEntity: Entity): Entity {
     const updatedRecord = updatedEntity as Record<string, unknown>;
     for (const k in this.schema.properties) {
       updatedRecord[k] = this.sqlToJsValue(k, updatedRecord[k] as any);
     }
-
-    this.events.emit("put", updatedEntity);
     return updatedEntity;
+  }
+
+  /**
+   * Encode and execute the vector-wrapped INSERT for a single entity, then
+   * decode the RETURNING row back into an Entity. Optionally emits the `put`
+   * event so bulk callers can defer events until after their own transaction
+   * commits.
+   */
+  private executeVectorPutSync(entity: any, emitEvent: boolean = true): Entity {
+    const { sql, params } = this.buildVectorInsertSql(entity);
+    const stmt = this.database.prepare(sql);
+    const updatedEntity = this.decodeReturnedEntity(stmt.get(...params) as Entity);
+    if (emitEvent) this.emitPut(updatedEntity);
+    return updatedEntity;
+  }
+
+  /**
+   * Override put to use sqlite-vector encoding for vector data. Builds a
+   * custom INSERT OR REPLACE that wraps the vector column with
+   * `vector_as_fXX()` to encode as a native vector BLOB. Falls back to the
+   * base put() if the extension is not available.
+   */
+  public override async put(entity: any): Promise<Entity> {
+    return this.mutex(() => this._putInternal(entity));
+  }
+
+  /**
+   * Validate every entry up front so a single malformed vector rejects the
+   * whole batch before any row is encoded for sqlite-vector, then route the
+   * batch through the same `vector_as_${suffix}(?)`-wrapped INSERT as `put`
+   * inside a SQLite transaction. Without this, the inherited bulk path binds
+   * vectors as plain JSON strings, so `vector_full_scan` cannot decode them
+   * and similarity search silently falls back to the in-memory cosine path.
+   *
+   * `put` events are deferred until after the (inner or outer) transaction
+   * commits so listeners never observe rows that are about to roll back.
+   */
+  public override async putBulk(entities: any[]): Promise<Entity[]> {
+    return this.mutex(() => this._putBulkInternal(entities));
+  }
+
+  /**
+   * Internal `put` that the {@link SqliteTabularStorage.createTxView} proxy
+   * dispatches to when callers reach the vector storage through a `tx`
+   * handle. Skipping the public `put` is what keeps `tx.put(vector)` going
+   * through the vector-encoding INSERT instead of falling through to the
+   * parent's `_putInternal` (which binds vectors as JSON BLOBs that
+   * `vector_full_scan` cannot decode).
+   */
+  protected override async _putInternal(entity: any): Promise<Entity> {
+    validateVectorEntities(
+      [entity as Record<string, unknown>],
+      this.vectorPropertyName as string,
+      this.vectorDimensions
+    );
+    if (!this.extensionLoaded) {
+      return super._putInternal(entity);
+    }
+    return this.executeVectorPutSync(entity);
+  }
+
+  /**
+   * Internal `putBulk` that the proxy dispatches to from `tx.putBulk(...)`.
+   * When already inside an outer `withTransaction` BEGIN we cannot open a
+   * second `db.transaction(...)` here — that would be a nested transaction
+   * (better-sqlite3 turns it into a SAVEPOINT, but we still want all
+   * row-level rollback to fall under the outer BEGIN). In that case we
+   * iterate the rows directly; otherwise we wrap them in a SQLite
+   * transaction to collapse N fsyncs into one COMMIT.
+   *
+   * `put` events are appended to a local buffer and emitted only after the
+   * inner transaction commits (or, when nested in `withTransaction`, after
+   * the buffer is handed to `emitPut`, which the proxy routes into the
+   * outer transaction's deferred-event queue).
+   */
+  protected override async _putBulkInternal(entities: any[]): Promise<Entity[]> {
+    validateVectorEntities(
+      entities as ReadonlyArray<Record<string, unknown>>,
+      this.vectorPropertyName as string,
+      this.vectorDimensions
+    );
+    if (entities.length === 0) return [];
+    if (!this.extensionLoaded) {
+      return super._putBulkInternal(entities);
+    }
+
+    const updatedEntities: Entity[] = [];
+    // better-sqlite3 / bun:sqlite expose `inTransaction` as a runtime getter
+    // on the underlying handle; the canonical API doesn't surface it. When it's
+    // present and true (e.g. an outer `withTransaction` BEGIN is open and the
+    // proxy routed `tx.putBulk` here), iterate rows directly so we don't open a
+    // nested SQLite transaction. Browser-WASM has no such flag and never wraps
+    // mutating calls in `withTransaction` via the Proxy, so falling through to
+    // the inner `db.transaction(...)` is safe there.
+    const dbWithFlag = this.database as unknown as { readonly inTransaction?: boolean };
+    if (dbWithFlag.inTransaction) {
+      for (const item of entities) {
+        updatedEntities.push(this.executeVectorPutSync(item, false));
+      }
+    } else {
+      const transaction = this.database.transaction((items: any[]) => {
+        for (const item of items) {
+          updatedEntities.push(this.executeVectorPutSync(item, false));
+        }
+      });
+      transaction(entities);
+    }
+
+    for (const entity of updatedEntities) this.emitPut(entity);
+    return updatedEntities;
   }
 
   /**
@@ -413,6 +517,10 @@ export class SqliteAiVectorStorage<
    * Falls back to in-memory search if the extension is unavailable.
    */
   async similaritySearch(query: TypedArray, options: VectorSearchOptions<Metadata> = {}) {
+    // Validate before the extension/fallback split so a wrong-dimension or
+    // non-finite query fails fast instead of silently returning a meaningless
+    // score from the in-memory fallback path.
+    assertVectorShape(query, this.vectorDimensions, "query");
     if (!this.extensionLoaded) {
       return this.searchFallback(query, options);
     }

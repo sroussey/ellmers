@@ -1,7 +1,7 @@
 {
   "name": "@workglow/supabase",
   "type": "module",
-  "version": "0.3.13",
+  "version": "0.3.21",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
@@ -11,6 +11,7 @@
     "url": "https://github.com/workglow-dev/libs/issues"
   },
   "description": "Supabase backends for @workglow/storage and @workglow/job-queue.",
+  "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
     "watch-js": "concurrently -c 'auto' -n 'storage-br,storage-nb,jq-br,jq-nb' 'bun run watch-storage-browser' 'bun run watch-storage-node-bun' 'bun run watch-jq-browser' 'bun run watch-jq-node-bun'",
@@ -20,7 +21,7 @@
     "watch-jq-node-bun": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/node.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "bun run build-js && bun run build-types",
-    "build-js": "concurrently -c 'auto' -n 'storage-br,storage-nb,jq-br,jq-nb' 'bun run build-storage-browser' 'bun run build-storage-node-bun' 'bun run build-jq-browser' 'bun run build-jq-node-bun'",
+    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'storage-br,storage-nb,jq-br,jq-nb' 'bun run build-storage-browser' 'bun run build-storage-node-bun' 'bun run build-jq-browser' 'bun run build-jq-node-bun'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-storage-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/browser.ts",
     "build-storage-node-bun": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/node.ts",

@@ -18,6 +18,7 @@ export * from "./utilities/TypeUtilities";
 export * from "./worker/WorkerManager";
 export * from "./credentials";
 export * from "./crypto/WebCrypto";
+export * from "./crypto/Hmac";
 export * from "./telemetry";
 export * from "./resource/ResourceScope";
 export * from "./resource/DisposeStrategy";

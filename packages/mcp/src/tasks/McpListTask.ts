@@ -10,7 +10,7 @@ import {
   getMcpTaskDeps,
   TypeMcpServer,
 } from "@workglow/mcp/util";
-import type { CachePolicy, TaskEntitlements } from "@workglow/task-graph";
+import type { CachePolicy, IRunConfig, TaskEntitlements } from "@workglow/task-graph";
 import {
   CreateWorkflow,
   Entitlements,
@@ -284,7 +284,11 @@ export class McpListTask extends Task<McpListTaskInput, McpListTaskOutput, TaskC
     const serverConfig = getMcpServerConfig(input as Record<string, unknown>);
 
     const { mcpClientFactory } = getMcpTaskDeps();
-    const { client } = await mcpClientFactory.create(serverConfig, context.signal);
+    const { client } = await mcpClientFactory.create(
+      serverConfig,
+      context.signal,
+      context.registry
+    );
     const listType = input.list_type;
     try {
       switch (listType) {
@@ -311,9 +315,10 @@ export class McpListTask extends Task<McpListTaskInput, McpListTaskOutput, TaskC
 
 export const mcpList = async (
   input: McpListTaskInput,
-  config: TaskConfig = {}
+  config: TaskConfig = {},
+  runConfig: Partial<IRunConfig> = {}
 ): Promise<McpListTaskOutput> => {
-  return new McpListTask(config).run(input);
+  return new McpListTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

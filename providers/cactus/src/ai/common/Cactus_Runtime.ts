@@ -28,8 +28,8 @@ export interface CactusModelCacheInfo {
   readonly file_sizes: Record<string, number> | null;
 }
 
-const MODEL_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
-const FILENAME_RE = /^[A-Za-z0-9_.-]+$/;
+const MODEL_ID_RE = /^[\w-]{1,64}$/;
+const FILENAME_RE = /^[\w.-]+$/;
 // Most filesystems (ext4, APFS, NTFS) cap a single path component at 255
 // bytes. The Node atomic-write path writes to `${filename}.tmp` (4 chars)
 // before renaming, so the source filename must leave room for that suffix.

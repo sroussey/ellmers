@@ -1,5 +1,45 @@
 # @workglow/tasks
 
+## 0.3.21
+
+## 0.3.20
+
+## 0.3.19
+
+## 0.3.18
+
+## 0.3.17
+
+## 0.3.16
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `undici`: ^8.5.0
+
+## 0.3.15
+
+### Bug Fixes
+
+- eslint fixes
+
+### Build
+
+- make timings easier to spot trouble
+
+### Chores
+
+- add homepage
+
+## 0.3.14
+
+### Features
+
+- add bugs URL to package.json files across all packages and providers
+
 ## 0.3.13
 
 ## 0.3.12

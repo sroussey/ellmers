@@ -1,5 +1,90 @@
 # Changelog
 
+## 0.3.21
+
+## 0.3.20
+
+## 0.3.19
+
+## 0.3.18
+
+## 0.3.17
+
+## 0.3.16
+
+### Refactors
+
+#### storage
+
+- enhance unique index handling and event emission
+
+## 0.3.15
+
+### Bug Fixes
+
+- eslint fixes
+
+#### storage
+
+- include rolled-back ids in rollback event payload (#591)
+
+#### storage,indexeddb,postgres,sqlite
+
+- cumulative vector-storage validation + atomicity hardening (#580/#581/#583/#584/#587) (#589)
+
+### Refactors
+
+- extract shared Postgres type mapping and vector storage logic (#586)
+
+### Build
+
+- make timings easier to spot trouble
+
+### Chores
+
+- add homepage
+
+## Unreleased
+
+### Bug Fixes
+
+#### storage,indexeddb
+
+- validate vector shape on `IndexedDbVectorStorage` `put` / `putBulk` /
+  `similaritySearch` (paired with the matching `InMemoryVectorStorage` fix in
+  `@workglow/storage`). Validation runs synchronously before any IDB
+  transaction opens, so a malformed `putBulk` rejects the whole batch with no
+  partial write reaching the object store.
+
+#### indexeddb
+
+- `IndexedDbVectorStorage.putBulk` now routes every record through a single
+  `readwrite` IDB transaction instead of inheriting the
+  one-transaction-per-row `Promise.all` path. A request error, transaction
+  abort, or quota failure on any record aborts the whole batch — no row
+  reaches the object store. **Behaviour change for subscribers**: per-row
+  `put` events for a batched put now fire as a burst from `tx.oncomplete`
+  rather than interleaved with each IDB request. Consumers that relied on
+  the request-level ordering (none in this repo) should switch to
+  `tx.oncomplete` semantics.
+- `IndexedDbTabularStorage` exposes `protected putBulkInTransaction()` so
+  storages that need an atomic batch can route through a single transaction;
+  the base `putBulk` is unchanged to preserve existing per-row event
+  semantics for non-vector callers. An `InvalidStateError` raised by an
+  `onversionchange` race is absorbed with a single open-and-retry, and a
+  `rollback` event fires on the storage emitter when the retry path runs.
+- The per-record key-derivation logic (autoincrement, UUID,
+  `clientProvidedKeys`) is now extracted into
+  `protected prepareRecordForPut()` and shared by `put` /
+  `putBulkInTransaction`, eliminating drift between the single- and
+  batch-write paths.
+
+## 0.3.14
+
+### Features
+
+- add bugs URL to package.json files across all packages and providers
+
 ## 0.3.13
 
 ## 0.3.12

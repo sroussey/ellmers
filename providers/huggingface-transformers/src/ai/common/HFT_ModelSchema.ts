@@ -42,9 +42,9 @@ export const HfTransformersOnnxModelSchema = {
         },
         device: {
           type: "string",
-          enum: ["cpu", "gpu", "webgpu", "wasm", "metal"],
+          enum: ["auto", "cpu", "gpu", "webgpu", "wasm", "metal"],
           description: "High-level device selection.",
-          default: "webgpu",
+          default: "auto",
         },
         execution_providers: {
           type: "array",

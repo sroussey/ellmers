@@ -1,7 +1,7 @@
 {
   "name": "@workglow/cli",
   "type": "module",
-  "version": "0.3.13",
+  "version": "0.3.21",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
@@ -11,6 +11,7 @@
     "url": "https://github.com/workglow-dev/libs/issues"
   },
   "description": "Command-line interface example for Workglow, demonstrating how to build and run AI task pipelines from the terminal.",
+  "homepage": "https://workglow.dev",
   "scripts": {
     "dev": "concurrently -c 'auto' -n 'cli:' 'bun:dev-*'",
     "dev-js": "bun build --watch --target=bun --sourcemap=external --packages=external --outdir ./dist ./src/workglow.ts",
@@ -66,9 +67,9 @@
     "@inkjs/ui": "^2.0.0",
     "chalk": "^5.6.2",
     "commander": "^15.0.0",
-    "ink": "^7.0.5",
+    "ink": "^7.1.0",
     "react": "^19.2.7",
-    "smol-toml": "^1.6.1"
+    "smol-toml": "^1.7.0"
   },
   "devDependencies": {
     "@types/react": "^19.2.17"

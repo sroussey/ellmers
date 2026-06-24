@@ -13,7 +13,6 @@ import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
  */
 export const OPENAI_ALLOWED_HOSTS: readonly string[] = ["api.openai.com", ".openai.azure.com"];
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type OpenAIClientClass = new (config: any) => any;
 
 let _loadPromise: Promise<OpenAIClientClass> | undefined;
@@ -21,7 +20,7 @@ let _loadPromise: Promise<OpenAIClientClass> | undefined;
 // NOTE: we do not want to de-dup this in the provider-utils, vite wants direct import with string literals.
 export async function loadOpenAISDK(): Promise<OpenAIClientClass> {
   _loadPromise ??= import(/* @vite-ignore */ "openai")
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     .then((mod) => mod.default as OpenAIClientClass)
     .catch(() => {
       _loadPromise = undefined;

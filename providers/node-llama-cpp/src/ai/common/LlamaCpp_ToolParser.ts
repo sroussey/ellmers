@@ -43,15 +43,11 @@ export function detectQwenToolCallingVariation(
 ): "3" | "3.5" | undefined {
   const candidates = getModelTextCandidates(model);
 
-  if (
-    candidates.some((value) =>
-      /\bqwen(?:[\s._-]?|)3(?:[\s._-]?|)5\b|\bqwen(?:[\s._-]?|)3\.5\b/.test(value)
-    )
-  ) {
+  if (candidates.some((value) => /\bqwen[\s._-]?3[\s._-]?5\b/.test(value))) {
     return "3.5";
   }
 
-  if (candidates.some((value) => /\bqwen(?:[\s._-]?|)3\b/.test(value))) {
+  if (candidates.some((value) => /\bqwen[\s._-]?3\b/.test(value))) {
     return "3";
   }
 

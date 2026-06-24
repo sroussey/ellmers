@@ -195,7 +195,7 @@ export class WorkerServerBase {
     this.completedRequests.add(id);
     const transferables = extractTransferables(result);
     const uniqueTransferables = [...new Set(transferables)];
-    // @ts-ignore - Ignore type mismatch between standard Transferable and Bun.Transferable
+    // @ts-expect-error - Ignore type mismatch between standard Transferable and Bun.Transferable
     postMessage({ id, type: "complete", data: result }, uniqueTransferables);
   };
 
@@ -242,7 +242,6 @@ export class WorkerServerBase {
    * so WorkerManager can skip unnecessary roundtrips for unregistered calls.
    */
   sendReady() {
-    // @ts-ignore
     postMessage({
       type: "ready",
       functions: Object.keys(this.functions),

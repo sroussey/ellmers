@@ -32,18 +32,8 @@ export class HuggingFaceTransformersProvider extends AiProvider<HfTransformersOn
   readonly supportsServer = true;
 
   constructor(
-    promiseRunFns?: readonly AiProviderRunFnRegistration<
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      any,
-      HfTransformersOnnxModelConfig
-    >[],
-    previewTasks?: Record<
-      string,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      AiProviderPreviewRunFn<any, any, HfTransformersOnnxModelConfig>
-    >
+    promiseRunFns?: readonly AiProviderRunFnRegistration<any, any, HfTransformersOnnxModelConfig>[],
+    previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, HfTransformersOnnxModelConfig>>
   ) {
     super(promiseRunFns, previewTasks);
   }

@@ -38,7 +38,6 @@ describe("CloudflareMessageQueue.sendBatch — transient failure", () => {
     const sendBatch = vi.fn().mockRejectedValue(new Error("cf transient"));
 
     const mq = new CloudflareMessageQueue<TestInput, TestOutput>({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       queue: { send, sendBatch } as any,
       queueName: "q",
       jobStore,

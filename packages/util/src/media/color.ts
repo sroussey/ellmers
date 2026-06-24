@@ -11,12 +11,9 @@ export interface ColorObject {
   readonly a: number;
 }
 
-const HEX_PATTERN = /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
-const CSS_RGB_CHANNEL = "(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)";
-const CSS_RGB_ALPHA = "(?:0(?:\\.\\d+)?|1(?:\\.0+)?)";
-const CSS_RGB_PATTERN = new RegExp(
-  `^rgba?\\(\\s*(${CSS_RGB_CHANNEL})\\s*,\\s*(${CSS_RGB_CHANNEL})\\s*,\\s*(${CSS_RGB_CHANNEL})\\s*(?:,\\s*(${CSS_RGB_ALPHA}))?\\s*\\)$`
-);
+const HEX_PATTERN = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+const CSS_RGB_PATTERN =
+  /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(\d+(?:\.\d+)?))?\s*\)$/i;
 
 /**
  * Parse a `#RGB` / `#RGBA` / `#RRGGBB` / `#RRGGBBAA` hex color into a {@link ColorObject}.

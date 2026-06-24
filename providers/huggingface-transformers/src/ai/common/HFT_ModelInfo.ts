@@ -7,6 +7,7 @@
 import type { DeviceType } from "@huggingface/transformers";
 import type { AiProviderRunFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
 import { getLogger } from "@workglow/util/worker";
+import { resolveHftPipelineDevice } from "./HFT_Device";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { parseOnnxQuantizations } from "./HFT_OnnxDtypes";
 import { getPipelineCacheKey, hasCachedPipeline, loadTransformersSDK } from "./HFT_Pipeline";
@@ -67,7 +68,8 @@ export const HFT_ModelInfo: AiProviderRunFn<
   const detail = input.detail;
   const is_loaded = hasCachedPipeline(getPipelineCacheKey(model!));
 
-  const { pipeline: pipelineType, model_path, dtype, device } = model!.provider_config;
+  const { pipeline: pipelineType, model_path, dtype } = model!.provider_config;
+  const device = resolveHftPipelineDevice(model!.provider_config.device);
 
   const cacheOptions = {
     ...(dtype ? { dtype } : {}),

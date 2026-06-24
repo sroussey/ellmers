@@ -20,13 +20,7 @@ import { createStableDiffusionCppModelSearchRunFn } from "./StableDiffusionCpp_M
 
 export function buildStableDiffusionCppRunFns(
   opts: IStableDiffusionCppProviderOptions
-): readonly AiProviderRunFnRegistration<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  StableDiffusionCppModelConfig
->[] {
+): readonly AiProviderRunFnRegistration<any, any, StableDiffusionCppModelConfig>[] {
   return [
     {
       serves: STABLE_DIFFUSION_CPP_IMAGE_GENERATION,

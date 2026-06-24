@@ -1,5 +1,182 @@
 # @workglow/test
 
+## 0.3.21
+
+## 0.3.20
+
+### Features
+
+#### task-graph
+
+- bubble subgraph events for While and Fallback (data) groups
+- emit and bubble per-task task_progress events
+- bubble subgraph events from streaming groups too
+- bubble subgraph task events up to the parent graph
+- emit graph-level task_complete event per finished task
+
+### Bug Fixes
+
+#### task-graph
+
+- only emit task_progress while a task is actively running
+- harden task_complete emit against throwing listeners
+
+#### huggingface-transformers
+
+- resolve server device to undefined instead of "auto" (#597)
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1075.0
+- `@cloudflare/workers-types`: ^4.20260624.1
+- `miniflare`: ^4.20260623.0
+
+## 0.3.19
+
+### Features
+
+#### huggingface-transformers
+
+- add HFT_Device module and related tests
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1074.0
+
+## 0.3.18
+
+### Tests
+
+#### fix
+
+- hmac
+
+## 0.3.17
+
+### Features
+
+#### util
+
+- add Hmac utility
+
+### Updated Dependencies
+
+- `@cloudflare/workers-types`: ^4.20260621.1
+
+## 0.3.16
+
+### Bug Fixes
+
+#### providers/sqlite
+
+- vector encoding inside withTransaction + nested-BEGIN deadlock (#594)
+
+### Refactors
+
+#### storage
+
+- enhance unique index handling and event emission
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1073.0
+- `@cloudflare/workers-types`: ^4.20260619.1
+- `miniflare`: ^4.20260617.1
+- `vitest`: ^4.1.9
+
+## 0.3.15
+
+### Features
+
+#### storage
+
+- add uniqueIndexes for DB-level UNIQUE constraints + dedup overlapping regular indexes (#593)
+
+### Bug Fixes
+
+- eslint fixes
+
+#### providers/sqlite
+
+- wrap putBulk vectors with vector_as_*() to match put (#590)
+
+#### storage
+
+- include rolled-back ids in rollback event payload (#591)
+
+#### storage,indexeddb,postgres,sqlite
+
+- cumulative vector-storage validation + atomicity hardening (#580/#581/#583/#584/#587) (#589)
+
+#### test
+
+- playwright
+- browser use task tests disposing early
+
+#### mcp,supabase
+
+- credential-leak fail-closed + vector dim validation (2 HIGH from code review) (#579)
+
+### Refactors
+
+- extract shared Postgres type mapping and vector storage logic (#586)
+
+### Build
+
+- make timings easier to spot trouble
+
+### Chores
+
+- add homepage
+
+## 0.3.14
+
+### Features
+
+- add bugs URL to package.json files across all packages and providers
+
+#### supabase
+
+- add Supabase vector storage with pgvector support (#578)
+
+### Bug Fixes
+
+#### mcp
+
+- thread run-scoped registry through discoverSchemas (#577)
+- resolve auth credentials through the run-scoped registry
+
+#### task-graph,storage
+
+- cache restart-resume + SharedInMemory sync barrier (#552)
+
+### Tests
+
+- pin HF router provider for tool-calling conformance tests (#564)
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1068.0
+- `@cloudflare/workers-types`: ^4.20260612.1
+- `@types/dom-chromium-ai`: ^0.0.17
+- `miniflare`: ^4.20260611.0
+
 ## 0.3.13
 
 ### Refactors

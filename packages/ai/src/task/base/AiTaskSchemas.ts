@@ -26,7 +26,7 @@ export type TTypeModel = DataPortSchemaNonBoolean & {
 
 export function TypeModelAsString<
   S extends TypeModelSemantic = "model",
-  O extends Record<string, unknown> = {},
+  O extends Record<string, unknown> = Record<string, never>,
 >(semantic: S = "model" as S, options: O = {} as O) {
   if (semantic !== "model" && !semantic.startsWith("model:")) {
     throw new Error("Invalid semantic value");
@@ -49,7 +49,7 @@ export function TypeModelAsString<
 
 export function TypeModelByDetail<
   S extends TypeModelSemantic = "model",
-  O extends Record<string, unknown> = {},
+  O extends Record<string, unknown> = Record<string, never>,
 >(semantic: S = "model" as S, options: O = {} as O) {
   if (semantic !== "model" && !semantic.startsWith("model:")) {
     throw new Error("Invalid semantic value");
@@ -63,7 +63,7 @@ export function TypeModelByDetail<
 
 export function TypeModel<
   S extends TypeModelSemantic = "model",
-  O extends Record<string, unknown> = {},
+  O extends Record<string, unknown> = Record<string, never>,
 >(semantic: S = "model" as S, options: O = {} as O) {
   return {
     oneOf: [TypeModelAsString<S, O>(semantic, options), TypeModelByDetail<S, O>(semantic, options)],

@@ -13,7 +13,7 @@ import { PermanentJobError } from "@workglow/job-queue";
 import { loadTfmpTasksTextSDK, loadTfmpTasksVisionSDK } from "./TFMP_Client";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import type { TaskInstance } from "./TFMP_Runtime";
-import { getModelTask, wasm_reference_counts } from "./TFMP_Runtime";
+import { getModelTask, modelTaskCache, wasm_reference_counts, wasm_tasks } from "./TFMP_Runtime";
 
 /**
  * Core implementation for downloading a TensorFlow MediaPipe model. Resolves
@@ -103,8 +103,19 @@ export const TFMP_Download: AiProviderRunFn<
 
   emit({ type: "phase", message: "Pipeline loaded", progress: 0.9 });
   task.close();
+  // getModelTask cached this task; drop it so a later call doesn't hand back
+  // the now-closed instance.
+  modelTaskCache.delete(model!.provider_config.model_path);
+  // Release the WASM reference acquired during load, mirroring TFMP_Unload's
+  // teardown (and guarding against an absent counter producing NaN).
   const task_engine = model!.provider_config.task_engine!;
-  wasm_reference_counts.set(task_engine, wasm_reference_counts.get(task_engine)! - 1);
+  const newCount = (wasm_reference_counts.get(task_engine) ?? 1) - 1;
+  if (newCount <= 0) {
+    wasm_tasks.delete(task_engine);
+    wasm_reference_counts.delete(task_engine);
+  } else {
+    wasm_reference_counts.set(task_engine, newCount);
+  }
 
   emit({ type: "finish", data: { model: input.model } });
 };

@@ -24,18 +24,8 @@ export class TensorFlowMediaPipeQueuedProvider extends AiProvider<TFMPModelConfi
   readonly supportsServer = false;
 
   constructor(
-    promiseRunFns?: readonly AiProviderRunFnRegistration<
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      any,
-      TFMPModelConfig
-    >[],
-    previewTasks?: Record<
-      string,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      AiProviderPreviewRunFn<any, any, TFMPModelConfig>
-    >
+    promiseRunFns?: readonly AiProviderRunFnRegistration<any, any, TFMPModelConfig>[],
+    previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, TFMPModelConfig>>
   ) {
     super(promiseRunFns, previewTasks);
   }

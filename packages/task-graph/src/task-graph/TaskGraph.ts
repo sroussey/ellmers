@@ -708,14 +708,22 @@ export class TaskGraph implements ITaskGraph {
    */
   emit<E extends GraphEventDagEvents>(name: E, ...args: GraphEventDagParameters<E>): void;
   emit<E extends TaskGraphStatusEvents>(name: E, ...args: TaskGraphEventStatusParameters<E>): void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   emit(name: string, ...args: any[]): void {
     const dagEvent = EventTaskGraphToDagMapping[name as keyof typeof EventTaskGraphToDagMapping];
     if (dagEvent) {
       // Safe: overload signatures guarantee correct arg types at call sites
-      return (this.emit_dag as Function).call(this, name, ...args);
+      return (this.emit_dag as (name: string, ...args: unknown[]) => void).call(
+        this,
+        name,
+        ...args
+      );
     } else {
-      return (this.emit_local as Function).call(this, name, ...args);
+      return (this.emit_local as (name: string, ...args: unknown[]) => void).call(
+        this,
+        name,
+        ...args
+      );
     }
   }
 

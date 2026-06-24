@@ -13,4 +13,5 @@ export * from "./CredentialStoreRegistry";
 export * from "./EnvCredentialStore";
 export * from "./ICredentialStore";
 export * from "./InMemoryCredentialStore";
+export * from "./MissingCredentialError";
 export * from "./OtpPassphraseCache";

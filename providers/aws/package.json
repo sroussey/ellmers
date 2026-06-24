@@ -1,7 +1,7 @@
 {
   "name": "@workglow/aws",
   "type": "module",
-  "version": "0.3.13",
+  "version": "0.3.21",
   "private": true,
   "repository": {
     "type": "git",
@@ -12,13 +12,14 @@
     "url": "https://github.com/workglow-dev/libs/issues"
   },
   "description": "AWS backends for @workglow/job-queue (SQS).",
+  "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
     "watch-jq-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/browser.ts",
     "watch-jq-node-bun": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/node.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "bun run build-js && bun run build-types",
-    "build-js": "concurrently -c 'auto' -n 'jq-br,jq-nb' 'bun run build-jq-browser' 'bun run build-jq-node-bun'",
+    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'jq-br,jq-nb' 'bun run build-jq-browser' 'bun run build-jq-node-bun'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-jq-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/browser.ts",
     "build-jq-node-bun": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/node.ts",
@@ -41,7 +42,7 @@
     }
   },
   "peerDependencies": {
-    "@aws-sdk/client-sqs": "^3.1063.0",
+    "@aws-sdk/client-sqs": "^3.1075.0",
     "@workglow/job-queue": "workspace:*",
     "@workglow/util": "workspace:*"
   },
@@ -57,7 +58,7 @@
     }
   },
   "devDependencies": {
-    "@aws-sdk/client-sqs": "^3.1063.0",
+    "@aws-sdk/client-sqs": "^3.1075.0",
     "aws-sdk-client-mock": "^4.0.0",
     "@workglow/job-queue": "workspace:*",
     "@workglow/util": "workspace:*"

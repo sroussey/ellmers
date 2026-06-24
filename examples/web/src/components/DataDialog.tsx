@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { JsonTree } from "./JsonTree";
 
@@ -25,24 +25,36 @@ interface DataDialogProps {
 }
 
 export const DataDialog: React.FC<DataDialogProps> = ({ isOpen, onClose, title, data }) => {
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isOpen, onClose]);
 
-  const handleDialogClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-  };
+  if (!isOpen) return null;
 
   return (
     <DialogPortal>
-      <div
-        className="fixed inset-0 flex items-center justify-center z-[2000] bg-black/50 pointer-events-auto"
-        onClick={onClose}
-      >
+      <div className="fixed inset-0 flex items-center justify-center z-[2000] pointer-events-auto">
+        <button
+          type="button"
+          aria-label="Close dialog"
+          className="absolute inset-0 bg-black/50"
+          onClick={onClose}
+        />
         <div
-          className="bg-gray-900 rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] flex flex-col"
-          onClick={handleDialogClick}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="data-dialog-title"
+          className="relative bg-gray-900 rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] flex flex-col"
         >
           <div className="flex justify-between items-center p-4 border-b border-gray-700">
-            <h2 className="text-lg font-semibold text-white">{title}</h2>
+            <h2 id="data-dialog-title" className="text-lg font-semibold text-white">
+              {title}
+            </h2>
             <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
               ✕
             </button>

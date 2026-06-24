@@ -1,5 +1,77 @@
 # @workglow/task-graph
 
+## 0.3.21
+
+### Bug Fixes
+
+#### task-graph
+
+- emit task_progress from per-task progress subscription
+
+## 0.3.20
+
+### Features
+
+#### task-graph
+
+- bubble subgraph events for While and Fallback (data) groups
+- emit and bubble per-task task_progress events
+- bubble subgraph events from streaming groups too
+- bubble subgraph task events up to the parent graph
+- emit graph-level task_complete event per finished task
+
+### Bug Fixes
+
+#### task-graph
+
+- only emit task_progress while a task is actively running
+- tear down subgraph event bridges in finally
+- harden task_complete emit against throwing listeners
+
+## 0.3.19
+
+## 0.3.18
+
+## 0.3.17
+
+## 0.3.16
+
+## 0.3.15
+
+### Bug Fixes
+
+- eslint fixes
+
+### Refactors
+
+- extract shared Postgres type mapping and vector storage logic (#586)
+
+### Build
+
+- make timings easier to spot trouble
+
+### Chores
+
+- add homepage
+
+## 0.3.14
+
+### Features
+
+- add bugs URL to package.json files across all packages and providers
+
+### Bug Fixes
+
+#### task-graph,storage
+
+- cache restart-resume + SharedInMemory sync barrier (#552)
+
+### Documentation
+
+#### task-graph
+
+- fix TaskOutputTabularRepository README examples for new constructor signature
+
 ## 0.3.13
 
 ### Refactors

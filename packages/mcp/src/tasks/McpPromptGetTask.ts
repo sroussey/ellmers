@@ -22,6 +22,7 @@ import {
   TaskConfigSchema,
   Workflow,
 } from "@workglow/task-graph";
+import type { ServiceRegistry } from "@workglow/util";
 import { DataPortSchema, DataPortSchemaObject, FromSchema } from "@workglow/util/schema";
 import type { McpListTaskInput } from "./McpListTask";
 import { mcpList } from "./McpListTask";
@@ -241,7 +242,11 @@ export class McpPromptGetTask extends Task<
 
   private _schemasDiscoveringPromise: Promise<void> | undefined;
 
-  async discoverSchemas(_signal?: AbortSignal, serverConfig?: McpServerConfig): Promise<void> {
+  async discoverSchemas(
+    _signal?: AbortSignal,
+    serverConfig?: McpServerConfig,
+    registry?: ServiceRegistry
+  ): Promise<void> {
     if (this.config.inputSchema) return;
     if (this._schemasDiscoveringPromise) return this._schemasDiscoveringPromise;
     const resolved = serverConfig ?? getMcpServerConfig(this.config as Record<string, unknown>);
@@ -249,10 +254,14 @@ export class McpPromptGetTask extends Task<
 
     this._schemasDiscoveringPromise = (async () => {
       try {
-        const result = await mcpList({
-          server: resolved,
-          list_type: "prompts",
-        } as McpListTaskInput);
+        const result = await mcpList(
+          {
+            server: resolved,
+            list_type: "prompts",
+          } as McpListTaskInput,
+          {},
+          registry ? { registry } : {}
+        );
 
         const prompt = result.prompts?.find((p) => p.name === this.config.prompt_name);
         if (prompt) {
@@ -287,10 +296,14 @@ export class McpPromptGetTask extends Task<
   ): Promise<McpPromptGetTaskOutput> {
     const serverConfig = getMcpServerConfig(this.config as Record<string, unknown>);
 
-    await this.discoverSchemas(context.signal, serverConfig);
+    await this.discoverSchemas(context.signal, serverConfig, context.registry);
 
     const { mcpClientFactory } = getMcpTaskDeps();
-    const { client } = await mcpClientFactory.create(serverConfig, context.signal);
+    const { client } = await mcpClientFactory.create(
+      serverConfig,
+      context.signal,
+      context.registry
+    );
     try {
       const result = await client.getPrompt({
         name: String(this.config.prompt_name ?? ""),

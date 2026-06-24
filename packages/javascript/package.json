@@ -2,7 +2,7 @@
   "name": "@workglow/javascript",
   "type": "module",
   "sideEffects": false,
-  "version": "0.3.13",
+  "version": "0.3.21",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
@@ -12,6 +12,7 @@
     "url": "https://github.com/workglow-dev/libs/issues"
   },
   "description": "Sandboxed JavaScript task with vendored interpreter.",
+  "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
     "watch-js": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --outdir ./dist ./src/task.ts",

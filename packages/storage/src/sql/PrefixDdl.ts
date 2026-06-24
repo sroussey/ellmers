@@ -25,7 +25,7 @@ export interface ISqlPrefixColumn {
  * spliced into CREATE TABLE / CREATE INDEX statements without parameterisation,
  * so they MUST be validated before use.
  */
-const SAFE_IDENTIFIER = /^[a-zA-Z][a-zA-Z0-9_]*$/;
+const SAFE_IDENTIFIER = /^[a-z]\w*$/i;
 
 /**
  * Common SQL reserved words rejected by {@link assertPrefixesSafe}. Used as

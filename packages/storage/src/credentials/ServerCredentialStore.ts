@@ -81,7 +81,7 @@ export class ServerCredentialStore implements ICredentialStore {
    * vault id. The bounds are also chosen so the joined vault id stays well
    * under common KV/file-system key-length limits.
    */
-  private static readonly SAFE_SEGMENT = /^[A-Za-z0-9._:-]{1,128}$/;
+  private static readonly SAFE_SEGMENT = /^[\w.:-]{1,128}$/;
 
   private readonly vault: SecretVault;
   private readonly metadata: IKvStorage<string, CredentialMetadataRow>;

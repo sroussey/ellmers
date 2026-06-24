@@ -88,7 +88,7 @@ export class EventEmitter<EventListenerTypes extends Record<string, (...args: an
    * @returns this, so that calls can be chained
    */
   removeAllListeners<Event extends keyof EventListenerTypes>(event?: Event): this {
-    if (event) {
+    if (event !== undefined) {
       delete this.listeners[event];
       this.warnedEvents.delete(event);
     } else {

@@ -1,5 +1,61 @@
 # @workglow/web
 
+## 0.3.21
+
+## 0.3.20
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@vitejs/plugin-react`: ^6.0.3
+- `vite`: ^8.1.0
+
+## 0.3.19
+
+## 0.3.18
+
+## 0.3.17
+
+### Updated Dependencies
+
+- `@xyflow/react`: ^12.11.1
+
+## 0.3.16
+
+### Refactors
+
+#### storage
+
+- enhance unique index handling and event emission
+
+## 0.3.15
+
+### Bug Fixes
+
+- eslint fixes
+
+### Chores
+
+- add homepage
+
+## 0.3.14
+
+### Features
+
+- add bugs URL to package.json files across all packages and providers
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@tailwindcss/vite`: ^4.3.1
+- `tailwindcss`: ^4.3.1
+
 ## 0.3.13
 
 ### Refactors

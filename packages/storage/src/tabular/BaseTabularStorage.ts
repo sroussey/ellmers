@@ -140,6 +140,16 @@ export abstract class BaseTabularStorage<
   protected events = new EventEmitter<TabularEventListeners<PrimaryKey, Entity>>();
 
   protected indexes: Array<keyof Entity>[];
+  /**
+   * Compound column tuples that must each be unique across all rows in the
+   * table. Concrete backends translate these into DB-level UNIQUE indexes
+   * (SQLite / Postgres `CREATE UNIQUE INDEX IF NOT EXISTS`) so the
+   * deduplication invariant survives outside the application-layer code that
+   * upserts canonical rows. Stored separately from {@link indexes} so the
+   * prefix-redundancy filter applied to plain indexes does not collapse a
+   * unique tuple that happens to share a prefix.
+   */
+  protected uniqueIndexes: Array<keyof Entity>[];
   protected primaryKeySchema: DataPortSchemaObject;
   protected valueSchema: DataPortSchemaObject;
 
@@ -168,7 +178,8 @@ export abstract class BaseTabularStorage<
     indexes: readonly (keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[])[] = [],
     clientProvidedKeys: ClientProvidedKeysOption = "if-missing",
     tabularMigrations?: ReadonlyArray<ITabularMigration>,
-    migrationName?: string
+    migrationName?: string,
+    uniqueIndexes: readonly (readonly (keyof NoInfer<Entity>)[])[] = []
   ) {
     this.tabularMigrations = tabularMigrations;
     if (migrationName) {
@@ -210,7 +221,7 @@ export abstract class BaseTabularStorage<
       if (typeof column !== "string") {
         throw new Error("Column names must be strings");
       }
-      if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(column)) {
+      if (!/^[a-z]\w*$/i.test(column)) {
         throw new Error(
           "Column names must start with a letter and contain only letters, digits, and underscores"
         );
@@ -240,6 +251,37 @@ export abstract class BaseTabularStorage<
         }
       }
     }
+
+    // Validate unique index column names against the schema the same way
+    // `indexes` are validated. NULL semantics and DDL emission live in the
+    // concrete backends.
+    this.uniqueIndexes = uniqueIndexes.map((spec) => [...spec]) as Array<Array<keyof Entity>>;
+    for (const uniqueIndex of this.uniqueIndexes) {
+      if (uniqueIndex.length === 0) {
+        throw new Error("Unique index column list must not be empty");
+      }
+      for (const column of uniqueIndex) {
+        if (
+          !(column in this.primaryKeySchema.properties) &&
+          !(column in this.valueSchema.properties)
+        ) {
+          throw new Error(
+            `Unique-index column ${String(column)} is not in the primary key schema or value schema`
+          );
+        }
+      }
+    }
+
+    // Drop any regular index whose column tuple exactly matches a declared
+    // unique index — a UNIQUE index is also a B-tree on the same columns in
+    // the same order, so the non-unique copy is pure waste (duplicate disk +
+    // duplicate write on every row). Prefix relationships are intentionally
+    // NOT collapsed here: the existing single-column carve-out in
+    // `filterCompoundKeys` reflects that a dedicated narrow index can still be
+    // a deliberate optimization vs a wider unique tuple's leftmost-prefix
+    // scan.
+    const uniqueTupleKeys = new Set(this.uniqueIndexes.map((tuple) => tuple.map(String).join(" ")));
+    this.indexes = this.indexes.filter((tuple) => !uniqueTupleKeys.has(tuple.map(String).join(" ")));
 
     // Detect and validate auto-generated keys (at most one PK column; any PK position is allowed).
     // Composite keys often put a scope column first (e.g. kb_id) and auto-generate a second id.

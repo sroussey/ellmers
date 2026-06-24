@@ -194,7 +194,7 @@ export function parseKeyValueArgs(argsStr: string): Record<string, unknown> {
   const args: Record<string, unknown> = {};
   if (!argsStr) return args;
 
-  const argRegex = /(?<!\w)(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s,]+))/g;
+  const argRegex = /\b(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s,]+))/g;
   let match: RegExpExecArray | null;
   while ((match = argRegex.exec(argsStr)) !== null) {
     const key = match[1];
@@ -437,26 +437,96 @@ export const parseCohere: ParserFn = (text) => {
  * V2 format: `<｜tool▁call▁begin｜>function_name\n```json\n{...}\n```<｜tool▁call▁end｜>`
  * V3.1 format: `<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>name<｜tool▁sep｜>{args}<｜tool▁call▁end｜><｜tool▁calls▁end｜>`
  */
-export const parseDeepSeek: ParserFn = (text) => {
+function parseDeepSeekV31Calls(text: string): ToolCall[] {
   const calls: ToolCall[] = [];
+  const bars = ["|", "｜"] as const;
+  const gapVariants = ["", " ", "\u2581", " \u2581", "\u2581 "] as const;
+
+  const beginTags: string[] = [];
+  const sepTags: string[] = [];
+  const endTags: string[] = [];
+  for (const bar of bars) {
+    for (const gap1 of gapVariants) {
+      for (const gap2 of gapVariants) {
+        beginTags.push(`<${bar}tool${gap1}call${gap2}begin${bar}>`);
+        endTags.push(`<${bar}tool${gap1}call${gap2}end${bar}>`);
+      }
+      sepTags.push(`<${bar}tool${gap1}sep${bar}>`);
+    }
+  }
+
+  let searchFrom = 0;
+  while (searchFrom < text.length) {
+    let beginIdx = -1;
+    let beginTag = "";
+    for (const tag of beginTags) {
+      const idx = text.indexOf(tag, searchFrom);
+      if (idx !== -1 && (beginIdx === -1 || idx < beginIdx)) {
+        beginIdx = idx;
+        beginTag = tag;
+      }
+    }
+    if (beginIdx === -1) break;
+
+    let pos = beginIdx + beginTag.length;
+    while (pos < text.length && /[ \t\u2581]/.test(text[pos]!)) pos += 1;
+
+    const nameStart = pos;
+    while (pos < text.length && /\w/.test(text[pos]!)) pos += 1;
+    const name = text.slice(nameStart, pos);
+    if (!name) {
+      searchFrom = beginIdx + beginTag.length;
+      continue;
+    }
+
+    while (pos < text.length && /[ \t\u2581]/.test(text[pos]!)) pos += 1;
+
+    let sepTag = "";
+    for (const tag of sepTags) {
+      if (text.startsWith(tag, pos)) {
+        sepTag = tag;
+        break;
+      }
+    }
+    if (!sepTag) {
+      searchFrom = beginIdx + beginTag.length;
+      continue;
+    }
+    pos += sepTag.length;
+
+    while (pos < text.length && /[ \t\u2581]/.test(text[pos]!)) pos += 1;
+
+    let endIdx = -1;
+    let endTag = "";
+    for (const tag of endTags) {
+      const idx = text.indexOf(tag, pos);
+      if (idx !== -1 && (endIdx === -1 || idx < endIdx)) {
+        endIdx = idx;
+        endTag = tag;
+      }
+    }
+    if (endIdx === -1) break;
+
+    const args = tryParseJson(text.slice(pos, endIdx).trim()) as
+      | Record<string, unknown>
+      | undefined;
+    if (args) {
+      calls.push(makeToolCall(name, args));
+    }
+    searchFrom = endIdx + endTag.length;
+  }
+
+  return calls;
+}
+
+export const parseDeepSeek: ParserFn = (text) => {
+  const calls: ToolCall[] = parseDeepSeekV31Calls(text);
 
   // Helper to match both fullwidth ｜ and ASCII | bar variants, and ▁ or space
   const bar = "(?:｜|\\|)";
   const sep = "[\\s\u2581]";
 
-  // Try V3.1 format first: name<｜tool▁sep｜>{args}
-  const v31Regex = new RegExp(
-    `<${bar}tool${sep}call${sep}begin${bar}>\\s*(\\w+)\\s*<${bar}tool${sep}sep${bar}>\\s*([^<]*(?:<(?!${bar}tool${sep}call${sep}end${bar}>)[^<]*)*)\\s*<${bar}tool${sep}call${sep}end${bar}>`,
-    "g"
-  );
   let match: RegExpExecArray | null;
-  while ((match = v31Regex.exec(text)) !== null) {
-    const args = tryParseJson(match[2].trim()) as Record<string, unknown> | undefined;
-    if (args) {
-      calls.push(makeToolCall(match[1], args));
-    }
-  }
-
   // Try V2 format: name\n```json\n{args}\n```
   if (calls.length === 0) {
     const v2Regex = new RegExp(
@@ -842,7 +912,7 @@ function parseLiquidArgs(argsStr: string): Record<string, unknown> {
  */
 function extractPythonicCalls(text: string): ToolCall[] {
   const calls: ToolCall[] = [];
-  const startRegex = /(?<!\w)(\w+)\(/g;
+  const startRegex = /\b(\w+)\(/g;
   let startMatch: RegExpExecArray | null;
   while ((startMatch = startRegex.exec(text)) !== null) {
     const funcName = startMatch[1];
@@ -937,7 +1007,7 @@ export const parseLiquid: ParserFn = (text) => {
   }
 
   // Try ||Call: format (LFM2 text-based variant): ||Call: func_name(args)
-  const callPrefixRegex = /\|?\|?Call:\s*/g;
+  const callPrefixRegex = /\|{0,2}Call:\s*/g;
   let callPrefixMatch: RegExpExecArray | null;
   const callCalls: ToolCall[] = [];
   while ((callPrefixMatch = callPrefixRegex.exec(text)) !== null) {
@@ -949,7 +1019,7 @@ export const parseLiquid: ParserFn = (text) => {
   }
 
   if (callCalls.length > 0) {
-    const content = stripModelArtifacts(text.replace(/\|?\|?Call:\s{0,20}\w+\([^)]*\)/g, ""));
+    const content = stripModelArtifacts(text.replace(/\|{0,2}Call:\s{0,20}\w+\([^)]*\)/g, ""));
     return { tool_calls: callCalls, content, parser: "liquid" };
   }
 

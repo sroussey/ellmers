@@ -23,7 +23,7 @@ export const KV_REPOSITORY = createServiceToken<IKvStorage<any, any, any>>("stor
  */
 export abstract class KvStorage<
   Key extends string = string,
-  Value extends any = any,
+  Value = any,
   Combined = { key: Key; value: Value },
 > implements IKvStorage<Key, Value, Combined> {
   protected events = new EventEmitter<KvEventListeners<Key, Value, Combined>>();

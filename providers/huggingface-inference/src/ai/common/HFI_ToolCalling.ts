@@ -27,7 +27,6 @@ export const HFI_ToolCalling_Stream: AiProviderRunFn<
   const messages = toOpenAIMessages(input);
   const toolChoice = mapOpenAIToolChoice(input.toolChoice, false);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const params: any = {
     model: modelName,
     messages,

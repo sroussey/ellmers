@@ -70,13 +70,14 @@ import { HFT_ToolCalling } from "./HFT_ToolCalling";
  * `Array.isArray(input.messages) && input.messages.length > 0` and dispatches
  * to {@link HFT_Chat} or {@link HFT_TextGeneration}.
  */
-const HFT_TextGeneration_Unified: AiProviderRunFn<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  HfTransformersOnnxModelConfig
-> = async (input, model, signal, emit, outputSchema, sessionId) => {
+const HFT_TextGeneration_Unified: AiProviderRunFn<any, any, HfTransformersOnnxModelConfig> = async (
+  input,
+  model,
+  signal,
+  emit,
+  outputSchema,
+  sessionId
+) => {
   const maybeMessages = (input as { messages?: unknown }).messages;
   if (Array.isArray(maybeMessages) && maybeMessages.length > 0) {
     await HFT_Chat(input, model, signal, emit, outputSchema, sessionId);
@@ -95,9 +96,7 @@ const HFT_TextGeneration_Unified: AiProviderRunFn<
  * {@link ToolCallingTask}.
  */
 export const HFT_RUN_FNS: readonly AiProviderRunFnRegistration<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   HfTransformersOnnxModelConfig
 >[] = [
@@ -129,7 +128,6 @@ export const HFT_RUN_FNS: readonly AiProviderRunFnRegistration<
 
 export const HFT_PREVIEW_TASKS: Record<
   string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   AiProviderPreviewRunFn<any, any, HfTransformersOnnxModelConfig>
 > = {
   CountTokensTask: HFT_CountTokens_Preview,

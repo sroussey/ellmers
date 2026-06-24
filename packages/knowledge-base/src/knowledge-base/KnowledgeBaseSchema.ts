@@ -40,7 +40,7 @@ export function knowledgeBaseTableNames(kbId: string): {
   readonly documentTable: string;
   readonly chunkTable: string;
 } {
-  const safe = kbId.replace(/[^a-zA-Z0-9_]/g, "_");
+  const safe = kbId.replace(/\W/g, "_");
   return {
     documentTable: `kb_docs_${safe}`,
     chunkTable: `kb_chunks_${safe}`,

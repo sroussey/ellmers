@@ -16,6 +16,7 @@ import {
   InsertEntity,
   ITabularMigration,
   ITabularMigrationApplier,
+  mapPostgresType,
   MIGRATIONS_TABLE,
   Page,
   PageRequest,
@@ -27,6 +28,7 @@ import {
   SqlTabularMigrationApplier,
   TabularChangePayload,
   TabularSubscribeOptions,
+  TYPED_ARRAY_CTORS,
   ValueOptionType,
   type VectorIndexOptions,
 } from "@workglow/storage";
@@ -42,15 +44,6 @@ import {
 export const POSTGRES_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
   "storage.tabularRepository.postgres"
 );
-
-const TYPED_ARRAY_CTORS: Record<string, new (data: number[]) => ArrayBufferView> = {
-  Float32Array,
-  Float64Array,
-  Int8Array,
-  Uint8Array,
-  Int16Array,
-  Uint16Array,
-};
 
 /**
  * Validates a vector-index numeric tuning value: undefined is allowed
@@ -107,9 +100,19 @@ export class PostgresTabularStorage<
     primaryKeyNames: PrimaryKeyNames,
     indexes: readonly (keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[])[] = [],
     clientProvidedKeys: ClientProvidedKeysOption = "if-missing",
-    tabularMigrations?: ReadonlyArray<ITabularMigration>
+    tabularMigrations?: ReadonlyArray<ITabularMigration>,
+    uniqueIndexes: readonly (readonly (keyof NoInfer<Entity>)[])[] = []
   ) {
-    super(table, schema, primaryKeyNames, indexes, clientProvidedKeys, tabularMigrations, table);
+    super(
+      table,
+      schema,
+      primaryKeyNames,
+      indexes,
+      clientProvidedKeys,
+      tabularMigrations,
+      table,
+      uniqueIndexes
+    );
     this.db = db;
   }
 
@@ -172,8 +175,7 @@ export class PostgresTabularStorage<
     const createdIndexes = new Set<string>();
     for (const columns of this.indexes) {
       if (columns.length <= pkColumns.length) {
-        // @ts-ignore
-        const isPkPrefix = columns.every((col, idx) => col === pkColumns[idx]);
+        const isPkPrefix = columns.every((col, idx) => col === (pkColumns[idx] as string));
         if (isPkPrefix) continue;
       }
       const indexName = `${this.table}_${columns.join("_")}`;
@@ -193,6 +195,24 @@ export class PostgresTabularStorage<
         );
         createdIndexes.add(columnKey);
       }
+    }
+    await this.createDeclaredUniqueIndexes();
+  }
+
+  /**
+   * Emit `CREATE UNIQUE INDEX IF NOT EXISTS` for each declared unique tuple.
+   * Idempotent so migration replays and setup-after-migration re-runs are
+   * safe. Index name: `${table}_uniq_${cols.join("_")}` — distinct from the
+   * non-unique `${table}_${cols.join("_")}` pattern above so a tuple can carry
+   * both a search index and a UNIQUE constraint without name collision.
+   */
+  private async createDeclaredUniqueIndexes(): Promise<void> {
+    for (const columns of this.uniqueIndexes) {
+      const indexName = `${this.table}_uniq_${columns.map(String).join("_")}`;
+      const columnList = columns.map((col) => `"${String(col)}"`).join(", ");
+      await this.db.query(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "${indexName}" ON "${this.table}" (${columnList})`
+      );
     }
   }
 
@@ -243,123 +263,19 @@ export class PostgresTabularStorage<
    * @returns The corresponding PostgreSQL data type
    */
   protected mapTypeToSQL(typeDef: JsonSchema): string {
-    // Extract the actual non-null type using base helper
-    const actualType = this.getNonNullType(typeDef);
-    if (typeof actualType === "boolean") {
-      return "TEXT /* boolean schema */";
-    }
-
-    // Handle BLOB type
-    if (actualType.contentEncoding === "blob") return "BYTEA";
-
-    switch (actualType.type) {
-      case "string":
-        // Handle special string formats
-        if (actualType.format === "date-time") return "TIMESTAMP";
-        if (actualType.format === "date") return "DATE";
-        if (actualType.format === "email") return "VARCHAR(255)";
-        if (actualType.format === "uri") return "VARCHAR(2048)";
-        if (actualType.format === "uuid") return "UUID";
-
-        // Handle vector format (pgvector extension)
+    return mapPostgresType(typeDef, {
+      getNonNullType: (t) => this.getNonNullType(t),
+      // pgvector column for vector-format strings with a known dimension.
+      vectorTypeFor: (actualType) => {
         if (this.isVectorFormat(actualType.format)) {
           const dimension = this.getVectorDimensions(actualType);
           if (typeof dimension === "number") {
             return `vector(${dimension})`;
           }
         }
-
-        // Use a VARCHAR with maxLength if specified
-        if (typeof actualType.maxLength === "number") {
-          return `VARCHAR(${actualType.maxLength})`;
-        }
-
-        // Default to TEXT for strings without constraints
-        return "TEXT";
-
-      case "number":
-      case "integer":
-        // Handle integer vs floating point
-        if (actualType.multipleOf === 1 || actualType.type === "integer") {
-          // Use PostgreSQL's numeric range types based on min/max values
-          if (typeof actualType.minimum === "number") {
-            if (actualType.minimum >= 0) {
-              // For unsigned integers
-              if (typeof actualType.maximum === "number") {
-                if (actualType.maximum <= 32767) return "SMALLINT";
-                if (actualType.maximum <= 2147483647) return "INTEGER";
-              }
-              return "BIGINT";
-            }
-          }
-
-          // Default integer type
-          return "INTEGER";
-        }
-
-        // For floating point numbers with precision requirements
-        if (actualType.format === "float") return "REAL";
-        if (actualType.format === "double") return "DOUBLE PRECISION";
-
-        // Use NUMERIC with precision/scale if specified
-        if (typeof actualType.multipleOf === "number") {
-          const decimalPlaces = String(actualType.multipleOf).split(".")[1]?.length || 0;
-          if (decimalPlaces > 0) {
-            return `NUMERIC(38, ${decimalPlaces})`;
-          }
-        }
-
-        return "NUMERIC";
-
-      case "boolean":
-        return "BOOLEAN";
-
-      case "array":
-        // Handle array types (if items type is specified)
-        if (
-          actualType.items &&
-          typeof actualType.items === "object" &&
-          !Array.isArray(actualType.items)
-        ) {
-          const itemType = this.mapTypeToSQL(actualType.items as JsonSchema);
-
-          // Only use native PostgreSQL arrays for simple scalar types
-          // List of types that work well as native PostgreSQL arrays
-          const supportedArrayElementTypes = [
-            "TEXT",
-            "VARCHAR",
-            "CHAR",
-            "INTEGER",
-            "SMALLINT",
-            "BIGINT",
-            "REAL",
-            "DOUBLE PRECISION",
-            "NUMERIC",
-            "BOOLEAN",
-            "UUID",
-            "DATE",
-            "TIMESTAMP",
-          ];
-
-          // Check if the item type is in our supported list (either exact match or starts with for VARCHAR types)
-          const isSupported = supportedArrayElementTypes.some(
-            (type) => itemType === type || (itemType.startsWith(type + "(") && type !== "VARCHAR") // Handle things like VARCHAR(255)
-          );
-
-          if (isSupported) {
-            return `${itemType}[]`;
-          } else {
-            return "JSONB /* complex array */";
-          }
-        }
-        return "JSONB /* generic array */";
-
-      case "object":
-        return "JSONB /* object */";
-
-      default:
-        return "TEXT /* unknown type */";
-    }
+        return undefined;
+      },
+    });
   }
 
   /**
@@ -511,30 +427,6 @@ export class PostgresTabularStorage<
       }
     }
     return super.sqlToJsValue(column, value);
-  }
-
-  /**
-   * Determines if a field should be treated as unsigned based on schema properties
-   * @param typeDef - The schema type definition
-   * @returns true if the field should be treated as unsigned
-   */
-  protected shouldBeUnsigned(typeDef: JsonSchema): boolean {
-    // Extract the non-null type using the base class helper
-    const actualType = this.getNonNullType(typeDef);
-    if (typeof actualType === "boolean") {
-      return false;
-    }
-
-    // Check if it's a number type with minimum >= 0
-    if (
-      (actualType.type === "number" || actualType.type === "integer") &&
-      typeof actualType.minimum === "number" &&
-      actualType.minimum >= 0
-    ) {
-      return true;
-    }
-
-    return false;
   }
 
   /**
@@ -992,8 +884,7 @@ export class PostgresTabularStorage<
    *     `BEGIN`. Use SAVEPOINT directly for nested rollback boundaries.
    */
   private createTxView(txDb: { query: Pool["query"] }, deferredPutEvents: Entity[]): this {
-    const target = this;
-    return new Proxy(target, {
+    return new Proxy(this, {
       get(t, prop, receiver) {
         if (prop === "withTransaction") {
           return () => {
@@ -1230,7 +1121,7 @@ export class PostgresTabularStorage<
     const db = this.db;
     const { key } = this.separateKeyValueFromCombined(value as Entity);
     const whereClauses = (this.primaryKeyColumns() as string[])
-      .map((key, i) => `${key} = $${i + 1}`)
+      .map((col, i) => `${PostgresDialect.quoteId(col)} = $${i + 1}`)
       .join(" AND ");
 
     const params = this.getPrimaryKeyAsOrderedArray(key);

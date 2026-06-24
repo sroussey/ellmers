@@ -474,8 +474,7 @@ export class Dataflow {
  */
 export class DataflowArrow extends Dataflow {
   constructor(dataflow: DataflowIdType) {
-    const pattern =
-      /^([a-zA-Z0-9-]+?)\[([a-zA-Z0-9-]+?)\] ==> ([a-zA-Z0-9-]+?)\[([a-zA-Z0-9-]+?)\]$/;
+    const pattern = /^([a-z0-9-]+)\[([a-z0-9-]+)\] ==> ([a-z0-9-]+)\[([a-z0-9-]+)\]$/i;
     const match = dataflow.match(pattern);
 
     if (!match) {

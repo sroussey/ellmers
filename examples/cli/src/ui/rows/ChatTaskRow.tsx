@@ -7,7 +7,7 @@
 import type { ChatMessage, ContentBlock } from "@workglow/ai";
 import type { ITask, StreamEvent } from "@workglow/task-graph";
 import { Box, Text } from "ink";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useSyncExternalStore } from "react";
 import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
 import type { TaskRowProps } from "./pickRenderer";
 
@@ -43,16 +43,31 @@ function messageText(message: ChatMessage): string {
   return (message.content as ReadonlyArray<ContentBlock>).map(blockToText).join("");
 }
 
+const EMPTY_MESSAGES: ReadonlyArray<ChatMessage> = [];
+
 function messagesFromTask(task: ITask): ReadonlyArray<ChatMessage> {
-  return (task.runOutputData.messages as ReadonlyArray<ChatMessage> | undefined) ?? [];
+  return (task.runOutputData.messages as ReadonlyArray<ChatMessage> | undefined) ?? EMPTY_MESSAGES;
+}
+
+function subscribeToTaskMessages(task: ITask, onStoreChange: () => void): () => void {
+  const onChunk = (event: StreamEvent): void => {
+    if (event.type === "object-delta" && event.port === "messages") {
+      onStoreChange();
+    }
+  };
+  task.events.on("stream_chunk", onChunk);
+  return () => {
+    task.events.off("stream_chunk", onChunk);
+  };
 }
 
 export function ChatTaskRow({ task, line }: TaskRowProps): React.ReactElement {
-  // Seed from runOutputData so we don't miss deltas that fired before
-  // the effect below attached. TaskRunner updates runOutputData after
-  // every object-delta so the current history is always recoverable.
-  const [messages, setMessages] = useState<ReadonlyArray<ChatMessage>>(() =>
-    messagesFromTask(task)
+  // TaskRunner updates runOutputData before every object-delta; subscribe
+  // so React always reads the authoritative accumulated history from the task.
+  const messages = useSyncExternalStore(
+    (onStoreChange) => subscribeToTaskMessages(task, onStoreChange),
+    () => messagesFromTask(task),
+    () => messagesFromTask(task)
   );
   // `streamText` is the in-progress assistant text for the *current* turn.
   // Appends on every text-delta; resets whenever history grows (meaning the
@@ -66,10 +81,6 @@ export function ChatTaskRow({ task, line }: TaskRowProps): React.ReactElement {
         const delta = (event as { textDelta?: string; text?: string }).textDelta ?? "";
         if (delta) setStreamText((prev) => prev + delta);
       } else if (event.type === "object-delta" && event.port === "messages") {
-        // `event.objectDelta` is only the *new* messages, not the full
-        // history. Pull the authoritative accumulated state from the task
-        // instead — TaskRunner updates runOutputData before emitting.
-        setMessages(messagesFromTask(task));
         // Each object-delta marks a turn boundary — clear the per-turn
         // streaming buffer so the next turn's text-deltas start fresh.
         setStreamText("");
@@ -78,10 +89,6 @@ export function ChatTaskRow({ task, line }: TaskRowProps): React.ReactElement {
     const onEnd = (): void => setStreamText("");
     task.events.on("stream_chunk", onChunk);
     task.events.on("stream_end", onEnd);
-    // Re-sync from runOutputData once the listener is attached — in case an
-    // object-delta fired between `useState` evaluation and listener attach.
-    const latest = messagesFromTask(task);
-    if (latest.length > 0) setMessages(latest);
     return () => {
       task.events.off("stream_chunk", onChunk);
       task.events.off("stream_end", onEnd);

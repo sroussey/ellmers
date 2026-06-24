@@ -185,7 +185,7 @@ export function TaskRunApp({
       unsubSubgraph?.();
       stopSubPoll?.();
     };
-  }, []);
+  }, [onComplete, onError, task, taskType, overrides, runConfig]);
 
   const subOrder =
     task.hasChildren() && task.subGraph

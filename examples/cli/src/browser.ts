@@ -7,7 +7,7 @@
 import path from "node:path";
 import type { CliConfig } from "./config";
 
-const SAFE_NAME_RE = /^[a-zA-Z0-9_-]+$/;
+const SAFE_NAME_RE = /^[\w-]+$/;
 
 function safeName(value: string, label: string): string {
   if (!SAFE_NAME_RE.test(value)) {

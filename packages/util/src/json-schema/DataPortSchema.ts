@@ -9,7 +9,7 @@ import { JsonSchema, JsonSchemaCustomProps } from "./JsonSchema";
 
 export type DataPortSchemaNonBoolean<
   EXTENSION extends JSONSchemaExtension = JsonSchemaCustomProps,
-> = Exclude<JsonSchema<EXTENSION>, Boolean>;
+> = Exclude<JsonSchema<EXTENSION>, boolean>;
 
 /**
  * Narrows to object schemas while preserving all schema properties.

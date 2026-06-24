@@ -22,7 +22,7 @@ import { sleep } from "@workglow/util";
 
 // Bun.WebView is accessed via globalThis at runtime
 /** @type {InstanceType<typeof Bun.WebView>} */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type AnyWebView = any;
 
 /**
@@ -41,6 +41,10 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
 
   private _dialogHandler: ((info: DialogInfo) => DialogAction | Promise<DialogAction>) | null =
     null;
+
+  /** Cancels the navigation wait currently in flight, if any, so a new
+   *  navigation can supersede it instead of silently orphaning its promise. */
+  private _pendingNavCancel: (() => void) | null = null;
 
   protected readonly backendName = "BunWebViewBackend";
 
@@ -62,7 +66,6 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
   }
 
   async connect(options: BrowserConnectOptions = {}): Promise<void> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const BunWebView = (globalThis as any).Bun?.WebView;
     if (!BunWebView) {
       throw new Error(
@@ -73,7 +76,6 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
 
     const { headless = true, chromePath = this.defaultChromePath } = options;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const webViewOptions: Record<string, any> = {
       headless,
       url: "about:blank",
@@ -110,6 +112,9 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
 
   async disconnect(): Promise<void> {
     this._connected = false;
+    // Reject any navigation still in flight — its callbacks will never fire
+    // once the webview is closed below.
+    this._pendingNavCancel?.();
     try {
       if (this._wv) {
         this._wv.close();
@@ -133,27 +138,48 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
   }
 
   async navigate(url: string, options: NavigateOptions = {}): Promise<void> {
-    const timeout = options.timeout ?? 30_000;
+    const settled = this.waitForNextNavigation(options.timeout ?? 30_000);
+    this.wv.navigate(url);
+    await settled;
+  }
 
-    await new Promise<void>((resolve, reject) => {
+  /**
+   * Install the navigation callbacks for the next navigation event, cancelling
+   * any wait already in flight first. Without this, two concurrent navigations
+   * would overwrite each other's `onNavigated`/`onNavigationFailed` callbacks,
+   * leaving the earlier promise pending forever with a dangling timer.
+   */
+  private waitForNextNavigation(timeout: number): Promise<void> {
+    // A navigation wait is already pending — its callbacks are about to be
+    // replaced, so settle it (rejected) rather than orphan it.
+    this._pendingNavCancel?.();
+
+    return new Promise<void>((resolve, reject) => {
+      const wv = this.wv;
+      const cleanup = (): void => {
+        clearTimeout(timer);
+        wv.onNavigated = null;
+        wv.onNavigationFailed = null;
+        this._pendingNavCancel = null;
+      };
       const timer = setTimeout(() => {
-        reject(new Error("BunWebViewBackend: navigate timed out"));
+        cleanup();
+        reject(new Error("BunWebViewBackend: navigation timed out"));
       }, timeout);
 
-      this.wv.onNavigated = () => {
-        clearTimeout(timer);
-        this.wv.onNavigated = null;
+      this._pendingNavCancel = () => {
+        cleanup();
+        reject(new Error("BunWebViewBackend: navigation superseded by a newer navigation"));
+      };
+
+      wv.onNavigated = () => {
+        cleanup();
         resolve();
       };
-
-      this.wv.onNavigationFailed = (error: unknown) => {
-        clearTimeout(timer);
-        this.wv.onNavigationFailed = null;
-        this.wv.onNavigated = null;
+      wv.onNavigationFailed = (error: unknown) => {
+        cleanup();
         reject(new Error(`BunWebViewBackend: navigation failed — ${error}`));
       };
-
-      this.wv.navigate(url);
     });
   }
 
@@ -276,28 +302,7 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
   }
 
   async waitForNavigation(options: NavigateOptions = {}): Promise<void> {
-    const timeout = options.timeout ?? 30_000;
-    return new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.wv.onNavigated = null;
-        this.wv.onNavigationFailed = null;
-        reject(new Error("BunWebViewBackend: waitForNavigation timed out"));
-      }, timeout);
-
-      this.wv.onNavigated = () => {
-        clearTimeout(timer);
-        this.wv.onNavigated = null;
-        this.wv.onNavigationFailed = null;
-        resolve();
-      };
-
-      this.wv.onNavigationFailed = (error: unknown) => {
-        clearTimeout(timer);
-        this.wv.onNavigated = null;
-        this.wv.onNavigationFailed = null;
-        reject(new Error(`BunWebViewBackend: navigation failed — ${error}`));
-      };
-    });
+    return this.waitForNextNavigation(options.timeout ?? 30_000);
   }
 
   async waitForSelector(selector: string, options: WaitOptions = {}): Promise<ElementRef> {

@@ -1,0 +1,28 @@
+name: Nightly type-drift guard
+permissions:
+  contents: read
+on:
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+env:
+  CI: "true"
+  DO_NOT_TRACK: "1"
+  TURBO_TELEMETRY_DISABLED: "1"
+jobs:
+  type-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun i
+      - name: Build type declarations
+        run: bun run build:types
+      # `.test-d.ts` files only run in vitest's typecheck mode. `--typecheck.only`
+      # disables the runtime test run so this stays cheap.
+      - run: bunx vitest run --typecheck --typecheck.only packages/ai/src/task/__tests__/types.test-d.ts

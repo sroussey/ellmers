@@ -38,9 +38,9 @@ function makeFakeServer(
   storage: AnyTabularStorage
 ): (path: string, init?: RequestInit) => Promise<Response> {
   return async (path: string, init?: RequestInit) => {
-    const match = /^\/api\/storage\/([^/]+)\/([^/]+)$/.exec(path);
+    const match = /^\/api\/storage\/[^/]+\/([^/]+)$/.exec(path);
     if (!match) return new Response(JSON.stringify({ error: "not found" }), { status: 404 });
-    const op = match[2];
+    const op = match[1];
     const body = init?.body ? JSON.parse(String(init.body)) : {};
     try {
       switch (op) {

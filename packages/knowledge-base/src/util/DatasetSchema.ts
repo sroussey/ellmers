@@ -7,7 +7,9 @@
 import type { JsonSchema } from "@workglow/util/schema";
 
 /** Accepts either a string ID (resolved from registry) or a direct instance. */
-export function TypeTabularStorage<O extends Record<string, unknown> = {}>(options: O = {} as O) {
+export function TypeTabularStorage<O extends Record<string, unknown> = Record<string, never>>(
+  options: O = {} as O
+) {
   return {
     title: "Tabular Storage",
     description: "Storage ID or instance for tabular data storage",
@@ -21,7 +23,9 @@ export function TypeTabularStorage<O extends Record<string, unknown> = {}>(optio
 }
 
 /** Accepts either a string ID (resolved from registry) or a direct instance. */
-export function TypeKnowledgeBase<O extends Record<string, unknown> = {}>(options: O = {} as O) {
+export function TypeKnowledgeBase<O extends Record<string, unknown> = Record<string, never>>(
+  options: O = {} as O
+) {
   return {
     title: "Knowledge Base",
     description: "Knowledge base ID or instance",

@@ -242,6 +242,7 @@ export const App = () => {
       workflow.off("error", complete);
       workflow.off("abort", abort);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflow]);
 
   const setNewJson = useCallback(
@@ -254,6 +255,7 @@ export const App = () => {
       }
       setJsonData(json);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [workflow]
   );
 

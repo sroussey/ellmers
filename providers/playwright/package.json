@@ -2,7 +2,7 @@
   "name": "@workglow/playwright",
   "type": "module",
   "sideEffects": false,
-  "version": "0.3.13",
+  "version": "0.3.21",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
@@ -12,6 +12,7 @@
     "url": "https://github.com/workglow-dev/libs/issues"
   },
   "description": "Playwright browser backend for @workglow/browser-control.",
+  "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
     "watch-code": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/index.ts",

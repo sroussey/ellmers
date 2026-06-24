@@ -49,18 +49,8 @@ export class WebBrowserProvider extends AiProvider<WebBrowserModelConfig> {
   private readonly probeReady: Promise<void>;
 
   constructor(
-    promiseRunFns?: readonly AiProviderRunFnRegistration<
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      any,
-      WebBrowserModelConfig
-    >[],
-    previewTasks?: Record<
-      string,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      AiProviderPreviewRunFn<any, any, WebBrowserModelConfig>
-    >,
+    promiseRunFns?: readonly AiProviderRunFnRegistration<any, any, WebBrowserModelConfig>[],
+    previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, WebBrowserModelConfig>>,
     /**
      * Test seam: injectable probe factory. Production callers leave this
      * undefined so the probe resolves against the real `LanguageModel`

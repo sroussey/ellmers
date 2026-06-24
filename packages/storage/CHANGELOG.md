@@ -1,5 +1,97 @@
 # @workglow/storage
 
+## 0.3.21
+
+## 0.3.20
+
+## 0.3.19
+
+## 0.3.18
+
+## 0.3.17
+
+## 0.3.16
+
+### Refactors
+
+#### storage
+
+- enhance unique index handling and event emission
+
+## 0.3.15
+
+### Features
+
+#### storage
+
+- add uniqueIndexes for DB-level UNIQUE constraints + dedup overlapping regular indexes (#593)
+
+### Bug Fixes
+
+- eslint fixes
+
+#### storage
+
+- include rolled-back ids in rollback event payload (#591)
+
+#### storage,indexeddb,postgres,sqlite
+
+- cumulative vector-storage validation + atomicity hardening (#580/#581/#583/#584/#587) (#589)
+
+### Refactors
+
+- extract shared Postgres type mapping and vector storage logic (#586)
+
+### Build
+
+- make timings easier to spot trouble
+
+### Chores
+
+- add homepage
+
+## Unreleased
+
+### Bug Fixes
+
+#### storage,indexeddb
+
+- validate vector shape on `InMemoryVectorStorage` and `IndexedDbVectorStorage`
+  `put` / `putBulk` / `similaritySearch` — closes a silent-corruption gap left
+  by the original `assertVectorShape` rollout that only covered Postgres,
+  SQLite, and Supabase. Lifts a `validateVectorEntities` batch helper to
+  `@workglow/storage` and refactors the cloud-backed overrides to use it.
+
+#### storage
+
+- `InMemoryVectorStorage.putBulk` is now genuinely atomic. The inherited
+  tabular `putBulk` runs writes via `Promise.all`, so a non-shape failure
+  mid-batch (PK collision, listener throw, custom subclass invariant)
+  could leave rows 0..N-1 committed. The vector override snapshots the
+  underlying `Map` and the autoincrement counter, writes serially, and
+  restores the snapshot on throw so the batch is either fully visible or
+  fully absent. A `rollback` event fires on the storage emitter when the
+  restore path runs, so subscribers can reconcile any per-row `put`
+  events emitted before the failure.
+- `InMemoryTabularStorage` now exposes `protected snapshotMutableState()`
+  / `restoreMutableState()` so subclasses (vector overlays, telemetry
+  wrappers) can implement atomic batch ops without reaching into private
+  state.
+- `TabularEventListeners` adds a `rollback` event carrying `{ op, error }`.
+  Existing event subscribers are unaffected.
+
+## 0.3.14
+
+### Features
+
+- add bugs URL to package.json files across all packages and providers
+
+### Bug Fixes
+
+#### task-graph,storage
+
+- cache restart-resume + SharedInMemory sync barrier (#552)
+
 ## 0.3.13
 
 ### Features

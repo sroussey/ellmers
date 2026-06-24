@@ -13,15 +13,12 @@ const { CACTUS_RUN_FNS } = _testOnly;
  * Resolve the Cactus run-fn registered for an exact `serves` capability set.
  * The lookup is order-independent (compares sorted joined strings).
  */
-export function runFnFor(
-  serves: readonly string[]
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): AiProviderRunFn<any, any, any> {
+export function runFnFor(serves: readonly string[]): AiProviderRunFn<any, any, any> {
   const target = [...serves].sort().join(",");
   const match = CACTUS_RUN_FNS.find((r) => [...r.serves].sort().join(",") === target);
   if (!match) {
     throw new Error(`No Cactus run-fn registered for serves=[${target}]`);
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   return match.runFn as AiProviderRunFn<any, any, any>;
 }

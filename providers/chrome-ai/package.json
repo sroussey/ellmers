@@ -2,7 +2,7 @@
   "name": "@workglow/chrome-ai",
   "type": "module",
   "sideEffects": false,
-  "version": "0.3.13",
+  "version": "0.3.21",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
@@ -12,6 +12,7 @@
     "url": "https://github.com/workglow-dev/libs/issues"
   },
   "description": "Chrome built-in AI provider for @workglow/ai.",
+  "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
     "watch-code": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/ai.ts ./src/ai-runtime.ts",
@@ -66,7 +67,7 @@
     }
   },
   "devDependencies": {
-    "@types/dom-chromium-ai": "^0.0.16",
+    "@types/dom-chromium-ai": "^0.0.17",
     "@workglow/ai": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",

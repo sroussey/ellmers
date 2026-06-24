@@ -16,7 +16,7 @@ import {
   useNodesState,
   useReactFlow,
 } from "@xyflow/react";
-import React, { Dispatch, SetStateAction, useEffect, useRef } from "react";
+import React, { Dispatch, SetStateAction, useCallback, useEffect, useRef } from "react";
 import { computeLayout, GraphPipelineCenteredLayout, GraphPipelineLayout } from "../layout";
 import { DataflowEdge, DataflowEdgeData } from "./DataflowEdge";
 import { TaskNode, TaskNodeData } from "./TaskNode";
@@ -116,57 +116,58 @@ export const RunGraphFlow: React.FC<{
   const graphRef = useRef<TaskGraph | null>(null);
   const { fitView } = useReactFlow();
 
-  // Function to build nodes from tasks
-  const buildNodesFromTasks = (taskGraph: TaskGraph) => {
-    const tasks = taskGraph.getTasks();
-    const dataFlows = taskGraph.getDataflows();
+  const buildNodesFromTasks = useCallback(
+    (taskGraph: TaskGraph) => {
+      const tasks = taskGraph.getTasks();
+      const dataFlows = taskGraph.getDataflows();
 
-    // Create nodes
-    const newNodes: Node<TaskNodeData>[] = tasks.map((task) => {
-      const type = "task";
-      const data: TaskNodeData = { task };
+      const newNodes: Node<TaskNodeData>[] = tasks.map((task) => {
+        const type = "task";
+        const data: TaskNodeData = { task };
 
-      return {
-        id: String(task.id),
-        type,
-        data,
-        position: { x: 0, y: 0 },
-      };
-    });
-
-    // Create edges
-    const newEdges: Edge<DataflowEdgeData>[] = dataFlows.map((flow) => ({
-      id: flow.id,
-      source: String(flow.sourceTaskId),
-      target: String(flow.targetTaskId),
-      type: "dataflow",
-      data: {
-        dataflow: flow,
-      },
-    }));
-
-    setNodes(newNodes);
-    setEdges(newEdges);
-    doNodeLayout(setNodes, setEdges);
-  };
-
-  // Function to update edge status based on task status
-  const updateEdgeStatus = (dataflow: Dataflow) => {
-    setEdges((currentEdges) => {
-      return currentEdges.map((edge) => {
-        // Update outgoing edges when a task is completed
-        if (edge.id === dataflow.id) {
-          return {
-            ...edge,
-            data: {
-              dataflow,
-            },
-          };
-        }
-        return edge;
+        return {
+          id: String(task.id),
+          type,
+          data,
+          position: { x: 0, y: 0 },
+        };
       });
-    });
-  };
+
+      const newEdges: Edge<DataflowEdgeData>[] = dataFlows.map((flow) => ({
+        id: flow.id,
+        source: String(flow.sourceTaskId),
+        target: String(flow.targetTaskId),
+        type: "dataflow",
+        data: {
+          dataflow: flow,
+        },
+      }));
+
+      setNodes(newNodes);
+      setEdges(newEdges);
+      doNodeLayout(setNodes, setEdges);
+    },
+    [setNodes, setEdges]
+  );
+
+  const updateEdgeStatus = useCallback(
+    (dataflow: Dataflow) => {
+      setEdges((currentEdges) => {
+        return currentEdges.map((edge) => {
+          if (edge.id === dataflow.id) {
+            return {
+              ...edge,
+              data: {
+                dataflow,
+              },
+            };
+          }
+          return edge;
+        });
+      });
+    },
+    [setEdges]
+  );
 
   useEffect(() => {
     if (graph && graph !== graphRef.current) {
@@ -222,7 +223,7 @@ export const RunGraphFlow: React.FC<{
       // Clean up subscriptions
       return () => unsubscribes.forEach((unsub) => unsub());
     }
-  }, [graph]);
+  }, [graph, buildNodesFromTasks, setNodes, updateEdgeStatus]);
 
   useEffect(() => {
     if (nodes.length > 0) {

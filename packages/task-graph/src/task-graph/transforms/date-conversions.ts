@@ -44,7 +44,7 @@ export const unixToIsoDateTransform: ITransformDef<UnixUnit> = {
   },
 };
 
-export const isoDateToUnixTransform: ITransformDef<{}> = {
+export const isoDateToUnixTransform: ITransformDef<Record<string, never>> = {
   id: "isoDateToUnix",
   title: "ISO date → Unix ms",
   category: "Date",

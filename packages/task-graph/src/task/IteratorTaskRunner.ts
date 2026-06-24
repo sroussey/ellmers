@@ -6,6 +6,7 @@
 
 import { uuid4 } from "@workglow/util";
 import { Dataflow } from "../task-graph/Dataflow";
+import { bridgeSubGraphTaskEvents } from "../task-graph/SubGraphEventBridge";
 import { TaskGraph } from "../task-graph/TaskGraph";
 import { GraphAsTaskRunner } from "./GraphAsTaskRunner";
 import type { ITaskConstructor } from "./ITask";
@@ -293,6 +294,14 @@ export class IteratorTaskRunner<
     };
     const unsubscribeGraphProgress = graphClone.subscribe("graph_progress", onGraphProgress);
 
+    // Bubble inner-task events up to the parent graph so subgraph children of an
+    // iteration surface as individual task events on the top-level stream
+    // (previews + progress), matching GraphAsTask / While / Fallback. A fresh
+    // clone is bridged per iteration, so tear down in finally — otherwise each
+    // discarded clone leaks its parentGraph subscriptions for the iterator's life.
+    const parentGraph = this.task.parentGraph;
+    const unbridge = parentGraph ? bridgeSubGraphTaskEvents(graphClone, parentGraph) : () => {};
+
     try {
       const results = await graphClone.run<TaskOutput>(input as TaskInput, {
         parentSignal: this.currentCtx?.abortController.signal,
@@ -311,6 +320,7 @@ export class IteratorTaskRunner<
       ) as TaskOutput;
     } finally {
       unsubscribeGraphProgress();
+      unbridge();
       if (this.aggregatingParentMapProgress && this.mapPartialIterationCount > 0) {
         this.mapPartialProgress[index] = 100;
         this.emitMapParentProgressFromPartials();

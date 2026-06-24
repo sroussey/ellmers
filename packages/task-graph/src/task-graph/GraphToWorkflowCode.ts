@@ -552,7 +552,7 @@ export function formatValue(
     const keys = Object.keys(obj);
     if (keys.length === 0) return "{}";
     const entries = keys.map((k) => {
-      const formattedKey = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(k) ? k : JSON.stringify(k);
+      const formattedKey = /^[a-z_$][\w$]*$/i.test(k) ? k : JSON.stringify(k);
       return `${formattedKey}: ${formatValue(obj[k], entryIndent)}`;
     });
     const oneLine = `{ ${entries.join(", ")} }`;

@@ -75,7 +75,13 @@ export function registerCredentialDefaults(
   registerInputResolver(
     "credential",
     async (id, _format, registry) => {
-      return (await resolveCredential(id, registry)) ?? id;
+      // Resolve the credential reference to its secret. On a miss, return
+      // undefined — NEVER the reference id itself. Echoing the id would thread
+      // the credential's *name* through as its *value* (e.g. straight into an
+      // Authorization: Bearer header), leaking the key name and masking
+      // misconfiguration. Consumers (e.g. resolveApiKey) treat undefined as
+      // "no credential" and fall through to their own missing-key error.
+      return resolveCredential(id, registry);
     },
     registry
   );

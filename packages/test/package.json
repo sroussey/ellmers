@@ -2,11 +2,12 @@
   "name": "@workglow/test",
   "type": "module",
   "private": true,
-  "version": "0.3.13",
+  "version": "0.3.21",
   "bugs": {
     "url": "https://github.com/workglow-dev/libs/issues"
   },
   "description": "Testing utilities and test suites for Workglow packages, providing comprehensive testing infrastructure.",
+  "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
     "watch-js": "concurrently -c 'auto' -n 'browser,node,bun' 'bun run watch-browser' 'bun run watch-node' 'bun run watch-bun'",
@@ -15,7 +16,7 @@
     "watch-bun": "bun build --watch --no-clear-screen --target=bun --sourcemap=external --packages=external --outdir ./dist/ ./src/bun.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "concurrently -c 'auto' -n 'browser,node,bun,types' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-types'",
-    "build-js": "concurrently -c 'auto' -n 'browser,node,bun' 'bun run build-browser' 'bun run build-node' 'bun run build-bun'",
+    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'browser,node,bun' 'bun run build-browser' 'bun run build-node' 'bun run build-bun'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/ ./src/browser.ts",
     "build-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/ ./src/node.ts",
@@ -26,13 +27,14 @@
     "test-concurrently": "bash -c 'cmds=(); for d in ./src/test/*/; do cmds+=(\"cd $d && bun test\"); done; concurrently \"${cmds[@]}\"'"
   },
   "devDependencies": {
-    "@aws-sdk/client-sqs": "^3.1063.0",
-    "@cloudflare/workers-types": "^4.20260605.1",
+    "@aws-sdk/client-sqs": "^3.1075.0",
+    "@cloudflare/workers-types": "^4.20260624.1",
     "@electric-sql/pglite": "catalog:",
+    "@electric-sql/pglite-pgvector": "catalog:",
     "@modelcontextprotocol/sdk": "catalog:",
     "@sqliteai/sqlite-vector": "catalog:",
     "@supabase/supabase-js": "catalog:",
-    "@types/dom-chromium-ai": "^0.0.16",
+    "@types/dom-chromium-ai": "^0.0.17",
     "@types/pg": "^8.18.0",
     "@workglow/ai": "workspace:*",
     "@workglow/anthropic": "workspace:*",
@@ -68,10 +70,10 @@
     "@workglow/util": "workspace:*",
     "aws-sdk-client-mock": "^4.0.0",
     "fake-indexeddb": "^6.2.4",
-    "miniflare": "^4.20260603.0",
+    "miniflare": "^4.20260623.0",
     "node-llama-cpp": "catalog:",
     "pg": "catalog:",
     "playwright": "catalog:",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.9"
   }
 }

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { bridgeSubGraphTaskEvents } from "../task-graph/SubGraphEventBridge";
 import { GraphResultArray } from "../task-graph/TaskGraphRunner";
 import type { GraphAsTaskConfig } from "./GraphAsTask";
 import { GraphAsTask } from "./GraphAsTask";
@@ -34,14 +35,28 @@ export class GraphAsTaskRunner<
         void this.handleProgress(progress, message, ...args);
       }
     );
-    const results = await this.task.subGraph!.run<Output>(input, {
-      parentSignal: this.currentCtx?.abortController.signal,
-      outputCache: this.outputCache,
-      registry: this.registry,
-      resourceScope: this.resourceScope,
-    });
-    unsubscribe();
-    return results;
+
+    // Bubble inner-task events up to the parent graph so subgraph children
+    // surface as individual task events on the top-level stream (used for
+    // previews and progress colors). Bubbles recursively: a nested compound
+    // task forwards its own subgraph to us, and we forward it onward.
+    const parent = this.task.parentGraph;
+    const unbridge = parent ? bridgeSubGraphTaskEvents(this.task.subGraph!, parent) : () => {};
+
+    try {
+      return await this.task.subGraph!.run<Output>(input, {
+        parentSignal: this.currentCtx?.abortController.signal,
+        outputCache: this.outputCache,
+        registry: this.registry,
+        resourceScope: this.resourceScope,
+      });
+    } finally {
+      // Always tear down — if subGraph.run() rejects (timeout/abort/inner
+      // failure) and this task is later re-run on the same instance, leaked
+      // subscriptions would double-emit every inner event to the parent.
+      unsubscribe();
+      unbridge();
+    }
   }
   /**
    * Protected method for preview execution delegation

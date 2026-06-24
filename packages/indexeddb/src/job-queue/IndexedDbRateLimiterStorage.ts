@@ -19,7 +19,7 @@ export const INDEXED_DB_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterSt
   "ratelimiter.storage.indexedDb"
 );
 
-export interface IndexedDbRateLimiterStorageOptions extends RateLimiterStorageOptions {}
+export type IndexedDbRateLimiterStorageOptions = RateLimiterStorageOptions;
 
 interface ExecutionRecord {
   readonly id?: string;
@@ -244,29 +244,6 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
       req.onerror = () => reject(req.error);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
-    });
-  }
-
-  public async recordExecution(queueName: string): Promise<void> {
-    const db = await this.getExecutionDb();
-    const tx = db.transaction(this.executionTableName, "readwrite");
-    const store = tx.objectStore(this.executionTableName);
-
-    const record: ExecutionRecord = {
-      id: crypto.randomUUID(),
-      queue_name: queueName,
-      executed_at: new Date().toISOString(),
-    };
-
-    for (const [key, value] of Object.entries(this.prefixValues)) {
-      (record as Record<string, unknown>)[key] = value;
-    }
-
-    return new Promise((resolve, reject) => {
-      const request = store.add(record);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-      request.onerror = () => reject(request.error);
     });
   }
 

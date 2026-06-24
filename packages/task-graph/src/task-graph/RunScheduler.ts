@@ -256,6 +256,27 @@ export class RunScheduler {
 
         const runAsync = async () => {
           let errorRouted = false;
+          // Forward this task's own progress — from ctx.updateProgress OR a
+          // direct task.emit("progress") — as a graph-level task_progress while
+          // it is actively running. Terminal 100% ticks fire after the status
+          // is set terminal, so the guard skips them (a finished/failed/skipped
+          // task must not look like it's "running"). Guarded so a throwing
+          // listener can't break the run loop.
+          const offProgress = task.subscribe(
+            "progress",
+            (progress: number | undefined, message?: string, ...args: any[]) => {
+              if (task.status === TaskStatus.PROCESSING || task.status === TaskStatus.STREAMING) {
+                try {
+                  this.graph.emit("task_progress", task.id, progress, message, ...args);
+                } catch (err) {
+                  getLogger().error("task_progress listener threw", {
+                    taskId: task.id,
+                    error: err,
+                  });
+                }
+              }
+            }
+          );
           try {
             // Root tasks (no incoming dataflows) receive the graph run input so e.g.
             // InputTask can seed the graph. Downstream tasks rely only on dataflow
@@ -287,6 +308,7 @@ export class RunScheduler {
               ctx.failedTaskErrors.set(task.id, error as TaskError);
             }
           } finally {
+            offProgress();
             // IMPORTANT: Push status to edges BEFORE notifying scheduler
             // This ensures dataflow statuses (including DISABLED) are set
             // before the scheduler checks which tasks are ready.
@@ -294,6 +316,22 @@ export class RunScheduler {
             if (!errorRouted) {
               this.pushStatusFromNodeToEdges(task, ctx);
               edgeMat.pushErrorFromNodeToEdges(task);
+            }
+            // Emit a per-task completion event carrying the authoritative output
+            // so external consumers can react incrementally. Only successful
+            // tasks emit — failures route through edges / failedTaskErrors above.
+            // Guarded so a throwing listener cannot stall the scheduler (the
+            // emit precedes onTaskCompleted) or escape the Promise.allSettled
+            // loop unobserved.
+            if (task.status === TaskStatus.COMPLETED) {
+              try {
+                this.graph.emit("task_complete", task.id, task.runOutputData);
+              } catch (err) {
+                getLogger().error("task_complete listener threw", {
+                  taskId: task.id,
+                  error: err,
+                });
+              }
             }
             this.processScheduler.onTaskCompleted(task.id);
           }

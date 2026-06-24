@@ -289,7 +289,7 @@ describe("BM25Index", () => {
       const tokenizer = {
         tokenize: (s: string) =>
           s
-            .split(/[^A-Za-z]+/)
+            .split(/[^A-Z]+/i)
             .filter((t) => t.length > 0)
             .map((t) => t.toUpperCase()),
       };

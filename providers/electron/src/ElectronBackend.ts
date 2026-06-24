@@ -22,23 +22,21 @@ import { sleep } from "@workglow/util";
 
 // Electron types are accessed via lazy import (optional dependency).
 /** @type {import("electron").BrowserWindow} */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type AnyBrowserWindow = any;
 
 /** @type {import("electron").WebContents} */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type AnyWebContents = any;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let electronModule: Record<string, any> | null = null;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getElectron(): Promise<Record<string, any>> {
   if (!electronModule) {
     // Dynamic import keeps electron as a true optional dependency.
     // The `Function` cast avoids a static "cannot find module" TS error
     // when electron types are not installed in the current environment.
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+
     electronModule = (await new Function("m", "return import(m)")("electron")) as Record<
       string,
       any
@@ -63,6 +61,9 @@ export class ElectronBackend extends CDPBrowserBackend implements IBrowserContex
 
   private _dialogHandler: ((info: DialogInfo) => DialogAction | Promise<DialogAction>) | null =
     null;
+  /** Guards against stacking duplicate CDP `message` listeners across repeated
+   *  onDialog() calls — the handler reads the current `_dialogHandler`. */
+  private _dialogListenerAttached = false;
 
   protected readonly backendName = "ElectronBackend";
 
@@ -222,10 +223,6 @@ export class ElectronBackend extends CDPBrowserBackend implements IBrowserContex
 
     // Electron's will-download signature: (event, item, webContents)
     const downloadPromise = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error("ElectronBackend: download timed out"));
-      }, timeout);
-
       const handler = (_event: unknown, item: AnyWebContents, _webContents: unknown) => {
         suggestedFilename = item.getFilename ? item.getFilename() : "download";
         item.once?.("done", (_e: unknown, state: string) => {
@@ -238,6 +235,12 @@ export class ElectronBackend extends CDPBrowserBackend implements IBrowserContex
           resolve();
         });
       };
+      const timer = setTimeout(() => {
+        // Remove the pending listener so a download that arrives after the
+        // timeout can't fire a stale handler against this rejected promise.
+        this.wc.session.removeListener("will-download", handler);
+        reject(new Error("ElectronBackend: download timed out"));
+      }, timeout);
       this.wc.session.once("will-download", handler);
     });
 
@@ -253,6 +256,12 @@ export class ElectronBackend extends CDPBrowserBackend implements IBrowserContex
 
   onDialog(handler: (info: DialogInfo) => DialogAction | Promise<DialogAction>): void {
     this._dialogHandler = handler;
+
+    // Only wire the CDP message listener once; later onDialog() calls just swap
+    // the handler. Re-registering would stack listeners and double-handle each
+    // dialog (the second Page.handleJavaScriptDialog throws a CDP error).
+    if (this._dialogListenerAttached) return;
+    this._dialogListenerAttached = true;
 
     // Intercept alert/confirm/prompt via CDP; requires Page domain enabled.
     void this.cdp("Page.enable").then(() => {

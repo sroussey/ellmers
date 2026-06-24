@@ -56,12 +56,7 @@ describe("handleQueueBatch — terminal-status redelivery", () => {
       const msg = fakeMessage({ id: String(id), attempts: 0 });
       const worker = { processClaims: vi.fn().mockResolvedValue(undefined) };
 
-      await handleQueueBatch(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        { messages: [msg] } as any,
-        worker,
-        jobStore
-      );
+      await handleQueueBatch({ messages: [msg] } as any, worker, jobStore);
 
       // C2: the redelivery must be ack'd at the dispatch boundary so the
       // runtime stops redelivering, and the worker must NOT be invoked.

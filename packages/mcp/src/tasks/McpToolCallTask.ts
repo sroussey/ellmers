@@ -22,6 +22,7 @@ import {
   TaskConfigSchema,
   Workflow,
 } from "@workglow/task-graph";
+import type { ServiceRegistry } from "@workglow/util";
 import { DataPortSchema, DataPortSchemaObject } from "@workglow/util/schema";
 import type { McpListTaskInput } from "./McpListTask";
 import { mcpList } from "./McpListTask";
@@ -237,7 +238,11 @@ export class McpToolCallTask extends Task<
 
   private _schemasDiscoveringPromise: Promise<void> | undefined;
 
-  async discoverSchemas(_signal?: AbortSignal, serverConfig?: McpServerConfig): Promise<void> {
+  async discoverSchemas(
+    _signal?: AbortSignal,
+    serverConfig?: McpServerConfig,
+    registry?: ServiceRegistry
+  ): Promise<void> {
     if (this.config.inputSchema && this.config.outputSchema) return;
     if (this._schemasDiscoveringPromise) return this._schemasDiscoveringPromise;
     const resolved = serverConfig ?? getMcpServerConfig(this.config as Record<string, unknown>);
@@ -245,10 +250,14 @@ export class McpToolCallTask extends Task<
 
     this._schemasDiscoveringPromise = (async () => {
       try {
-        const result = await mcpList({
-          server: resolved,
-          list_type: "tools",
-        } as McpListTaskInput);
+        const result = await mcpList(
+          {
+            server: resolved,
+            list_type: "tools",
+          } as McpListTaskInput,
+          {},
+          registry ? { registry } : {}
+        );
 
         const tool = result.tools?.find((t) => t.name === this.config.tool_name);
         if (tool) {
@@ -273,10 +282,14 @@ export class McpToolCallTask extends Task<
   ): Promise<McpToolCallTaskOutput> {
     const serverConfig = getMcpServerConfig(this.config as Record<string, unknown>);
 
-    await this.discoverSchemas(context.signal, serverConfig);
+    await this.discoverSchemas(context.signal, serverConfig, context.registry);
 
     const { mcpClientFactory } = getMcpTaskDeps();
-    const { client } = await mcpClientFactory.create(serverConfig, context.signal);
+    const { client } = await mcpClientFactory.create(
+      serverConfig,
+      context.signal,
+      context.registry
+    );
     try {
       const result = await client.callTool({
         name: String(this.config.tool_name ?? ""),

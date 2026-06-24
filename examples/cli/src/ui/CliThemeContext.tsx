@@ -12,12 +12,12 @@ const CliThemeContext = createContext<CliTheme>(DEFAULT_CLI_THEME);
 
 export function CliThemeProvider({
   value,
-  children,
+  slot,
 }: {
   readonly value: CliTheme;
-  readonly children: React.ReactNode;
+  readonly slot: React.ReactNode;
 }): React.ReactElement {
-  return <CliThemeContext.Provider value={value}>{children}</CliThemeContext.Provider>;
+  return <CliThemeContext.Provider value={value}>{slot}</CliThemeContext.Provider>;
 }
 
 export function useCliTheme(): CliTheme {

@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.3.21
+
+## 0.3.20
+
+## 0.3.19
+
+## 0.3.18
+
+## 0.3.17
+
+## 0.3.16
+
+## 0.3.15
+
+### Bug Fixes
+
+- eslint fixes
+
+#### mcp,supabase
+
+- credential-leak fail-closed + vector dim validation (2 HIGH from code review) (#579)
+
+### Refactors
+
+- extract shared Postgres type mapping and vector storage logic (#586)
+
+### Build
+
+- make timings easier to spot trouble
+
+### Chores
+
+- add homepage
+
+## 0.3.14
+
+### Features
+
+- add bugs URL to package.json files across all packages and providers
+
+### Bug Fixes
+
+#### mcp
+
+- thread run-scoped registry through discoverSchemas (#577)
+- resolve auth credentials through the run-scoped registry
+
 ## 0.3.13
 
 ## 0.3.12

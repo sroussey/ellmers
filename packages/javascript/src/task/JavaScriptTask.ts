@@ -17,7 +17,7 @@ import {
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { Interpreter } from "./interpreter";
 
-const isValidIdentifier = (key: string) => /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key);
+const isValidIdentifier = (key: string) => /^[a-z_$][\w$]*$/i.test(key);
 
 function runJavaScript(
   input: JavaScriptTaskInput,

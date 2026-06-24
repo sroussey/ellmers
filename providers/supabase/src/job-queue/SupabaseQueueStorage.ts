@@ -115,7 +115,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
    * Used for quoted values (e.g. queue names/IDs) and only allows alphanumeric
    * characters, underscores, hyphens, colons, and periods.
    */
-  private static readonly SAFE_SQL_VALUE_RE = /^[a-zA-Z0-9_\-.:]+$/;
+  private static readonly SAFE_SQL_VALUE_RE = /^[\w\-.:]+$/;
 
   /**
    * Validates that a string value is safe for use as a quoted SQL literal.

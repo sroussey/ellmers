@@ -20,9 +20,7 @@ import { registerCliBrowserDeps } from "../browser";
 import type { CliConfig } from "../config";
 import { isChromeAvailable } from "./chromeAvailability";
 
-const chromeAvailable =
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  Boolean((globalThis as any).Bun?.WebView) && isChromeAvailable();
+const chromeAvailable = Boolean((globalThis as any).Bun?.WebView) && isChromeAvailable();
 
 // ---------------------------------------------------------------------------
 // Test page

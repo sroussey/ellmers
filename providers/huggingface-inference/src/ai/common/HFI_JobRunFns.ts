@@ -40,20 +40,15 @@ import { HFI_ToolCalling_Stream } from "./HFI_ToolCalling";
  */
 const HFI_TextGeneration_Unified = HFI_TextGeneration_Stream;
 
-export const HFI_RUN_FNS: readonly AiProviderRunFnRegistration<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  HfInferenceModelConfig
->[] = [
-  { serves: HFI_TEXT_GENERATION, runFn: HFI_TextGeneration_Unified },
-  { serves: HFI_TOOL_USE, runFn: HFI_ToolCalling_Stream },
-  { serves: HFI_TEXT_REWRITER, runFn: HFI_TextRewriter_Stream },
-  { serves: HFI_TEXT_SUMMARY, runFn: HFI_TextSummary_Stream },
-  { serves: HFI_TEXT_EMBEDDING, runFn: HFI_TextEmbedding },
-  { serves: HFI_IMAGE_GENERATION, runFn: HFI_ImageGenerate_Stream },
-  { serves: HFI_IMAGE_EDITING, runFn: HFI_ImageEdit_Stream },
-  { serves: HFI_MODEL_SEARCH, runFn: HFI_ModelSearch },
-  { serves: HFI_MODEL_INFO, runFn: HFI_ModelInfo },
-];
+export const HFI_RUN_FNS: readonly AiProviderRunFnRegistration<any, any, HfInferenceModelConfig>[] =
+  [
+    { serves: HFI_TEXT_GENERATION, runFn: HFI_TextGeneration_Unified },
+    { serves: HFI_TOOL_USE, runFn: HFI_ToolCalling_Stream },
+    { serves: HFI_TEXT_REWRITER, runFn: HFI_TextRewriter_Stream },
+    { serves: HFI_TEXT_SUMMARY, runFn: HFI_TextSummary_Stream },
+    { serves: HFI_TEXT_EMBEDDING, runFn: HFI_TextEmbedding },
+    { serves: HFI_IMAGE_GENERATION, runFn: HFI_ImageGenerate_Stream },
+    { serves: HFI_IMAGE_EDITING, runFn: HFI_ImageEdit_Stream },
+    { serves: HFI_MODEL_SEARCH, runFn: HFI_ModelSearch },
+    { serves: HFI_MODEL_INFO, runFn: HFI_ModelInfo },
+  ];
