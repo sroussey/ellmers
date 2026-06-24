@@ -33,7 +33,7 @@ import {
 } from "./JobError";
 import { withJobErrorDiagnostics } from "./JobErrorDiagnostics";
 import type { StreamEventLike } from "./JobQueueEventListeners";
-import { classToStorage, storageToClass } from "./JobStorageConverters";
+import { storageToClass } from "./JobStorageConverters";
 
 /**
  * Minimum interval between {@link JobQueueWorker.processJobs} loop-error logs.
