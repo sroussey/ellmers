@@ -97,42 +97,59 @@ export abstract class TaskOutputRepository {
   abstract isDurable(): boolean;
 
   /**
-   * Delete every entry whose `taskType` starts with `prefix`. Used by
-   * `RunPrivateCacheRepo.clearRun()` to delete entries for a specific `runId`.
+   * Run-scoped write for the private cache: persist an entry under a specific
+   * `runId`. Used by {@link RunPrivateCacheRepo} so the run id is a first-class
+   * column (indexed) rather than a `taskType` prefix.
    *
-   * Default implementation throws — backing repositories that support run-private
-   * caching MUST override this.
+   * Default implementation throws — only run-private backing repositories
+   * (e.g. `RunPrivateTaskOutputRepository`) implement it.
    */
-  async deleteByTaskTypePrefix(_prefix: string): Promise<void> {
+  async saveOutputForRun(
+    _runId: string,
+    _taskType: string,
+    _inputs: TaskInput,
+    _output: TaskOutput,
+    _createdAt?: Date
+  ): Promise<void> {
     throw new Error(
-      `${this.constructor.name}: deleteByTaskTypePrefix is not supported by this repository.`
+      `${this.constructor.name}: saveOutputForRun is not supported by this repository.`
+    );
+  }
+
+  /** Run-scoped read counterpart to {@link saveOutputForRun}. Default throws. */
+  async getOutputForRun(
+    _runId: string,
+    _taskType: string,
+    _inputs: TaskInput
+  ): Promise<TaskOutput | undefined> {
+    throw new Error(
+      `${this.constructor.name}: getOutputForRun is not supported by this repository.`
     );
   }
 
   /**
-   * Delete entries whose `taskType` starts with `prefix` and were created more
-   * than `olderThanMs` ago. Used by `CacheJanitor.sweepStaleRunPrivate()`.
-   *
-   * Default implementation throws — backing repositories that support periodic
-   * janitor sweeps of run-private rows MUST override this.
+   * Delete every entry for `runId`. Used by `RunPrivateCacheRepo.clearRun()`.
+   * Indexed on the run-private schema's runId-leading primary key. Default throws.
    */
-  async clearOlderThanWithTaskTypePrefix(_prefix: string, _olderThanMs: number): Promise<void> {
+  async deleteRun(_runId: string): Promise<void> {
+    throw new Error(`${this.constructor.name}: deleteRun is not supported by this repository.`);
+  }
+
+  /**
+   * Delete entries for `runId` created more than `olderThanMs` ago. Used by
+   * `RunPrivateCacheRepo.clearOlderThan()`. Default throws.
+   */
+  async deleteRunOlderThan(_runId: string, _olderThanMs: number): Promise<void> {
     throw new Error(
-      `${this.constructor.name}: clearOlderThanWithTaskTypePrefix is not supported by this repository.`
+      `${this.constructor.name}: deleteRunOlderThan is not supported by this repository.`
     );
   }
 
   /**
-   * Count entries whose `taskType` starts with `prefix`. Used by
-   * `RunPrivateCacheRepo.size()` so the wrapper's count reflects only its own
-   * namespaced view rather than the entire backing store.
-   *
-   * Default implementation throws — backing repositories that support run-private
-   * caching MUST override this.
+   * Count entries for `runId`. Used by `RunPrivateCacheRepo.size()` so the
+   * wrapper's count reflects only its own run. Default throws.
    */
-  async sizeByTaskTypePrefix(_prefix: string): Promise<number> {
-    throw new Error(
-      `${this.constructor.name}: sizeByTaskTypePrefix is not supported by this repository.`
-    );
+  async sizeForRun(_runId: string): Promise<number> {
+    throw new Error(`${this.constructor.name}: sizeForRun is not supported by this repository.`);
   }
 }

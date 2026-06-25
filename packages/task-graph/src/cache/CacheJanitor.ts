@@ -14,10 +14,10 @@ export interface CacheJanitorOptions {
  * Periodic cleanup helper for run-private cache entries left behind by runs
  * that crashed and were never restarted.
  *
- * Run-private rows are namespaced by `RunPrivateCacheRepo` with the
- * `__run:${runId}::${taskId}` prefix. This janitor sweeps those rows when they are older than
- * `olderThanMs`. Entries lacking the prefix (deterministic cache, shared tier)
- * are not touched.
+ * The run-private cache is its own dedicated table, so any row older than
+ * `olderThanMs` is a stale orphan — a successful run deletes its own rows via
+ * {@link RunPrivateCacheRepo.clearRun}. The sweep is an indexed
+ * `deleteSearch({ createdAt: { "<" } })`, not a table scan.
  *
  * Apps schedule the sweep themselves (cron, periodic worker, on startup) —
  * libs does not run it automatically.
@@ -30,6 +30,6 @@ export class CacheJanitor {
   }
 
   async sweepStaleRunPrivate(olderThanMs: number): Promise<void> {
-    await this.privateBacking.clearOlderThanWithTaskTypePrefix("__run:", olderThanMs);
+    await this.privateBacking.clearOlderThan(olderThanMs);
   }
 }

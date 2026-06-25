@@ -50,6 +50,8 @@ export * from "./storage/ITaskOutputStorage";
 export * from "./storage/TabularTaskOutputStorage";
 export * from "./storage/TaskGraphRepository";
 export * from "./storage/TaskGraphTabularRepository";
+export * from "./storage/RunPrivateTaskOutputRepository";
+export * from "./storage/RunPrivateTaskOutputSchema";
 export * from "./storage/TaskOutputRepository";
 export * from "./storage/TaskOutputStorageSchema";
 export * from "./storage/TaskOutputTabularRepository";

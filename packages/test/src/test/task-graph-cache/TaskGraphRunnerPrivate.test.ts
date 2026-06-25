@@ -15,7 +15,7 @@ import {
 import { Container, ServiceRegistry } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
-import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
+import { RunPrivateInMemoryTaskOutputRepository } from "../../binding/RunPrivateInMemoryTaskOutputRepository";
 
 class FlakyTask extends Task<{ q: string }, { r: string }> {
   public static override type = "FlakyTask";
@@ -52,14 +52,14 @@ class FlakyTask extends Task<{ q: string }, { r: string }> {
 // Attach the static `runs` array properly
 (FlakyTask as any).runs = [];
 
-function freshServices(privateRepo: InMemoryTaskOutputRepository): ServiceRegistry {
+function freshServices(privateRepo: RunPrivateInMemoryTaskOutputRepository): ServiceRegistry {
   const services = new ServiceRegistry(new Container());
   services.registerInstance(CACHE_REGISTRY, new DefaultCacheRegistry({ private: privateRepo }));
   return services;
 }
 
-async function freshRepo(): Promise<InMemoryTaskOutputRepository> {
-  const r = new InMemoryTaskOutputRepository();
+async function freshRepo(): Promise<RunPrivateInMemoryTaskOutputRepository> {
+  const r = new RunPrivateInMemoryTaskOutputRepository();
   await (r as any).setupDatabase?.();
   return r;
 }
