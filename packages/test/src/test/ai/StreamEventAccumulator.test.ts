@@ -84,10 +84,7 @@ describe("StreamEventAccumulator", () => {
       port: "toolCalls",
       objectDelta: [{ id: "call_0", name: "search", input: {} }],
     } as StreamEvent<Out>);
-    acc.observeFinish({
-      type: "finish",
-      data: { text: "", toolCalls: [] },
-    } as StreamEvent<Out>);
+    acc.observeFinish({ type: "finish", data: { text: "", toolCalls: [] } });
     expect(acc.materialize()).toEqual({
       text: "",
       toolCalls: [{ id: "call_0", name: "search", input: {} }],
