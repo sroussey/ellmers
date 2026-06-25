@@ -177,7 +177,7 @@ export class RerankerTask extends Task<RerankerTaskInput, RerankerTaskOutput, Re
     let rankedItems: RankedItem[];
     switch (method) {
       case "reciprocal-rank-fusion":
-        rankedItems = this.reciprocalRankFusion(chunks, scores, metadata);
+        rankedItems = this.reciprocalRankFusion(query, chunks, scores, metadata);
         break;
       case "simple":
       default:
@@ -213,21 +213,7 @@ export class RerankerTask extends Task<RerankerTaskInput, RerankerTaskOutput, Re
       const chunkLower = chunk.toLowerCase();
       const initialScore = scores[index] || 0;
 
-      let keywordScore = 0;
-      for (const word of queryWords) {
-        // Skip pure-whitespace / empty tokens (defensive: split(/\s+/) +
-        // .filter(w => w.length > 0) above should already exclude them, but
-        // make the contract local).
-        if (word.length === 0 || /^\s+$/.test(word)) continue;
-        // Escape every regex metacharacter so user input like `foo(`, `\\`,
-        // `*abc`, or `[` is treated as a literal token rather than being
-        // parsed as a regex (which would throw `SyntaxError`).
-        const regex = new RegExp(escapeRegExp(word), "gi");
-        const matches = chunkLower.match(regex);
-        if (matches) {
-          keywordScore += matches.length;
-        }
-      }
+      const keywordScore = this.keywordMatchCount(queryWords, chunkLower);
 
       const exactMatchBonus = hasQueryWords && chunkLower.includes(queryLower) ? 0.5 : 0;
       const normalizedKeywordScore = hasQueryWords
@@ -245,12 +231,72 @@ export class RerankerTask extends Task<RerankerTaskInput, RerankerTaskOutput, Re
     return items;
   }
 
-  /** Reciprocal Rank Fusion: 1 / (k + rank) — useful when combining multiple rankings */
-  private reciprocalRankFusion(chunks: string[], scores: number[], metadata: any[]): RankedItem[] {
+  /**
+   * Count regex-safe keyword-token matches of `queryWords` within a chunk
+   * (already lower-cased). Shared by {@link simpleRerank} and
+   * {@link reciprocalRankFusion}.
+   */
+  private keywordMatchCount(queryWords: string[], chunkLower: string): number {
+    let keywordScore = 0;
+    for (const word of queryWords) {
+      // Skip pure-whitespace / empty tokens (defensive: the split + filter at
+      // the call site should already exclude them, but keep the contract local).
+      if (word.length === 0 || /^\s+$/.test(word)) continue;
+      // Escape every regex metacharacter so user input like `foo(`, `\\`,
+      // `*abc`, or `[` is treated as a literal token rather than being parsed
+      // as a regex (which would throw `SyntaxError`).
+      const regex = new RegExp(escapeRegExp(word), "gi");
+      const matches = chunkLower.match(regex);
+      if (matches) keywordScore += matches.length;
+    }
+    return keywordScore;
+  }
+
+  /**
+   * Reciprocal Rank Fusion. Fuses two rankings of the same chunks — the
+   * retrieval ranking (the provided initial `scores`, or the input order when
+   * no scores are given) and a lexical keyword-overlap ranking derived from the
+   * `query` — via `RRF(d) = Σ 1 / (k + rank_r(d))`. This is the point of RRF:
+   * a chunk ranked highly by both similarity and keyword overlap floats to the
+   * top even if neither signal alone put it first. Unlike a single-signal sort,
+   * it actually reads `scores` and `query`.
+   */
+  private reciprocalRankFusion(
+    query: string,
+    chunks: string[],
+    scores: number[],
+    metadata: any[]
+  ): RankedItem[] {
     const k = 60;
+    const n = chunks.length;
+    if (n === 0) return [];
+
+    // Ranking A — retrieval order. Prefer the provided initial scores; fall
+    // back to the input order (already retrieval order) when none are given.
+    const scoreOrder = chunks.map((_, index) => index);
+    if (scores.some((s) => typeof s === "number")) {
+      scoreOrder.sort((a, b) => (scores[b] ?? -Infinity) - (scores[a] ?? -Infinity));
+    }
+    const scoreRank = new Array<number>(n);
+    scoreOrder.forEach((originalIndex, rank) => (scoreRank[originalIndex] = rank));
+
+    // Ranking B — lexical keyword overlap with the query (plus an exact-phrase
+    // nudge), so RRF fuses a keyword signal with the retrieval signal.
+    const queryLower = query.toLowerCase();
+    const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 0);
+    const keywordScores = chunks.map((chunk) => {
+      const chunkLower = chunk.toLowerCase();
+      const base = this.keywordMatchCount(queryWords, chunkLower);
+      return base + (queryWords.length > 0 && chunkLower.includes(queryLower) ? 0.5 : 0);
+    });
+    const keywordOrder = chunks.map((_, index) => index);
+    keywordOrder.sort((a, b) => keywordScores[b] - keywordScores[a]);
+    const keywordRank = new Array<number>(n);
+    keywordOrder.forEach((originalIndex, rank) => (keywordRank[originalIndex] = rank));
+
     const items: RankedItem[] = chunks.map((chunk, index) => ({
       chunk,
-      score: 1 / (k + index + 1),
+      score: 1 / (k + scoreRank[index] + 1) + 1 / (k + keywordRank[index] + 1),
       metadata: metadata[index],
       originalIndex: index,
     }));

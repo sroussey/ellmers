@@ -16,6 +16,7 @@ import type { Capability } from "@workglow/ai/worker";
  */
 export const OLLAMA_TEXT_GENERATION = ["text.generation"] as const satisfies Capability[];
 export const OLLAMA_TOOL_USE = ["text.generation", "tool-use"] as const satisfies Capability[];
+export const OLLAMA_JSON_MODE = ["text.generation", "json-mode"] as const satisfies Capability[];
 export const OLLAMA_TEXT_REWRITER = ["text.rewriter"] as const satisfies Capability[];
 export const OLLAMA_TEXT_SUMMARY = ["text.summary"] as const satisfies Capability[];
 export const OLLAMA_TEXT_EMBEDDING = ["text.embedding"] as const satisfies Capability[];
@@ -26,6 +27,7 @@ export const OLLAMA_MODEL_INFO = ["model.info"] as const satisfies Capability[];
 export const OLLAMA_CAPABILITY_SETS = [
   OLLAMA_TEXT_GENERATION,
   OLLAMA_TOOL_USE,
+  OLLAMA_JSON_MODE,
   OLLAMA_TEXT_REWRITER,
   OLLAMA_TEXT_SUMMARY,
   OLLAMA_TEXT_EMBEDDING,

@@ -57,7 +57,7 @@ const inputSchema = {
       description: "Model to use for named entity recognition (optional)",
     }),
   },
-  required: [],
+  required: ["doc_id", "documentTree"],
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
@@ -90,7 +90,7 @@ const outputSchema = {
 
 export type DocumentEnricherTaskInput = Omit<
   {
-    doc_id?: string | undefined;
+    doc_id: string;
     documentTree?: { [x: string]: unknown } | undefined;
     generateSummaries?: boolean | undefined;
     extractEntities?: boolean | undefined;
@@ -147,7 +147,7 @@ export class DocumentEnricherTask extends Task<
       nerModel: nerModelConfig,
     } = input;
 
-    const root = documentTree as DocumentNode;
+    const root: DocumentNode = documentTree;
     const summaryModel = summaryModelConfig ? (summaryModelConfig as ModelConfig) : undefined;
     const nerModel = nerModelConfig ? (nerModelConfig as ModelConfig) : undefined;
     let summaryCount = 0;
@@ -181,7 +181,7 @@ export class DocumentEnricherTask extends Task<
     );
 
     return {
-      doc_id: doc_id as string,
+      doc_id,
       documentTree: enrichedRoot,
       summaryCount,
       entityCount,

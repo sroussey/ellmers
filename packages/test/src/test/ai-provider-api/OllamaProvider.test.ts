@@ -97,6 +97,7 @@ describe("OllamaQueuedProvider.inferCapabilities", () => {
     const caps = provider.inferCapabilities(model("llama3:8b"));
     const sorted = [...caps].sort();
     expect(sorted).toEqual([
+      "json-mode",
       "model.info",
       "model.search",
       "text.generation",
@@ -116,6 +117,7 @@ describe("OllamaQueuedProvider.inferCapabilities", () => {
     const caps = provider.inferCapabilities(model("llava:13b"));
     const sorted = [...caps].sort();
     expect(sorted).toEqual([
+      "json-mode",
       "model.info",
       "model.search",
       "text.generation",
@@ -140,6 +142,7 @@ describe("OLLAMA_RUN_FNS shape", () => {
     const sets = OLLAMA_RUN_FNS.map((r) => [...r.serves].sort().join(","));
     expect(sets).toContain("text.generation");
     expect(sets).toContain("text.generation,tool-use");
+    expect(sets).toContain("json-mode,text.generation");
     expect(sets).toContain("text.rewriter");
     expect(sets).toContain("text.summary");
     expect(sets).toContain("text.embedding");
@@ -152,11 +155,10 @@ describe("OLLAMA_RUN_FNS shape", () => {
     expect(candidates.some((r) => r.serves.length === 1)).toBe(true);
   });
 
-  it("does NOT register image generation, image editing, json-mode, or count-tokens", () => {
+  it("does NOT register image generation, image editing, or count-tokens", () => {
     const sets = OLLAMA_RUN_FNS.map((r) => [...r.serves].sort().join(","));
     expect(sets).not.toContain("image.generation");
     expect(sets).not.toContain("image.editing");
-    expect(sets).not.toContain("json-mode,text.generation");
     expect(sets).not.toContain("model.count-tokens");
   });
 });

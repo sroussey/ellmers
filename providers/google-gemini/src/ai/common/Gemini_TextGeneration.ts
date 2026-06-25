@@ -14,6 +14,29 @@ import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { buildGeminiContents } from "./Gemini_ToolCalling";
 
+interface GeminiGenerationConfig {
+  maxOutputTokens?: number;
+  temperature?: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+}
+
+/**
+ * Maps the canonical sampling params onto Gemini's `generationConfig`, only
+ * setting fields that are defined so callers that omit a param keep the
+ * provider's default (matching the OpenAI/Anthropic adapters).
+ */
+function buildGenerationConfig(input: TextGenerationTaskInput): GeminiGenerationConfig {
+  const config: GeminiGenerationConfig = {};
+  if (input.maxTokens !== undefined) config.maxOutputTokens = input.maxTokens;
+  if (input.temperature !== undefined) config.temperature = input.temperature;
+  if (input.topP !== undefined) config.topP = input.topP;
+  if (input.frequencyPenalty !== undefined) config.frequencyPenalty = input.frequencyPenalty;
+  if (input.presencePenalty !== undefined) config.presencePenalty = input.presencePenalty;
+  return config;
+}
+
 /**
  * Inputs that the unified `["text.generation"]` runFn handles. Both
  * {@link TextGenerationTask} and {@link AiChatTask} declare
@@ -58,10 +81,7 @@ export const Gemini_TextGeneration_Stream: AiProviderRunFn<
       const genModel = genAI.getGenerativeModel({
         model: getModelName(model),
         systemInstruction: unified.systemPrompt || undefined,
-        generationConfig: {
-          maxOutputTokens: input.maxTokens,
-          temperature: input.temperature,
-        },
+        generationConfig: buildGenerationConfig(input),
       });
 
       const contents = buildGeminiContents(
@@ -81,11 +101,7 @@ export const Gemini_TextGeneration_Stream: AiProviderRunFn<
       // Prompt path — simple single-user-message generation.
       const genModel = genAI.getGenerativeModel({
         model: getModelName(model),
-        generationConfig: {
-          maxOutputTokens: input.maxTokens,
-          temperature: input.temperature,
-          topP: input.topP,
-        },
+        generationConfig: buildGenerationConfig(input),
       });
 
       const result = await genModel.generateContentStream(

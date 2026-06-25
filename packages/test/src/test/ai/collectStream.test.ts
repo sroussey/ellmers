@@ -157,14 +157,14 @@ describe("collectStream", () => {
     expect(result).toEqual({ text: "Hello world", summary: "Hi there" });
   });
 
-  it("mixed text+object deltas: throws rather than silently dropping data", async () => {
+  it("mixed text+object deltas on distinct ports: composes into one object", async () => {
     type Output = Record<string, unknown>;
     const stream = makeStream<Output>(
       { type: "text-delta", port: "text", textDelta: "hello" },
       { type: "object-delta", port: "result", objectDelta: { a: 1 } },
       { type: "finish", data: {} as Output }
     );
-    await expect(collectStream(stream)).rejects.toThrow(/mixed/i);
+    await expect(collectStream(stream)).resolves.toEqual({ text: "hello", result: { a: 1 } });
   });
 
   it("first finish wins: duplicate finish event does not corrupt result", async () => {

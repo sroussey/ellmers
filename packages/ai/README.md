@@ -705,6 +705,18 @@ try {
 }
 ```
 
+### Execution and retries
+
+By default an AI task runs the provider call through a **direct** or
+**concurrency-limited** execution strategy that invokes the provider **once**
+and surfaces any failure to the caller — the built-in strategies do **not**
+retry automatically. Provider errors are still classified (retryable vs.
+permanent, with a rate-limit `retry-after` when the provider supplies one) for
+diagnostics and for queue-backed execution, but that classification only drives
+automatic retries when a task is run through a persistent job queue, not through
+the default in-process strategies. If you need provider-level retries, run the
+task on a queue-backed strategy or implement retry/backoff in your own caller.
+
 ## Advanced Configuration
 
 ### Model Input Resolution
