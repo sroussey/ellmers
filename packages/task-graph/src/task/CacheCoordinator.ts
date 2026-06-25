@@ -14,7 +14,7 @@ import { RunPrivateCacheRepo } from "../cache/RunPrivateCacheRepo";
 import { streamRefViaBacking } from "../cache/resolveRef";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ITask } from "./ITask";
-import type { BinaryRefSink } from "./StreamProcessor";
+import type { BinaryRefSink, StreamSink } from "./StreamProcessor";
 import type { StreamEvent } from "./StreamTypes";
 import { assertBinaryFormat, getStreamingPorts, materializeBinary } from "./StreamTypes";
 import { Task } from "./Task";
@@ -391,6 +391,55 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
       return isCacheRef(raw) ? raw : makeCacheRef(raw);
     };
     return new Map([[port, sink]]);
+  }
+
+  /**
+   * Per-port {@link StreamSink} map for the no-accumulation path: every
+   * streamable output port (`append` / `object` / `binary`) gets its own sink
+   * keyed by `(taskType, inputs, port)` via {@link TaskOutputRepository.saveOutputStreamPort},
+   * so a multi-port task stores each port's bytes independently — no overwrite,
+   * no single-binary-port restriction. The {@link StreamProcessor} encodes each
+   * port's deltas with the mode codec before handing the bytes to the sink.
+   *
+   * Returns `undefined` when no cache is configured by policy, the cache does
+   * not implement `saveOutputStreamPort` (legacy backings keep the single
+   * binary path via {@link getBinaryRefSinksByPolicy}), the task is not
+   * cacheable, or the schema has no streamable port. `replace`-mode ports are
+   * excluded — a snapshot-driven port has no single-port delta byte stream and
+   * stays on the accumulation path.
+   */
+  public getRefSinksByPolicy(
+    keyInputs: Input,
+    registry: CacheRegistry | undefined,
+    policy: CachePolicy,
+    outputSchema: DataPortSchema
+  ): ReadonlyMap<string, StreamSink> | undefined {
+    if (!this.task.cacheable) return undefined;
+    const cache = this.repoFor(registry, policy);
+    if (!cache || !cache.supportsStreamingPorts()) return undefined;
+    const ports = getStreamingPorts(outputSchema).filter(
+      (p) => p.mode === "append" || p.mode === "object" || p.mode === "binary"
+    );
+    if (ports.length === 0) return undefined;
+    const taskType = this.task.type;
+    const sinks = new Map<string, StreamSink>();
+    for (const { port, mode } of ports) {
+      sinks.set(port, {
+        mode,
+        write: async (chunks) => {
+          const raw = await cache.saveOutputStreamPort!(
+            taskType,
+            keyInputs,
+            port,
+            mode,
+            chunks,
+            {}
+          );
+          return isCacheRef(raw) ? raw : makeCacheRef(raw);
+        },
+      });
+    }
+    return sinks;
   }
 
   /**

@@ -23,6 +23,14 @@ import { foldObjectDelta } from "../task/StreamTypes";
  */
 export interface StreamPortCodec {
   readonly mode: StreamMode;
+  /**
+   * Encode a single stream event into the bytes that represent it for `port`,
+   * or `undefined` when the event carries nothing for this port (wrong type,
+   * wrong port, or empty delta). The per-event primitive: `encode` is this
+   * applied over a stream, and the live router uses it to push deltas to a sink
+   * one event at a time.
+   */
+  encodeEvent(event: StreamEvent, port: string): Uint8Array | undefined;
   encode(events: AsyncIterable<StreamEvent>, port: string): AsyncIterable<Uint8Array>;
   decode(bytes: AsyncIterable<Uint8Array>, port: string): AsyncIterable<StreamEvent>;
   materialize(bytes: AsyncIterable<Uint8Array>, port: string): Promise<unknown>;
@@ -30,12 +38,16 @@ export interface StreamPortCodec {
 
 const appendCodec: StreamPortCodec = {
   mode: "append",
+  encodeEvent(event, port) {
+    if (event.type === "text-delta" && event.port === port && event.textDelta) {
+      return new TextEncoder().encode(event.textDelta);
+    }
+    return undefined;
+  },
   async *encode(events, port) {
-    const enc = new TextEncoder();
     for await (const e of events) {
-      if (e.type === "text-delta" && e.port === port && e.textDelta) {
-        yield enc.encode(e.textDelta);
-      }
+      const bytes = this.encodeEvent(e, port);
+      if (bytes) yield bytes;
     }
   },
   async *decode(bytes, port) {
@@ -58,12 +70,16 @@ const appendCodec: StreamPortCodec = {
 
 const objectCodec: StreamPortCodec = {
   mode: "object",
+  encodeEvent(event, port) {
+    if (event.type === "object-delta" && event.port === port) {
+      return new TextEncoder().encode(JSON.stringify(event.objectDelta) + "\n");
+    }
+    return undefined;
+  },
   async *encode(events, port) {
-    const enc = new TextEncoder();
     for await (const e of events) {
-      if (e.type === "object-delta" && e.port === port) {
-        yield enc.encode(JSON.stringify(e.objectDelta) + "\n");
-      }
+      const bytes = this.encodeEvent(e, port);
+      if (bytes) yield bytes;
     }
   },
   decode: decodeObject,
@@ -100,9 +116,14 @@ async function* decodeObject(
 
 const binaryCodec: StreamPortCodec = {
   mode: "binary",
+  encodeEvent(event, port) {
+    if (event.type === "binary-delta" && event.port === port) return event.binaryDelta;
+    return undefined;
+  },
   async *encode(events, port) {
     for await (const e of events) {
-      if (e.type === "binary-delta" && e.port === port) yield e.binaryDelta;
+      const bytes = this.encodeEvent(e, port);
+      if (bytes) yield bytes;
     }
   },
   async *decode(bytes, port) {

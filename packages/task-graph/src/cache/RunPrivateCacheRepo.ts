@@ -5,6 +5,7 @@
  */
 
 import { TaskOutputRepository } from "../storage/TaskOutputRepository";
+import type { StreamMode } from "../task/StreamTypes";
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
 import type { CacheRef } from "./CacheRef";
 import { isCacheRef, makeCacheRef } from "./CacheRef";
@@ -57,6 +58,9 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     // the prototype; assigning `undefined` on the instance shadows them.
     if (typeof backing.saveOutputStream !== "function") {
       (this as { saveOutputStream?: unknown }).saveOutputStream = undefined;
+    }
+    if (typeof backing.saveOutputStreamPort !== "function") {
+      (this as { saveOutputStreamPort?: unknown }).saveOutputStreamPort = undefined;
     }
     if (typeof backing.getOutputByRef !== "function") {
       (this as { getOutputByRef?: unknown }).getOutputByRef = undefined;
@@ -138,6 +142,39 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
   }
 
   /**
+   * Port-aware streaming sink, namespaced like {@link saveOutputStream}. Only in
+   * effect when the backing implements `saveOutputStreamPort`; the constructor
+   * shadows this method to `undefined` otherwise so `supportsStreamingPorts()`
+   * and `typeof` probes report the backing's true capability.
+   */
+  public override async saveOutputStreamPort(
+    taskType: string,
+    inputs: TaskInput,
+    port: string,
+    mode: StreamMode,
+    chunks: AsyncIterable<Uint8Array>,
+    metadata: Record<string, unknown>
+  ): Promise<CacheRef> {
+    const fn = this.backing.saveOutputStreamPort;
+    if (typeof fn !== "function") {
+      throw new Error(
+        `RunPrivateCacheRepo: backing repository does not implement saveOutputStreamPort. ` +
+          `Call supportsStreamingPorts() before saveOutputStreamPort.`
+      );
+    }
+    const raw = await fn.call(
+      this.backing,
+      this.ns(taskType),
+      inputs,
+      port,
+      mode,
+      chunks,
+      metadata
+    );
+    return isCacheRef(raw) ? raw : makeCacheRef(raw);
+  }
+
+  /**
    * Forwards by-ref retrieval to the backing repository. The `$ref` already
    * encodes whatever the backing needs to locate the entry; no namespacing is
    * re-applied here.
@@ -161,6 +198,11 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
   /** Mirrors the backing repository's streaming-read capability. */
   public override supportsStreamingReads(): boolean {
     return this.backing.supportsStreamingReads();
+  }
+
+  /** Mirrors the backing repository's port-aware streaming capability. */
+  public override supportsStreamingPorts(): boolean {
+    return this.backing.supportsStreamingPorts();
   }
 
   /**

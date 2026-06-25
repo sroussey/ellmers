@@ -6,6 +6,8 @@
 
 import type { ResourceScope, ServiceRegistry } from "@workglow/util";
 import type { CacheRef } from "../cache/CacheRef";
+import type { StreamPortCodec } from "../cache/streamCodec";
+import { getStreamPortCodec } from "../cache/streamCodec";
 import type { Taskish } from "../task-graph/Conversions";
 import { BackpressureGate } from "./BackpressureGate";
 import type { ITask } from "./ITask";
@@ -33,6 +35,22 @@ import { TaskStatus } from "./TaskTypes";
  * once it knows the cache key.
  */
 export type BinaryRefSink = (chunks: AsyncIterable<Uint8Array>) => Promise<CacheRef>;
+
+/**
+ * A per-port stream sink generalized to any streamable mode. `mode` selects the
+ * codec the processor uses to encode that port's deltas (`append` → UTF-8,
+ * `object` → NDJSON, `binary` → identity) before handing the ordered bytes to
+ * `write`, which persists them and returns the {@link CacheRef} the processor
+ * places into `Output` at the port slot (subject to the same artifact
+ * precedence as the binary path: an explicit whole finish payload wins).
+ *
+ * A `binary`-mode sink is exactly the legacy {@link BinaryRefSink} with its
+ * mode named; the two are interchangeable on the wire (bytes in, ref out).
+ */
+export interface StreamSink {
+  readonly mode: StreamMode;
+  readonly write: BinaryRefSink;
+}
 
 /**
  * Per-call run-state inputs shared by StreamProcessor.run. Bundles facade
@@ -63,6 +81,18 @@ export interface StreamProcessorDeps {
    * Ports without a sink follow the normal accumulation path.
    */
   readonly binaryRefSinks?: ReadonlyMap<string, BinaryRefSink>;
+  /**
+   * Per-port stream sinks for any streamable mode (the superset of
+   * {@link binaryRefSinks}). When a port has a sink registered, the processor
+   * encodes that port's deltas via the sink's mode codec and routes the bytes
+   * to the sink **instead** of accumulating them in memory; at finish the
+   * sink's {@link CacheRef} replaces the port slot in the output (unless an
+   * explicit whole finish payload is present for that port, which always wins).
+   *
+   * A `binary`-mode entry here is equivalent to a {@link binaryRefSinks} entry;
+   * when both are supplied for the same port, `refSinks` wins.
+   */
+  readonly refSinks?: ReadonlyMap<string, StreamSink>;
   /**
    * High-water mark (bytes) for the per-port binary stream router buffer. When
    * the buffered (un-consumed) byte total reaches or exceeds this value,
@@ -123,26 +153,48 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
       ? new Map<string, Record<string, unknown> | unknown[]>()
       : undefined;
     const accumulatedBinary = ctx.shouldAccumulate ? new Map<string, Uint8Array[]>() : undefined;
-    // Per-port routers: lazily created on the first binary-delta whose port has
-    // a sink in `deps.binaryRefSinks`. Routes chunks to the sink instead of
-    // accumulating in memory; at finish, awaits the sink's returned CacheRef
-    // and writes it into the output at the port slot.
-    const sinks = deps.binaryRefSinks;
+    // Unified per-port sink map: a `binary`-mode entry for every legacy
+    // `binaryRefSinks` sink, overlaid by `refSinks` (any mode) so a port present
+    // in both takes the explicit `refSinks` entry.
+    const sinks = new Map<string, StreamSink>();
+    if (deps.binaryRefSinks) {
+      for (const [port, write] of deps.binaryRefSinks) sinks.set(port, { mode: "binary", write });
+    }
+    if (deps.refSinks) {
+      for (const [port, sink] of deps.refSinks) sinks.set(port, sink);
+    }
     const highWaterMark =
       deps.binaryHighWaterBytes !== undefined && deps.binaryHighWaterBytes > 0
         ? deps.binaryHighWaterBytes
         : DEFAULT_BINARY_HIGH_WATER_BYTES;
-    const routers = new Map<string, BinaryStreamRouter>();
-    const ensureRouter = (port: string): BinaryStreamRouter | undefined => {
-      if (!sinks) return undefined;
+    // Per-port routers: lazily created on the first delta whose port has a sink.
+    // Routes codec-encoded bytes to the sink instead of accumulating in memory;
+    // at finish, awaits the sink's returned CacheRef and writes it into the
+    // output at the port slot. The codec (chosen by the sink's mode) turns each
+    // text/object/binary delta into the ordered bytes the sink persists.
+    const routers = new Map<string, { router: BinaryStreamRouter; codec: StreamPortCodec }>();
+    const ensureRouter = (
+      port: string
+    ): { router: BinaryStreamRouter; codec: StreamPortCodec } | undefined => {
       const sink = sinks.get(port);
       if (!sink) return undefined;
       let r = routers.get(port);
       if (!r) {
-        r = new BinaryStreamRouter(sink, highWaterMark);
+        r = {
+          router: new BinaryStreamRouter(sink.write, highWaterMark),
+          codec: getStreamPortCodec(sink.mode),
+        };
         routers.set(port, r);
       }
       return r;
+    };
+    // Encode `event` for `port` via its sink codec and park the producer on the
+    // router's byte-bounded gate. No-op when the port has no sink.
+    const routeDelta = async (port: string, event: StreamEvent): Promise<void> => {
+      const r = ensureRouter(port);
+      if (!r) return;
+      const bytes = r.codec.encodeEvent(event, port);
+      if (bytes) await r.router.push(bytes);
     };
 
     let streamingStarted = false;
@@ -159,8 +211,8 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
     const binaryBackpressure = async (): Promise<void> => {
       if (routers.size === 0) return;
       const waits: Promise<void>[] = [];
-      for (const r of routers.values()) {
-        if (r._bufferedBytes >= r._highWaterMarkBytes) waits.push(r._awaitDrain());
+      for (const { router } of routers.values()) {
+        if (router._bufferedBytes >= router._highWaterMarkBytes) waits.push(router._awaitDrain());
       }
       if (waits.length === 0) return;
       await Promise.all(waits);
@@ -202,6 +254,9 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
             if (accumulated) {
               accumulated.set(event.port, (accumulated.get(event.port) ?? "") + event.textDelta);
             }
+            // Tee to the port's sink (encoded as UTF-8) when one exists; the
+            // accumulator (if any) still drives the enriched finish event.
+            await routeDelta(event.port, event);
             this.task.emit("stream_chunk", event as StreamEvent);
             break;
           }
@@ -222,6 +277,8 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
               ...this.task.runOutputData,
               [event.port]: accumulatedObjects?.get(event.port) ?? event.objectDelta,
             } as Output;
+            // Tee to the port's sink (encoded as NDJSON) when one exists.
+            await routeDelta(event.port, event);
             this.task.emit("stream_chunk", event as StreamEvent);
             break;
           }
@@ -237,12 +294,11 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
             // router writes to the cache for the small ref-bearing Output,
             // accumulator drives the enriched finish event so edge consumers
             // still receive a Blob/ArrayBuffer.
-            // `await router.push(...)` here is where byte-bounded backpressure
-            // takes effect: the producer (executeStream) parks until the sink
-            // drains the router buffer back under the high-water mark, or
-            // until the router is closed (abort/error path).
-            const router = ensureRouter(event.port);
-            if (router) await router.push(event.binaryDelta);
+            // `routeDelta` is where byte-bounded backpressure takes effect: the
+            // producer (executeStream) parks until the sink drains the router
+            // buffer back under the high-water mark, or until the router is
+            // closed (abort/error path).
+            await routeDelta(event.port, event);
             if (accumulatedBinary) {
               const arr = accumulatedBinary.get(event.port) ?? [];
               arr.push(event.binaryDelta);
@@ -297,9 +353,9 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
               // still wins for the OUTPUT slot (artifact precedence); the
               // router's CacheRef is discarded in that case but the cache
               // write already happened.
-              for (const router of routers.values()) router.end();
+              for (const { router } of routers.values()) router.end();
               const refs = new Map<string, CacheRef>();
-              for (const [port, router] of routers) {
+              for (const [port, { router }] of routers) {
                 if (port in explicitPayload) {
                   // Drain the promise so the sink doesn't leak; ignore the ref.
                   router.ref().catch(() => {});
@@ -379,13 +435,13 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
       // (rather than waiting forever on the producer). The original error is
       // rethrown unchanged.
       const failure = err instanceof Error ? err : new Error(String(err));
-      for (const router of routers.values()) router.fail(failure);
+      for (const { router } of routers.values()) router.fail(failure);
       throw err;
     } finally {
       // Defensive: if the loop exited without seeing a `finish` event
       // (e.g. abort, generator return without yield), close routers so their
       // sinks see end-of-stream rather than blocking on the next chunk.
-      for (const router of routers.values()) router.end();
+      for (const { router } of routers.values()) router.end();
     }
 
     // Check if the task was aborted during streaming
