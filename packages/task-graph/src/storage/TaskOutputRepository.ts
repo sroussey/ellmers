@@ -170,6 +170,15 @@ export abstract class TaskOutputRepository {
     return typeof this.getOutputStreamByRef === "function";
   }
 
+  /**
+   * True when this repository implements the port-aware {@link saveOutputStreamPort}
+   * (the all-mode, multi-port superset of {@link saveOutputStream}). Backings
+   * that stream only the legacy single binary port return `false`.
+   */
+  supportsStreamingPorts(): boolean {
+    return typeof this.saveOutputStreamPort === "function";
+  }
+
   abstract getOutput(taskType: string, inputs: TaskInput): Promise<TaskOutput | undefined>;
 
   abstract clear(): Promise<void>;
