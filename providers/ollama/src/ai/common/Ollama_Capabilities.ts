@@ -70,6 +70,7 @@ export function inferOllamaCapabilities(model: CapabilityHints): readonly Capabi
       "text.rewriter",
       "text.summary",
       "tool-use",
+      "json-mode",
       "vision-input",
       "model.info",
       "model.search",
@@ -85,6 +86,7 @@ export function inferOllamaCapabilities(model: CapabilityHints): readonly Capabi
       "text.rewriter",
       "text.summary",
       "tool-use",
+      "json-mode",
       "model.info",
       "model.search",
     ];

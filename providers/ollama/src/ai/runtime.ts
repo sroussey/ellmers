@@ -15,5 +15,6 @@
 
 export * from "./common/Ollama_Client";
 export * from "./common/Ollama_TextGeneration";
+export * from "./common/Ollama_StructuredGeneration";
 export * from "./registerOllamaInline";
 export * from "./registerOllamaWorker";

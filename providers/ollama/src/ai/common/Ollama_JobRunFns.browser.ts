@@ -6,6 +6,7 @@
 
 import type { AiProviderRunFnRegistration, ToolCallingTaskInput } from "@workglow/ai";
 import {
+  OLLAMA_JSON_MODE,
   OLLAMA_MODEL_INFO,
   OLLAMA_MODEL_SEARCH,
   OLLAMA_TEXT_EMBEDDING,
@@ -18,6 +19,7 @@ import { getClient } from "./Ollama_Client.browser";
 import { createOllamaModelInfoStream } from "./Ollama_ModelInfo";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { createOllamaModelSearchStream } from "./Ollama_ModelSearch";
+import { createOllamaStructuredGenerationStream } from "./Ollama_StructuredGeneration";
 import { createOllamaTextEmbeddingStream } from "./Ollama_TextEmbedding";
 import { createOllamaTextGenerationStream } from "./Ollama_TextGeneration";
 import { createOllamaTextRewriterStream } from "./Ollama_TextRewriter";
@@ -39,6 +41,7 @@ function buildBrowserToolCallingMessages(input: ToolCallingTaskInput): Array<{
 }
 
 export const Ollama_TextGeneration_Stream = createOllamaTextGenerationStream(getClient);
+export const Ollama_StructuredGeneration_Stream = createOllamaStructuredGenerationStream(getClient);
 export const Ollama_TextRewriter_Stream = createOllamaTextRewriterStream(getClient);
 export const Ollama_TextSummary_Stream = createOllamaTextSummaryStream(getClient);
 export const Ollama_TextEmbedding_Stream = createOllamaTextEmbeddingStream(getClient);
@@ -52,6 +55,7 @@ export const Ollama_ModelSearch_Stream = createOllamaModelSearchStream(getClient
 export const OLLAMA_RUN_FNS: readonly AiProviderRunFnRegistration<any, any, OllamaModelConfig>[] = [
   { serves: OLLAMA_TEXT_GENERATION, runFn: Ollama_TextGeneration_Stream },
   { serves: OLLAMA_TOOL_USE, runFn: Ollama_ToolCalling_Stream },
+  { serves: OLLAMA_JSON_MODE, runFn: Ollama_StructuredGeneration_Stream },
   { serves: OLLAMA_TEXT_REWRITER, runFn: Ollama_TextRewriter_Stream },
   { serves: OLLAMA_TEXT_SUMMARY, runFn: Ollama_TextSummary_Stream },
   { serves: OLLAMA_TEXT_EMBEDDING, runFn: Ollama_TextEmbedding_Stream },
