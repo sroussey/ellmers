@@ -363,7 +363,7 @@ export interface ITaskIO<Input extends TaskInput> {
   resetInputData(): void;
   setInput(input: Partial<Input>): void;
   addInput(overrides: Partial<Input> | undefined): boolean;
-  validateInput(input: Input): Promise<boolean>;
+  validateInput(input: Input, skipPorts?: ReadonlySet<string>): Promise<boolean>;
   get cacheable(): boolean;
   getCacheVersion(): string;
   getCachePolicy(inputs: Input): CachePolicy;
