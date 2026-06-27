@@ -22,7 +22,12 @@ export class BaseError extends Error {
     super(message, options);
 
     const constructor = this.constructor as typeof BaseError;
-    this.name = constructor.type ?? this.constructor.name;
+    // Use the subclass's OWN `static type` when it declares one; otherwise fall
+    // back to the runtime constructor name. (`BaseError.type` is inherited, so a
+    // plain `constructor.type` would mask every subclass that forgets to set it.)
+    this.name = Object.prototype.hasOwnProperty.call(constructor, "type")
+      ? constructor.type
+      : this.constructor.name;
 
     // Some runtimes (or super() in older targets) do not forward `cause`.
     if (options && "cause" in options && this.cause === undefined) {

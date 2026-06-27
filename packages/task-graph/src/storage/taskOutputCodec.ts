@@ -17,7 +17,9 @@ export async function encodeTaskOutput(
   outputCompression: boolean
 ): Promise<Uint8Array> {
   const value = JSON.stringify(output);
-  return outputCompression ? await compress(value) : Buffer.from(value);
+  // TextEncoder (not Buffer.from) so the uncompressed path works in browser
+  // builds, where Buffer is not defined.
+  return outputCompression ? await compress(value) : new TextEncoder().encode(value);
 }
 
 /**
