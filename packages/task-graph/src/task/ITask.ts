@@ -196,6 +196,29 @@ export interface IRunConfig {
   binaryHighWaterBytes?: number;
 
   /**
+   * Opt into the no-accumulation passthrough path (default `false`). When set,
+   * a streaming source feeding a single same-mode streaming consumer over a
+   * plain (no-transform, non-ending) edge pipes producer → (consumer + cache
+   * sink) **without** the full-speed materialize drain on that edge: the edge
+   * carries the per-port {@link CacheRef} (resolved by the consumer's input
+   * hydration) instead of an accumulated value, and the producer is paced by
+   * the consumer's read rate through the per-port backpressure gate.
+   *
+   * Every edge that does not meet the passthrough conditions (transform edges,
+   * ending-node edges, multi-consumer fan-out, no live sink, mode mismatch)
+   * falls back to today's drain — correct, just without the backpressure win.
+   * Off ⇒ behavior is byte-identical to the accumulation path.
+   */
+  noAccumulation?: boolean;
+
+  /**
+   * High-water mark (bytes) for the no-accumulation passthrough gate, the
+   * all-mode analogue of {@link binaryHighWaterBytes}. When omitted, the binary
+   * high-water value (then {@link DEFAULT_BINARY_HIGH_WATER_BYTES}) applies.
+   */
+  streamHighWaterBytes?: number;
+
+  /**
    * Optional callback invoked whenever a task's progress changes during execution.
    * @param task - The task whose progress changed.
    * @param progress - 0..100 for measured progress, or `undefined` for indeterminate.
