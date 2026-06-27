@@ -505,7 +505,7 @@ export class TaskGraphRunner {
     // Streaming downstream tasks are still unblocked early by the scheduler
     // (they can start setup while upstream is streaming), but their actual
     // input data waits for upstream completion.
-    await this.streamPump.awaitStreamInputs(task, this.registry);
+    await this.streamPump.awaitStreamInputs(task, this.registry, this.noAccumulation);
 
     this.edgeMaterializer.copyInputFromEdgesToNode(task);
 

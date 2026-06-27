@@ -7,10 +7,12 @@
 import { getLogger } from "@workglow/util";
 import type { ImageValue } from "@workglow/util/media";
 import { previewSource } from "@workglow/util/media";
+import { isCacheRef } from "../cache/CacheRef";
 import type { ITask } from "../task/ITask";
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
 import { TaskStatus } from "../task/TaskTypes";
 import { DATAFLOW_ALL_PORTS, DATAFLOW_ERROR_PORT } from "./Dataflow";
+import { StreamPump } from "./StreamPump";
 import type { TaskGraph } from "./TaskGraph";
 import type { TaskGraphRunner } from "./TaskGraphRunner";
 
@@ -115,7 +117,19 @@ export class EdgeMaterializer {
       // Setting port data here would be overwritten by the finish event, and
       // applying transforms again on this path would double-apply
       // non-idempotent transforms, so skip the whole post-materialisation step.
-      if (dataflow.stream !== undefined) continue;
+      if (dataflow.stream !== undefined) {
+        // Exception: a no-accumulation passthrough edge is NOT drained
+        // downstream, so nothing else populates its value. When the source
+        // produced a per-port CacheRef, set it as the edge's durable value (no
+        // transforms by definition) so a consumer that reads the static slot
+        // resolves it via input hydration. A non-ref value is left alone.
+        const noAccumulation = this.runner["noAccumulation"] === true;
+        if (StreamPump.isNoAccumulationPassthroughEdge(this.graph, dataflow, noAccumulation)) {
+          const ref = (results as Record<string, unknown>)[dataflow.sourceTaskPortId];
+          if (isCacheRef(ref)) dataflow.value = ref;
+        }
+        continue;
+      }
       // Bracket access — registry stays protected on the facade.
       const registry = this.runner["registry"];
       const compatibility = dataflow.semanticallyCompatible(this.graph, dataflow, registry);
