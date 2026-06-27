@@ -117,6 +117,17 @@ export class TaskGraphRunner {
    * output. True by default so workflow return values are complete.
    */
   protected accumulateLeafOutputs: boolean = true;
+
+  /**
+   * Opt-in to the no-accumulation passthrough path for this run. Off by
+   * default — every edge takes today's drain unless this is set AND the edge
+   * meets the passthrough conditions (see {@link TaskGraphRunConfig.noAccumulation}).
+   */
+  protected noAccumulation: boolean = false;
+
+  /** High-water mark (bytes) for the no-accumulation passthrough gate. */
+  protected streamHighWaterBytes?: number;
+
   /**
    * Service registry for this graph run.
    * Read by EdgeMaterializer via bracket access (`runner["registry"]`).
@@ -508,6 +519,8 @@ export class TaskGraphRunner {
         outputCache: this.outputCache,
         resourceScope: this.resourceScope,
         accumulateLeafOutputs: this.accumulateLeafOutputs,
+        noAccumulation: this.noAccumulation,
+        streamHighWaterBytes: this.streamHighWaterBytes,
         updateProgress: (t, p, m, ...a) =>
           this.runScheduler.handleProgress(this.currentCtx!, t, p, m, ...a),
         runId: this.runId,
@@ -679,6 +692,8 @@ export class TaskGraphRunner {
     }
 
     this.accumulateLeafOutputs = config?.accumulateLeafOutputs !== false;
+    this.noAccumulation = config?.noAccumulation === true;
+    this.streamHighWaterBytes = config?.streamHighWaterBytes;
 
     if (config?.outputCache !== undefined) {
       if (typeof config.outputCache === "boolean") {

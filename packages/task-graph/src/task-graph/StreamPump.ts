@@ -38,6 +38,15 @@ export interface StreamingRunOptions {
   readonly outputCache: TaskOutputRepository | undefined;
   readonly resourceScope: ResourceScope | undefined;
   readonly accumulateLeafOutputs: boolean;
+  /**
+   * Opt-in to the no-accumulation passthrough path for this run. Off ⇒ every
+   * edge takes today's drain; the flag only matters when an edge also meets the
+   * passthrough conditions. Threaded onto each streaming task's run config so
+   * the runner can choose the per-port ref-sink path.
+   */
+  readonly noAccumulation?: boolean;
+  /** High-water mark (bytes) for the no-accumulation passthrough gate. */
+  readonly streamHighWaterBytes?: number;
   readonly updateProgress: (
     task: ITask,
     progress: number | undefined,
@@ -200,6 +209,8 @@ export class StreamPump {
         registry: options.registry,
         resourceScope: options.resourceScope,
         runId: options.runId,
+        noAccumulation: options.noAccumulation,
+        streamHighWaterBytes: options.streamHighWaterBytes,
         // Sinks are installed regardless of downstream needs: when both an
         // accumulator and a router exist (downstream needs materialized + cache
         // can stream), StreamProcessor tees — accumulator drives the enriched
