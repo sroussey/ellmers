@@ -6,6 +6,7 @@
 
 import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import {
+  bridgeSubGraphTaskEvents,
   Dataflow,
   FallbackTask,
   GraphAsTask,
@@ -16,8 +17,10 @@ import {
   WhileTask,
   Workflow,
 } from "@workglow/task-graph";
+import type { ILogger } from "@workglow/util";
+import { NullLogger, setLogger } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 class TCEAddOne extends Task<{ value: number }, { value: number }> {
   static override readonly type = "TCEAddOne";
@@ -396,5 +399,114 @@ describe("task_complete graph event", () => {
     unsub();
 
     expect(seen.filter((id) => id === "leaky")).toHaveLength(1);
+  });
+});
+
+describe("bridgeSubGraphTaskEvents depth cap", () => {
+  // Each test installs a stub logger and restores a NullLogger after, so warn
+  // spies do not leak into other tests (and we never emit to the real console).
+  let warnSpy: ReturnType<typeof vi.fn>;
+
+  function installStubLogger(): void {
+    warnSpy = vi.fn();
+    const stub: ILogger = {
+      debug: () => {},
+      info: () => {},
+      warn: warnSpy as unknown as ILogger["warn"],
+      error: () => {},
+      fatal: () => {},
+      child() {
+        return stub;
+      },
+      time: () => {},
+      timeEnd: () => {},
+      group: () => {},
+      groupEnd: () => {},
+    };
+    setLogger(stub);
+  }
+
+  afterEach(() => {
+    setLogger(new NullLogger());
+  });
+
+  it("stops bridging past maxDepth (default 16)", () => {
+    installStubLogger();
+    // Build a chain of TaskGraphs: g0 (top) -> g1 -> g2 -> ... -> gN (innermost).
+    // Bridging is chained so each gK forwards into gK-1, mirroring how a stack
+    // of GraphAsTask wrappers nests bridges at run time.
+    const N = 20;
+    const graphs: TaskGraph[] = [];
+    for (let i = 0; i <= N; i++) graphs.push(new TaskGraph());
+
+    const unbridges: Array<() => void> = [];
+    for (let i = 1; i <= N; i++) {
+      // graphs[i] is the inner subgraph; graphs[i-1] is its parent.
+      unbridges.push(bridgeSubGraphTaskEvents(graphs[i], graphs[i - 1]));
+    }
+
+    // Emit a task_progress from the innermost graph and count how many bridges
+    // it traversed up to the outermost. Without the cap this would re-emit N
+    // times (once per parent); with the cap of 16 it stops after 16 hops.
+    const reachedDepths: number[] = [];
+    for (let i = 0; i < graphs.length; i++) {
+      const depth = i;
+      graphs[i].subscribe("task_progress", () => {
+        reachedDepths.push(depth);
+      });
+    }
+
+    graphs[N].emit("task_progress", "inner-id", 42, "msg");
+
+    // Innermost (depth N) saw the original emit; bridges propagate up at most
+    // 16 levels (the default cap), so the highest depth reached is N - 16.
+    const minReached = Math.min(...reachedDepths);
+    expect(minReached).toBeGreaterThanOrEqual(N - 16);
+    // The cap fired (depth reached 16), producing at least one warn.
+    expect(warnSpy).toHaveBeenCalled();
+
+    unbridges.forEach((off) => off());
+  });
+
+  it("logs warning with depth fields when the cap is hit", () => {
+    installStubLogger();
+    const N = 18;
+    const graphs: TaskGraph[] = [];
+    for (let i = 0; i <= N; i++) graphs.push(new TaskGraph());
+    const unbridges: Array<() => void> = [];
+    for (let i = 1; i <= N; i++) {
+      unbridges.push(bridgeSubGraphTaskEvents(graphs[i], graphs[i - 1]));
+    }
+
+    expect(warnSpy).toHaveBeenCalled();
+    const firstCall = warnSpy.mock.calls[0];
+    expect(firstCall[0]).toBe("bridgeSubGraphTaskEvents depth cap hit; dropping bridge");
+    expect(firstCall[1]).toEqual({ depth: 16, maxDepth: 16 });
+
+    unbridges.forEach((off) => off());
+  });
+
+  it("accepts a custom maxDepth override", () => {
+    installStubLogger();
+    const N = 6;
+    const graphs: TaskGraph[] = [];
+    for (let i = 0; i <= N; i++) graphs.push(new TaskGraph());
+
+    const unbridges: Array<() => void> = [];
+    for (let i = 1; i <= N; i++) {
+      // Explicitly pass maxDepth=4 to each level. Depth is derived from the
+      // parent's stamped marker, so the first call to exceed the cap is the
+      // bridge whose computed depth is 4.
+      unbridges.push(bridgeSubGraphTaskEvents(graphs[i], graphs[i - 1], undefined, 4));
+    }
+
+    expect(warnSpy).toHaveBeenCalled();
+    const firstCall = warnSpy.mock.calls.find(
+      (c) => c[0] === "bridgeSubGraphTaskEvents depth cap hit; dropping bridge"
+    );
+    expect(firstCall).toBeDefined();
+    expect(firstCall![1]).toEqual({ depth: 4, maxDepth: 4 });
+
+    unbridges.forEach((off) => off());
   });
 });
