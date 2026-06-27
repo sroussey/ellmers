@@ -126,9 +126,21 @@ export class StreamPump {
    * value (via Dataflow.awaitStreamValue) before the task reads its
    * inputs through the normal getPortData() path.
    */
-  async awaitStreamInputs(task: ITask, registry: ServiceRegistry): Promise<void> {
+  async awaitStreamInputs(
+    task: ITask,
+    registry: ServiceRegistry,
+    noAccumulation: boolean = false
+  ): Promise<void> {
     const dataflows = this.graph.getSourceDataflows(task.id);
-    const streamingDataflows = dataflows.filter((df) => df.stream !== undefined);
+    const streamingDataflows = dataflows.filter(
+      (df) =>
+        df.stream !== undefined &&
+        // No-accumulation passthrough edges are NOT drained: the consumer takes
+        // its data from the live stream (tee'd to executeStream) and its static
+        // input slot holds the upstream per-port CacheRef. Draining here would
+        // be the full-speed materialize that defeats edge backpressure.
+        !StreamPump.isNoAccumulationPassthroughEdge(this.graph, df, noAccumulation)
+    );
     if (streamingDataflows.length === 0) return;
     await Promise.all(
       streamingDataflows.map(async (df) => {
@@ -166,7 +178,8 @@ export class StreamPump {
     const shouldAccumulate = this.taskNeedsAccumulation(
       task,
       options.outputCache,
-      options.accumulateLeafOutputs
+      options.accumulateLeafOutputs,
+      options.noAccumulation === true
     );
 
     let streamingNotified = false;
@@ -250,7 +263,8 @@ export class StreamPump {
   private taskNeedsAccumulation(
     task: ITask,
     outputCache: TaskOutputRepository | undefined,
-    accumulateLeafOutputs: boolean
+    accumulateLeafOutputs: boolean,
+    noAccumulation: boolean = false
   ): boolean {
     if (outputCache) {
       // Relaxation: when the cache can ingest a byte stream, the task streams
@@ -259,6 +273,14 @@ export class StreamPump {
       // into an enriched finish event. This is the memory win for large binary
       // outputs (e.g. file/image producers).
       if (StreamPump.canStreamBinaryToCache(this.graph, task, outputCache)) return false;
+      // No-accumulation passthrough: under the opt-in flag, a cacheable task
+      // whose streamable ports can each be sunk per-port (and no consumer needs
+      // a materialized value) pipes every port straight to the cache, skipping
+      // the enriched-finish buffer for all modes — the all-mode generalization
+      // of the binary relaxation above.
+      if (StreamPump.canStreamAllPortsToCache(this.graph, task, outputCache, noAccumulation)) {
+        return false;
+      }
       return true;
     }
 
@@ -324,6 +346,81 @@ export class StreamPump {
     if (streamingPorts.length !== 1 || streamingPorts[0].mode !== "binary") return false;
 
     return !StreamPump.anyConsumerNeedsMaterialized(graph, task);
+  }
+
+  /**
+   * All-mode analogue of {@link canStreamBinaryToCache} for the opt-in
+   * no-accumulation path. True when the flag is on, the task is cacheable, the
+   * cache implements the port-aware `saveOutputStreamPort`, every streaming
+   * output port is a delta mode (`append` / `object` / `binary`), and no
+   * downstream edge needs a materialized value. Then each port is sunk
+   * independently (per-port {@link CacheRef}) and no enriched-finish buffer is
+   * built. Cacheability is required because the per-port sinks are only built
+   * for cacheable tasks; without them the deltas would have nowhere to go.
+   */
+  static canStreamAllPortsToCache(
+    graph: TaskGraph,
+    task: ITask,
+    outputCache: TaskOutputRepository | undefined,
+    noAccumulation: boolean
+  ): boolean {
+    if (!noAccumulation) return false;
+    if (!task.cacheable) return false;
+    if (typeof outputCache?.supportsStreamingPorts !== "function") return false;
+    if (!outputCache.supportsStreamingPorts()) return false;
+    const streamingPorts = getStreamingPorts(task.outputSchema());
+    if (streamingPorts.length === 0) return false;
+    const allDelta = streamingPorts.every(
+      (p) => p.mode === "append" || p.mode === "object" || p.mode === "binary"
+    );
+    if (!allDelta) return false;
+    return !StreamPump.anyConsumerNeedsMaterialized(graph, task);
+  }
+
+  /**
+   * True when {@link df} is a no-accumulation passthrough edge: the flag is on,
+   * the edge carries an active stream with no transforms, its source and target
+   * ports declare the SAME delta stream mode (`append` / `object` / `binary`),
+   * the source port fans out to this single consumer, and the target port does
+   * not force stream validation (`x-validate-stream`). Such an edge skips the
+   * materialize drain — the consumer reads the live stream and its static slot
+   * holds the upstream {@link CacheRef}. Every other edge falls back to the
+   * drain (correct, just no backpressure win).
+   */
+  static isNoAccumulationPassthroughEdge(
+    graph: TaskGraph,
+    df: Dataflow,
+    noAccumulation: boolean
+  ): boolean {
+    if (!noAccumulation) return false;
+    if (df.sourceTaskPortId === DATAFLOW_ALL_PORTS) return false;
+    if (df.getTransforms().length > 0) return false;
+    const source = graph.getTask(df.sourceTaskId);
+    const target = graph.getTask(df.targetTaskId);
+    if (!source || !target) return false;
+    const srcMode = getPortStreamMode(source.outputSchema(), df.sourceTaskPortId);
+    if (srcMode !== "append" && srcMode !== "object" && srcMode !== "binary") return false;
+    if (getPortStreamMode(target.inputSchema(), df.targetTaskPortId) !== srcMode) return false;
+    if (StreamPump.portForcesStreamValidation(target.inputSchema(), df.targetTaskPortId)) {
+      return false;
+    }
+    // Single consumer of this source port: a fan-out source port must keep the
+    // drain (the precise-pacing limitation is documented for multi-consumer).
+    const fanout = graph
+      .getTargetDataflows(df.sourceTaskId)
+      .filter((e) => e.sourceTaskPortId === df.sourceTaskPortId);
+    return fanout.length === 1;
+  }
+
+  /** Reads the per-port `x-validate-stream` opt-in from an input schema. */
+  private static portForcesStreamValidation(
+    schema: ReturnType<ITask["inputSchema"]>,
+    port: string
+  ): boolean {
+    if (typeof schema === "boolean") return false;
+    const prop = (schema.properties as Record<string, any>)?.[port];
+    if (!prop || typeof prop === "boolean") return false;
+    return prop["x-validate-stream"] === true;
   }
 
   /**

@@ -271,22 +271,37 @@ export class TaskRunner<
         );
 
         if (outputs === undefined) {
-          // Build per-port binary-stream sinks when the cache supports
-          // streaming and the schema has a binary port. The sinks always run
-          // (memory-bounded write to cache); the runtime threshold controls
-          // whether the resulting CacheRef SURVIVES in Output or gets
-          // rehydrated to an inline Blob/ArrayBuffer below.
-          const binaryRefSinks = isStreamable
-            ? this.cacheCoordinator.getBinaryRefSinksByPolicy(
-                keyInputs,
-                this.cacheRegistry,
-                policy,
-                this.task.outputSchema()
-              )
-            : undefined;
+          // Under the no-accumulation opt-in, build per-port sinks for EVERY
+          // streamable mode (append/object/binary) via the port-aware backing;
+          // otherwise fall back to the legacy single-binary-port sink. Both run
+          // memory-bounded; the runtime threshold controls whether the resulting
+          // CacheRef survives in Output or is rehydrated inline below.
+          const noAccumulation =
+            (config.noAccumulation ?? this.task.runConfig.noAccumulation) === true;
+          const refSinks =
+            isStreamable && noAccumulation
+              ? this.cacheCoordinator.getRefSinksByPolicy(
+                  keyInputs,
+                  this.cacheRegistry,
+                  policy,
+                  this.task.outputSchema()
+                )
+              : undefined;
+          const binaryRefSinks =
+            isStreamable && !refSinks
+              ? this.cacheCoordinator.getBinaryRefSinksByPolicy(
+                  keyInputs,
+                  this.cacheRegistry,
+                  policy,
+                  this.task.outputSchema()
+                )
+              : undefined;
 
           const binaryHighWaterBytes =
-            config.binaryHighWaterBytes ?? this.task.runConfig.binaryHighWaterBytes;
+            config.streamHighWaterBytes ??
+            this.task.runConfig.streamHighWaterBytes ??
+            config.binaryHighWaterBytes ??
+            this.task.runConfig.binaryHighWaterBytes;
           outputs = isStreamable
             ? await this.streamProcessor.run(inputs, ctx, {
                 registry: this.registry,
@@ -295,6 +310,7 @@ export class TaskRunner<
                 onProgress: this.handleProgress.bind(this),
                 own: this.own,
                 binaryRefSinks,
+                refSinks,
                 binaryHighWaterBytes,
               })
             : await this.executeTask(inputs, ctx);
@@ -316,7 +332,7 @@ export class TaskRunner<
             // before we got here; the row write failure leaves that blob
             // unreferenced. Best-effort delete it so the cache directory
             // does not accumulate orphans on every save failure.
-            if (binaryRefSinks !== undefined && outputs !== undefined) {
+            if ((refSinks ?? binaryRefSinks) !== undefined && outputs !== undefined) {
               await this.cacheCoordinator.cleanupOrphanBlobsForBinaryPorts(
                 outputs as Output,
                 this.cacheRegistry,
@@ -328,10 +344,10 @@ export class TaskRunner<
           }
 
           // Rehydrate refs whose committed size is below the configured
-          // threshold so callers see inline bytes for small outputs (threshold
+          // threshold so callers see inline values for small outputs (threshold
           // default = 64 KiB). Refs at/above threshold survive. threshold = 0
           // forces every ref to survive regardless of size.
-          if (outputs !== undefined && binaryRefSinks !== undefined) {
+          if (outputs !== undefined && (refSinks ?? binaryRefSinks) !== undefined) {
             outputs = await this.cacheCoordinator.hydrateRefsBelowThreshold(
               outputs as Output,
               this.cacheRegistry,

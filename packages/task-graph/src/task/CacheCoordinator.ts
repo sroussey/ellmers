@@ -12,6 +12,7 @@ import { isCacheRef, makeCacheRef } from "../cache/CacheRef";
 import type { CacheRegistry } from "../cache/CacheRegistry";
 import { RunPrivateCacheRepo } from "../cache/RunPrivateCacheRepo";
 import { streamRefViaBacking } from "../cache/resolveRef";
+import { getStreamPortCodec } from "../cache/streamCodec";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ITask } from "./ITask";
 import type { BinaryRefSink, StreamSink } from "./StreamProcessor";
@@ -473,23 +474,34 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     const cache = this.repoFor(registry, policy);
     if (!cache || typeof cache.getOutputByRef !== "function") return output;
 
-    const binaryPorts = getStreamingPorts(outputSchema)
-      .filter((p) => p.mode === "binary")
-      .map((p) => p.port);
-    if (binaryPorts.length === 0) return output;
+    // Every streamable mode can carry a ref now (append/object via the per-port
+    // codec, binary via getOutputByRef). Rehydrate a below-threshold ref back to
+    // its value: a string for append, the folded array/object for object, a
+    // Blob/ArrayBuffer for binary.
+    const ports = getStreamingPorts(outputSchema).filter(
+      (p) => p.mode === "append" || p.mode === "object" || p.mode === "binary"
+    );
+    if (ports.length === 0) return output;
 
     const source = output as Record<string, unknown>;
     let out: Record<string, unknown> | undefined;
     const rehydrations = await Promise.all(
-      binaryPorts.map(async (port) => {
+      ports.map(async ({ port, mode }) => {
         const value = source[port];
         if (!isCacheRef(value)) return undefined;
         const size = value.size;
         if (size === undefined || size >= referenceThresholdBytes) return undefined;
-        const blob = await cache.getOutputByRef!(value);
-        if (blob === undefined) return undefined;
-        const format = assertBinaryFormat(outputSchema, port);
-        const inlined = format === "binary" ? await blob.arrayBuffer() : blob;
+        if (mode === "binary") {
+          const blob = await cache.getOutputByRef!(value);
+          if (blob === undefined) return undefined;
+          const format = assertBinaryFormat(outputSchema, port);
+          const inlined = format === "binary" ? await blob.arrayBuffer() : blob;
+          return { port, inlined };
+        }
+        // append / object: replay the encoded bytes through the mode codec.
+        const stream = await streamRefViaBacking(value, cache);
+        if (stream === undefined) return undefined;
+        const inlined = await getStreamPortCodec(mode).materialize(stream, port);
         return { port, inlined };
       })
     );
