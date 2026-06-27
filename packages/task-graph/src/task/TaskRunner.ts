@@ -12,6 +12,7 @@ import {
   ServiceRegistry,
   SpanStatusCode,
 } from "@workglow/util";
+import type { DataPortSchema } from "@workglow/util/schema";
 import type { CacheRegistry } from "../cache";
 import {
   CACHE_REGISTRY,
@@ -192,7 +193,10 @@ export class TaskRunner<
 
         const inputs: Input = await this.hydrateInputRefs(this.task.runInputData as Input);
         this.task.runInputData = inputs;
-        const isValid = await this.task.validateInput(inputs);
+        const isValid = await this.task.validateInput(
+          inputs,
+          this.streamWiredValidationSkips(inputs)
+        );
         if (!isValid) {
           throw new TaskInvalidInputError("Invalid input data");
         }
@@ -396,6 +400,40 @@ export class TaskRunner<
   }
 
   /**
+   * Ports to exempt from whole-value input validation this run: an input port
+   * fed by a live event stream has no settled value to validate (its slot holds
+   * only a {@link CacheRef} pointer, or nothing, until the stream finishes).
+   * A port that already carries a settled value is still validated — only a
+   * ref/undefined slot is skipped — so off the no-accumulation path (where the
+   * drain materializes the value) behavior is unchanged. A port that declares
+   * `x-validate-stream: true` opts back in (it wants its stream materialized and
+   * validated, forcing the accumulation fallback for that edge).
+   */
+  private streamWiredValidationSkips(inputs: Input): ReadonlySet<string> | undefined {
+    if (!this.inputStreams || this.inputStreams.size === 0) return undefined;
+    if (inputs === null || typeof inputs !== "object") return undefined;
+    const schema = this.task.inputSchema();
+    const source = inputs as Record<string, unknown>;
+    let skip: Set<string> | undefined;
+    for (const port of this.inputStreams.keys()) {
+      if (getPortStreamMode(schema, port) === "none") continue;
+      if (TaskRunner.portForcesStreamValidation(schema, port)) continue;
+      const value = source[port];
+      if (value !== undefined && !isCacheRef(value)) continue;
+      (skip ??= new Set()).add(port);
+    }
+    return skip;
+  }
+
+  /** Reads the per-port `x-validate-stream` opt-in from an input schema. */
+  private static portForcesStreamValidation(schema: DataPortSchema, port: string): boolean {
+    if (typeof schema === "boolean") return false;
+    const prop = (schema.properties as Record<string, any>)?.[port];
+    if (!prop || typeof prop === "boolean") return false;
+    return prop["x-validate-stream"] === true;
+  }
+
+  /**
    * Hydrate branded {@link CacheRef} values in resolved inputs to inline
    * bytes before `execute()` runs, resolving against the run's cache registry
    * (private repo first, then deterministic). Materialization type follows the
@@ -427,7 +465,11 @@ export class TaskRunner<
     let out: Record<string, unknown> | undefined;
     for (const [port, value] of Object.entries(source)) {
       if (!isCacheRef(value)) continue;
-      if (getPortStreamMode(schema, port) === "binary" && this.inputStreams?.has(port)) continue;
+      // A stream-wired input port (any mode) with a live input stream keeps its
+      // ref as the durable pointer — the consumer takes its data from the
+      // stream, so hydrating the ref would re-materialize what the stream
+      // already delivers.
+      if (getPortStreamMode(schema, port) !== "none" && this.inputStreams?.has(port)) continue;
       let blob: Blob | undefined;
       for (const repo of repos) {
         blob = await repo.getOutputByRef!(value);
