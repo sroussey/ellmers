@@ -21,31 +21,40 @@ export async function encodeTaskOutput(
 }
 
 /**
- * Decodes the `value` a backing store round-tripped back into a task output. A
- * backend may hand the blob back as a Uint8Array, a number[], or a
- * numeric-keyed object, so all three shapes are normalized here.
+ * Normalizes the `value` a backing store round-tripped into bytes. A backend may
+ * hand the blob back as a Uint8Array, a number[], or a numeric-keyed object
+ * (structured-clone / JSON round-trips), so all three shapes are handled.
+ */
+function toBytes(rawValue: unknown): Uint8Array {
+  if (rawValue instanceof Uint8Array) return rawValue;
+  if (Array.isArray(rawValue)) return new Uint8Array(rawValue as number[]);
+  if (rawValue && typeof rawValue === "object") {
+    return new Uint8Array(
+      Object.keys(rawValue as Record<string, number>)
+        .filter((k) => /^\d+$/.test(k))
+        .sort((a, b) => Number(a) - Number(b))
+        .map((k) => (rawValue as Record<string, number>)[k])
+    );
+  }
+  return new Uint8Array();
+}
+
+/**
+ * Decodes the `value` a backing store round-tripped back into a task output.
+ * Mirrors {@link encodeTaskOutput}: gzip when compressed, otherwise UTF-8 JSON.
  */
 export async function decodeTaskOutput(
   rawValue: unknown,
   outputCompression: boolean
 ): Promise<TaskOutput> {
   if (outputCompression) {
-    const bytes: Uint8Array =
-      rawValue instanceof Uint8Array
-        ? rawValue
-        : Array.isArray(rawValue)
-          ? new Uint8Array(rawValue as number[])
-          : rawValue && typeof rawValue === "object"
-            ? new Uint8Array(
-                Object.keys(rawValue as Record<string, number>)
-                  .filter((k) => /^\d+$/.test(k))
-                  .sort((a, b) => Number(a) - Number(b))
-                  .map((k) => (rawValue as Record<string, number>)[k])
-              )
-            : new Uint8Array();
-    const decompressed = await decompress(bytes);
+    const decompressed = await decompress(toBytes(rawValue));
     return JSON.parse(decompressed) as TaskOutput;
   }
-  const stringValue = (rawValue as { toString(): string }).toString();
-  return JSON.parse(stringValue) as TaskOutput;
+  // Uncompressed: durable backends (SQL/IndexedDB) hand the blob back as bytes,
+  // not a string, so decode the bytes as UTF-8 rather than calling `.toString()`
+  // on a Uint8Array (which would yield comma-separated byte numbers).
+  const json =
+    typeof rawValue === "string" ? rawValue : new TextDecoder().decode(toBytes(rawValue));
+  return JSON.parse(json) as TaskOutput;
 }

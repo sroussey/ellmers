@@ -4,10 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
+import type { RunPrivateTaskOutputRepository } from "../storage/RunPrivateTaskOutputRepository";
 
 export interface CacheJanitorOptions {
-  privateBacking: TaskOutputRepository;
+  /**
+   * The dedicated run-private backing (NOT a per-run {@link RunPrivateCacheRepo}
+   * wrapper, whose `clearOlderThan` is scoped to a single run — that would leave
+   * other runs' stale rows un-swept).
+   */
+  privateBacking: RunPrivateTaskOutputRepository;
 }
 
 /**
@@ -23,7 +28,7 @@ export interface CacheJanitorOptions {
  * libs does not run it automatically.
  */
 export class CacheJanitor {
-  private readonly privateBacking: TaskOutputRepository;
+  private readonly privateBacking: RunPrivateTaskOutputRepository;
 
   constructor({ privateBacking }: CacheJanitorOptions) {
     this.privateBacking = privateBacking;

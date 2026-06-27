@@ -104,8 +104,8 @@ export class RunPrivateTaskOutputRepository extends TaskOutputRepository {
   }
 
   override async sizeForRun(runId: string): Promise<number> {
-    const rows = await this.storage.query({ runId });
-    return rows?.length ?? 0;
+    // count() tallies matching rows without loading (and decoding) every blob.
+    return await this.storage.count({ runId });
   }
 
   /**
