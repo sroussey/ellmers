@@ -112,10 +112,36 @@ export class RunPrivateTaskOutputRepository extends TaskOutputRepository {
    * All-runs age sweep for the janitor. The private table holds only run-private
    * rows, so deleting everything older than the cutoff is the correct stale-row
    * reap — served by the `createdAt` index.
+   *
+   * `excludeRunIds` (the janitor's live-run snapshot) protects in-flight runs:
+   * a run that started long ago but is still active must not have its cache rows
+   * deleted out from under it. The tabular surface has no `NOT IN` operator
+   * ({@link SearchOperator} is `=/</<=/>/>=` only), so the implementation
+   * enumerates distinct old `runId`s and calls {@link deleteRunOlderThan} per
+   * runId not in the exclude set.
    */
-  async clearOlderThan(olderThanInMs: number): Promise<void> {
+  async clearOlderThan(
+    olderThanInMs: number,
+    excludeRunIds: ReadonlySet<string> = new Set()
+  ): Promise<void> {
     const cutoff = new Date(Date.now() - olderThanInMs).toISOString();
-    await this.storage.deleteSearch({ createdAt: { value: cutoff, operator: "<" } });
+    if (excludeRunIds.size === 0) {
+      await this.storage.deleteSearch({ createdAt: { value: cutoff, operator: "<" } });
+      this.emit("output_pruned");
+      return;
+    }
+    const oldRows = await this.storage.search({
+      createdAt: { value: cutoff, operator: "<" },
+    });
+    const oldRunIds = new Set<string>();
+    for (const row of oldRows ?? []) {
+      const runId = (row as { runId?: unknown }).runId;
+      if (typeof runId === "string") oldRunIds.add(runId);
+    }
+    for (const runId of oldRunIds) {
+      if (excludeRunIds.has(runId)) continue;
+      await this.deleteRunOlderThan(runId, olderThanInMs);
+    }
     this.emit("output_pruned");
   }
 
