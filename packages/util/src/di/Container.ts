@@ -20,7 +20,11 @@ export class Container {
   private inheritedServices: Set<string> = new Set();
 
   /**
-   * Register a service factory
+   * Register a service factory. Replacing a factory disposes the previously
+   * cached singleton (if any) so a held resource — DB connection, file
+   * handle, subscriber — is released before the new factory takes effect.
+   * Inherited (parent-owned) instances are skipped here; the parent owns the
+   * lifetime.
    * @param token The identifier token for the service
    * @param factory A factory function that creates the service
    * @param singleton Whether the service should be a singleton (created once)
@@ -30,6 +34,10 @@ export class Container {
     // Evict any previously instantiated singleton so the new factory actually
     // takes effect on the next get(). Otherwise get() would keep returning the
     // stale cached instance and the re-registration would be silently dead.
+    const previous = this.services.get(token);
+    if (previous != null && !this.inheritedServices.has(token)) {
+      void this.disposeService(token, previous);
+    }
     this.services.delete(token);
     this.inheritedServices.delete(token);
     if (singleton) {
@@ -54,11 +62,17 @@ export class Container {
   }
 
   /**
-   * Register an instance as a service
+   * Register an instance as a service. If a previously cached singleton exists
+   * under this token (and was not inherited from a parent), it is disposed
+   * before being overwritten.
    * @param token The identifier token for the service
    * @param instance The instance to register
    */
   registerInstance<T>(token: string, instance: T): void {
+    const previous = this.services.get(token);
+    if (previous != null && previous !== instance && !this.inheritedServices.has(token)) {
+      void this.disposeService(token, previous);
+    }
     this.services.set(token, instance);
     this.singletons.add(token);
     // An explicitly registered instance is owned by this container.
@@ -132,13 +146,7 @@ export class Container {
         // disposing them here would leave the parent holding a disposed object.
         if (this.inheritedServices.has(token)) continue;
         try {
-          if (typeof service[Symbol.asyncDispose] === "function") {
-            await service[Symbol.asyncDispose]();
-          } else if (typeof service[Symbol.dispose] === "function") {
-            service[Symbol.dispose]();
-          } else if (typeof service.dispose === "function") {
-            await service.dispose();
-          }
+          await this.invokeDisposer(service);
         } catch (err) {
           errors.push(err);
         }
@@ -151,6 +159,31 @@ export class Container {
     }
     if (errors.length > 0) {
       throw new AggregateError(errors, "One or more services failed to dispose");
+    }
+  }
+
+  /**
+   * Eviction-path disposer used by {@link register} and {@link registerInstance}
+   * when a cached singleton is replaced. Errors are caught here so a buggy
+   * disposer cannot prevent the new registration from taking effect — util has
+   * no logger dependency, hence console.warn.
+   */
+  private async disposeService(token: string, service: any): Promise<void> {
+    try {
+      await this.invokeDisposer(service);
+    } catch (err) {
+      console.warn(`Container: disposer for ${String(token)} threw`, err);
+    }
+  }
+
+  /** Invoke whichever disposer protocol the service implements. */
+  private async invokeDisposer(service: any): Promise<void> {
+    if (typeof service[Symbol.asyncDispose] === "function") {
+      await service[Symbol.asyncDispose]();
+    } else if (typeof service[Symbol.dispose] === "function") {
+      service[Symbol.dispose]();
+    } else if (typeof service.dispose === "function") {
+      await service.dispose();
     }
   }
 
