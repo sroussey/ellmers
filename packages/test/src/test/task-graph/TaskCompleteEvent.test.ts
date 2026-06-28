@@ -509,4 +509,85 @@ describe("bridgeSubGraphTaskEvents depth cap", () => {
 
     unbridges.forEach((off) => off());
   });
+
+  it("stamped over-cap subgraph prevents downstream bridges from restarting depth", () => {
+    installStubLogger();
+    // Build a 5-level chain with maxDepth=2. Bridges install left-to-right
+    // (outermost first). The first call to exceed the cap MUST stamp the
+    // subgraph so the next bridge (whose parent is that subgraph) also sees
+    // depth >= maxDepth — otherwise the parent's BRIDGE_DEPTH reads as
+    // undefined, depth resets to 0, and the cap leaks downstream.
+    const maxDepth = 2;
+    const N = 5;
+    const graphs: TaskGraph[] = [];
+    for (let i = 0; i <= N; i++) graphs.push(new TaskGraph());
+
+    const reached: number[] = [];
+    for (let i = 0; i < graphs.length; i++) {
+      const depth = i;
+      graphs[i].subscribe("task_progress", () => {
+        reached.push(depth);
+      });
+    }
+
+    const unbridges: Array<() => void> = [];
+    for (let i = 1; i <= N; i++) {
+      unbridges.push(bridgeSubGraphTaskEvents(graphs[i], graphs[i - 1], undefined, maxDepth));
+    }
+
+    // graphs[1] and graphs[2] install (depth 0, 1). graphs[3] hits cap and
+    // stamps itself at maxDepth so graphs[4] and graphs[5] also no-op. Emit
+    // from the innermost graph: only its own subscriber should fire — every
+    // bridge i=3..5 short-circuited, so no event propagates outward at all.
+    graphs[N].emit("task_progress", "inner-id", 42, "msg");
+
+    // No bridge from level 2 onward installed, so only the innermost graph
+    // (depth N) saw the emit. depth=0 (outermost) must NOT be reached.
+    expect(reached).toEqual([N]);
+    expect(reached).not.toContain(0);
+
+    unbridges.forEach((off) => off());
+  });
+
+  it("warn fires exactly once per parentGraph at over-cap", () => {
+    installStubLogger();
+    const parent = new TaskGraph();
+    // Call 50 times with the same parent at over-cap (depth seeded above cap).
+    const teardowns: Array<() => void> = [];
+    for (let i = 0; i < 50; i++) {
+      const sub = new TaskGraph();
+      teardowns.push(bridgeSubGraphTaskEvents(sub, parent, 16, 16));
+    }
+
+    const capCalls = warnSpy.mock.calls.filter(
+      (c) => c[0] === "bridgeSubGraphTaskEvents depth cap hit; dropping bridge"
+    );
+    expect(capCalls).toHaveLength(1);
+
+    teardowns.forEach((off) => off());
+  });
+
+  it("distinct parents at over-cap each warn once", () => {
+    installStubLogger();
+    const parentA = new TaskGraph();
+    const parentB = new TaskGraph();
+    const subA = new TaskGraph();
+    const subB = new TaskGraph();
+
+    const off1 = bridgeSubGraphTaskEvents(subA, parentA, 16, 16);
+    const off2 = bridgeSubGraphTaskEvents(subB, parentB, 16, 16);
+    // Repeat each parent a few more times — should not produce additional warns.
+    const off3 = bridgeSubGraphTaskEvents(new TaskGraph(), parentA, 16, 16);
+    const off4 = bridgeSubGraphTaskEvents(new TaskGraph(), parentB, 16, 16);
+
+    const capCalls = warnSpy.mock.calls.filter(
+      (c) => c[0] === "bridgeSubGraphTaskEvents depth cap hit; dropping bridge"
+    );
+    expect(capCalls).toHaveLength(2);
+
+    off1();
+    off2();
+    off3();
+    off4();
+  });
 });
