@@ -13,6 +13,17 @@ export interface CacheJanitorOptions {
    * other runs' stale rows un-swept).
    */
   privateBacking: RunPrivateTaskOutputRepository;
+  /**
+   * Snapshot accessor for currently-live run IDs. The janitor invokes this at
+   * the start of each sweep and excludes the returned IDs from deletion so an
+   * in-flight long-running run cannot have its cache rows deleted out from
+   * under it (a row's `createdAt` predates the run's age, not its current
+   * activity, so a still-running run started days ago would otherwise be
+   * reaped). Default returns an empty list AND emits a one-time `console.warn`
+   * — defaulting is only safe when no run is ever active concurrent with the
+   * sweep.
+   */
+  liveRunIds?: () => Iterable<string>;
 }
 
 /**
@@ -29,12 +40,28 @@ export interface CacheJanitorOptions {
  */
 export class CacheJanitor {
   private readonly privateBacking: RunPrivateTaskOutputRepository;
+  private readonly liveRunIds: () => Iterable<string>;
+  private static defaultLiveRunIdsWarned = false;
 
-  constructor({ privateBacking }: CacheJanitorOptions) {
+  constructor({ privateBacking, liveRunIds }: CacheJanitorOptions) {
     this.privateBacking = privateBacking;
+    if (liveRunIds === undefined) {
+      if (!CacheJanitor.defaultLiveRunIdsWarned) {
+        CacheJanitor.defaultLiveRunIdsWarned = true;
+        // No logger dependency here (task-graph keeps its log surface narrow);
+        // a one-time console.warn is enough to surface the misconfiguration.
+        console.warn(
+          "CacheJanitor: no liveRunIds callback provided — sweeps may delete cache rows for in-flight runs. Pass `liveRunIds: () => activeRunIdSnapshot` to suppress."
+        );
+      }
+      this.liveRunIds = () => [];
+    } else {
+      this.liveRunIds = liveRunIds;
+    }
   }
 
   async sweepStaleRunPrivate(olderThanMs: number): Promise<void> {
-    await this.privateBacking.clearOlderThan(olderThanMs);
+    const live = new Set<string>(this.liveRunIds());
+    await this.privateBacking.clearOlderThan(olderThanMs, live);
   }
 }
