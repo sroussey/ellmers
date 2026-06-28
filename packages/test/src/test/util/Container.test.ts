@@ -93,6 +93,106 @@ describe("Container", () => {
       container.registerInstance("myService", instance);
       expect(container.get("myService")).toBe(container.get("myService"));
     });
+
+    it("disposes the previous cached instance when registerInstance overwrites", async () => {
+      let disposed = 0;
+      const first = {
+        dispose() {
+          disposed++;
+        },
+      };
+      const second = {
+        dispose() {
+          disposed++;
+        },
+      };
+      container.registerInstance("svc", first);
+      container.registerInstance("svc", second);
+      // Disposer runs asynchronously inside `void this.disposeService(...)`;
+      // a microtask flush is sufficient.
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(disposed).toBe(1);
+      expect(container.get("svc")).toBe(second);
+    });
+
+    it("does not re-dispose when registerInstance receives the same instance", async () => {
+      let disposed = 0;
+      const instance = {
+        dispose() {
+          disposed++;
+        },
+      };
+      container.registerInstance("svc", instance);
+      container.registerInstance("svc", instance);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(disposed).toBe(0);
+    });
+  });
+
+  describe("register dispose-on-replace", () => {
+    it("disposes the previously cached singleton when register replaces a factory", async () => {
+      let disposed = 0;
+      container.register("svc", () => ({
+        value: "first",
+        dispose() {
+          disposed++;
+        },
+      }));
+      // Force instantiation so the singleton is cached.
+      expect(container.get<{ value: string }>("svc").value).toBe("first");
+
+      container.register("svc", () => ({ value: "second" }));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(disposed).toBe(1);
+      expect(container.get<{ value: string }>("svc").value).toBe("second");
+    });
+
+    it("does not throw when a previously cached singleton has no disposer", () => {
+      container.register("svc", () => ({ value: "first" }));
+      container.get("svc");
+      expect(() => container.register("svc", () => ({ value: "second" }))).not.toThrow();
+    });
+
+    it("does not dispose if the previously cached singleton was inherited from parent", async () => {
+      let disposed = 0;
+      const parent = new Container();
+      parent.register("svc", () => ({
+        dispose() {
+          disposed++;
+        },
+      }));
+      parent.get("svc"); // instantiate
+      const child = parent.createChildContainer();
+      // Re-register on the child; the cached instance is parent-owned and
+      // must NOT be disposed by the child's eviction path.
+      child.register("svc", () => ({}));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(disposed).toBe(0);
+    });
+
+    it("survives a buggy disposer on the eviction path", async () => {
+      const originalWarn = console.warn;
+      console.warn = () => {};
+      try {
+        container.register("svc", () => ({
+          dispose() {
+            throw new Error("boom");
+          },
+        }));
+        container.get("svc");
+        // Re-registering must not throw — the new factory must still take effect.
+        expect(() => container.register("svc", () => ({ value: "second" }))).not.toThrow();
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(container.get<{ value: string }>("svc").value).toBe("second");
+      } finally {
+        console.warn = originalWarn;
+      }
+    });
   });
 
   describe("has", () => {
