@@ -26,6 +26,14 @@ const DEFAULT_MAX_BRIDGE_DEPTH = 16;
 const BRIDGE_DEPTH = Symbol.for("@workglow/task-graph/SubGraphEventBridge.depth");
 
 /**
+ * Track parent graphs that have already emitted the depth-cap warning so a
+ * pathologically nested compound (e.g. an iterator with 1k iterations all at
+ * over-cap) does not spam one warn per iteration. Held weakly so an evicted
+ * parent graph can still be garbage-collected.
+ */
+const warnedParents = new WeakSet<TaskGraph>();
+
+/**
  * Forward a subgraph's per-task events (task_complete, task_progress, and the
  * task_stream_* trio) up to the parent graph, so tasks nested inside a compound
  * task (GraphAsTask / FallbackTask / WhileTask / ...) surface as individual
@@ -53,10 +61,18 @@ export function bridgeSubGraphTaskEvents(
   // instances) but guard anyway so a malformed hierarchy degrades to a no-op.
   if (subGraph === parentGraph) return () => {};
   if (depth >= maxDepth) {
-    getLogger().warn("bridgeSubGraphTaskEvents depth cap hit; dropping bridge", {
-      depth,
-      maxDepth,
-    });
+    // Stamp the subgraph at the cap so any nested bridge call (whose
+    // parentGraph is this subgraph) derives `depth >= maxDepth` and also
+    // short-circuits — otherwise the depth counter resets at the next level
+    // and the cap leaks downstream.
+    (subGraph as unknown as Record<symbol, number>)[BRIDGE_DEPTH] = maxDepth;
+    if (!warnedParents.has(parentGraph)) {
+      warnedParents.add(parentGraph);
+      getLogger().warn("bridgeSubGraphTaskEvents depth cap hit; dropping bridge", {
+        depth,
+        maxDepth,
+      });
+    }
     return () => {};
   }
 
