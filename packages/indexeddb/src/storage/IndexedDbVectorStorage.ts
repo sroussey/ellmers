@@ -132,10 +132,11 @@ export class IndexedDbVectorStorage<
     options: VectorSearchOptions<Record<string, unknown>> = {}
   ) {
     assertVectorShape(query, this.vectorDimensions, "query");
-    // Default to no floor: cosine similarity ranges over [-1, 1], so a default
-    // of 0 would silently drop negatively-correlated hits and return fewer than
-    // `topK`. Callers opt into a relevance floor explicitly via `scoreThreshold`.
-    const { topK = 10, filter, scoreThreshold = -Infinity } = options;
+    // Default to 0 to match every SQL backend (Sqlite / Postgres / Supabase /
+    // SqliteAi). Cosine similarity ranges over [-1, 1]; a negatively-correlated
+    // hit is "not a match" for relevance retrieval. Callers that want every
+    // result regardless of correlation pass `scoreThreshold: -Infinity`.
+    const { topK = 10, filter, scoreThreshold = 0 } = options;
     const results: Array<Entity & { score: number }> = [];
 
     const allEntities = (await this.getAll()) || [];
