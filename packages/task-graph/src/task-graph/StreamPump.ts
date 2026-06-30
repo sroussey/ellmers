@@ -216,7 +216,7 @@ export class StreamPump {
         // otherwise pass the legacy repo (or undefined to use CACHE_REGISTRY).
         outputCache: options.legacyCacheExplicitlyDisabled ? false : options.outputCache,
         shouldAccumulate,
-        hasStreamingConsumers: StreamPump.anyConsumerAcceptsBinaryStream(this.graph, task),
+        hasStreamingConsumers: StreamPump.anyConsumerAcceptsStream(this.graph, task),
         hasMaterializingConsumers: StreamPump.anyConsumerNeedsMaterialized(this.graph, task),
         updateProgress: options.updateProgress,
         registry: options.registry,
@@ -465,6 +465,26 @@ export class StreamPump {
       const targetTask = graph.getTask(df.targetTaskId);
       if (!targetTask) return false;
       return getPortStreamMode(targetTask.inputSchema(), df.targetTaskPortId) === "binary";
+    });
+  }
+
+  /**
+   * All-mode analogue of {@link anyConsumerAcceptsBinaryStream}: `true` when any
+   * outgoing edge targets an input port that consumes the source port's delta
+   * stream mode directly (same `append` / `object` / `binary` mode on both
+   * ends). Drives whether a cache hit replays the cached bytes as delta events
+   * (via the per-mode codec) for a stream-capable consumer; `*` fan-out edges
+   * don't count (their consumers receive materialized values).
+   */
+  static anyConsumerAcceptsStream(graph: TaskGraph, task: ITask): boolean {
+    const outSchema = task.outputSchema();
+    return graph.getTargetDataflows(task.id).some((df) => {
+      if (df.sourceTaskPortId === DATAFLOW_ALL_PORTS) return false;
+      const srcMode = getPortStreamMode(outSchema, df.sourceTaskPortId);
+      if (srcMode !== "append" && srcMode !== "object" && srcMode !== "binary") return false;
+      const targetTask = graph.getTask(df.targetTaskId);
+      if (!targetTask) return false;
+      return getPortStreamMode(targetTask.inputSchema(), df.targetTaskPortId) === srcMode;
     });
   }
 
