@@ -149,7 +149,7 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     ctx.telemetrySpan?.addEvent("workglow.task.cache_hit");
 
     if (isStreamable) {
-      const replayed = await this.replayBinaryRefs(
+      const replayed = await this.replayStreamRefs(
         outputs,
         outputCache,
         outputSchema as DataPortSchema,
@@ -172,24 +172,25 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
   }
 
   /**
-   * Cache-hit stream-out for binary {@link CacheRef} output ports.
+   * Cache-hit stream-out for {@link CacheRef} output ports of any streamable
+   * mode (`append` / `object` / `binary`).
    *
-   * Mirrors the fresh-run event contract: the emitted finish event carries
-   * materialized `Blob`/`ArrayBuffer` values for consumers that need them,
-   * while the returned output keeps the small ref at the port slot. When a
-   * stream-capable consumer exists, the cached bytes are re-emitted as
-   * chunked `binary-delta` events first (pull-paced from the repository's
-   * streaming reader, so memory stays bounded by the read chunk size).
+   * Mirrors the fresh-run event contract: the emitted finish event carries the
+   * materialized value (string / folded object / `Blob`/`ArrayBuffer`) for
+   * consumers that need it, while the returned output keeps the small ref at the
+   * port slot. When a stream-capable consumer exists, the cached bytes are
+   * re-emitted as the mode's delta events first (binary chunked directly;
+   * append/object decoded through the per-mode codec).
    *
    * Returns:
-   *  - `"none"`    — nothing to replay (no refs at binary ports, or no
+   *  - `"none"`    — nothing to replay (no refs at streamable ports, or no
    *                  consumer hint set); caller emits the default synthetic
    *                  finish.
    *  - `"handled"` — events were emitted here; caller must not re-emit.
    *  - `"miss"`    — a ref no longer resolves; caller treats the lookup as a
    *                  cache miss.
    */
-  private async replayBinaryRefs(
+  private async replayStreamRefs(
     outputs: Output,
     outputCache: TaskOutputRepository,
     outputSchema: DataPortSchema,
@@ -201,16 +202,17 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     if (outputs === null || typeof outputs !== "object") return "none";
 
     const source = outputs as Record<string, unknown>;
-    const refPorts = getStreamingPorts(outputSchema)
-      .filter((p) => p.mode === "binary")
-      .map((p) => p.port)
-      .filter((port) => isCacheRef(source[port]));
+    const refPorts = getStreamingPorts(outputSchema).filter(
+      (p) =>
+        (p.mode === "append" || p.mode === "object" || p.mode === "binary") &&
+        isCacheRef(source[p.port])
+    );
     if (refPorts.length === 0) return "none";
 
     // Resolve every ref before emitting any event so a dangling ref becomes a
     // clean miss with zero observable side effects.
     const streams = new Map<string, AsyncIterable<Uint8Array>>();
-    for (const port of refPorts) {
+    for (const { port } of refPorts) {
       const stream = await streamRefViaBacking(source[port] as CacheRef, outputCache);
       if (stream === undefined) return "miss";
       streams.set(port, stream);
@@ -224,20 +226,42 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     this.task.emit("status", this.task.status);
 
     const finishData: Record<string, unknown> = { ...source };
-    for (const [port, stream] of streams) {
-      const chunks: Uint8Array[] | undefined = needBytes ? [] : undefined;
-      for await (const chunk of stream) {
-        chunks?.push(chunk);
-        if (replayDeltas) {
-          this.task.emit("stream_chunk", {
-            type: "binary-delta",
-            port,
-            binaryDelta: chunk,
-          } as StreamEvent);
+    for (const { port, mode } of refPorts) {
+      const stream = streams.get(port)!;
+      if (mode === "binary") {
+        // Stream chunk-by-chunk so large binary stays memory-bounded when no
+        // materializing consumer needs the whole artifact.
+        const chunks: Uint8Array[] | undefined = needBytes ? [] : undefined;
+        for await (const chunk of stream) {
+          chunks?.push(chunk);
+          if (replayDeltas) {
+            this.task.emit("stream_chunk", {
+              type: "binary-delta",
+              port,
+              binaryDelta: chunk,
+            } as StreamEvent);
+          }
         }
-      }
-      if (chunks !== undefined) {
-        finishData[port] = materializeBinary(chunks, assertBinaryFormat(outputSchema, port));
+        if (chunks !== undefined) {
+          finishData[port] = materializeBinary(chunks, assertBinaryFormat(outputSchema, port));
+        }
+      } else {
+        // append / object: collect the encoded bytes once, then decode (deltas)
+        // and/or materialize (value) from the same buffer via the mode codec.
+        const codec = getStreamPortCodec(mode);
+        const buf: Uint8Array[] = [];
+        for await (const chunk of stream) buf.push(chunk);
+        const bytesOf = async function* (): AsyncIterable<Uint8Array> {
+          for (const c of buf) yield c;
+        };
+        if (replayDeltas) {
+          for await (const ev of codec.decode(bytesOf(), port)) {
+            this.task.emit("stream_chunk", ev as StreamEvent);
+          }
+        }
+        if (needBytes) {
+          finishData[port] = await codec.materialize(bytesOf(), port);
+        }
       }
     }
     this.task.emit("stream_chunk", { type: "finish", data: finishData } as StreamEvent);
