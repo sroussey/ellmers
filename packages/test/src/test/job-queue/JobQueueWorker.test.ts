@@ -14,6 +14,7 @@ import {
   JobQueueServer,
   JobQueueWorker,
   JobStatus,
+  PermanentJobError,
   RateLimiter,
   wrapQueueStorage,
 } from "@workglow/job-queue";
@@ -261,5 +262,47 @@ describe("JobQueueWorker — PR #511 follow-up regressions", () => {
     expect(final?.status).toBe(JobStatus.FAILED);
     expect(final?.abort_requested_at).toBeTruthy();
     expect(TJob.executeCalls).toBe(0);
+  });
+
+  it("server job_error event delivers the errorCode the worker carries", async () => {
+    // The worker emits job_error(jobId, error, errorCode); the server forwards
+    // errorCode to clients but historically dropped it from its OWN job_error
+    // re-emit. A consumer subscribing to the server directly must still see the
+    // machine-readable code.
+    class FailingJob extends Job<TI, TO> {
+      public override async execute(): Promise<TO> {
+        throw new PermanentJobError("boom");
+      }
+    }
+
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
+    const server = new JobQueueServer<TI, TO, FailingJob>(FailingJob, {
+      messageQueue,
+      jobStore,
+      queueName,
+      pollIntervalMs: 5,
+      stopTimeoutMs: 0,
+    });
+    const client = new JobQueueClient<TI, TO>({ messageQueue, jobStore, queueName });
+    client.attach(server);
+
+    const seen: { error: string; errorCode?: string }[] = [];
+    server.on("job_error", (_queueName, _jobId, error, errorCode) => {
+      seen.push({ error, errorCode });
+    });
+
+    await server.start();
+    const handle = await client.send({ taskType: "fail", data: "x" }, { maxAttempts: 1 });
+
+    const failed = await waitUntil(async () => {
+      const j = await storage.get(handle.id);
+      return j?.status === JobStatus.FAILED;
+    });
+    expect(failed).toBe(true);
+
+    await server.stop();
+
+    expect(seen.length).toBeGreaterThanOrEqual(1);
+    expect(seen[0]!.errorCode).toBe("PermanentJobError");
   });
 });

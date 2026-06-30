@@ -13,7 +13,7 @@ import type { IRunConfig, ITask, ITaskConstructor } from "../task/ITask";
 import type { StreamEvent } from "../task/StreamTypes";
 import { Task } from "../task/Task";
 import type { TaskEntitlements } from "../task/TaskEntitlements";
-import { WorkflowError } from "../task/TaskError";
+import { TaskAbortedError, WorkflowError } from "../task/TaskError";
 import type { JsonTaskItem, TaskGraphJson, TaskGraphJsonOptions } from "../task/TaskJSON";
 import type { DataPorts, TaskConfig, TaskIdType, TaskInput } from "../task/TaskTypes";
 import { autoConnect } from "./autoConnect";
@@ -48,9 +48,22 @@ export interface RenameOptions {
 export type WorkflowEventListeners = {
   changed: (id: unknown) => void;
   reset: () => void;
+  /**
+   * Fired when a run fails. Carries a STRINGIFIED error (via `String(error)`),
+   * unlike the underlying TaskGraph 'error' event which carries the real Error.
+   * The stringification is intentional for this facade, but it is lossy (stack,
+   * error class, structured fields are dropped). To inspect the Error object
+   * (e.g. instanceof checks, .stack), catch the rejection from `run()` — it
+   * re-throws the original Error.
+   */
   error: (error: string) => void;
   start: () => void;
   complete: () => void;
+  /**
+   * Fired when a run is cancelled (the rejection from `run()` is a
+   * TaskAbortedError). Carries the stringified error; see `error` above for the
+   * same lossiness caveat. Catch `run()`'s rejection for the typed Error.
+   */
   abort: (error: string) => void;
   /** Fired when a task in the workflow starts streaming */
   stream_start: (taskId: TaskIdType) => void;
@@ -240,7 +253,14 @@ export class Workflow<
       this.events.emit("complete");
       return results;
     } catch (error) {
-      this.events.emit("error", String(error));
+      // Surface cancellation on the dedicated 'abort' event (declared on the
+      // facade) so consumers can distinguish a cancelled run from a failure.
+      // Other errors continue to fire 'error'.
+      if (error instanceof TaskAbortedError) {
+        this.events.emit("abort", String(error));
+      } else {
+        this.events.emit("error", String(error));
+      }
       throw error;
     } finally {
       ctx.dispose();
@@ -250,6 +270,13 @@ export class Workflow<
     }
   }
 
+  /**
+   * Signals the in-flight run to abort. This only TRIPS the abort signal; it
+   * does NOT wait for the run to finish unwinding. The returned promise resolves
+   * on the next microtask, before run()'s finally (dispose/teardown) has run.
+   * To observe the run fully stopped, await the promise returned by `run()`
+   * (which rejects with {@link TaskAbortedError} on abort), not this method.
+   */
   public async abort(): Promise<void> {
     const loopContext = this._builder.loopContext;
     if (loopContext) {
@@ -481,12 +508,13 @@ export class Workflow<
     config?: Partial<C>,
     runConfig?: Partial<IRunConfig>
   ): Workflow<Input, Output> {
-    return this._builder.addTaskWithAutoConnect<I, O, C>(
-      taskClass,
-      input,
-      config,
-      runConfig
-    ) as Workflow<Input, Output>;
+    // The public fluent addTask throws on auto-connect failure (consistent with
+    // connect/rename/onError) so a failed add does not silently no-op and leave
+    // the chain wired against a missing predecessor. The createWorkflow helper
+    // path keeps the legacy swallow-into-.error behavior.
+    return this._builder.addTaskWithAutoConnect<I, O, C>(taskClass, input, config, runConfig, {
+      throwOnAutoConnectError: true,
+    }) as Workflow<Input, Output>;
   }
 
   // ========================================================================

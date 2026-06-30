@@ -6,6 +6,7 @@
 
 import { createServiceToken, getLogger } from "@workglow/util";
 import { DataPortSchemaObject, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
+import { safeEmit } from "../events/safeEmit";
 import type { ITabularMigrationApplier } from "../migrations";
 import { BaseTabularStorage, ClientProvidedKeysOption } from "./BaseTabularStorage";
 import { InMemoryTabularStorage } from "./InMemoryTabularStorage";
@@ -83,20 +84,22 @@ export class CachedTabularStorage<
   }
 
   private setupEventForwarding(): void {
+    // Forwarded events are post-commit (the cache already mutated), so a
+    // throwing subscriber must not derail the write — route through safeEmit.
     this.cache.on("put", (entity) => {
-      this.events.emit("put", entity);
+      safeEmit(this.events, "put", entity);
     });
     this.cache.on("get", (key, entity) => {
-      this.events.emit("get", key, entity);
+      safeEmit(this.events, "get", key, entity);
     });
     this.cache.on("query", (key, entities) => {
-      this.events.emit("query", key, entities);
+      safeEmit(this.events, "query", key, entities);
     });
     this.cache.on("delete", (key) => {
-      this.events.emit("delete", key);
+      safeEmit(this.events, "delete", key);
     });
     this.cache.on("clearall", () => {
-      this.events.emit("clearall");
+      safeEmit(this.events, "clearall");
     });
   }
 
@@ -116,8 +119,13 @@ export class CachedTabularStorage<
         }
         this.cacheInitialized = true;
       } catch (error) {
+        // Surface the warm-up failure instead of swallowing it: query() and
+        // queryIndex() read ONLY the cache, so a silently-failed warm-up would
+        // make them return an empty result set as if the table were empty —
+        // a data-correctness bug callers cannot distinguish from "no rows".
+        // cacheInitialized stays false so a later access retries the warm-up.
         getLogger().warn("Failed to initialize cache from durable repository:", { error });
-        // Don't mark as initialized on error — allow retry on next access.
+        throw error;
       } finally {
         this.cacheInitPromise = null;
       }
@@ -273,23 +281,38 @@ export class CachedTabularStorage<
   /**
    * Subscribes to durable changes (including external ones) and keeps the
    * cache in step before forwarding each change to `callback`.
+   *
+   * The durable backend emits changes synchronously and does not await the
+   * subscriber, so the awaited cache mutation below cannot run inline. Instead,
+   * each change is appended to a per-subscription promise chain so the cache
+   * mutations apply in the same order the durable emitted them (no races
+   * between two rapid events) and any error in a cache mutation or in
+   * `callback` is logged rather than becoming a floating unhandled rejection.
    */
   override subscribeToChanges(
     callback: (change: any) => void,
     options?: TabularSubscribeOptions
   ): () => void {
-    return this.durable.subscribeToChanges(async (change) => {
-      if (change.type === "INSERT" || change.type === "UPDATE") {
-        if (change.new) {
-          await this.cache.put(change.new);
-        }
-      } else if (change.type === "DELETE") {
-        if (change.old) {
-          await this.cache.delete(change.old);
-        }
-      }
-
-      callback(change);
+    let chain: Promise<void> = Promise.resolve();
+    return this.durable.subscribeToChanges((change) => {
+      chain = chain
+        .then(async () => {
+          if (change.type === "INSERT" || change.type === "UPDATE") {
+            if (change.new) {
+              await this.cache.put(change.new);
+            }
+          } else if (change.type === "DELETE") {
+            if (change.old) {
+              await this.cache.delete(change.old);
+            }
+          }
+          callback(change);
+        })
+        .catch((error) => {
+          getLogger().warn("CachedTabularStorage: failed to apply subscribed change to cache", {
+            error,
+          });
+        });
     }, options);
   }
 

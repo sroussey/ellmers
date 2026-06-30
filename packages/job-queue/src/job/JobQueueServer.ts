@@ -21,6 +21,14 @@ import { storageToClass } from "./JobStorageConverters";
  * Statistics tracked for the job queue
  */
 export interface JobQueueStats {
+  /**
+   * Total number of execution ATTEMPTS started, not distinct jobs. Incremented
+   * once per `job_start`, which the worker emits on every execution — so a job
+   * that retries N times contributes N to this counter. It therefore will not
+   * equal `completedJobs + failedJobs + disabledJobs` in any run with retries;
+   * use {@link retriedJobs} to reconcile. Renamed semantics, not the field, to
+   * preserve the public stats shape.
+   */
   readonly totalJobs: number;
   readonly completedJobs: number;
   readonly failedJobs: number;
@@ -39,7 +47,7 @@ export type JobQueueServerEventListeners<Input, Output> = {
   server_stop: (queueName: string) => void;
   job_start: (queueName: string, jobId: unknown) => void;
   job_complete: (queueName: string, jobId: unknown, output: Output) => void;
-  job_error: (queueName: string, jobId: unknown, error: string) => void;
+  job_error: (queueName: string, jobId: unknown, error: string, errorCode?: string) => void;
   job_disabled: (queueName: string, jobId: unknown) => void;
   job_retry: (queueName: string, jobId: unknown, visibleAt: Date) => void;
   job_progress: (
@@ -414,6 +422,8 @@ export class JobQueueServer<
 
     // Forward worker events to server and clients
     worker.on("job_start", (jobId) => {
+      // job_start fires once per execution attempt, so totalJobs is
+      // attempt-weighted (see JobQueueStats.totalJobs docs).
       this.stats = { ...this.stats, totalJobs: this.stats.totalJobs + 1 };
       this.events.emit("job_start", this.queueName, jobId);
       this.forwardToClients("handleJobStart", jobId);
@@ -428,7 +438,11 @@ export class JobQueueServer<
       // Immediate deletion when configured
       if (this.deleteAfterCompletionMs === 0) {
         this.jobStore.delete(jobId).catch((err) => {
-          console.error("Error deleting job after completion:", err);
+          getLogger().error("Error deleting job after completion", {
+            error: err,
+            jobId,
+            queueName: this.queueName,
+          });
         });
       }
 
@@ -438,13 +452,17 @@ export class JobQueueServer<
 
     worker.on("job_error", (jobId, error, errorCode) => {
       this.stats = { ...this.stats, failedJobs: this.stats.failedJobs + 1 };
-      this.events.emit("job_error", this.queueName, jobId, error);
+      this.events.emit("job_error", this.queueName, jobId, error, errorCode);
       this.forwardToClients("handleJobError", jobId, error, errorCode);
 
       // Immediate deletion when configured
       if (this.deleteAfterFailureMs === 0) {
         this.jobStore.delete(jobId).catch((err) => {
-          console.error("Error deleting job after error:", err);
+          getLogger().error("Error deleting job after error", {
+            error: err,
+            jobId,
+            queueName: this.queueName,
+          });
         });
       }
 
@@ -460,7 +478,11 @@ export class JobQueueServer<
       // Immediate deletion when configured
       if (this.deleteAfterDisabledMs === 0) {
         this.jobStore.delete(jobId).catch((err) => {
-          console.error("Error deleting job after disabling:", err);
+          getLogger().error("Error deleting job after disabling", {
+            error: err,
+            jobId,
+            queueName: this.queueName,
+          });
         });
       }
 
@@ -562,7 +584,7 @@ export class JobQueueServer<
         await this.jobStore.deleteByStatusAndAge(JobStatus.DISABLED, this.deleteAfterDisabledMs);
       }
     } catch (error) {
-      console.error("Error in cleanup:", error);
+      getLogger().error("Error in cleanup", { error, queueName: this.queueName });
     }
   }
 

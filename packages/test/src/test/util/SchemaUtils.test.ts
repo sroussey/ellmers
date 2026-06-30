@@ -300,6 +300,40 @@ describe("SchemaUtils", () => {
 
         expect(areSemanticallyCompatible(source, target)).toBe("static");
       });
+
+      it("should reject an optional target property present on source with an incompatible type", () => {
+        const source: JsonSchema = {
+          type: "object",
+          properties: {
+            count: { type: "string" },
+          },
+        };
+        const target: JsonSchema = {
+          type: "object",
+          properties: {
+            count: { type: "number" }, // optional (not required) but present on source
+          },
+        };
+
+        expect(areSemanticallyCompatible(source, target)).toBe("incompatible");
+      });
+
+      it("should mark runtime when an optional shared property narrows via format", () => {
+        const source: JsonSchema = {
+          type: "object",
+          properties: {
+            model: { type: "string", format: "model" },
+          },
+        };
+        const target: JsonSchema = {
+          type: "object",
+          properties: {
+            model: { type: "string", format: "model:EmbeddingTask" }, // optional
+          },
+        };
+
+        expect(areSemanticallyCompatible(source, target)).toBe("runtime");
+      });
     });
 
     describe("array schemas", () => {
@@ -349,7 +383,9 @@ describe("SchemaUtils", () => {
         expect(areSemanticallyCompatible(source, target)).toBe("incompatible");
       });
 
-      it("should handle tuple types (array items)", () => {
+      it("should require a uniform source to satisfy every tuple position", () => {
+        // A uniform string[] source cannot satisfy a [string, number] tuple
+        // target: every element must fit every position, and string ≠ number.
         const source: JsonSchema = {
           type: "array",
           items: { type: "string" },
@@ -359,7 +395,36 @@ describe("SchemaUtils", () => {
           items: [{ type: "string" }, { type: "number" }],
         };
 
+        expect(areSemanticallyCompatible(source, target)).toBe("incompatible");
+      });
+
+      it("should accept a uniform source matching every tuple position statically", () => {
+        const source: JsonSchema = {
+          type: "array",
+          items: { type: "string" },
+        };
+        const target: JsonSchema = {
+          type: "array",
+          items: [{ type: "string" }, { type: "string" }],
+        };
+
         expect(areSemanticallyCompatible(source, target)).toBe("static");
+      });
+
+      it("should mark a uniform source as runtime when a tuple position narrows", () => {
+        const source: JsonSchema = {
+          type: "array",
+          items: { type: "string", format: "model" },
+        };
+        const target: JsonSchema = {
+          type: "array",
+          items: [
+            { type: "string", format: "model" },
+            { type: "string", format: "model:EmbeddingTask" },
+          ],
+        };
+
+        expect(areSemanticallyCompatible(source, target)).toBe("runtime");
       });
 
       it("should return incompatible when array items are incompatible", () => {
@@ -694,6 +759,34 @@ describe("SchemaUtils", () => {
         };
 
         expect(areSemanticallyCompatible(source, target)).toBe("incompatible");
+      });
+
+      it("should compare the full multi-segment narrowing tail (incompatible)", () => {
+        // Both share name `points` and first narrowing segment `3d`, but differ
+        // in the third segment. The comparator must not collapse to `3d`.
+        const source: JsonSchema = {
+          type: "string",
+          format: "points:3d:relative",
+        };
+        const target: JsonSchema = {
+          type: "string",
+          format: "points:3d:meters",
+        };
+
+        expect(areSemanticallyCompatible(source, target)).toBe("incompatible");
+      });
+
+      it("should treat identical multi-segment narrowing as static", () => {
+        const source: JsonSchema = {
+          type: "string",
+          format: "points:3d:meters",
+        };
+        const target: JsonSchema = {
+          type: "string",
+          format: "points:3d:meters",
+        };
+
+        expect(areSemanticallyCompatible(source, target)).toBe("static");
       });
 
       it("should check format compatibility for all types", () => {

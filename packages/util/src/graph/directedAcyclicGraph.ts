@@ -3,7 +3,7 @@
 // license: MIT
 
 import { DirectedGraph } from "./directedGraph";
-import { CycleError } from "./errors";
+import { CycleError, GraphInvariantError } from "./errors";
 
 /**
  * # DirectedAcyclicGraph
@@ -41,9 +41,19 @@ export class DirectedAcyclicGraph<
       graph.edgeIdentity
     );
 
-    toRet.nodes = (graph as any).nodes;
-    toRet.adjacency = (graph as any).adjacency;
-    toRet.nodeIndexMap = (graph as any).nodeIndexMap;
+    // Deep-copy the backing state so the resulting DAG is an independent value.
+    // Aliasing the source graph's Maps/arrays by reference would let a later
+    // mutation of either graph silently corrupt the other (and break the DAG's
+    // acyclicity invariant from the outside).
+    const sourceNodes = (graph as any).nodes as Map<NodeId, Node>;
+    const sourceAdjacency = (graph as any).adjacency as Array<Array<Array<Edge> | null>>;
+    const sourceNodeIndexMap = (graph as any).nodeIndexMap as Map<NodeId, number>;
+
+    toRet.nodes = new Map(sourceNodes);
+    toRet.nodeIndexMap = new Map(sourceNodeIndexMap);
+    toRet.adjacency = sourceAdjacency.map((row) =>
+      row.map((cell) => (cell === null ? null : [...cell]))
+    );
 
     return toRet;
   }
@@ -71,7 +81,8 @@ export class DirectedAcyclicGraph<
 
     // Invalidate cache of toposorted nodes
     this._topologicallySortedNodes = undefined;
-    return super.addEdge(sourceNodeIdentity, targetNodeIdentity, edge, true);
+    // Acyclicity was just validated above; skip the redundant cycle check.
+    return this.addEdgeMaintainingCyclicality(sourceNodeIdentity, targetNodeIdentity, edge, true);
   }
 
   /**
@@ -121,11 +132,15 @@ export class DirectedAcyclicGraph<
     while (toSearch.length > 0) {
       const n = toSearch.pop();
       if (n === undefined) {
-        throw new Error("Unexpected empty array");
+        throw new GraphInvariantError(
+          "Kahn's algorithm popped an empty search frontier; toSearch desynced from node set"
+        );
       }
       const curNode = this.nodes.get(n[0]);
       if (curNode == null) {
-        throw new Error("This should never happen");
+        throw new GraphInvariantError(
+          `Zero-indegree node ${String(n[0])} is missing from the node map; node/index bookkeeping desynced`
+        );
       }
       toReturn.push(curNode);
 
@@ -140,7 +155,9 @@ export class DirectedAcyclicGraph<
               toSearch.push([nodeIndices[index], 0]);
             }
           } else {
-            throw new Error("This should never happen");
+            throw new GraphInvariantError(
+              `Edge target ${String(nodeIndices[index])} has no recorded indegree; adjacency/indegree maps desynced`
+            );
           }
         }
       });

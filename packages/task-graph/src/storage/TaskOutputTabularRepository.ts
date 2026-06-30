@@ -5,10 +5,10 @@
  */
 
 import { makeFingerprint } from "@workglow/util";
-import { compress, decompress } from "@workglow/util/compress";
 import { TaskInput, TaskOutput } from "../task/TaskTypes";
 import type { ITaskOutputStorage } from "./ITaskOutputStorage";
 import type { TaskOutputTabularBacking } from "./TabularTaskOutputStorage";
+import { decodeTaskOutput, encodeTaskOutput } from "./taskOutputCodec";
 import { TaskOutputRepository } from "./TaskOutputRepository";
 
 export { TaskOutputPrimaryKeyNames, TaskOutputSchema } from "./TaskOutputStorageSchema";
@@ -53,58 +53,26 @@ export class TaskOutputTabularRepository extends TaskOutputRepository {
     createdAt = new Date()
   ): Promise<void> {
     const key = await this.keyFromInputs(inputs);
-    const value = JSON.stringify(output);
-    if (this.outputCompression) {
-      const compressedValue = await compress(value);
-      await this.storage.put({
-        taskType,
-        key,
-        value: compressedValue as unknown as string,
-        createdAt: createdAt.toISOString(),
-      });
-    } else {
-      const valueBuffer = Buffer.from(value);
-      await this.storage.put({
-        taskType,
-        key,
-        value: valueBuffer as unknown as string,
-        createdAt: createdAt.toISOString(),
-      });
-    }
+    const value = await encodeTaskOutput(output, this.outputCompression);
+    await this.storage.put({
+      taskType,
+      key,
+      // Blob column: raw bytes stored under a string-typed schema (see
+      // TaskOutputRow.value); getOutput normalizes the round-tripped shape.
+      value: value as unknown as string,
+      createdAt: createdAt.toISOString(),
+    });
     this.emit("output_saved", taskType);
   }
 
   async getOutput(taskType: string, inputs: TaskInput): Promise<TaskOutput | undefined> {
     const key = await this.keyFromInputs(inputs);
     const output = await this.storage.get({ key, taskType });
+    if (!output?.value) return undefined;
+    // Emit only on an actual hit so hit-rate metrics keyed off this event are
+    // not inflated by misses.
     this.emit("output_retrieved", taskType);
-    if (output?.value) {
-      if (this.outputCompression) {
-        const raw: unknown = output.value as unknown;
-        const bytes: Uint8Array =
-          raw instanceof Uint8Array
-            ? raw
-            : Array.isArray(raw)
-              ? new Uint8Array(raw as number[])
-              : raw && typeof raw === "object"
-                ? new Uint8Array(
-                    Object.keys(raw as Record<string, number>)
-                      .filter((k) => /^\d+$/.test(k))
-                      .sort((a, b) => Number(a) - Number(b))
-                      .map((k) => (raw as Record<string, number>)[k])
-                  )
-                : new Uint8Array();
-        const decompressedValue = await decompress(bytes);
-        const value = JSON.parse(decompressedValue) as TaskOutput;
-        return value as TaskOutput;
-      } else {
-        const stringValue = output.value.toString();
-        const value = JSON.parse(stringValue) as TaskOutput;
-        return value as TaskOutput;
-      }
-    } else {
-      return undefined;
-    }
+    return await decodeTaskOutput(output.value, this.outputCompression);
   }
 
   async clear(): Promise<void> {
@@ -120,38 +88,5 @@ export class TaskOutputTabularRepository extends TaskOutputRepository {
     const date = new Date(Date.now() - olderThanInMs).toISOString();
     await this.storage.deleteSearch({ createdAt: { value: date, operator: "<" } });
     this.emit("output_pruned");
-  }
-
-  override async deleteByTaskTypePrefix(prefix: string): Promise<void> {
-    for await (const row of this.storage.records()) {
-      if (typeof row.taskType === "string" && row.taskType.startsWith(prefix)) {
-        await this.storage.delete({ key: row.key, taskType: row.taskType });
-      }
-    }
-  }
-
-  override async clearOlderThanWithTaskTypePrefix(
-    prefix: string,
-    olderThanInMs: number
-  ): Promise<void> {
-    const cutoff = Date.now() - olderThanInMs;
-    for await (const row of this.storage.records()) {
-      if (typeof row.taskType === "string" && row.taskType.startsWith(prefix)) {
-        const ts = typeof row.createdAt === "string" ? new Date(row.createdAt).getTime() : NaN;
-        if (!isNaN(ts) && ts < cutoff) {
-          await this.storage.delete({ key: row.key, taskType: row.taskType });
-        }
-      }
-    }
-  }
-
-  override async sizeByTaskTypePrefix(prefix: string): Promise<number> {
-    let count = 0;
-    for await (const row of this.storage.records()) {
-      if (typeof row.taskType === "string" && row.taskType.startsWith(prefix)) {
-        count++;
-      }
-    }
-    return count;
   }
 }

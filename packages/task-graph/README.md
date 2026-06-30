@@ -757,6 +757,9 @@ Both slots are optional. A missing slot is a silent no-op — the task still run
 import {
   CACHE_REGISTRY,
   DefaultCacheRegistry,
+  RunPrivateTaskOutputPrimaryKeyNames,
+  RunPrivateTaskOutputRepository,
+  RunPrivateTaskOutputSchema,
   tabularTaskOutputStorage,
   TaskOutputPrimaryKeyNames,
   TaskOutputSchema,
@@ -779,15 +782,16 @@ const deterministic = new TaskOutputTabularRepository({
   ),
 });
 
-const privateBacking = new TaskOutputTabularRepository({
-  storage: tabularTaskOutputStorage(
-    new SqliteTabularStorage(
-      "./cache.sqlite",
-      "task_outputs_private",
-      TaskOutputSchema,
-      TaskOutputPrimaryKeyNames,
-      ["createdAt"]
-    )
+// The private slot must be a RunPrivateTaskOutputRepository: its own table with
+// a runId column and a runId-leading primary key, so run-scoped cleanup is an
+// indexed delete. (It takes the ITabularStorage directly — no tabular adapter.)
+const privateBacking = new RunPrivateTaskOutputRepository({
+  storage: new SqliteTabularStorage(
+    "./cache.sqlite",
+    "task_outputs_private",
+    RunPrivateTaskOutputSchema,
+    RunPrivateTaskOutputPrimaryKeyNames,
+    ["createdAt"]
   ),
 });
 
@@ -801,7 +805,7 @@ registry.registerInstance(
 await graph.run({}, { registry, runId: "run-" + crypto.randomUUID() });
 ```
 
-The runner constructs a per-run `RunPrivateCacheRepo` wrapper over the `private` slot, namespaced by `runId`. The wrapper exists only for the duration of the run; the rows it writes survive in the backing store until either explicit cleanup (on successful completion) or the TTL janitor sweeps them (after a crashed run is abandoned).
+The runner constructs a per-run `RunPrivateCacheRepo` wrapper over the `private` slot, scoping every entry to `runId` (stored as a first-class column in the run-private table, not a key prefix). The wrapper exists only for the duration of the run; the rows it writes survive in the backing store until either explicit cleanup (on successful completion) or the TTL janitor sweeps them (after a crashed run is abandoned).
 
 ### Run identity and durable execution
 
@@ -833,7 +837,7 @@ const janitor = new CacheJanitor({ privateBacking });
 await janitor.sweepStaleRunPrivate(24 * 60 * 60 * 1000);
 ```
 
-The janitor only touches rows with the `__run:` prefix that `RunPrivateCacheRepo` writes; deterministic-tier rows are never affected.
+The run-private cache is its own dedicated table, so the janitor sweeps every entry older than the cutoff; the deterministic tier (a separate repository/table) is never touched. Pass the raw `RunPrivateTaskOutputRepository` here — not a per-run `RunPrivateCacheRepo` wrapper, whose `clearOlderThan` is scoped to a single run.
 
 #### Durability warning
 

@@ -120,4 +120,73 @@ describe("InMemoryVectorStorage validation", () => {
       );
     });
   });
+
+  describe("similaritySearch result behavior", () => {
+    it("returns negatively-correlated hits by default (no implicit score floor)", async () => {
+      // Store a vector that is the exact opposite of the query so cosine
+      // similarity is -1. The default scoreThreshold must not drop it.
+      await storage.put({ id: "opposite", vector: new Float32Array([-1, 0, 0, 0]), metadata: {} });
+      await storage.put({ id: "same", vector: new Float32Array([1, 0, 0, 0]), metadata: {} });
+
+      const results = await storage.similaritySearch(new Float32Array([1, 0, 0, 0]));
+
+      // Both rows come back; the negatively-correlated one is not silently
+      // filtered out (topK is honored regardless of sign).
+      expect(results).toHaveLength(2);
+      const opposite = results.find((r) => r.id === "opposite");
+      expect(opposite).toBeDefined();
+      expect(opposite!.score).toBeCloseTo(-1, 5);
+    });
+
+    it("still honors an explicit scoreThreshold floor", async () => {
+      await storage.put({ id: "opposite", vector: new Float32Array([-1, 0, 0, 0]), metadata: {} });
+      await storage.put({ id: "same", vector: new Float32Array([1, 0, 0, 0]), metadata: {} });
+
+      const results = await storage.similaritySearch(new Float32Array([1, 0, 0, 0]), {
+        scoreThreshold: 0,
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe("same");
+    });
+
+    it("treats a present-but-null metadata value as a non-match under a filter (no throw)", async () => {
+      // A row whose metadata column is null must not crash a filtered search;
+      // it is coalesced to {} and excluded by the filter rather than matched.
+      await storage.put({
+        id: "null-meta",
+        vector: new Float32Array([1, 0, 0, 0]),
+        metadata: null as unknown as Record<string, unknown>,
+      });
+      await storage.put({
+        id: "tagged",
+        vector: new Float32Array([1, 0, 0, 0]),
+        metadata: { tag: "keep" },
+      });
+
+      const results = await storage.similaritySearch(new Float32Array([1, 0, 0, 0]), {
+        filter: { tag: "keep" },
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe("tagged");
+    });
+
+    it("emits a similaritySearch event with the returned results", async () => {
+      await storage.put({ id: "a", vector: new Float32Array([1, 0, 0, 0]), metadata: {} });
+
+      const seen: Array<{ query: unknown; results: unknown[] }> = [];
+      // The event lives on the vector extension of the tabular event surface;
+      // the public `on` is typed to the tabular names, so cast at the call site.
+      (
+        storage as unknown as {
+          on: (name: string, fn: (query: unknown, results: unknown[]) => void) => void;
+        }
+      ).on("similaritySearch", (query, results) => seen.push({ query, results }));
+
+      const out = await storage.similaritySearch(new Float32Array([1, 0, 0, 0]));
+      expect(seen).toHaveLength(1);
+      expect(seen[0].results).toBe(out);
+    });
+  });
 });

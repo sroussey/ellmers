@@ -24,10 +24,11 @@ const Worker = isMainThread ? WorkerPolyfill : parentPort;
 export { Worker, parentPort };
 
 import { globalServiceRegistry } from "../di";
+import type { WorkerServerBaseOptions } from "./WorkerServerBase";
 import { WORKER_SERVER, WorkerServerBase } from "./WorkerServerBase";
 export { WORKER_SERVER };
 export class WorkerServer extends WorkerServerBase {
-  constructor() {
+  constructor(options?: WorkerServerBaseOptions) {
     parentPort?.addEventListener("message", async (event) => {
       const msg = {
         type: event.type,
@@ -36,7 +37,7 @@ export class WorkerServer extends WorkerServerBase {
       };
       await this.handleMessage(msg);
     });
-    super();
+    super(options);
   }
 }
 

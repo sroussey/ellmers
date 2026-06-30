@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { getLogger } from "@workglow/util";
+
 export interface HybridManagerOptions {
   /** Default polling interval in milliseconds for backup polling */
   readonly defaultIntervalMs?: number;
@@ -87,7 +89,7 @@ export class HybridSubscriptionManager<Item, Key, ChangePayload> {
         this.handleBroadcastMessage(event.data);
       };
     } catch (error) {
-      console.error("Failed to initialize BroadcastChannel:", error);
+      getLogger().error("Failed to initialize BroadcastChannel:", { error });
       this.channel = null;
     }
   }

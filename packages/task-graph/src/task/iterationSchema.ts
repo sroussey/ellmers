@@ -180,13 +180,6 @@ export function extractIterationProperties(schema?: DataPortSchema): DataPortSch
 }
 
 /**
- * Remove iteration properties from a schema (alias for filterIterationProperties).
- */
-export function removeIterationProperties(schema?: DataPortSchema): DataPortSchema | undefined {
-  return filterIterationProperties(schema);
-}
-
-/**
  * Merge chained output properties into input schema; marks output properties with "x-ui-iteration": true.
  */
 export function mergeChainedOutputToInput(

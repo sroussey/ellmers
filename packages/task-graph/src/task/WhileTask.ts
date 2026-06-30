@@ -13,7 +13,7 @@ import { GraphAsTask, GraphAsTaskConfig, graphAsTaskConfigSchema } from "./Graph
 import type { IExecuteContext, IRunConfig } from "./ITask";
 import { resolveIterationBound, type IterationBound } from "./IteratorTask";
 import type { StreamEvent, StreamFinish } from "./StreamTypes";
-import { TaskConfigurationError, TaskFailedError } from "./TaskError";
+import { TaskAbortedError, TaskConfigurationError, TaskFailedError } from "./TaskError";
 import type { TaskInput, TaskOutput, TaskTypeName } from "./TaskTypes";
 import { WhileTaskRunner } from "./WhileTaskRunner";
 
@@ -316,6 +316,31 @@ export class WhileTask<
     return iterInput as Input;
   }
 
+  /**
+   * Normalizes an error thrown by the user-supplied condition function.
+   * A pre-typed {@link TaskFailedError} is rethrown unchanged so its type,
+   * message, and stack survive; any other error is wrapped in a TaskFailedError
+   * with the original stack chained on. Shared by execute() and executeStream()
+   * so both paths preserve error type and stack identically.
+   */
+  private wrapConditionError(err: unknown): TaskFailedError {
+    if (err instanceof TaskFailedError) {
+      return err;
+    }
+    const message = `${this.type}: Condition function threw at iteration ${this._currentIteration}: ${
+      err instanceof Error ? err.message : String(err)
+    }`;
+    const wrappedError = new TaskFailedError(message);
+    if (err instanceof Error && err.stack) {
+      if (wrappedError.stack) {
+        wrappedError.stack += `\nCaused by original error:\n${err.stack}`;
+      } else {
+        wrappedError.stack = err.stack;
+      }
+    }
+    return wrappedError;
+  }
+
   public override async execute(
     input: Input,
     context: IExecuteContext
@@ -380,7 +405,9 @@ export class WhileTask<
       // Execute iterations until condition returns false or max iterations reached
       while (this._currentIteration < effectiveMax) {
         if (context.signal?.aborted) {
-          break;
+          // Honor cancellation as a failure rather than returning the partial
+          // currentOutput as a COMPLETED success.
+          throw new TaskAbortedError(`${this.type}: aborted during iteration`);
         }
 
         // Build the input for this iteration
@@ -415,23 +442,7 @@ export class WhileTask<
         try {
           shouldContinue = condition(currentOutput, this._currentIteration);
         } catch (err) {
-          // Rethrow TaskFailedError instances unchanged so their type, message,
-          // and stack are preserved for the caller.
-          if (err instanceof TaskFailedError) {
-            throw err;
-          }
-          const message = `${this.type}: Condition function threw at iteration ${this._currentIteration}: ${
-            err instanceof Error ? err.message : String(err)
-          }`;
-          const wrappedError = new TaskFailedError(message);
-          if (err instanceof Error && err.stack) {
-            if (wrappedError.stack) {
-              wrappedError.stack += `\nCaused by original error:\n${err.stack}`;
-            } else {
-              wrappedError.stack = err.stack;
-            }
-          }
-          throw wrappedError;
+          throw this.wrapConditionError(err);
         }
         if (!shouldContinue) {
           break;
@@ -516,7 +527,9 @@ export class WhileTask<
 
     try {
       while (this._currentIteration < effectiveMax) {
-        if (context.signal?.aborted) break;
+        if (context.signal?.aborted) {
+          throw new TaskAbortedError(`${this.type}: aborted during iteration`);
+        }
 
         let iterationInput: Input;
         if (arrayAnalysis) {
@@ -546,9 +559,7 @@ export class WhileTask<
         try {
           shouldContinue = condition(currentOutput, this._currentIteration);
         } catch (err) {
-          throw new TaskFailedError(
-            `${this.type}: Condition function threw at iteration ${this._currentIteration}: ${err instanceof Error ? err.message : String(err)}`
-          );
+          throw this.wrapConditionError(err);
         }
         if (!shouldContinue) {
           // This was the final iteration -- but we already ran it non-streaming.

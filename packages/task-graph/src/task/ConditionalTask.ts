@@ -60,6 +60,16 @@ export type ConditionalTaskConfig = TaskConfig & {
  * match activates. In multi-path mode, all matching branches activate simultaneously.
  * Inactive branches DISABLE their outgoing dataflows, cascading to downstream tasks
  * with no other active inputs.
+ *
+ * TWO OUTPUT SHAPES (selected by how branches are supplied):
+ * - Function branches (config.branches with ConditionFn) -> {@link buildOutput}:
+ *   `{ _activeBranches: string[], [outputPort]: { ...input } }`. This is the shape
+ *   the instance `outputSchema()` describes.
+ * - Serialized `conditionConfig` (from input or config, no function branches) ->
+ *   {@link buildConditionConfigOutput}: UI-style `key_<n>` / `key_else` suffixed
+ *   keys with NO `_activeBranches`. The declared outputSchema does NOT describe
+ *   this shape, so consumers wiring dataflows off a conditionConfig-driven
+ *   ConditionalTask must account for the suffixed keys explicitly.
  */
 export class ConditionalTask<
   Input extends TaskInput = TaskInput,

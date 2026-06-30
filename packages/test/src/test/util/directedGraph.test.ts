@@ -233,6 +233,49 @@ describe("Directed Graph", () => {
     expect(graph.canReachFrom("nonexistent" as unknown as string, "A")).toBe(false);
   });
 
+  it("canReachFrom terminates on a cyclic graph (no stack overflow)", () => {
+    interface NodeType {
+      name: string;
+    }
+    const graph = new DirectedGraph<NodeType>((n: NodeType) => n.name, edgeIdentity);
+
+    graph.insert({ name: "A" });
+    graph.insert({ name: "B" });
+    graph.insert({ name: "C" });
+    graph.insert({ name: "D" });
+
+    // Build a cycle A -> B -> C -> A reachable from A, with D unreachable.
+    graph.addEdge("A", "B");
+    graph.addEdge("B", "C");
+    graph.addEdge("C", "A");
+
+    // Without a visited set this recurses forever and overflows the stack.
+    expect(graph.canReachFrom("A", "C")).toBe(true);
+    expect(graph.canReachFrom("A", "D")).toBe(false);
+    expect(graph.canReachFrom("B", "A")).toBe(true);
+  });
+
+  it("canReachFrom handles diamond graphs without exponential re-walking", () => {
+    interface NodeType {
+      name: string;
+    }
+    const graph = new DirectedGraph<NodeType>((n: NodeType) => n.name, edgeIdentity);
+
+    graph.insert({ name: "A" });
+    graph.insert({ name: "B" });
+    graph.insert({ name: "C" });
+    graph.insert({ name: "D" });
+
+    // Diamond: A -> B, A -> C, B -> D, C -> D (D shares two paths).
+    graph.addEdge("A", "B");
+    graph.addEdge("A", "C");
+    graph.addEdge("B", "D");
+    graph.addEdge("C", "D");
+
+    expect(graph.canReachFrom("A", "D")).toBe(true);
+    expect(graph.canReachFrom("D", "A")).toBe(false);
+  });
+
   it("can return a subgraph based on walking from a start node", () => {
     interface NodeType {
       name: string;

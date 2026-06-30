@@ -24,6 +24,12 @@ export type KvEventListeners<Key, Value, Combined> = {
   getBulk: (keys: readonly Key[], results: readonly Combined[]) => void;
   getAll: (results: Combined[] | undefined) => void;
   delete: (key: unknown) => void;
+  /**
+   * Fired by {@link IKvStorage.deleteAll}. NOTE: the tabular surface emits the
+   * same clear-the-store concept under a different name (`clearall`, see
+   * {@link TabularEventListeners}). Subscribing at an abstraction boundary that
+   * spans both KV and tabular stores must account for both identifiers.
+   */
   deleteall: () => void;
 };
 
@@ -49,7 +55,7 @@ export type KvEventParameters<Event extends KvEventName, Key, Value, Combined> =
  * @typeParam Combined - Combined type of Key & Value
  */
 export interface IKvStorage<
-  Key extends string | number = string,
+  Key extends string = string,
   Value = any,
   Combined = { key: Key; value: Value },
 > {

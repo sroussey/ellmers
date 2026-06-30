@@ -15,10 +15,13 @@ export interface RunPrivateCacheRepoOptions {
 /**
  * Wraps a TaskOutputRepository so that all entries are namespaced by `runId`.
  *
- * Namespacing happens at the repository's `taskType` axis: {@link CacheCoordinator}
- * passes each task's instance `id` for private-policy entries, so rows are stored
- * as `__run:${runId}::${taskId}` in the backing store. The input fingerprint is
- * unchanged for resume lookups within the same node.
+ * Run scoping is delegated to the backing repository's run-scoped methods
+ * ({@link TaskOutputRepository.saveOutputForRun} etc.): {@link CacheCoordinator}
+ * passes each task's instance `id` as the entry's `taskType`, and this wrapper
+ * threads its `runId` so the backing stores it as a first-class column under a
+ * runId-leading primary key. The input fingerprint is unchanged for resume
+ * lookups within the same node. The backing must be a run-private repository
+ * (e.g. `RunPrivateTaskOutputRepository`).
  *
  * - Two wrappers with the same `runId` (e.g., a restart after a crash) see each
  *   other's writes via the backing store — that's the restart-survival contract.
@@ -66,30 +69,26 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     return this.observedFallback;
   }
 
-  private ns(cacheIdentity: string): string {
-    return `__run:${this.runId}::${cacheIdentity}`;
-  }
-
   public async saveOutput(
     cacheIdentity: string,
     inputs: TaskInput,
     output: TaskOutput,
     createdAt?: Date
   ): Promise<void> {
-    await this.backing.saveOutput(this.ns(cacheIdentity), inputs, output, createdAt);
+    await this.backing.saveOutputForRun(this.runId, cacheIdentity, inputs, output, createdAt);
   }
 
   public async getOutput(
     cacheIdentity: string,
     inputs: TaskInput
   ): Promise<TaskOutput | undefined> {
-    return this.backing.getOutput(this.ns(cacheIdentity), inputs);
+    return this.backing.getOutputForRun(this.runId, cacheIdentity, inputs);
   }
 
   /**
-   * Override of `TaskOutputRepository.clear()` that only deletes entries
-   * namespaced under THIS wrapper's `runId`. Entries from other runs are not
-   * touched. Use the backing repository directly if you need a global clear.
+   * Override of `TaskOutputRepository.clear()` that only deletes entries for
+   * THIS wrapper's `runId`. Entries from other runs are not touched. Use the
+   * backing repository directly if you need a global clear.
    */
   public async clear(): Promise<void> {
     await this.clearRun();
@@ -97,29 +96,28 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
 
   /**
    * Delete every entry written through this wrapper's `runId`. Called by the
-   * graph runner after a successful run, and by the janitor for stale runs.
-   * Requires the backing repository to implement `deleteByTaskTypePrefix`.
+   * graph runner after a successful run. An indexed `deleteSearch({ runId })`
+   * on the backing's runId-leading primary key — not a table scan.
    */
   public async clearRun(): Promise<void> {
-    await this.backing.deleteByTaskTypePrefix(`__run:${this.runId}::`);
+    await this.backing.deleteRun(this.runId);
   }
 
   /**
-   * Returns the count of entries namespaced under THIS wrapper's `runId`.
-   * Consistent with `saveOutput`/`getOutput`/`clear()` being run-scoped.
+   * Returns the count of entries for THIS wrapper's `runId`. Consistent with
+   * `saveOutput`/`getOutput`/`clear()` being run-scoped.
    */
   public async size(): Promise<number> {
-    return this.backing.sizeByTaskTypePrefix(`__run:${this.runId}::`);
+    return this.backing.sizeForRun(this.runId);
   }
 
   /**
    * Override of `TaskOutputRepository.clearOlderThan()` scoped to THIS
-   * wrapper's `runId`. Without the scope override, the wrapper would
-   * accidentally prune the entire backing store (including deterministic
-   * cache entries and other runs' private rows).
+   * wrapper's `runId`. Without the scope, the wrapper would prune other runs'
+   * private rows. An indexed `deleteSearch({ runId, createdAt: { "<" } })`.
    */
   public async clearOlderThan(olderThanInMs: number): Promise<void> {
-    await this.backing.clearOlderThanWithTaskTypePrefix(`__run:${this.runId}::`, olderThanInMs);
+    await this.backing.deleteRunOlderThan(this.runId, olderThanInMs);
   }
 
   public isDurable(): boolean {
