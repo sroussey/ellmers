@@ -130,7 +130,7 @@ export class RunPrivateTaskOutputRepository extends TaskOutputRepository {
       this.emit("output_pruned");
       return;
     }
-    const oldRows = await this.storage.search({
+    const oldRows = await this.storage.query({
       createdAt: { value: cutoff, operator: "<" },
     });
     const oldRunIds = new Set<string>();
