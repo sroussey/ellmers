@@ -832,7 +832,13 @@ If the registered `private` slot is present and the graph contains any task whos
 ```typescript
 import { CacheJanitor } from "@workglow/task-graph";
 
-const janitor = new CacheJanitor({ privateBacking });
+const janitor = new CacheJanitor({
+  privateBacking,
+  // Snapshot of currently-live run IDs; the janitor excludes these from the
+  // sweep so a long-running in-flight run does not have its cache rows deleted.
+  // Pass `() => []` if no run is ever concurrent with the sweep.
+  liveRunIds: () => runner.activeRunIds(),
+});
 // Sweep run-private rows older than 24 hours.
 await janitor.sweepStaleRunPrivate(24 * 60 * 60 * 1000);
 ```

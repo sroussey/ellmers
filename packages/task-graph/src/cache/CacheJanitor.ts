@@ -19,11 +19,11 @@ export interface CacheJanitorOptions {
    * in-flight long-running run cannot have its cache rows deleted out from
    * under it (a row's `createdAt` predates the run's age, not its current
    * activity, so a still-running run started days ago would otherwise be
-   * reaped). Default returns an empty list AND emits a one-time `console.warn`
-   * — defaulting is only safe when no run is ever active concurrent with the
-   * sweep.
+   * reaped). Callers that never sweep concurrent with a live run should pass
+   * `() => []` explicitly — the argument is required so the empty case is a
+   * conscious choice at the call site rather than a silent default.
    */
-  liveRunIds?: () => Iterable<string>;
+  liveRunIds: () => Iterable<string>;
 }
 
 /**
@@ -41,23 +41,10 @@ export interface CacheJanitorOptions {
 export class CacheJanitor {
   private readonly privateBacking: RunPrivateTaskOutputRepository;
   private readonly liveRunIds: () => Iterable<string>;
-  private static defaultLiveRunIdsWarned = false;
 
   constructor({ privateBacking, liveRunIds }: CacheJanitorOptions) {
     this.privateBacking = privateBacking;
-    if (liveRunIds === undefined) {
-      if (!CacheJanitor.defaultLiveRunIdsWarned) {
-        CacheJanitor.defaultLiveRunIdsWarned = true;
-        // No logger dependency here (task-graph keeps its log surface narrow);
-        // a one-time console.warn is enough to surface the misconfiguration.
-        console.warn(
-          "CacheJanitor: no liveRunIds callback provided — sweeps may delete cache rows for in-flight runs. Pass `liveRunIds: () => activeRunIdSnapshot` to suppress."
-        );
-      }
-      this.liveRunIds = () => [];
-    } else {
-      this.liveRunIds = liveRunIds;
-    }
+    this.liveRunIds = liveRunIds;
   }
 
   async sweepStaleRunPrivate(olderThanMs: number): Promise<void> {
