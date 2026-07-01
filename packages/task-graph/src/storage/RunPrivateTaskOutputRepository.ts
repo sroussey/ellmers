@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ITabularStorage } from "@workglow/storage";
+import type { ITabularStorage, PageCursor } from "@workglow/storage";
 import { makeFingerprint } from "@workglow/util";
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
 import {
@@ -99,8 +99,19 @@ export class RunPrivateTaskOutputRepository extends TaskOutputRepository {
 
   override async deleteRunOlderThan(runId: string, olderThanInMs: number): Promise<void> {
     const cutoff = new Date(Date.now() - olderThanInMs).toISOString();
-    await this.storage.deleteSearch({ runId, createdAt: { value: cutoff, operator: "<" } });
+    await this.deleteRunOlderThanAt(runId, cutoff);
     this.emit("output_pruned");
+  }
+
+  /**
+   * Internal — timestamp-parameterized older-than delete used by both
+   * {@link deleteRunOlderThan} (which computes the cutoff from `olderThanInMs`
+   * on entry) and the all-runs sweep (which computes the cutoff once). Does
+   * NOT emit `output_pruned`; callers own the event so the sweep can emit
+   * exactly once at the end.
+   */
+  private async deleteRunOlderThanAt(runId: string, cutoff: string): Promise<void> {
+    await this.storage.deleteSearch({ runId, createdAt: { value: cutoff, operator: "<" } });
   }
 
   override async sizeForRun(runId: string): Promise<number> {
@@ -117,25 +128,41 @@ export class RunPrivateTaskOutputRepository extends TaskOutputRepository {
    * a run that started long ago but is still active must not have its cache rows
    * deleted out from under it. The tabular surface has no `NOT IN` operator
    * ({@link SearchOperator} is `=/</<=/>/>=` only), so the implementation
-   * enumerates distinct old `runId`s and calls {@link deleteRunOlderThan} per
-   * runId not in the exclude set.
+   * enumerates distinct old `runId`s via cursor-paginated `queryPage` — bounded
+   * page reads instead of materializing the full stale row set in memory — and
+   * calls {@link deleteRunOlderThan} per runId not in the exclude set.
    */
   async clearOlderThan(
     olderThanInMs: number,
     excludeRunIds: ReadonlySet<string> = new Set()
   ): Promise<void> {
     const cutoff = new Date(Date.now() - olderThanInMs).toISOString();
-    const oldRows = await this.storage.query({
-      createdAt: { value: cutoff, operator: "<" },
-    });
-    const oldRunIds = new Set<string>();
-    for (const row of oldRows ?? []) {
-      const runId = (row as { runId?: unknown }).runId;
-      if (typeof runId === "string") oldRunIds.add(runId);
-    }
-    for (const runId of oldRunIds) {
+    const criteria = { createdAt: { value: cutoff, operator: "<" as const } };
+    const seenRunIds = new Set<string>();
+
+    // Default PK ordering (`runId` ASC — leading PK column) groups a run's rows
+    // contiguously, so distinct runIds accumulate quickly on typical data. The
+    // page size caps per-batch memory; `seenRunIds` is bounded by distinct
+    // runId count, not row count.
+    const pageLimit = 500;
+    let cursor: PageCursor | undefined;
+    // Termination follows the ITabularStorage contract: bail on empty page or
+    // undefined nextCursor (whichever comes first).
+    do {
+      const page = await this.storage.queryPage(criteria, { limit: pageLimit, cursor });
+      for (const row of page.items) {
+        const runId = (row as { runId?: unknown }).runId;
+        if (typeof runId === "string") seenRunIds.add(runId);
+      }
+      if (page.items.length === 0) break;
+      cursor = page.nextCursor;
+    } while (cursor !== undefined);
+
+    for (const runId of seenRunIds) {
       if (excludeRunIds.has(runId)) continue;
-      await this.deleteRunOlderThan(runId, olderThanInMs);
+      // Route through the internal helper so per-run delete does NOT emit
+      // `output_pruned`; the sweep emits once at the end below.
+      await this.deleteRunOlderThanAt(runId, cutoff);
     }
     this.emit("output_pruned");
   }
