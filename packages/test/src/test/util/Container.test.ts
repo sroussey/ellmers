@@ -174,6 +174,87 @@ describe("Container", () => {
       expect(disposed).toBe(0);
     });
 
+    it("register schedules eviction dispose and awaitReplacement resolves after it completes", async () => {
+      // Deferred pattern so we can observe: (1) disposer hasn't run yet
+      // synchronously after `register`, (2) resolving lets awaitReplacement
+      // settle, (3) `disposeCalled` is only true after that.
+      let resolveGate: (() => void) | undefined;
+      const gate = new Promise<void>((resolve) => {
+        resolveGate = resolve;
+      });
+      let disposeCalled = false;
+      container.register("svc", () => ({
+        async dispose() {
+          await gate;
+          disposeCalled = true;
+        },
+      }));
+      // Force instantiation so the singleton is cached.
+      container.get("svc");
+
+      container.register("svc", () => ({ value: "second" }));
+      // Disposer is still awaiting the gate; nothing has completed yet.
+      expect(disposeCalled).toBe(false);
+
+      resolveGate!();
+      await container.awaitReplacement("svc");
+      expect(disposeCalled).toBe(true);
+    });
+
+    it("container.dispose() drains pending disposals from prior register replacements", async () => {
+      let resolveGate: (() => void) | undefined;
+      const gate = new Promise<void>((resolve) => {
+        resolveGate = resolve;
+      });
+      let disposeCalled = false;
+      container.register("svc", () => ({
+        async dispose() {
+          await gate;
+          disposeCalled = true;
+        },
+      }));
+      container.get("svc");
+
+      container.register("svc", () => ({ value: "second" }));
+      // Kick off dispose(); it must wait for the pending eviction disposer.
+      const disposePromise = container.dispose();
+      expect(disposeCalled).toBe(false);
+      resolveGate!();
+      await disposePromise;
+      expect(disposeCalled).toBe(true);
+    });
+
+    it("registerInstance eviction is drained by awaitReplacement", async () => {
+      let resolveGate: (() => void) | undefined;
+      const gate = new Promise<void>((resolve) => {
+        resolveGate = resolve;
+      });
+      let disposeCalled = false;
+      const first = {
+        async dispose() {
+          await gate;
+          disposeCalled = true;
+        },
+      };
+      container.registerInstance("svc", first);
+      container.registerInstance("svc", { value: "second" });
+      expect(disposeCalled).toBe(false);
+      resolveGate!();
+      await container.awaitReplacement("svc");
+      expect(disposeCalled).toBe(true);
+    });
+
+    it("registerInstance clears any previously-registered factory for the token", () => {
+      container.register("svc", () => ({ value: "from-factory" }));
+      // Do not force-instantiate; the factory sits in `factories` with no
+      // cached entry in `services`.
+      container.registerInstance("svc", { value: "from-instance" });
+      // The factory must be cleared so a subsequent remove() → get() cannot
+      // resurrect the factory-built object.
+      expect((container as any).factories.has("svc")).toBe(false);
+      expect(container.get<{ value: string }>("svc").value).toBe("from-instance");
+    });
+
     it("survives a buggy disposer on the eviction path", async () => {
       const originalWarn = console.warn;
       console.warn = () => {};
