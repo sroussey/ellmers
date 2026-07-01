@@ -125,11 +125,6 @@ export class RunPrivateTaskOutputRepository extends TaskOutputRepository {
     excludeRunIds: ReadonlySet<string> = new Set()
   ): Promise<void> {
     const cutoff = new Date(Date.now() - olderThanInMs).toISOString();
-    if (excludeRunIds.size === 0) {
-      await this.storage.deleteSearch({ createdAt: { value: cutoff, operator: "<" } });
-      this.emit("output_pruned");
-      return;
-    }
     const oldRows = await this.storage.query({
       createdAt: { value: cutoff, operator: "<" },
     });
