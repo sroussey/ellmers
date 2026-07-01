@@ -52,4 +52,18 @@ describe("CacheJanitor", () => {
     // Every row is run-private; all are older than the cutoff, so all are reaped.
     expect(await backing.size()).toBe(0);
   });
+
+  it("clearOlderThan with a non-empty excludeRunIds does not throw", async () => {
+    // Regression: clearOlderThan called this.storage.search(...) which does not
+    // exist on ITabularStorage — the correct method is query(). This smoke test
+    // exercises the non-empty-excludeRunIds branch so the fix stays regressed.
+    const backing = new RunPrivateInMemoryTaskOutputRepository();
+    await (backing as any).setupDatabase?.();
+
+    const old = new Date(Date.now() - 30 * 24 * 3600_000);
+    await backing.saveOutputForRun("live", "T", { x: 1 }, { ok: "live" }, old);
+    await backing.saveOutputForRun("stale", "T", { x: 1 }, { ok: "stale" }, old);
+
+    await expect(backing.clearOlderThan(1, new Set(["live"]))).resolves.not.toThrow();
+  });
 });
