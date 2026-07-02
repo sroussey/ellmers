@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createServiceToken, getLogger } from "@workglow/util";
+import { createServiceToken, DEFAULT_LIMITS, getLogger } from "@workglow/util";
 import { DataPortSchemaObject, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
 import { safeEmit } from "../events/safeEmit";
 import { type ITabularMigration, type ITabularMigrationApplier } from "../migrations";
@@ -28,7 +28,6 @@ export const SHARED_IN_MEMORY_TABULAR_REPOSITORY = createServiceToken<AnyTabular
 );
 
 const SYNC_TIMEOUT = 1000;
-const MAX_PENDING_MESSAGES = 1000;
 
 type BroadcastMessage =
   | { type: "SYNC_REQUEST" }
@@ -61,6 +60,7 @@ export class SharedInMemoryTabularStorage<
   private isInitialized = false;
   private syncInProgress = false;
   private pendingMessages: BroadcastMessage[] = [];
+  private readonly maxPendingMessages: number;
   /**
    * Resolves when the current `syncFromOtherTabs()` settles, either because a
    * peer tab sent a `SYNC_RESPONSE` (drained, then resolved) or because the
@@ -76,10 +76,12 @@ export class SharedInMemoryTabularStorage<
     primaryKeyNames: PrimaryKeyNames,
     indexes: readonly (keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[])[] = [],
     clientProvidedKeys: ClientProvidedKeysOption = "if-missing",
-    tabularMigrations?: ReadonlyArray<ITabularMigration>
+    tabularMigrations?: ReadonlyArray<ITabularMigration>,
+    maxPendingMessages: number = DEFAULT_LIMITS.storageMaxPendingMessages
   ) {
     super(schema, primaryKeyNames, indexes, clientProvidedKeys, tabularMigrations, channelName);
     this.channelName = channelName;
+    this.maxPendingMessages = maxPendingMessages;
     // Don't pass migrations to the inner repo — migrations are owned by the
     // outer Shared wrapper which delegates them through getMigrationApplier.
     this.inMemoryRepo = new InMemoryTabularStorage<Schema, PrimaryKeyNames, Entity, PrimaryKey>(
@@ -139,7 +141,7 @@ export class SharedInMemoryTabularStorage<
   private async handleBroadcastMessage(message: BroadcastMessage): Promise<void> {
     if (this.syncInProgress && message.type !== "SYNC_RESPONSE") {
       // Queue messages during sync; we'll replay them after SYNC_RESPONSE.
-      if (this.pendingMessages.length < MAX_PENDING_MESSAGES) {
+      if (this.pendingMessages.length < this.maxPendingMessages) {
         this.pendingMessages.push(message);
       }
       return;
