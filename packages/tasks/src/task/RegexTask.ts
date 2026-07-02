@@ -13,10 +13,8 @@ import {
   TaskInvalidInputError,
   Workflow,
 } from "@workglow/task-graph";
+import { SECURITY_LIMITS } from "@workglow/util";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
-
-/** Maximum number of '[' characters allowed in a regex pattern before rejecting (ReDoS guard). */
-const MAX_BRACKET_COUNT = 100;
 
 /**
  * Detects regex patterns prone to catastrophic backtracking (ReDoS).
@@ -34,7 +32,7 @@ function executeRegex(input: { value: string; pattern: string; flags?: string })
   matches: string[];
 } {
   const bracketCount = (input.pattern.match(/\[/g) ?? []).length;
-  if (bracketCount > MAX_BRACKET_COUNT) {
+  if (bracketCount > SECURITY_LIMITS.regexMaxBracketCount) {
     throw new TaskInvalidInputError(
       "Regex pattern rejected: too many '[' characters (potential ReDoS). " +
         "Simplify the pattern to reduce complexity."

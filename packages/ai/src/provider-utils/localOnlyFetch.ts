@@ -4,9 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { DEFAULT_LIMITS } from "@workglow/util";
 import { extractRawHost, isLoopbackHostname } from "./localUrl";
-
-const MAX_REDIRECTS = 5;
 
 /**
  * Standard HTTP redirect status codes per the Fetch/HTTP specs. A 3xx that is
@@ -98,7 +97,8 @@ function assertLoopbackTarget(
 export async function localOnlyFetch(
   input: string,
   init?: RequestInit,
-  label = "localOnlyFetch"
+  label = "localOnlyFetch",
+  maxRedirects: number = DEFAULT_LIMITS.aiLocalFetchMaxRedirects
 ): Promise<Response> {
   // Defensively validate the initial URL BEFORE issuing any request. A bad
   // initial URL must throw before fetch is ever called (zero network calls).
@@ -121,7 +121,7 @@ export async function localOnlyFetch(
   assertLoopbackTarget(initialUrl, label, "initial URL", rawHost);
 
   let current = initialUrl.href;
-  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+  for (let hop = 0; hop <= maxRedirects; hop++) {
     const res = await fetch(current, { ...init, redirect: "manual" });
     if (!isRedirectResponse(res)) return res;
     const location = res.headers.get("location");
@@ -130,5 +130,5 @@ export async function localOnlyFetch(
     assertLoopbackTarget(next, label, "redirect");
     current = next.href;
   }
-  throw new Error(`${label}: too many redirects (> ${MAX_REDIRECTS}).`);
+  throw new Error(`${label}: too many redirects (> ${maxRedirects}).`);
 }

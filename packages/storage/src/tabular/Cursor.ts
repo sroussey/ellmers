@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { SECURITY_LIMITS } from "@workglow/util";
 import { StorageValidationError } from "./StorageError";
 
 /**
@@ -51,7 +52,7 @@ export const CURSOR_VERSION = 1 as const;
  * can't force the server to base64-decode and JSON-parse arbitrarily
  * large strings, which would be cheap memory/CPU abuse.
  */
-export const MAX_CURSOR_LENGTH = 8 * 1024;
+export const MAX_CURSOR_LENGTH = SECURITY_LIMITS.tabularMaxCursorLength;
 
 /**
  * Encodes a cursor payload as an opaque, URL-safe string.

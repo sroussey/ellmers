@@ -4,19 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { getLogger } from "@workglow/util";
+import { DEFAULT_LIMITS, getLogger } from "@workglow/util";
 import type { TaskGraph } from "./TaskGraph";
-
-/**
- * Default maximum bridge nesting depth before re-emit listeners are dropped.
- * Each level installs one listener per event type and re-emits up; without a
- * cap, a pathologically nested compound task (e.g. a MapTask containing a
- * GraphAsTask containing a MapTask…) amplifies a single inner emit into N
- * parent emits before reaching any wire subscriber, and downstream consumers
- * with a bounded event log can evict legitimate events under sustained
- * fan-out.
- */
-const DEFAULT_MAX_BRIDGE_DEPTH = 16;
 
 /**
  * Symbol-keyed marker we attach to each subgraph so nested calls can derive
@@ -43,7 +32,13 @@ const warnedParents = new WeakSet<TaskGraph>();
  *
  * Depth is tracked on the parent graph via a symbol-keyed marker so callers do
  * not need to thread a counter through. Once `depth >= maxDepth` the call
- * degrades to a no-op (with a single warn log) — see {@link DEFAULT_MAX_BRIDGE_DEPTH}.
+ * degrades to a no-op (with a single warn log) — see
+ * {@link DEFAULT_LIMITS.bridgeMaxDepth}. Each level installs one listener per
+ * event type and re-emits up; without a cap, a pathologically nested compound
+ * task (e.g. a MapTask containing a GraphAsTask containing a MapTask…)
+ * amplifies a single inner emit into N parent emits before reaching any wire
+ * subscriber, and downstream consumers with a bounded event log can evict
+ * legitimate events under sustained fan-out.
  *
  * @returns a teardown that unsubscribes every bridged listener. Callers MUST
  *   invoke it in a `finally` so a rejecting/aborted/early-terminated subgraph
@@ -53,7 +48,7 @@ export function bridgeSubGraphTaskEvents(
   subGraph: TaskGraph,
   parentGraph: TaskGraph,
   depth: number = (parentGraph as unknown as Record<symbol, number>)[BRIDGE_DEPTH] ?? 0,
-  maxDepth: number = DEFAULT_MAX_BRIDGE_DEPTH
+  maxDepth: number = DEFAULT_LIMITS.bridgeMaxDepth
 ): () => void {
   // A subgraph bridging to itself would re-emit each event back onto the same
   // graph it just observed, looping forever. This cannot arise from normal

@@ -4,21 +4,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { DEFAULT_LIMITS } from "@workglow/util";
+
 /** Appended to job error messages; {@link JobQueueClient.buildErrorFromCode} maps this back onto `.stack`. */
 export const JOB_ERROR_DIAGNOSTICS_MARKER = "\n\n--- Error diagnostics ---\n";
-
-const DEFAULT_MAX_DIAGNOSTICS_CHARS = 48_000;
 
 /**
  * Formats an error and its `.cause` chain (name, message, stack) for logs and persisted job errors.
  */
 export function formatErrorChainForDiagnostics(
   err: unknown,
-  maxChars: number = DEFAULT_MAX_DIAGNOSTICS_CHARS
+  maxChars: number = DEFAULT_LIMITS.jobErrorMaxDiagnosticsChars,
+  maxCauseChainDepth: number = DEFAULT_LIMITS.jobErrorMaxCauseChainDepth
 ): string {
   const lines: string[] = [];
   let current: unknown = err;
-  for (let depth = 0; depth < 8 && current != null; depth++) {
+  for (let depth = 0; depth < maxCauseChainDepth && current != null; depth++) {
     if (current instanceof Error) {
       lines.push(`${current.name}: ${current.message}`);
       if (current.stack) {

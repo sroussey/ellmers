@@ -18,7 +18,7 @@ import {
   RateLimiter,
   wrapQueueStorage,
 } from "@workglow/job-queue";
-import { setLogger, sleep, uuid4 } from "@workglow/util";
+import { DEFAULT_LIMITS, setLogger, sleep, uuid4 } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
@@ -304,5 +304,54 @@ describe("JobQueueWorker — PR #511 follow-up regressions", () => {
 
     expect(seen.length).toBeGreaterThanOrEqual(1);
     expect(seen[0]!.errorCode).toBe("PermanentJobError");
+  });
+});
+
+describe("JobQueueWorker limit overrides", () => {
+  it("caps the processing-time sample window at the configured maxProcessingTimeSamples", async () => {
+    TJob.executeCalls = 0;
+    const queueName = `limits-test-queue-${uuid4()}`;
+    const storage = new InMemoryQueueStorage<TI, TO>(queueName);
+    await storage.migrate();
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
+    const worker = new JobQueueWorker<TI, TO, TJob>(TJob, {
+      messageQueue,
+      jobStore,
+      queueName,
+      pollIntervalMs: 5,
+      stopTimeoutMs: 0,
+      maxProcessingTimeSamples: 2,
+    });
+    await worker.start();
+    for (let i = 0; i < 3; i++) {
+      await storage.add({
+        input: { taskType: "default", data: `job-${i}` },
+        visible_at: null,
+        completed_at: null,
+        deadline_at: null,
+      } as any);
+    }
+    await waitUntil(() => TJob.executeCalls >= 3, 2000);
+    await sleep(20);
+    // @ts-expect-error accessing protected internal for the assertion
+    expect(worker.processingTimes.length).toBeLessThanOrEqual(2);
+    await worker.stop();
+    await storage.deleteAll();
+  });
+
+  it("uses the DEFAULT_LIMITS.jobQueueLimiterMaxWakeMs value when limiterMaxWakeMs is not set", async () => {
+    const queueName = `limits-test-queue-2-${uuid4()}`;
+    const storage = new InMemoryQueueStorage<TI, TO>(queueName);
+    await storage.migrate();
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
+    const worker = new JobQueueWorker<TI, TO, TJob>(TJob, {
+      messageQueue,
+      jobStore,
+      queueName,
+      stopTimeoutMs: 0,
+    });
+    // @ts-expect-error accessing protected internal for the assertion
+    expect(worker.limiterMaxWakeMs).toBe(DEFAULT_LIMITS.jobQueueLimiterMaxWakeMs);
+    await storage.deleteAll();
   });
 });
