@@ -16,6 +16,7 @@
  * `network:private` entitlement (via its dynamic `entitlements()`).
  */
 
+import { SECURITY_LIMITS } from "@workglow/util";
 import { createFetchUrlJobError, FetchUrlErrorCode } from "../task/FetchUrlJobError";
 import { classifyUrl, urlMatchesScope } from "./UrlClassifier";
 
@@ -47,7 +48,7 @@ export interface SafeFetchOptions extends RequestInit {
 
 export type SafeFetchFn = (url: string, options: SafeFetchOptions) => Promise<Response>;
 
-const MAX_REDIRECT_HOPS = 20;
+const MAX_REDIRECT_HOPS = SECURITY_LIMITS.safeFetchMaxRedirectHops;
 
 function assertAllowedUrl(
   url: string,
