@@ -252,4 +252,38 @@ export abstract class TaskOutputRepository {
   async sizeForRun(_runId: string): Promise<number> {
     throw new Error(`${this.constructor.name}: sizeForRun is not supported by this repository.`);
   }
+
+  /**
+   * OPTIONAL run-scoped counterpart of {@link saveOutputStream}. Persists a
+   * binary stream under a specific `runId` so a streaming task with
+   * `kind: "private"` writes through the same sidecar as the deterministic
+   * tier without leaking across runs. {@link RunPrivateCacheRepo} forwards to
+   * this method when the backing declares it; backings that cannot stream
+   * (e.g. a tabular run-private table) omit it and the private tier degrades to
+   * accumulation. The returned {@link CacheRef}'s `$ref` is opaque; the SAME
+   * backing resolves it via {@link getOutputByRef} / {@link getOutputStreamByRef}
+   * and reclaims it when {@link deleteRun} runs for `runId`.
+   */
+  saveOutputStreamForRun?(
+    runId: string,
+    taskType: string,
+    inputs: TaskInput,
+    chunks: AsyncIterable<Uint8Array>,
+    metadata: Record<string, unknown>
+  ): Promise<CacheRef>;
+
+  /**
+   * OPTIONAL run-scoped, port-aware counterpart of {@link saveOutputStreamPort}
+   * (the all-mode, multi-port superset of {@link saveOutputStreamForRun}). Keys
+   * one output port's encoded byte stream by `(runId, taskType, inputs, port)`.
+   */
+  saveOutputStreamPortForRun?(
+    runId: string,
+    taskType: string,
+    inputs: TaskInput,
+    port: string,
+    mode: StreamMode,
+    chunks: AsyncIterable<Uint8Array>,
+    metadata: Record<string, unknown>
+  ): Promise<CacheRef>;
 }

@@ -302,6 +302,8 @@ Binary output ports whose bytes were piped into a stream-capable cache carry a b
 
 `FsFolderTaskOutputRepository` (node/bun) is the production streaming backing: JSON rows via `FsFolderTabularStorage`, bytes as sidecar files under `<folder>/blobs/` written incrementally and published by atomic rename — `<sanitized-taskType>_<input-fingerprint>.bin`, so a re-run overwrites rather than leaks. Two instances over one folder interoperate (the cross-process read story).
 
+**Streaming the private tier.** Streaming is a property of the sidecar, not the tier: `FsFolderTaskOutputRepository` also implements the run-scoped writers (`saveOutputStreamForRun` / `saveOutputStreamPortForRun`) by folding `runId` into the taskType axis, so the same blob path serves both cache tiers. When the `private` slot's `RunPrivateCacheRepo` wraps such a backing it forwards streaming through those writers (and forwards the opaque by-ref readers), so `kind: "private"` streaming tasks stream end-to-end and `clearRun()` reclaims the run's rows **and** its sidecar blobs by the run's namespace prefix. Wrapping a backing with no sidecar (a tabular run-private table) leaves the wrapper's streaming surface undefined and the private tier degrades to accumulation, exactly as a non-streaming deterministic backing does.
+
 ### Per-port stream sinks and the no-accumulation passthrough
 
 Everything above generalizes from "one binary port" to **every delta stream mode**

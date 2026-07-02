@@ -46,6 +46,50 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     super({ outputCompression: backing.outputCompression });
     this.backing = backing;
     this.runId = runId;
+
+    // Streaming is a per-backing capability: only backings with a sidecar
+    // (today `FsFolderTaskOutputRepository`) implement the run-scoped stream
+    // writers. Forward each stream writer ONLY when the backing declares its
+    // `*ForRun` counterpart, so the inherited `supportsStreaming*()` probes
+    // (and the CacheCoordinator's direct `typeof cache.X` checks) report this
+    // wrapper's true capability — a tabular run-private backing leaves these
+    // undefined and the private tier degrades to accumulation, unchanged.
+    const canStreamForRun = typeof backing.saveOutputStreamForRun === "function";
+    const canStreamPortForRun = typeof backing.saveOutputStreamPortForRun === "function";
+    if (canStreamForRun) {
+      this.saveOutputStream = (taskType, inputs, chunks, metadata) =>
+        backing.saveOutputStreamForRun!(this.runId, taskType, inputs, chunks, metadata);
+    }
+    if (canStreamPortForRun) {
+      this.saveOutputStreamPort = (taskType, inputs, port, mode, chunks, metadata) =>
+        backing.saveOutputStreamPortForRun!(
+          this.runId,
+          taskType,
+          inputs,
+          port,
+          mode,
+          chunks,
+          metadata
+        );
+    }
+    // By-ref reads/deletes take an opaque `CacheRef` (the runId is already baked
+    // into the `$ref` the backing minted), so they forward straight through.
+    // Gate them on the backing being a run-scoped STREAM backing: a ref can
+    // only exist here if it was written through one of the stream writers above,
+    // so a backing that can stream-read but not stream-write-for-run (e.g. a
+    // deterministic-only streaming repo) exposes no readable refs through this
+    // wrapper and must report no read capability.
+    if (canStreamForRun || canStreamPortForRun) {
+      if (typeof backing.getOutputByRef === "function") {
+        this.getOutputByRef = (ref) => backing.getOutputByRef!(ref);
+      }
+      if (typeof backing.getOutputStreamByRef === "function") {
+        this.getOutputStreamByRef = (ref) => backing.getOutputStreamByRef!(ref);
+      }
+      if (typeof backing.deleteOutputByRef === "function") {
+        this.deleteOutputByRef = (ref) => backing.deleteOutputByRef!(ref);
+      }
+    }
   }
 
   /**
