@@ -42,22 +42,26 @@ function registerTask(baseClass: AnyTaskConstructor): void {
     );
   }
 
-  // Validate every binary streaming output port's `format` against the
-  // canonical {@link BinaryFormat} vocabulary BEFORE adding to the registry.
-  // A typo like `format: "Blob"` would otherwise silently coerce to the
-  // ArrayBuffer branch in `materializeBinary`, producing the wrong runtime
-  // type for every consumer of that port. Fail at registration so the
+  // Validate every binary streaming port's `format` against the canonical
+  // {@link BinaryFormat} vocabulary BEFORE adding to the registry — output
+  // ports (materializeBinary picks the runtime type) AND input ports (input
+  // hydration picks Blob vs ArrayBuffer the same way). A typo like
+  // `format: "Blob"` would otherwise silently coerce to the wrong branch,
+  // producing the wrong runtime type. Fail at registration so the
   // misconfiguration surfaces near the task definition site.
   const outputSchema = baseClass.outputSchema();
-  for (const { port, mode } of getStreamingPorts(outputSchema)) {
-    if (mode !== "binary") continue;
-    try {
-      assertBinaryFormat(outputSchema, port);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      throw new Error(
-        `Cannot register task "${baseClass.type}": invalid binary stream port. ${message}`
-      );
+  const inputSchema = baseClass.inputSchema();
+  for (const schema of [outputSchema, inputSchema]) {
+    for (const { port, mode } of getStreamingPorts(schema)) {
+      if (mode !== "binary") continue;
+      try {
+        assertBinaryFormat(schema, port);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(
+          `Cannot register task "${baseClass.type}": invalid binary stream port. ${message}`
+        );
+      }
     }
   }
 
@@ -65,7 +69,7 @@ function registerTask(baseClass: AnyTaskConstructor): void {
 
   // Validate schemas at registration time (soft — warn only, don't throw)
   const schemas = [
-    { name: "inputSchema", schema: baseClass.inputSchema() },
+    { name: "inputSchema", schema: inputSchema },
     { name: "outputSchema", schema: outputSchema },
   ] as const;
 

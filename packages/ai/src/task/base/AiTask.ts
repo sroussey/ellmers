@@ -370,7 +370,10 @@ export class AiTask<
   /**
    * Validates that model inputs are valid ModelConfig objects.
    */
-  public override async validateInput(input: Input): Promise<boolean> {
+  public override async validateInput(
+    input: Input,
+    skipPorts?: ReadonlySet<string>
+  ): Promise<boolean> {
     const inputSchema = this.inputSchema();
     if (typeof inputSchema === "boolean") {
       if (inputSchema === false) {
@@ -422,7 +425,7 @@ export class AiTask<
       }
     }
 
-    return super.validateInput(input);
+    return super.validateInput(input, skipPorts);
   }
 
   public override async narrowInput(input: Input, registry: ServiceRegistry): Promise<Input> {

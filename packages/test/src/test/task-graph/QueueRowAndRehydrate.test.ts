@@ -29,8 +29,8 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 type BinOut = { bytes: Blob };
 
 /**
- * Streaming memory cache that exposes both `saveOutputStream` (Spec 2 path,
- * returns CacheRef + stores bytes in a side map) and `getOutputByRef` so the
+ * Streaming memory cache that exposes both `saveOutputStream` (the ref sink
+ * path: returns CacheRef + stores bytes in a side map) and `getOutputByRef` so the
  * cross-process resolution test below can hydrate refs without touching the
  * main `saveOutput` row.
  */
@@ -173,13 +173,13 @@ beforeEach(() => {
 });
 
 /**
- * The principal user value of Spec 2: the SAVED ROW in the cache (the same
- * value job-queue would carry through `JobStorageFormat.output`) stays small
+ * The principal user value of result-as-reference: the SAVED ROW in the cache
+ * (the same value job-queue would carry through `JobStorageFormat.output`) stays small
  * regardless of payload size when the ref path is taken. These tests measure
  * the wire size by JSON-serializing the saved output the way a real storage
  * backend (Postgres/SQLite) would.
  */
-describe("Spec 2 — saved-row size & cross-process rehydration", () => {
+describe("saved-row size & cross-process rehydration", () => {
   it("force-ref keeps the saved row tiny (CacheRef envelope only); bytes live in the streaming cache", async () => {
     const task = new BigBlobStreamTask();
     const output = await task.run({}, { registry: services, referenceThresholdBytes: 0 });
@@ -299,7 +299,7 @@ describe("Spec 2 — saved-row size & cross-process rehydration", () => {
       waitFor: async () => savedOutput as unknown as { bytes: Blob },
     };
     const resolved = await resolveJobOutput(handle, repo);
-    // Per Spec 2 §2: best-effort, returns undefined on cache miss.
+    // Resolution is best-effort: a dangling ref resolves to undefined.
     expect(resolved.bytes).toBeUndefined();
   });
 });

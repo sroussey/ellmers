@@ -7,7 +7,6 @@ import type { StreamBinaryDelta, StreamEvent, StreamMode } from "@workglow/task-
 import {
   assertBinaryFormat,
   edgeNeedsAccumulation,
-  getBinaryPortId,
   getOutputStreamMode,
   getPortStreamMode,
   getStreamingPorts,
@@ -92,19 +91,6 @@ describe("binary-aware port helpers", () => {
 
   it("getOutputStreamMode returns 'mixed' for append + binary", () => {
     expect(getOutputStreamMode(mixedSchema)).toBe("mixed");
-  });
-
-  it("getBinaryPortId finds the first binary port", () => {
-    expect(getBinaryPortId(binarySchema)).toBe("bytes");
-    expect(getBinaryPortId(mixedSchema)).toBe("bytes");
-  });
-
-  it("getBinaryPortId returns undefined when no binary port", () => {
-    const noBinary = {
-      type: "object",
-      properties: { text: { type: "string", "x-stream": "append" } },
-    } as const satisfies DataPortSchema;
-    expect(getBinaryPortId(noBinary)).toBeUndefined();
   });
 
   it("edgeNeedsAccumulation: binary source → non-binary target accumulates", () => {
