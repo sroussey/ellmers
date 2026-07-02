@@ -45,6 +45,14 @@ export interface UIConditionConfig {
   defaultBranch?: string;
 }
 
+function formatLogValue(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 /**
  * Evaluates a condition based on operator type.
  *
@@ -102,7 +110,7 @@ export function evaluateCondition(
       const compareNum = Number(compareValue);
       if (isNaN(numValue) || isNaN(compareNum)) {
         getLogger().warn(
-          `Non-numeric operand in '${operator}' comparison (field=${JSON.stringify(fieldValue)}, compare=${JSON.stringify(compareValue)}); evaluating as false`
+          `Non-numeric operand in '${operator}' comparison (field=${formatLogValue(fieldValue)}, compare=${formatLogValue(compareValue)}); evaluating as false`
         );
         return false;
       }

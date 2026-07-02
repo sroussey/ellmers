@@ -278,7 +278,7 @@ destroy(): void;
 interface VectorSearchOptions<Metadata = Record<string, unknown>> {
   readonly topK?: number; // Number of results (default: 10)
   readonly filter?: Partial<Metadata>; // Filter by metadata fields
-  readonly scoreThreshold?: number; // Minimum cosine score in [-1, 1]; default -Infinity (no floor, pure topK)
+  readonly scoreThreshold?: number; // Minimum cosine score in [-1, 1]; default 0
 }
 
 interface HybridSearchOptions<Metadata> extends VectorSearchOptions<Metadata> {

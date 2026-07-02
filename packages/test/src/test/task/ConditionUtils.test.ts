@@ -70,6 +70,10 @@ describe("ConditionUtils", () => {
       it("should return false when less", () => {
         expect(evaluateCondition(3, "greater_than", "5")).toBe(false);
       });
+
+      it("should return false without throwing when non-numeric compare value is used with BigInt", () => {
+        expect(evaluateCondition(101n, "greater_than", "not-a-number")).toBe(false);
+      });
     });
 
     describe("greater_or_equal", () => {

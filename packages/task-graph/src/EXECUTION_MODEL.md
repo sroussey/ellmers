@@ -245,7 +245,7 @@ interface CacheRegistry {
 
 `TaskGraphRunner` resolves the registry from the per-run `ServiceRegistry` and dispatches each task's read/write to the slot named by its policy. Both slots are independently optional. A missing slot is a silent no-op: the task runs uncached, no error.
 
-For the `private` slot, the runner constructs a per-run `RunPrivateCacheRepo` wrapper that threads `runId` into the backing `RunPrivateTaskOutputRepository`, whose rows carry `runId` as a first-class column under a runId-leading primary key `(runId, key, taskId)`. Two runs with different `runId`s never see each other's rows; the same `runId` (a restart) does. Two task nodes of the same class in one graph never share private entries because each keys by its instance id, not its type.
+For the `private` slot, the runner constructs a per-run `RunPrivateCacheRepo` wrapper that threads `runId` into the backing `RunPrivateTaskOutputRepository`, whose rows carry `runId` as a first-class column under a runId-leading primary key `(runId, key, taskType)`. Two runs with different `runId`s never see each other's rows; the same `runId` (a restart) does. Two task nodes of the same class in one graph never share private entries because each keys by its instance id, not its type.
 
 ### Run identity (`runId`)
 

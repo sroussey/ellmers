@@ -55,7 +55,7 @@ export type KvEventParameters<Event extends KvEventName, Key, Value, Combined> =
  * @typeParam Combined - Combined type of Key & Value
  */
 export interface IKvStorage<
-  Key extends string = string,
+  Key extends string | number = string | number,
   Value = any,
   Combined = { key: Key; value: Value },
 > {
