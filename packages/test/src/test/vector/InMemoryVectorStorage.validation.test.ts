@@ -122,28 +122,40 @@ describe("InMemoryVectorStorage validation", () => {
   });
 
   describe("similaritySearch result behavior", () => {
-    it("returns negatively-correlated hits by default (no implicit score floor)", async () => {
-      // Store a vector that is the exact opposite of the query so cosine
-      // similarity is -1. The default scoreThreshold must not drop it.
+    it("drops negatively-correlated hits by default (parity with SQL backends)", async () => {
+      // Default scoreThreshold is 0 — matches Sqlite/Postgres/Supabase. The
+      // opposite vector (cosine = -1) is excluded as "not a match".
       await storage.put({ id: "opposite", vector: new Float32Array([-1, 0, 0, 0]), metadata: {} });
       await storage.put({ id: "same", vector: new Float32Array([1, 0, 0, 0]), metadata: {} });
 
       const results = await storage.similaritySearch(new Float32Array([1, 0, 0, 0]));
 
-      // Both rows come back; the negatively-correlated one is not silently
-      // filtered out (topK is honored regardless of sign).
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe("same");
+    });
+
+    it("retains negatively-correlated hits when scoreThreshold: -Infinity is passed", async () => {
+      // Opt-in escape hatch for callers that want every result regardless of
+      // correlation (e.g. K-NN with no relevance filter).
+      await storage.put({ id: "opposite", vector: new Float32Array([-1, 0, 0, 0]), metadata: {} });
+      await storage.put({ id: "same", vector: new Float32Array([1, 0, 0, 0]), metadata: {} });
+
+      const results = await storage.similaritySearch(new Float32Array([1, 0, 0, 0]), {
+        scoreThreshold: -Infinity,
+      });
+
       expect(results).toHaveLength(2);
       const opposite = results.find((r) => r.id === "opposite");
       expect(opposite).toBeDefined();
       expect(opposite!.score).toBeCloseTo(-1, 5);
     });
 
-    it("still honors an explicit scoreThreshold floor", async () => {
-      await storage.put({ id: "opposite", vector: new Float32Array([-1, 0, 0, 0]), metadata: {} });
+    it("still honors an explicit scoreThreshold floor above the default", async () => {
+      await storage.put({ id: "weak", vector: new Float32Array([0, 1, 0, 0]), metadata: {} });
       await storage.put({ id: "same", vector: new Float32Array([1, 0, 0, 0]), metadata: {} });
 
       const results = await storage.similaritySearch(new Float32Array([1, 0, 0, 0]), {
-        scoreThreshold: 0,
+        scoreThreshold: 0.5,
       });
 
       expect(results).toHaveLength(1);

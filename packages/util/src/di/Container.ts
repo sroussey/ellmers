@@ -18,9 +18,25 @@ export class Container {
    * disposing this container must NOT dispose them.
    */
   private inheritedServices: Set<string> = new Set();
+  /**
+   * In-flight eviction disposals keyed by token. `register()` and
+   * `registerInstance()` invoke the previous singleton's disposer without
+   * blocking the registration; the returned promise lives here so
+   * {@link dispose} and {@link awaitReplacement} can drain it. When the same
+   * token is replaced again while its prior disposal is still running, the new
+   * entry chains onto the prior one (see {@link trackDisposal}) so a rapid
+   * re-replace never drops an in-flight disposer from the drain set. Entries are
+   * identity-guarded so a subsequent replacement's promise doesn't get erased
+   * by an earlier disposer's `.finally()`.
+   */
+  private readonly pendingDisposals: Map<string, Promise<void>> = new Map();
 
   /**
-   * Register a service factory
+   * Register a service factory. Replacing a factory disposes the previously
+   * cached singleton (if any) so a held resource — DB connection, file
+   * handle, subscriber — is released before the new factory takes effect.
+   * Inherited (parent-owned) instances are skipped here; the parent owns the
+   * lifetime.
    * @param token The identifier token for the service
    * @param factory A factory function that creates the service
    * @param singleton Whether the service should be a singleton (created once)
@@ -30,6 +46,10 @@ export class Container {
     // Evict any previously instantiated singleton so the new factory actually
     // takes effect on the next get(). Otherwise get() would keep returning the
     // stale cached instance and the re-registration would be silently dead.
+    const previous = this.services.get(token);
+    if (previous != null && !this.inheritedServices.has(token)) {
+      this.trackDisposal(token, this.disposeService(token, previous));
+    }
     this.services.delete(token);
     this.inheritedServices.delete(token);
     if (singleton) {
@@ -54,14 +74,24 @@ export class Container {
   }
 
   /**
-   * Register an instance as a service
+   * Register an instance as a service. If a previously cached singleton exists
+   * under this token (and was not inherited from a parent), it is disposed
+   * before being overwritten.
    * @param token The identifier token for the service
    * @param instance The instance to register
    */
   registerInstance<T>(token: string, instance: T): void {
+    const previous = this.services.get(token);
+    if (previous != null && previous !== instance && !this.inheritedServices.has(token)) {
+      this.trackDisposal(token, this.disposeService(token, previous));
+    }
     this.services.set(token, instance);
     this.singletons.add(token);
-    // An explicitly registered instance is owned by this container.
+    // An explicitly registered instance is owned by this container. A stale
+    // factory left behind by a prior register() would let a subsequent
+    // remove() → get() race resurrect the factory-built object instead of
+    // failing loudly; clear it.
+    this.factories.delete(token);
     this.inheritedServices.delete(token);
   }
 
@@ -122,9 +152,19 @@ export class Container {
   /**
    * Dispose all instantiated singleton services and clear registrations.
    * Services implementing dispose(), Symbol.asyncDispose, or Symbol.dispose will be cleaned up.
+   *
+   * Also drains any eviction disposals scheduled by prior `register` /
+   * `registerInstance` replacements — otherwise the container would clear its
+   * state (and reject subsequent lookups) while asynchronous disposers were
+   * still holding resources open.
    */
   async dispose(): Promise<void> {
     const errors: unknown[] = [];
+    try {
+      await this.awaitRegistrations();
+    } catch (err) {
+      errors.push(err);
+    }
     try {
       for (const [token, service] of this.services) {
         if (service == null) continue;
@@ -132,13 +172,7 @@ export class Container {
         // disposing them here would leave the parent holding a disposed object.
         if (this.inheritedServices.has(token)) continue;
         try {
-          if (typeof service[Symbol.asyncDispose] === "function") {
-            await service[Symbol.asyncDispose]();
-          } else if (typeof service[Symbol.dispose] === "function") {
-            service[Symbol.dispose]();
-          } else if (typeof service.dispose === "function") {
-            await service.dispose();
-          }
+          await this.invokeDisposer(service);
         } catch (err) {
           errors.push(err);
         }
@@ -148,9 +182,75 @@ export class Container {
       this.factories.clear();
       this.singletons.clear();
       this.inheritedServices.clear();
+      this.pendingDisposals.clear();
     }
     if (errors.length > 0) {
       throw new AggregateError(errors, "One or more services failed to dispose");
+    }
+  }
+
+  /**
+   * Resolves once the in-flight eviction disposal for `token` (if any) has
+   * settled. Callers that immediately re-`register` and then need to observe
+   * side effects of the prior disposer (e.g. a released DB connection) can
+   * `await awaitReplacement(token)` between the two operations.
+   */
+  async awaitReplacement(token: string): Promise<void> {
+    const pending = this.pendingDisposals.get(token);
+    if (pending) await pending;
+  }
+
+  /** Drains every in-flight eviction disposal. */
+  async awaitRegistrations(): Promise<void> {
+    // Snapshot: entries `.finally()` themselves out of the map, but a race
+    // between iteration and settlement could otherwise skip pending entries.
+    const pending = Array.from(this.pendingDisposals.values());
+    await Promise.allSettled(pending);
+  }
+
+  /**
+   * Track an in-flight eviction disposal so callers (and {@link dispose}) can
+   * drain it. If a prior disposal for the same token is still in flight, the new
+   * one chains onto it so the map's single per-token entry settles only once
+   * BOTH have settled — otherwise a rapid re-replace would overwrite (and thus
+   * orphan) the earlier disposer, and `dispose()`/`awaitRegistrations` would
+   * resolve while it still held its resource open. Identity-guarded: the
+   * `.finally()` only clears the entry if it is still the tracked promise, so a
+   * later replacement's promise is never erased.
+   */
+  private trackDisposal(token: string, promise: Promise<void>): void {
+    const prior = this.pendingDisposals.get(token);
+    const tracked = prior ? Promise.allSettled([prior, promise]).then(() => undefined) : promise;
+    this.pendingDisposals.set(token, tracked);
+    void tracked.finally(() => {
+      if (this.pendingDisposals.get(token) === tracked) {
+        this.pendingDisposals.delete(token);
+      }
+    });
+  }
+
+  /**
+   * Eviction-path disposer used by {@link register} and {@link registerInstance}
+   * when a cached singleton is replaced. Errors are caught here so a buggy
+   * disposer cannot prevent the new registration from taking effect — util has
+   * no logger dependency, hence console.warn.
+   */
+  private async disposeService(token: string, service: any): Promise<void> {
+    try {
+      await this.invokeDisposer(service);
+    } catch (err) {
+      console.warn(`Container: disposer for ${String(token)} threw`, err);
+    }
+  }
+
+  /** Invoke whichever disposer protocol the service implements. */
+  private async invokeDisposer(service: any): Promise<void> {
+    if (typeof service[Symbol.asyncDispose] === "function") {
+      await service[Symbol.asyncDispose]();
+    } else if (typeof service[Symbol.dispose] === "function") {
+      service[Symbol.dispose]();
+    } else if (typeof service.dispose === "function") {
+      await service.dispose();
     }
   }
 

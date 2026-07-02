@@ -294,6 +294,10 @@ export class StreamPump {
     portId: string | undefined,
     edgesForGroup: ReadonlyArray<Dataflow>
   ): ReadableStream<StreamEvent> {
+    // Shared teardown closure — hoisted out of start() so cancel() (which the
+    // ReadableStream invokes on reader.cancel()) can call it too. Without this,
+    // a downstream that aborts mid-stream leaves every listener still attached.
+    let cleanup: () => void = () => {};
     return new ReadableStream<StreamEvent>({
       start: (controller) => {
         // Single teardown path: closes the controller and detaches every
@@ -303,7 +307,7 @@ export class StreamPump {
         // fallback the controller and listeners would leak (and a downstream
         // consumer awaiting `done` would hang) on failed/aborted source tasks.
         let closed = false;
-        const cleanup = () => {
+        cleanup = () => {
           if (closed) return;
           closed = true;
           try {
@@ -358,6 +362,16 @@ export class StreamPump {
         task.on("stream_chunk", onChunk);
         task.on("stream_end", onEnd);
         task.on("status", onStatus);
+      },
+      cancel: (_reason) => {
+        // Reader cancellation MUST release the listeners. Without this, a
+        // downstream that aborts mid-stream (e.g. a consumer hit its limit,
+        // an upstream task failed and tore down its child stream) leaves
+        // every listener still attached — the task continues to emit events
+        // into a closed controller and the leaked listeners pin GC. `cleanup`
+        // is idempotent (the `closed` flag), so concurrent cancel + stream_end
+        // is safe.
+        cleanup();
       },
     });
   }
