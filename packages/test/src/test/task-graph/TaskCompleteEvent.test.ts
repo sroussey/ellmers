@@ -445,10 +445,11 @@ describe("bridgeSubGraphTaskEvents depth cap", () => {
       unbridges.push(bridgeSubGraphTaskEvents(graphs[i], graphs[i - 1]));
     }
 
-    // Emit a task_progress from the innermost graph and count how many bridges
-    // it traversed up to the outermost. Without the cap this would re-emit N
-    // times (once per parent); with the cap of 16 it stops after 16 hops.
-    const reachedDepths: number[] = [];
+    // Bridges install outermost-first, so the levels that hit the cap are the
+    // innermost ones (i = 17..N): those bridges are dropped and install no
+    // listeners. The deepest level whose outgoing bridge is still active is
+    // graphs[16] (bridge i=16, depth 15 < 16). Track where an emit lands.
+    let reachedDepths: number[] = [];
     for (let i = 0; i < graphs.length; i++) {
       const depth = i;
       graphs[i].subscribe("task_progress", () => {
@@ -456,12 +457,19 @@ describe("bridgeSubGraphTaskEvents depth cap", () => {
       });
     }
 
-    graphs[N].emit("task_progress", "inner-id", 42, "msg");
+    // Emit from the deepest still-bridged node: it must propagate through all 16
+    // active bridges down to the outermost graph (g0), reaching levels 0..16.
+    graphs[16].emit("task_progress", "inner-id", 42, "msg");
+    expect(reachedDepths.slice().sort((a, b) => a - b)).toEqual(
+      Array.from({ length: 17 }, (_, k) => k)
+    );
 
-    // Innermost (depth N) saw the original emit; bridges propagate up at most
-    // 16 levels (the default cap), so the highest depth reached is N - 16.
-    const minReached = Math.min(...reachedDepths);
-    expect(minReached).toBeGreaterThanOrEqual(N - 16);
+    // Emit from the innermost (over-cap) node: its bridge was dropped, so the
+    // event reaches only that node — it does not propagate up at all.
+    reachedDepths = [];
+    graphs[N].emit("task_progress", "inner-id", 7, "msg");
+    expect(reachedDepths).toEqual([N]);
+
     // The cap fired (depth reached 16), producing at least one warn.
     expect(warnSpy).toHaveBeenCalled();
 

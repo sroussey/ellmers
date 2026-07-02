@@ -60,12 +60,29 @@ export function bridgeSubGraphTaskEvents(
   // composition (a compound task's subGraph and parentGraph are distinct
   // instances) but guard anyway so a malformed hierarchy degrades to a no-op.
   if (subGraph === parentGraph) return () => {};
+
+  // Capture the subgraph's prior depth marker up front so BOTH the over-cap and
+  // the active-bridge paths can restore it on teardown. Restoring is what keeps
+  // a later, independently-rooted bridge of the same (reused) subgraph instance
+  // from inheriting a stale counter.
+  const subGraphWithDepth = subGraph as unknown as Record<symbol, number>;
+  const previousDepth = subGraphWithDepth[BRIDGE_DEPTH];
+  const restoreDepth = () => {
+    if (previousDepth === undefined) {
+      delete subGraphWithDepth[BRIDGE_DEPTH];
+    } else {
+      subGraphWithDepth[BRIDGE_DEPTH] = previousDepth;
+    }
+  };
+
   if (depth >= maxDepth) {
     // Stamp the subgraph at the cap so any nested bridge call (whose
     // parentGraph is this subgraph) derives `depth >= maxDepth` and also
     // short-circuits — otherwise the depth counter resets at the next level
-    // and the cap leaks downstream.
-    (subGraph as unknown as Record<symbol, number>)[BRIDGE_DEPTH] = maxDepth;
+    // and the cap leaks downstream. The teardown restores the prior marker so
+    // the stamp does not persist past this bridge's lifetime on a reused
+    // subgraph instance.
+    subGraphWithDepth[BRIDGE_DEPTH] = maxDepth;
     if (!warnedParents.has(parentGraph)) {
       warnedParents.add(parentGraph);
       getLogger().warn("bridgeSubGraphTaskEvents depth cap hit; dropping bridge", {
@@ -73,13 +90,11 @@ export function bridgeSubGraphTaskEvents(
         maxDepth,
       });
     }
-    return () => {};
+    return restoreDepth;
   }
 
   // Stamp the subgraph with its bridge depth so any nested bridge call (whose
   // parentGraph is this subgraph) derives `depth + 1` automatically.
-  const subGraphWithDepth = subGraph as unknown as Record<symbol, number>;
-  const previousDepth = subGraphWithDepth[BRIDGE_DEPTH];
   subGraphWithDepth[BRIDGE_DEPTH] = depth + 1;
 
   const offs = [
@@ -99,10 +114,6 @@ export function bridgeSubGraphTaskEvents(
     offs.forEach((off) => off());
     // Restore the previous depth marker so a later, independently-rooted bridge
     // of the same subgraph instance does not inherit a stale counter.
-    if (previousDepth === undefined) {
-      delete subGraphWithDepth[BRIDGE_DEPTH];
-    } else {
-      subGraphWithDepth[BRIDGE_DEPTH] = previousDepth;
-    }
+    restoreDepth();
   };
 }

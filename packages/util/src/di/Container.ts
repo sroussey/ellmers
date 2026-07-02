@@ -22,11 +22,14 @@ export class Container {
    * In-flight eviction disposals keyed by token. `register()` and
    * `registerInstance()` invoke the previous singleton's disposer without
    * blocking the registration; the returned promise lives here so
-   * {@link dispose} and {@link awaitReplacement} can drain it. Entries are
+   * {@link dispose} and {@link awaitReplacement} can drain it. When the same
+   * token is replaced again while its prior disposal is still running, the new
+   * entry chains onto the prior one (see {@link trackDisposal}) so a rapid
+   * re-replace never drops an in-flight disposer from the drain set. Entries are
    * identity-guarded so a subsequent replacement's promise doesn't get erased
    * by an earlier disposer's `.finally()`.
    */
-  private pendingDisposals: Map<string, Promise<void>> = new Map();
+  private readonly pendingDisposals: Map<string, Promise<void>> = new Map();
 
   /**
    * Register a service factory. Replacing a factory disposes the previously
@@ -207,14 +210,20 @@ export class Container {
 
   /**
    * Track an in-flight eviction disposal so callers (and {@link dispose}) can
-   * drain it. Identity-guarded: if a later replacement schedules another
-   * disposal for the same token, this promise's `.finally()` doesn't erase the
-   * newer entry.
+   * drain it. If a prior disposal for the same token is still in flight, the new
+   * one chains onto it so the map's single per-token entry settles only once
+   * BOTH have settled — otherwise a rapid re-replace would overwrite (and thus
+   * orphan) the earlier disposer, and `dispose()`/`awaitRegistrations` would
+   * resolve while it still held its resource open. Identity-guarded: the
+   * `.finally()` only clears the entry if it is still the tracked promise, so a
+   * later replacement's promise is never erased.
    */
   private trackDisposal(token: string, promise: Promise<void>): void {
-    this.pendingDisposals.set(token, promise);
-    void promise.finally(() => {
-      if (this.pendingDisposals.get(token) === promise) {
+    const prior = this.pendingDisposals.get(token);
+    const tracked = prior ? Promise.allSettled([prior, promise]).then(() => undefined) : promise;
+    this.pendingDisposals.set(token, tracked);
+    void tracked.finally(() => {
+      if (this.pendingDisposals.get(token) === tracked) {
         this.pendingDisposals.delete(token);
       }
     });

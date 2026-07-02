@@ -224,6 +224,52 @@ describe("Container", () => {
       expect(disposeCalled).toBe(true);
     });
 
+    it("dispose() still awaits an earlier disposal after the same token is replaced again", async () => {
+      // Rapid same-token re-replace must not drop the first in-flight disposal
+      // from the drain set: with two gated disposers pending under one token,
+      // resolving only the SECOND must leave dispose() blocked on the FIRST.
+      let resolveA: (() => void) | undefined;
+      let resolveB: (() => void) | undefined;
+      const gateA = new Promise<void>((resolve) => (resolveA = resolve));
+      const gateB = new Promise<void>((resolve) => (resolveB = resolve));
+      let disposedA = false;
+      let disposedB = false;
+
+      container.register("svc", () => ({
+        async dispose() {
+          await gateA;
+          disposedA = true;
+        },
+      }));
+      container.get("svc"); // cache instance A
+      container.register("svc", () => ({
+        async dispose() {
+          await gateB;
+          disposedB = true;
+        },
+      }));
+      container.get("svc"); // cache instance B; schedules disposal of A (awaits gateA)
+      container.register("svc", () => ({ value: "third" })); // schedules disposal of B (awaits gateB)
+
+      const disposePromise = container.dispose();
+      let disposeSettled = false;
+      void disposePromise.then(() => {
+        disposeSettled = true;
+      });
+
+      // Release only B's disposer. If A's disposal had been orphaned by the
+      // second replacement, dispose() would resolve here — it must not.
+      resolveB!();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(disposedB).toBe(true);
+      expect(disposeSettled).toBe(false);
+
+      resolveA!();
+      await disposePromise;
+      expect(disposedA).toBe(true);
+      expect(disposeSettled).toBe(true);
+    });
+
     it("registerInstance eviction is drained by awaitReplacement", async () => {
       let resolveGate: (() => void) | undefined;
       const gate = new Promise<void>((resolve) => {

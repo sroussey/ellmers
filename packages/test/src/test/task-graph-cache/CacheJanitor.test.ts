@@ -76,10 +76,13 @@ describe("CacheJanitor", () => {
 
   it("sweepStaleRunPrivate does not materialize the full stale row set at once", async () => {
     // Regression: the previous implementation called `storage.query({...})`
-    // for ALL stale rows in a single call. The new implementation drives
-    // distinct-runId collection through cursor-paginated `queryPage` with a
-    // bounded `limit`, so SQL backends (which push both the WHERE and the
-    // keyset predicate into the SELECT) issue O(pageSize) round-trips.
+    // for ALL stale rows in a single call. When there is a live run to exclude,
+    // the implementation drives distinct-runId collection through
+    // cursor-paginated `queryPage` with a bounded `limit`, so SQL backends
+    // (which push both the WHERE and the keyset predicate into the SELECT) issue
+    // O(pageSize) round-trips. (With nothing to exclude, `clearOlderThan` takes
+    // a single indexed bulk delete instead — see the empty-exclude fast path —
+    // so we pass a non-empty exclude set here to exercise the paging path.)
     //
     // We seed 5000 stale rows across 3 runs and assert:
     //   (a) `queryPage` is invoked repeatedly (≥10 calls, matching the 500-row
@@ -114,7 +117,13 @@ describe("CacheJanitor", () => {
     };
 
     try {
-      const janitor = new CacheJanitor({ privateBacking: backing, liveRunIds: () => [] });
+      // Exclude a runId that matches none of the seeded runs so every stale row
+      // is still reaped, but `clearOlderThan` takes the paging path (the set is
+      // non-empty) rather than the single-delete fast path.
+      const janitor = new CacheJanitor({
+        privateBacking: backing,
+        liveRunIds: () => ["not-a-seeded-run"],
+      });
       await janitor.sweepStaleRunPrivate(7 * 24 * 3600_000);
     } finally {
       storage.queryPage = originalQueryPage;
@@ -129,7 +138,7 @@ describe("CacheJanitor", () => {
     expect(await backing.size()).toBe(0);
   });
 
-  it("empty liveRunIds still respects the per-run indexed delete path", async () => {
+  it("excludes live runs while reaping the rest via the per-run indexed delete path", async () => {
     // Seed 3 stale runs + 1 live-but-excluded run. All rows are older than the
     // cutoff; the excluded live-run rows must survive and only the 3 stale
     // runs' rows should be reaped.

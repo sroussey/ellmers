@@ -127,10 +127,13 @@ export class RunPrivateTaskOutputRepository extends TaskOutputRepository {
    * `excludeRunIds` (the janitor's live-run snapshot) protects in-flight runs:
    * a run that started long ago but is still active must not have its cache rows
    * deleted out from under it. The tabular surface has no `NOT IN` operator
-   * ({@link SearchOperator} is `=/</<=/>/>=` only), so the implementation
-   * enumerates distinct old `runId`s via cursor-paginated `queryPage` — bounded
-   * page reads instead of materializing the full stale row set in memory — and
-   * calls {@link deleteRunOlderThan} per runId not in the exclude set.
+   * ({@link SearchOperator} is `=/</<=/>/>=` only), so when there is anything to
+   * exclude the implementation enumerates distinct old `runId`s via
+   * cursor-paginated `queryPage` — bounded page reads instead of materializing
+   * the full stale row set in memory — and calls {@link deleteRunOlderThan} per
+   * runId not in the exclude set. With nothing to exclude (the common idle
+   * sweep) it takes the original single indexed bulk delete instead of paging
+   * and deleting per-run.
    */
   async clearOlderThan(
     olderThanInMs: number,
@@ -138,6 +141,16 @@ export class RunPrivateTaskOutputRepository extends TaskOutputRepository {
   ): Promise<void> {
     const cutoff = new Date(Date.now() - olderThanInMs).toISOString();
     const criteria = { createdAt: { value: cutoff, operator: "<" as const } };
+
+    // Fast path: with no live runs to protect, a single indexed delete reaps
+    // every stale row — no need to page the whole table (loading each row's
+    // encoded output blob) just to collect runIds we would not exclude.
+    if (excludeRunIds.size === 0) {
+      await this.storage.deleteSearch(criteria);
+      this.emit("output_pruned");
+      return;
+    }
+
     const seenRunIds = new Set<string>();
 
     // Default PK ordering (`runId` ASC — leading PK column) groups a run's rows
