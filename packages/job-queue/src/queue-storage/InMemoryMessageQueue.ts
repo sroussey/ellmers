@@ -25,7 +25,11 @@ class InMemoryClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Out
 
   async ack(result?: unknown): Promise<void> {
     const current = (await this.core.get(this.id)) ?? this.body;
-    const output = result !== undefined ? result : (current.output ?? null);
+    // Do not fall back to current.output — that's the prior attempt's value
+    // and finalize() must overwrite it on every ack. Matches WrappedClaim.ack
+    // so the ack(undefined) contract is identical across every IQueueStorage
+    // backend (in-memory vs wrapped cloud/IndexedDB).
+    const output = result !== undefined ? result : null;
     await this.core.finalize(this.id, {
       output: output as Output | null,
       error: null,
@@ -58,8 +62,11 @@ class InMemoryClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Out
   }): Promise<void> {
     void opts?.permanent;
     const current = (await this.core.get(this.id)) ?? this.body;
-    const error = opts?.error !== undefined ? opts.error : (current.error ?? null);
-    const errorCode = opts?.errorCode !== undefined ? opts.errorCode : (current.error_code ?? null);
+    // Do not fall back to current.error / current.error_code — those are the
+    // prior attempt's values and finalize() must overwrite them on every fail.
+    // Matches WrappedClaim.fail so the contract is identical across backends.
+    const error = opts?.error !== undefined ? opts.error : null;
+    const errorCode = opts?.errorCode !== undefined ? opts.errorCode : null;
     const abortRequested = opts?.abortRequested === true;
     await this.core.finalize(this.id, {
       error,

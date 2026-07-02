@@ -9,7 +9,8 @@ import { describe, expect, it, vi } from "vitest";
 
 /**
  * Minimal concrete subclass that implements only the truly-abstract methods.
- * Leaves the three default-throwing prefix-aware methods as their base defaults.
+ * Leaves the run-scoped methods as their base defaults, which throw — only a
+ * run-private backing (RunPrivateTaskOutputRepository) implements them.
  */
 class MinimalRepo extends TaskOutputRepository {
   constructor() {
@@ -26,21 +27,31 @@ class MinimalRepo extends TaskOutputRepository {
   }
 }
 
-describe("TaskOutputRepository default-throwing prefix-aware methods", () => {
-  it("deleteByTaskTypePrefix throws by default", async () => {
+describe("TaskOutputRepository default-throwing run-scoped methods", () => {
+  it("saveOutputForRun throws by default", async () => {
     const r = new MinimalRepo();
-    await expect(r.deleteByTaskTypePrefix("some-prefix::")).rejects.toThrow(/not supported/);
-  });
-
-  it("clearOlderThanWithTaskTypePrefix throws by default", async () => {
-    const r = new MinimalRepo();
-    await expect(r.clearOlderThanWithTaskTypePrefix("some-prefix::", 86400_000)).rejects.toThrow(
+    await expect(r.saveOutputForRun("run", "T", { x: 1 }, { r: 1 })).rejects.toThrow(
       /not supported/
     );
   });
 
-  it("sizeByTaskTypePrefix throws by default", async () => {
+  it("getOutputForRun throws by default", async () => {
     const r = new MinimalRepo();
-    await expect(r.sizeByTaskTypePrefix("some-prefix::")).rejects.toThrow(/not supported/);
+    await expect(r.getOutputForRun("run", "T", { x: 1 })).rejects.toThrow(/not supported/);
+  });
+
+  it("deleteRun throws by default", async () => {
+    const r = new MinimalRepo();
+    await expect(r.deleteRun("run")).rejects.toThrow(/not supported/);
+  });
+
+  it("deleteRunOlderThan throws by default", async () => {
+    const r = new MinimalRepo();
+    await expect(r.deleteRunOlderThan("run", 86400_000)).rejects.toThrow(/not supported/);
+  });
+
+  it("sizeForRun throws by default", async () => {
+    const r = new MinimalRepo();
+    await expect(r.sizeForRun("run")).rejects.toThrow(/not supported/);
   });
 });

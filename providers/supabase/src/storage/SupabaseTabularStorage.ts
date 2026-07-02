@@ -21,6 +21,7 @@ import {
   PageRequest,
   pickCoveringIndex,
   QueryOptions,
+  safeEmit,
   SearchCriteria,
   SearchOperator,
   SimplifyPrimaryKey,
@@ -317,8 +318,7 @@ export class SupabaseTabularStorage<
    */
   protected override sqlToJsValue(column: string, value: ValueOptionType): Entity[keyof Entity] {
     const typeDef = this.schema.properties[column as keyof typeof this.schema.properties] as
-      | JsonSchema
-      | undefined;
+      JsonSchema | undefined;
     if (typeDef) {
       if (value === null && this.isNullable(typeDef)) {
         return null as Entity[keyof Entity];
@@ -432,7 +432,7 @@ export class SupabaseTabularStorage<
     if (error) throw error;
     const updatedEntity = this.hydrateRow(data);
 
-    this.events.emit("put", updatedEntity);
+    safeEmit(this.events, "put", updatedEntity);
     return updatedEntity;
   }
 
@@ -463,7 +463,13 @@ export class SupabaseTabularStorage<
       .upsert(normalizedEntities, { onConflict: this.primaryKeyColumnList() })
       .select();
 
-    if (error) throw error;
+    if (error) {
+      // The upsert is a single PostgREST request whose INSERT ... ON CONFLICT
+      // runs inside one server-side transaction, so a failure commits no rows.
+      // `ids` is empty because nothing landed that a subscriber needs to undo.
+      safeEmit(this.events, "rollback", { op: "putBulk", error, ids: [] });
+      throw error;
+    }
     if (!data) return [];
 
     const returnedRows = (data as unknown[]).map((row) => this.hydrateRow(row));
@@ -475,7 +481,7 @@ export class SupabaseTabularStorage<
     const orderedEntities = this.alignBulkResponseToInputOrder(normalizedEntities, returnedRows);
 
     for (const entity of orderedEntities) {
-      this.events.emit("put", entity);
+      safeEmit(this.events, "put", entity);
     }
     return orderedEntities;
   }
@@ -540,7 +546,7 @@ export class SupabaseTabularStorage<
     if (error) {
       if (error.code === "PGRST116") {
         // Not found
-        this.events.emit("get", key, undefined);
+        safeEmit(this.events, "get", key, undefined);
         return undefined;
       }
       throw error;
@@ -554,7 +560,7 @@ export class SupabaseTabularStorage<
         valRecord[key] = this.sqlToJsValue(key, valRecord[key] as ValueOptionType);
       }
     }
-    this.events.emit("get", key, val);
+    safeEmit(this.events, "get", key, val);
     return val;
   }
 
@@ -578,7 +584,7 @@ export class SupabaseTabularStorage<
     const { error } = await query;
 
     if (error) throw error;
-    this.events.emit("delete", key as Partial<Entity>);
+    safeEmit(this.events, "delete", key as Partial<Entity>);
   }
 
   /**
@@ -632,7 +638,7 @@ export class SupabaseTabularStorage<
     const { error } = await this.client.from(this.table).delete().neq(String(firstPkColumn), null); // Delete all rows by using a condition that's always true
 
     if (error) throw error;
-    this.events.emit("clearall");
+    safeEmit(this.events, "clearall");
   }
 
   /**
@@ -795,7 +801,7 @@ export class SupabaseTabularStorage<
     const { error } = await query;
 
     if (error) throw error;
-    this.events.emit("delete", this.deleteIdentity(criteria));
+    safeEmit(this.events, "delete", this.deleteIdentity(criteria));
   }
 
   /**
@@ -841,10 +847,10 @@ export class SupabaseTabularStorage<
           record[key] = this.sqlToJsValue(key, record[key] as ValueOptionType);
         }
       }
-      this.events.emit("query", criteria as Partial<Entity>, data as Entity[]);
+      safeEmit(this.events, "query", criteria as Partial<Entity>, data as Entity[]);
       return data as Entity[];
     }
-    this.events.emit("query", criteria as Partial<Entity>, undefined);
+    safeEmit(this.events, "query", criteria as Partial<Entity>, undefined);
     return undefined;
   }
 

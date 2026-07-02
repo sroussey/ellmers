@@ -204,6 +204,49 @@ describe("StreamPump", () => {
     expect((sp as any).taskNeedsAccumulation(a, undefined, false)).toBe(false);
   });
 
+  it("cleans up listeners when the reader cancels mid-stream", async () => {
+    const graph = new TaskGraph();
+    const a = new RunnerInternalsSourceTask({ id: "a" });
+    const b = new RunnerInternalsSinkTask({ id: "b" });
+    graph.addTask(a);
+    graph.addTask(b);
+    // One edge — `createStreamFromTaskEvents` requires at least one
+    // dataflow group to be exercised via `pushStreamToEdges`. We invoke the
+    // private method directly via bracket access so the test exercises the
+    // cancel handler without needing a fully-running graph.
+    graph.addDataflow(new Dataflow(a.id, "value", b.id, "value"));
+
+    const runner = new TaskGraphRunner(graph);
+    const em = new EdgeMaterializer(graph, runner);
+    const sp = new StreamPump(graph, (runner as any).processScheduler, em);
+
+    const edges = graph.getTargetDataflows(a.id);
+    const stream: ReadableStream = (sp as any).createStreamFromTaskEvents(a, "value", edges);
+
+    // Sanity: the start() callback wires up listeners synchronously when the
+    // stream is constructed (ReadableStream calls start eagerly). But pull is
+    // lazy in some implementations — fetch a reader to ensure the start hook
+    // ran before we assert.
+    const reader = stream.getReader();
+
+    // Emit one chunk so the consumer sees at least one event before cancel.
+    a.emit("stream_chunk", { type: "text-delta", port: "value", textDelta: "hi" } as any);
+    const first = await reader.read();
+    expect(first.done).toBe(false);
+
+    expect(a.events.listenerCount("stream_chunk")).toBeGreaterThanOrEqual(1);
+    expect(a.events.listenerCount("stream_end")).toBeGreaterThanOrEqual(1);
+    expect(a.events.listenerCount("status")).toBeGreaterThanOrEqual(1);
+
+    await reader.cancel();
+
+    // After cancellation, the cleanup handler must have detached every
+    // listener createStreamFromTaskEvents installed.
+    expect(a.events.listenerCount("stream_chunk")).toBe(0);
+    expect(a.events.listenerCount("stream_end")).toBe(0);
+    expect(a.events.listenerCount("status")).toBe(0);
+  });
+
   it("prepareStreamingInputs tees upstream stream into task.runner.inputStreams", () => {
     const graph = new TaskGraph();
     const a = new RunnerInternalsSourceTask({ id: "a" });

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { getLogger } from "../logging";
 import { DisposeStrategy, type IDisposeStrategy } from "./DisposeStrategy";
 
 export interface ResourceScopeOptions {
@@ -64,13 +65,23 @@ export class ResourceScope {
 
   /**
    * Call all disposers via Promise.allSettled (best-effort), then clear
-   * (escape hatch — bypasses the strategy). Individual disposer errors are
-   * silently swallowed.
+   * (escape hatch — bypasses the strategy). This intentionally does NOT throw,
+   * so it is safe in teardown paths (`[Symbol.asyncDispose]`, `await using`)
+   * where one failing disposer must not prevent the rest from running. Failures
+   * are no longer silent: each rejected disposer is logged so cleanup failures
+   * (e.g. a connection that errors on close) are visible to operators.
    */
   async disposeAll(): Promise<void> {
     const fns = [...this.disposers.values()];
     this.disposers.clear();
-    await Promise.allSettled(fns.map((fn) => fn()));
+    const results = await Promise.allSettled(fns.map((fn) => fn()));
+    for (const result of results) {
+      if (result.status === "rejected") {
+        getLogger().warn("ResourceScope.disposeAll: a disposer failed", {
+          error: result.reason,
+        });
+      }
+    }
   }
 
   /**

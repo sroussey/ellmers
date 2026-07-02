@@ -55,11 +55,9 @@ function sanitize(s: string): string {
  * `<sanitized-taskType>_<fingerprint>_<uuid>.bin`. Two concurrent writers
  * computing the same `(taskType, inputs)` therefore land at distinct paths,
  * so a failed-row-commit cleanup on one writer cannot remove the published
- * blob the other writer's row still points at. The published `$ref` continues
- * to carry the sanitized taskType prefix so prefix-scoped pruning
- * (`deleteByTaskTypePrefix` / `clearOlderThanWithTaskTypePrefix`) keeps
- * cascading correctly; stale blobs from crashes between rename and row
- * commit are reclaimed by `clearOlderThan` / the {@link CacheJanitor}.
+ * blob the other writer's row still points at. Stale blobs from crashes
+ * between rename and row commit are reclaimed by `clearOlderThan` (which prunes
+ * old rows and sweeps sidecar blobs by mtime) and the {@link CacheJanitor}.
  *
  * Two instances pointed at the same folder interoperate: a `CacheRef` written
  * by one resolves through the other (the cross-process contract for queue
@@ -245,29 +243,6 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     }
     this.emit("output_pruned");
     await this.deleteBlobsByPrefix("", cutoff);
-  }
-
-  /**
-   * Row deletions scoped by `taskType` prefix (run-private cleanup via
-   * `RunPrivateCacheRepo.clearRun()` and `CacheJanitor`) must cascade to the
-   * blob sidecar files, or every streamed run-private payload leaks on disk
-   * after its rows are pruned. Blob names start with the sanitized taskType,
-   * and `sanitize` preserves prefix relationships, so a sanitized-prefix match
-   * selects exactly the rows' blobs (a cross-prefix collision would require
-   * two raw prefixes with identical sanitized forms — run namespaces embed a
-   * UUID, so this does not occur in practice).
-   */
-  override async deleteByTaskTypePrefix(prefix: string): Promise<void> {
-    await super.deleteByTaskTypePrefix(prefix);
-    await this.deleteBlobsByPrefix(sanitize(prefix));
-  }
-
-  override async clearOlderThanWithTaskTypePrefix(
-    prefix: string,
-    olderThanInMs: number
-  ): Promise<void> {
-    await super.clearOlderThanWithTaskTypePrefix(prefix, olderThanInMs);
-    await this.deleteBlobsByPrefix(sanitize(prefix), Date.now() - olderThanInMs);
   }
 
   private async deleteBlobsByPrefix(namePrefix: string, olderThanMtimeMs?: number): Promise<void> {

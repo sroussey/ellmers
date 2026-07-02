@@ -22,6 +22,7 @@ import {
   PageRequest,
   pickCoveringIndex,
   QueryOptions,
+  safeEmit,
   SearchCriteria,
   SimplifyPrimaryKey,
   SqliteDialect,
@@ -271,8 +272,7 @@ export class SqliteTabularStorage<
     // Handle null values
     if (value === null) {
       const typeDef = this.schema.properties[column as keyof typeof this.schema.properties] as
-        | JsonSchema
-        | undefined;
+        JsonSchema | undefined;
       if (typeDef && this.isNullable(typeDef)) {
         return null;
       }
@@ -281,8 +281,7 @@ export class SqliteTabularStorage<
 
     // Schema-based type handling for non-object/array values
     const typeDef = this.schema.properties[column as keyof typeof this.schema.properties] as
-      | JsonSchema
-      | undefined;
+      JsonSchema | undefined;
     if (typeDef) {
       const actualType = this.getNonNullType(typeDef);
       const isObject =
@@ -337,8 +336,7 @@ export class SqliteTabularStorage<
    */
   protected override sqlToJsValue(column: string, value: ValueOptionType): Entity[keyof Entity] {
     const typeDef = this.schema.properties[column as keyof typeof this.schema.properties] as
-      | JsonSchema
-      | undefined;
+      JsonSchema | undefined;
     if (typeDef) {
       if (value === null && this.isNullable(typeDef)) {
         return null as Entity[keyof Entity];
@@ -712,7 +710,7 @@ export class SqliteTabularStorage<
    * that are about to roll back.
    */
   protected emitPut(entity: Entity): void {
-    this.events.emit("put", entity);
+    safeEmit(this.events, "put", entity);
   }
 
   /**
@@ -754,7 +752,16 @@ export class SqliteTabularStorage<
         updatedEntities.push(this.executePutSync(item, false));
       }
     });
-    transaction(entities);
+    try {
+      transaction(entities);
+    } catch (error) {
+      // better-sqlite3's `db.transaction(...)` is all-or-nothing: a throw
+      // inside the wrapped body rolls the whole transaction back, so no row
+      // persists. Emit `rollback` with empty `ids` so subscribers treat the
+      // batch as fully reverted, then rethrow the original failure.
+      safeEmit(this.events, "rollback", { op: "putBulk", error, ids: [] });
+      throw error;
+    }
 
     for (const entity of updatedEntities) this.emitPut(entity);
     return updatedEntities;
@@ -891,7 +898,7 @@ export class SqliteTabularStorage<
           throw err;
         }
         // Flush deferred events only on commit success.
-        for (const entity of deferredPutEvents) this.events.emit("put", entity);
+        for (const entity of deferredPutEvents) safeEmit(this.events, "put", entity);
         return result;
       } finally {
         this.inTransaction = false;
@@ -926,10 +933,10 @@ export class SqliteTabularStorage<
       for (const k in this.schema.properties) {
         row[k] = this.sqlToJsValue(k, row[k] as ValueOptionType);
       }
-      this.events.emit("get", key, value);
+      safeEmit(this.events, "get", key, value);
       return value;
     } else {
-      this.events.emit("get", key, undefined);
+      safeEmit(this.events, "get", key, undefined);
       return undefined;
     }
   }
@@ -960,7 +967,7 @@ export class SqliteTabularStorage<
         rows.push(...chunkRows);
       }
     }
-    this.events.emit("getBulk", keys, rows);
+    safeEmit(this.events, "getBulk", keys, rows);
     return rows;
   }
 
@@ -1014,7 +1021,7 @@ export class SqliteTabularStorage<
     const params = this.getPrimaryKeyAsOrderedArray(key);
     const stmt = db.prepare(`DELETE FROM \`${this.table}\` WHERE ${whereClauses}`);
     stmt.run(...(params as ValueOptionType[]));
-    this.events.emit("delete", key as Partial<Entity>);
+    safeEmit(this.events, "delete", key as Partial<Entity>);
   }
 
   /**
@@ -1074,7 +1081,7 @@ export class SqliteTabularStorage<
   private async _deleteAllInternal(): Promise<void> {
     const db = this.db;
     db.exec(`DELETE FROM \`${this.table}\``);
-    this.events.emit("clearall");
+    safeEmit(this.events, "clearall");
   }
 
   /**
@@ -1254,7 +1261,7 @@ export class SqliteTabularStorage<
     const { whereClause, params } = this.buildDeleteSearchWhere(criteria);
     const stmt = db.prepare(`DELETE FROM \`${this.table}\` WHERE ${whereClause}`);
     stmt.run(...params);
-    this.events.emit("delete", this.deleteIdentity(criteria));
+    safeEmit(this.events, "delete", this.deleteIdentity(criteria));
   }
 
   /**
@@ -1310,10 +1317,10 @@ export class SqliteTabularStorage<
           record[k] = this.sqlToJsValue(k, record[k] as ValueOptionType);
         }
       }
-      this.events.emit("query", criteria as Partial<Entity>, result);
+      safeEmit(this.events, "query", criteria as Partial<Entity>, result);
       return result;
     }
-    this.events.emit("query", criteria as Partial<Entity>, undefined);
+    safeEmit(this.events, "query", criteria as Partial<Entity>, undefined);
     return undefined;
   }
 

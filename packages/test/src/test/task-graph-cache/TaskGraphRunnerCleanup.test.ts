@@ -15,7 +15,7 @@ import {
 import { Container, ResourceScope, ServiceRegistry } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
-import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
+import { RunPrivateInMemoryTaskOutputRepository } from "../../binding/RunPrivateInMemoryTaskOutputRepository";
 
 class PrivTask extends Task<{ q: string }, { r: string }> {
   public static override type = "PrivTask_Cleanup";
@@ -79,7 +79,7 @@ class FailingTask extends Task<{ q: string }, { r: string }> {
   }
 }
 
-function freshServices(privateRepo: InMemoryTaskOutputRepository): ServiceRegistry {
+function freshServices(privateRepo: RunPrivateInMemoryTaskOutputRepository): ServiceRegistry {
   const services = new ServiceRegistry(new Container());
   services.registerInstance(CACHE_REGISTRY, new DefaultCacheRegistry({ private: privateRepo }));
   return services;
@@ -87,7 +87,7 @@ function freshServices(privateRepo: InMemoryTaskOutputRepository): ServiceRegist
 
 describe("TaskGraphRunner cleanup on success", () => {
   it("private cache entries for the runId are cleared after a successful run", async () => {
-    const backing = new InMemoryTaskOutputRepository();
+    const backing = new RunPrivateInMemoryTaskOutputRepository();
     await (backing as any).setupDatabase?.();
     const services = freshServices(backing);
 
@@ -107,7 +107,7 @@ describe("TaskGraphRunner cleanup on success", () => {
   });
 
   it("entries survive a failed run (left for restart/TTL)", async () => {
-    const backing = new InMemoryTaskOutputRepository();
+    const backing = new RunPrivateInMemoryTaskOutputRepository();
     await (backing as any).setupDatabase?.();
     const services = freshServices(backing);
 

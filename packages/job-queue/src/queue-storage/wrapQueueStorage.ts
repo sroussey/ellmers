@@ -27,12 +27,6 @@ import type {
  */
 const MAX_FINGERPRINT_SCAN = 10_000;
 
-/**
- * One-shot warning gate for the bounded-scan exhaustion path so a hot
- * queue doesn't flood logs with the same message every send.
- */
-let __fingerprintScanExhaustedWarned = false;
-
 class WrappedClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Output>> {
   constructor(
     private readonly storage: IQueueStorage<Input, Output>,
@@ -199,6 +193,15 @@ class WrappedMessageQueue<Input, Output> implements IMessageQueue<JobStorageForm
 }
 
 class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
+  /**
+   * Per-instance one-shot gate for the bounded-scan exhaustion warning, so a
+   * hot queue doesn't flood logs with the same message on every send. Scoped
+   * to this store (not module-global) so each affected queue emits the warning
+   * at least once — a process-wide flag would let the first queue to exhaust
+   * permanently silence the signal for every other queue.
+   */
+  private fingerprintScanExhaustedWarned = false;
+
   constructor(private readonly storage: IQueueStorage<Input, Output>) {}
 
   get(id: MessageId): Promise<JobRecord<Input, Output> | undefined> {
@@ -283,8 +286,8 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
       }
     }
 
-    if (scanned >= MAX_FINGERPRINT_SCAN && !__fingerprintScanExhaustedWarned) {
-      __fingerprintScanExhaustedWarned = true;
+    if (scanned >= MAX_FINGERPRINT_SCAN && !this.fingerprintScanExhaustedWarned) {
+      this.fingerprintScanExhaustedWarned = true;
       getLogger().warn(
         "WrappedJobStore.findActiveByFingerprint: scanned MAX_FINGERPRINT_SCAN rows without a match; dedup may be best-effort under load"
       );

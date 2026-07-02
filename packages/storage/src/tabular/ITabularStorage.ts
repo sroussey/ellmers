@@ -15,6 +15,14 @@ export type ValueOptionType = string | number | bigint | boolean | null | Uint8A
 export type TabularEventListeners<PrimaryKey, Entity> = {
   put: (entity: Entity) => void;
   get: (key: PrimaryKey, entity: Entity | undefined) => void;
+  /**
+   * NOTE: backends that implement `getBulk` as a fan-out over per-key `get`
+   * (the default {@link BaseTabularStorage.getBulk}, used by InMemory) ALSO
+   * emit one `get` event per key in addition to this single `getBulk`.
+   * Push-down backends (SQL `WHERE pk IN (...)`, and the KV-over-tabular path)
+   * emit only `getBulk`. Instrumentation that counts reads via `get` events
+   * must account for this backend-dependent fan-out.
+   */
   getBulk: (keys: readonly PrimaryKey[], entities: readonly Entity[]) => void;
   query: (key: Partial<Entity>, entities: Entity[] | undefined) => void;
   /**
@@ -24,12 +32,28 @@ export type TabularEventListeners<PrimaryKey, Entity> = {
    * can filter and caches can invalidate without the backend reading the row.
    */
   delete: (key: Partial<Entity>) => void;
+  /**
+   * Fired by {@link ITabularStorage.deleteAll}. NOTE: the KV surface emits the
+   * same clear-the-store concept under a different name (`deleteall`, see
+   * {@link KvEventListeners}). Subscribing at an abstraction boundary that spans
+   * both tabular and KV stores must account for both identifiers.
+   */
   clearall: () => void;
   /**
-   * Emitted when an atomic batch op (e.g. vector `putBulk`) detects a mid-batch
-   * failure and restores prior state. Subscribers should treat any uncommitted
-   * `put` events from the failed batch as superseded and reconcile against the
-   * post-rollback state.
+   * Emitted when an atomic batch op (`putBulk`) detects a mid-batch failure and
+   * restores prior state. Subscribers should treat any uncommitted `put` events
+   * from the failed batch as superseded and reconcile against the post-rollback
+   * state.
+   *
+   * **Support is backend-dependent.** Backends that can cheaply snapshot and
+   * restore their mutable state honor an all-or-nothing `putBulk` and emit this
+   * event on failure: the in-memory family (`InMemoryTabularStorage`, its vector
+   * overlay, and `SharedInMemoryTabularStorage`, which delegates to an inner
+   * in-memory repo) and the IndexedDB transactional batch. Backends whose batch
+   * is a non-atomic fan-out — notably `FsFolderTabularStorage` (per-file writes
+   * with no snapshot) — do NOT emit `rollback`; a mid-batch failure there leaves
+   * earlier rows committed. Subscribers that rely on rollback for correctness
+   * must confirm the concrete backend supports it.
    *
    * `ids` carries the primary keys of rows that were observably committed (via
    * a per-row `put` event or backend-level write) before the failure, in the
@@ -72,12 +96,7 @@ export interface TabularSubscribeOptions {
 }
 
 export type JSONValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JSONValue[]
-  | { [key: string]: JSONValue };
+  string | number | boolean | null | JSONValue[] | { [key: string]: JSONValue };
 
 export type SearchOperator = "=" | "<" | "<=" | ">" | ">=";
 

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.22
+
+### Bug Fixes
+
+#### ai
+
+- make StreamEventAccumulator delta-wins to stop tool-call clobber
+
+#### providers
+
+- map Gemini sampling params; add Ollama json-mode support
+
+### Tests
+
+#### ollama
+
+- unit-test the structured-generation streaming run-fn
+
 ## 0.3.21
 
 ## 0.3.20

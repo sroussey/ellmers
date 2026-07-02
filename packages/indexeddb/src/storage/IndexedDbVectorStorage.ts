@@ -17,8 +17,10 @@ import {
   getMetadataProperty,
   getVectorProperty,
   matchesFilter,
+  safeEmit,
   validateVectorEntities,
 } from "@workglow/storage";
+import type { EventEmitter } from "@workglow/util";
 import { createServiceToken } from "@workglow/util";
 import type {
   DataPortSchemaObject,
@@ -130,6 +132,10 @@ export class IndexedDbVectorStorage<
     options: VectorSearchOptions<Record<string, unknown>> = {}
   ) {
     assertVectorShape(query, this.vectorDimensions, "query");
+    // Default to 0 to match every SQL backend (Sqlite / Postgres / Supabase /
+    // SqliteAi). Cosine similarity ranges over [-1, 1]; a negatively-correlated
+    // hit is "not a match" for relevance retrieval. Callers that want every
+    // result regardless of correlation pass `scoreThreshold: -Infinity`.
     const { topK = 10, filter, scoreThreshold = 0 } = options;
     const results: Array<Entity & { score: number }> = [];
 
@@ -138,9 +144,10 @@ export class IndexedDbVectorStorage<
     for (const entity of allEntities) {
       // IndexedDB stores TypedArrays natively via structured clone
       const vector = entity[this.vectorPropertyName] as TypedArray;
-      const metadata = this.metadataPropertyName
-        ? (entity[this.metadataPropertyName] as Metadata)
-        : ({} as Metadata);
+      // A present-but-null metadata column value coalesces to `{}` so a filtered
+      // search treats the row as a non-match rather than dereferencing null.
+      const rawMetadata = this.metadataPropertyName ? entity[this.metadataPropertyName] : undefined;
+      const metadata = (rawMetadata ?? {}) as Metadata;
 
       if (filter && !matchesFilter(metadata, filter)) {
         continue;
@@ -160,6 +167,19 @@ export class IndexedDbVectorStorage<
 
     results.sort((a, b) => b.score - a.score);
     const topResults = results.slice(0, topK);
+    // The inherited `events` emitter is typed for the tabular event surface;
+    // `similaritySearch` lives on the vector extension of that surface. The
+    // emitter instance is the same object, so widen the view to a record that
+    // carries the event so it can be emitted type-safely.
+    type SimilaritySearchEvents = {
+      similaritySearch: (query: TypedArray, results: (Entity & { score: number })[]) => void;
+    };
+    safeEmit(
+      this.events as unknown as EventEmitter<SimilaritySearchEvents>,
+      "similaritySearch",
+      query,
+      topResults
+    );
 
     return topResults;
   }

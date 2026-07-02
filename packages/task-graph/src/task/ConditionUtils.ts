@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { getLogger } from "@workglow/util";
+
 /**
  * Comparison operators supported by the UI condition builder.
  */
@@ -90,16 +92,25 @@ export function evaluateCondition(
       return strValue !== compareValue;
 
     case "greater_than":
-      return numValue > Number(compareValue);
-
     case "greater_or_equal":
-      return numValue >= Number(compareValue);
-
     case "less_than":
-      return numValue < Number(compareValue);
-
-    case "less_or_equal":
-      return numValue <= Number(compareValue);
+    case "less_or_equal": {
+      // Ordering operators require numeric operands. If either side is
+      // non-numeric (Number(...) is NaN) the comparison can never be true and
+      // would silently never fire; surface it as a clear diagnostic and return
+      // false rather than failing quietly forever.
+      const compareNum = Number(compareValue);
+      if (isNaN(numValue) || isNaN(compareNum)) {
+        getLogger().warn(
+          `Non-numeric operand in '${operator}' comparison (field=${JSON.stringify(fieldValue)}, compare=${JSON.stringify(compareValue)}); evaluating as false`
+        );
+        return false;
+      }
+      if (operator === "greater_than") return numValue > compareNum;
+      if (operator === "greater_or_equal") return numValue >= compareNum;
+      if (operator === "less_than") return numValue < compareNum;
+      return numValue <= compareNum;
+    }
 
     case "contains":
       return strValue.toLowerCase().includes(compareValue.toLowerCase());

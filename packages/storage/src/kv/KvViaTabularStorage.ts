@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { getLogger } from "@workglow/util";
+import { safeEmit } from "../events/safeEmit";
 import type { BaseTabularStorage } from "../tabular/BaseTabularStorage";
 import { DefaultKeyValueKey, DefaultKeyValueSchema } from "./IKvStorage";
 import { KvStorage } from "./KvStorage";
@@ -38,14 +40,21 @@ export abstract class KvViaTabularStorage<
   /**
    * Deserialize a stored value back to the runtime form. When the schema
    * isn't a primitive we round-trip through JSON; if the stored bytes
-   * aren't valid JSON we return them as-is so callers see what's on disk
-   * rather than an exception.
+   * aren't valid JSON we log a warning (the value is corrupt for a
+   * JSON-serialized store) and return them as-is so callers see what's on
+   * disk rather than an exception. The log makes the corruption observable
+   * instead of silently surfacing a raw string where a parsed value is
+   * expected.
    */
   private deserialize(raw: unknown): Value {
     if (this.needsJsonSerialization && typeof raw === "string") {
       try {
         return JSON.parse(raw) as Value;
-      } catch {
+      } catch (error) {
+        getLogger().warn(
+          "KvViaTabularStorage: stored value failed JSON parse; returning raw string",
+          { error }
+        );
         return raw as unknown as Value;
       }
     }
@@ -60,7 +69,9 @@ export abstract class KvViaTabularStorage<
   public async put(key: Key, value: Value): Promise<void> {
     const storedValue = this.needsJsonSerialization ? (JSON.stringify(value) as Value) : value;
     await this.tabularRepository.put({ key, value: storedValue });
-    this.events.emit("put", key, value);
+    // Post-commit emit: route through safeEmit so a throwing subscriber cannot
+    // turn an already-committed write into a thrown error.
+    safeEmit(this.events, "put", key, value);
   }
 
   public async putBulk(items: Array<{ key: Key; value: Value }>): Promise<void> {
@@ -70,18 +81,18 @@ export abstract class KvViaTabularStorage<
 
     await this.tabularRepository.putBulk(entities);
     for (const { key, value } of items) {
-      this.events.emit("put", key, value);
+      safeEmit(this.events, "put", key, value);
     }
   }
 
   public async get(key: Key): Promise<Value | undefined> {
     const result = await this.tabularRepository.get({ key });
     if (!result) {
-      this.events.emit("get", key, undefined);
+      safeEmit(this.events, "get", key, undefined);
       return undefined;
     }
     const value = this.deserialize(result.value);
-    this.events.emit("get", key, value);
+    safeEmit(this.events, "get", key, value);
     return value;
   }
 
@@ -95,13 +106,13 @@ export abstract class KvViaTabularStorage<
     const combined = rows.map(
       (row) => ({ key: row.key as Key, value: this.deserialize(row.value) }) as Combined
     );
-    this.events.emit("getBulk", keys, combined);
+    safeEmit(this.events, "getBulk", keys, combined);
     return combined;
   }
 
   public async delete(key: Key): Promise<void> {
     await this.tabularRepository.delete({ key });
-    this.events.emit("delete", key);
+    safeEmit(this.events, "delete", key);
   }
 
   public async getAll(): Promise<Combined[] | undefined> {
@@ -109,13 +120,13 @@ export abstract class KvViaTabularStorage<
     const results = values
       ? values.map((row) => ({ key: row.key, value: this.deserialize(row.value) }) as Combined)
       : undefined;
-    this.events.emit("getAll", results);
+    safeEmit(this.events, "getAll", results);
     return results;
   }
 
   public async deleteAll(): Promise<void> {
     await this.tabularRepository.deleteAll();
-    this.events.emit("deleteall");
+    safeEmit(this.events, "deleteall");
   }
 
   public async size(): Promise<number> {
@@ -124,5 +135,9 @@ export abstract class KvViaTabularStorage<
 
   destroy(): void {
     this.tabularRepository.destroy();
+    // Release KV-emitter subscriptions so long-lived subscribers (cache
+    // invalidators, telemetry) don't leak across store lifecycles. The wrapped
+    // tabular repo tears down its own emitter in its destroy().
+    this.events.removeAllListeners();
   }
 }

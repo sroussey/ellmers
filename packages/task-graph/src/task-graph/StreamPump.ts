@@ -5,6 +5,7 @@
  */
 
 import type { ResourceScope, ServiceRegistry } from "@workglow/util";
+import { getLogger } from "@workglow/util";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import { BackpressureGate } from "../task/BackpressureGate";
 import type { ITask } from "../task/ITask";
@@ -262,16 +263,32 @@ export class StreamPump {
       }
     };
 
+    // Guarded so a throwing listener on the (possibly bridged, cross-graph)
+    // stream events can't propagate back into the source task's stream loop and
+    // abort an otherwise-healthy run. Mirrors the guarded task_progress/
+    // task_complete emits in RunScheduler.
     const onStreamStart = () => {
-      this.graph.emit("task_stream_start", task.id);
+      try {
+        this.graph.emit("task_stream_start", task.id);
+      } catch (err) {
+        getLogger().error("task_stream_start listener threw", { error: err });
+      }
     };
 
     const onStreamChunk = (event: StreamEvent) => {
-      this.graph.emit("task_stream_chunk", task.id, event);
+      try {
+        this.graph.emit("task_stream_chunk", task.id, event);
+      } catch (err) {
+        getLogger().error("task_stream_chunk listener threw", { error: err });
+      }
     };
 
     const onStreamEnd = (output: Record<string, any>) => {
-      this.graph.emit("task_stream_end", task.id, output);
+      try {
+        this.graph.emit("task_stream_end", task.id, output);
+      } catch (err) {
+        getLogger().error("task_stream_end listener threw", { error: err });
+      }
     };
 
     task.on("status", onStatus);
@@ -671,11 +688,44 @@ export class StreamPump {
     edgesForGroup: ReadonlyArray<Dataflow>,
     gate?: EdgeGateState
   ): ReadableStream<StreamEvent> {
+    // Shared teardown closure — hoisted out of start() so cancel() (which the
+    // ReadableStream invokes on reader.cancel()) can call it too. Without this,
+    // a downstream that aborts mid-stream leaves every listener still attached.
+    let cleanup: () => void = () => {};
     return new ReadableStream<StreamEvent>({
       start: (controller) => {
+        // Single teardown path: closes the controller and detaches every
+        // listener this stream added. Invoked on normal stream_end AND on a
+        // terminal task status (FAILED/COMPLETED), because StreamProcessor does
+        // not emit stream_end on the error/abort path — without the status
+        // fallback the controller and listeners would leak (and a downstream
+        // consumer awaiting `done` would hang) on failed/aborted source tasks.
+        let closed = false;
+        cleanup = () => {
+          if (closed) return;
+          closed = true;
+          // Release any producer parked on this port's passthrough gate —
+          // every teardown path (end, terminal status, reader cancel) must
+          // wake it or the run hangs.
+          gate?.gate.close();
+          try {
+            controller.close();
+          } catch {
+            // Stream may already be closed
+          }
+          task.off("stream_chunk", onChunk);
+          task.off("stream_end", onEnd);
+          task.off("status", onStatus);
+        };
         const onChunk = (event: StreamEvent) => {
           try {
             if (portId !== undefined && StreamPump.isPortDelta(event) && event.port !== portId) {
+              return;
+            }
+            // Phase events are not accumulated into dataflow edges per the
+            // StreamTypes contract, so they must not be enqueued onto edge
+            // streams; drop them here.
+            if (event.type === "phase") {
               return;
             }
             // Tap: on snapshot events, write per-port data into each edge's
@@ -702,50 +752,45 @@ export class StreamPump {
             // Stream may be closed
           }
         };
-        const detach = () => {
-          task.off("stream_chunk", onChunk);
-          task.off("stream_end", onEnd);
-          task.off("abort", onTerminate);
-          task.off("error", onError);
-        };
         const onEnd = () => {
-          gate?.gate.close();
-          try {
-            controller.close();
-          } catch {
-            // Stream may already be closed
-          }
-          detach();
+          cleanup();
         };
-        // Abort/error never emit `stream_end` (the stream loop throws first),
-        // so without these the edge stream would stay open forever and the
-        // listeners would leak. Abort closes gracefully (the run-level abort
-        // cascade is already tearing everything down); a producer FAILURE
-        // first surfaces in-stream so a drained edge materializes the error
-        // instead of quietly settling on whatever partial data had arrived —
-        // a consumer already dispatched (unblocked at STREAMING) must not
-        // complete, and cache, an output derived from truncated input.
-        const onTerminate = () => {
-          gate?.gate.close();
-          try {
-            controller.close();
-          } catch {
-            // Stream may already be closed
+        const onStatus = (status: TaskStatus) => {
+          // Terminal statuses with no stream_end (error/abort -> FAILED, or a
+          // completion that bypassed stream_end) must still release the stream.
+          // A producer FAILURE first surfaces in-stream so a drained edge
+          // materializes the error instead of quietly settling on whatever
+          // partial data had arrived — a consumer already dispatched
+          // (unblocked at STREAMING) must not complete, and cache, an output
+          // derived from truncated input. Abort closes gracefully (the
+          // run-level abort cascade is already tearing everything down).
+          if (status === TaskStatus.FAILED) {
+            try {
+              controller.enqueue({
+                type: "error",
+                error: task.error ?? new Error(`Task ${task.type} failed during streaming`),
+              } as StreamEvent);
+            } catch {
+              // Stream may already be closed
+            }
+            cleanup();
+          } else if (status === TaskStatus.COMPLETED || status === TaskStatus.ABORTING) {
+            cleanup();
           }
-          detach();
-        };
-        const onError = (error: Error) => {
-          try {
-            controller.enqueue({ type: "error", error } as StreamEvent);
-          } catch {
-            // Stream may already be closed
-          }
-          onTerminate();
         };
         task.on("stream_chunk", onChunk);
         task.on("stream_end", onEnd);
-        task.on("abort", onTerminate);
-        task.on("error", onError);
+        task.on("status", onStatus);
+      },
+      cancel: (_reason) => {
+        // Reader cancellation MUST release the listeners. Without this, a
+        // downstream that aborts mid-stream (e.g. a consumer hit its limit,
+        // an upstream task failed and tore down its child stream) leaves
+        // every listener still attached — the task continues to emit events
+        // into a closed controller and the leaked listeners pin GC. `cleanup`
+        // is idempotent (the `closed` flag), so concurrent cancel + stream_end
+        // is safe.
+        cleanup();
       },
     });
   }

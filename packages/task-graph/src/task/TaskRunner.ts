@@ -12,15 +12,11 @@ import {
   ServiceRegistry,
   SpanStatusCode,
 } from "@workglow/util";
-import type { CacheRegistry } from "../cache";
-import {
-  CACHE_REGISTRY,
-  DefaultCacheRegistry,
-  isCacheRef,
-  resolveReferenceThreshold,
-  RunPrivateCacheRepo,
-} from "../cache";
+import { isCacheRef, resolveReferenceThreshold } from "../cache/CacheRef";
+import type { CacheRegistry } from "../cache/CacheRegistry";
+import { CACHE_REGISTRY, DefaultCacheRegistry } from "../cache/CacheRegistry";
 import { streamRefViaBacking } from "../cache/resolveRef";
+import { RunPrivateCacheRepo } from "../cache/RunPrivateCacheRepo";
 import { getStreamPortCodec } from "../cache/streamCodec";
 import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { Taskish } from "../task-graph/Conversions";
@@ -137,6 +133,13 @@ export class TaskRunner<
    * Tracks task types that have already received the "private policy without
    * runId" downgrade warning, so the warning fires only once per task type
    * across the process lifetime.
+   *
+   * Process-global and never reset: in long-lived processes that dynamically
+   * generate task-type names this set can grow unbounded. It is also
+   * test-order-dependent — a prior test that triggers the warning suppresses a
+   * later test's expected warning. Tests that assert on this warning should
+   * clear it (or use a unique task type) in setup. Bounding/eviction is left as
+   * a future improvement; the per-type cardinality is small in practice.
    */
   private static __privateWithoutRunIdWarned = new Set<string>();
 

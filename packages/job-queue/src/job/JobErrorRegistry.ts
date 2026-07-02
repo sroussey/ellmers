@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { getLogger } from "@workglow/util";
 import { JobError } from "./JobError";
 
 /**
@@ -57,9 +58,9 @@ export function registerErrorCodeReconstructor(
       return; // idempotent — same fn, same prefix
     }
 
-    console.warn(
-      `registerErrorCodeReconstructor: overwriting existing reconstructor for prefix "${prefix}"`
-    );
+    getLogger().warn("registerErrorCodeReconstructor: overwriting existing reconstructor", {
+      prefix,
+    });
     reconstructors[existingIdx] = { prefix, reconstructor };
     return;
   }

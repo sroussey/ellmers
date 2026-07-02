@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.22
+
+### Bug Fixes
+
+#### providers
+
+- map Gemini sampling params; add Ollama json-mode support
+
 ## 0.3.21
 
 ## 0.3.20

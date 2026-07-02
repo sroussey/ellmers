@@ -48,7 +48,9 @@ import { FORMAT_PATTERN } from "./SchemaValidation";
 
 /**
  * Checks if two format strings are compatible.
- * Format: /\w+(:\w+)?/ where first part is the "name" and optional second part narrows the type.
+ * Format: a base "name" optionally followed by a narrowing tail after the first
+ * colon (e.g. `model`, `model:EmbeddingTask`, `points:3d:meters`). The narrowing
+ * tail is everything after the first colon and is compared in full.
  * - Same name without narrowing: static compatible
  * - Source name matches target narrowed name: runtime compatible
  * - Different names or incompatible narrowing: incompatible
@@ -61,8 +63,16 @@ function areFormatStringsCompatible(
     return "incompatible";
   }
 
-  const [sourceName, sourceNarrow] = sourceFormat.split(":");
-  const [targetName, targetNarrow] = targetFormat.split(":");
+  // Split on the FIRST colon only: everything after the name is the narrowing
+  // tail. FORMAT_PATTERN permits multiple colon segments (e.g.
+  // `points:3d:meters`), so we must compare the full tail rather than only the
+  // first segment — otherwise `a:b:c` and `a:b:d` would collapse to equal.
+  const sourceColon = sourceFormat.indexOf(":");
+  const targetColon = targetFormat.indexOf(":");
+  const sourceName = sourceColon === -1 ? sourceFormat : sourceFormat.slice(0, sourceColon);
+  const sourceNarrow = sourceColon === -1 ? undefined : sourceFormat.slice(sourceColon + 1);
+  const targetName = targetColon === -1 ? targetFormat : targetFormat.slice(0, targetColon);
+  const targetNarrow = targetColon === -1 ? undefined : targetFormat.slice(targetColon + 1);
 
   // Different base names are incompatible
   if (sourceName !== targetName) {
@@ -398,6 +408,7 @@ export function areSemanticallyCompatible(
 
     // Check if all required target properties are present and compatible in source
     const targetRequired = targetSchema.required || [];
+    const requiredSet = new Set(targetRequired);
     let hasRuntime = false;
 
     for (const propName of targetRequired) {
@@ -417,6 +428,24 @@ export function areSemanticallyCompatible(
         } else if (propCompatibility === "runtime") {
           hasRuntime = true;
         }
+      }
+    }
+
+    // Optional target properties that ALSO exist on the source must still have
+    // compatible types — a present-but-optional property feeding an
+    // incompatible value would otherwise pass the gate and fail at runtime.
+    for (const [propName, targetProp] of Object.entries(
+      targetProperties as Record<string, JsonSchema>
+    )) {
+      if (requiredSet.has(propName)) continue;
+      const sourceProp = (sourceProperties as Record<string, JsonSchema>)?.[propName];
+      // Property absent on the source is fine (it is optional on the target).
+      if (!sourceProp || !targetProp) continue;
+      const propCompatibility = areSemanticallyCompatible(sourceProp, targetProp);
+      if (propCompatibility === "incompatible") {
+        return "incompatible";
+      } else if (propCompatibility === "runtime") {
+        hasRuntime = true;
       }
     }
 
@@ -495,9 +524,28 @@ export function areSemanticallyCompatible(
       return "incompatible";
     }
 
-    // If target items is an array (tuple), check if source is compatible with any item
+    // If target items is an array (tuple), the target describes positional
+    // element types. The source here has a single uniform item schema (this
+    // branch is only reached when sourceItems is NOT an array), so every source
+    // element must satisfy EVERY tuple position — not merely match one of them.
     if (Array.isArray(targetItems)) {
-      return isCompatibleWithUnion(sourceItems as JsonSchema, targetItems as JsonSchema[]);
+      const tuple = targetItems as JsonSchema[];
+      if (tuple.length === 0) {
+        return "static";
+      }
+      let tupleRuntime = false;
+      for (const positionSchema of tuple) {
+        const positionCompatibility = areSemanticallyCompatible(
+          sourceItems as JsonSchema,
+          positionSchema
+        );
+        if (positionCompatibility === "incompatible") {
+          return "incompatible";
+        } else if (positionCompatibility === "runtime") {
+          tupleRuntime = true;
+        }
+      }
+      return tupleRuntime ? "runtime" : "static";
     }
 
     // Fallback to static if we can't determine
@@ -562,8 +610,9 @@ export function areSemanticallyCompatible(
 }
 
 /**
- * Checks if two object schemas are semantically compatible.
- * This is a helper function for checking object-level schema compatibility.
+ * Backward-compatible alias for {@link areSemanticallyCompatible}. It applies no
+ * object-specific handling — the underlying function already dispatches on the
+ * schema's type. Prefer {@link areSemanticallyCompatible} directly.
  */
 export function areObjectSchemasSemanticallyCompatible(
   sourceSchema: JsonSchema,

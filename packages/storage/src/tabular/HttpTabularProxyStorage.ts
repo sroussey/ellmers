@@ -6,6 +6,7 @@
 
 import { createServiceToken, deepEqual, makeFingerprint } from "@workglow/util";
 import { DataPortSchemaObject, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
+import { safeEmit } from "../events/safeEmit";
 import { PollingSubscriptionManager } from "../util/PollingSubscriptionManager";
 import { BaseTabularStorage, ClientProvidedKeysOption } from "./BaseTabularStorage";
 import type {
@@ -43,8 +44,7 @@ export interface HttpTabularProxyOptions<
   readonly schema: Schema;
   readonly primaryKey: PrimaryKeyNames;
   readonly indexes?: readonly (
-    | keyof Schema["properties"]
-    | readonly (keyof Schema["properties"])[]
+    keyof Schema["properties"] | readonly (keyof Schema["properties"])[]
   )[];
   /** Optional base path. Defaults to `/api/storage`. Trailing slashes are stripped. */
   readonly basePath?: string;
@@ -125,34 +125,34 @@ export class HttpTabularProxyStorage<
 
   async put(value: InsertType): Promise<Entity> {
     const { entity } = await this.call<{ entity: Entity }>("put", { value });
-    this.events.emit("put", entity);
+    safeEmit(this.events, "put", entity);
     return entity;
   }
 
   async putBulk(values: InsertType[]): Promise<Entity[]> {
     if (values.length === 0) return [];
     const { entities } = await this.call<{ entities: Entity[] }>("putBulk", { values });
-    for (const entity of entities) this.events.emit("put", entity);
+    for (const entity of entities) safeEmit(this.events, "put", entity);
     return entities;
   }
 
   async get(key: PrimaryKey): Promise<Entity | undefined> {
     const { entity } = await this.call<{ entity: Entity | null }>("get", { key });
     const result = entity ?? undefined;
-    this.events.emit("get", key, result);
+    safeEmit(this.events, "get", key, result);
     return result;
   }
 
   async delete(key: PrimaryKey | Entity): Promise<void> {
     await this.call<{ ok: true }>("delete", { key });
     const { key: normalizedKey } = this.separateKeyValueFromCombined(key as Entity);
-    this.events.emit("delete", normalizedKey as Partial<Entity>);
+    safeEmit(this.events, "delete", normalizedKey as Partial<Entity>);
   }
 
   override async getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]> {
     if (keys.length === 0) return [];
     const { entities } = await this.call<{ entities: Entity[] }>("getBulk", { keys });
-    this.events.emit("getBulk", keys, entities);
+    safeEmit(this.events, "getBulk", keys, entities);
     return entities;
   }
 
@@ -166,7 +166,7 @@ export class HttpTabularProxyStorage<
       options,
     });
     const result = entities ?? undefined;
-    this.events.emit("query", criteria as Partial<Entity>, result);
+    safeEmit(this.events, "query", criteria as Partial<Entity>, result);
     return result;
   }
 
@@ -188,7 +188,7 @@ export class HttpTabularProxyStorage<
 
   async deleteAll(): Promise<void> {
     await this.call<{ ok: true }>("deleteAll", {});
-    this.events.emit("clearall");
+    safeEmit(this.events, "clearall");
   }
 
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {

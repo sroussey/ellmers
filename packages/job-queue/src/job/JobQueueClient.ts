@@ -217,23 +217,7 @@ export class JobQueueClient<Input, Output> {
       readonly timeoutSeconds?: number;
     }
   ): Promise<JobHandle<Output>> {
-    const job: JobStorageFormat<Input, Output> = {
-      queue: this.queueName,
-      input,
-      job_run_id: options?.jobRunId,
-      fingerprint: options?.fingerprint,
-      max_attempts: options?.maxAttempts ?? 10,
-      visible_at:
-        options?.delaySeconds != null
-          ? new Date(Date.now() + options.delaySeconds * 1000).toISOString()
-          : new Date().toISOString(),
-      deadline_at:
-        options?.timeoutSeconds != null
-          ? new Date(Date.now() + options.timeoutSeconds * 1000).toISOString()
-          : null,
-      completed_at: null,
-      status: JobStatus.PENDING,
-    };
+    const job = this.buildJobBody(input, options);
 
     const id = await this.messageQueue.send(job, {
       fingerprint: options?.fingerprint,
@@ -252,21 +236,77 @@ export class JobQueueClient<Input, Output> {
   }
 
   /**
-   * Send multiple jobs to the queue
+   * Send multiple jobs to the queue in a single batched insert.
+   *
+   * Delegates to {@link IMessageQueue.sendBatch} so N jobs become one storage
+   * round-trip and a single worker wake, instead of N inserts + N wakes.
+   *
+   * Per the {@link IMessageQueue.sendBatch} contract, a batch-wide
+   * `fingerprint` is intentionally NOT accepted (it would dedup every body
+   * against the first row); use {@link send} per job for fingerprinted dedup.
+   * The other options — `jobRunId`, `maxAttempts`, `delaySeconds`,
+   * `timeoutSeconds` — apply uniformly to every body and are forwarded (the
+   * previous per-item loop silently dropped `delaySeconds`/`timeoutSeconds`).
    */
   public async sendBatch(
     inputs: readonly Input[],
     options?: {
       readonly jobRunId?: string;
       readonly maxAttempts?: number;
+      /** Delay in seconds before every job becomes visible for processing */
+      readonly delaySeconds?: number;
+      /** Timeout in seconds after which every job's deadline is exceeded */
+      readonly timeoutSeconds?: number;
     }
   ): Promise<readonly JobHandle<Output>[]> {
-    const handles: JobHandle<Output>[] = [];
-    for (const input of inputs) {
-      const handle = await this.send(input, options);
-      handles.push(handle);
+    if (inputs.length === 0) return [];
+
+    const bodies = inputs.map((input) => this.buildJobBody(input, options));
+    const ids = await this.messageQueue.sendBatch(bodies, {
+      jobRunId: options?.jobRunId,
+      maxAttempts: options?.maxAttempts,
+      delaySeconds: options?.delaySeconds,
+      timeoutSeconds: options?.timeoutSeconds,
+    });
+
+    // Single wake for the whole batch — avoids the N-wake thundering herd the
+    // per-item loop caused.
+    this.server?.handleJobAdded(ids[ids.length - 1]);
+
+    return ids.map((id) => this.createJobHandle(id));
+  }
+
+  /**
+   * Build a {@link JobStorageFormat} body from an input + send options. Shared
+   * by {@link send} and {@link sendBatch} so both produce identical rows.
+   */
+  private buildJobBody(
+    input: Input,
+    options?: {
+      readonly jobRunId?: string;
+      readonly fingerprint?: string;
+      readonly maxAttempts?: number;
+      readonly delaySeconds?: number;
+      readonly timeoutSeconds?: number;
     }
-    return handles;
+  ): JobStorageFormat<Input, Output> {
+    return {
+      queue: this.queueName,
+      input,
+      job_run_id: options?.jobRunId,
+      fingerprint: options?.fingerprint,
+      max_attempts: options?.maxAttempts ?? 10,
+      visible_at:
+        options?.delaySeconds != null
+          ? new Date(Date.now() + options.delaySeconds * 1000).toISOString()
+          : new Date().toISOString(),
+      deadline_at:
+        options?.timeoutSeconds != null
+          ? new Date(Date.now() + options.timeoutSeconds * 1000).toISOString()
+          : null,
+      completed_at: null,
+      status: JobStatus.PENDING,
+    };
   }
 
   /**

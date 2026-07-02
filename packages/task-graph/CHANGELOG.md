@@ -1,5 +1,39 @@
 # @workglow/task-graph
 
+## 0.3.22
+
+### Bug Fixes
+
+#### review
+
+- resolve xhigh code-review findings on cherry-picked 601+604
+
+#### task-graph/cache
+
+- require liveRunIds callback and drop unguarded fast-path
+
+#### task-graph
+
+- swap nonexistent storage.search for query in clearOlderThan
+- clean up listeners on reader.cancel() in createStreamFromTaskEvents
+- stamp saturating depth on over-cap bridge + dedupe warn per parent
+- cap bridgeSubGraphTaskEvents depth to prevent event amplification
+- bubble subgraph events from iterator/map/reduce loops (#599)
+
+#### cache
+
+- exclude live runIds from janitor sweep to prevent in-flight cache-row deletion
+
+#### core
+
+- resolve review findings across util, storage, job-queue, task-graph (#602)
+
+### Performance
+
+#### task-graph
+
+- stream distinct runIds via queryPage in clearOlderThan
+
 ## 0.3.21
 
 ### Bug Fixes

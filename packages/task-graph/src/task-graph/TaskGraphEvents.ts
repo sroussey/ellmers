@@ -32,6 +32,14 @@ export type TaskGraphStatusListeners = {
    * output. Mirrors `task_stream_end` but fires for every task — streaming or
    * not — so consumers can observe authoritative outputs incrementally rather
    * than only at graph completion.
+   *
+   * NOTE: the same `taskId` may legitimately fire more than once across a run.
+   * While/Fallback/GraphAsTask reuse the same subGraph (and thus stable task
+   * ids) across loop iterations, so each iteration re-emits task_complete for
+   * the identical id. There is no iteration discriminator on this event;
+   * consumers keying state by taskId should treat a later emit as the
+   * authoritative overwrite for that task. (Iterator clones mint fresh ids per
+   * iteration, so they are unaffected.)
    */
   task_complete: (taskId: TaskIdType, output: Record<string, any>) => void;
   /**

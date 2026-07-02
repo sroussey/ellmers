@@ -1,5 +1,7 @@
 # @workglow/knowledge-base
 
+## 0.3.22
+
 ## 0.3.21
 
 ## 0.3.20

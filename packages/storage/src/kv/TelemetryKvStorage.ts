@@ -13,7 +13,7 @@ import type { IKvStorage, KvEventListener, KvEventName, KvEventParameters } from
  * Creates spans for all storage operations.
  */
 export class TelemetryKvStorage<
-  Key extends string | number = string,
+  Key extends string = string,
   Value = any,
   Combined = { key: Key; value: Value },
 > implements IKvStorage<Key, Value, Combined> {

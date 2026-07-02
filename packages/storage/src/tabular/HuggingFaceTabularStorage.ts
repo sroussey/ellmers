@@ -6,6 +6,7 @@
 
 import { createServiceToken } from "@workglow/util";
 import { DataPortSchemaObject, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
+import { safeEmit } from "../events/safeEmit";
 import { type ITabularMigration, type ITabularMigrationApplier } from "../migrations";
 import { BaseTabularStorage } from "./BaseTabularStorage";
 import { decodeCursor, encodeCursor, PageCursor } from "./Cursor";
@@ -144,8 +145,7 @@ export class HuggingFaceTabularStorage<
       schema,
       primaryKeyNames,
       (options?.indexes ?? []) as readonly (
-        | keyof NoInfer<Entity>
-        | readonly (keyof NoInfer<Entity>)[]
+        keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[]
       )[],
       "never", // HF datasets don't support client-provided keys.
       tabularMigrations,
@@ -275,11 +275,11 @@ export class HuggingFaceTabularStorage<
 
     if (data.rows.length > 0) {
       const entity = this.rowToEntity(data.rows[0]);
-      this.events.emit("get", key, entity);
+      safeEmit(this.events, "get", key, entity);
       return entity;
     }
 
-    this.events.emit("get", key, undefined);
+    safeEmit(this.events, "get", key, undefined);
     return undefined;
   }
 
@@ -509,10 +509,10 @@ export class HuggingFaceTabularStorage<
     }
 
     if (results.length > 0) {
-      this.events.emit("query", criteria as Partial<Entity>, results);
+      safeEmit(this.events, "query", criteria as Partial<Entity>, results);
       return results;
     } else {
-      this.events.emit("query", criteria as Partial<Entity>, undefined);
+      safeEmit(this.events, "query", criteria as Partial<Entity>, undefined);
       return undefined;
     }
   }

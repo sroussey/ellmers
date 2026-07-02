@@ -4,10 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { InMemoryTabularStorage, type TabularChangePayload } from "@workglow/storage";
+import {
+  InMemoryTabularStorage,
+  StorageInvalidLimitError,
+  StorageValidationError,
+  type TabularChangePayload,
+} from "@workglow/storage";
 import { setLogger } from "@workglow/util";
 import type { FromSchema } from "@workglow/util/schema";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   runTabularStorageContract,
@@ -219,5 +224,107 @@ describe("InMemoryTabularStorage delete change payloads", () => {
       }
     ).deleteIdentity({ type: "t1", option: { value: "x", operator: ">" } });
     expect(identity).toEqual({ type: "t1" });
+  });
+});
+
+describe("InMemoryTabularStorage putBulk atomicity", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("rolls back all rows and emits a rollback event when a mid-batch put throws", async () => {
+    const storage = new InMemoryTabularStorage<
+      typeof CompoundSchema,
+      typeof CompoundPrimaryKeyNames
+    >(CompoundSchema, CompoundPrimaryKeyNames);
+
+    await storage.put({ name: "keep", type: "t0", option: "v0", success: true });
+
+    const originalPut = InMemoryTabularStorage.prototype.put;
+    let call = 0;
+    vi.spyOn(InMemoryTabularStorage.prototype as any, "put").mockImplementation(async function (
+      this: InMemoryTabularStorage<any, any>,
+      v: any
+    ) {
+      call += 1;
+      if (call === 2) throw new Error("mid-batch boom");
+      return await (originalPut as any).call(this, v);
+    } as any);
+
+    const rollbacks: Array<{ op: string; error: unknown; ids: readonly any[] }> = [];
+    storage.on("rollback" as any, (reason: any) => rollbacks.push(reason));
+
+    await expect(
+      storage.putBulk([
+        { name: "a", type: "t1", option: "v1", success: true },
+        { name: "b", type: "t2", option: "v2", success: true },
+        { name: "c", type: "t3", option: "v3", success: true },
+      ])
+    ).rejects.toThrow("mid-batch boom");
+
+    vi.restoreAllMocks();
+
+    // Only the pre-existing row survives; no row from the failed batch remains.
+    expect(await storage.size()).toBe(1);
+    expect(await storage.get({ name: "keep", type: "t0" })).toBeDefined();
+    expect(await storage.get({ name: "a", type: "t1" })).toBeUndefined();
+    expect(await storage.get({ name: "b", type: "t2" })).toBeUndefined();
+
+    // Rollback event names exactly the row that committed before the throw.
+    expect(rollbacks).toHaveLength(1);
+    expect(rollbacks[0].op).toBe("putBulk");
+    expect(rollbacks[0].ids).toHaveLength(1);
+    expect((rollbacks[0].ids[0] as { name: string }).name).toBe("a");
+  });
+
+  it("commits every row when nothing throws", async () => {
+    const storage = new InMemoryTabularStorage<
+      typeof CompoundSchema,
+      typeof CompoundPrimaryKeyNames
+    >(CompoundSchema, CompoundPrimaryKeyNames);
+    const results = await storage.putBulk([
+      { name: "a", type: "t1", option: "v1", success: true },
+      { name: "b", type: "t2", option: "v2", success: true },
+    ]);
+    expect(results).toHaveLength(2);
+    expect(await storage.size()).toBe(2);
+  });
+
+  it("a throwing put listener does not turn a committed write into a rejection", async () => {
+    const storage = new InMemoryTabularStorage<
+      typeof CompoundSchema,
+      typeof CompoundPrimaryKeyNames
+    >(CompoundSchema, CompoundPrimaryKeyNames);
+
+    // Suppress the warning the safeEmit path logs for the thrown listener.
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    storage.on("put", () => {
+      throw new Error("listener boom");
+    });
+
+    // The write is post-commit, so the row persists and put() resolves.
+    await expect(
+      storage.put({ name: "a", type: "t1", option: "v1", success: true })
+    ).resolves.toBeDefined();
+    expect(await storage.get({ name: "a", type: "t1" })).toBeDefined();
+  });
+});
+
+describe("InMemoryTabularStorage getOffsetPage validation", () => {
+  it("rejects a non-positive limit", async () => {
+    const storage = new InMemoryTabularStorage<
+      typeof CompoundSchema,
+      typeof CompoundPrimaryKeyNames
+    >(CompoundSchema, CompoundPrimaryKeyNames);
+    await expect(storage.getOffsetPage(0, 0)).rejects.toBeInstanceOf(StorageInvalidLimitError);
+    await expect(storage.getOffsetPage(0, -1)).rejects.toBeInstanceOf(StorageInvalidLimitError);
+  });
+
+  it("rejects a negative offset", async () => {
+    const storage = new InMemoryTabularStorage<
+      typeof CompoundSchema,
+      typeof CompoundPrimaryKeyNames
+    >(CompoundSchema, CompoundPrimaryKeyNames);
+    await expect(storage.getOffsetPage(-1, 10)).rejects.toBeInstanceOf(StorageValidationError);
   });
 });

@@ -43,24 +43,16 @@ describe("TaskOutputRepository.saveOutputStream", () => {
     expect(repo.streamedMetadata.get('T{"k":1}')).toEqual(metadata);
   });
 
-  it("RunPrivateCacheRepo forwards streaming with namespaced taskType", async () => {
+  it("RunPrivateCacheRepo does not forward streaming (run-private is not stream-capable)", () => {
+    // Run scoping is delegated to the backing's run-scoped row methods; the
+    // streaming sink is a deterministic-cache capability, so the wrapper does
+    // not expose it regardless of the backing.
     const backing = new StreamingMemoryRepo({});
     const wrapper = new RunPrivateCacheRepo({ backing, runId: "run-A" });
-
-    expect(wrapper.supportsStreaming()).toBe(true);
-
-    await wrapper.saveOutputStream("T", { k: 1 }, gen(new Uint8Array([1, 2, 3])), {});
-
-    // taskType is namespaced exactly as saveOutput namespaces it.
-    const namespacedKey = `__run:run-A::T${JSON.stringify({ k: 1 })}`;
-    expect(Array.from(backing.streamed.get(namespacedKey)!)).toEqual([1, 2, 3]);
-    expect(backing.streamed.has('T{"k":1}')).toBe(false);
-  });
-
-  it("RunPrivateCacheRepo.supportsStreaming() is false when backing lacks it", () => {
-    const backing = new NonStreamingMemoryRepo({});
-    const wrapper = new RunPrivateCacheRepo({ backing, runId: "run-A" });
     expect(wrapper.supportsStreaming()).toBe(false);
+    expect(typeof (wrapper as { saveOutputStream?: unknown }).saveOutputStream).not.toBe(
+      "function"
+    );
   });
 
   it("saveOutputStream returns a CacheRef the same backing can resolve to bytes", async () => {
@@ -92,15 +84,5 @@ describe("TaskOutputRepository.saveOutputStream", () => {
     expect(await repo.getOutputByRef(ref)).toBeInstanceOf(Blob);
     await repo.clear();
     expect(await repo.getOutputByRef(ref)).toBeUndefined();
-  });
-
-  it("RunPrivateCacheRepo forwards getOutputByRef to backing", async () => {
-    const backing = new StreamingMemoryRepo({});
-    const wrapper = new RunPrivateCacheRepo({ backing, runId: "run-B" });
-    const ref = await wrapper.saveOutputStream("T", { k: 4 }, gen(new Uint8Array([42])), {});
-    const hydrated = await wrapper.getOutputByRef(ref);
-    expect(hydrated).toBeInstanceOf(Blob);
-    const bytes = new Uint8Array(await hydrated!.arrayBuffer());
-    expect(Array.from(bytes)).toEqual([42]);
   });
 });

@@ -55,15 +55,19 @@ describe("TaskGraph", () => {
     const inputHandle = "input";
     const outputHandle = "output";
 
+    // A serial chain task[i] -> task[i+1] reads from the upstream task's
+    // OUTPUT port and writes to the downstream task's INPUT port.
     const expectedDataflows: Dataflow[] = [
-      new Dataflow("task1", inputHandle, "task2", outputHandle),
-      new Dataflow("task2", inputHandle, "task3", outputHandle),
+      new Dataflow("task1", outputHandle, "task2", inputHandle),
+      new Dataflow("task2", outputHandle, "task3", inputHandle),
     ];
 
     const result = serialGraph(tasks, inputHandle, outputHandle);
 
     expect(result).toBeInstanceOf(TaskGraph);
     expect(result.getDataflows()).toEqual(expectedDataflows);
+    expect(result.getDataflow("task1[output] ==> task2[input]")).toBeDefined();
+    expect(result.getDataflow("task2[output] ==> task3[input]")).toBeDefined();
   });
 
   describe("subscribeToTaskStatus", () => {

@@ -34,11 +34,12 @@ describe("supportsStreamingReads", () => {
     expect(new NonStreamingMemoryRepo({}).supportsStreamingReads()).toBe(false);
   });
 
-  it("RunPrivateCacheRepo mirrors the backing's read capability", () => {
-    const yes = new RunPrivateCacheRepo({ backing: new StreamingMemoryRepo({}), runId: "r" });
-    const no = new RunPrivateCacheRepo({ backing: new NonStreamingMemoryRepo({}), runId: "r" });
-    expect(yes.supportsStreamingReads()).toBe(true);
-    expect(no.supportsStreamingReads()).toBe(false);
+  it("RunPrivateCacheRepo is not stream-read-capable (streaming is deterministic-only)", () => {
+    // Run scoping is delegated to the backing's run-scoped row methods; the
+    // by-ref stream reader is a deterministic-cache capability the wrapper does
+    // not expose, regardless of the backing.
+    const wrapper = new RunPrivateCacheRepo({ backing: new StreamingMemoryRepo({}), runId: "r" });
+    expect(wrapper.supportsStreamingReads()).toBe(false);
   });
 });
 
@@ -200,36 +201,6 @@ describe("FsFolderTaskOutputRepository specifics", () => {
     // Negative age puts the cutoff in the future: everything is "older".
     await repo.clearOlderThan(-60_000);
     expect(repo.getOutputStreamByRef!(ref)).toBeUndefined();
-  });
-
-  it("deleteByTaskTypePrefix cascades to blob files (run-private cleanup)", async () => {
-    const folder = await mkdtemp(join(tmpdir(), "wg-cache-streamout-"));
-    const repo = new FsFolderTaskOutputRepository(folder);
-    const runRef = await repo.saveOutputStream!(
-      "__run:abc::T",
-      { k: 1 },
-      gen(new Uint8Array([1])),
-      {}
-    );
-    const keepRef = await repo.saveOutputStream!("Other", { k: 1 }, gen(new Uint8Array([2])), {});
-    await repo.deleteByTaskTypePrefix("__run:abc::");
-    expect(repo.getOutputStreamByRef!(runRef)).toBeUndefined();
-    expect(repo.getOutputStreamByRef!(keepRef)).toBeDefined();
-  });
-
-  it("clearOlderThanWithTaskTypePrefix cascades to blob files by prefix and age", async () => {
-    const folder = await mkdtemp(join(tmpdir(), "wg-cache-streamout-"));
-    const repo = new FsFolderTaskOutputRepository(folder);
-    const staleRef = await repo.saveOutputStream!(
-      "__run:x::T",
-      { k: 1 },
-      gen(new Uint8Array([1])),
-      {}
-    );
-    const keepRef = await repo.saveOutputStream!("Other", { k: 1 }, gen(new Uint8Array([2])), {});
-    await repo.clearOlderThanWithTaskTypePrefix("__run:", -60_000);
-    expect(repo.getOutputStreamByRef!(staleRef)).toBeUndefined();
-    expect(repo.getOutputStreamByRef!(keepRef)).toBeDefined();
   });
 
   it("task types with colliding sanitized names get distinct blobs", async () => {

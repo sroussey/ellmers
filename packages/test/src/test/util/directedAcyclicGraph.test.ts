@@ -47,6 +47,35 @@ describe("Directed Acyclic Graph", () => {
     expect(() => DirectedAcyclicGraph.fromDirectedGraph(graph)).toThrow(CycleError);
   });
 
+  it("produces a DAG independent of the source graph (no shared backing state)", () => {
+    interface NodeType {
+      name: string;
+    }
+    const graph = new DirectedGraph<NodeType>((n: NodeType) => n.name, edgeIdentity);
+
+    graph.insert({ name: "A" });
+    graph.insert({ name: "B" });
+    graph.addEdge("A", "B");
+
+    const dag = DirectedAcyclicGraph.fromDirectedGraph(graph);
+
+    // Mutating the source graph after conversion must not change the DAG.
+    graph.insert({ name: "C" });
+    graph.addEdge("B", "C");
+
+    expect(
+      dag
+        .getNodes()
+        .map((n) => n.name)
+        .sort()
+    ).toEqual(["A", "B"]);
+    expect(dag.canReachFrom("A", "C" as unknown as string)).toBe(false);
+
+    // And mutating the DAG must not corrupt the source graph.
+    dag.insert({ name: "D" });
+    expect(graph.getNodes().map((n) => n.name)).not.toContain("D");
+  });
+
   it("can add an edge only if it wouldn't create a cycle", () => {
     interface NodeType {
       name: string;

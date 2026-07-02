@@ -22,11 +22,35 @@ export class TelemetryQueueStorage<Input, Output> implements IQueueStorage<Input
   constructor(
     private readonly storageName: string,
     private readonly inner: IQueueStorage<Input, Output>
-  ) {}
+  ) {
+    // findActiveByFingerprint is an OPTIONAL native method. Only expose it when
+    // the inner storage actually implements it, so wrapQueueStorage's
+    // `typeof native === "function"` probe still falls through to the bounded
+    // scan fallback when the inner has no native impl. A telemetry decorator
+    // must be transparent: always defining the method would force the O(1)
+    // native path to be reported as present even for backends (in-memory,
+    // IndexedDB) that lack it, then throw when delegating to undefined.
+    if (typeof inner.findActiveByFingerprint === "function") {
+      this.findActiveByFingerprint = (fingerprint: string, queueName: string) =>
+        traced("workglow.storage.queue.findActiveByFingerprint", this.storageName, () =>
+          this.inner.findActiveByFingerprint!(fingerprint, queueName)
+        );
+    }
+  }
 
   public get scope(): QueueStorageScope {
     return this.inner.scope;
   }
+
+  /**
+   * Conditionally assigned in the constructor — present only when the inner
+   * storage exposes a native implementation. See the constructor for why this
+   * mirrors the inner's presence rather than always defining the method.
+   */
+  public readonly findActiveByFingerprint?: (
+    fingerprint: string,
+    queueName: string
+  ) => Promise<JobStorageFormat<Input, Output> | undefined>;
 
   add(job: JobStorageFormat<Input, Output>): Promise<unknown> {
     return traced("workglow.storage.queue.add", this.storageName, () => this.inner.add(job));

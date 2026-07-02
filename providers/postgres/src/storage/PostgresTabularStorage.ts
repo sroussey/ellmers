@@ -23,6 +23,7 @@ import {
   pickCoveringIndex,
   PostgresDialect,
   QueryOptions,
+  safeEmit,
   SearchCriteria,
   SimplifyPrimaryKey,
   SqlTabularMigrationApplier,
@@ -372,8 +373,7 @@ export class PostgresTabularStorage<
    */
   protected override sqlToJsValue(column: string, value: ValueOptionType): Entity[keyof Entity] {
     const typeDef = this.schema.properties[column as keyof typeof this.schema.properties] as
-      | JsonSchema
-      | undefined;
+      JsonSchema | undefined;
     if (typeDef) {
       if (value === null && this.isNullable(typeDef)) {
         return null as Entity[keyof Entity];
@@ -770,7 +770,7 @@ export class PostgresTabularStorage<
    * rows that are about to roll back.
    */
   protected emitPut(entity: Entity): void {
-    this.events.emit("put", entity);
+    safeEmit(this.events, "put", entity);
   }
 
   /**
@@ -852,6 +852,10 @@ export class PostgresTabularStorage<
         } catch {
           // prefer the original error if rollback fails
         }
+        // The transaction is all-or-nothing: on ROLLBACK no row persisted and
+        // no `put` event fired (those are deferred to after COMMIT below), so
+        // `ids` is empty.
+        safeEmit(this.events, "rollback", { op: "putBulk", error: err, ids: [] });
         throw err;
       }
     } finally {
@@ -1001,7 +1005,7 @@ export class PostgresTabularStorage<
       throw err;
     }
     // Flush deferred events only on commit success.
-    for (const entity of deferredPutEvents) this.events.emit("put", entity);
+    for (const entity of deferredPutEvents) safeEmit(this.events, "put", entity);
     return result;
   }
 
@@ -1037,7 +1041,7 @@ export class PostgresTabularStorage<
     } else {
       val = undefined;
     }
-    this.events.emit("get", key, val);
+    safeEmit(this.events, "get", key, val);
     return val;
   }
 
@@ -1066,7 +1070,7 @@ export class PostgresTabularStorage<
         rows.push(...chunkRows);
       }
     }
-    this.events.emit("getBulk", keys, rows);
+    safeEmit(this.events, "getBulk", keys, rows);
     return rows;
   }
 
@@ -1126,7 +1130,7 @@ export class PostgresTabularStorage<
 
     const params = this.getPrimaryKeyAsOrderedArray(key);
     await db.query(`DELETE FROM "${this.table}" WHERE ${whereClauses}`, params);
-    this.events.emit("delete", key as Partial<Entity>);
+    safeEmit(this.events, "delete", key as Partial<Entity>);
   }
 
   /**
@@ -1185,7 +1189,7 @@ export class PostgresTabularStorage<
   private async _deleteAllInternal(): Promise<void> {
     const db = this.db;
     await db.query(`DELETE FROM "${this.table}"`);
-    this.events.emit("clearall");
+    safeEmit(this.events, "clearall");
   }
 
   /**
@@ -1383,7 +1387,7 @@ export class PostgresTabularStorage<
     const db = this.db;
     const { whereClause, params } = this.buildDeleteSearchWhere(criteria);
     await db.query(`DELETE FROM "${this.table}" WHERE ${whereClause}`, params);
-    this.events.emit("delete", this.deleteIdentity(criteria));
+    safeEmit(this.events, "delete", this.deleteIdentity(criteria));
   }
 
   /**
@@ -1435,10 +1439,10 @@ export class PostgresTabularStorage<
           record[k] = this.sqlToJsValue(k, record[k] as ValueOptionType);
         }
       }
-      this.events.emit("query", criteria as Partial<Entity>, result.rows as Entity[]);
+      safeEmit(this.events, "query", criteria as Partial<Entity>, result.rows as Entity[]);
       return result.rows as Entity[];
     }
-    this.events.emit("query", criteria as Partial<Entity>, undefined);
+    safeEmit(this.events, "query", criteria as Partial<Entity>, undefined);
     return undefined;
   }
 
