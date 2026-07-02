@@ -12,8 +12,9 @@ import {
   ServiceRegistry,
   SpanStatusCode,
 } from "@workglow/util";
-import type { CacheRegistry } from "../cache";
-import { CACHE_REGISTRY, DefaultCacheRegistry, RunPrivateCacheRepo } from "../cache";
+import type { CacheRegistry } from "../cache/CacheRegistry";
+import { CACHE_REGISTRY, DefaultCacheRegistry } from "../cache/CacheRegistry";
+import { RunPrivateCacheRepo } from "../cache/RunPrivateCacheRepo";
 import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { Taskish } from "../task-graph/Conversions";
 import { ensureTask } from "../task-graph/Conversions";

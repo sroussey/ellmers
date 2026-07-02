@@ -16,7 +16,8 @@ import {
   SpanStatusCode,
   uuid4,
 } from "@workglow/util";
-import { CACHE_REGISTRY, DefaultCacheRegistry, RunPrivateCacheRepo } from "../cache";
+import { CACHE_REGISTRY, DefaultCacheRegistry } from "../cache/CacheRegistry";
+import { RunPrivateCacheRepo } from "../cache/RunPrivateCacheRepo";
 import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOutputRepository";
 import { ENTITLEMENT_ENFORCER, formatEntitlementDenial } from "../task/EntitlementEnforcer";
 import { ITask } from "../task/ITask";
