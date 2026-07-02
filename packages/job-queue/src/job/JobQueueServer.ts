@@ -13,8 +13,8 @@ import type { JobStorageFormat, QueueChangePayload } from "../queue-storage/IQue
 import { JobStatus } from "../queue-storage/IQueueStorage";
 import type { DeadLetter } from "./DeadLetter";
 import { Job, JobClass } from "./Job";
-import type { StreamEventLike } from "./JobQueueEventListeners";
 import { JobQueueClient } from "./JobQueueClient";
+import type { StreamEventLike } from "./JobQueueEventListeners";
 import { JobQueueWorker } from "./JobQueueWorker";
 import { storageToClass } from "./JobStorageConverters";
 

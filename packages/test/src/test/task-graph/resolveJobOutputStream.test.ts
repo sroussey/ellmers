@@ -91,6 +91,19 @@ describe("resolveJobOutputStream", () => {
     const resolver = makeJobOutputStreamResolver(repo);
     const stream = await resolver({ file: ref }, "file");
     expect(await collect(stream!)).toEqual([7, 7]);
-    expect(await resolver({ file: "not-binary" }, "file")).toBeUndefined();
+  });
+
+  it("adapts an inline string at a named port to its UTF-8 bytes", async () => {
+    // A below-threshold append-mode ref hydrates to an inline string; the
+    // stream form must match what the surviving-ref form would have yielded,
+    // so caller behavior does not flip on payload size.
+    const repo = new StreamingMemoryRepo({});
+    const stream = await resolveJobOutputStream(handleFor({ text: "hi" }), repo, "text");
+    expect(await collect(stream!)).toEqual([104, 105]);
+  });
+
+  it("resolves undefined for an unsupported inline value", async () => {
+    const repo = new StreamingMemoryRepo({});
+    expect(await resolveJobOutputStream(handleFor({ n: 42 }), repo, "n")).toBeUndefined();
   });
 });

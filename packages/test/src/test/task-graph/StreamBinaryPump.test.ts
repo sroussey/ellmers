@@ -259,9 +259,10 @@ describe("StreamBinaryPump — C1 binary source → non-binary consumer", () => 
 //
 // These tests assert the DECISION in isolation, not a real-run outcome. We
 // deliberately do NOT run a streaming-cache graph and assert "binary port absent
-// from finish" as correct: in the reduced scope nothing drives saveOutputStream
-// on a real run, so absent bytes there means SILENT DATA LOSS, not success. The
-// live pipe (cache actually receiving the bytes on a real run) lands in Spec 2.
+// from finish" as correct: with no live sink driving saveOutputStream on a real
+// run, absent bytes there means SILENT DATA LOSS, not success. The live pipe
+// (cache actually receiving the bytes on a real run) is covered by the
+// per-port sink and cache stream-out suites.
 // ============================================================================
 
 describe("StreamBinaryPump.canStreamBinaryToCache — decision", () => {
@@ -309,7 +310,7 @@ describe("StreamBinaryPump.canStreamBinaryToCache — decision", () => {
 });
 
 // ============================================================================
-// Stream-out decision: anyConsumerAcceptsBinaryStream
+// Stream-out decision: anyConsumerAcceptsStream (binary schemas)
 // ============================================================================
 
 /** Streaming consumer: its `bytes` input port accepts the binary stream mode. */
@@ -340,7 +341,7 @@ class BinaryStreamConsumer extends Task<SinkInput, SinkOutput> {
   }
 }
 
-describe("StreamPump.anyConsumerAcceptsBinaryStream", () => {
+describe("StreamPump.anyConsumerAcceptsStream (binary)", () => {
   it("returns true when an out-edge targets a binary-streaming input port", () => {
     const graph = new TaskGraph();
     const source = new CacheableBinaryStreamSource({ id: "source" });
@@ -348,7 +349,7 @@ describe("StreamPump.anyConsumerAcceptsBinaryStream", () => {
     graph.addTasks([source, consumer]);
     graph.addDataflow(new Dataflow("source", "bytes", "consumer", "bytes"));
 
-    expect(StreamPump.anyConsumerAcceptsBinaryStream(graph, source)).toBe(true);
+    expect(StreamPump.anyConsumerAcceptsStream(graph, source)).toBe(true);
   });
 
   it("returns false with no consumers", () => {
@@ -356,7 +357,7 @@ describe("StreamPump.anyConsumerAcceptsBinaryStream", () => {
     const source = new CacheableBinaryStreamSource({ id: "source" });
     graph.addTask(source);
 
-    expect(StreamPump.anyConsumerAcceptsBinaryStream(graph, source)).toBe(false);
+    expect(StreamPump.anyConsumerAcceptsStream(graph, source)).toBe(false);
   });
 
   it("returns false when the only consumer needs a materialized value", () => {
@@ -366,7 +367,7 @@ describe("StreamPump.anyConsumerAcceptsBinaryStream", () => {
     graph.addTasks([source, sink]);
     graph.addDataflow(new Dataflow("source", "bytes", "sink", "bytes"));
 
-    expect(StreamPump.anyConsumerAcceptsBinaryStream(graph, source)).toBe(false);
+    expect(StreamPump.anyConsumerAcceptsStream(graph, source)).toBe(false);
   });
 
   it("returns false for * fan-out edges (consumers receive materialized values)", () => {
@@ -376,7 +377,7 @@ describe("StreamPump.anyConsumerAcceptsBinaryStream", () => {
     graph.addTasks([source, consumer]);
     graph.addDataflow(new Dataflow("source", "*", "consumer", "*"));
 
-    expect(StreamPump.anyConsumerAcceptsBinaryStream(graph, source)).toBe(false);
+    expect(StreamPump.anyConsumerAcceptsStream(graph, source)).toBe(false);
   });
 
   it("returns true with mixed consumers (one streams, one materializes)", () => {
@@ -388,7 +389,7 @@ describe("StreamPump.anyConsumerAcceptsBinaryStream", () => {
     graph.addDataflow(new Dataflow("source", "bytes", "consumer", "bytes"));
     graph.addDataflow(new Dataflow("source", "bytes", "sink", "bytes"));
 
-    expect(StreamPump.anyConsumerAcceptsBinaryStream(graph, source)).toBe(true);
+    expect(StreamPump.anyConsumerAcceptsStream(graph, source)).toBe(true);
   });
 });
 
@@ -428,8 +429,8 @@ describe("StreamBinaryPump — C2 accumulation materializes bytes on a real run"
   });
 
   it("tees when a downstream edge needs materialized AND the cache can stream", async () => {
-    // Spec 2 Phase E: cache-can-stream + downstream-needs-materialized used to
-    // inhibit refs entirely. Now both paths fire — accumulator drives the
+    // cache-can-stream + downstream-needs-materialized used to inhibit refs
+    // entirely. Now both paths fire — accumulator drives the
     // enriched finish event (Blob for the edge consumer) and the router
     // writes to the cache so the queue/cache row stays small.
     const graph = new TaskGraph();

@@ -101,6 +101,16 @@ export interface StreamProcessorDeps {
    * {@link DEFAULT_BINARY_HIGH_WATER_BYTES} when omitted.
    */
   readonly binaryHighWaterBytes?: number;
+  /**
+   * Consumer-edge backpressure for the no-accumulation passthrough path,
+   * threaded down from the graph runner (see `IRunConfig.edgeBackpressure`).
+   * After emitting a delta the processor awaits this with the event's port so
+   * the producer is paced to that port's consumer read rate; the cooperative
+   * `IExecuteContext.backpressure` hook awaits it with no argument (all
+   * ports). Absent on standalone runs — the processor then paces only against
+   * its own cache-sink routers.
+   */
+  readonly edgeBackpressure?: (port?: string) => Promise<void>;
 }
 
 /**
@@ -203,17 +213,16 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
     this.task.emit("stream_start");
 
     // Cooperative backpressure hook for executeStream() implementations that
-    // emit through a side channel (not StreamProcessor's awaited `push`). When
-    // any port has a router (we'd be applying byte-bounded backpressure on the
-    // direct `binary-delta` path anyway), `await ctx.binaryBackpressure()`
-    // waits until ALL active routers are at-or-below their high-water mark.
-    // Without a router this is a cheap no-op.
-    const binaryBackpressure = async (): Promise<void> => {
-      if (routers.size === 0) return;
+    // emit through a side channel (not StreamProcessor's awaited per-event
+    // path). `await ctx.backpressure()` waits until ALL active cache-sink
+    // routers AND any consumer-edge gate are back below their high-water
+    // marks. With no router and no edge gate this is a cheap no-op.
+    const backpressure = async (): Promise<void> => {
       const waits: Promise<void>[] = [];
       for (const { router } of routers.values()) {
         if (router._bufferedBytes >= router._highWaterMarkBytes) waits.push(router._awaitDrain());
       }
+      if (deps.edgeBackpressure) waits.push(deps.edgeBackpressure());
       if (waits.length === 0) return;
       await Promise.all(waits);
     };
@@ -225,9 +234,10 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
       registry: deps.registry,
       resourceScope: deps.resourceScope,
       inputStreams: deps.inputStreams,
-      binaryBackpressure,
+      backpressure,
     });
 
+    let sawFinish = false;
     try {
       for await (const event of stream) {
         // For snapshot events, update runOutputData BEFORE emitting stream_chunk
@@ -258,6 +268,10 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
             // accumulator (if any) still drives the enriched finish event.
             await routeDelta(event.port, event);
             this.task.emit("stream_chunk", event as StreamEvent);
+            // Pace the producer to this port's consumer read rate on a
+            // passthrough edge (no-op elsewhere): the emit above charged the
+            // edge gate; park here until the consumer drains below the mark.
+            if (deps.edgeBackpressure) await deps.edgeBackpressure(event.port);
             break;
           }
           case "object-delta": {
@@ -280,6 +294,7 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
             // Tee to the port's sink (encoded as NDJSON) when one exists.
             await routeDelta(event.port, event);
             this.task.emit("stream_chunk", event as StreamEvent);
+            if (deps.edgeBackpressure) await deps.edgeBackpressure(event.port);
             break;
           }
           case "binary-delta": {
@@ -305,6 +320,7 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
               accumulatedBinary.set(event.port, arr);
             }
             this.task.emit("stream_chunk", event as StreamEvent);
+            if (deps.edgeBackpressure) await deps.edgeBackpressure(event.port);
             break;
           }
           case "snapshot": {
@@ -317,6 +333,7 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
             break;
           }
           case "finish": {
+            sawFinish = true;
             const hasEnrichment =
               accumulated !== undefined ||
               accumulatedObjects !== undefined ||
@@ -438,10 +455,20 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
       for (const { router } of routers.values()) router.fail(failure);
       throw err;
     } finally {
-      // Defensive: if the loop exited without seeing a `finish` event
-      // (e.g. abort, generator return without yield), close routers so their
-      // sinks see end-of-stream rather than blocking on the next chunk.
-      for (const { router } of routers.values()) router.end();
+      // If the loop exited without a `finish` event (abort via cooperative
+      // generator return, or a generator ending early), the routed bytes are
+      // incomplete: FAIL the routers so their sinks reject and discard the
+      // partial write, instead of committing a truncated blob to the cache as
+      // a finished artifact. After a normal finish, `end()` is an idempotent
+      // no-op (the finish handler already ended the routers).
+      if (sawFinish) {
+        for (const { router } of routers.values()) router.end();
+      } else {
+        const incomplete = new TaskError(
+          `Task ${this.task.type} stream ended without a finish event; discarding partial output.`
+        );
+        for (const { router } of routers.values()) router.fail(incomplete);
+      }
     }
 
     // Check if the task was aborted during streaming
@@ -535,7 +562,7 @@ export class BinaryStreamRouter {
   }
 
   /**
-   * @internal Used by {@link IExecuteContext.binaryBackpressure} so a task
+   * @internal Used by {@link IExecuteContext.backpressure} so a task
    * emitting via a side channel can park until the consumer drains. Resolves
    * immediately when the buffer is already under the mark or the router has
    * been closed.

@@ -175,6 +175,34 @@ export function getStreamingPorts(
 }
 
 /**
+ * Delta stream modes: the modes whose events are incremental per-port deltas
+ * that can be encoded to (and replayed from) a single-port byte stream via
+ * {@link getStreamPortCodec}. `replace` (snapshot-driven), `none`, and `mixed`
+ * are not delta modes.
+ */
+export function isDeltaStreamMode(
+  mode: StreamMode
+): mode is Extract<StreamMode, "append" | "object" | "binary"> {
+  return mode === "append" || mode === "object" || mode === "binary";
+}
+
+/**
+ * Reads the per-port `x-validate-stream` opt-in from an input schema: a port
+ * that sets it wants its stream materialized and validated as a whole value,
+ * opting out of both the validation exemption for stream-wired ports and the
+ * no-accumulation passthrough for its edge.
+ */
+export function portForcesStreamValidation(
+  schema: DataPortSchema | JsonSchema,
+  port: string
+): boolean {
+  if (typeof schema === "boolean") return false;
+  const prop = (schema.properties as Record<string, any>)?.[port];
+  if (!prop || typeof prop === "boolean") return false;
+  return prop["x-validate-stream"] === true;
+}
+
+/**
  * Returns the dominant output stream mode for a task by inspecting its output schema.
  * Returns `"mixed"` when ports use different modes (e.g., append + object).
  * Returns `"none"` if no output port declares streaming.
@@ -272,25 +300,6 @@ export function getObjectPortId(schema: DataPortSchema): string | undefined {
 }
 
 /**
- * Returns the port ID (property name) of the first output port that declares
- * `x-stream: "binary"`, or `undefined` if no such port exists.
- *
- * @param schema - The task's output DataPortSchema
- * @returns The port name with binary streaming, or undefined
- */
-export function getBinaryPortId(schema: DataPortSchema): string | undefined {
-  if (typeof schema === "boolean") return undefined;
-  const props = schema.properties;
-  if (!props) return undefined;
-
-  for (const [name, prop] of Object.entries(props)) {
-    if (!prop || typeof prop === "boolean") continue;
-    if ((prop as any)["x-stream"] === "binary") return name;
-  }
-  return undefined;
-}
-
-/**
  * Canonical vocabulary for the `format` annotation on a binary streaming output
  * port. `"blob"` materializes chunks into a `Blob` (the default); `"binary"`
  * materializes them into an `ArrayBuffer`. Any other value is rejected at
@@ -310,6 +319,28 @@ export type BinaryFormat = "blob" | "binary";
  * `IRunConfig.binaryHighWaterBytes`.
  */
 export const DEFAULT_BINARY_HIGH_WATER_BYTES = 8 * 1024 * 1024;
+
+const streamCostEncoder = new TextEncoder();
+
+/**
+ * Buffered cost of a single stream event, in bytes, for backpressure
+ * accounting. Delta events cost their payload size (UTF-8 bytes for
+ * `text-delta`, JSON-encoded length for `object-delta`, raw byte length for
+ * `binary-delta`); control events (`finish`, `snapshot`, `phase`, `error`)
+ * cost nothing — they are not what a slow consumer buffers up on.
+ */
+export function streamEventCost(event: StreamEvent): number {
+  switch (event.type) {
+    case "text-delta":
+      return streamCostEncoder.encode(event.textDelta).byteLength;
+    case "object-delta":
+      return JSON.stringify(event.objectDelta).length;
+    case "binary-delta":
+      return event.binaryDelta.byteLength;
+    default:
+      return 0;
+  }
+}
 
 /**
  * Reads the `format` annotation of a single output port from the task's output

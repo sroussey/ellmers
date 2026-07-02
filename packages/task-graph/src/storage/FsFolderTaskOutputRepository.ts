@@ -7,7 +7,7 @@
 import { FsFolderTabularStorage } from "@workglow/storage";
 import { makeFingerprint } from "@workglow/util";
 import { randomUUID } from "node:crypto";
-import { createReadStream, existsSync } from "node:fs";
+import { createReadStream, openSync } from "node:fs";
 import { mkdir, open, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { CacheRef } from "../cache/CacheRef";
@@ -135,7 +135,17 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     try {
       try {
         for await (const chunk of chunks) {
-          await handle.write(chunk);
+          // write(2) may write fewer bytes than requested (quota/NFS/FUSE
+          // edges); loop until the whole chunk is on disk so the returned
+          // size — stamped into the CacheRef — never overstates the file.
+          let offset = 0;
+          while (offset < chunk.byteLength) {
+            const { bytesWritten } = await handle.write(chunk, offset, chunk.byteLength - offset);
+            if (bytesWritten <= 0) {
+              throw new Error(`Short write persisting blob ${name} (0 bytes accepted)`);
+            }
+            offset += bytesWritten;
+          }
           size += chunk.byteLength;
         }
         await handle.sync();
@@ -182,12 +192,23 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
 
   override getOutputStreamByRef(ref: CacheRef): AsyncIterable<Uint8Array> | undefined {
     const path = this.blobPath(ref);
-    if (path === undefined || !existsSync(path)) return undefined;
-    return (async function* () {
-      for await (const chunk of createReadStream(path)) {
-        yield chunk as Uint8Array;
-      }
-    })();
+    if (path === undefined) return undefined;
+    // Open the file descriptor NOW so a missing blob reports `undefined` (the
+    // clean cache-miss contract, matching getOutputByRef) instead of an ENOENT
+    // thrown mid-iteration; once open, a concurrent prune can no longer break
+    // the read (POSIX keeps the inode alive until the handle closes).
+    let fd: number;
+    try {
+      fd = openSync(path, "r");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw err;
+    }
+    // Return the ReadStream itself (it is an AsyncIterable<Buffer>): its async
+    // iterator's `return()` destroys the stream and releases the fd, so a
+    // caller that resolves several port streams and then abandons them (e.g. a
+    // replay that converts to a miss) can close without reading.
+    return createReadStream(path, { fd, autoClose: true }) as unknown as AsyncIterable<Uint8Array>;
   }
 
   override async deleteOutputByRef(ref: CacheRef): Promise<void> {

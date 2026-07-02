@@ -17,8 +17,13 @@ import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ITask } from "./ITask";
 import type { BinaryRefSink, StreamSink } from "./StreamProcessor";
 import type { StreamEvent } from "./StreamTypes";
-import { assertBinaryFormat, getStreamingPorts, materializeBinary } from "./StreamTypes";
-import { Task } from "./Task";
+import {
+  assertBinaryFormat,
+  foldObjectDelta,
+  getStreamingPorts,
+  isDeltaStreamMode,
+  materializeBinary,
+} from "./StreamTypes";
 import type { TaskRunContext } from "./TaskRunContext";
 import type { TaskInput, TaskOutput } from "./TaskTypes";
 import { TaskStatus } from "./TaskTypes";
@@ -36,6 +41,13 @@ interface SchemaProperties {
 export interface CacheReplayContext {
   readonly hasMaterializingConsumers: boolean;
   readonly hasStreamingConsumers: boolean;
+  /**
+   * Graph-installed producer park for gated passthrough edges (see
+   * {@link IRunConfig.edgeBackpressure}). When present, cache-hit replay
+   * awaits it after each emitted delta so a slow consumer paces the replay
+   * exactly as it paces a fresh run; absent, replay is read-speed.
+   */
+  readonly edgeBackpressure?: (port?: string) => Promise<void>;
 }
 
 /**
@@ -72,7 +84,10 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
    */
   async buildKey(inputs: Input, outputCache: TaskOutputRepository | undefined): Promise<Input> {
     if (!outputCache) return inputs;
-    const inputSchema = (this.task.constructor as typeof Task).inputSchema();
+    // Instance schema, not the static one: dynamic-schema tasks add ports at
+    // runtime, and the key must normalize the same ports the save/lookup
+    // paths serialize.
+    const inputSchema = this.task.inputSchema();
     const normalized = await CacheCoordinator.normalizeInputsForCacheKey(
       inputs as Record<string, unknown>,
       inputSchema as unknown as SchemaProperties
@@ -121,7 +136,11 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     // entry should cost at most a recompute, never convert a runnable task into a
     // hard failure. Degrade any decode failure to a cache miss (the deterministic
     // path is safe to recompute by definition).
-    const outputSchema = (this.task.constructor as typeof Task).outputSchema();
+    // Instance schema, not the static one: a dynamic-schema task's
+    // streaming/format ports may not exist on the static schema, and the
+    // fresh-run write path (sinks, threshold hydration) keys off the instance
+    // schema.
+    const outputSchema = this.task.outputSchema();
     let cached: unknown;
     let outputs: Output;
     try {
@@ -197,18 +216,28 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
 
     const source = outputs as Record<string, unknown>;
     const refPorts = getStreamingPorts(outputSchema).filter(
-      (p) =>
-        (p.mode === "append" || p.mode === "object" || p.mode === "binary") &&
-        isCacheRef(source[p.port])
+      (p) => isDeltaStreamMode(p.mode) && isCacheRef(source[p.port])
     );
     if (refPorts.length === 0) return "none";
 
     // Resolve every ref before emitting any event so a dangling ref becomes a
     // clean miss with zero observable side effects.
+    const resolved = await Promise.all(
+      refPorts.map(async ({ port }) => ({
+        port,
+        stream: await streamRefViaBacking(source[port] as CacheRef, outputCache),
+      }))
+    );
     const streams = new Map<string, AsyncIterable<Uint8Array>>();
-    for (const { port } of refPorts) {
-      const stream = await streamRefViaBacking(source[port] as CacheRef, outputCache);
-      if (stream === undefined) return "miss";
+    for (const { port, stream } of resolved) {
+      if (stream === undefined) {
+        // Release any streams already opened for other ports before reporting
+        // the miss — a backing may hold a file handle per resolved stream.
+        for (const s of streams.values()) {
+          void s[Symbol.asyncIterator]().return?.(undefined);
+        }
+        return "miss";
+      }
       streams.set(port, stream);
     }
 
@@ -219,12 +248,17 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     this.task.status = TaskStatus.STREAMING;
     this.task.emit("status", this.task.status);
 
+    // Replay pacing: on a gated passthrough edge, await the consumer's gate
+    // after each emitted delta so a cache hit honors the same memory bound as
+    // a fresh run. Ungated consumers replay at read speed, matching the
+    // fresh-run edge enqueue behavior.
+    const pace = replay?.edgeBackpressure;
     const finishData: Record<string, unknown> = { ...source };
     for (const { port, mode } of refPorts) {
       const stream = streams.get(port)!;
       if (mode === "binary") {
-        // Stream chunk-by-chunk so large binary stays memory-bounded when no
-        // materializing consumer needs the whole artifact.
+        // Stream chunk-by-chunk; whole-artifact buffering happens only when a
+        // materializing consumer needs the settled value.
         const chunks: Uint8Array[] | undefined = needBytes ? [] : undefined;
         for await (const chunk of stream) {
           chunks?.push(chunk);
@@ -234,27 +268,31 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
               port,
               binaryDelta: chunk,
             } as StreamEvent);
+            if (pace) await pace(port);
           }
         }
         if (chunks !== undefined) {
           finishData[port] = materializeBinary(chunks, assertBinaryFormat(outputSchema, port));
         }
       } else {
-        // append / object: collect the encoded bytes once, then decode (deltas)
-        // and/or materialize (value) from the same buffer via the mode codec.
+        // append / object: decode the byte stream once — emit each delta to
+        // any stream-capable consumer and fold it into the settled value when
+        // a materializing consumer needs it. No whole-log buffering.
         const codec = getStreamPortCodec(mode);
-        const buf: Uint8Array[] = [];
-        for await (const chunk of stream) buf.push(chunk);
-        const bytesOf = async function* (): AsyncIterable<Uint8Array> {
-          for (const c of buf) yield c;
-        };
-        if (replayDeltas) {
-          for await (const ev of codec.decode(bytesOf(), port)) {
+        let text = "";
+        let folded: Record<string, unknown> | unknown[] | undefined;
+        for await (const ev of codec.decode(stream, port)) {
+          if (replayDeltas) {
             this.task.emit("stream_chunk", ev as StreamEvent);
+            if (pace) await pace(port);
+          }
+          if (needBytes) {
+            if (ev.type === "text-delta") text += ev.textDelta;
+            else if (ev.type === "object-delta") folded = foldObjectDelta(folded, ev.objectDelta);
           }
         }
         if (needBytes) {
-          finishData[port] = await codec.materialize(bytesOf(), port);
+          finishData[port] = mode === "append" ? text : folded;
         }
       }
     }
@@ -274,7 +312,7 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     policy: CachePolicy
   ): Promise<void> {
     if (!outputCache || !this.task.cacheable || output === undefined) return;
-    const outputSchema = (this.task.constructor as typeof Task).outputSchema();
+    const outputSchema = this.task.outputSchema();
     const wireOutputs = await CacheCoordinator.serializeOutputPorts(
       output as Record<string, unknown>,
       outputSchema as unknown as SchemaProperties
@@ -284,23 +322,6 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
       keyInputs,
       wireOutputs as Output
     );
-  }
-
-  /**
-   * Streams output bytes straight to a stream-capable cache sink. Returns the
-   * {@link CacheRef} produced by the backing, or `undefined` when no cache is
-   * configured, the task is not cacheable, or the repository does not
-   * implement `saveOutputStream`.
-   */
-  async saveStream(
-    keyInputs: Input,
-    chunks: AsyncIterable<Uint8Array>,
-    metadata: Record<string, unknown>,
-    outputCache: TaskOutputRepository | undefined
-  ): Promise<CacheRef | undefined> {
-    if (!outputCache || !this.task.cacheable) return undefined;
-    if (!outputCache.supportsStreaming()) return undefined;
-    return outputCache.saveOutputStream!(this.task.type, keyInputs, chunks, metadata);
   }
 
   // ========================================================================
@@ -358,14 +379,15 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
 
   /**
    * Best-effort cleanup of orphan blobs after a row commit fails. When
-   * `saveByPolicy` rejects after the stream sink already wrote bytes and
-   * minted a {@link CacheRef}, the blob has no row pointing at it and is
-   * effectively leaked until the next janitor sweep. Walk the output's binary
-   * ports, locate any {@link CacheRef} values, and ask the backing to delete
-   * them. Per-ref deletion failures are swallowed and logged — they should
-   * not mask the original save error the caller is about to re-throw.
+   * `saveByPolicy` rejects after a stream sink already wrote bytes and minted
+   * a {@link CacheRef}, the blob has no row pointing at it and is effectively
+   * leaked until the next janitor sweep. Walk every delta-mode streaming port
+   * (`append` / `object` / `binary` — all three can carry per-port refs),
+   * locate any {@link CacheRef} values, and ask the backing to delete them.
+   * Per-ref deletion failures are swallowed — they should not mask the
+   * original save error the caller is about to re-throw.
    */
-  public async cleanupOrphanBlobsForBinaryPorts(
+  public async cleanupOrphanBlobsForStreamPorts(
     output: Output,
     registry: CacheRegistry | undefined,
     policy: CachePolicy,
@@ -375,11 +397,11 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     const cache = this.repoFor(registry, policy);
     if (!cache || typeof cache.deleteOutputByRef !== "function") return;
     const source = output as Record<string, unknown>;
-    const binaryPorts = getStreamingPorts(outputSchema)
-      .filter((p) => p.mode === "binary")
+    const refPorts = getStreamingPorts(outputSchema)
+      .filter((p) => isDeltaStreamMode(p.mode))
       .map((p) => p.port);
     await Promise.all(
-      binaryPorts.map(async (port) => {
+      refPorts.map(async (port) => {
         const value = source[port];
         if (!isCacheRef(value)) return;
         try {

@@ -69,15 +69,17 @@ export interface IExecuteContext {
    */
   resourceScope?: ResourceScope;
   /**
-   * Optional cooperative backpressure hook for streaming tasks that emit very
-   * large binary outputs by direct event emission (rather than through the
-   * StreamProcessor's `await router.push(...)` path). Tasks may `await` this
-   * between yields/emits to give downstream sinks a chance to drain.
+   * Optional cooperative backpressure hook for streaming tasks that emit
+   * large outputs by direct event emission (rather than through the
+   * StreamProcessor's awaited per-event path). Tasks may `await` this between
+   * yields/emits to give downstream sinks and consumers a chance to drain: it
+   * resolves once every active cache-sink router AND any consumer-edge gate
+   * is back below its high-water mark.
    *
    * Defaults to a no-op when the runtime does not install a real backpressure
    * source — tasks can call it unconditionally without paying a cost.
    */
-  binaryBackpressure?: () => Promise<void>;
+  backpressure?: () => Promise<void>;
 }
 
 export type IExecutePreviewContext = Pick<IExecuteContext, "own">;
@@ -188,6 +190,18 @@ export interface IRunConfig {
    * high-water value (then {@link DEFAULT_BINARY_HIGH_WATER_BYTES}) applies.
    */
   streamHighWaterBytes?: number;
+
+  /**
+   * Graph-installed producer park for the no-accumulation passthrough path.
+   * The graph runner owns the consumer-edge gates (it is the only layer that
+   * knows the edges); this thunk closes over them so the task-level streaming
+   * runtime can pace the producer without any edge knowledge. Called with a
+   * port name it awaits that port's gate (used after each delta); called with
+   * no argument it awaits every gate (the cooperative
+   * {@link IExecuteContext.backpressure} hook). Absent on standalone runs and
+   * whenever no outgoing edge qualifies for the passthrough.
+   */
+  edgeBackpressure?: (port?: string) => Promise<void>;
 
   /**
    * Optional callback invoked whenever a task's progress changes during execution.

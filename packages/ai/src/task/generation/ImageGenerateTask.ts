@@ -66,8 +66,11 @@ export class ImageGenerateTask extends AiImageOutputTask<
     return ImageGenerateOutputSchema as DataPortSchema;
   }
 
-  public override async validateInput(input: ImageGenerateTaskInput): Promise<boolean> {
-    const ok = await super.validateInput(input);
+  public override async validateInput(
+    input: ImageGenerateTaskInput,
+    skipPorts?: ReadonlySet<string>
+  ): Promise<boolean> {
+    const ok = await super.validateInput(input, skipPorts);
     if (!ok) return false;
     await this.validateProviderImageInput(input);
     return true;

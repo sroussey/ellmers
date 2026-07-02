@@ -287,12 +287,12 @@ Failed tasks are never cached — only `Ok` results reach `saveOutput`. `saveOut
 Binary output ports whose bytes were piped into a stream-capable cache carry a branded `CacheRef` in the cached row. On a **cache hit**, the runner mirrors the fresh-run event contract, driven by two graph-computed consumer hints (`IRunConfig.hasStreamingConsumers` / `hasMaterializingConsumers`):
 
 - **Stream-capable consumer** (`x-stream: "binary"` on both ends of an edge): the cached bytes replay as chunked `binary-delta` events, pull-paced from the repository's streaming reader (`getOutputStreamByRef`), so memory stays bounded by the read chunk size. The finish event keeps the ref at the port.
-- **Materializing consumer** (target port cannot consume the stream): the ref hydrates into the **enriched finish event** as a `Blob`/`ArrayBuffer` (per the port's `format`), exactly what a fresh run's accumulator would have delivered. The *returned* output still carries the small ref.
+- **Materializing consumer** (target port cannot consume the stream): the ref hydrates into the **enriched finish event** as a `Blob`/`ArrayBuffer` (per the port's `format`), exactly what a fresh run's accumulator would have delivered. The _returned_ output still carries the small ref.
 - **No consumers**: no reads are performed; the synthetic finish carries the ref unchanged (callers resolve via `resolveOutput` / `resolveJobOutputStream`).
 
 **Rows store the wire form**: the cached row always carries the `CacheRef`, never inline bytes — JSON-row backings would destroy an inline `Blob`/`ArrayBuffer` (`JSON.stringify(Blob)` is `{}`). Below-threshold hydration to inline bytes applies to the value **returned to the caller**, identically on fresh runs and cache hits.
 
-**Single binary port**: the cache sink keys bytes by `(taskType, inputs)` with no port axis, so cache-streaming supports exactly one binary output port. Tasks with multiple binary ports take the accumulation path (enforced in both `StreamPump.canStreamBinaryToCache` and `CacheCoordinator.getBinaryRefSinksByPolicy`); their inline outputs are only safely cacheable by non-JSON-row backings until per-port refs land.
+**Single binary port**: the legacy cache sink keys bytes by `(taskType, inputs)` with no port axis, so this path supports exactly one binary output port. Tasks with multiple binary ports take the accumulation path (enforced in both `StreamPump.canStreamBinaryToCache` and `CacheCoordinator.getBinaryRefSinksByPolicy`) — unless the run opts into the per-port sink path below, which has a port axis and no such limit.
 
 **Self-healing dangling refs**: when a ref needed for replay or hydration no longer resolves (blob evicted, cache cleared), the hit converts into a **miss** — the task re-executes and rewrites both the row and the bytes. No events are emitted before all refs are validated.
 
@@ -301,6 +301,99 @@ Binary output ports whose bytes were piped into a stream-capable cache carry a b
 **Queue consumers**: `JobHandle.outputStream(port?)` (present only when the `JobQueueClient` was configured with an `outputStreamResolver`, typically `makeJobOutputStreamResolver(repo)`) awaits completion and streams the binary result out of the cache without materializing it.
 
 `FsFolderTaskOutputRepository` (node/bun) is the production streaming backing: JSON rows via `FsFolderTabularStorage`, bytes as sidecar files under `<folder>/blobs/` written incrementally and published by atomic rename — `<sanitized-taskType>_<input-fingerprint>.bin`, so a re-run overwrites rather than leaks. Two instances over one folder interoperate (the cross-process read story).
+
+### Per-port stream sinks and the no-accumulation passthrough
+
+Everything above generalizes from "one binary port" to **every delta stream mode**
+(`append`, `object`, `binary`) behind an opt-in run flag,
+`TaskGraphRunConfig.noAccumulation` (default off — off is byte-identical to the
+accumulation path).
+
+**Per-port sinks (cache as tee).** When the flag is on, the task is cacheable,
+and the cache backing implements the port-aware stream writer
+(`saveOutputStreamPort`, advertised via `supportsStreamingPorts()`), the runner
+builds one `StreamSink` per streaming output port. `StreamProcessor` encodes
+each port's deltas through that mode's codec (`append` → UTF-8 text, `object` →
+NDJSON delta log, `binary` → identity bytes) and routes the bytes to the sink
+instead of buffering them into an enriched finish event. Each port's slot in the
+returned output carries its own `CacheRef`; the cached row stores those refs
+(wire form), and below-threshold hydration to inline values applies to the value
+returned to the caller, as on the binary path. Backings without
+`saveOutputStreamPort` — inline-only backings — never see this path: the task
+falls back to accumulation and its outputs are cached inline as before.
+
+**Skippable edge materialization.** An edge qualifies as a _passthrough edge_
+when the flag is on, the edge carries a live stream with no transforms, source
+and target ports declare the **same** delta stream mode, the target is itself a
+streamable task (it implements `executeStream`; only streamable tasks receive
+`ctx.inputStreams`) without a subgraph, the source port has exactly **one**
+consumer, and the target port does not set `x-validate-stream: true`. Such an
+edge skips the full-speed materialize drain entirely: the consumer takes its
+data from the live event stream (handed to its `executeStream` via
+`ctx.inputStreams`, without a tee — nothing else will read the edge), and the
+edge's settled value is set from the producer's result when it finishes (the
+per-port `CacheRef`, or the inline value a below-threshold ref was rehydrated
+to). Every non-qualifying edge — transforms, mode mismatch, fan-out, `*`
+edges, non-streamable or subgraph targets — falls back to today's drain, which
+is correct, just without the memory and pacing win.
+
+**Caching a stream-fed consumer.** A consumer reading a live stream computes
+its cache key while the streamed port is unsettled (`CacheRef` or nothing in
+the slot), so the streamed content cannot contribute to the key. Rather than
+let two runs that differ only in stream payload collide on one cache entry,
+the runner disables caching (`kind: "none"`) for any run consuming a live
+stream at an unsettled port. Drained edges settle the value before key
+computation and keep caching as usual.
+
+**Validation of stream-wired inputs.** Whole-value input validation is a
+settled-value concept, and a stream-wired port has no settled value while the
+stream is live — its static slot holds a `CacheRef` (or nothing) until finish.
+The runner therefore exempts such a port from validation when (and only when)
+its slot is a ref or `undefined`; a port that already carries a materialized
+value is validated as usual. A target port can opt back in with
+`x-validate-stream: true`, which also disqualifies its edge from the
+passthrough so the drain materializes a validatable value.
+
+**All-mode backpressure.** On a passthrough edge the producer is paced to the
+consumer's read rate by a per-port `BackpressureGate` owned by the graph
+runner: each event enqueued onto the edge stream charges the gate with its
+`streamEventCost` (UTF-8 bytes for text deltas, JSON-encoded length for object
+deltas, raw byte length for binary), and each event the consumer reads credits
+it back. After emitting a delta, `StreamProcessor` awaits the gate for that
+port (threaded down as `IRunConfig.edgeBackpressure`, so the task layer stays
+edge-agnostic); once buffered cost reaches the high-water mark —
+`TaskGraphRunConfig.streamHighWaterBytes`, defaulting to the binary router's
+8 MiB — the producer parks until the consumer drains below the mark. Producer
+completion, abort, error, and consumer termination all close the gate, so a
+parked producer can never be orphaned. A gate is built only when the consumer
+can make read progress while the producer is parked: if any OTHER edge into
+the consumer is sourced from the producer or one of its descendants (a drained
+edge, a mode-mismatched edge, a static-value edge), that edge settles only
+after the producer finishes, so gating would deadlock the pair — such
+consumers keep the ungated passthrough (correct, just unpaced). Tasks that
+emit through a side channel can cooperate explicitly via `ctx.backpressure()`,
+which awaits both the cache-sink routers and every edge gate.
+
+**Producer failure mid-stream.** A producer FAILURE (not abort) enqueues an
+in-stream error event on every attached edge stream before closing it, so a
+drained edge materializes the failure — a consumer already dispatched
+(unblocked at STREAMING) fails with the producer's error instead of
+completing, and caching, an output derived from truncated input. Abort keeps
+the graceful close: the run-level abort cascade is already tearing everything
+down.
+
+**Fan-out limitation.** Precise pacing is single-consumer by design. A source
+port feeding two or more consumers keeps the tee'd drain: every consumer still
+receives all events in order, but pacing is best-effort — no gate bounds the
+producer's lead.
+
+**Cache hit ≡ fresh run.** On a cache hit for a task with per-port refs and a
+same-mode streaming consumer, the runner replays each port's cached bytes
+through the mode's codec as delta events, so downstream tasks observe the same
+event sequence as a fresh run. Replay honors the same consumer-edge gate as a
+fresh run (each emitted delta awaits `edgeBackpressure`); ungated consumers
+replay at read speed. Materializing consumers receive hydrated values in the
+enriched finish event, exactly as on the binary path.
 
 ### Durable execution model
 

@@ -12,11 +12,12 @@ import {
   ServiceRegistry,
   SpanStatusCode,
 } from "@workglow/util";
-import type { DataPortSchema } from "@workglow/util/schema";
 import { isCacheRef, resolveReferenceThreshold } from "../cache/CacheRef";
 import type { CacheRegistry } from "../cache/CacheRegistry";
 import { CACHE_REGISTRY, DefaultCacheRegistry } from "../cache/CacheRegistry";
+import { streamRefViaBacking } from "../cache/resolveRef";
 import { RunPrivateCacheRepo } from "../cache/RunPrivateCacheRepo";
+import { getStreamPortCodec } from "../cache/streamCodec";
 import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { Taskish } from "../task-graph/Conversions";
 import { ensureTask } from "../task-graph/Conversions";
@@ -30,7 +31,9 @@ import {
   getBinaryPortFormat,
   getOutputStreamMode,
   getPortStreamMode,
+  isDeltaStreamMode,
   isTaskStreamable,
+  portForcesStreamValidation,
 } from "./StreamTypes";
 import { Task } from "./Task";
 import {
@@ -196,10 +199,8 @@ export class TaskRunner<
 
         const inputs: Input = await this.hydrateInputRefs(this.task.runInputData as Input);
         this.task.runInputData = inputs;
-        const isValid = await this.task.validateInput(
-          inputs,
-          this.streamWiredValidationSkips(inputs)
-        );
+        const streamWiredSkips = this.streamWiredValidationSkips(inputs);
+        const isValid = await this.task.validateInput(inputs, streamWiredSkips);
         if (!isValid) {
           throw new TaskInvalidInputError("Invalid input data");
         }
@@ -223,6 +224,16 @@ export class TaskRunner<
         }
 
         let policy = this.task.getCachePolicy(inputs);
+
+        // A port fed by a live event stream has no settled value when the
+        // cache key is computed — the streamed content cannot contribute to
+        // the key, so two runs differing only in stream payload would collide
+        // on one entry (stale hits, poisoned rows). Disable caching for any
+        // run consuming a live stream at an unsettled port; a drained edge
+        // settles the value before this point and keeps caching as usual.
+        if (streamWiredSkips !== undefined && streamWiredSkips.size > 0) {
+          policy = { kind: "none" };
+        }
 
         // Standalone TaskRunner cannot namespace private cache writes without a
         // runId — TaskGraphRunner owns the wrap. If a standalone caller routes
@@ -270,6 +281,7 @@ export class TaskRunner<
           {
             hasMaterializingConsumers: config.hasMaterializingConsumers === true,
             hasStreamingConsumers: config.hasStreamingConsumers === true,
+            edgeBackpressure: config.edgeBackpressure,
           }
         );
 
@@ -315,6 +327,7 @@ export class TaskRunner<
                 binaryRefSinks,
                 refSinks,
                 binaryHighWaterBytes,
+                edgeBackpressure: config.edgeBackpressure,
               })
             : await this.executeTask(inputs, ctx);
 
@@ -336,7 +349,7 @@ export class TaskRunner<
             // unreferenced. Best-effort delete it so the cache directory
             // does not accumulate orphans on every save failure.
             if ((refSinks ?? binaryRefSinks) !== undefined && outputs !== undefined) {
-              await this.cacheCoordinator.cleanupOrphanBlobsForBinaryPorts(
+              await this.cacheCoordinator.cleanupOrphanBlobsForStreamPorts(
                 outputs as Output,
                 this.cacheRegistry,
                 policy,
@@ -436,7 +449,7 @@ export class TaskRunner<
     let skip: Set<string> | undefined;
     for (const port of this.inputStreams.keys()) {
       if (getPortStreamMode(schema, port) === "none") continue;
-      if (TaskRunner.portForcesStreamValidation(schema, port)) continue;
+      if (portForcesStreamValidation(schema, port)) continue;
       const value = source[port];
       if (value !== undefined && !isCacheRef(value)) continue;
       (skip ??= new Set()).add(port);
@@ -444,24 +457,17 @@ export class TaskRunner<
     return skip;
   }
 
-  /** Reads the per-port `x-validate-stream` opt-in from an input schema. */
-  private static portForcesStreamValidation(schema: DataPortSchema, port: string): boolean {
-    if (typeof schema === "boolean") return false;
-    const prop = (schema.properties as Record<string, any>)?.[port];
-    if (!prop || typeof prop === "boolean") return false;
-    return prop["x-validate-stream"] === true;
-  }
-
   /**
    * Hydrate branded {@link CacheRef} values in resolved inputs to inline
-   * bytes before `execute()` runs, resolving against the run's cache registry
-   * (private repo first, then deterministic). Materialization type follows the
-   * input port's `format` annotation (`"binary"` → `ArrayBuffer`, anything
-   * else → `Blob`).
+   * values before `execute()` runs, resolving against the run's cache registry
+   * (private repo first, then deterministic). Materialization is mode-aware:
+   * an `append` / `object` ref decodes through its stream codec back to the
+   * string / folded object the port expects; anything else follows the input
+   * port's `format` annotation (`"binary"` → `ArrayBuffer`, else → `Blob`).
    *
-   * Binary-streaming input ports with a live input stream are skipped: those
-   * consumers take bytes from the stream and the ref at the port remains the
-   * durable pointer — hydrating it would re-materialize what the stream
+   * Stream-wired input ports with a live input stream are skipped: those
+   * consumers take their data from the stream and the ref at the port remains
+   * the durable pointer — hydrating it would re-materialize what the stream
    * already delivers.
    *
    * Hydration runs before cache-key computation so a ref-bearing input
@@ -481,29 +487,53 @@ export class TaskRunner<
 
     const schema = this.task.inputSchema();
     const source = inputs as Record<string, unknown>;
+    const hydrations = await Promise.all(
+      Object.entries(source).map(async ([port, value]) => {
+        if (!isCacheRef(value)) return undefined;
+        // A stream-wired input port (any mode) with a live input stream keeps
+        // its ref as the durable pointer — the consumer takes its data from
+        // the stream, so hydrating the ref would re-materialize what the
+        // stream already delivers.
+        if (getPortStreamMode(schema, port) !== "none" && this.inputStreams?.has(port)) {
+          return undefined;
+        }
+        // append / object refs persist codec-encoded delta bytes; decode them
+        // back to the settled value instead of handing a byte Blob to a
+        // string/object port.
+        if (value.mode !== undefined && value.mode !== "binary" && isDeltaStreamMode(value.mode)) {
+          for (const repo of repos) {
+            const stream = await streamRefViaBacking(value, repo);
+            if (stream === undefined) continue;
+            const inlined = await getStreamPortCodec(value.mode).materialize(stream, port);
+            return { port, inlined };
+          }
+          throw this.unresolvableInputRefError(port);
+        }
+        let blob: Blob | undefined;
+        for (const repo of repos) {
+          blob = await repo.getOutputByRef!(value);
+          if (blob !== undefined) break;
+        }
+        if (blob === undefined) throw this.unresolvableInputRefError(port);
+        const inlined =
+          getBinaryPortFormat(schema, port) === "binary" ? await blob.arrayBuffer() : blob;
+        return { port, inlined };
+      })
+    );
     let out: Record<string, unknown> | undefined;
-    for (const [port, value] of Object.entries(source)) {
-      if (!isCacheRef(value)) continue;
-      // A stream-wired input port (any mode) with a live input stream keeps its
-      // ref as the durable pointer — the consumer takes its data from the
-      // stream, so hydrating the ref would re-materialize what the stream
-      // already delivers.
-      if (getPortStreamMode(schema, port) !== "none" && this.inputStreams?.has(port)) continue;
-      let blob: Blob | undefined;
-      for (const repo of repos) {
-        blob = await repo.getOutputByRef!(value);
-        if (blob !== undefined) break;
-      }
-      if (blob === undefined) {
-        throw new TaskFailedError(
-          `Task "${this.task.type}" input port "${port}" holds a cache ref that no configured ` +
-            `cache backing can resolve (entry evicted?).`
-        );
-      }
+    for (const h of hydrations) {
+      if (!h) continue;
       out ??= { ...source };
-      out[port] = getBinaryPortFormat(schema, port) === "binary" ? await blob.arrayBuffer() : blob;
+      out[h.port] = h.inlined;
     }
     return (out ?? source) as Input;
+  }
+
+  private unresolvableInputRefError(port: string): TaskFailedError {
+    return new TaskFailedError(
+      `Task "${this.task.type}" input port "${port}" holds a cache ref that no configured ` +
+        `cache backing can resolve (entry evicted?).`
+    );
   }
 
   public async runPreview(overrides: Partial<Input> = {}): Promise<Output> {

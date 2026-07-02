@@ -7,7 +7,6 @@
 import { getLogger } from "@workglow/util";
 import type { ImageValue } from "@workglow/util/media";
 import { previewSource } from "@workglow/util/media";
-import { isCacheRef } from "../cache/CacheRef";
 import type { ITask } from "../task/ITask";
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
 import { TaskStatus } from "../task/TaskTypes";
@@ -119,14 +118,16 @@ export class EdgeMaterializer {
       // non-idempotent transforms, so skip the whole post-materialisation step.
       if (dataflow.stream !== undefined) {
         // Exception: a no-accumulation passthrough edge is NOT drained
-        // downstream, so nothing else populates its value. When the source
-        // produced a per-port CacheRef, set it as the edge's durable value (no
-        // transforms by definition) so a consumer that reads the static slot
-        // resolves it via input hydration. A non-ref value is left alone.
+        // downstream, so nothing else populates its value. Set the settled
+        // slot from the producer's result (no transforms by definition):
+        // either the per-port CacheRef (large output — a static-slot reader
+        // resolves it via input hydration) or the inline value a
+        // below-threshold ref was rehydrated to. Without this, the edge's
+        // settled value would depend on output size.
         const noAccumulation = this.runner["noAccumulation"] === true;
         if (StreamPump.isNoAccumulationPassthroughEdge(this.graph, dataflow, noAccumulation)) {
-          const ref = (results as Record<string, unknown>)[dataflow.sourceTaskPortId];
-          if (isCacheRef(ref)) dataflow.value = ref;
+          const value = (results as Record<string, unknown>)[dataflow.sourceTaskPortId];
+          if (value !== undefined) dataflow.value = value;
         }
         continue;
       }

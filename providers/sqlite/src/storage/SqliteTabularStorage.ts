@@ -272,8 +272,7 @@ export class SqliteTabularStorage<
     // Handle null values
     if (value === null) {
       const typeDef = this.schema.properties[column as keyof typeof this.schema.properties] as
-        | JsonSchema
-        | undefined;
+        JsonSchema | undefined;
       if (typeDef && this.isNullable(typeDef)) {
         return null;
       }
@@ -282,8 +281,7 @@ export class SqliteTabularStorage<
 
     // Schema-based type handling for non-object/array values
     const typeDef = this.schema.properties[column as keyof typeof this.schema.properties] as
-      | JsonSchema
-      | undefined;
+      JsonSchema | undefined;
     if (typeDef) {
       const actualType = this.getNonNullType(typeDef);
       const isObject =
@@ -338,8 +336,7 @@ export class SqliteTabularStorage<
    */
   protected override sqlToJsValue(column: string, value: ValueOptionType): Entity[keyof Entity] {
     const typeDef = this.schema.properties[column as keyof typeof this.schema.properties] as
-      | JsonSchema
-      | undefined;
+      JsonSchema | undefined;
     if (typeDef) {
       if (value === null && this.isNullable(typeDef)) {
         return null as Entity[keyof Entity];
