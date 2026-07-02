@@ -7,13 +7,16 @@
 import type { ResourceScope, ServiceRegistry } from "@workglow/util";
 import { getLogger } from "@workglow/util";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
+import { BackpressureGate } from "../task/BackpressureGate";
 import type { ITask } from "../task/ITask";
 import type { StreamEvent, StreamMode } from "../task/StreamTypes";
 import {
+  DEFAULT_BINARY_HIGH_WATER_BYTES,
   edgeNeedsAccumulation,
   getOutputStreamMode,
   getPortStreamMode,
   getStreamingPorts,
+  streamEventCost,
 } from "../task/StreamTypes";
 import type { TaskInput } from "../task/TaskTypes";
 import { TaskStatus } from "../task/TaskTypes";
@@ -102,14 +105,25 @@ export class StreamPump {
    * Tees streaming inputs for a streamable task — one copy goes to the task's
    * executeStream() (via inputStreams), one stays on the edge for materialization
    * by awaitStreamInputs.
+   *
+   * A no-accumulation passthrough edge is never drained downstream, so its
+   * materialize copy would only pile every event up in the unread tee branch —
+   * the accumulation the passthrough exists to avoid. Such an edge hands its
+   * stream to the consumer directly (no tee); the edge keeps the same stream
+   * reference so "this edge is streaming" checks still hold, and its settled
+   * value arrives as the per-port {@link CacheRef} at producer finish.
    */
-  prepareStreamingInputs(task: ITask): void {
+  prepareStreamingInputs(task: ITask, noAccumulation: boolean = false): void {
     const dataflows = this.graph.getSourceDataflows(task.id);
     const streamingEdges = dataflows.filter((df) => df.stream !== undefined);
     if (streamingEdges.length === 0) return;
     const inputStreams = new Map<string, ReadableStream<StreamEvent>>();
     for (const df of streamingEdges) {
       const stream = df.stream!;
+      if (StreamPump.isNoAccumulationPassthroughEdge(this.graph, df, noAccumulation)) {
+        inputStreams.set(df.targetTaskPortId, stream);
+        continue;
+      }
       const [forwardCopy, materializeCopy] = stream.tee();
       inputStreams.set(df.targetTaskPortId, forwardCopy);
       df.setStream(materializeCopy);
@@ -183,13 +197,53 @@ export class StreamPump {
       options.noAccumulation === true
     );
 
+    // One gate per source port that feeds a no-accumulation passthrough edge.
+    // The edge stream charges the gate as events are enqueued and credits it
+    // as the consumer reads; the producer's StreamProcessor parks on the
+    // `edgeBackpressure` thunk after each delta, pacing it to the consumer.
+    const edgeGates = this.buildPassthroughEdgeGates(task, options);
+    const edgeBackpressure = edgeGates
+      ? async (port?: string): Promise<void> => {
+          if (port !== undefined) {
+            await edgeGates.get(port)?.awaitBelowMark();
+            return;
+          }
+          await Promise.all(Array.from(edgeGates.values(), (g) => g.awaitBelowMark()));
+        }
+      : undefined;
+    // Safety release: a passthrough consumer that reaches a terminal state
+    // without reading its stream to completion (throws mid-read, gets
+    // disabled, or simply ignores ctx.inputStreams) would otherwise leave the
+    // producer parked at the gate forever.
+    const gateCleanups: Array<() => void> = [];
+    if (edgeGates) {
+      for (const df of this.graph.getTargetDataflows(task.id)) {
+        const gate = edgeGates.get(df.sourceTaskPortId);
+        if (!gate) continue;
+        const target = this.graph.getTask(df.targetTaskId);
+        if (!target) continue;
+        const onTargetStatus = (status: TaskStatus) => {
+          if (
+            status === TaskStatus.COMPLETED ||
+            status === TaskStatus.FAILED ||
+            status === TaskStatus.ABORTING ||
+            status === TaskStatus.DISABLED
+          ) {
+            gate.close();
+          }
+        };
+        target.on("status", onTargetStatus);
+        gateCleanups.push(() => target.off("status", onTargetStatus));
+      }
+    }
+
     let streamingNotified = false;
 
     const onStatus = (status: TaskStatus) => {
       if (status === TaskStatus.STREAMING && !streamingNotified) {
         streamingNotified = true;
         this.runScheduler.pushStatusFromNodeToEdges(task, ctx, TaskStatus.STREAMING);
-        this.pushStreamToEdges(task, streamMode);
+        this.pushStreamToEdges(task, streamMode, edgeGates);
         this.processScheduler.onTaskStreaming(task.id);
       }
     };
@@ -241,6 +295,7 @@ export class StreamPump {
         runId: options.runId,
         noAccumulation: options.noAccumulation,
         streamHighWaterBytes: options.streamHighWaterBytes,
+        edgeBackpressure,
         // Sinks are installed regardless of downstream needs: when both an
         // accumulator and a router exist (downstream needs materialized + cache
         // can stream), StreamProcessor tees — accumulator drives the enriched
@@ -260,6 +315,10 @@ export class StreamPump {
       task.off("stream_start", onStreamStart);
       task.off("stream_chunk", onStreamChunk);
       task.off("stream_end", onStreamEnd);
+      for (const cleanup of gateCleanups) cleanup();
+      // Idempotent: normally already closed by the edge stream's end/terminate
+      // handlers; this covers runs that never flipped to STREAMING at all.
+      if (edgeGates) for (const gate of edgeGates.values()) gate.close();
     }
   }
 
@@ -506,6 +565,62 @@ export class StreamPump {
   }
 
   /**
+   * Builds one {@link BackpressureGate} per source port whose (single) outgoing
+   * edge qualifies as a no-accumulation passthrough. The gate's high-water mark
+   * is the run's `streamHighWaterBytes` (falling back to
+   * {@link DEFAULT_BINARY_HIGH_WATER_BYTES}). Returns `undefined` when the flag
+   * is off or no edge qualifies, so the entire pacing path stays dormant.
+   */
+  private buildPassthroughEdgeGates(
+    task: ITask,
+    options: StreamingRunOptions
+  ): Map<string, BackpressureGate> | undefined {
+    if (options.noAccumulation !== true) return undefined;
+    const highWaterMark =
+      options.streamHighWaterBytes !== undefined && options.streamHighWaterBytes > 0
+        ? options.streamHighWaterBytes
+        : DEFAULT_BINARY_HIGH_WATER_BYTES;
+    let gates: Map<string, BackpressureGate> | undefined;
+    for (const df of this.graph.getTargetDataflows(task.id)) {
+      if (!StreamPump.isNoAccumulationPassthroughEdge(this.graph, df, true)) continue;
+      // The passthrough predicate guarantees a single consumer per source
+      // port, so one gate per port is exactly one gate per edge.
+      gates ??= new Map();
+      gates.set(df.sourceTaskPortId, new BackpressureGate(highWaterMark));
+    }
+    return gates;
+  }
+
+  /**
+   * Wraps a per-port edge stream so every event read by the consumer credits
+   * the port's gate with that event's {@link streamEventCost}, waking a
+   * producer parked at the high-water mark. Close (end or cancel) also closes
+   * the gate so an abandoned consumer can never orphan a parked producer.
+   */
+  private static wrapStreamWithGateCredit(
+    stream: ReadableStream<StreamEvent>,
+    gate: BackpressureGate
+  ): ReadableStream<StreamEvent> {
+    const reader = stream.getReader();
+    return new ReadableStream<StreamEvent>({
+      async pull(controller) {
+        const { done, value } = await reader.read();
+        if (done) {
+          gate.close();
+          controller.close();
+          return;
+        }
+        gate.credit(streamEventCost(value));
+        controller.enqueue(value);
+      },
+      cancel(reason) {
+        gate.close();
+        return reader.cancel(reason);
+      },
+    });
+  }
+
+  /**
    * Returns true if an event carries a port-specific delta (text-delta or object-delta).
    */
   private static isPortDelta(event: StreamEvent): event is StreamEvent & { port: string } {
@@ -520,11 +635,18 @@ export class StreamPump {
    *
    * Also taps snapshot events to write per-port data into each edge's
    * `latestSnapshot` slot for downstream peek-during-streaming.
+   *
+   * When a `gate` is supplied (no-accumulation passthrough), every enqueued
+   * event charges the gate with its {@link streamEventCost}; the consumer-side
+   * wrapper ({@link wrapStreamWithGateCredit}) credits it back on each read.
+   * Stream end and producer abort/error close the gate so a parked producer
+   * is always released.
    */
   private createStreamFromTaskEvents(
     task: ITask,
     portId: string | undefined,
-    edgesForGroup: ReadonlyArray<Dataflow>
+    edgesForGroup: ReadonlyArray<Dataflow>,
+    gate?: BackpressureGate
   ): ReadableStream<StreamEvent> {
     // Shared teardown closure — hoisted out of start() so cancel() (which the
     // ReadableStream invokes on reader.cancel()) can call it too. Without this,
@@ -542,6 +664,10 @@ export class StreamPump {
         cleanup = () => {
           if (closed) return;
           closed = true;
+          // Release any producer parked on this port's passthrough gate —
+          // every teardown path (end, terminal status, reader cancel) must
+          // wake it or the run hangs.
+          gate?.close();
           try {
             controller.close();
           } catch {
@@ -576,6 +702,7 @@ export class StreamPump {
                 }
               }
             }
+            gate?.account(streamEventCost(event));
             controller.enqueue(event);
           } catch {
             // Stream may be closed
@@ -613,8 +740,18 @@ export class StreamPump {
    * Creates per-port filtered ReadableStreams for specific-port edges and
    * unfiltered streams for DATAFLOW_ALL_PORTS edges. Within each port group,
    * uses tee() for fan-out to multiple consumers.
+   *
+   * A port with an entry in `edgeGates` (single passthrough consumer by
+   * construction) gets a gate-instrumented stream: events charge the gate as
+   * they are enqueued and credit it as the consumer reads, so the producer can
+   * park against the consumer's read rate. Fan-out groups never have a gate —
+   * multi-consumer pacing stays best-effort.
    */
-  private pushStreamToEdges(task: ITask, _streamMode: StreamMode): void {
+  private pushStreamToEdges(
+    task: ITask,
+    _streamMode: StreamMode,
+    edgeGates?: ReadonlyMap<string, BackpressureGate>
+  ): void {
     const targetDataflows = this.graph.getTargetDataflows(task.id);
     if (targetDataflows.length === 0) return;
 
@@ -632,10 +769,15 @@ export class StreamPump {
 
     for (const [portKey, edges] of groups) {
       const filterPort = portKey === DATAFLOW_ALL_PORTS ? undefined : portKey;
-      const stream = this.createStreamFromTaskEvents(task, filterPort, edges);
+      // Gates exist only for single-consumer passthrough ports; a gate on a
+      // multi-edge group cannot happen by construction, but guard anyway so a
+      // tee'd fan-out is never double-credited.
+      const gate =
+        filterPort !== undefined && edges.length === 1 ? edgeGates?.get(filterPort) : undefined;
+      const stream = this.createStreamFromTaskEvents(task, filterPort, edges, gate);
 
       if (edges.length === 1) {
-        edges[0].setStream(stream);
+        edges[0].setStream(gate ? StreamPump.wrapStreamWithGateCredit(stream, gate) : stream);
       } else {
         let currentStream = stream;
         for (let i = 0; i < edges.length; i++) {

@@ -326,6 +326,7 @@ export class TaskRunner<
                 binaryRefSinks,
                 refSinks,
                 binaryHighWaterBytes,
+                edgeBackpressure: config.edgeBackpressure ?? this.task.runConfig.edgeBackpressure,
               })
             : await this.executeTask(inputs, ctx);
 

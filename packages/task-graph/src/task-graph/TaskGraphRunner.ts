@@ -495,7 +495,7 @@ export class TaskGraphRunner {
     // the task's executeStream() (via inputStreams) while the other stays
     // on the edge for materialization by awaitStreamInputs.
     if (isStreamable) {
-      this.streamPump.prepareStreamingInputs(task);
+      this.streamPump.prepareStreamingInputs(task, this.noAccumulation);
     }
 
     // Await any active streams on input dataflow edges so their values

@@ -418,6 +418,28 @@ export type BinaryFormat = "blob" | "binary";
  */
 export const DEFAULT_BINARY_HIGH_WATER_BYTES = 8 * 1024 * 1024;
 
+const streamCostEncoder = new TextEncoder();
+
+/**
+ * Buffered cost of a single stream event, in bytes, for backpressure
+ * accounting. Delta events cost their payload size (UTF-8 bytes for
+ * `text-delta`, JSON-encoded length for `object-delta`, raw byte length for
+ * `binary-delta`); control events (`finish`, `snapshot`, `phase`, `error`)
+ * cost nothing — they are not what a slow consumer buffers up on.
+ */
+export function streamEventCost(event: StreamEvent): number {
+  switch (event.type) {
+    case "text-delta":
+      return streamCostEncoder.encode(event.textDelta).byteLength;
+    case "object-delta":
+      return JSON.stringify(event.objectDelta).length;
+    case "binary-delta":
+      return event.binaryDelta.byteLength;
+    default:
+      return 0;
+  }
+}
+
 /**
  * Reads the `format` annotation of a single output port from the task's output
  * schema. Returns the raw string (or `undefined`) — callers needing the
