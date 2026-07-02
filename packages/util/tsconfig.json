@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.json",
-  "include": ["src/common.ts", "src/*/**/*"],
+  "include": ["src/common.ts", "src/limits.ts", "src/*/**/*"],
   "files": [
     "./src/node.ts",
     "./src/browser.ts",
