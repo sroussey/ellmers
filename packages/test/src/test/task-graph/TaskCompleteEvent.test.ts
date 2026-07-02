@@ -432,10 +432,10 @@ describe("bridgeSubGraphTaskEvents depth cap", () => {
 
   it("stops bridging past maxDepth (default 16)", () => {
     installStubLogger();
-    // Build a chain of TaskGraphs: g0 (top) -> g1 -> g2 -> ... -> gN (innermost).
+    // Build a chain of TaskGraphs: g0 (root) -> g1 -> ... -> g17 (innermost).
     // Bridging is chained so each gK forwards into gK-1, mirroring how a stack
     // of GraphAsTask wrappers nests bridges at run time.
-    const N = 20;
+    const N = 17;
     const graphs: TaskGraph[] = [];
     for (let i = 0; i <= N; i++) graphs.push(new TaskGraph());
 
@@ -445,24 +445,21 @@ describe("bridgeSubGraphTaskEvents depth cap", () => {
       unbridges.push(bridgeSubGraphTaskEvents(graphs[i], graphs[i - 1]));
     }
 
-    // Emit a task_progress from the innermost graph and count how many bridges
-    // it traversed up to the outermost. Without the cap this would re-emit N
-    // times (once per parent); with the cap of 16 it stops after 16 hops.
-    const reachedDepths: number[] = [];
-    for (let i = 0; i < graphs.length; i++) {
-      const depth = i;
-      graphs[i].subscribe("task_progress", () => {
-        reachedDepths.push(depth);
-      });
-    }
+    // Track all task IDs that reach the root (graphs[0]).
+    const rootIds: string[] = [];
+    graphs[0].subscribe("task_progress", (id) => rootIds.push(String(id)));
 
-    graphs[N].emit("task_progress", "inner-id", 42, "msg");
+    // graphs[16] is bridged at depth 15 (< 16), so its events propagate
+    // through all 16 hops and must reach the root.
+    graphs[16].emit("task_progress", "at-cap", 1, "msg");
+    expect(rootIds).toContain("at-cap");
 
-    // Innermost (depth N) saw the original emit; bridges propagate up at most
-    // 16 levels (the default cap), so the highest depth reached is N - 16.
-    const minReached = Math.min(...reachedDepths);
-    expect(minReached).toBeGreaterThanOrEqual(N - 16);
-    // The cap fired (depth reached 16), producing at least one warn.
+    // graphs[17] is where the depth hits 16 (= maxDepth), so that bridge is
+    // dropped; its events must NOT reach the root.
+    graphs[17].emit("task_progress", "over-cap", 1, "msg");
+    expect(rootIds).not.toContain("over-cap");
+
+    // The cap warning was emitted.
     expect(warnSpy).toHaveBeenCalled();
 
     unbridges.forEach((off) => off());

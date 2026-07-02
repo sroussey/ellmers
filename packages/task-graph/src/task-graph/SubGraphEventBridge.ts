@@ -65,7 +65,9 @@ export function bridgeSubGraphTaskEvents(
     // parentGraph is this subgraph) derives `depth >= maxDepth` and also
     // short-circuits — otherwise the depth counter resets at the next level
     // and the cap leaks downstream.
-    (subGraph as unknown as Record<symbol, number>)[BRIDGE_DEPTH] = maxDepth;
+    const subGraphAsRecord = subGraph as unknown as Record<symbol, number>;
+    const previousDepth = subGraphAsRecord[BRIDGE_DEPTH];
+    subGraphAsRecord[BRIDGE_DEPTH] = maxDepth;
     if (!warnedParents.has(parentGraph)) {
       warnedParents.add(parentGraph);
       getLogger().warn("bridgeSubGraphTaskEvents depth cap hit; dropping bridge", {
@@ -73,7 +75,13 @@ export function bridgeSubGraphTaskEvents(
         maxDepth,
       });
     }
-    return () => {};
+    return () => {
+      if (previousDepth === undefined) {
+        delete subGraphAsRecord[BRIDGE_DEPTH];
+      } else {
+        subGraphAsRecord[BRIDGE_DEPTH] = previousDepth;
+      }
+    };
   }
 
   // Stamp the subgraph with its bridge depth so any nested bridge call (whose
