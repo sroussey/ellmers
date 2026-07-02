@@ -244,9 +244,9 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
       resourceScope: deps.resourceScope,
       inputStreams: deps.inputStreams,
       backpressure,
-      binaryBackpressure: backpressure,
     });
 
+    let sawFinish = false;
     try {
       for await (const event of stream) {
         // For snapshot events, update runOutputData BEFORE emitting stream_chunk
@@ -342,6 +342,7 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
             break;
           }
           case "finish": {
+            sawFinish = true;
             usage = mergeUsage(usage, event.usage);
             // Re-attached to every finish this processor constructs below, so a
             // downstream StreamPump consumer sees the same token counts the
@@ -490,10 +491,20 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
       for (const { router } of routers.values()) router.fail(failure);
       throw err;
     } finally {
-      // Defensive: if the loop exited without seeing a `finish` event
-      // (e.g. abort, generator return without yield), close routers so their
-      // sinks see end-of-stream rather than blocking on the next chunk.
-      for (const { router } of routers.values()) router.end();
+      // If the loop exited without a `finish` event (abort via cooperative
+      // generator return, or a generator ending early), the routed bytes are
+      // incomplete: FAIL the routers so their sinks reject and discard the
+      // partial write, instead of committing a truncated blob to the cache as
+      // a finished artifact. After a normal finish, `end()` is an idempotent
+      // no-op (the finish handler already ended the routers).
+      if (sawFinish) {
+        for (const { router } of routers.values()) router.end();
+      } else {
+        const incomplete = new TaskError(
+          `Task ${this.task.type} stream ended without a finish event; discarding partial output.`
+        );
+        for (const { router } of routers.values()) router.fail(incomplete);
+      }
     }
 
     // Check if the task was aborted during streaming
@@ -609,7 +620,7 @@ export class BinaryStreamRouter {
   }
 
   /**
-   * @internal Used by {@link IExecuteContext.binaryBackpressure} so a task
+   * @internal Used by {@link IExecuteContext.backpressure} so a task
    * emitting via a side channel can park until the consumer drains. Resolves
    * immediately when the buffer is already under the mark or the router has
    * been closed.

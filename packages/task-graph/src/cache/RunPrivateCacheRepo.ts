@@ -71,6 +71,9 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     if (typeof backing.getOutputStreamByRef !== "function") {
       (this as { getOutputStreamByRef?: unknown }).getOutputStreamByRef = undefined;
     }
+    if (typeof backing.deleteOutputByRef !== "function") {
+      (this as { deleteOutputByRef?: unknown }).deleteOutputByRef = undefined;
+    }
   }
 
   /**
@@ -187,6 +190,16 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
   public override getOutputStreamByRef(ref: CacheRef): AsyncIterable<Uint8Array> | undefined {
     if (typeof this.backing.getOutputStreamByRef !== "function") return undefined;
     return this.backing.getOutputStreamByRef(ref);
+  }
+
+  /**
+   * Forwards by-ref deletion (orphan-blob cleanup) to the backing repository.
+   * Like the by-ref readers, no namespacing is re-applied — the `$ref`
+   * self-describes the entry.
+   */
+  public override deleteOutputByRef(ref: CacheRef): Promise<void> {
+    if (typeof this.backing.deleteOutputByRef !== "function") return Promise.resolve();
+    return this.backing.deleteOutputByRef(ref);
   }
 
   /** Mirrors the backing repository's streaming capability. */

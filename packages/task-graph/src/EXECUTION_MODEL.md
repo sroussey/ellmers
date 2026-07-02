@@ -324,15 +324,26 @@ falls back to accumulation and its outputs are cached inline as before.
 
 **Skippable edge materialization.** An edge qualifies as a _passthrough edge_
 when the flag is on, the edge carries a live stream with no transforms, source
-and target ports declare the **same** delta stream mode, the source port has
-exactly **one** consumer, and the target port does not set
-`x-validate-stream: true`. Such an edge skips the full-speed materialize drain
-entirely: the consumer takes its data from the live event stream (handed to its
-`executeStream` via `ctx.inputStreams`, without a tee — nothing else will read
-the edge), and the edge's settled value is the producer's per-port `CacheRef`,
-set when the producer finishes. Every non-qualifying edge — transforms, mode
-mismatch, fan-out, `*` edges — falls back to today's drain, which is correct,
-just without the memory and pacing win.
+and target ports declare the **same** delta stream mode, the target is itself a
+streamable task (it implements `executeStream`; only streamable tasks receive
+`ctx.inputStreams`) without a subgraph, the source port has exactly **one**
+consumer, and the target port does not set `x-validate-stream: true`. Such an
+edge skips the full-speed materialize drain entirely: the consumer takes its
+data from the live event stream (handed to its `executeStream` via
+`ctx.inputStreams`, without a tee — nothing else will read the edge), and the
+edge's settled value is set from the producer's result when it finishes (the
+per-port `CacheRef`, or the inline value a below-threshold ref was rehydrated
+to). Every non-qualifying edge — transforms, mode mismatch, fan-out, `*`
+edges, non-streamable or subgraph targets — falls back to today's drain, which
+is correct, just without the memory and pacing win.
+
+**Caching a stream-fed consumer.** A consumer reading a live stream computes
+its cache key while the streamed port is unsettled (`CacheRef` or nothing in
+the slot), so the streamed content cannot contribute to the key. Rather than
+let two runs that differ only in stream payload collide on one cache entry,
+the runner disables caching (`kind: "none"`) for any run consuming a live
+stream at an unsettled port. Drained edges settle the value before key
+computation and keep caching as usual.
 
 **Validation of stream-wired inputs.** Whole-value input validation is a
 settled-value concept, and a stream-wired port has no settled value while the
@@ -354,10 +365,22 @@ edge-agnostic); once buffered cost reaches the high-water mark —
 `TaskGraphRunConfig.streamHighWaterBytes`, defaulting to the binary router's
 8 MiB — the producer parks until the consumer drains below the mark. Producer
 completion, abort, error, and consumer termination all close the gate, so a
-parked producer can never be orphaned. Tasks that emit through a side channel
-can cooperate explicitly via `ctx.backpressure()` (its former name
-`binaryBackpressure` remains as a deprecated alias), which awaits both the
-cache-sink routers and every edge gate.
+parked producer can never be orphaned. A gate is built only when the consumer
+can make read progress while the producer is parked: if any OTHER edge into
+the consumer is sourced from the producer or one of its descendants (a drained
+edge, a mode-mismatched edge, a static-value edge), that edge settles only
+after the producer finishes, so gating would deadlock the pair — such
+consumers keep the ungated passthrough (correct, just unpaced). Tasks that
+emit through a side channel can cooperate explicitly via `ctx.backpressure()`,
+which awaits both the cache-sink routers and every edge gate.
+
+**Producer failure mid-stream.** A producer FAILURE (not abort) enqueues an
+in-stream error event on every attached edge stream before closing it, so a
+drained edge materializes the failure — a consumer already dispatched
+(unblocked at STREAMING) fails with the producer's error instead of
+completing, and caching, an output derived from truncated input. Abort keeps
+the graceful close: the run-level abort cascade is already tearing everything
+down.
 
 **Fan-out limitation.** Precise pacing is single-consumer by design. A source
 port feeding two or more consumers keeps the tee'd drain: every consumer still
@@ -367,9 +390,10 @@ producer's lead.
 **Cache hit ≡ fresh run.** On a cache hit for a task with per-port refs and a
 same-mode streaming consumer, the runner replays each port's cached bytes
 through the mode's codec as delta events, so downstream tasks observe the same
-event sequence as a fresh run (unpaced — replay reads are pull-driven from the
-backing). Materializing consumers receive hydrated values in the enriched
-finish event, exactly as on the binary path.
+event sequence as a fresh run. Replay honors the same consumer-edge gate as a
+fresh run (each emitted delta awaits `edgeBackpressure`); ungated consumers
+replay at read speed. Materializing consumers receive hydrated values in the
+enriched finish event, exactly as on the binary path.
 
 ### Durable execution model
 

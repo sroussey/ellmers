@@ -35,8 +35,14 @@ function bytesToBase64(bytes: Uint8Array): string {
   if (typeof Buffer !== "undefined") {
     return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
   }
+  // Block-wise String.fromCharCode: one call per 32 KiB instead of per byte —
+  // a per-byte loop is minutes of main-thread jank on multi-MB payloads, and
+  // spreading the whole array in one call overflows the argument stack.
+  const BLOCK = 0x8000;
   let bin = "";
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i] ?? 0);
+  for (let i = 0; i < bytes.length; i += BLOCK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + BLOCK));
+  }
   return btoa(bin);
 }
 

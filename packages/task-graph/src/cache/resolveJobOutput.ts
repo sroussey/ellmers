@@ -24,8 +24,7 @@ export interface JobHandleLike<Output> {
  * `TaskOutputRepository` exposes).
  */
 export type RefBacking =
-  | CacheRefResolver
-  | { readonly getOutputByRef?: (ref: CacheRef) => Promise<Blob | undefined> };
+  CacheRefResolver | { readonly getOutputByRef?: (ref: CacheRef) => Promise<Blob | undefined> };
 
 /**
  * Await a job's completion and hydrate every {@link CacheRef} inside its
@@ -123,6 +122,28 @@ async function outputValueToStream(
       yield bytes;
     })();
   }
+  // Inline values of the non-binary streamable modes: a below-threshold
+  // append port hydrates to a string, an object port to a plain object/array.
+  // Adapt them to the same byte encoding the ref form streams (UTF-8 text;
+  // one NDJSON line that folds back to the same value) so caller behavior
+  // does not flip on payload size.
+  if (typeof candidate === "string") {
+    const bytes = new TextEncoder().encode(candidate);
+    return (async function* () {
+      yield bytes;
+    })();
+  }
+  if (
+    port !== undefined &&
+    candidate !== null &&
+    typeof candidate === "object" &&
+    (Array.isArray(candidate) || Object.getPrototypeOf(candidate) === Object.prototype)
+  ) {
+    const bytes = new TextEncoder().encode(JSON.stringify(candidate) + "\n");
+    return (async function* () {
+      yield bytes;
+    })();
+  }
   return undefined;
 }
 
@@ -131,9 +152,11 @@ async function outputValueToStream(
  * output cache without materializing it. `port` selects the output port;
  * when omitted, the single branded {@link CacheRef} reachable in the output
  * is used (two or more refs without a port is an error; zero resolves
- * `undefined`). Inline `Blob` / `ArrayBuffer` / `Uint8Array` values at a
- * named port are adapted to a stream so callers don't branch on whether the
- * reference threshold kept the value inline.
+ * `undefined`). Inline values at a named port — `Blob` / `ArrayBuffer` /
+ * `Uint8Array`, plus the `string` and plain object/array forms a
+ * below-threshold append/object ref hydrates to — are adapted to a stream so
+ * callers don't branch on whether the reference threshold kept the value
+ * inline.
  *
  * Portless discovery walks the ENTIRE output, including fields whose content
  * the job may have copied from untrusted input — a crafted branded ref shape

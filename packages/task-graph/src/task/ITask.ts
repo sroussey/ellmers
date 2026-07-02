@@ -109,11 +109,6 @@ export interface IExecuteContext {
    * source — tasks can call it unconditionally without paying a cost.
    */
   backpressure?: () => Promise<void>;
-  /**
-   * @deprecated Alias of {@link backpressure} kept for existing call sites;
-   * both names resolve to the same function.
-   */
-  binaryBackpressure?: () => Promise<void>;
 }
 
 export type IExecutePreviewContext = Pick<IExecuteContext, "own">;

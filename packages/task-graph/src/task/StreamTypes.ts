@@ -282,6 +282,34 @@ export function getStreamingPorts(
 }
 
 /**
+ * Delta stream modes: the modes whose events are incremental per-port deltas
+ * that can be encoded to (and replayed from) a single-port byte stream via
+ * {@link getStreamPortCodec}. `replace` (snapshot-driven), `none`, and `mixed`
+ * are not delta modes.
+ */
+export function isDeltaStreamMode(
+  mode: StreamMode
+): mode is Extract<StreamMode, "append" | "object" | "binary"> {
+  return mode === "append" || mode === "object" || mode === "binary";
+}
+
+/**
+ * Reads the per-port `x-validate-stream` opt-in from an input schema: a port
+ * that sets it wants its stream materialized and validated as a whole value,
+ * opting out of both the validation exemption for stream-wired ports and the
+ * no-accumulation passthrough for its edge.
+ */
+export function portForcesStreamValidation(
+  schema: DataPortSchema | JsonSchema,
+  port: string
+): boolean {
+  if (typeof schema === "boolean") return false;
+  const prop = (schema.properties as Record<string, any>)?.[port];
+  if (!prop || typeof prop === "boolean") return false;
+  return prop["x-validate-stream"] === true;
+}
+
+/**
  * Returns the dominant output stream mode for a task by inspecting its output schema.
  * Returns `"mixed"` when ports use different modes (e.g., append + object).
  * Returns `"none"` if no output port declares streaming.
@@ -374,25 +402,6 @@ export function getObjectPortId(schema: DataPortSchema): string | undefined {
   for (const [name, prop] of Object.entries(props)) {
     if (!prop || typeof prop === "boolean") continue;
     if ((prop as any)["x-stream"] === "object") return name;
-  }
-  return undefined;
-}
-
-/**
- * Returns the port ID (property name) of the first output port that declares
- * `x-stream: "binary"`, or `undefined` if no such port exists.
- *
- * @param schema - The task's output DataPortSchema
- * @returns The port name with binary streaming, or undefined
- */
-export function getBinaryPortId(schema: DataPortSchema): string | undefined {
-  if (typeof schema === "boolean") return undefined;
-  const props = schema.properties;
-  if (!props) return undefined;
-
-  for (const [name, prop] of Object.entries(props)) {
-    if (!prop || typeof prop === "boolean") continue;
-    if ((prop as any)["x-stream"] === "binary") return name;
   }
   return undefined;
 }

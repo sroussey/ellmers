@@ -16,9 +16,12 @@ import {
   getOutputStreamMode,
   getPortStreamMode,
   getStreamingPorts,
+  isDeltaStreamMode,
+  isTaskStreamable,
+  portForcesStreamValidation,
   streamEventCost,
 } from "../task/StreamTypes";
-import type { TaskInput } from "../task/TaskTypes";
+import type { TaskIdType, TaskInput } from "../task/TaskTypes";
 import { TaskStatus } from "../task/TaskTypes";
 import { Dataflow, DATAFLOW_ALL_PORTS } from "./Dataflow";
 import type { EdgeMaterializer } from "./EdgeMaterializer";
@@ -65,6 +68,18 @@ export interface StreamingRunOptions {
    * cacheRegistry rather than falling through to CACHE_REGISTRY resolution.
    */
   readonly legacyCacheExplicitlyDisabled?: boolean;
+}
+
+/**
+ * Per-port pacing state for a no-accumulation passthrough edge: the gate that
+ * parks the producer, plus a FIFO of the costs charged for enqueued events so
+ * the consumer-side credit reuses the charge instead of recomputing it.
+ *
+ * @internal
+ */
+interface EdgeGateState {
+  readonly gate: BackpressureGate;
+  readonly pendingCosts: number[];
 }
 
 /**
@@ -205,10 +220,10 @@ export class StreamPump {
     const edgeBackpressure = edgeGates
       ? async (port?: string): Promise<void> => {
           if (port !== undefined) {
-            await edgeGates.get(port)?.awaitBelowMark();
+            await edgeGates.get(port)?.gate.awaitBelowMark();
             return;
           }
-          await Promise.all(Array.from(edgeGates.values(), (g) => g.awaitBelowMark()));
+          await Promise.all(Array.from(edgeGates.values(), (s) => s.gate.awaitBelowMark()));
         }
       : undefined;
     // Safety release: a passthrough consumer that reaches a terminal state
@@ -218,8 +233,8 @@ export class StreamPump {
     const gateCleanups: Array<() => void> = [];
     if (edgeGates) {
       for (const df of this.graph.getTargetDataflows(task.id)) {
-        const gate = edgeGates.get(df.sourceTaskPortId);
-        if (!gate) continue;
+        const state = edgeGates.get(df.sourceTaskPortId);
+        if (!state) continue;
         const target = this.graph.getTask(df.targetTaskId);
         if (!target) continue;
         const onTargetStatus = (status: TaskStatus) => {
@@ -229,7 +244,7 @@ export class StreamPump {
             status === TaskStatus.ABORTING ||
             status === TaskStatus.DISABLED
           ) {
-            gate.close();
+            state.gate.close();
           }
         };
         target.on("status", onTargetStatus);
@@ -318,7 +333,7 @@ export class StreamPump {
       for (const cleanup of gateCleanups) cleanup();
       // Idempotent: normally already closed by the edge stream's end/terminate
       // handlers; this covers runs that never flipped to STREAMING at all.
-      if (edgeGates) for (const gate of edgeGates.values()) gate.close();
+      if (edgeGates) for (const state of edgeGates.values()) state.gate.close();
     }
   }
 
@@ -411,6 +426,11 @@ export class StreamPump {
     // that cannot affirmatively report streaming support as non-streaming.
     if (typeof outputCache?.supportsStreaming !== "function") return false;
     if (!outputCache.supportsStreaming()) return false;
+    // The sink is only built for cacheable tasks (getBinaryRefSinksByPolicy
+    // refuses otherwise). Skipping accumulation for a non-cacheable task would
+    // leave its binary deltas with neither an accumulator nor a sink — the
+    // output would silently drop to the finish payload ({}).
+    if (!task.cacheable) return false;
 
     const outSchema = task.outputSchema();
     const streamingPorts = getStreamingPorts(outSchema);
@@ -446,10 +466,7 @@ export class StreamPump {
     if (!outputCache.supportsStreamingPorts()) return false;
     const streamingPorts = getStreamingPorts(task.outputSchema());
     if (streamingPorts.length === 0) return false;
-    const allDelta = streamingPorts.every(
-      (p) => p.mode === "append" || p.mode === "object" || p.mode === "binary"
-    );
-    if (!allDelta) return false;
+    if (!streamingPorts.every((p) => isDeltaStreamMode(p.mode))) return false;
     return !StreamPump.anyConsumerNeedsMaterialized(graph, task);
   }
 
@@ -474,10 +491,17 @@ export class StreamPump {
     const source = graph.getTask(df.sourceTaskId);
     const target = graph.getTask(df.targetTaskId);
     if (!source || !target) return false;
+    // The consumer must actually take its data from the live stream: only
+    // streamable tasks receive ctx.inputStreams (prepareStreamingInputs is
+    // gated on isTaskStreamable), so a non-streamable target with a matching
+    // input mode still needs the drain to materialize its value. Subgraph
+    // hosts (GraphAsTask etc.) also need the drain — their inner tasks read
+    // the settled input slot, which the passthrough leaves unmaterialized.
+    if (!isTaskStreamable(target) || target.hasChildren()) return false;
     const srcMode = getPortStreamMode(source.outputSchema(), df.sourceTaskPortId);
-    if (srcMode !== "append" && srcMode !== "object" && srcMode !== "binary") return false;
+    if (!isDeltaStreamMode(srcMode)) return false;
     if (getPortStreamMode(target.inputSchema(), df.targetTaskPortId) !== srcMode) return false;
-    if (StreamPump.portForcesStreamValidation(target.inputSchema(), df.targetTaskPortId)) {
+    if (portForcesStreamValidation(target.inputSchema(), df.targetTaskPortId)) {
       return false;
     }
     // Single consumer of this source port: a fan-out source port must keep the
@@ -486,17 +510,6 @@ export class StreamPump {
       .getTargetDataflows(df.sourceTaskId)
       .filter((e) => e.sourceTaskPortId === df.sourceTaskPortId);
     return fanout.length === 1;
-  }
-
-  /** Reads the per-port `x-validate-stream` opt-in from an input schema. */
-  private static portForcesStreamValidation(
-    schema: ReturnType<ITask["inputSchema"]>,
-    port: string
-  ): boolean {
-    if (typeof schema === "boolean") return false;
-    const prop = (schema.properties as Record<string, any>)?.[port];
-    if (!prop || typeof prop === "boolean") return false;
-    return prop["x-validate-stream"] === true;
   }
 
   /**
@@ -526,38 +539,19 @@ export class StreamPump {
   }
 
   /**
-   * Returns `true` when any outgoing dataflow edge targets an input port that
-   * consumes the source port's binary stream mode directly (`x-stream:
-   * "binary"` on both ends). Used to decide whether a cache hit should replay
-   * cached bytes as `binary-delta` events: with no stream-capable consumer
-   * the replay would be wasted reads. `*` fan-out edges don't count — their
-   * consumers receive materialized values, not streams.
-   */
-  static anyConsumerAcceptsBinaryStream(graph: TaskGraph, task: ITask): boolean {
-    const outSchema = task.outputSchema();
-    return graph.getTargetDataflows(task.id).some((df) => {
-      if (df.sourceTaskPortId === DATAFLOW_ALL_PORTS) return false;
-      if (getPortStreamMode(outSchema, df.sourceTaskPortId) !== "binary") return false;
-      const targetTask = graph.getTask(df.targetTaskId);
-      if (!targetTask) return false;
-      return getPortStreamMode(targetTask.inputSchema(), df.targetTaskPortId) === "binary";
-    });
-  }
-
-  /**
-   * All-mode analogue of {@link anyConsumerAcceptsBinaryStream}: `true` when any
-   * outgoing edge targets an input port that consumes the source port's delta
-   * stream mode directly (same `append` / `object` / `binary` mode on both
-   * ends). Drives whether a cache hit replays the cached bytes as delta events
-   * (via the per-mode codec) for a stream-capable consumer; `*` fan-out edges
-   * don't count (their consumers receive materialized values).
+   * Returns `true` when any outgoing edge targets an input port that consumes
+   * the source port's delta stream mode directly (same `append` / `object` /
+   * `binary` mode on both ends). Drives whether a cache hit replays the cached
+   * bytes as delta events (via the per-mode codec) for a stream-capable
+   * consumer; `*` fan-out edges don't count (their consumers receive
+   * materialized values).
    */
   static anyConsumerAcceptsStream(graph: TaskGraph, task: ITask): boolean {
     const outSchema = task.outputSchema();
     return graph.getTargetDataflows(task.id).some((df) => {
       if (df.sourceTaskPortId === DATAFLOW_ALL_PORTS) return false;
       const srcMode = getPortStreamMode(outSchema, df.sourceTaskPortId);
-      if (srcMode !== "append" && srcMode !== "object" && srcMode !== "binary") return false;
+      if (!isDeltaStreamMode(srcMode)) return false;
       const targetTask = graph.getTask(df.targetTaskId);
       if (!targetTask) return false;
       return getPortStreamMode(targetTask.inputSchema(), df.targetTaskPortId) === srcMode;
@@ -565,66 +559,112 @@ export class StreamPump {
   }
 
   /**
-   * Builds one {@link BackpressureGate} per source port whose (single) outgoing
-   * edge qualifies as a no-accumulation passthrough. The gate's high-water mark
-   * is the run's `streamHighWaterBytes` (falling back to
+   * Builds one {@link EdgeGateState} per source port whose (single) outgoing
+   * edge qualifies as a no-accumulation passthrough AND whose consumer can
+   * make read progress while this producer is parked. The gate's high-water
+   * mark is the run's `streamHighWaterBytes` (falling back to
    * {@link DEFAULT_BINARY_HIGH_WATER_BYTES}). Returns `undefined` when the flag
    * is off or no edge qualifies, so the entire pacing path stays dormant.
+   *
+   * Liveness guard: the producer may park on a gate long before it finishes,
+   * so the consumer must be able to reach its stream reads without waiting on
+   * anything that itself waits on this producer. Any OTHER edge into the
+   * consumer whose source is this producer or one of its descendants — a
+   * drained streaming edge, a mode-mismatched edge, a static-value edge —
+   * settles only after this producer finishes, so gating would deadlock the
+   * pair. Such consumers keep the ungated passthrough (correct, just unpaced).
    */
   private buildPassthroughEdgeGates(
     task: ITask,
     options: StreamingRunOptions
-  ): Map<string, BackpressureGate> | undefined {
+  ): Map<string, EdgeGateState> | undefined {
     if (options.noAccumulation !== true) return undefined;
     const highWaterMark =
       options.streamHighWaterBytes !== undefined && options.streamHighWaterBytes > 0
         ? options.streamHighWaterBytes
         : DEFAULT_BINARY_HIGH_WATER_BYTES;
-    let gates: Map<string, BackpressureGate> | undefined;
+    let reachable: ReadonlySet<TaskIdType> | undefined;
+    let gates: Map<string, EdgeGateState> | undefined;
     for (const df of this.graph.getTargetDataflows(task.id)) {
       if (!StreamPump.isNoAccumulationPassthroughEdge(this.graph, df, true)) continue;
+      reachable ??= this.tasksReachableFrom(task.id);
+      const consumerWaitsOnProducer = this.graph
+        .getSourceDataflows(df.targetTaskId)
+        .some((e) => e !== df && reachable!.has(e.sourceTaskId));
+      if (consumerWaitsOnProducer) continue;
       // The passthrough predicate guarantees a single consumer per source
       // port, so one gate per port is exactly one gate per edge.
       gates ??= new Map();
-      gates.set(df.sourceTaskPortId, new BackpressureGate(highWaterMark));
+      gates.set(df.sourceTaskPortId, {
+        gate: new BackpressureGate(highWaterMark),
+        pendingCosts: [],
+      });
     }
     return gates;
   }
 
+  /** Task ids reachable from `taskId` via outgoing dataflows, including itself. */
+  private tasksReachableFrom(taskId: TaskIdType): ReadonlySet<TaskIdType> {
+    const seen = new Set<TaskIdType>([taskId]);
+    const queue: TaskIdType[] = [taskId];
+    while (queue.length > 0) {
+      const id = queue.pop()!;
+      for (const df of this.graph.getTargetDataflows(id)) {
+        if (!seen.has(df.targetTaskId)) {
+          seen.add(df.targetTaskId);
+          queue.push(df.targetTaskId);
+        }
+      }
+    }
+    return seen;
+  }
+
   /**
    * Wraps a per-port edge stream so every event read by the consumer credits
-   * the port's gate with that event's {@link streamEventCost}, waking a
-   * producer parked at the high-water mark. Close (end or cancel) also closes
-   * the gate so an abandoned consumer can never orphan a parked producer.
+   * the port's gate with the cost charged when that event was enqueued (a
+   * FIFO — events cross the gate in order, so each read pops the oldest
+   * charge), waking a producer parked at the high-water mark. Close (end,
+   * cancel, or an upstream read failure) also closes the gate so an abandoned
+   * consumer can never orphan a parked producer.
    */
   private static wrapStreamWithGateCredit(
     stream: ReadableStream<StreamEvent>,
-    gate: BackpressureGate
+    state: EdgeGateState
   ): ReadableStream<StreamEvent> {
     const reader = stream.getReader();
     return new ReadableStream<StreamEvent>({
       async pull(controller) {
-        const { done, value } = await reader.read();
-        if (done) {
-          gate.close();
+        let done: boolean;
+        let value: StreamEvent | undefined;
+        try {
+          ({ done, value } = await reader.read());
+        } catch (err) {
+          state.gate.close();
+          throw err;
+        }
+        if (done || value === undefined) {
+          state.gate.close();
           controller.close();
           return;
         }
-        gate.credit(streamEventCost(value));
+        state.gate.credit(state.pendingCosts.shift() ?? streamEventCost(value));
         controller.enqueue(value);
       },
       cancel(reason) {
-        gate.close();
+        state.gate.close();
         return reader.cancel(reason);
       },
     });
   }
 
   /**
-   * Returns true if an event carries a port-specific delta (text-delta or object-delta).
+   * Returns true if an event carries a port-specific delta (text-delta,
+   * object-delta, or binary-delta).
    */
   private static isPortDelta(event: StreamEvent): event is StreamEvent & { port: string } {
-    return event.type === "text-delta" || event.type === "object-delta";
+    return (
+      event.type === "text-delta" || event.type === "object-delta" || event.type === "binary-delta"
+    );
   }
 
   /**
@@ -646,7 +686,7 @@ export class StreamPump {
     task: ITask,
     portId: string | undefined,
     edgesForGroup: ReadonlyArray<Dataflow>,
-    gate?: BackpressureGate
+    gate?: EdgeGateState
   ): ReadableStream<StreamEvent> {
     // Shared teardown closure — hoisted out of start() so cancel() (which the
     // ReadableStream invokes on reader.cancel()) can call it too. Without this,
@@ -667,7 +707,7 @@ export class StreamPump {
           // Release any producer parked on this port's passthrough gate —
           // every teardown path (end, terminal status, reader cancel) must
           // wake it or the run hangs.
-          gate?.close();
+          gate?.gate.close();
           try {
             controller.close();
           } catch {
@@ -702,7 +742,11 @@ export class StreamPump {
                 }
               }
             }
-            gate?.account(streamEventCost(event));
+            if (gate) {
+              const cost = streamEventCost(event);
+              gate.gate.account(cost);
+              gate.pendingCosts.push(cost);
+            }
             controller.enqueue(event);
           } catch {
             // Stream may be closed
@@ -714,7 +758,23 @@ export class StreamPump {
         const onStatus = (status: TaskStatus) => {
           // Terminal statuses with no stream_end (error/abort -> FAILED, or a
           // completion that bypassed stream_end) must still release the stream.
-          if (status === TaskStatus.FAILED || status === TaskStatus.COMPLETED) {
+          // A producer FAILURE first surfaces in-stream so a drained edge
+          // materializes the error instead of quietly settling on whatever
+          // partial data had arrived — a consumer already dispatched
+          // (unblocked at STREAMING) must not complete, and cache, an output
+          // derived from truncated input. Abort closes gracefully (the
+          // run-level abort cascade is already tearing everything down).
+          if (status === TaskStatus.FAILED) {
+            try {
+              controller.enqueue({
+                type: "error",
+                error: task.error ?? new Error(`Task ${task.type} failed during streaming`),
+              } as StreamEvent);
+            } catch {
+              // Stream may already be closed
+            }
+            cleanup();
+          } else if (status === TaskStatus.COMPLETED) {
             cleanup();
           }
         };
@@ -750,7 +810,7 @@ export class StreamPump {
   private pushStreamToEdges(
     task: ITask,
     _streamMode: StreamMode,
-    edgeGates?: ReadonlyMap<string, BackpressureGate>
+    edgeGates?: ReadonlyMap<string, EdgeGateState>
   ): void {
     const targetDataflows = this.graph.getTargetDataflows(task.id);
     if (targetDataflows.length === 0) return;

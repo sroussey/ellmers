@@ -5,7 +5,7 @@
  */
 
 import type { StreamEvent, StreamMode } from "../task/StreamTypes";
-import { foldObjectDelta } from "../task/StreamTypes";
+import { foldObjectDelta, materializeBinary } from "../task/StreamTypes";
 
 /**
  * Translates a single output port's streaming deltas to and from the ordered
@@ -36,19 +36,32 @@ export interface StreamPortCodec {
   materialize(bytes: AsyncIterable<Uint8Array>, port: string): Promise<unknown>;
 }
 
+// TextEncoder is stateless — one shared instance serves every event on the
+// delta hot path instead of a fresh allocation per encodeEvent call.
+const utf8 = new TextEncoder();
+
+/** Shared `encode` body: {@link StreamPortCodec.encodeEvent} applied over a stream. */
+async function* encodeEvents(
+  codec: StreamPortCodec,
+  events: AsyncIterable<StreamEvent>,
+  port: string
+): AsyncIterable<Uint8Array> {
+  for await (const e of events) {
+    const bytes = codec.encodeEvent(e, port);
+    if (bytes) yield bytes;
+  }
+}
+
 const appendCodec: StreamPortCodec = {
   mode: "append",
   encodeEvent(event, port) {
     if (event.type === "text-delta" && event.port === port && event.textDelta) {
-      return new TextEncoder().encode(event.textDelta);
+      return utf8.encode(event.textDelta);
     }
     return undefined;
   },
-  async *encode(events, port) {
-    for await (const e of events) {
-      const bytes = this.encodeEvent(e, port);
-      if (bytes) yield bytes;
-    }
+  encode(events, port) {
+    return encodeEvents(this, events, port);
   },
   async *decode(bytes, port) {
     const dec = new TextDecoder();
@@ -72,15 +85,12 @@ const objectCodec: StreamPortCodec = {
   mode: "object",
   encodeEvent(event, port) {
     if (event.type === "object-delta" && event.port === port) {
-      return new TextEncoder().encode(JSON.stringify(event.objectDelta) + "\n");
+      return utf8.encode(JSON.stringify(event.objectDelta) + "\n");
     }
     return undefined;
   },
-  async *encode(events, port) {
-    for await (const e of events) {
-      const bytes = this.encodeEvent(e, port);
-      if (bytes) yield bytes;
-    }
+  encode(events, port) {
+    return encodeEvents(this, events, port);
   },
   decode: decodeObject,
   async materialize(bytes, port) {
@@ -120,11 +130,8 @@ const binaryCodec: StreamPortCodec = {
     if (event.type === "binary-delta" && event.port === port) return event.binaryDelta;
     return undefined;
   },
-  async *encode(events, port) {
-    for await (const e of events) {
-      const bytes = this.encodeEvent(e, port);
-      if (bytes) yield bytes;
-    }
+  encode(events, port) {
+    return encodeEvents(this, events, port);
   },
   async *decode(bytes, port) {
     for await (const chunk of bytes) yield { type: "binary-delta", port, binaryDelta: chunk };
@@ -132,7 +139,7 @@ const binaryCodec: StreamPortCodec = {
   async materialize(bytes) {
     const parts: Uint8Array[] = [];
     for await (const chunk of bytes) parts.push(chunk);
-    return new Blob(parts as unknown as BlobPart[]);
+    return materializeBinary(parts, "blob");
   },
 };
 
