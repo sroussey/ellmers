@@ -14,8 +14,10 @@ import type { WorkflowEventListeners } from "./Workflow";
  * events to a Workflow's EventEmitter. Owns subscription lifecycle:
  *   attach(graph)   → subscribe to mutation + entitlement events
  *   detach()        → unsubscribe (called on graph swap and reset)
- *   beginRun()      → subscribe to streaming events for the current run
- *   endRun()        → unsubscribe streaming
+ *   beginRun()      → subscribe to streaming events for the current run and
+ *                     return an unsubscribe token the caller MUST hold and
+ *                     invoke when the run ends (there is no endRun() method;
+ *                     teardown is the returned token, kept on the run context).
  *
  * The bridge does NOT own the events emitter — the facade Workflow does. The
  * bridge holds a reference and emits through it.

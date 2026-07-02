@@ -16,7 +16,7 @@ import {
 import { Container, ResourceScope, ServiceRegistry, getLogger, setLogger } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
+import { RunPrivateInMemoryTaskOutputRepository } from "../../binding/RunPrivateInMemoryTaskOutputRepository";
 
 class PrivatePolicyTask extends Task<{ q: string }, { r: string }> {
   public static override type = "PrivateRunIdTask";
@@ -79,13 +79,13 @@ class DeterministicTask extends Task<{ q: string }, { r: string }> {
   }
 }
 
-async function freshPrivateRepo(): Promise<InMemoryTaskOutputRepository> {
-  const r = new InMemoryTaskOutputRepository();
+async function freshPrivateRepo(): Promise<RunPrivateInMemoryTaskOutputRepository> {
+  const r = new RunPrivateInMemoryTaskOutputRepository();
   await (r as any).setupDatabase?.();
   return r;
 }
 
-function freshServices(privateRepo: InMemoryTaskOutputRepository): ServiceRegistry {
+function freshServices(privateRepo: RunPrivateInMemoryTaskOutputRepository): ServiceRegistry {
   const services = new ServiceRegistry(new Container());
   services.registerInstance(CACHE_REGISTRY, new DefaultCacheRegistry({ private: privateRepo }));
   return services;
@@ -124,8 +124,7 @@ describe("private cache policy requires a runId", () => {
 
     // The private repo must be untouched — without a runId the task should
     // skip caching entirely rather than colliding in the shared namespace.
-    const stored = await backing.getOutput(PrivatePolicyTask.type, { q: "hello", __cv: "1" });
-    expect(stored).toBeUndefined();
+    expect(await backing.size()).toBe(0);
 
     const matches = warnings.filter(
       (w) => w.includes("private cache policy") && w.includes(PrivatePolicyTask.type)
@@ -180,9 +179,12 @@ describe("private cache policy requires a runId", () => {
     );
     expect(matchingWarnings.length).toBe(0);
 
-    // Private cache keys by task instance id, namespaced under __run:<runId>::
-    const prefixedType = `__run:${runId}::${task.id}`;
-    const stored = await rawBacking.getOutput(prefixedType, { q: "bypass-test", __cv: "1" });
+    // Private cache keys by task instance id under the wrapper's runId (a
+    // first-class column, not a taskType prefix).
+    const stored = await rawBacking.getOutputForRun(runId, String(task.id), {
+      q: "bypass-test",
+      __cv: "1",
+    });
     expect(stored).toEqual({ r: "done:bypass-test" });
   });
 });

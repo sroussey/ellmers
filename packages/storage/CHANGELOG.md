@@ -1,5 +1,21 @@
 # @workglow/storage
 
+## 0.3.22
+
+### Bug Fixes
+
+#### review
+
+- resolve xhigh code-review findings on cherry-picked 601+604
+
+#### storage/vector
+
+- align in-memory + IndexedDB default scoreThreshold to 0 (match SQL backends)
+
+#### core
+
+- resolve review findings across util, storage, job-queue, task-graph (#602)
+
 ## 0.3.21
 
 ## 0.3.20

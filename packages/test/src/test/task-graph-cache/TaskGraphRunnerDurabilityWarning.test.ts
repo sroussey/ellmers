@@ -9,7 +9,7 @@ import { CACHE_REGISTRY, DefaultCacheRegistry, Task, TaskGraph } from "@workglow
 import { Container, ResourceScope, ServiceRegistry, getLogger, setLogger } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
+import { RunPrivateInMemoryTaskOutputRepository } from "../../binding/RunPrivateInMemoryTaskOutputRepository";
 
 class PrivTask extends Task<{ q: string }, { r: string }> {
   public static override type = "DurabilityWarnTask";
@@ -62,7 +62,7 @@ describe("TaskGraphRunner durability warning", () => {
   });
 
   it("warns when a private-policy task is wired to a non-durable repo", async () => {
-    const backing = new InMemoryTaskOutputRepository();
+    const backing = new RunPrivateInMemoryTaskOutputRepository();
     await (backing as any).setupDatabase?.();
 
     const services = new ServiceRegistry(new Container());
@@ -79,7 +79,7 @@ describe("TaskGraphRunner durability warning", () => {
   });
 
   it("does NOT warn when private repo is durable", async () => {
-    const backing = new InMemoryTaskOutputRepository();
+    const backing = new RunPrivateInMemoryTaskOutputRepository();
     (backing as any).isDurable = () => true;
     await (backing as any).setupDatabase?.();
 
@@ -125,7 +125,7 @@ describe("TaskGraphRunner durability warning", () => {
       }
     }
 
-    const backing = new InMemoryTaskOutputRepository();
+    const backing = new RunPrivateInMemoryTaskOutputRepository();
     await (backing as any).setupDatabase?.();
 
     const services = new ServiceRegistry(new Container());
@@ -140,7 +140,7 @@ describe("TaskGraphRunner durability warning", () => {
   });
 
   it("emits durability warning only once per private repo across multiple runGraph calls", async () => {
-    const backing = new InMemoryTaskOutputRepository();
+    const backing = new RunPrivateInMemoryTaskOutputRepository();
     await (backing as any).setupDatabase?.();
 
     const services = new ServiceRegistry(new Container());
@@ -163,7 +163,7 @@ describe("TaskGraphRunner durability warning", () => {
 
   it("emits a fresh warning for a different repo instance", async () => {
     // First repo — should warn once.
-    const backingA = new InMemoryTaskOutputRepository();
+    const backingA = new RunPrivateInMemoryTaskOutputRepository();
     await (backingA as any).setupDatabase?.();
     const servicesA = new ServiceRegistry(new Container());
     servicesA.registerInstance(CACHE_REGISTRY, new DefaultCacheRegistry({ private: backingA }));
@@ -172,7 +172,7 @@ describe("TaskGraphRunner durability warning", () => {
     await gA.run({}, { runId: "ra", registry: servicesA, resourceScope: new ResourceScope() });
 
     // Second, separate repo instance — must warn again (WeakSet keys on repo).
-    const backingB = new InMemoryTaskOutputRepository();
+    const backingB = new RunPrivateInMemoryTaskOutputRepository();
     await (backingB as any).setupDatabase?.();
     const servicesB = new ServiceRegistry(new Container());
     servicesB.registerInstance(CACHE_REGISTRY, new DefaultCacheRegistry({ private: backingB }));
@@ -185,7 +185,7 @@ describe("TaskGraphRunner durability warning", () => {
   });
 
   it("restores registry between runs to avoid nested RunPrivateCacheRepo wrappers", async () => {
-    const backing = new InMemoryTaskOutputRepository();
+    const backing = new RunPrivateInMemoryTaskOutputRepository();
     await (backing as any).setupDatabase?.();
     const services = new ServiceRegistry(new Container());
     services.registerInstance(CACHE_REGISTRY, new DefaultCacheRegistry({ private: backing }));
@@ -238,7 +238,7 @@ describe("TaskGraphRunner durability warning", () => {
       }
     }
 
-    const backing = new InMemoryTaskOutputRepository();
+    const backing = new RunPrivateInMemoryTaskOutputRepository();
     await (backing as any).setupDatabase?.();
     const services = new ServiceRegistry(new Container());
     services.registerInstance(CACHE_REGISTRY, new DefaultCacheRegistry({ private: backing }));
@@ -289,7 +289,7 @@ describe("TaskGraphRunner durability warning", () => {
       }
     }
 
-    const backing = new InMemoryTaskOutputRepository();
+    const backing = new RunPrivateInMemoryTaskOutputRepository();
     await (backing as any).setupDatabase?.();
     const services = new ServiceRegistry(new Container());
     services.registerInstance(CACHE_REGISTRY, new DefaultCacheRegistry({ private: backing }));

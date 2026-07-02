@@ -10,6 +10,7 @@ import { CreateEndLoopWorkflow, CreateLoopWorkflow } from "../task-graph/Workflo
 import { FallbackTaskRunner } from "./FallbackTaskRunner";
 import type { GraphAsTaskConfig } from "./GraphAsTask";
 import { GraphAsTask, graphAsTaskConfigSchema } from "./GraphAsTask";
+import type { TaskGraphJsonOptions } from "./TaskJSON";
 import type { TaskInput, TaskOutput, TaskTypeName } from "./TaskTypes";
 
 /**
@@ -177,8 +178,8 @@ export class FallbackTask<
   // Serialization
   // ========================================================================
 
-  public override toJSON() {
-    const json = super.toJSON();
+  public override toJSON(options?: TaskGraphJsonOptions) {
+    const json = super.toJSON(options);
     return {
       ...json,
       config: {

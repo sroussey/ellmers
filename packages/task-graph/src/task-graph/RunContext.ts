@@ -35,8 +35,13 @@ export class RunContext {
   // constructor when parentSignal is provided; called from dispose().
   private parentSignalCleanup?: () => void;
 
-  constructor(parentSignal?: AbortSignal) {
-    this.runId = uuid4();
+  constructor(parentSignal?: AbortSignal, runId?: string) {
+    // Derive from the caller-supplied runId when present so the same identifier
+    // flows through to per-task runnerId (and thus queued-job jobRunId). This
+    // lets a caller holding the graph's runId reliably target the run's queued
+    // jobs via the queue's runId-keyed operations (e.g. abortJobRun(runId)).
+    // Falls back to a fresh uuid when no runId was provided.
+    this.runId = runId ?? uuid4();
     this.abortController = new AbortController();
     if (parentSignal) {
       // Listen first, then check — addEventListener on an already-aborted signal

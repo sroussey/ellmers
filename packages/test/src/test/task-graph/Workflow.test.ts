@@ -444,6 +444,16 @@ describe("Workflow", () => {
       expect(workflow.graph.getTasks()).toHaveLength(1); // Second task not added
     });
 
+    it("public addTask throws (not just sets .error) when auto-connect fails", () => {
+      workflow.addTask(StringTask, { input: "test" });
+
+      // NumberTask cannot auto-connect to StringTask (string output vs number
+      // input). The public fluent addTask must throw, not silently no-op.
+      expect(() => workflow.addTask(NumberTask)).toThrow(WorkflowError);
+      // The failed task was removed; only the first task remains.
+      expect(workflow.graph.getTasks()).toHaveLength(1);
+    });
+
     it("should auto-connect TypedArray ports with different names by format", () => {
       // VectorOutputTask outputs 'vector', VectorsInputTask expects 'vectors'
       // They should match because both have format: "TypedArray"
@@ -1300,16 +1310,21 @@ describe("Workflow — refactor regression net", () => {
       expect(events).toEqual(["start", "complete"]);
     });
 
-    it("abort() during run causes run to reject and emits error exactly once", async () => {
+    it("abort() during run causes run to reject and emits abort (not error) exactly once", async () => {
       const w = new Workflow();
       w.addTask(LongRunningTask, {});
       const errors: string[] = [];
+      const aborts: string[] = [];
       w.on("error", (msg) => errors.push(msg));
+      w.on("abort", (msg) => aborts.push(msg));
 
       const runPromise = w.run();
       setTimeout(() => void w.abort(), 10);
       await expect(runPromise).rejects.toBeDefined();
-      expect(errors).toHaveLength(1);
+      // Cancellation surfaces on the dedicated 'abort' event, NOT 'error',
+      // so consumers can distinguish a cancelled run from a failure.
+      expect(aborts).toHaveLength(1);
+      expect(errors).toHaveLength(0);
     });
   });
 

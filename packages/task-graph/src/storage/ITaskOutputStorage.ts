@@ -10,7 +10,15 @@ import type { SearchCondition } from "@workglow/storage";
 export interface TaskOutputRow {
   readonly taskType: string;
   readonly key: string;
-  /** Serialized (optionally compressed) output payload. */
+  /**
+   * Serialized output payload. NOTE: although typed `string`, the compression
+   * path actually stores raw bytes here (a Uint8Array/Buffer written through an
+   * `as unknown as string` cast in TaskOutputTabularRepository.saveOutput). The
+   * declared type is kept `string` to match the blob column's schema-derived
+   * tabular type; a backing store may round-trip those bytes as a Uint8Array, a
+   * number[] array, or a numeric-keyed object, and the reader in
+   * {@link TaskOutputTabularRepository.getOutput} normalizes all three shapes.
+   */
   readonly value: string;
   readonly createdAt: string;
 }

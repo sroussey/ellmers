@@ -16,6 +16,7 @@ import {
   type IteratorTask,
   type IteratorTaskConfig,
 } from "./IteratorTask";
+import { TaskAbortedError } from "./TaskError";
 import type { TaskRunContext } from "./TaskRunContext";
 import type { TaskInput, TaskOutput } from "./TaskTypes";
 
@@ -100,7 +101,9 @@ export class IteratorTaskRunner<
     try {
       for (let batchStart = 0; batchStart < iterationCount; batchStart += batchSize) {
         if (this.currentCtx?.abortController.signal.aborted) {
-          break;
+          // Honor cancellation as a failure: returning the partial map result
+          // would report a truncated array as a COMPLETED success.
+          throw new TaskAbortedError("Iterator aborted during iteration");
         }
 
         const batchEnd = Math.min(batchStart + batchSize, iterationCount);
@@ -168,7 +171,9 @@ export class IteratorTaskRunner<
 
     for (let index = 0; index < iterationCount; index++) {
       if (this.currentCtx?.abortController.signal.aborted) {
-        break;
+        // Honor cancellation as a failure: returning the partial accumulator
+        // would report an incomplete reduction as a COMPLETED success.
+        throw new TaskAbortedError("Iterator aborted during iteration");
       }
 
       const iterationInput = this.task.buildIterationRunInput(analysis, index, iterationCount, {

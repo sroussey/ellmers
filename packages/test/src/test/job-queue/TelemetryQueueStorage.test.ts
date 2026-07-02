@@ -93,4 +93,39 @@ describe("TelemetryQueueStorage", () => {
     expect(jobs).toEqual([]);
     expect(startSpanSpy).toHaveBeenCalledWith("workglow.storage.queue.peek", expect.anything());
   });
+
+  it("exposes findActiveByFingerprint and delegates when the inner implements it", async () => {
+    // InMemoryQueueStorage has a native findActiveByFingerprint, so the
+    // telemetry wrapper must expose a delegating, traced passthrough — not
+    // drop it (which would silently degrade dedup to the O(N) scan fallback
+    // once wrapped in front of a real DB backend).
+    expect(typeof wrapped.findActiveByFingerprint).toBe("function");
+
+    const id = await inner.add({
+      input: { data: "fp-test" },
+      fingerprint: "fp-123",
+      visible_at: null,
+      completed_at: null,
+    });
+    expect(id).toBeDefined();
+
+    const found = await wrapped.findActiveByFingerprint!("fp-123", "test-queue");
+    expect(found?.fingerprint).toBe("fp-123");
+    expect(startSpanSpy).toHaveBeenCalledWith(
+      "workglow.storage.queue.findActiveByFingerprint",
+      expect.anything()
+    );
+  });
+
+  it("leaves findActiveByFingerprint undefined when the inner lacks it", () => {
+    // Mirror the optional-method semantics: if the inner storage has no native
+    // implementation, the wrapper must stay undefined so wrapQueueStorage's
+    // `typeof === 'function'` probe falls through to the bounded scan fallback.
+    const innerWithout = {
+      ...inner,
+      findActiveByFingerprint: undefined,
+    } as unknown as InMemoryQueueStorage<{ data: string }, { result: string }>;
+    const wrappedWithout = new TelemetryQueueStorage("no-native", innerWithout);
+    expect(wrappedWithout.findActiveByFingerprint).toBeUndefined();
+  });
 });

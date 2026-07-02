@@ -65,19 +65,29 @@ export function mapPostgresType(typeDef: JsonSchema, options: PostgresTypeMapOpt
     case "integer":
       // Handle integer vs floating point
       if (actualType.multipleOf === 1 || actualType.type === "integer") {
-        // Use PostgreSQL's numeric range types based on min/max values
-        if (typeof actualType.minimum === "number") {
-          if (actualType.minimum >= 0) {
-            // For unsigned integers
-            if (typeof actualType.maximum === "number") {
-              if (actualType.maximum <= 32767) return "SMALLINT";
-              if (actualType.maximum <= 2147483647) return "INTEGER";
-            }
-            return "BIGINT";
+        // Use PostgreSQL's numeric range types based on min/max values.
+        if (typeof actualType.minimum === "number" && actualType.minimum >= 0) {
+          // For unsigned integers.
+          if (typeof actualType.maximum === "number") {
+            if (actualType.maximum <= 32767) return "SMALLINT";
+            if (actualType.maximum <= 2147483647) return "INTEGER";
           }
+          return "BIGINT";
         }
 
-        // Default integer type
+        // Signed (or unbounded-below) integers: a large positive maximum still
+        // needs a wide enough column. Without this, a schema like
+        // `{ type: "integer", minimum: -1, maximum: 9999999999 }` would map to
+        // INTEGER (max 2147483647) and reject schema-valid writes at runtime.
+        // A minimum below INTEGER's lower bound also forces BIGINT.
+        if (typeof actualType.maximum === "number" && actualType.maximum > 2147483647) {
+          return "BIGINT";
+        }
+        if (typeof actualType.minimum === "number" && actualType.minimum < -2147483648) {
+          return "BIGINT";
+        }
+
+        // Default integer type.
         return "INTEGER";
       }
 

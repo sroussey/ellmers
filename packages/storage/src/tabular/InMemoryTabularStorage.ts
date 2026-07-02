@@ -6,6 +6,7 @@
 
 import { createServiceToken, makeFingerprint, uuid4 } from "@workglow/util";
 import { DataPortSchemaObject, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
+import { safeEmit } from "../events/safeEmit";
 import { type ITabularMigration, type ITabularMigrationApplier } from "../migrations";
 import {
   BaseTabularStorage,
@@ -144,12 +145,65 @@ export class InMemoryTabularStorage<
     this._lastPutWasInsert = !this.values.has(id);
     this.values.set(id, entityToStore);
 
-    this.events.emit("put", entityToStore);
+    // Post-commit emit: the row is already in the Map, so a throwing subscriber
+    // must not turn a successful write into a thrown error. Route through
+    // safeEmit (consistent with the batch `rollback` emit and the per-row paths
+    // below) so the mutation's success/failure signal is never derailed.
+    safeEmit(this.events, "put", entityToStore);
     return entityToStore;
   }
 
+  /**
+   * Atomic batch put: snapshot mutable state, write rows one at a time, and
+   * roll back to the snapshot if any single `put` throws. The inherited
+   * `Promise.all` shape used to leave the Map (and autoincrement counter) in a
+   * half-applied state when a later `put` rejected after earlier ones already
+   * mutated the Map. This guarantees either every row in the batch is visible
+   * after a successful return, or none of the batch's rows are — so subscribers
+   * written against the `rollback` event contract behave correctly here, not
+   * just on the vector overlay.
+   */
   async putBulk(values: InsertType[]): Promise<Entity[]> {
-    return await Promise.all(values.map(async (value) => this.put(value)));
+    if (values.length === 0) return [];
+    return this.atomicPutBulk(values);
+  }
+
+  /**
+   * Shared all-or-nothing batch implementation used by {@link putBulk} and the
+   * vector overlay's `putBulk`. Snapshots the Map + counter, writes serially,
+   * and on a mid-batch throw restores the snapshot and emits a `rollback` event
+   * (through {@link safeEmit}) carrying the PKs that committed before the
+   * failure.
+   *
+   * `writeRow` defaults to {@link put}. The vector overlay passes its own
+   * base-`put` writer so the per-row writes do NOT re-enter the overlay's
+   * `put` (which re-acquires the overlay mutex this batch already holds, and
+   * re-runs validation already performed up front).
+   */
+  protected async atomicPutBulk(
+    values: InsertType[],
+    writeRow: (value: InsertType) => Promise<Entity> = (value) => this.put(value)
+  ): Promise<Entity[]> {
+    const snapshot = this.snapshotMutableState();
+    const results: Entity[] = [];
+    // PKs of rows that actually committed before a throw, so the rollback event
+    // lets subscribers surgically invalidate caches instead of re-reading the
+    // whole table. Typed via `any` because the public PK type is computed from
+    // the schema; the value still flows through the {@link TabularEventListeners}
+    // payload at the emit site.
+    const committedIds: any[] = [];
+    try {
+      for (const value of values) {
+        const committed = await writeRow(value);
+        results.push(committed);
+        committedIds.push(this.separateKeyValueFromCombined(committed).key);
+      }
+      return results;
+    } catch (error) {
+      this.restoreMutableState(snapshot);
+      safeEmit(this.events, "rollback", { op: "putBulk", error, ids: committedIds });
+      throw error;
+    }
   }
 
   /**
@@ -217,7 +271,7 @@ export class InMemoryTabularStorage<
   async get(key: PrimaryKey): Promise<Entity | undefined> {
     const id = await makeFingerprint(key);
     const out = this.values.get(id);
-    this.events.emit("get", key, out);
+    safeEmit(this.events, "get", key, out);
     return out;
   }
 
@@ -228,12 +282,12 @@ export class InMemoryTabularStorage<
     // A keyed delete emits only the key. Bulk deleteSearch carries the matched
     // row (it already has it in hand), and scoped callers delete via
     // deleteSearch so the owner columns reach subscribers without a read-back.
-    this.events.emit("delete", key as Partial<Entity>);
+    safeEmit(this.events, "delete", key as Partial<Entity>);
   }
 
   async deleteAll(): Promise<void> {
     this.values.clear();
-    this.events.emit("clearall");
+    safeEmit(this.events, "clearall");
   }
 
   async getAll(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
@@ -271,6 +325,10 @@ export class InMemoryTabularStorage<
   }
 
   async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
+    // Match the validation the query paths already enforce (and that the
+    // IndexedDb backend applies) so a negative offset or non-positive limit
+    // fails the same way across backends instead of silently slicing.
+    this.validateGetAllOptions({ offset, limit });
     const all = Array.from(this.values.values());
 
     // Sort by primary key for deterministic pagination order.
@@ -336,7 +394,7 @@ export class InMemoryTabularStorage<
       this.values.delete(id);
       // Emit the matched row as the deleted identity (it carries the owner
       // columns); InMemory already has it in hand, so this is not a read-back.
-      this.events.emit("delete", entity);
+      safeEmit(this.events, "delete", entity);
     }
   }
 
@@ -407,7 +465,7 @@ export class InMemoryTabularStorage<
     }
 
     const result = results.length > 0 ? results : undefined;
-    this.events.emit("query", criteria as Partial<Entity>, result);
+    safeEmit(this.events, "query", criteria as Partial<Entity>, result);
     return result;
   }
 

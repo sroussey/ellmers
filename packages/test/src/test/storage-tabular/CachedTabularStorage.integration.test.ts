@@ -431,8 +431,11 @@ describe("CachedTabularStorage", () => {
       expect(cacheResults?.length).toBe(2);
     });
 
-    it("should handle cache initialization errors gracefully", async () => {
-      // Create a mock durable that throws on getAll
+    it("surfaces a cache warm-up failure instead of presenting an empty result", async () => {
+      // A transient durable read failure during warm-up must NOT be swallowed:
+      // query()/queryIndex() read only the cache, so a silently-failed warm-up
+      // would return an empty result set as if the table were empty. The read
+      // must fail loudly, and the warm-up must remain retryable.
       const errorDurable = new InMemoryTabularStorage<
         typeof CompoundSchema,
         typeof CompoundPrimaryKeyNames
@@ -443,12 +446,24 @@ describe("CachedTabularStorage", () => {
         typeof CompoundPrimaryKeyNames
       >(errorDurable, undefined, CompoundSchema, CompoundPrimaryKeyNames);
 
-      // Mock getAll to throw
-      spyOn(errorDurable, "getAll").mockRejectedValueOnce(new Error("Test error"));
+      // Seed a row so a successful warm-up would return it.
+      await errorDurable.put({ name: "key1", type: "string1", option: "value1", success: true });
 
-      // Should not throw, but cache initialization should fail gracefully
+      // First warm-up read throws.
+      const getAllSpy = spyOn(errorDurable, "getAll").mockRejectedValueOnce(
+        new Error("Test error")
+      );
+
+      // The error is surfaced, not masked as "no rows".
+      await expect(cachedWithError.get({ name: "key1", type: "string1" })).rejects.toThrow(
+        "Test error"
+      );
+
+      // The failed warm-up is retryable: the spy only rejected once, so a
+      // subsequent access re-runs init and returns the seeded row.
+      getAllSpy.mockRestore();
       const result = await cachedWithError.get({ name: "key1", type: "string1" });
-      expect(result).toBeUndefined();
+      expect(result?.option).toEqual("value1");
 
       cachedWithError.destroy();
     });

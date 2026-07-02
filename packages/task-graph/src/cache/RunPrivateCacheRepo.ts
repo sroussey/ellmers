@@ -5,10 +5,7 @@
  */
 
 import { TaskOutputRepository } from "../storage/TaskOutputRepository";
-import type { StreamMode } from "../task/StreamTypes";
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
-import type { CacheRef } from "./CacheRef";
-import { isCacheRef, makeCacheRef } from "./CacheRef";
 
 export interface RunPrivateCacheRepoOptions {
   backing: TaskOutputRepository;
@@ -18,10 +15,13 @@ export interface RunPrivateCacheRepoOptions {
 /**
  * Wraps a TaskOutputRepository so that all entries are namespaced by `runId`.
  *
- * Namespacing happens at the repository's `taskType` axis: {@link CacheCoordinator}
- * passes each task's instance `id` for private-policy entries, so rows are stored
- * as `__run:${runId}::${taskId}` in the backing store. The input fingerprint is
- * unchanged for resume lookups within the same node.
+ * Run scoping is delegated to the backing repository's run-scoped methods
+ * ({@link TaskOutputRepository.saveOutputForRun} etc.): {@link CacheCoordinator}
+ * passes each task's instance `id` as the entry's `taskType`, and this wrapper
+ * threads its `runId` so the backing stores it as a first-class column under a
+ * runId-leading primary key. The input fingerprint is unchanged for resume
+ * lookups within the same node. The backing must be a run-private repository
+ * (e.g. `RunPrivateTaskOutputRepository`).
  *
  * - Two wrappers with the same `runId` (e.g., a restart after a crash) see each
  *   other's writes via the backing store — that's the restart-survival contract.
@@ -34,11 +34,6 @@ export interface RunPrivateCacheRepoOptions {
  * and signals the fallback via {@link noteFallbackKey}; this wrapper warns once
  * per process to tell the operator that the cache is best-effort intra-process
  * only until task ids are pinned.
- *
- * Capability probing on this wrapper MUST use `typeof repo.method ===
- * "function"` or optional-call (`repo.method?.()`): optional methods the
- * backing lacks are shadowed to `undefined` on the instance, so an unguarded
- * call is a `TypeError` even though the prototype declares the method.
  */
 export class RunPrivateCacheRepo extends TaskOutputRepository {
   private static fallbackWarned = false;
@@ -51,23 +46,6 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     super({ outputCompression: backing.outputCompression });
     this.backing = backing;
     this.runId = runId;
-    // Mirror the backing's optional-method shape on this instance so callers
-    // probing `typeof repo.saveOutputStream === "function"` (or the
-    // getOutputByRef/getOutputStreamByRef siblings) see the true capability
-    // instead of the always-present wrapper override. Class methods live on
-    // the prototype; assigning `undefined` on the instance shadows them.
-    if (typeof backing.saveOutputStream !== "function") {
-      (this as { saveOutputStream?: unknown }).saveOutputStream = undefined;
-    }
-    if (typeof backing.saveOutputStreamPort !== "function") {
-      (this as { saveOutputStreamPort?: unknown }).saveOutputStreamPort = undefined;
-    }
-    if (typeof backing.getOutputByRef !== "function") {
-      (this as { getOutputByRef?: unknown }).getOutputByRef = undefined;
-    }
-    if (typeof backing.getOutputStreamByRef !== "function") {
-      (this as { getOutputStreamByRef?: unknown }).getOutputStreamByRef = undefined;
-    }
   }
 
   /**
@@ -91,124 +69,26 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     return this.observedFallback;
   }
 
-  private ns(cacheIdentity: string): string {
-    return `__run:${this.runId}::${cacheIdentity}`;
-  }
-
   public async saveOutput(
     cacheIdentity: string,
     inputs: TaskInput,
     output: TaskOutput,
     createdAt?: Date
   ): Promise<void> {
-    await this.backing.saveOutput(this.ns(cacheIdentity), inputs, output, createdAt);
+    await this.backing.saveOutputForRun(this.runId, cacheIdentity, inputs, output, createdAt);
   }
 
   public async getOutput(
     cacheIdentity: string,
     inputs: TaskInput
   ): Promise<TaskOutput | undefined> {
-    return this.backing.getOutput(this.ns(cacheIdentity), inputs);
+    return this.backing.getOutputForRun(this.runId, cacheIdentity, inputs);
   }
 
   /**
-   * Forwards the streaming sink to the backing repository, applying the same
-   * `runId` namespacing as `saveOutput`. Only present in effect when the
-   * backing repo supports streaming; `supportsStreaming()` (below) reflects the
-   * backing repo so callers branch correctly before calling this.
-   *
-   * Returns whatever {@link CacheRef} the backing produced (already namespaced
-   * via the wrapped `taskType`). Resolvers calling `getOutputByRef` on this
-   * wrapper forward to the backing, which decodes its own `$ref`.
-   */
-  public override async saveOutputStream(
-    taskType: string,
-    inputs: TaskInput,
-    chunks: AsyncIterable<Uint8Array>,
-    metadata: Record<string, unknown>
-  ): Promise<CacheRef> {
-    const fn = this.backing.saveOutputStream;
-    if (typeof fn !== "function") {
-      throw new Error(
-        `RunPrivateCacheRepo: backing repository does not implement saveOutputStream. ` +
-          `Call supportsStreaming() before saveOutputStream.`
-      );
-    }
-    // Re-wrap the backing's CacheRef so legacy backings that pre-date the
-    // `kind` brand still produce a discriminator-bearing ref through this
-    // wrapper. Branded refs pass through unchanged.
-    const raw = await fn.call(this.backing, this.ns(taskType), inputs, chunks, metadata);
-    return isCacheRef(raw) ? raw : makeCacheRef(raw);
-  }
-
-  /**
-   * Port-aware streaming sink, namespaced like {@link saveOutputStream}. Only in
-   * effect when the backing implements `saveOutputStreamPort`; the constructor
-   * shadows this method to `undefined` otherwise so `supportsStreamingPorts()`
-   * and `typeof` probes report the backing's true capability.
-   */
-  public override async saveOutputStreamPort(
-    taskType: string,
-    inputs: TaskInput,
-    port: string,
-    mode: StreamMode,
-    chunks: AsyncIterable<Uint8Array>,
-    metadata: Record<string, unknown>
-  ): Promise<CacheRef> {
-    const fn = this.backing.saveOutputStreamPort;
-    if (typeof fn !== "function") {
-      throw new Error(
-        `RunPrivateCacheRepo: backing repository does not implement saveOutputStreamPort. ` +
-          `Call supportsStreamingPorts() before saveOutputStreamPort.`
-      );
-    }
-    const raw = await fn.call(
-      this.backing,
-      this.ns(taskType),
-      inputs,
-      port,
-      mode,
-      chunks,
-      metadata
-    );
-    return isCacheRef(raw) ? raw : makeCacheRef(raw);
-  }
-
-  /**
-   * Forwards by-ref retrieval to the backing repository. The `$ref` already
-   * encodes whatever the backing needs to locate the entry; no namespacing is
-   * re-applied here.
-   */
-  public override getOutputByRef(ref: CacheRef): Promise<Blob | undefined> {
-    if (typeof this.backing.getOutputByRef !== "function") return Promise.resolve(undefined);
-    return this.backing.getOutputByRef(ref);
-  }
-
-  /** Forwards streaming by-ref retrieval to the backing repository. */
-  public override getOutputStreamByRef(ref: CacheRef): AsyncIterable<Uint8Array> | undefined {
-    if (typeof this.backing.getOutputStreamByRef !== "function") return undefined;
-    return this.backing.getOutputStreamByRef(ref);
-  }
-
-  /** Mirrors the backing repository's streaming capability. */
-  public override supportsStreaming(): boolean {
-    return this.backing.supportsStreaming();
-  }
-
-  /** Mirrors the backing repository's streaming-read capability. */
-  public override supportsStreamingReads(): boolean {
-    return this.backing.supportsStreamingReads();
-  }
-
-  /** Mirrors the backing repository's port-aware streaming capability. */
-  public override supportsStreamingPorts(): boolean {
-    return this.backing.supportsStreamingPorts();
-  }
-
-  /**
-   * Override of `TaskOutputRepository.clear()` that only deletes entries
-   * namespaced under THIS wrapper's `runId`. Entries from other runs are not
-   * touched. Use the backing repository directly if you need a global clear.
+   * Override of `TaskOutputRepository.clear()` that only deletes entries for
+   * THIS wrapper's `runId`. Entries from other runs are not touched. Use the
+   * backing repository directly if you need a global clear.
    */
   public async clear(): Promise<void> {
     await this.clearRun();
@@ -216,29 +96,28 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
 
   /**
    * Delete every entry written through this wrapper's `runId`. Called by the
-   * graph runner after a successful run, and by the janitor for stale runs.
-   * Requires the backing repository to implement `deleteByTaskTypePrefix`.
+   * graph runner after a successful run. An indexed `deleteSearch({ runId })`
+   * on the backing's runId-leading primary key — not a table scan.
    */
   public async clearRun(): Promise<void> {
-    await this.backing.deleteByTaskTypePrefix(`__run:${this.runId}::`);
+    await this.backing.deleteRun(this.runId);
   }
 
   /**
-   * Returns the count of entries namespaced under THIS wrapper's `runId`.
-   * Consistent with `saveOutput`/`getOutput`/`clear()` being run-scoped.
+   * Returns the count of entries for THIS wrapper's `runId`. Consistent with
+   * `saveOutput`/`getOutput`/`clear()` being run-scoped.
    */
   public async size(): Promise<number> {
-    return this.backing.sizeByTaskTypePrefix(`__run:${this.runId}::`);
+    return this.backing.sizeForRun(this.runId);
   }
 
   /**
    * Override of `TaskOutputRepository.clearOlderThan()` scoped to THIS
-   * wrapper's `runId`. Without the scope override, the wrapper would
-   * accidentally prune the entire backing store (including deterministic
-   * cache entries and other runs' private rows).
+   * wrapper's `runId`. Without the scope, the wrapper would prune other runs'
+   * private rows. An indexed `deleteSearch({ runId, createdAt: { "<" } })`.
    */
   public async clearOlderThan(olderThanInMs: number): Promise<void> {
-    await this.backing.clearOlderThanWithTaskTypePrefix(`__run:${this.runId}::`, olderThanInMs);
+    await this.backing.deleteRunOlderThan(this.runId, olderThanInMs);
   }
 
   public isDurable(): boolean {

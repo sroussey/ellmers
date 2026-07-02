@@ -843,6 +843,45 @@ describe("IteratorTask", () => {
       expect(result.processed).toEqual([8, 10, 12]);
     });
 
+    test("aborting a MapTask mid-flight throws (not a partial COMPLETED result)", async () => {
+      class SlowItemTask extends Task<{ item: number }, { processed: number }> {
+        public static override type = "SlowItemTask";
+        public static override inputSchema(): DataPortSchema {
+          return {
+            type: "object",
+            properties: { item: { type: "number" } },
+            required: ["item"],
+          } as const satisfies DataPortSchema;
+        }
+        public static override outputSchema(): DataPortSchema {
+          return {
+            type: "object",
+            properties: { processed: { type: "number" } },
+          } as const satisfies DataPortSchema;
+        }
+        override async execute(input: { item: number }): Promise<{ processed: number }> {
+          await sleep(20);
+          return { processed: input.item * 2 };
+        }
+      }
+
+      const mapTask = new MapTask({
+        maxIterations: "unbounded",
+        batchSize: 1,
+        concurrencyLimit: 1,
+      });
+      const subGraph = new TaskGraph();
+      subGraph.addTask(new SlowItemTask({ id: "slow", defaults: { item: 0 } }));
+      mapTask.subGraph = subGraph;
+
+      const runPromise = mapTask.run({ item: [1, 2, 3, 4, 5] } as TaskInput);
+      // Abort after the first batch begins but before all batches finish.
+      await sleep(10);
+      mapTask.abort();
+
+      await expect(runPromise).rejects.toThrow();
+    });
+
     test("map preserveOrder=true should return outputs aligned to input index", async () => {
       class DelayedEchoTask extends Task<{ item: number }, { item: number }> {
         public static override type = "DelayedEchoTask";

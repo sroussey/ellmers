@@ -93,6 +93,30 @@ describe("ConcurrencyLimiter", () => {
     await limiter.setNextAvailableTime(future);
     expect(await limiter.tryAcquire()).toBeNull();
   });
+
+  it("complete should free exactly one slot for a valid token", async () => {
+    const t1 = await limiter.tryAcquire();
+    await limiter.tryAcquire();
+    expect(await limiter.tryAcquire()).toBeNull();
+    await limiter.complete(t1);
+    expect(await limiter.tryAcquire()).not.toBeNull();
+  });
+
+  it("complete with an invalid/foreign token must not corrupt the counter", async () => {
+    // Saturate to the limit (2).
+    await limiter.tryAcquire();
+    await limiter.tryAcquire();
+    expect(await limiter.tryAcquire()).toBeNull();
+
+    // A duplicate/foreign complete used to decrement a slot this limiter never
+    // handed out, permanently over-admitting concurrency. With the sentinel
+    // guard it is a no-op, so the limit stays enforced.
+    await limiter.complete(undefined);
+    await limiter.complete(Symbol("not-the-sentinel"));
+    await limiter.complete("garbage");
+
+    expect(await limiter.tryAcquire()).toBeNull();
+  });
 });
 
 describe("DelayLimiter", () => {

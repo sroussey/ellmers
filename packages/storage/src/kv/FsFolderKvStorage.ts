@@ -8,6 +8,8 @@ import { createServiceToken } from "@workglow/util";
 import { JsonSchema } from "@workglow/util/schema";
 import { mkdir, readFile, rm, unlink, writeFile } from "fs/promises";
 import path from "path";
+import { safeEmit } from "../events/safeEmit";
+import { StorageUnsupportedError } from "../tabular/StorageError";
 import { IKvStorage } from "./IKvStorage";
 import { KvStorage } from "./KvStorage";
 
@@ -69,7 +71,9 @@ export class FsFolderKvStorage<
 
     await mkdir(path.dirname(localPath), { recursive: true });
     await writeFile(localPath, content);
-    this.events.emit("put", key, value);
+    // Post-commit emit: the file is written, so a throwing subscriber must not
+    // turn a durable write into a thrown error.
+    safeEmit(this.events, "put", key, value);
   }
 
   public async putBulk(items: Array<{ key: Key; value: Value }>): Promise<void> {
@@ -88,7 +92,7 @@ export class FsFolderKvStorage<
       })
     );
     const combined = settled.filter((r) => r !== undefined) as Combined[];
-    this.events.emit("getBulk", keys, combined);
+    safeEmit(this.events, "getBulk", keys, combined);
     return combined;
   }
 
@@ -128,31 +132,37 @@ export class FsFolderKvStorage<
         value = content as unknown as Value;
       }
 
-      this.events.emit("get", key, value);
+      safeEmit(this.events, "get", key, value);
       return value;
     } catch (error) {
-      this.events.emit("get", key, undefined);
+      safeEmit(this.events, "get", key, undefined);
       return undefined;
     }
   }
 
   public async delete(key: Key): Promise<void> {
     const localPath = path.join(this.folderPath, this.pathWriter(key).replaceAll("..", "_"));
-    await unlink(localPath);
-    this.events.emit("delete", key);
+    try {
+      await unlink(localPath);
+    } catch (error) {
+      // Deleting a key that was never written is a no-op, matching the
+      // idempotent delete of the in-memory and tabular FsFolder backends.
+      if ((error as { code?: string })?.code !== "ENOENT") throw error;
+    }
+    safeEmit(this.events, "delete", key);
   }
 
   public async getAll(): Promise<Combined[] | undefined> {
-    throw new Error("Not implemented");
+    throw new StorageUnsupportedError("getAll", "FsFolderKvStorage");
   }
 
   public async deleteAll(): Promise<void> {
     const localPath = path.join(this.folderPath);
     await rm(localPath, { recursive: true, force: true });
-    this.events.emit("deleteall");
+    safeEmit(this.events, "deleteall");
   }
 
   public async size(): Promise<number> {
-    throw new Error("Not implemented");
+    throw new StorageUnsupportedError("size", "FsFolderKvStorage");
   }
 }

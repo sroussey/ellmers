@@ -7,7 +7,7 @@
 import { getLogger } from "@workglow/util";
 import { ConditionalTask } from "../task/ConditionalTask";
 import type { ITask } from "../task/ITask";
-import { TaskError, TaskGraphTimeoutError } from "../task/TaskError";
+import { TaskError, TaskFailedError, TaskGraphTimeoutError } from "../task/TaskError";
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
 import { TaskStatus } from "../task/TaskTypes";
 import type { EdgeMaterializer } from "./EdgeMaterializer";
@@ -16,6 +16,14 @@ import type { TaskGraph, TaskGraphRunConfig } from "./TaskGraph";
 import type { GraphResultArray, GraphSingleTaskResult, TaskGraphRunner } from "./TaskGraphRunner";
 import { taskPrototypeHasOwnExecute } from "./TaskGraphRunner";
 import type { ITaskGraphScheduler } from "./TaskGraphScheduler";
+
+/**
+ * Key used to record a scheduler-iterator-level failure in
+ * `ctx.failedTaskErrors` (as opposed to a per-task failure, which is keyed by
+ * task id). Lets the runGraph epilogue treat a scheduler throw as a graph
+ * failure rather than completing on partial results.
+ */
+const SCHEDULER_FAILURE_KEY = Symbol("scheduler-failure");
 
 /**
  * @internal
@@ -345,6 +353,15 @@ export class RunScheduler {
       }
     } catch (err) {
       getLogger().error("Error running graph", { error: err });
+      // A throw from the scheduler iterator itself (not an individual task) must
+      // propagate as a graph failure, not be logged-and-dropped on the success
+      // path. Record it so the runGraph epilogue throws instead of calling
+      // handleComplete and emitting "complete" on a partial run.
+      const schedulerError =
+        err instanceof TaskError
+          ? err
+          : new TaskFailedError(err instanceof Error ? err.message : String(err));
+      ctx.failedTaskErrors.set(SCHEDULER_FAILURE_KEY, schedulerError);
     }
 
     // Wait for all tasks to complete since we did not await runAsync()/this.runTaskWithProvenance()

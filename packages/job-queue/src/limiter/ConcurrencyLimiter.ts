@@ -46,7 +46,13 @@ export class ConcurrencyLimiter implements ILimiter {
     this.currentRunningJobs = Math.max(0, this.currentRunningJobs - 1);
   }
 
-  async complete(_token: unknown): Promise<void> {
+  async complete(token: unknown): Promise<void> {
+    // Guard on the sentinel exactly like release() does. Without this, a
+    // duplicate complete(), a complete() after a release(), or a complete()
+    // with a foreign/undefined token would decrement a slot this limiter never
+    // handed out, permanently over-admitting concurrency (floored at 0) until
+    // clear().
+    if (token !== ConcurrencyLimiter.SENTINEL) return;
     this.currentRunningJobs = Math.max(0, this.currentRunningJobs - 1);
   }
 

@@ -102,6 +102,47 @@ describe("WorkerServerBase abort-before-call race", () => {
     expect(errorReplies.length).toBe(1);
   });
 
+  it("does not post a second terminal reply when a non-cooperative call arrives after the dedupe window", async () => {
+    vi.useFakeTimers();
+    try {
+      const server = new WorkerServerBase();
+      // A non-cooperative run-fn: ignores the abort signal and returns normally.
+      server.registerRunFunction("ignoresAbort", async () => {
+        // intentionally does not check signal.aborted
+      });
+
+      // Abort arrives first; handleAbort posts the terminal error and schedules
+      // cleanup of the completed id.
+      await server.handleMessage({ type: "message", data: { type: "abort", id: "req-dup" } });
+
+      // Advance past the OLD 5s completed-request cleanup window but stay within
+      // the 30s pending-abort TTL — this is the window where a duplicate used
+      // to slip through.
+      await vi.advanceTimersByTimeAsync(6000);
+
+      await server.handleMessage({
+        type: "message",
+        data: {
+          type: "call",
+          id: "req-dup",
+          functionName: "ignoresAbort",
+          run: true,
+          args: [{}, undefined, undefined, undefined],
+        },
+      });
+
+      const errorReplies = stub.captured.filter((m) => m.id === "req-dup" && m.type === "error");
+      const completeReplies = stub.captured.filter(
+        (m) => m.id === "req-dup" && m.type === "complete"
+      );
+      // Exactly one terminal reply (the abort error), never a second response.
+      expect(errorReplies.length).toBe(1);
+      expect(completeReplies.length).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("aborts a stream call whose abort arrived before the call", async () => {
     const server = new WorkerServerBase();
     const seenAborted: boolean[] = [];

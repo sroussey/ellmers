@@ -1,5 +1,26 @@
 # @workglow/util
 
+## 0.3.22
+
+### Bug Fixes
+
+#### review
+
+- resolve xhigh code-review findings on cherry-picked 601+604
+
+#### util/di
+
+- drain eviction disposals and clear stale factories on registerInstance
+- dispose previously cached singleton on register replacement
+
+#### core
+
+- resolve review findings across util, storage, job-queue, task-graph (#602)
+
+### Chores
+
+- update deps
+
 ## 0.3.21
 
 ## 0.3.20

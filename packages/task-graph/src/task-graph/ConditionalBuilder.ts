@@ -10,8 +10,9 @@ import { ConditionalTask } from "../task/ConditionalTask";
 import type { ITask, ITaskConstructor } from "../task/ITask";
 import { WorkflowError } from "../task/TaskError";
 import type { DataPorts, TaskConfig, TaskInput } from "../task/TaskTypes";
-import { Dataflow } from "./Dataflow";
+import { Dataflow, DATAFLOW_ALL_PORTS } from "./Dataflow";
 import type { Workflow } from "./Workflow";
+import { getLastTask } from "./WorkflowPipe";
 
 /**
  * Fluent builder for constructing a {@link ConditionalTask} with a
@@ -74,6 +75,12 @@ export class ConditionalBuilder {
       throw new WorkflowError(".endIf() called without a prior .then(...) call");
     }
 
+    // Capture the immediately-preceding workflow task BEFORE the conditional is
+    // added so its output can be wired INTO the conditional's input. Without
+    // this, the ConditionalTask runs against empty input and the predicate sees
+    // `{}` rather than the upstream task's output.
+    const priorTask = getLastTask(this.workflow);
+
     const thenPort = "then";
     const elsePort = "else";
 
@@ -105,6 +112,16 @@ export class ConditionalBuilder {
     });
     this.workflow.graph.addTask(conditionalTask);
 
+    // Wire the prior task's output into the conditional's input so the predicate
+    // evaluates against real upstream data. ConditionalTask accepts any input
+    // (additionalProperties: true), so an all-ports edge passes the full output
+    // through, mirroring the all-ports wiring used by connect()/onError().
+    if (priorTask && priorTask.id !== conditionalTask.id) {
+      this.workflow.graph.addDataflow(
+        new Dataflow(priorTask.id, DATAFLOW_ALL_PORTS, conditionalTask.id, DATAFLOW_ALL_PORTS)
+      );
+    }
+
     const thenTask = instantiate(this.thenSpec);
     this.workflow.graph.addTask(thenTask);
     this.workflow.graph.addDataflow(new Dataflow(conditionalTask.id, thenPort, thenTask.id, "*"));
@@ -114,6 +131,13 @@ export class ConditionalBuilder {
       this.workflow.graph.addTask(elseTask);
       this.workflow.graph.addDataflow(new Dataflow(conditionalTask.id, elsePort, elseTask.id, "*"));
     }
+
+    // Record the branch terminus so a continuation can be validated. A two-arm
+    // conditional leaves two mutually-exclusive leaf nodes with no join, so the
+    // next .addTask(...) cannot pick a single predecessor and must throw. A
+    // then-only conditional leaves a single leaf (the then task), which is a
+    // safe predecessor to continue from.
+    this.workflow.builder.markBranchTerminus(this.elseSpec ? 2 : 1);
 
     return this.workflow;
   }

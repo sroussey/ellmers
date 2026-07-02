@@ -5,7 +5,7 @@
  */
 
 import type { ServiceRegistry } from "@workglow/util";
-import { deepEqual, EventEmitter, uuid4 } from "@workglow/util";
+import { deepEqual, EventEmitter, getLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchema, SchemaNode } from "@workglow/util/schema";
 import { compileSchema } from "@workglow/util/schema";
 import { type CachePolicy, DEFAULT_CACHE_POLICY } from "../cache/CachePolicy";
@@ -519,9 +519,9 @@ export class Task<
       });
       return (defaultData || {}) as Partial<Input>;
     } catch (error) {
-      console.warn(
+      getLogger().warn(
         `Failed to compile input schema for ${this.type}, falling back to manual extraction:`,
-        error
+        { error }
       );
       // Fallback to manual extraction if compilation fails
       return Object.entries(schema.properties || {}).reduce<Record<string, any>>(
@@ -699,6 +699,10 @@ export class Task<
         this.runInputData = { ...this.runInputData, ...overrides };
         changed = true;
       } else {
+        // `undefined` is treated as "no value provided" (absent), not as an
+        // explicit clear: a dataflow yielding undefined does NOT reset a
+        // previously-set port. There is intentionally no way to unset a port via
+        // this merge path; the previous value persists.
         if (overrides[inputId] === undefined) continue;
         const isArray =
           (prop as any)?.type === "array" ||
@@ -839,7 +843,7 @@ export class Task<
           enumerable: false,
         });
       } catch (error) {
-        console.warn(`Failed to compile config schema for ${this.type}:`, error);
+        getLogger().warn(`Failed to compile config schema for ${this.type}:`, { error });
         return undefined;
       }
     }
@@ -921,9 +925,9 @@ export class Task<
       } catch (error) {
         // If compilation fails, fall back to accepting any object structure
         // This is a safety net for schemas that json-schema-library can't compile
-        console.warn(
+        getLogger().warn(
           `Failed to compile input schema for ${this.type}, falling back to permissive validation:`,
-          error
+          { error }
         );
         Object.defineProperty(this, "__compiledInputSchema", {
           value: compileSchema({}),

@@ -1,5 +1,13 @@
 # @workglow/job-queue
 
+## 0.3.22
+
+### Bug Fixes
+
+#### core
+
+- resolve review findings across util, storage, job-queue, task-graph (#602)
+
 ## 0.3.21
 
 ## 0.3.20

@@ -57,6 +57,13 @@ export class FallbackTaskRunner<
   /**
    * Tries each task in the subgraph sequentially. Returns the first
    * successful result. If all fail, throws with collected errors.
+   *
+   * NOTE: alternatives are run via `alternativeTask.run(input)` directly, not
+   * through the subGraph runner, so the `bridgeSubGraphTaskEvents` bridge used in
+   * data mode does not apply here — there is no subgraph run to bridge from.
+   * Consequently inner alternatives' task_progress/task_complete/task_stream_*
+   * events do not bubble to the top-level run stream in task mode (data mode does
+   * surface them). Coarse attempt progress is forwarded via handleProgress below.
    */
   private async executeTaskFallback(input: Input): Promise<Output | undefined> {
     const tasks = this.task.subGraph.getTasks();

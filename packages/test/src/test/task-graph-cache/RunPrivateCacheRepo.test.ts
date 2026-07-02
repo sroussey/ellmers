@@ -6,13 +6,13 @@
 
 import { RunPrivateCacheRepo } from "@workglow/task-graph";
 import { beforeEach, describe, expect, it } from "vitest";
-import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
+import { RunPrivateInMemoryTaskOutputRepository } from "../../binding/RunPrivateInMemoryTaskOutputRepository";
 
 describe("RunPrivateCacheRepo", () => {
-  let backing: InMemoryTaskOutputRepository;
+  let backing: RunPrivateInMemoryTaskOutputRepository;
 
   beforeEach(async () => {
-    backing = new InMemoryTaskOutputRepository();
+    backing = new RunPrivateInMemoryTaskOutputRepository();
     await (backing as any).setupDatabase?.();
   });
 
@@ -78,10 +78,6 @@ describe("RunPrivateCacheRepo", () => {
     // repoB: one old
     await repoB.saveOutput("T", { x: "old" }, { v: "B-old" }, oldDate);
 
-    // Also save a deterministic (non-prefixed) entry directly in the backing store
-    // with an old timestamp — clearOlderThan on repoA must NOT touch it.
-    await backing.saveOutput("DeterministicTask", { x: "det" }, { v: "det-old" }, oldDate);
-
     // Prune entries in repoA older than 7 days.
     await repoA.clearOlderThan(7 * 24 * 3600_000);
 
@@ -89,9 +85,7 @@ describe("RunPrivateCacheRepo", () => {
     expect(await repoA.getOutput("T", { x: "old" })).toBeUndefined();
     // repoA's fresh entry should survive.
     expect(await repoA.getOutput("T", { x: "new" })).toEqual({ v: "A-new" });
-    // repoB's old entry should survive (different runId namespace).
+    // repoB's old entry should survive (different runId, not touched by repoA's prune).
     expect(await repoB.getOutput("T", { x: "old" })).toEqual({ v: "B-old" });
-    // The deterministic (non-prefixed) entry should survive.
-    expect(await backing.getOutput("DeterministicTask", { x: "det" })).toEqual({ v: "det-old" });
   });
 });

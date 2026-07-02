@@ -6,6 +6,7 @@
 
 import { createServiceToken, EventEmitter, makeFingerprint } from "@workglow/util";
 import { DataPortSchemaObject, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
+import { safeEmit } from "../events/safeEmit";
 import {
   ITabularMigration,
   ITabularMigrationApplier,
@@ -399,7 +400,7 @@ export abstract class BaseTabularStorage<
     if (keys.length === 0) return [];
     const results = await Promise.all(keys.map((k) => this.get(k)));
     const found = results.filter((r) => r !== undefined) as Entity[];
-    this.events.emit("getBulk", keys, found);
+    safeEmit(this.events, "getBulk", keys, found);
     return found;
   }
 

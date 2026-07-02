@@ -1,5 +1,19 @@
 # @workglow/web
 
+## 0.3.22
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `react-icons`: ^5.7.0
+- `react-resizable-panels`: ^4.12.0
+- `@tailwindcss/vite`: ^4.3.2
+- `tailwindcss`: ^4.3.2
+- `vite`: ^8.1.3
+
 ## 0.3.21
 
 ## 0.3.20
