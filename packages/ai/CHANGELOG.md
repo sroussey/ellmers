@@ -1,5 +1,15 @@
 # @workglow/ai
 
+## 0.3.22
+
+### Bug Fixes
+
+#### ai
+
+- make StreamEventAccumulator delta-wins to stop tool-call clobber
+- unify capability gating, implement real RRF, document retry behavior
+- correct provider lifecycle, dispatch, and task bugs found in review
+
 ## 0.3.21
 
 ## 0.3.20

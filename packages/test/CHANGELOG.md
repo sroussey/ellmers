@@ -1,5 +1,72 @@
 # @workglow/test
 
+## 0.3.22
+
+### Bug Fixes
+
+#### review
+
+- resolve xhigh code-review findings on cherry-picked 601+604
+
+#### util/di
+
+- drain eviction disposals and clear stale factories on registerInstance
+- dispose previously cached singleton on register replacement
+
+#### task-graph/cache
+
+- require liveRunIds callback and drop unguarded fast-path
+
+#### task-graph
+
+- swap nonexistent storage.search for query in clearOlderThan
+- clean up listeners on reader.cancel() in createStreamFromTaskEvents
+- stamp saturating depth on over-cap bridge + dedupe warn per parent
+- cap bridgeSubGraphTaskEvents depth to prevent event amplification
+- bubble subgraph events from iterator/map/reduce loops (#599)
+
+#### storage/vector
+
+- align in-memory + IndexedDB default scoreThreshold to 0 (match SQL backends)
+
+#### core
+
+- resolve review findings across util, storage, job-queue, task-graph (#602)
+
+#### test
+
+- drop over-broad cast on observeFinish in accumulator test
+
+#### ai
+
+- make StreamEventAccumulator delta-wins to stop tool-call clobber
+
+#### providers
+
+- map Gemini sampling params; add Ollama json-mode support
+
+### Performance
+
+#### task-graph
+
+- stream distinct runIds via queryPage in clearOlderThan
+
+### Tests
+
+#### ollama
+
+- unit-test the structured-generation streaming run-fn
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1079.0
+- `@cloudflare/workers-types`: ^4.20260702.1
+- `miniflare`: ^4.20260701.0
+
 ## 0.3.21
 
 ## 0.3.20
