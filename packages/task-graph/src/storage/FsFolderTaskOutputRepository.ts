@@ -13,7 +13,7 @@ import { join } from "node:path";
 import type { CacheRef } from "../cache/CacheRef";
 import { makeCacheRef } from "../cache/CacheRef";
 import type { StreamMode } from "../task/StreamTypes";
-import type { TaskInput } from "../task/TaskTypes";
+import type { TaskInput, TaskOutput } from "../task/TaskTypes";
 import { tabularTaskOutputStorage } from "./TabularTaskOutputStorage";
 import {
   TaskOutputPrimaryKeyNames,
@@ -30,6 +30,22 @@ const REF_PATTERN = /^fsfolder:\/\/blobs\/([\w.-]+\.bin)$/;
 
 function sanitize(s: string): string {
   return s.replace(/[^\w.-]/g, "-");
+}
+
+/**
+ * Fold a `runId` into the `taskType` axis. FsFolder has no runId column — rows
+ * are keyed `(taskType, key)` and blob names lead with `sanitize(taskType)` —
+ * so scoping a private run means prefixing its taskType. The `::` terminator
+ * keeps one runId's namespace from being a prefix of another's (e.g. `a` vs
+ * `ab`), so a run's rows and sidecar blobs are prefix-selectable for cleanup.
+ */
+function runScopedType(runId: string, taskType: string): string {
+  return `__run:${runId}::${taskType}`;
+}
+
+/** The taskType-namespace prefix for a run (see {@link runScopedType}). */
+function runScopePrefix(runId: string): string {
+  return `__run:${runId}::`;
 }
 
 /**
@@ -117,6 +133,98 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     this.emit("output_saved", taskType);
     const mime = typeof metadata.mime === "string" ? metadata.mime : undefined;
     return makeCacheRef({ $ref: `fsfolder://blobs/${name}`, port, mode, size, mime });
+  }
+
+  // ==========================================================================
+  // Run-scoped surface (private cache tier)
+  //
+  // FsFolder doubles as the run-private backing: it namespaces each run into
+  // the taskType axis (see runScopedType) so the SAME sidecar streaming path
+  // serves both the deterministic and the private tier, and a run's rows and
+  // blobs are prefix-selectable for cleanup on deleteRun / deleteRunOlderThan.
+  // ==========================================================================
+
+  override async saveOutputForRun(
+    runId: string,
+    taskType: string,
+    inputs: TaskInput,
+    output: TaskOutput,
+    createdAt = new Date()
+  ): Promise<void> {
+    await this.saveOutput(runScopedType(runId, taskType), inputs, output, createdAt);
+  }
+
+  override async getOutputForRun(
+    runId: string,
+    taskType: string,
+    inputs: TaskInput
+  ): Promise<TaskOutput | undefined> {
+    return this.getOutput(runScopedType(runId, taskType), inputs);
+  }
+
+  override async saveOutputStreamForRun(
+    runId: string,
+    taskType: string,
+    inputs: TaskInput,
+    chunks: AsyncIterable<Uint8Array>,
+    metadata: Record<string, unknown>
+  ): Promise<CacheRef> {
+    return this.saveOutputStream(runScopedType(runId, taskType), inputs, chunks, metadata);
+  }
+
+  override async saveOutputStreamPortForRun(
+    runId: string,
+    taskType: string,
+    inputs: TaskInput,
+    port: string,
+    mode: StreamMode,
+    chunks: AsyncIterable<Uint8Array>,
+    metadata: Record<string, unknown>
+  ): Promise<CacheRef> {
+    return this.saveOutputStreamPort(
+      runScopedType(runId, taskType),
+      inputs,
+      port,
+      mode,
+      chunks,
+      metadata
+    );
+  }
+
+  override async deleteRun(runId: string): Promise<void> {
+    const nsPrefix = runScopePrefix(runId);
+    for await (const row of this.storage.records()) {
+      if (typeof row.taskType === "string" && row.taskType.startsWith(nsPrefix)) {
+        await this.storage.delete({ key: row.key, taskType: row.taskType });
+      }
+    }
+    this.emit("output_pruned");
+    // Blob names lead with `sanitize(taskType)`, so the sanitized namespace is
+    // the shared prefix of every sidecar this run wrote (streamed or orphaned).
+    await this.deleteBlobsByPrefix(sanitize(nsPrefix));
+  }
+
+  override async deleteRunOlderThan(runId: string, olderThanInMs: number): Promise<void> {
+    const cutoff = Date.now() - olderThanInMs;
+    const nsPrefix = runScopePrefix(runId);
+    for await (const row of this.storage.records()) {
+      if (typeof row.taskType !== "string" || !row.taskType.startsWith(nsPrefix)) continue;
+      const ts = typeof row.createdAt === "string" ? new Date(row.createdAt).getTime() : NaN;
+      if (!isNaN(ts) && ts < cutoff) {
+        await this.storage.delete({ key: row.key, taskType: row.taskType });
+      }
+    }
+    this.emit("output_pruned");
+    await this.deleteBlobsByPrefix(sanitize(nsPrefix), cutoff);
+  }
+
+  override async sizeForRun(runId: string): Promise<number> {
+    const nsPrefix = runScopePrefix(runId);
+    let count = 0;
+    for await (const row of this.storage.records()) {
+      if (typeof row.taskType === "string" && row.taskType.startsWith(nsPrefix)) count++;
+    }
+    return count;
   }
 
   /**

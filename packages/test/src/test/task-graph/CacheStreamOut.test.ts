@@ -34,11 +34,14 @@ describe("supportsStreamingReads", () => {
     expect(new NonStreamingMemoryRepo({}).supportsStreamingReads()).toBe(false);
   });
 
-  it("RunPrivateCacheRepo mirrors the backing's read capability", () => {
-    const yes = new RunPrivateCacheRepo({ backing: new StreamingMemoryRepo({}), runId: "r" });
-    const no = new RunPrivateCacheRepo({ backing: new NonStreamingMemoryRepo({}), runId: "r" });
-    expect(yes.supportsStreamingReads()).toBe(true);
-    expect(no.supportsStreamingReads()).toBe(false);
+  it("RunPrivateCacheRepo exposes by-ref reads only over a run-scoped streaming backing", () => {
+    // The wrapper forwards by-ref reads only when the backing implements the
+    // run-scoped stream writers (a ref can only exist here if it was written
+    // through one). StreamingMemoryRepo streams for the DETERMINISTIC tier
+    // (no `saveOutputStream*ForRun`), so the run-private wrapper over it exposes
+    // no readable refs and reports no read capability.
+    const wrapper = new RunPrivateCacheRepo({ backing: new StreamingMemoryRepo({}), runId: "r" });
+    expect(wrapper.supportsStreamingReads()).toBe(false);
   });
 });
 

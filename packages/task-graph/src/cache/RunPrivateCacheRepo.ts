@@ -5,10 +5,7 @@
  */
 
 import { TaskOutputRepository } from "../storage/TaskOutputRepository";
-import type { StreamMode } from "../task/StreamTypes";
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
-import type { CacheRef } from "./CacheRef";
-import { isCacheRef, makeCacheRef } from "./CacheRef";
 
 export interface RunPrivateCacheRepoOptions {
   backing: TaskOutputRepository;
@@ -37,11 +34,6 @@ export interface RunPrivateCacheRepoOptions {
  * and signals the fallback via {@link noteFallbackKey}; this wrapper warns once
  * per process to tell the operator that the cache is best-effort intra-process
  * only until task ids are pinned.
- *
- * Capability probing on this wrapper MUST use `typeof repo.method ===
- * "function"` or optional-call (`repo.method?.()`): optional methods the
- * backing lacks are shadowed to `undefined` on the instance, so an unguarded
- * call is a `TypeError` even though the prototype declares the method.
  */
 export class RunPrivateCacheRepo extends TaskOutputRepository {
   private static fallbackWarned = false;
@@ -54,25 +46,49 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     super({ outputCompression: backing.outputCompression });
     this.backing = backing;
     this.runId = runId;
-    // Mirror the backing's optional-method shape on this instance so callers
-    // probing `typeof repo.saveOutputStream === "function"` (or the
-    // getOutputByRef/getOutputStreamByRef siblings) see the true capability
-    // instead of the always-present wrapper override. Class methods live on
-    // the prototype; assigning `undefined` on the instance shadows them.
-    if (typeof backing.saveOutputStream !== "function") {
-      (this as { saveOutputStream?: unknown }).saveOutputStream = undefined;
+
+    // Streaming is a per-backing capability: only backings with a sidecar
+    // (today `FsFolderTaskOutputRepository`) implement the run-scoped stream
+    // writers. Forward each stream writer ONLY when the backing declares its
+    // `*ForRun` counterpart, so the inherited `supportsStreaming*()` probes
+    // (and the CacheCoordinator's direct `typeof cache.X` checks) report this
+    // wrapper's true capability — a tabular run-private backing leaves these
+    // undefined and the private tier degrades to accumulation, unchanged.
+    const canStreamForRun = typeof backing.saveOutputStreamForRun === "function";
+    const canStreamPortForRun = typeof backing.saveOutputStreamPortForRun === "function";
+    if (canStreamForRun) {
+      this.saveOutputStream = (taskType, inputs, chunks, metadata) =>
+        backing.saveOutputStreamForRun!(this.runId, taskType, inputs, chunks, metadata);
     }
-    if (typeof backing.saveOutputStreamPort !== "function") {
-      (this as { saveOutputStreamPort?: unknown }).saveOutputStreamPort = undefined;
+    if (canStreamPortForRun) {
+      this.saveOutputStreamPort = (taskType, inputs, port, mode, chunks, metadata) =>
+        backing.saveOutputStreamPortForRun!(
+          this.runId,
+          taskType,
+          inputs,
+          port,
+          mode,
+          chunks,
+          metadata
+        );
     }
-    if (typeof backing.getOutputByRef !== "function") {
-      (this as { getOutputByRef?: unknown }).getOutputByRef = undefined;
-    }
-    if (typeof backing.getOutputStreamByRef !== "function") {
-      (this as { getOutputStreamByRef?: unknown }).getOutputStreamByRef = undefined;
-    }
-    if (typeof backing.deleteOutputByRef !== "function") {
-      (this as { deleteOutputByRef?: unknown }).deleteOutputByRef = undefined;
+    // By-ref reads/deletes take an opaque `CacheRef` (the runId is already baked
+    // into the `$ref` the backing minted), so they forward straight through.
+    // Gate them on the backing being a run-scoped STREAM backing: a ref can
+    // only exist here if it was written through one of the stream writers above,
+    // so a backing that can stream-read but not stream-write-for-run (e.g. a
+    // deterministic-only streaming repo) exposes no readable refs through this
+    // wrapper and must report no read capability.
+    if (canStreamForRun || canStreamPortForRun) {
+      if (typeof backing.getOutputByRef === "function") {
+        this.getOutputByRef = (ref) => backing.getOutputByRef!(ref);
+      }
+      if (typeof backing.getOutputStreamByRef === "function") {
+        this.getOutputStreamByRef = (ref) => backing.getOutputStreamByRef!(ref);
+      }
+      if (typeof backing.deleteOutputByRef === "function") {
+        this.deleteOutputByRef = (ref) => backing.deleteOutputByRef!(ref);
+      }
     }
   }
 
@@ -111,110 +127,6 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     inputs: TaskInput
   ): Promise<TaskOutput | undefined> {
     return this.backing.getOutputForRun(this.runId, cacheIdentity, inputs);
-  }
-
-  /**
-   * Forwards the streaming sink to the backing repository. Only present in
-   * effect when the backing repo supports streaming; `supportsStreaming()`
-   * (below) reflects the backing repo so callers branch correctly before
-   * calling this.
-   *
-   * Returns whatever {@link CacheRef} the backing produced (already namespaced
-   * via the wrapped `taskType`). Resolvers calling `getOutputByRef` on this
-   * wrapper forward to the backing, which decodes its own `$ref`.
-   */
-  public override async saveOutputStream(
-    taskType: string,
-    inputs: TaskInput,
-    chunks: AsyncIterable<Uint8Array>,
-    metadata: Record<string, unknown>
-  ): Promise<CacheRef> {
-    const fn = this.backing.saveOutputStream;
-    if (typeof fn !== "function") {
-      throw new Error(
-        `RunPrivateCacheRepo: backing repository does not implement saveOutputStream. ` +
-          `Call supportsStreaming() before saveOutputStream.`
-      );
-    }
-    // Re-wrap the backing's CacheRef so legacy backings that pre-date the
-    // `kind` brand still produce a discriminator-bearing ref through this
-    // wrapper. Branded refs pass through unchanged.
-    const raw = await fn.call(this.backing, taskType, inputs, chunks, metadata);
-    return isCacheRef(raw) ? raw : makeCacheRef(raw);
-  }
-
-  /**
-   * Port-aware streaming sink, namespaced like {@link saveOutputStream}. Only in
-   * effect when the backing implements `saveOutputStreamPort`; the constructor
-   * shadows this method to `undefined` otherwise so `supportsStreamingPorts()`
-   * and `typeof` probes report the backing's true capability.
-   */
-  public override async saveOutputStreamPort(
-    taskType: string,
-    inputs: TaskInput,
-    port: string,
-    mode: StreamMode,
-    chunks: AsyncIterable<Uint8Array>,
-    metadata: Record<string, unknown>
-  ): Promise<CacheRef> {
-    const fn = this.backing.saveOutputStreamPort;
-    if (typeof fn !== "function") {
-      throw new Error(
-        `RunPrivateCacheRepo: backing repository does not implement saveOutputStreamPort. ` +
-          `Call supportsStreamingPorts() before saveOutputStreamPort.`
-      );
-    }
-    const raw = await fn.call(
-      this.backing,
-      this.ns(taskType),
-      inputs,
-      port,
-      mode,
-      chunks,
-      metadata
-    );
-    return isCacheRef(raw) ? raw : makeCacheRef(raw);
-  }
-
-  /**
-   * Forwards by-ref retrieval to the backing repository. The `$ref` already
-   * encodes whatever the backing needs to locate the entry; no namespacing is
-   * re-applied here.
-   */
-  public override getOutputByRef(ref: CacheRef): Promise<Blob | undefined> {
-    if (typeof this.backing.getOutputByRef !== "function") return Promise.resolve(undefined);
-    return this.backing.getOutputByRef(ref);
-  }
-
-  /** Forwards streaming by-ref retrieval to the backing repository. */
-  public override getOutputStreamByRef(ref: CacheRef): AsyncIterable<Uint8Array> | undefined {
-    if (typeof this.backing.getOutputStreamByRef !== "function") return undefined;
-    return this.backing.getOutputStreamByRef(ref);
-  }
-
-  /**
-   * Forwards by-ref deletion (orphan-blob cleanup) to the backing repository.
-   * Like the by-ref readers, no namespacing is re-applied — the `$ref`
-   * self-describes the entry.
-   */
-  public override deleteOutputByRef(ref: CacheRef): Promise<void> {
-    if (typeof this.backing.deleteOutputByRef !== "function") return Promise.resolve();
-    return this.backing.deleteOutputByRef(ref);
-  }
-
-  /** Mirrors the backing repository's streaming capability. */
-  public override supportsStreaming(): boolean {
-    return this.backing.supportsStreaming();
-  }
-
-  /** Mirrors the backing repository's streaming-read capability. */
-  public override supportsStreamingReads(): boolean {
-    return this.backing.supportsStreamingReads();
-  }
-
-  /** Mirrors the backing repository's port-aware streaming capability. */
-  public override supportsStreamingPorts(): boolean {
-    return this.backing.supportsStreamingPorts();
   }
 
   /**
