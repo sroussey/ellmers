@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { DEFAULT_LIMITS } from "../limits";
+
 /**
  * Options for {@link OtpPassphraseCache}.
  */
@@ -28,7 +30,7 @@ export interface OtpPassphraseCacheOptions {
   readonly onExpiry?: () => void;
 }
 
-const DEFAULT_HARD_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const DEFAULT_HARD_TTL_MS = DEFAULT_LIMITS.otpCacheHardTtlMs;
 
 /**
  * XOR-masks a passphrase with a random one-time pad so the cache does not

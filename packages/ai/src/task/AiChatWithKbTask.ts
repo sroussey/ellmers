@@ -9,7 +9,7 @@ import { getKnowledgeBase, slugifyHeading } from "@workglow/knowledge-base";
 import type { CachePolicy, IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import { TaskConfigSchema } from "@workglow/task-graph";
 import type { IHumanRequest } from "@workglow/util";
-import { resolveHumanConnector } from "@workglow/util";
+import { DEFAULT_LIMITS, resolveHumanConnector } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import type { AiEmit } from "../capability/AiEmit";
 import type { Capability } from "../capability/Capabilities";
@@ -388,7 +388,7 @@ export class AiChatWithKbTask extends StreamingAiTask<
     // Initialize _sessionId before the loop.
     const workingInput: AiChatWithKbTaskInput = { ...input, messages: history };
     await this.getJobInput(workingInput);
-    const maxIterations = input.maxIterations ?? 100;
+    const maxIterations = input.maxIterations ?? DEFAULT_LIMITS.aiChatMaxIterations;
 
     if (context.resourceScope && this._sessionId) {
       const sessionId = this._sessionId;

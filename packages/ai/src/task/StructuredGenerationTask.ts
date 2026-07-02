@@ -6,6 +6,7 @@
 
 import type { IExecuteContext, IRunConfig, StreamEvent, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, TaskConfigurationError, TaskError, Workflow } from "@workglow/task-graph";
+import { DEFAULT_LIMITS } from "@workglow/util";
 import type { DataPortSchema, SchemaNode } from "@workglow/util/schema";
 import { compileSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
@@ -185,7 +186,7 @@ export class StructuredGenerationTask extends StreamingAiTask<
       throw configErr;
     }
 
-    const maxRetries = Math.max(0, input.maxRetries ?? 2);
+    const maxRetries = Math.max(0, input.maxRetries ?? DEFAULT_LIMITS.structuredGenMaxRetries);
     const maxAttempts = maxRetries + 1;
     const attempts: StructuredOutputValidationAttempt[] = [];
     let currentInput = input;
