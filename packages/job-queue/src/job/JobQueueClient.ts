@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { EventEmitter, getLogger } from "@workglow/util";
+import { DEFAULT_LIMITS, EventEmitter, getLogger } from "@workglow/util";
 import type { IJobStore } from "../queue-storage/IJobStore";
 import type { IMessageQueue } from "../queue-storage/IMessageQueue";
 import type { JobStorageFormat, QueueChangePayload } from "../queue-storage/IQueueStorage";
@@ -251,7 +251,7 @@ export class JobQueueClient<Input, Output> {
       input,
       job_run_id: options?.jobRunId,
       fingerprint: options?.fingerprint,
-      max_attempts: options?.maxAttempts ?? 10,
+      max_attempts: options?.maxAttempts ?? DEFAULT_LIMITS.jobMaxAttempts,
       visible_at:
         options?.delaySeconds != null
           ? new Date(Date.now() + options.delaySeconds * 1000).toISOString()
