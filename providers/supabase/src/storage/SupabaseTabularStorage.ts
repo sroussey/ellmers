@@ -318,8 +318,7 @@ export class SupabaseTabularStorage<
    */
   protected override sqlToJsValue(column: string, value: ValueOptionType): Entity[keyof Entity] {
     const typeDef = this.schema.properties[column as keyof typeof this.schema.properties] as
-      | JsonSchema
-      | undefined;
+      JsonSchema | undefined;
     if (typeDef) {
       if (value === null && this.isNullable(typeDef)) {
         return null as Entity[keyof Entity];
@@ -803,6 +802,38 @@ export class SupabaseTabularStorage<
 
     if (error) throw error;
     safeEmit(this.events, "delete", this.deleteIdentity(criteria));
+  }
+
+  /**
+   * Atomically updates rows matching `match` with `patch` via a single
+   * PostgREST `UPDATE ... WHERE ... RETURNING` request (`.update().select()`),
+   * returning the updated row. Zero-match is not an error: `.maybeSingle()`
+   * yields `data: null` (or a `PGRST116` error on some client versions) when
+   * no row satisfies the filter, which this method normalizes to `undefined`.
+   *
+   * @param match - Criteria identifying the row(s) to update
+   * @param patch - Partial entity of column values to set
+   * @returns The updated entity, or `undefined` if no row matched
+   * @emits "put" event with the updated entity when successful
+   */
+  async updateWhere(
+    match: SearchCriteria<Entity>,
+    patch: Partial<Entity>
+  ): Promise<Entity | undefined> {
+    if (Object.keys(patch).length === 0) return undefined;
+
+    let query = this.client.from(this.table).update(patch as Record<string, unknown>);
+    query = this.applyCriteriaToFilter(query, match);
+    const { data, error } = await query.select().maybeSingle();
+
+    if (error) {
+      if ((error as { code?: string }).code === "PGRST116") return undefined;
+      throw error;
+    }
+    if (data === null || data === undefined) return undefined;
+    const updated = this.hydrateRow(data);
+    safeEmit(this.events, "put", updated);
+    return updated;
   }
 
   /**
