@@ -272,8 +272,7 @@ export class SqliteTabularStorage<
     // Handle null values
     if (value === null) {
       const typeDef = this.schema.properties[column as keyof typeof this.schema.properties] as
-        | JsonSchema
-        | undefined;
+        JsonSchema | undefined;
       if (typeDef && this.isNullable(typeDef)) {
         return null;
       }
@@ -282,8 +281,7 @@ export class SqliteTabularStorage<
 
     // Schema-based type handling for non-object/array values
     const typeDef = this.schema.properties[column as keyof typeof this.schema.properties] as
-      | JsonSchema
-      | undefined;
+      JsonSchema | undefined;
     if (typeDef) {
       const actualType = this.getNonNullType(typeDef);
       const isObject =
@@ -338,8 +336,7 @@ export class SqliteTabularStorage<
    */
   protected override sqlToJsValue(column: string, value: ValueOptionType): Entity[keyof Entity] {
     const typeDef = this.schema.properties[column as keyof typeof this.schema.properties] as
-      | JsonSchema
-      | undefined;
+      JsonSchema | undefined;
     if (typeDef) {
       if (value === null && this.isNullable(typeDef)) {
         return null as Entity[keyof Entity];
@@ -1265,6 +1262,44 @@ export class SqliteTabularStorage<
     const stmt = db.prepare(`DELETE FROM \`${this.table}\` WHERE ${whereClause}`);
     stmt.run(...params);
     safeEmit(this.events, "delete", this.deleteIdentity(criteria));
+  }
+
+  /**
+   * Atomically updates the first row matching the search criteria and returns the updated row.
+   *
+   * @param match - Object with column names as keys and values or SearchConditions
+   * @param patch - Partial entity with the columns to update
+   * @returns The updated entity, or undefined if no row matched
+   */
+  async updateWhere(
+    match: SearchCriteria<Entity>,
+    patch: Partial<Entity>
+  ): Promise<Entity | undefined> {
+    return this.mutex(() => this._updateWhereInternal(match, patch));
+  }
+
+  private async _updateWhereInternal(
+    match: SearchCriteria<Entity>,
+    patch: Partial<Entity>
+  ): Promise<Entity | undefined> {
+    const patchKeys = Object.keys(patch) as Array<keyof Entity>;
+    if (patchKeys.length === 0) return undefined;
+
+    const setClause = patchKeys.map((col) => `\`${String(col)}\` = ?`).join(", ");
+    const setParams = patchKeys.map((col) => this.jsToSqlValue(String(col), patch[col] as never));
+
+    const { whereClause, params: whereParams } = this.buildDeleteSearchWhere(match);
+    const where = whereClause.length > 0 ? `WHERE ${whereClause}` : "";
+
+    const stmt = this.db.prepare(`UPDATE \`${this.table}\` SET ${setClause} ${where} RETURNING *`);
+    const row = stmt.get(...setParams, ...whereParams) as Record<string, unknown> | undefined;
+    if (row === undefined) return undefined;
+    for (const k in this.schema.properties) {
+      row[k] = this.sqlToJsValue(k, row[k] as never);
+    }
+    const updated = row as Entity;
+    this.emitPut(updated);
+    return updated;
   }
 
   /**
