@@ -114,7 +114,7 @@ function runCacheStreamOutContractTests(name: string, setup: () => Promise<Contr
       );
       expect(repo.supportsStreamingReads()).toBe(true);
       expect(ref.size).toBe(6);
-      const stream = repo.getOutputStreamByRef!(ref);
+      const stream = await repo.getOutputStreamByRef!(ref);
       expect(stream).toBeDefined();
       expect(await collect(stream!)).toEqual([1, 2, 3, 4, 5, 6]);
     });
@@ -131,7 +131,7 @@ function runCacheStreamOutContractTests(name: string, setup: () => Promise<Contr
       const { repo } = await setup();
       await repo.saveOutputStream!("T", { k: 3 }, gen(new Uint8Array([1, 2, 3])), {});
       const ref = await repo.saveOutputStream!("T", { k: 3 }, gen(new Uint8Array([9])), {});
-      expect(await collect(repo.getOutputStreamByRef!(ref)!)).toEqual([9]);
+      expect(await collect((await repo.getOutputStreamByRef!(ref))!)).toEqual([9]);
     });
 
     it("returns undefined from both readers for an unknown ref", async () => {
@@ -154,7 +154,7 @@ function runCacheStreamOutContractTests(name: string, setup: () => Promise<Contr
       if (!sibling) return; // in-memory backings have no cross-instance story
       const ref = await repo.saveOutputStream!("T", { k: 5 }, gen(new Uint8Array([4, 2])), {});
       const other = sibling();
-      expect(await collect(other.getOutputStreamByRef!(ref)!)).toEqual([4, 2]);
+      expect(await collect((await other.getOutputStreamByRef!(ref))!)).toEqual([4, 2]);
       const blob = await other.getOutputByRef!(ref);
       expect(Array.from(new Uint8Array(await blob!.arrayBuffer()))).toEqual([4, 2]);
     });

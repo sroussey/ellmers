@@ -83,7 +83,7 @@ describe("run-private streaming over an FsFolder backing", () => {
     expect(ref.port).toBe("text");
     expect(ref.mode).toBe("append");
 
-    const back = repo.getOutputStreamByRef!(ref);
+    const back = await repo.getOutputStreamByRef!(ref);
     expect(back).toBeDefined();
     expect(await codec.materialize(back!, "text")).toBe("Bonjour");
   });
@@ -100,8 +100,8 @@ describe("run-private streaming over an FsFolder backing", () => {
     const refB = await repoB.saveOutputStreamPort!("T", { p: 1 }, "text", "append", mk("B"), {});
 
     expect(refA.$ref).not.toBe(refB.$ref);
-    expect(await codec.materialize(repoA.getOutputStreamByRef!(refA)!, "text")).toBe("A");
-    expect(await codec.materialize(repoB.getOutputStreamByRef!(refB)!, "text")).toBe("B");
+    expect(await codec.materialize((await repoA.getOutputStreamByRef!(refA))!, "text")).toBe("A");
+    expect(await codec.materialize((await repoB.getOutputStreamByRef!(refB))!, "text")).toBe("B");
     expect(blobNames(folder)).toHaveLength(2);
   });
 
