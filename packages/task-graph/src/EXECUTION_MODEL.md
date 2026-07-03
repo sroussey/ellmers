@@ -306,6 +306,8 @@ Binary output ports whose bytes were piped into a stream-capable cache carry a b
 
 `StreamingIndexedDbTaskOutputRepository` is the durable **browser** streaming backing: JSON rows via `IndexedDbTabularStorage`, port payloads as ordered chunk rows in a dedicated `<dbName>__blobs` IndexedDB database (a `manifest` row per ref witnesses existence and carries `size`/`createdAt`). Writes stream one chunk row per delta (no accumulation); reads page the chunk store so memory stays bounded per chunk. Two instances over one `dbName` interoperate. IndexedDB has no synchronous existence probe, so its by-ref readers are asynchronous — `getOutputStreamByRef` may return a `Promise`, and `streamRefViaBacking` awaits it, so a dangling ref still converts a cache hit into a miss (re-execute) instead of replaying an empty stream. The synchronous filesystem/in-memory readers are unchanged.
 
+The **SQL** backings share one implementation. `TabularBlobChunkStore` persists a ref's bytes as ordered `(refKey, seq, bytes)` chunk rows plus a manifest row over any `ITabularStorage`, keyset-paging the chunk table by `seq` for bounded-memory reads; `TabularStreamingTaskOutputRepository` is the shared base (rows + blob store + `<scheme>://<refKey>` refs). `StreamingPostgresTaskOutputRepository` (server, `bytea` chunks in sibling tables) and `StreamingSqliteTaskOutputRepository` (embedded, `BLOB` chunks) are thin subclasses; both read asynchronously through the same widened by-ref contract as IndexedDB.
+
 ### Per-port stream sinks and the no-accumulation passthrough
 
 Everything above generalizes from "one binary port" to **every delta stream mode**
