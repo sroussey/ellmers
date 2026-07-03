@@ -17,6 +17,7 @@ export * from "./job/JobQueueServer";
 export * from "./job/JobQueueWorker";
 export * from "./job/JobStorageConverters";
 export * from "./job/MessageQueueClient";
+export * from "./job/StreamReassembler";
 export * from "./limiter/CompositeLimiter";
 export * from "./limiter/ConcurrencyLimiter";
 export * from "./limiter/DelayLimiter";
