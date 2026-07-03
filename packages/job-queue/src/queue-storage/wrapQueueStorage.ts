@@ -5,6 +5,7 @@
  */
 
 import { getLogger } from "@workglow/util";
+import type { StreamChunkRow, StreamEventLike } from "../job/JobQueueEventListeners";
 import type { IClaim } from "./IClaim";
 import type { IJobStore, JobRecord } from "./IJobStore";
 import type { IMessageQueue, MessageId, SendOptions } from "./IMessageQueue";
@@ -122,7 +123,29 @@ class WrappedMessageQueue<Input, Output> implements IMessageQueue<JobStorageForm
     return this.storage.scope;
   }
 
-  constructor(private readonly storage: IQueueStorage<Input, Output>) {}
+  /**
+   * OPTIONAL stream-channel forwarders — assigned only when the wrapped storage
+   * implements them, so the capability (probed via `typeof …=== "function"`)
+   * reflects the storage, mirroring how `JobHandle` conditionally exposes
+   * `onStream`.
+   */
+  publishStreamChunk?: (jobId: unknown, seq: number, event: StreamEventLike) => Promise<void>;
+  subscribeToStream?: (
+    jobId: unknown,
+    sinceSeq: number,
+    callback: (row: StreamChunkRow) => void
+  ) => () => void;
+
+  constructor(private readonly storage: IQueueStorage<Input, Output>) {
+    if (typeof storage.publishStreamChunk === "function") {
+      this.publishStreamChunk = (jobId, seq, event) =>
+        storage.publishStreamChunk!(jobId, seq, event);
+    }
+    if (typeof storage.subscribeToStream === "function") {
+      this.subscribeToStream = (jobId, sinceSeq, callback) =>
+        storage.subscribeToStream!(jobId, sinceSeq, callback);
+    }
+  }
 
   async send(body: JobStorageFormat<Input, Output>, opts?: SendOptions): Promise<MessageId> {
     const job = applySendOptions(body, opts);
