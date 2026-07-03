@@ -44,8 +44,7 @@ export interface HttpTabularProxyOptions<
   readonly schema: Schema;
   readonly primaryKey: PrimaryKeyNames;
   readonly indexes?: readonly (
-    | keyof Schema["properties"]
-    | readonly (keyof Schema["properties"])[]
+    keyof Schema["properties"] | readonly (keyof Schema["properties"])[]
   )[];
   /** Optional base path. Defaults to `/api/storage`. Trailing slashes are stripped. */
   readonly basePath?: string;
@@ -194,6 +193,15 @@ export class HttpTabularProxyStorage<
 
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
     await this.call<{ ok: true }>("deleteSearch", { criteria });
+  }
+
+  async updateWhere(
+    match: SearchCriteria<Entity>,
+    patch: Partial<Entity>
+  ): Promise<Entity | undefined> {
+    const matches = (await this.query(match)) ?? [];
+    if (matches.length === 0) return undefined;
+    return this.put({ ...matches[0], ...patch } as never);
   }
 
   async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {

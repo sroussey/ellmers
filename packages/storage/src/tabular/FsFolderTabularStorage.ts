@@ -357,6 +357,16 @@ export class FsFolderTabularStorage<
     throw new Error("deleteSearch is not supported for FsFolderTabularStorage");
   }
 
+  async updateWhere(
+    match: SearchCriteria<Entity>,
+    patch: Partial<Entity>
+  ): Promise<Entity | undefined> {
+    const matches = (await this.query(match)) ?? [];
+    if (matches.length === 0) return undefined;
+    const updated = { ...matches[0], ...patch } as Entity;
+    return this.put(updated as never);
+  }
+
   /** Lazy-init so all subscriptions share a single polling loop per interval. */
   private getPollingManager(): PollingSubscriptionManager<
     Entity,

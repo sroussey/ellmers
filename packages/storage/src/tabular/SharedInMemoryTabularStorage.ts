@@ -344,6 +344,13 @@ export class SharedInMemoryTabularStorage<
     });
   }
 
+  async updateWhere(
+    match: SearchCriteria<Entity>,
+    patch: Partial<Entity>
+  ): Promise<Entity | undefined> {
+    return this.inMemoryRepo.updateWhere(match, patch);
+  }
+
   /**
    * Delegates to the internal InMemoryTabularStorage; cross-tab changes already
    * land in that store via the BroadcastChannel handler.
