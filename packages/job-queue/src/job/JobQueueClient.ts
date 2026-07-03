@@ -27,10 +27,12 @@ import {
   JobQueueEventParameters,
   JobQueueEvents,
   JobStreamListener,
+  type StreamChunkRow,
   type StreamEventLike,
 } from "./JobQueueEventListeners";
 import type { JobQueueServer } from "./JobQueueServer";
 import { storageToClass } from "./JobStorageConverters";
+import { StreamReassembler } from "./StreamReassembler";
 
 /**
  * Handle returned when submitting a job, providing methods to interact with the job
@@ -120,6 +122,9 @@ export class JobQueueClient<Input, Output> {
    * Map of job IDs to their stream listeners
    */
   protected readonly jobStreamListeners: Map<unknown, Set<JobStreamListener>> = new Map();
+
+  /** Active cross-process stream-channel unsubscribers, keyed by job id. */
+  private readonly jobStreamUnsubscribers: Map<unknown, () => void> = new Map();
 
   /**
    * Last known progress state for each job
@@ -484,6 +489,7 @@ export class JobQueueClient<Input, Output> {
     }
     const listeners = this.jobStreamListeners.get(jobId)!;
     listeners.add(listener);
+    this.ensureStreamSubscription(jobId);
 
     return () => {
       const listeners = this.jobStreamListeners.get(jobId);
@@ -491,9 +497,39 @@ export class JobQueueClient<Input, Output> {
         listeners.delete(listener);
         if (listeners.size === 0) {
           this.jobStreamListeners.delete(jobId);
+          this.teardownStreamSubscription(jobId);
         }
       }
     };
+  }
+
+  /**
+   * For a storage-only client (no attached server) on a channel-capable queue,
+   * open a stream subscription for `jobId` and feed rows through a
+   * {@link StreamReassembler} into the same `handleJobStream` path the
+   * same-process fast path uses. Server-attached clients get delivery via
+   * `forwardToClients` and must NOT also subscribe (double-delivery).
+   */
+  private ensureStreamSubscription(jobId: unknown): void {
+    if (this.server) return;
+    const subscribe = this.messageQueue.subscribeToStream;
+    if (typeof subscribe !== "function") return;
+    if (this.jobStreamUnsubscribers.has(jobId)) return;
+    const reassembler = new StreamReassembler((event: StreamEventLike) =>
+      this.handleJobStream(jobId, event)
+    );
+    const unsub = subscribe.call(this.messageQueue, jobId, 0, (row: StreamChunkRow) => {
+      reassembler.push(row);
+    });
+    this.jobStreamUnsubscribers.set(jobId, unsub);
+  }
+
+  private teardownStreamSubscription(jobId: unknown): void {
+    const unsub = this.jobStreamUnsubscribers.get(jobId);
+    if (unsub) {
+      unsub();
+      this.jobStreamUnsubscribers.delete(jobId);
+    }
   }
 
   // ========================================================================
@@ -663,10 +699,11 @@ export class JobQueueClient<Input, Output> {
       abort: () => this.abort(id),
       onProgress: (callback: JobProgressListener) => this.onJobProgress(id, callback),
     };
-    // Stream delivery requires a same-process server-attached transport — the
-    // same signal `connect()` uses. Storage-only backends omit `onStream`, so
+    // Stream delivery requires either a same-process server-attached transport
+    // (direct in-memory fast path) or a channel-capable message queue (the
+    // cross-process side-stream). Backends with neither omit `onStream`, so
     // callers branch on `typeof handle.onStream === "function"`.
-    if (this.server) {
+    if (this.server || typeof this.messageQueue.subscribeToStream === "function") {
       handle.onStream = (callback: JobStreamListener) => this.onJobStream(id, callback);
     }
     // Streaming result reads require a cache backing reachable from this
@@ -683,6 +720,7 @@ export class JobQueueClient<Input, Output> {
     this.lastKnownProgress.delete(jobId);
     this.jobProgressListeners.delete(jobId);
     this.jobStreamListeners.delete(jobId);
+    this.teardownStreamSubscription(jobId);
   }
 
   private handleStorageChange(change: QueueChangePayload<Input, Output>): void {
