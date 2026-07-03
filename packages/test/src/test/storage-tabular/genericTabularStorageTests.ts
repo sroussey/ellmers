@@ -860,6 +860,59 @@ export function runGenericTabularStorageTests(
       });
     });
 
+    describe("updateWhere tests", () => {
+      let repository: ITabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>;
+
+      beforeEach(async () => {
+        repository = await createSearchableRepository!();
+        await repository.setupDatabase?.();
+      });
+
+      afterEach(async () => {
+        await repository.deleteAll();
+        repository.destroy();
+      });
+
+      it("updates a row matched by equality and returns the new row", async () => {
+        await repository.put({ id: "u1", category: "a", subcategory: "s", value: 1 } as never);
+        const updated = await repository.updateWhere(
+          { id: "u1" } as never,
+          { category: "b" } as never
+        );
+        expect((updated as { category?: string } | undefined)?.category).toBe("b");
+        const read = (await repository.get({ id: "u1" } as never)) as
+          { category?: string } | undefined;
+        expect(read?.category).toBe("b");
+      });
+
+      it("only updates when a conditional predicate matches (CAS)", async () => {
+        await repository.put({ id: "u2", category: "a", subcategory: "s", value: 10 } as never);
+
+        const hit = await repository.updateWhere(
+          { id: "u2", value: { value: 20, operator: "<" } } as never,
+          { category: "hit" } as never
+        );
+        expect((hit as { category?: string } | undefined)?.category).toBe("hit");
+
+        const miss = await repository.updateWhere(
+          { id: "u2", value: { value: 5, operator: "<" } } as never,
+          { category: "miss" } as never
+        );
+        expect(miss).toBeUndefined();
+        const read = (await repository.get({ id: "u2" } as never)) as
+          { category?: string } | undefined;
+        expect(read?.category).toBe("hit");
+      });
+
+      it("returns undefined for an unmatched row", async () => {
+        const res = await repository.updateWhere(
+          { id: "nope" } as never,
+          { category: "x" } as never
+        );
+        expect(res).toBeUndefined();
+      });
+    });
+
     describe(`query tests`, () => {
       let repository: ITabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>;
 
