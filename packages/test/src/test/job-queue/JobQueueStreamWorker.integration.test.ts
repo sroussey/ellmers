@@ -29,11 +29,11 @@ import { afterEach, describe, expect, it } from "vitest";
  * from a worker thread can be TRANSFERRED (not copied) to the host via
  * `postMessage`, which is what `WorkerServerBase.extractTransferables`
  * (packages/util/src/worker/WorkerServerBase.ts ~line 30) walks payloads to
- * arrange. Note that `WorkerServerBase` currently applies that walk only in
- * `postResult` (terminal complete message), not in `postStreamChunk` — so
- * even on that boundary, incremental chunks are structure-cloned today; this
- * test validates that the transfer semantics work for the binary-delta payload
- * shape if anyone later wires them up. The worker emits two `binary-delta`
+ * arrange. `WorkerServerBase.postStreamChunk` now applies that walk too
+ * (mirroring `postResult`), so incremental binary chunks are transferred, not
+ * structure-cloned, across the worker boundary. This test validates the
+ * underlying Node transfer semantics that path relies on. The worker emits two
+ * `binary-delta`
  * events across the thread boundary (see jobQueueStreamWorker.fixture.mjs);
  * the host receives the full byte sequence in order, and the worker's
  * transferred views detach (`byteLength` becomes 0). Run under Node (vitest's
