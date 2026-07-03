@@ -874,7 +874,15 @@ export function runGenericTabularStorageTests(
       });
 
       it("updates a row matched by equality and returns the new row", async () => {
-        await repository.put({ id: "u1", category: "a", subcategory: "s", value: 1 } as never);
+        const ts = new Date().toISOString();
+        await repository.put({
+          id: "u1",
+          category: "a",
+          subcategory: "s",
+          value: 1,
+          createdAt: ts,
+          updatedAt: ts,
+        } as never);
         const updated = await repository.updateWhere(
           { id: "u1" } as never,
           { category: "b" } as never
@@ -886,7 +894,15 @@ export function runGenericTabularStorageTests(
       });
 
       it("only updates when a conditional predicate matches (CAS)", async () => {
-        await repository.put({ id: "u2", category: "a", subcategory: "s", value: 10 } as never);
+        const ts = new Date().toISOString();
+        await repository.put({
+          id: "u2",
+          category: "a",
+          subcategory: "s",
+          value: 10,
+          createdAt: ts,
+          updatedAt: ts,
+        } as never);
 
         const hit = await repository.updateWhere(
           { id: "u2", value: { value: 20, operator: "<" } } as never,
