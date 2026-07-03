@@ -12,6 +12,7 @@ import {
   sleep,
   uuid4,
 } from "@workglow/util";
+import type { StreamChunkRow, StreamEventLike } from "../job/JobQueueEventListeners";
 import {
   IQueueStorage,
   JobStatus,
@@ -43,6 +44,11 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
   protected readonly prefixValues: Readonly<Record<string, string | number>>;
   /** Event emitter for change notifications */
   protected readonly events = new EventEmitter<QueueEventListeners<Input, Output>>();
+
+  /** Per-job ordered append log of published stream rows (existence + replay). */
+  private readonly streamLog = new Map<string, StreamChunkRow[]>();
+  /** Per-job live stream subscribers. */
+  private readonly streamSubscribers = new Map<string, Set<(row: StreamChunkRow) => void>>();
 
   /**
    * Creates a new in-memory job queue
@@ -407,6 +413,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     this.jobQueue = this.jobQueue.filter((job) => !this.matchesPrefixes(job));
     for (const job of deletedJobs) {
       this.events.emit("change", { type: "DELETE", old: job });
+      this.evictStream(job.id);
     }
   }
 
@@ -439,6 +446,9 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     if (deletedJob) {
       this.events.emit("change", { type: "DELETE", old: deletedJob });
     }
+    // Evict unconditionally: deleting a job id drops its stream channel whether
+    // or not a row still matched.
+    this.evictStream(id);
   }
 
   /**
@@ -465,6 +475,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     );
     for (const job of deletedJobs) {
       this.events.emit("change", { type: "DELETE", old: job });
+      this.evictStream(job.id);
     }
   }
 
@@ -600,6 +611,52 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
       }
     }
     return true;
+  }
+
+  public async publishStreamChunk(
+    jobId: unknown,
+    seq: number,
+    event: StreamEventLike
+  ): Promise<void> {
+    const key = String(jobId);
+    const row: StreamChunkRow = { jobId, seq, event };
+    const log = this.streamLog.get(key);
+    if (log) log.push(row);
+    else this.streamLog.set(key, [row]);
+    const subs = this.streamSubscribers.get(key);
+    if (subs) for (const cb of subs) cb(row);
+  }
+
+  public subscribeToStream(
+    jobId: unknown,
+    sinceSeq: number,
+    callback: (row: StreamChunkRow) => void
+  ): () => void {
+    const key = String(jobId);
+    let subs = this.streamSubscribers.get(key);
+    if (!subs) {
+      subs = new Set();
+      this.streamSubscribers.set(key, subs);
+    }
+    subs.add(callback);
+    // Replay already-published rows after registering; a row published during
+    // replay (impossible in this single-threaded impl) would arrive live and the
+    // consumer's reassembler dedups by seq.
+    const log = this.streamLog.get(key);
+    if (log) for (const r of log) if (r.seq > sinceSeq) callback(r);
+    return () => {
+      const s = this.streamSubscribers.get(key);
+      if (!s) return;
+      s.delete(callback);
+      if (s.size === 0) this.streamSubscribers.delete(key);
+    };
+  }
+
+  /** Drop a job's stream log + subscribers (rides row deletion). */
+  private evictStream(jobId: unknown): void {
+    const key = String(jobId);
+    this.streamLog.delete(key);
+    this.streamSubscribers.delete(key);
   }
 
   /**
