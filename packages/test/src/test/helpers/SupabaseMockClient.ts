@@ -419,7 +419,15 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
                   .filter((k) => !options.onConflict?.includes(k))
                   .map((k) => `"${k}" = EXCLUDED."${k}"`)
                   .join(", ");
-                query += ` ON CONFLICT (${options.onConflict}) DO UPDATE SET ${updateSet}`;
+                // Quote each conflict-target column so a camelCase PK (e.g.
+                // "refKey") is not folded to lowercase; real PostgREST quotes
+                // identifiers, and the INSERT column list / SET clause above
+                // already do.
+                const conflictCols = options.onConflict
+                  .split(",")
+                  .map((c: string) => `"${c.trim()}"`)
+                  .join(",");
+                query += ` ON CONFLICT (${conflictCols}) DO UPDATE SET ${updateSet}`;
               }
 
               query += " RETURNING *";
@@ -562,7 +570,14 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
               return deleteBuilder;
             },
             neq: (column: string, value: any) => {
-              queryBuilder._filters.push({ column, operator: "!=", value });
+              // `neq.null` means IS DISTINCT FROM NULL in PostgREST (used by
+              // `deleteAll`'s always-true `.neq(pk, null)`); match the select
+              // chain so a raw `!= NULL` doesn't silently delete nothing.
+              if (value === null) {
+                queryBuilder._filters.push({ column, operator: "IS NOT", value: "NULL" });
+              } else {
+                queryBuilder._filters.push({ column, operator: "!=", value });
+              }
               return deleteBuilder;
             },
             lt: (column: string, value: any) => {
