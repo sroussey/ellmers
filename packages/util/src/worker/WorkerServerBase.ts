@@ -231,7 +231,13 @@ export class WorkerServerBase {
     if (this.completedRequests.has(id)) {
       return;
     }
-    postMessage({ id, type: "stream_chunk", data: event });
+    // Mirror postResult: transfer (not clone) any binary payload a stream event
+    // carries (binary-delta buffers, snapshot image bytes) across the worker
+    // boundary. Non-binary events (text-delta, object-delta, phase, finish)
+    // yield an empty list and clone byte-for-byte exactly as before.
+    const transferables = [...new Set(extractTransferables(event))];
+    // @ts-expect-error - Ignore type mismatch between standard Transferable and Bun.Transferable
+    postMessage({ id, type: "stream_chunk", data: event }, transferables);
   };
 
   /**
