@@ -398,6 +398,59 @@ export class InMemoryTabularStorage<
     }
   }
 
+  async updateWhere(
+    match: SearchCriteria<Entity>,
+    patch: Partial<Entity>
+  ): Promise<Entity | undefined> {
+    const criteriaKeys = Object.keys(match) as Array<keyof Entity>;
+    for (const [id, entity] of Array.from(this.values.entries())) {
+      let matched = true;
+      for (const column of criteriaKeys) {
+        const criterion = match[column];
+        const columnValue = entity[column];
+        if (isSearchCondition(criterion)) {
+          const { value, operator } = criterion;
+          const v = value as string | number;
+          const cv = columnValue as string | number | null | undefined;
+          switch (operator) {
+            case "=":
+              if (cv !== v) matched = false;
+              break;
+            case "<":
+              if (cv === null || cv === undefined || !(cv < v)) matched = false;
+              break;
+            case "<=":
+              if (cv === null || cv === undefined || !(cv <= v)) matched = false;
+              break;
+            case ">":
+              if (cv === null || cv === undefined || !(cv > v)) matched = false;
+              break;
+            case ">=":
+              if (cv === null || cv === undefined || !(cv >= v)) matched = false;
+              break;
+            default:
+              matched = false;
+          }
+        } else if (columnValue !== criterion) {
+          matched = false;
+        }
+        if (!matched) break;
+      }
+      if (!matched) continue;
+
+      const updated = { ...entity, ...patch } as Entity;
+      // If the patch touched a primary-key column the fingerprint id changes;
+      // move the row to its new id so reads by key still resolve.
+      const { key } = this.separateKeyValueFromCombined(updated);
+      const newId = await makeFingerprint(key);
+      if (newId !== id) this.values.delete(id);
+      this.values.set(newId, updated);
+      safeEmit(this.events, "put", updated);
+      return updated;
+    }
+    return undefined;
+  }
+
   async query(
     criteria: SearchCriteria<Entity>,
     options?: QueryOptions<Entity>

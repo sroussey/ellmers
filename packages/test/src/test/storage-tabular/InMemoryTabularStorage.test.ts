@@ -328,3 +328,32 @@ describe("InMemoryTabularStorage getOffsetPage validation", () => {
     await expect(storage.getOffsetPage(-1, 10)).rejects.toBeInstanceOf(StorageValidationError);
   });
 });
+
+describe("updateWhere (InMemory)", () => {
+  it("updates the matching row and returns it; returns undefined when no match", async () => {
+    const repo = new InMemoryTabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>(
+      SearchSchema,
+      SearchPrimaryKeyNames
+    );
+    await repo.setupDatabase?.();
+    await repo.put({ id: "a", category: "x", subcategory: "s", value: 1 } as never);
+
+    const updated = await repo.updateWhere(
+      { id: "a", value: { value: 5, operator: "<" } } as never,
+      { category: "y" } as never
+    );
+    expect((updated as { category?: string } | undefined)?.category).toBe("y");
+    expect(
+      ((await repo.get({ id: "a" } as never)) as { category?: string } | undefined)?.category
+    ).toBe("y");
+
+    const noMatch = await repo.updateWhere(
+      { id: "a", value: { value: 0, operator: "<" } } as never,
+      { category: "z" } as never
+    );
+    expect(noMatch).toBeUndefined();
+    expect(
+      ((await repo.get({ id: "a" } as never)) as { category?: string } | undefined)?.category
+    ).toBe("y");
+  });
+});
