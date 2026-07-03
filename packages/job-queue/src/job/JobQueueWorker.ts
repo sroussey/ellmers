@@ -165,6 +165,9 @@ export class JobQueueWorker<
    */
   private readonly activeClaims: Map<unknown, IClaim<JobStorageFormat<Input, Output>>> = new Map();
 
+  /** Monotonic per-job stream sequence counter for the cross-process channel. */
+  private readonly streamSeq: Map<unknown, number> = new Map();
+
   /**
    * Resolve function for the idle wait promise.
    * When set, the worker is idle and waiting for either a notification or poll timeout.
@@ -895,7 +898,20 @@ export class JobQueueWorker<
    * subscribed clients. Storage is not touched.
    */
   protected emitStreamEvent(jobId: unknown, event: StreamEventLike): void {
+    // In-memory fast path (same-process attached clients) — unchanged.
     this.events.emit("job_stream", jobId, event);
+
+    // Cross-process side-channel (best-effort). Assign the seq synchronously so
+    // ordering is well-defined regardless of publish resolution order; the
+    // client reorders by seq. A publish failure must never fail the job.
+    const publish = this.messageQueue.publishStreamChunk;
+    if (typeof publish === "function") {
+      const seq = (this.streamSeq.get(jobId) ?? 0) + 1;
+      this.streamSeq.set(jobId, seq);
+      void publish.call(this.messageQueue, jobId, seq, event).catch((err) => {
+        getLogger().error("publishStreamChunk failed", { jobId, error: err });
+      });
+    }
   }
 
   /** Internal — resolve the active claim for a job id, throw if missing. */
@@ -1181,6 +1197,7 @@ export class JobQueueWorker<
   protected cleanupJob(jobId: unknown): void {
     this.activeJobAbortControllers.delete(jobId);
     this.activeClaims.delete(jobId);
+    this.streamSeq.delete(jobId);
   }
 
   /**
