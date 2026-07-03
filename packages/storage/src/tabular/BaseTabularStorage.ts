@@ -415,6 +415,11 @@ export abstract class BaseTabularStorage<
 
   abstract deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void>;
 
+  abstract updateWhere(
+    match: SearchCriteria<Entity>,
+    patch: Partial<Entity>
+  ): Promise<Entity | undefined>;
+
   abstract query(
     criteria: SearchCriteria<Entity>,
     options?: QueryOptions<Entity>

@@ -96,12 +96,7 @@ export interface TabularSubscribeOptions {
 }
 
 export type JSONValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JSONValue[]
-  | { [key: string]: JSONValue };
+  string | number | boolean | null | JSONValue[] | { [key: string]: JSONValue };
 
 export type SearchOperator = "=" | "<" | "<=" | ">" | ">=";
 
@@ -333,6 +328,21 @@ export interface ITabularStorage<
    * await repo.deleteSearch({ category: "electronics", value: { value: 100, operator: "<" } });
    */
   deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void>;
+
+  /**
+   * Atomically apply `patch` to the row(s) matching `match` and return the
+   * updated row, or `undefined` when nothing matched. `match` uses the same
+   * {@link SearchCriteria} shape as {@link query}/{@link deleteSearch} (AND of
+   * per-column equality or `{ value, operator }` conditions). When several rows
+   * match, the first updated row is returned. Callers that need single-row
+   * semantics should match on a primary key or unique tuple.
+   *
+   * This is a single-statement conditional update on SQL backends (`UPDATE …
+   * WHERE … RETURNING`) and a filtered `.update().select()` on Supabase, so it
+   * is a genuine compare-and-set — safe under concurrent writers where a
+   * read-then-`put` would race.
+   */
+  updateWhere(match: SearchCriteria<Entity>, patch: Partial<Entity>): Promise<Entity | undefined>;
 
   /** Offset-based paging; prefer {@link getPage} for stable iteration. */
   getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined>;
