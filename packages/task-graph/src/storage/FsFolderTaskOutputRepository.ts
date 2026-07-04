@@ -289,8 +289,35 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     return match ? join(this.blobsDir, match[1]) : undefined;
   }
 
+  /**
+   * Return the blob path for `ref` only when its blob name lies within
+   * `runId`'s sanitized run-scope namespace. Foreign refs (malformed,
+   * wrong-runId, or unscoped deterministic writes) yield `undefined` — the
+   * caller then reports a cache miss / no-op instead of touching another run's
+   * blobs. Blob names lead with `sanitize(taskType)`, so a run's sanitized
+   * `runScopePrefix` is the shared prefix of every sidecar it wrote.
+   */
+  private blobPathInRunScope(ref: CacheRef, runId: string): string | undefined {
+    const match = REF_PATTERN.exec(ref.$ref);
+    if (match === null) return undefined;
+    const expectedPrefix = sanitize(runScopePrefix(runId));
+    if (!match[1].startsWith(expectedPrefix)) return undefined;
+    return join(this.blobsDir, match[1]);
+  }
+
   override async getOutputByRef(ref: CacheRef): Promise<Blob | undefined> {
     const path = this.blobPath(ref);
+    if (path === undefined) return undefined;
+    try {
+      return new Blob([await readFile(path)]);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw err;
+    }
+  }
+
+  override async getOutputByRefForRun(ref: CacheRef, runId: string): Promise<Blob | undefined> {
+    const path = this.blobPathInRunScope(ref, runId);
     if (path === undefined) return undefined;
     try {
       return new Blob([await readFile(path)]);
@@ -321,8 +348,30 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     return createReadStream(path, { fd, autoClose: true }) as unknown as AsyncIterable<Uint8Array>;
   }
 
+  override getOutputStreamByRefForRun(
+    ref: CacheRef,
+    runId: string
+  ): AsyncIterable<Uint8Array> | undefined {
+    const path = this.blobPathInRunScope(ref, runId);
+    if (path === undefined) return undefined;
+    let fd: number;
+    try {
+      fd = openSync(path, "r");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw err;
+    }
+    return createReadStream(path, { fd, autoClose: true }) as unknown as AsyncIterable<Uint8Array>;
+  }
+
   override async deleteOutputByRef(ref: CacheRef): Promise<void> {
     const path = this.blobPath(ref);
+    if (path === undefined) return;
+    await rm(path, { force: true });
+  }
+
+  override async deleteOutputByRefForRun(ref: CacheRef, runId: string): Promise<void> {
+    const path = this.blobPathInRunScope(ref, runId);
     if (path === undefined) return;
     await rm(path, { force: true });
   }
