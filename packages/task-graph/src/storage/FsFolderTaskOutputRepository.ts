@@ -35,17 +35,29 @@ function sanitize(s: string): string {
 /**
  * Fold a `runId` into the `taskType` axis. FsFolder has no runId column — rows
  * are keyed `(taskType, key)` and blob names lead with `sanitize(taskType)` —
- * so scoping a private run means prefixing its taskType. The `::` terminator
- * keeps one runId's namespace from being a prefix of another's (e.g. `a` vs
- * `ab`), so a run's rows and sidecar blobs are prefix-selectable for cleanup.
+ * so scoping a private run means prefixing its taskType.
+ *
+ * The prefix is netstring-encoded (`__run:<len>:<runId>::`), where `<len>` is
+ * `runId.length`. A trailing `::` terminator alone is *not* sufficient: every
+ * prefix comparison here runs through {@link sanitize}, which collapses `:`
+ * (and every other non-word, non-`.`/`-` character) to `-`. That maps `::` to
+ * `--`, which a crafted runId can also produce or extend — e.g.
+ * `sanitize(runScopePrefix("session1"))` is a strict prefix of
+ * `sanitize(runScopePrefix("session1-"))`, so `session1`'s wrapper would
+ * accept and could delete `session1-`'s blobs. The length digits sanitize to
+ * themselves (`\d` is a word character), so encoding `runId.length` ahead of
+ * `runId` guarantees any two distinct runIds diverge at their length field
+ * before either one's content is compared — the standard netstring property
+ * that makes the boundary between "length" and "payload" unambiguous no
+ * matter what characters the payload contains.
  */
 function runScopedType(runId: string, taskType: string): string {
-  return `__run:${runId}::${taskType}`;
+  return `${runScopePrefix(runId)}${taskType}`;
 }
 
 /** The taskType-namespace prefix for a run (see {@link runScopedType}). */
 function runScopePrefix(runId: string): string {
-  return `__run:${runId}::`;
+  return `__run:${runId.length}:${runId}::`;
 }
 
 /**
