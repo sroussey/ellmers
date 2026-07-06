@@ -242,4 +242,57 @@ describe("run-private streaming over an FsFolder backing", () => {
       await expect(wrapperA.deleteOutputByRef!(foreign)).resolves.toBeUndefined();
     });
   });
+
+  describe("prefix-boundary collision", () => {
+    // Before the netstring-length fix, sanitize() collapsed the "::" run-scope
+    // terminator to "--", so sanitize(runScopePrefix(victim)) could be a strict
+    // prefix of sanitize(runScopePrefix(attacker)) whenever `attacker` extended
+    // `victim` with dash-mappable characters. That let the victim's wrapper
+    // accept — and delete — blobs it never wrote. Each pair below reproduces a
+    // distinct flavor of that collision (a trailing dash, a literal colon, and
+    // a dash immediately after the terminator).
+    it.each([
+      ["session1", "session1-"],
+      ["run-1", "run-1:x"],
+      ["x", "x-y"],
+    ])(
+      "does not let victim %j read or delete a blob written by attacker %j",
+      async (victimRunId, attackerRunId) => {
+        const codec = getStreamPortCodec("append");
+        const mk = (t: string): AsyncIterable<Uint8Array> =>
+          codec.encode(fromArray([{ type: "text-delta", port: "text", textDelta: t }]), "text");
+
+        const wrapperVictim = new RunPrivateCacheRepo({ backing, runId: victimRunId });
+        const wrapperAttacker = new RunPrivateCacheRepo({ backing, runId: attackerRunId });
+
+        const refAttacker = await wrapperAttacker.saveOutputStreamPort!(
+          "T",
+          { p: 1 },
+          "text",
+          "append",
+          mk("attacker-payload"),
+          {}
+        );
+        const blobsBefore = blobNames(folder).length;
+
+        // Read rejection: the victim's wrapper must not resolve the attacker's ref.
+        expect(await wrapperVictim.getOutputStreamByRef!(refAttacker)).toBeUndefined();
+        expect(await wrapperVictim.getOutputByRef!(refAttacker)).toBeUndefined();
+
+        // Delete rejection: a silent no-op (matching the base by-ref delete
+        // contract), and the attacker's blob must survive.
+        await expect(wrapperVictim.deleteOutputByRef!(refAttacker)).resolves.toBeUndefined();
+        expect(blobNames(folder).length).toBe(blobsBefore);
+
+        // Positive control: the attacker can still round-trip its own ref.
+        const back = await wrapperAttacker.getOutputStreamByRef!(refAttacker);
+        expect(back).toBeDefined();
+        expect(await codec.materialize(back!, "text")).toBe("attacker-payload");
+
+        await wrapperAttacker.deleteOutputByRef!(refAttacker);
+        expect(await wrapperAttacker.getOutputStreamByRef!(refAttacker)).toBeUndefined();
+        expect(blobNames(folder).length).toBe(blobsBefore - 1);
+      }
+    );
+  });
 });
