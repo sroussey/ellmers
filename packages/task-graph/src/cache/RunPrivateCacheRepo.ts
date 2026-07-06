@@ -38,13 +38,13 @@ export interface RunPrivateCacheRepoOptions {
 export class RunPrivateCacheRepo extends TaskOutputRepository {
   private static fallbackWarned = false;
 
-  private readonly backing: TaskOutputRepository;
+  private readonly _backing: TaskOutputRepository;
   private readonly runId: string;
   private observedFallback: boolean = false;
 
   constructor({ backing, runId }: RunPrivateCacheRepoOptions) {
     super({ outputCompression: backing.outputCompression });
-    this.backing = backing;
+    this._backing = backing;
     this.runId = runId;
 
     // Streaming is a per-backing capability: only backings with a sidecar
@@ -124,14 +124,14 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     output: TaskOutput,
     createdAt?: Date
   ): Promise<void> {
-    await this.backing.saveOutputForRun(this.runId, cacheIdentity, inputs, output, createdAt);
+    await this._backing.saveOutputForRun(this.runId, cacheIdentity, inputs, output, createdAt);
   }
 
   public async getOutput(
     cacheIdentity: string,
     inputs: TaskInput
   ): Promise<TaskOutput | undefined> {
-    return this.backing.getOutputForRun(this.runId, cacheIdentity, inputs);
+    return this._backing.getOutputForRun(this.runId, cacheIdentity, inputs);
   }
 
   /**
@@ -149,7 +149,7 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
    * on the backing's runId-leading primary key — not a table scan.
    */
   public async clearRun(): Promise<void> {
-    await this.backing.deleteRun(this.runId);
+    await this._backing.deleteRun(this.runId);
   }
 
   /**
@@ -157,7 +157,7 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
    * `saveOutput`/`getOutput`/`clear()` being run-scoped.
    */
   public async size(): Promise<number> {
-    return this.backing.sizeForRun(this.runId);
+    return this._backing.sizeForRun(this.runId);
   }
 
   /**
@@ -166,10 +166,21 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
    * private rows. An indexed `deleteSearch({ runId, createdAt: { "<" } })`.
    */
   public async clearOlderThan(olderThanInMs: number): Promise<void> {
-    await this.backing.deleteRunOlderThan(this.runId, olderThanInMs);
+    await this._backing.deleteRunOlderThan(this.runId, olderThanInMs);
   }
 
   public isDurable(): boolean {
-    return this.backing.isDurable();
+    return this._backing.isDurable();
+  }
+
+  /**
+   * The backing repository this wrapper scopes by `runId`. Exposed so callers
+   * (e.g. {@link TaskRunner}'s cache-registry validation) can detect a
+   * misconfiguration where the private and deterministic tiers share the same
+   * backing instance — see the guard in `TaskRunner` for why that combination
+   * must be rejected rather than silently accepted.
+   */
+  public get backing(): TaskOutputRepository {
+    return this._backing;
   }
 }
