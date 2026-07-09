@@ -72,22 +72,27 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
           metadata
         );
     }
-    // By-ref reads/deletes take an opaque `CacheRef` (the runId is already baked
-    // into the `$ref` the backing minted), so they forward straight through.
+    // By-ref reads/deletes MUST route through the backing's `*ForRun` variants,
+    // threading this wrapper's `runId`. A foreign ref (another run's blob, a
+    // malformed `$ref`, an unscoped deterministic write) then resolves to
+    // `undefined` / no-ops at the backing — the wrapper never resolves another
+    // run's bytes. The unscoped `backing.getOutputByRef` / `.getOutputStreamByRef`
+    // / `.deleteOutputByRef` are deliberately NOT forwarded here: their runId-
+    // agnostic surface is the leak this wrapper exists to close.
+    //
     // Gate them on the backing being a run-scoped STREAM backing: a ref can
     // only exist here if it was written through one of the stream writers above,
-    // so a backing that can stream-read but not stream-write-for-run (e.g. a
-    // deterministic-only streaming repo) exposes no readable refs through this
-    // wrapper and must report no read capability.
+    // so a backing that can stream-read but not stream-write-for-run exposes no
+    // readable refs through this wrapper and reports no read capability.
     if (canStreamForRun || canStreamPortForRun) {
-      if (typeof backing.getOutputByRef === "function") {
-        this.getOutputByRef = (ref) => backing.getOutputByRef!(ref);
+      if (typeof backing.getOutputByRefForRun === "function") {
+        this.getOutputByRef = (ref) => backing.getOutputByRefForRun!(ref, this.runId);
       }
-      if (typeof backing.getOutputStreamByRef === "function") {
-        this.getOutputStreamByRef = (ref) => backing.getOutputStreamByRef!(ref);
+      if (typeof backing.getOutputStreamByRefForRun === "function") {
+        this.getOutputStreamByRef = (ref) => backing.getOutputStreamByRefForRun!(ref, this.runId);
       }
-      if (typeof backing.deleteOutputByRef === "function") {
-        this.deleteOutputByRef = (ref) => backing.deleteOutputByRef!(ref);
+      if (typeof backing.deleteOutputByRefForRun === "function") {
+        this.deleteOutputByRef = (ref) => backing.deleteOutputByRefForRun!(ref, this.runId);
       }
     }
   }

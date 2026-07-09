@@ -16,7 +16,12 @@
  */
 
 import type { StreamEvent } from "@workglow/task-graph";
-import { getStreamPortCodec, isCacheRef, RunPrivateCacheRepo } from "@workglow/task-graph";
+import {
+  getStreamPortCodec,
+  isCacheRef,
+  makeCacheRef,
+  RunPrivateCacheRepo,
+} from "@workglow/task-graph";
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -83,7 +88,7 @@ describe("run-private streaming over an FsFolder backing", () => {
     expect(ref.port).toBe("text");
     expect(ref.mode).toBe("append");
 
-    const back = repo.getOutputStreamByRef!(ref);
+    const back = await repo.getOutputStreamByRef!(ref);
     expect(back).toBeDefined();
     expect(await codec.materialize(back!, "text")).toBe("Bonjour");
   });
@@ -100,8 +105,8 @@ describe("run-private streaming over an FsFolder backing", () => {
     const refB = await repoB.saveOutputStreamPort!("T", { p: 1 }, "text", "append", mk("B"), {});
 
     expect(refA.$ref).not.toBe(refB.$ref);
-    expect(await codec.materialize(repoA.getOutputStreamByRef!(refA)!, "text")).toBe("A");
-    expect(await codec.materialize(repoB.getOutputStreamByRef!(refB)!, "text")).toBe("B");
+    expect(await codec.materialize((await repoA.getOutputStreamByRef!(refA))!, "text")).toBe("A");
+    expect(await codec.materialize((await repoB.getOutputStreamByRef!(refB))!, "text")).toBe("B");
     expect(blobNames(folder)).toHaveLength(2);
   });
 
@@ -133,5 +138,108 @@ describe("run-private streaming over an FsFolder backing", () => {
     expect(await repoB.getOutput("T", { p: 1 })).toEqual({ ok: "B" });
     expect(await repoB.size()).toBe(1);
     expect(blobNames(folder)).toHaveLength(1);
+    // clearRun also invalidates run-A's ref for run-B's readers: a ref that
+    // came from run-A must never resolve against run-B, even after the blob
+    // (and its run-A rows) are gone.
+    expect(await repoB.getOutputStreamByRef!(refA)).toBeUndefined();
+  });
+
+  describe("run-scope enforcement", () => {
+    it("does not resolve a ref written by another run", async () => {
+      const codec = getStreamPortCodec("append");
+      const mk = (t: string): AsyncIterable<Uint8Array> =>
+        codec.encode(fromArray([{ type: "text-delta", port: "text", textDelta: t }]), "text");
+
+      const wrapperA = new RunPrivateCacheRepo({ backing, runId: "run-A" });
+      const wrapperB = new RunPrivateCacheRepo({ backing, runId: "run-B" });
+
+      const refB = await wrapperB.saveOutputStreamPort!(
+        "T",
+        { p: 1 },
+        "text",
+        "append",
+        mk("B"),
+        {}
+      );
+
+      expect(await wrapperA.getOutputStreamByRef!(refB)).toBeUndefined();
+      expect(await wrapperA.getOutputByRef!(refB)).toBeUndefined();
+    });
+
+    it("does not delete a blob written by another run", async () => {
+      const codec = getStreamPortCodec("append");
+      const mk = (t: string): AsyncIterable<Uint8Array> =>
+        codec.encode(fromArray([{ type: "text-delta", port: "text", textDelta: t }]), "text");
+
+      const wrapperA = new RunPrivateCacheRepo({ backing, runId: "run-A" });
+      const wrapperB = new RunPrivateCacheRepo({ backing, runId: "run-B" });
+
+      const refB = await wrapperB.saveOutputStreamPort!(
+        "T",
+        { p: 1 },
+        "text",
+        "append",
+        mk("B"),
+        {}
+      );
+      const blobsBefore = blobNames(folder).length;
+
+      // Silent no-op: matches the base contract's best-effort idempotency for
+      // by-ref delete (missing entries never throw). Foreign-ref alarms belong
+      // in operator observability, not on the security-invariant path — a
+      // throw here would let a hostile ref crash a legitimate wrapper.
+      await expect(wrapperA.deleteOutputByRef!(refB)).resolves.toBeUndefined();
+
+      const back = await wrapperB.getOutputStreamByRef!(refB);
+      expect(back).toBeDefined();
+      expect(await codec.materialize(back!, "text")).toBe("B");
+      expect(blobNames(folder).length).toBe(blobsBefore);
+    });
+
+    it("still resolves and deletes refs written by the same run", async () => {
+      const codec = getStreamPortCodec("append");
+      const wrapperA = new RunPrivateCacheRepo({ backing, runId: "run-A" });
+
+      const refA = await wrapperA.saveOutputStreamPort!(
+        "T",
+        { p: 1 },
+        "text",
+        "append",
+        codec.encode(fromArray([{ type: "text-delta", port: "text", textDelta: "A" }]), "text"),
+        {}
+      );
+      const before = blobNames(folder).length;
+
+      const stream = await wrapperA.getOutputStreamByRef!(refA);
+      expect(stream).toBeDefined();
+      expect(await codec.materialize(stream!, "text")).toBe("A");
+      const blob = await wrapperA.getOutputByRef!(refA);
+      expect(blob).toBeDefined();
+
+      await wrapperA.deleteOutputByRef!(refA);
+
+      expect(await wrapperA.getOutputStreamByRef!(refA)).toBeUndefined();
+      expect(await wrapperA.getOutputByRef!(refA)).toBeUndefined();
+      expect(blobNames(folder).length).toBe(before - 1);
+    });
+
+    it("uniformly rejects malformed and foreign-scheme refs", async () => {
+      const wrapperA = new RunPrivateCacheRepo({ backing, runId: "run-A" });
+
+      // Well-formed fsfolder URI but with no run-scope prefix in the blob name:
+      // could only exist as a deterministic-tier write; the wrapper must not
+      // resolve it against run-A.
+      const unscoped = makeCacheRef({ $ref: "fsfolder://blobs/foreign.bin" });
+      // Foreign URI scheme entirely — never a fsfolder blob.
+      const foreign = makeCacheRef({ $ref: "other://something" });
+
+      expect(await wrapperA.getOutputStreamByRef!(unscoped)).toBeUndefined();
+      expect(await wrapperA.getOutputByRef!(unscoped)).toBeUndefined();
+      await expect(wrapperA.deleteOutputByRef!(unscoped)).resolves.toBeUndefined();
+
+      expect(await wrapperA.getOutputStreamByRef!(foreign)).toBeUndefined();
+      expect(await wrapperA.getOutputByRef!(foreign)).toBeUndefined();
+      await expect(wrapperA.deleteOutputByRef!(foreign)).resolves.toBeUndefined();
+    });
   });
 });

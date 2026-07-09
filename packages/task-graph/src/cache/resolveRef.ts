@@ -21,7 +21,9 @@ export type CacheRefResolver = (ref: CacheRef) => Promise<Blob | undefined>;
  * if the backing has no streaming retrieval for this ref or the entry is
  * absent.
  */
-export type CacheRefStreamResolver = (ref: CacheRef) => AsyncIterable<Uint8Array> | undefined;
+export type CacheRefStreamResolver = (
+  ref: CacheRef
+) => AsyncIterable<Uint8Array> | undefined | Promise<AsyncIterable<Uint8Array> | undefined>;
 
 /**
  * Object shape carrying the optional by-ref readers a cache backing exposes
@@ -31,7 +33,9 @@ export type CacheRefStreamResolver = (ref: CacheRef) => AsyncIterable<Uint8Array
  */
 export interface RefStreamBacking {
   readonly getOutputByRef?: (ref: CacheRef) => Promise<Blob | undefined>;
-  readonly getOutputStreamByRef?: (ref: CacheRef) => AsyncIterable<Uint8Array> | undefined;
+  readonly getOutputStreamByRef?: (
+    ref: CacheRef
+  ) => AsyncIterable<Uint8Array> | undefined | Promise<AsyncIterable<Uint8Array> | undefined>;
 }
 
 /** Adapt a `Blob` to the `AsyncIterable<Uint8Array>` chunk shape. */
@@ -59,7 +63,11 @@ export async function streamRefViaBacking(
   backing: RefStreamBacking
 ): Promise<AsyncIterable<Uint8Array> | undefined> {
   if (typeof backing.getOutputStreamByRef === "function") {
-    const stream = backing.getOutputStreamByRef(ref);
+    // Await so an asynchronous backing (a DB store that cannot probe existence
+    // synchronously) resolves a dangling ref to `undefined` — a cache miss —
+    // rather than a truthy Promise the caller would mistake for a live stream.
+    // Synchronous backings return the iterable directly; awaiting it is a no-op.
+    const stream = await backing.getOutputStreamByRef(ref);
     if (stream !== undefined) return stream;
   }
   if (typeof backing.getOutputByRef === "function") {

@@ -159,7 +159,7 @@ export class PostgresTabularStorage<
     const sql = `
       CREATE TABLE IF NOT EXISTS "${this.table}" (
         ${this.constructPrimaryKeyColumns('"')} ${this.constructValueColumns('"')},
-        PRIMARY KEY (${this.primaryKeyColumnList()})
+        PRIMARY KEY (${this.primaryKeyColumnList('"')})
       )
     `;
     await this.db.query(sql);
