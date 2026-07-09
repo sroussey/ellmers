@@ -18,6 +18,9 @@ import { getTestingLogger } from "../../binding/TestingLogger";
 import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 
 const RUN = !!process.env.GOOGLE_API_KEY || !!process.env.GEMINI_API_KEY;
+// gemini-2.5-flash was retired from the v1beta API. Exercise a current
+// "thinking" model so the thought-signature and structured-generation paths
+// are covered live.
 const MODEL_ID = "gemini:gemini-3.5-flash";
 const EMBED_MODEL_ID = "gemini:gemini-embedding-001";
 

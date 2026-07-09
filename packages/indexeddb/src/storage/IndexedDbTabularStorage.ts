@@ -959,6 +959,24 @@ export class IndexedDbTabularStorage<
     });
   }
 
+  /**
+   * Read-modify-write over {@link query}/{@link put}. IndexedDB has no
+   * native conditional-update primitive, so this is not a true atomic CAS
+   * like the SQL backends' `UPDATE ... WHERE ... RETURNING` — concurrent
+   * writers could race between the read and the write. Matches the
+   * unoptimized `query`+`put` fallback used by the other non-SQL backends.
+   */
+  async updateWhere(
+    match: SearchCriteria<Entity>,
+    patch: Partial<Entity>
+  ): Promise<Entity | undefined> {
+    this.assertPatchKeepsPrimaryKey(patch);
+    const matches = (await this.query(match)) ?? [];
+    if (matches.length === 0) return undefined;
+    const updated = { ...matches[0], ...patch } as Entity;
+    return this.put(updated as never);
+  }
+
   private getEqualityCriterionValue(
     criteria: SearchCriteria<Entity>,
     column: keyof Entity

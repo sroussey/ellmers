@@ -1391,6 +1391,50 @@ export class PostgresTabularStorage<
   }
 
   /**
+   * Atomically updates the first entry matching `match` with `patch`, returning the
+   * updated row (or `undefined` if nothing matched). A single `UPDATE ... RETURNING *`
+   * statement makes this a compare-and-swap primitive: the WHERE clause is evaluated
+   * server-side against the current row, so there is no read/modify/write race.
+   */
+  async updateWhere(
+    match: SearchCriteria<Entity>,
+    patch: Partial<Entity>
+  ): Promise<Entity | undefined> {
+    this.assertPatchKeepsPrimaryKey(patch);
+    return this.mutex(() => this._updateWhereInternal(match, patch));
+  }
+
+  private async _updateWhereInternal(
+    match: SearchCriteria<Entity>,
+    patch: Partial<Entity>
+  ): Promise<Entity | undefined> {
+    const patchKeys = Object.keys(patch) as Array<keyof Entity>;
+    if (patchKeys.length === 0) return undefined;
+
+    const setClause = patchKeys.map((col, i) => `"${String(col)}" = $${i + 1}`).join(", ");
+    const setParams = patchKeys.map((col) => this.jsToSqlValue(String(col), patch[col] as never));
+
+    const { whereClause, params: whereParams } = this.buildSearchWhereWithIndex(
+      match,
+      patchKeys.length + 1
+    );
+    const subWhere = whereClause.length > 0 ? `WHERE ${whereClause}` : "";
+
+    // Constrain the write to a single row (via a ctid sub-select) so a
+    // non-unique `match` updates exactly one row — matching the single-row
+    // contract and the non-SQL backends.
+    const result = await this.db.query(
+      `UPDATE "${this.table}" SET ${setClause} ` +
+        `WHERE ctid IN (SELECT ctid FROM "${this.table}" ${subWhere} LIMIT 1) RETURNING *`,
+      [...setParams, ...whereParams]
+    );
+    if (result.rows.length === 0) return undefined;
+    const updated = this.hydrateRow(result.rows[0]);
+    this.emitPut(updated);
+    return updated;
+  }
+
+  /**
    * Queries entries matching the specified search criteria with optional ordering, limit, and offset.
    *
    * @param criteria - Object with column names as keys and values or SearchConditions

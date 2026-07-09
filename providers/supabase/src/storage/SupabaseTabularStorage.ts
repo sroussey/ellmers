@@ -805,6 +805,65 @@ export class SupabaseTabularStorage<
   }
 
   /**
+   * Atomically updates a **single** row matching `match` with `patch`, returning
+   * the updated row (or `undefined` when nothing matched).
+   *
+   * PostgREST cannot `LIMIT` an `UPDATE`, so a lone `.update().<match>` would
+   * mutate every matching row. Instead this resolves one matching row's primary
+   * key, then updates by that key while re-applying `match`: the second write
+   * re-checks the conditions atomically, so a concurrent change that breaks the
+   * match yields `undefined` (a CAS miss) rather than a stale write. Zero-match
+   * is normalized from `.single()`/`.maybeSingle()`'s `PGRST116` to `undefined`.
+   *
+   * @param match - Criteria identifying the row to update
+   * @param patch - Partial entity of column values to set
+   * @returns The updated entity, or `undefined` if no row matched
+   * @emits "put" event with the updated entity when successful
+   */
+  async updateWhere(
+    match: SearchCriteria<Entity>,
+    patch: Partial<Entity>
+  ): Promise<Entity | undefined> {
+    if (Object.keys(patch).length === 0) return undefined;
+    this.assertPatchKeepsPrimaryKey(patch);
+
+    const pkColumns = this.primaryKeyColumns() as unknown as Array<keyof Entity>;
+
+    // Step 1: resolve one matching row's primary key.
+    const pkSelect = this.applyCriteriaToFilter(
+      this.client.from(this.table).select(pkColumns.map(String).join(",")),
+      match
+    ).limit(1);
+    const { data: target, error: selectError } = await pkSelect.single();
+    if (selectError) {
+      if ((selectError as { code?: string }).code === "PGRST116") return undefined;
+      throw selectError;
+    }
+    if (target === null || target === undefined) return undefined;
+
+    // Step 2: update by that primary key, re-applying `match` so the write is
+    // a genuine compare-and-set on exactly one row.
+    let update = this.client.from(this.table).update(patch as Record<string, unknown>);
+    update = this.applyCriteriaToFilter(update, match);
+    // `.select(<dynamic string>)` widens `data` to include GenericStringError,
+    // so route the row shape through `unknown`.
+    const targetRecord = target as unknown as Record<string, unknown>;
+    for (const col of pkColumns) {
+      update = update.eq(String(col), targetRecord[String(col)]);
+    }
+    const { data, error } = await update.select().maybeSingle();
+
+    if (error) {
+      if ((error as { code?: string }).code === "PGRST116") return undefined;
+      throw error;
+    }
+    if (data === null || data === undefined) return undefined;
+    const updated = this.hydrateRow(data);
+    safeEmit(this.events, "put", updated);
+    return updated;
+  }
+
+  /**
    * Queries entries matching the specified search criteria with optional ordering, limit, and offset.
    *
    * @param criteria - Object with column names as keys and values or SearchConditions

@@ -1,5 +1,27 @@
 # @workglow/storage
 
+## 0.3.23
+
+### Features
+
+#### storage
+
+- updateWhere on remaining backends and wrappers
+- InMemory updateWhere CAS
+- declare ITabularStorage.updateWhere atomic CAS
+
+### Bug Fixes
+
+#### storage
+
+- updateWhere rejects patches that change a primary-key column
+- FsFolder updateWhere throws unsupported instead of failing via query
+- make updateWhere single-row and consistent across backends
+
+### Refactors
+
+- consolidate hardcoded limits into DEFAULT_LIMITS/SECURITY_LIMITS (#609)
+
 ## 0.3.22
 
 ### Bug Fixes

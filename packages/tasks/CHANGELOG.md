@@ -1,5 +1,26 @@
 # @workglow/tasks
 
+## 0.3.23
+
+### Bug Fixes
+
+#### tasks
+
+- route SafeFetch.server redirect ceiling through SECURITY_LIMITS
+
+### Refactors
+
+- consolidate hardcoded limits into DEFAULT_LIMITS/SECURITY_LIMITS (#609)
+
+### Chores
+
+- update deps
+- format / lint
+
+### Updated Dependencies
+
+- `undici`: ^8.7.0
+
 ## 0.3.22
 
 ### Chores

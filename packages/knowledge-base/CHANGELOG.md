@@ -1,5 +1,17 @@
 # @workglow/knowledge-base
 
+## 0.3.23
+
+### Features
+
+#### storage
+
+- updateWhere on remaining backends and wrappers
+
+### Chores
+
+- format / lint
+
 ## 0.3.22
 
 ## 0.3.21

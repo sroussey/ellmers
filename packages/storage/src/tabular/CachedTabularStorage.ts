@@ -226,6 +226,16 @@ export class CachedTabularStorage<
     await this.cache.deleteSearch(criteria);
   }
 
+  async updateWhere(
+    match: SearchCriteria<Entity>,
+    patch: Partial<Entity>
+  ): Promise<Entity | undefined> {
+    await this.initializeCache();
+    const result = await this.durable.updateWhere(match, patch);
+    if (result !== undefined) await this.cache.put(result as never);
+    return result;
+  }
+
   /**
    * Runs `fn` inside the durable store's transaction. The cache layer is
    * intentionally bypassed for the transaction's duration — coordinating

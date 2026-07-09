@@ -357,6 +357,17 @@ export class FsFolderTabularStorage<
     throw new Error("deleteSearch is not supported for FsFolderTabularStorage");
   }
 
+  async updateWhere(
+    _match: SearchCriteria<Entity>,
+    _patch: Partial<Entity>
+  ): Promise<Entity | undefined> {
+    // A conditional update needs query support, which this folder-backed store
+    // does not provide (query/queryIndex/deleteSearch all throw). Fail with the
+    // same unsupported-operation error rather than the misleading "query"
+    // variant the old query-then-put body produced.
+    throw new StorageUnsupportedError("updateWhere", "FsFolderTabularStorage");
+  }
+
   /** Lazy-init so all subscriptions share a single polling loop per interval. */
   private getPollingManager(): PollingSubscriptionManager<
     Entity,

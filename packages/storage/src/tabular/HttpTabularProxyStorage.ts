@@ -195,6 +195,16 @@ export class HttpTabularProxyStorage<
     await this.call<{ ok: true }>("deleteSearch", { criteria });
   }
 
+  async updateWhere(
+    match: SearchCriteria<Entity>,
+    patch: Partial<Entity>
+  ): Promise<Entity | undefined> {
+    this.assertPatchKeepsPrimaryKey(patch);
+    const matches = (await this.query(match)) ?? [];
+    if (matches.length === 0) return undefined;
+    return this.put({ ...matches[0], ...patch } as never);
+  }
+
   async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
     const { entities } = await this.call<{ entities: Entity[] | null }>("getOffsetPage", {
       offset,

@@ -99,6 +99,12 @@ export class TelemetryTabularStorage<
     );
   }
 
+  updateWhere(match: SearchCriteria<Entity>, patch: Partial<Entity>): Promise<Entity | undefined> {
+    return traced("workglow.storage.tabular.updateWhere", this.storageName, () =>
+      this.inner.updateWhere(match, patch)
+    );
+  }
+
   getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
     return traced("workglow.storage.tabular.getOffsetPage", this.storageName, () =>
       this.inner.getOffsetPage(offset, limit)

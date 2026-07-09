@@ -521,6 +521,13 @@ export class HuggingFaceTabularStorage<
     throw new Error("HuggingFaceTabularStorage is readonly");
   }
 
+  async updateWhere(
+    _match: SearchCriteria<Entity>,
+    _patch: Partial<Entity>
+  ): Promise<Entity | undefined> {
+    throw new Error("HuggingFaceTabularStorage is read-only: updateWhere is not supported");
+  }
+
   override subscribeToChanges(
     _callback: (change: TabularChangePayload<Entity>) => void,
     _options?: TabularSubscribeOptions

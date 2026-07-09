@@ -1,5 +1,21 @@
 # @workglow/util
 
+## 0.3.23
+
+### Bug Fixes
+
+#### util
+
+- make objectOfArraysAsArrayOfObjects work with native array methods
+
+### Refactors
+
+- consolidate hardcoded limits into DEFAULT_LIMITS/SECURITY_LIMITS (#609)
+
+### Chores
+
+- format / lint
+
 ## 0.3.22
 
 ### Bug Fixes

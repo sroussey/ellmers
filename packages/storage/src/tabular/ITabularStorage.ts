@@ -329,6 +329,27 @@ export interface ITabularStorage<
    */
   deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void>;
 
+  /**
+   * Atomically apply `patch` to a **single** row matching `match` and return
+   * the updated row, or `undefined` when nothing matched. `match` uses the same
+   * {@link SearchCriteria} shape as {@link query}/{@link deleteSearch} (AND of
+   * per-column equality or `{ value, operator }` conditions). When several rows
+   * match, exactly one (arbitrary) row is updated and returned — every backend
+   * touches at most one row, so a non-unique `match` never bulk-mutates. Match
+   * on a primary key or unique tuple when you need a specific row.
+   *
+   * `patch` must not include a primary-key column: this updates a row in place,
+   * it does not move a row's identity (that is a delete + insert). Backends
+   * throw {@link StorageValidationError} if the patch touches a key column.
+   *
+   * This is a genuine compare-and-set — safe under concurrent writers where a
+   * read-then-`put` would race. SQL backends constrain the write to one row via
+   * a `rowid`/`ctid` sub-select; Supabase resolves one matching primary key and
+   * updates by it while re-applying `match`, so a concurrent change that breaks
+   * the condition yields `undefined` rather than a stale write.
+   */
+  updateWhere(match: SearchCriteria<Entity>, patch: Partial<Entity>): Promise<Entity | undefined>;
+
   /** Offset-based paging; prefer {@link getPage} for stable iteration. */
   getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined>;
 

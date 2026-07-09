@@ -92,10 +92,9 @@ const sqliteBackend: BackendUnderTest = {
         // Locate the partial index by name and assert it's UNIQUE.
         const tableName = `job_queue`;
         const rows = db
-          .prepare<
-            [string],
-            { name: string; sql: string }
-          >(`SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND name=?`)
+          .prepare<[string], { name: string; sql: string }>(
+            `SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND name=?`
+          )
           .all(tableName, `idx_${tableName}_fingerprint_active`);
         expect(rows.length).toBeGreaterThan(0);
         const idx = rows[0]!;

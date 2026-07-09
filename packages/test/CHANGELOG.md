@@ -1,5 +1,55 @@
 # @workglow/test
 
+## 0.3.23
+
+### Features
+
+#### supabase
+
+- updateWhere CAS via filtered update().select()
+
+#### storage
+
+- InMemory updateWhere CAS
+
+### Bug Fixes
+
+#### storage
+
+- updateWhere rejects patches that change a primary-key column
+- make updateWhere single-row and consistent across backends
+
+#### util
+
+- make objectOfArraysAsArrayOfObjects work with native array methods
+
+### Refactors
+
+- consolidate hardcoded limits into DEFAULT_LIMITS/SECURITY_LIMITS (#609)
+
+### Tests
+
+#### gemini
+
+- disable the gemini-2.5-flash live conformance suite (model retired)
+
+#### storage
+
+- regression tests for InMemory updateWhere invariants
+- seed required createdAt/updatedAt in updateWhere suite
+- generic updateWhere CAS suite
+
+### Chores
+
+- update deps
+- format / lint
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1084.0
+- `miniflare`: ^4.20260708.1
+- `vitest`: ^4.1.10
+
 ## 0.3.22
 
 ### Bug Fixes

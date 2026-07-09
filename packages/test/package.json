@@ -2,7 +2,7 @@
   "name": "@workglow/test",
   "type": "module",
   "private": true,
-  "version": "0.3.22",
+  "version": "0.3.23",
   "bugs": {
     "url": "https://github.com/workglow-dev/libs/issues"
   },
@@ -27,7 +27,7 @@
     "test-concurrently": "bash -c 'cmds=(); for d in ./src/test/*/; do cmds+=(\"cd $d && bun test\"); done; concurrently \"${cmds[@]}\"'"
   },
   "devDependencies": {
-    "@aws-sdk/client-sqs": "^3.1079.0",
+    "@aws-sdk/client-sqs": "^3.1084.0",
     "@cloudflare/workers-types": "^4.20260702.1",
     "@electric-sql/pglite": "catalog:",
     "@electric-sql/pglite-pgvector": "catalog:",
@@ -70,10 +70,10 @@
     "@workglow/util": "workspace:*",
     "aws-sdk-client-mock": "^4.0.0",
     "fake-indexeddb": "^6.2.4",
-    "miniflare": "^4.20260701.0",
+    "miniflare": "^4.20260708.1",
     "node-llama-cpp": "catalog:",
     "pg": "catalog:",
     "playwright": "catalog:",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   }
 }

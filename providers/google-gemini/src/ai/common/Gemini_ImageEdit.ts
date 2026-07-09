@@ -14,7 +14,7 @@ import {
   imageValueToPngBytes,
   modelIdForError,
 } from "@workglow/ai/provider-utils";
-import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
+import { createGeminiClient, getModelName } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 
 /** Decode a base64 inline image part into an ImageValue. */
@@ -64,10 +64,8 @@ export const Gemini_ImageEdit_Stream: AiProviderRunFn<
   const timer = `gemini:ImageEdit:${modelIdForError(model, "gemini")}`;
   logger.time(timer, { model: modelIdForError(model, "gemini") });
   try {
-    const GoogleGenerativeAI = await loadGeminiSDK();
-    const genAI = new GoogleGenerativeAI(getApiKey(model));
+    const ai = await createGeminiClient(model);
     const modelName = getModelName(model);
-    const genModel = genAI.getGenerativeModel({ model: modelName });
 
     // image/additionalImages may be data URI strings if the input crossed
     // an earlier worker boundary in legacy form; otherwise they are ImageValue
@@ -86,11 +84,11 @@ export const Gemini_ImageEdit_Stream: AiProviderRunFn<
     const parts: Array<any> = [{ text: input.prompt }, primaryPart, ...additionalParts];
 
     try {
-      const result = await genModel.generateContent({ contents: [{ role: "user", parts }] }, {
-        signal,
-      } as any);
-
-      const response = result.response;
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: [{ role: "user", parts }],
+        config: { abortSignal: signal ?? undefined },
+      });
 
       if (
         !response.candidates ||
