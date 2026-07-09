@@ -805,13 +805,17 @@ export class SupabaseTabularStorage<
   }
 
   /**
-   * Atomically updates rows matching `match` with `patch` via a single
+   * Atomically updates the row matching `match` with `patch` via a single
    * PostgREST `UPDATE ... WHERE ... RETURNING` request (`.update().select()`),
-   * returning the updated row. Zero-match is not an error: `.maybeSingle()`
-   * yields `data: null` (or a `PGRST116` error on some client versions) when
-   * no row satisfies the filter, which this method normalizes to `undefined`.
+   * returning the updated row. `match` must identify at most one row (see the
+   * `ITabularStorage.updateWhere` contract): PostgREST cannot limit an
+   * update, so a non-unique match mutates every matching row — and
+   * `.maybeSingle()` then errors after the rows were already changed.
+   * Zero-match is not an error: `.maybeSingle()` yields `data: null` (or a
+   * `PGRST116` error on some client versions), which this method normalizes
+   * to `undefined`.
    *
-   * @param match - Criteria identifying the row(s) to update
+   * @param match - Criteria identifying the row to update (unique tuple + CAS predicates)
    * @param patch - Partial entity of column values to set
    * @returns The updated entity, or `undefined` if no row matched
    * @emits "put" event with the updated entity when successful

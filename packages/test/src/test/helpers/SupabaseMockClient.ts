@@ -456,8 +456,14 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
               ? queryBuilder._filters
                   .map((f) => {
                     const val = f.value;
-                    if (val === null || val === undefined)
+                    if (val === null || val === undefined) {
+                      // `= NULL` never matches in Postgres; PostgREST's
+                      // eq/neq-null translate to IS [NOT] NULL — mirror that
+                      // so mock behavior doesn't diverge on null comparisons.
+                      if (f.operator === "=") return `"${f.column}" IS NULL`;
+                      if (f.operator === "!=") return `"${f.column}" IS NOT NULL`;
                       return `"${f.column}" ${f.operator} NULL`;
+                    }
                     if (typeof val === "object")
                       return `"${f.column}" ${f.operator} '${JSON.stringify(val).replace(/'/g, "''")}'`;
                     if (typeof val === "string")

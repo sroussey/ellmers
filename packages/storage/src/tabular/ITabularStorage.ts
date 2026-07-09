@@ -330,12 +330,19 @@ export interface ITabularStorage<
   deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void>;
 
   /**
-   * Atomically apply `patch` to the row(s) matching `match` and return the
+   * Atomically apply `patch` to the row matching `match` and return the
    * updated row, or `undefined` when nothing matched. `match` uses the same
    * {@link SearchCriteria} shape as {@link query}/{@link deleteSearch} (AND of
-   * per-column equality or `{ value, operator }` conditions). When several rows
-   * match, the first updated row is returned. Callers that need single-row
-   * semantics should match on a primary key or unique tuple.
+   * per-column equality or `{ value, operator }` conditions).
+   *
+   * `match` MUST identify at most one row (a primary key or unique tuple,
+   * optionally plus compare-and-set predicates). Multi-row matches are
+   * contract misuse with backend-defined behavior: SQL/Supabase backends run
+   * a single filtered `UPDATE` and mutate EVERY matching row (PostgREST has
+   * no way to limit an update, and diverging per backend would let a
+   * non-unique caller pass on one backend and corrupt rows on another),
+   * while the in-memory/query-then-put fallbacks update only the first
+   * match. Only the unique-match contract is portable.
    *
    * This is a single-statement conditional update on SQL backends (`UPDATE …
    * WHERE … RETURNING`) and a filtered `.update().select()` on Supabase, so it

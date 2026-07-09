@@ -213,7 +213,7 @@ export class InMemoryTabularStorage<
    * the SQLite/Postgres backends emit so contract tests can exercise the
    * constraint without standing up a real DB.
    */
-  private assertUniqueIndexes(entityToStore: Entity, incomingId: string): void {
+  private assertUniqueIndexes(entityToStore: Entity, ...excludedIds: string[]): void {
     const incomingRecord = entityToStore as Record<string, unknown>;
     for (const tuple of this.uniqueIndexes) {
       const incomingValues = tuple.map((col) => incomingRecord[col as string]);
@@ -222,7 +222,7 @@ export class InMemoryTabularStorage<
       // null field never trips the constraint.
       if (incomingValues.some((v) => v === undefined || v === null)) continue;
       for (const [existingId, existing] of this.values) {
-        if (existingId === incomingId) continue;
+        if (excludedIds.includes(existingId)) continue;
         const existingRecord = existing as Record<string, unknown>;
         const matches = tuple.every(
           (col, i) => existingRecord[col as string] === incomingValues[i]
@@ -443,6 +443,14 @@ export class InMemoryTabularStorage<
       // move the row to its new id so reads by key still resolve.
       const { key } = this.separateKeyValueFromCombined(updated);
       const newId = await makeFingerprint(key);
+      // Maintain put()'s invariants: enforce declared UNIQUE tuples (excluding
+      // the row being replaced under both its old and new ids, so an unchanged
+      // unique column never collides with itself) and mark the write as an
+      // UPDATE for change subscribers, before mutating and emitting.
+      if (this.uniqueIndexes.length > 0) {
+        this.assertUniqueIndexes(updated, id, newId);
+      }
+      this._lastPutWasInsert = false;
       if (newId !== id) this.values.delete(id);
       this.values.set(newId, updated);
       safeEmit(this.events, "put", updated);
