@@ -805,13 +805,17 @@ export class SupabaseTabularStorage<
   }
 
   /**
-   * Atomically updates rows matching `match` with `patch` via a single
-   * PostgREST `UPDATE ... WHERE ... RETURNING` request (`.update().select()`),
-   * returning the updated row. Zero-match is not an error: `.maybeSingle()`
-   * yields `data: null` (or a `PGRST116` error on some client versions) when
-   * no row satisfies the filter, which this method normalizes to `undefined`.
+   * Atomically updates a **single** row matching `match` with `patch`, returning
+   * the updated row (or `undefined` when nothing matched).
    *
-   * @param match - Criteria identifying the row(s) to update
+   * PostgREST cannot `LIMIT` an `UPDATE`, so a lone `.update().<match>` would
+   * mutate every matching row. Instead this resolves one matching row's primary
+   * key, then updates by that key while re-applying `match`: the second write
+   * re-checks the conditions atomically, so a concurrent change that breaks the
+   * match yields `undefined` (a CAS miss) rather than a stale write. Zero-match
+   * is normalized from `.single()`/`.maybeSingle()`'s `PGRST116` to `undefined`.
+   *
+   * @param match - Criteria identifying the row to update
    * @param patch - Partial entity of column values to set
    * @returns The updated entity, or `undefined` if no row matched
    * @emits "put" event with the updated entity when successful
@@ -822,9 +826,31 @@ export class SupabaseTabularStorage<
   ): Promise<Entity | undefined> {
     if (Object.keys(patch).length === 0) return undefined;
 
-    let query = this.client.from(this.table).update(patch as Record<string, unknown>);
-    query = this.applyCriteriaToFilter(query, match);
-    const { data, error } = await query.select().maybeSingle();
+    const pkColumns = this.primaryKeyColumns() as unknown as Array<keyof Entity>;
+
+    // Step 1: resolve one matching row's primary key.
+    const pkSelect = this.applyCriteriaToFilter(
+      this.client.from(this.table).select(pkColumns.map(String).join(",")),
+      match
+    ).limit(1);
+    const { data: target, error: selectError } = await pkSelect.single();
+    if (selectError) {
+      if ((selectError as { code?: string }).code === "PGRST116") return undefined;
+      throw selectError;
+    }
+    if (target === null || target === undefined) return undefined;
+
+    // Step 2: update by that primary key, re-applying `match` so the write is
+    // a genuine compare-and-set on exactly one row.
+    let update = this.client.from(this.table).update(patch as Record<string, unknown>);
+    update = this.applyCriteriaToFilter(update, match);
+    // `.select(<dynamic string>)` widens `data` to include GenericStringError,
+    // so route the row shape through `unknown`.
+    const targetRecord = target as unknown as Record<string, unknown>;
+    for (const col of pkColumns) {
+      update = update.eq(String(col), targetRecord[String(col)]);
+    }
+    const { data, error } = await update.select().maybeSingle();
 
     if (error) {
       if ((error as { code?: string }).code === "PGRST116") return undefined;

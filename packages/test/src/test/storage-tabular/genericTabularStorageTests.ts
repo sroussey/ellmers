@@ -927,6 +927,28 @@ export function runGenericTabularStorageTests(
         );
         expect(res).toBeUndefined();
       });
+
+      it("updates exactly one row when several match a non-unique predicate", async () => {
+        const ts = new Date().toISOString();
+        for (const id of ["m1", "m2", "m3"]) {
+          await repository.put({
+            id,
+            category: "grp",
+            subcategory: "s",
+            value: 1,
+            createdAt: ts,
+            updatedAt: ts,
+          } as never);
+        }
+        // `category: "grp"` matches all three; only one may be mutated.
+        const updated = await repository.updateWhere(
+          { category: "grp" } as never,
+          { value: 999 } as never
+        );
+        expect((updated as { value?: number } | undefined)?.value).toBe(999);
+        const changed = (await repository.query({ value: 999 } as never)) ?? [];
+        expect(changed.length).toBe(1);
+      });
     });
 
     describe(`query tests`, () => {

@@ -1417,10 +1417,14 @@ export class PostgresTabularStorage<
       match,
       patchKeys.length + 1
     );
-    const where = whereClause.length > 0 ? `WHERE ${whereClause}` : "";
+    const subWhere = whereClause.length > 0 ? `WHERE ${whereClause}` : "";
 
+    // Constrain the write to a single row (via a ctid sub-select) so a
+    // non-unique `match` updates exactly one row — matching the single-row
+    // contract and the non-SQL backends.
     const result = await this.db.query(
-      `UPDATE "${this.table}" SET ${setClause} ${where} RETURNING *`,
+      `UPDATE "${this.table}" SET ${setClause} ` +
+        `WHERE ctid IN (SELECT ctid FROM "${this.table}" ${subWhere} LIMIT 1) RETURNING *`,
       [...setParams, ...whereParams]
     );
     if (result.rows.length === 0) return undefined;

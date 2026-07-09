@@ -1289,9 +1289,15 @@ export class SqliteTabularStorage<
     const setParams = patchKeys.map((col) => this.jsToSqlValue(String(col), patch[col] as never));
 
     const { whereClause, params: whereParams } = this.buildDeleteSearchWhere(match);
-    const where = whereClause.length > 0 ? `WHERE ${whereClause}` : "";
+    const subWhere = whereClause.length > 0 ? `WHERE ${whereClause}` : "";
 
-    const stmt = this.db.prepare(`UPDATE \`${this.table}\` SET ${setClause} ${where} RETURNING *`);
+    // Constrain the write to a single row (via a rowid sub-select) so a
+    // non-unique `match` updates exactly one row — matching the single-row
+    // contract and the non-SQL backends.
+    const stmt = this.db.prepare(
+      `UPDATE \`${this.table}\` SET ${setClause} ` +
+        `WHERE rowid IN (SELECT rowid FROM \`${this.table}\` ${subWhere} LIMIT 1) RETURNING *`
+    );
     const row = stmt.get(...setParams, ...whereParams) as Record<string, unknown> | undefined;
     if (row === undefined) return undefined;
     for (const k in this.schema.properties) {

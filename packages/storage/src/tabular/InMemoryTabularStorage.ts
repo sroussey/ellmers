@@ -443,8 +443,13 @@ export class InMemoryTabularStorage<
       // move the row to its new id so reads by key still resolve.
       const { key } = this.separateKeyValueFromCombined(updated);
       const newId = await makeFingerprint(key);
+      // Enforce the same invariants as put(): reject a patch that would collide
+      // with another row's UNIQUE tuple, and mark this write as an UPDATE (not
+      // an INSERT) so change subscribers classify the emitted "put" correctly.
+      this.assertUniqueIndexes(updated, newId);
       if (newId !== id) this.values.delete(id);
       this.values.set(newId, updated);
+      this._lastPutWasInsert = false;
       safeEmit(this.events, "put", updated);
       return updated;
     }
