@@ -28,10 +28,7 @@ export const VectorItemSchema = {
  * a TS error rather than a silently-ignored entry.
  */
 export type TabularStorageContractAssertion =
-  | "subscribeToChanges"
-  | "vectorColumnFormat"
-  | "withTransactionRollback"
-  | "countMatchesQuery";
+  "subscribeToChanges" | "vectorColumnFormat" | "withTransactionRollback" | "countMatchesQuery";
 
 interface TabularStorageContractBaseOpts {
   readonly name: string;

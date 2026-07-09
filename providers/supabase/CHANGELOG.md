@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.23
+
+### Features
+
+#### supabase
+
+- updateWhere CAS via filtered update().select()
+
+### Bug Fixes
+
+#### storage
+
+- updateWhere rejects patches that change a primary-key column
+- make updateWhere single-row and consistent across backends
+
 ## 0.3.22
 
 ### Bug Fixes

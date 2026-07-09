@@ -44,12 +44,10 @@ interface ITransportStub {
 
 function createTransportStub(url = "http://127.0.0.1:8765"): ITransportStub {
   const release = vi.fn(async (): Promise<void> => undefined);
-  const ensureRunning = vi.fn(
-    async (_req: IEnsureRunningRequest): Promise<IRunningHandle> => ({
-      url,
-      release,
-    })
-  );
+  const ensureRunning = vi.fn(async (_req: IEnsureRunningRequest): Promise<IRunningHandle> => ({
+    url,
+    release,
+  }));
   const transport: IBackendsTransport = {
     ensureRunning,
     subscribeStatus: (
@@ -122,8 +120,7 @@ describe("local backend provider stream contracts", () => {
     );
 
     let resolvePendingRead:
-      | ((value: { readonly done: boolean; readonly value?: Uint8Array }) => void)
-      | undefined;
+      ((value: { readonly done: boolean; readonly value?: Uint8Array }) => void) | undefined;
     let readCount = 0;
     const reader = {
       read: vi.fn(() => {

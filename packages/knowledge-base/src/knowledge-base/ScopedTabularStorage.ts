@@ -160,6 +160,17 @@ export class ScopedTabularStorage<
     await this.inner.deleteSearch({ ...(criteria as any), kb_id: this.kbId });
   }
 
+  async updateWhere(
+    match: SearchCriteria<Entity>,
+    patch: Partial<Entity>
+  ): Promise<Entity | undefined> {
+    const result = await this.inner.updateWhere(
+      { ...(match as any), kb_id: this.kbId },
+      patch as any
+    );
+    return result ? this.strip(result) : undefined;
+  }
+
   async queryIndex<K extends keyof Entity & string>(
     criteria: SearchCriteria<Entity>,
     options: CoveringIndexQueryOptions<Entity, K>

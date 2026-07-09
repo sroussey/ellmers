@@ -19,8 +19,7 @@ export function getMcpServerTransport(task: Task<any, any, any>): string | undef
   }
 
   const configServer = (task.config as Record<string, unknown>)?.server as
-    | Record<string, unknown>
-    | undefined;
+    Record<string, unknown> | undefined;
 
   if (typeof configServer?.transport === "string") {
     return configServer.transport;

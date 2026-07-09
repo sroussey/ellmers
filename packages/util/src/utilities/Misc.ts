@@ -65,7 +65,7 @@ export function deepEqual(a: unknown, b: unknown): boolean {
       if (!Array.isArray(b)) return false;
       length = a.length;
       if (length != b.length) return false;
-      for (i = length; i-- !== 0; ) if (!deepEqual(a[i], b[i])) return false;
+      for (i = length; i-- !== 0;) if (!deepEqual(a[i], b[i])) return false;
       return true;
     }
 
@@ -89,7 +89,7 @@ export function deepEqual(a: unknown, b: unknown): boolean {
 
         length = viewA.byteLength;
         if (length != viewB.byteLength) return false;
-        for (i = length; i-- !== 0; ) if (viewA.getUint8(i) !== viewB.getUint8(i)) return false;
+        for (i = length; i-- !== 0;) if (viewA.getUint8(i) !== viewB.getUint8(i)) return false;
         return true;
       }
 
@@ -98,7 +98,7 @@ export function deepEqual(a: unknown, b: unknown): boolean {
 
       length = viewA.length;
       if (length != viewB.length) return false;
-      for (i = length; i-- !== 0; ) if (viewA[i] !== viewB[i]) return false;
+      for (i = length; i-- !== 0;) if (viewA[i] !== viewB[i]) return false;
       return true;
     }
 
@@ -112,13 +112,13 @@ export function deepEqual(a: unknown, b: unknown): boolean {
     length = keys.length;
     if (length !== Object.keys(b).length) return false;
 
-    for (i = length; i-- !== 0; )
+    for (i = length; i-- !== 0;)
       if (!Object.prototype.hasOwnProperty.call(b, keys[i])) return false;
 
     const objectA = a as Record<string, unknown>;
     const objectB = b as Record<string, unknown>;
 
-    for (i = length; i-- !== 0; ) {
+    for (i = length; i-- !== 0;) {
       var key = keys[i];
       if (!deepEqual(objectA[key], objectB[key])) return false;
     }

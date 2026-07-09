@@ -145,8 +145,7 @@ export class HuggingFaceTabularStorage<
       schema,
       primaryKeyNames,
       (options?.indexes ?? []) as readonly (
-        | keyof NoInfer<Entity>
-        | readonly (keyof NoInfer<Entity>)[]
+        keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[]
       )[],
       "never", // HF datasets don't support client-provided keys.
       tabularMigrations,
@@ -520,6 +519,13 @@ export class HuggingFaceTabularStorage<
 
   async deleteSearch(_criteria: DeleteSearchCriteria<Entity>): Promise<void> {
     throw new Error("HuggingFaceTabularStorage is readonly");
+  }
+
+  async updateWhere(
+    _match: SearchCriteria<Entity>,
+    _patch: Partial<Entity>
+  ): Promise<Entity | undefined> {
+    throw new Error("HuggingFaceTabularStorage is read-only: updateWhere is not supported");
   }
 
   override subscribeToChanges(

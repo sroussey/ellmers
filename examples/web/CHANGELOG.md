@@ -1,5 +1,19 @@
 # @workglow/web
 
+## 0.3.23
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@uiw/codemirror-theme-vscode`: ^4.25.11
+- `@uiw/react-codemirror`: ^4.25.11
+- `@xyflow/react`: ^12.11.2
+- `react-resizable-panels`: ^4.12.1
+- `vite`: ^8.1.4
+
 ## 0.3.22
 
 ### Chores

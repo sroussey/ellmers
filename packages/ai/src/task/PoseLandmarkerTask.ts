@@ -151,8 +151,7 @@ export type PoseLandmarkerTaskOutput = {
   poses:
     | {
         segmentationMask?:
-          | { data: { [x: string]: unknown }; width: number; height: number }
-          | undefined;
+          { data: { [x: string]: unknown }; width: number; height: number } | undefined;
         landmarks: {
           visibility?: number | undefined;
           presence?: number | undefined;
@@ -170,8 +169,7 @@ export type PoseLandmarkerTaskOutput = {
       }[]
     | {
         segmentationMask?:
-          | { data: { [x: string]: unknown }; width: number; height: number }
-          | undefined;
+          { data: { [x: string]: unknown }; width: number; height: number } | undefined;
         landmarks: {
           visibility?: number | undefined;
           presence?: number | undefined;

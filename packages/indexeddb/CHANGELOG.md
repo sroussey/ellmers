@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.23
+
+### Features
+
+#### storage
+
+- updateWhere on remaining backends and wrappers
+
+### Bug Fixes
+
+#### storage
+
+- updateWhere rejects patches that change a primary-key column
+
+### Chores
+
+- format / lint
+
 ## 0.3.22
 
 ### Bug Fixes

@@ -398,6 +398,61 @@ export class InMemoryTabularStorage<
     }
   }
 
+  async updateWhere(
+    match: SearchCriteria<Entity>,
+    patch: Partial<Entity>
+  ): Promise<Entity | undefined> {
+    this.assertPatchKeepsPrimaryKey(patch);
+    const criteriaKeys = Object.keys(match) as Array<keyof Entity>;
+    for (const [id, entity] of Array.from(this.values.entries())) {
+      let matched = true;
+      for (const column of criteriaKeys) {
+        const criterion = match[column];
+        const columnValue = entity[column];
+        if (isSearchCondition(criterion)) {
+          const { value, operator } = criterion;
+          const v = value as string | number;
+          const cv = columnValue as string | number | null | undefined;
+          switch (operator) {
+            case "=":
+              if (cv !== v) matched = false;
+              break;
+            case "<":
+              if (cv === null || cv === undefined || !(cv < v)) matched = false;
+              break;
+            case "<=":
+              if (cv === null || cv === undefined || !(cv <= v)) matched = false;
+              break;
+            case ">":
+              if (cv === null || cv === undefined || !(cv > v)) matched = false;
+              break;
+            case ">=":
+              if (cv === null || cv === undefined || !(cv >= v)) matched = false;
+              break;
+            default:
+              matched = false;
+          }
+        } else if (columnValue !== criterion) {
+          matched = false;
+        }
+        if (!matched) break;
+      }
+      if (!matched) continue;
+
+      const updated = { ...entity, ...patch } as Entity;
+      // The guard above forbids primary-key changes, so the row keeps its id.
+      // Enforce the same invariants as put(): reject a patch that would collide
+      // with another row's UNIQUE tuple, and mark this write as an UPDATE (not
+      // an INSERT) so change subscribers classify the emitted "put" correctly.
+      this.assertUniqueIndexes(updated, id);
+      this.values.set(id, updated);
+      this._lastPutWasInsert = false;
+      safeEmit(this.events, "put", updated);
+      return updated;
+    }
+    return undefined;
+  }
+
   async query(
     criteria: SearchCriteria<Entity>,
     options?: QueryOptions<Entity>

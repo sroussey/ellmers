@@ -437,81 +437,89 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
         },
 
         update: (data: any) => {
+          // Shared SET/WHERE builder for the `.select().single()/.maybeSingle()`
+          // (RETURNING *) and bare-`await` (no RETURNING) forms below, mirroring
+          // `executeDelete`/`executeQuery`'s single-source-of-truth pattern.
+          const buildSetClause = (): string =>
+            Object.entries(data)
+              .map(([k, v]) => {
+                if (v === null || v === undefined) return `"${k}" = NULL`;
+                if (typeof v === "object")
+                  return `"${k}" = '${JSON.stringify(v).replace(/'/g, "''")}'`;
+                if (typeof v === "string") return `"${k}" = '${v.replace(/'/g, "''")}'`;
+                return `"${k}" = ${String(v)}`;
+              })
+              .join(", ");
+
+          const buildWhereClause = (): string =>
+            queryBuilder._filters.length > 0
+              ? queryBuilder._filters
+                  .map((f) => {
+                    const val = f.value;
+                    if (val === null || val === undefined)
+                      return `"${f.column}" ${f.operator} NULL`;
+                    if (typeof val === "object")
+                      return `"${f.column}" ${f.operator} '${JSON.stringify(val).replace(/'/g, "''")}'`;
+                    if (typeof val === "string")
+                      return `"${f.column}" ${f.operator} '${val.replace(/'/g, "''")}'`;
+                    return `"${f.column}" ${f.operator} ${String(val)}`;
+                  })
+                  .join(" AND ")
+              : "1=1";
+
+          // Only rows matching every accumulated filter are updated, mirroring
+          // PostgREST's `UPDATE ... WHERE <eq/lt/lte/gt/gte AND ...>` semantics.
+          const executeUpdateReturning = async () => {
+            try {
+              const query = `UPDATE "${queryBuilder._table}" SET ${buildSetClause()} WHERE ${buildWhereClause()} RETURNING *`;
+              const result = await pglite.query(query);
+              return { data: result.rows[0] || null, error: null };
+            } catch (error: any) {
+              return { data: null, error };
+            }
+          };
+
           const updateBuilder = {
             eq: (column: string, value: any) => {
               queryBuilder._filters.push({ column, operator: "=", value });
               return updateBuilder; // Return self for chaining
             },
+            lt: (column: string, value: any) => {
+              queryBuilder._filters.push({ column, operator: "<", value });
+              return updateBuilder;
+            },
+            lte: (column: string, value: any) => {
+              queryBuilder._filters.push({ column, operator: "<=", value });
+              return updateBuilder;
+            },
+            gt: (column: string, value: any) => {
+              queryBuilder._filters.push({ column, operator: ">", value });
+              return updateBuilder;
+            },
+            gte: (column: string, value: any) => {
+              queryBuilder._filters.push({ column, operator: ">=", value });
+              return updateBuilder;
+            },
 
             select: () => {
               return {
+                // `single()` errors when zero rows match (real PostgREST/postgrest-js
+                // behavior); `maybeSingle()` returns `data: null, error: null` instead
+                // — this is what `updateWhere`'s CAS semantics rely on.
                 single: async () => {
-                  try {
-                    const setClause = Object.entries(data)
-                      .map(([k, v]) => {
-                        if (v === null || v === undefined) return `"${k}" = NULL`;
-                        if (typeof v === "object")
-                          return `"${k}" = '${JSON.stringify(v).replace(/'/g, "''")}'`;
-                        if (typeof v === "string") return `"${k}" = '${v.replace(/'/g, "''")}'`;
-                        return `"${k}" = ${String(v)}`;
-                      })
-                      .join(", ");
-
-                    const whereClause = queryBuilder._filters
-                      .map((f) => {
-                        const val = f.value;
-                        if (val === null || val === undefined)
-                          return `"${f.column}" ${f.operator} NULL`;
-                        if (typeof val === "object")
-                          return `"${f.column}" ${f.operator} '${JSON.stringify(val).replace(/'/g, "''")}'`;
-                        if (typeof val === "string")
-                          return `"${f.column}" ${f.operator} '${val.replace(/'/g, "''")}'`;
-                        return `"${f.column}" ${f.operator} ${String(val)}`;
-                      })
-                      .join(" AND ");
-
-                    const query = `UPDATE "${queryBuilder._table}" SET ${setClause} WHERE ${whereClause} RETURNING *`;
-                    const result = await pglite.query(query);
-
-                    return {
-                      data: result.rows[0] || null,
-                      error: null,
-                    };
-                  } catch (error: any) {
-                    return { data: null, error };
+                  const result = await executeUpdateReturning();
+                  if (result.error) return result;
+                  if (!result.data) {
+                    return { data: null, error: { code: "PGRST116", message: "No rows found" } };
                   }
+                  return result;
                 },
+                maybeSingle: async () => executeUpdateReturning(),
               };
             },
             then: async (resolve: any, reject: any) => {
               try {
-                const setClause = Object.entries(data)
-                  .map(([k, v]) => {
-                    if (v === null || v === undefined) return `"${k}" = NULL`;
-                    if (typeof v === "object")
-                      return `"${k}" = '${JSON.stringify(v).replace(/'/g, "''")}'`;
-                    if (typeof v === "string") return `"${k}" = '${v.replace(/'/g, "''")}'`;
-                    return `"${k}" = ${String(v)}`;
-                  })
-                  .join(", ");
-
-                const whereClause =
-                  queryBuilder._filters.length > 0
-                    ? queryBuilder._filters
-                        .map((f) => {
-                          const val = f.value;
-                          if (val === null || val === undefined)
-                            return `"${f.column}" ${f.operator} NULL`;
-                          if (typeof val === "object")
-                            return `"${f.column}" ${f.operator} '${JSON.stringify(val).replace(/'/g, "''")}'`;
-                          if (typeof val === "string")
-                            return `"${f.column}" ${f.operator} '${val.replace(/'/g, "''")}'`;
-                          return `"${f.column}" ${f.operator} ${String(val)}`;
-                        })
-                        .join(" AND ")
-                    : "1=1";
-
-                const query = `UPDATE "${queryBuilder._table}" SET ${setClause} WHERE ${whereClause}`;
+                const query = `UPDATE "${queryBuilder._table}" SET ${buildSetClause()} WHERE ${buildWhereClause()}`;
                 await pglite.query(query);
 
                 resolve?.({ data: null, error: null });
