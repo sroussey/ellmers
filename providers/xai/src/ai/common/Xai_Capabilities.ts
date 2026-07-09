@@ -42,8 +42,10 @@ export function inferXaiCapabilities(model: CapabilityHints): readonly Capabilit
       ""
   );
 
-  // Image models — grok-2-image and successors.
-  if (/image/i.test(id)) {
+  // Image models — grok-2-image and successors. Match "image" only as a
+  // dash-delimited id segment so substring collisions (e.g. "reimagine-*")
+  // don't get misrouted to image-only.
+  if (/(?:^|-)image(?:-|$)/i.test(id)) {
     return ["image.generation", "model.info", "model.search"];
   }
 
