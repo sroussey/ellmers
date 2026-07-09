@@ -89,4 +89,23 @@ describe("job-queue cross-process stream channel (storage-only client)", () => {
     const handle = await observer.send({ taskType: "x" });
     expect(typeof handle.onStream).toBe("function");
   });
+
+  it("resumes from the last delivered seq on re-subscribe (no duplicate replay)", async () => {
+    const jobId = "manual-resub-job";
+    await storage.publishStreamChunk!(jobId, 1, { type: "text-delta", port: "p", textDelta: "a" });
+    await storage.publishStreamChunk!(jobId, 2, { type: "text-delta", port: "p", textDelta: "b" });
+
+    const first: string[] = [];
+    const unsubA = observer.onJobStream(jobId, (e) => first.push(e.textDelta as string));
+    expect(first).toEqual(["a", "b"]); // late subscriber replays 1..2
+
+    unsubA(); // last listener removed → subscription torn down, cursor persists
+
+    const second: string[] = [];
+    observer.onJobStream(jobId, (e) => second.push(e.textDelta as string));
+    expect(second).toEqual([]); // re-subscribe must NOT replay 1..2 again
+
+    await storage.publishStreamChunk!(jobId, 3, { type: "text-delta", port: "p", textDelta: "c" });
+    expect(second).toEqual(["c"]); // only the new event, delivered once
+  });
 });

@@ -897,6 +897,16 @@ export class JobQueueWorker<
     // Cross-process side-channel (best-effort). Assign the seq synchronously so
     // ordering is well-defined regardless of publish resolution order; the
     // client reorders by seq. A publish failure must never fail the job.
+    //
+    // The seq counter is per-worker-instance, so it is monotonic for the whole
+    // of a single execution (one worker holds the lease at a time). Across a
+    // RETRY claimed by a *different* worker on the same channel-capable carrier,
+    // the new worker restarts at 1 and those seqs collide with the prior
+    // attempt's — a subscriber spanning the retry would see the new attempt's
+    // events dropped by its reassembler. Robust multi-attempt streaming
+    // (carrier-assigned seq, or a per-attempt stream reset) is deferred to the
+    // durable carriers, where the store is the natural place to assign seq; the
+    // InMemory reference and the single-attempt common case are unaffected.
     const publish = this.messageQueue.publishStreamChunk;
     if (typeof publish === "function") {
       const seq = (this.streamSeq.get(jobId) ?? 0) + 1;
