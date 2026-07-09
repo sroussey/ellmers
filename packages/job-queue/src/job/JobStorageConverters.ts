@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { DEFAULT_LIMITS } from "@workglow/util";
 import type { JobStorageFormat } from "../queue-storage/IQueueStorage";
 import { JobStatus } from "../queue-storage/IQueueStorage";
 import { Job, JobClass } from "./Job";
@@ -43,7 +44,7 @@ export function storageToClass<Input, Output>(
     error: details.error ?? null,
     errorCode: details.error_code ?? null,
     attempts: details.attempts ?? 0,
-    maxAttempts: details.max_attempts ?? 10,
+    maxAttempts: details.max_attempts ?? DEFAULT_LIMITS.jobMaxAttempts,
     leaseOwner: details.lease_owner ?? null,
     abort_requested_at: details.abort_requested_at ?? null,
     lease_expires_at: details.lease_expires_at ?? null,

@@ -30,7 +30,7 @@ Bun workspaces + Turborepo. All packages live in `packages/`. Build order is man
 
 ### Product requirements & planning docs
 
-Cross-repo design specs and implementation plans live in the PRD repository (`/workspaces/workglow/prd/docs/superpowers/specs/` and `.../plans/`). Write new superpowers-style specs and plans there and commit in that repo.
+Cross-repo design specs and implementation plans live in the PRD repository (`/workspaces/{workglow|workglow_container}/prd/docs/superpowers/specs/` and `.../plans/`). Write new superpowers-style specs and plans there and commit in that repo. The prd repo is a sibling to this repo and contains skills to use.
 
 ### No plan or spec references in code
 

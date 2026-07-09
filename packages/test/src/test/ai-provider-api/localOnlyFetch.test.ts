@@ -22,6 +22,7 @@
  */
 
 import { localOnlyFetch } from "@workglow/ai/provider-utils";
+import { DEFAULT_LIMITS } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const originalFetch = globalThis.fetch;
@@ -282,5 +283,24 @@ describe("localOnlyFetch", () => {
       localOnlyFetch("http://127.0.0.1:9000/start", undefined, "TestProvider")
     ).rejects.toThrow(/too many redirects/);
     expect(calls).toHaveLength(6);
+  });
+
+  it("accepts an explicit maxRedirects override tighter than the default", async () => {
+    stubFetch([redirect("http://localhost/a"), redirect("http://localhost/b"), new Response("ok")]);
+    await expect(localOnlyFetch("http://localhost/start", undefined, "test", 1)).rejects.toThrow(
+      /too many redirects/
+    );
+    expect(calls.length).toBe(2);
+  });
+
+  it("still allows more hops than DEFAULT_LIMITS.aiLocalFetchMaxRedirects when maxRedirects is raised", async () => {
+    const hops = DEFAULT_LIMITS.aiLocalFetchMaxRedirects + 2;
+    const responses = Array.from({ length: hops }, (_, i) =>
+      redirect(`http://localhost/hop-${i + 1}`)
+    );
+    responses.push(new Response("ok"));
+    stubFetch(responses);
+    const res = await localOnlyFetch("http://localhost/start", undefined, "test", hops + 1);
+    expect(await res.text()).toBe("ok");
   });
 });

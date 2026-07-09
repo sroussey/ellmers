@@ -5,6 +5,7 @@
  */
 
 import {
+  DEFAULT_LIMITS,
   EventEmitter,
   getLogger,
   getTelemetryProvider,
@@ -35,27 +36,12 @@ import type { StreamEventLike } from "./JobQueueEventListeners";
 import { storageToClass } from "./JobStorageConverters";
 
 /**
- * Upper bound on {@link JobQueueWorker.getLimiterWakeDelay}. Prevents a
- * misconfigured or stuck limiter (e.g. one whose `getNextAvailableTime`
- * returns hours in the future) from making the worker unresponsive — it
- * wakes at least this often regardless of what the limiter says.
- */
-const MAX_LIMITER_WAKE_MS = 30_000;
-
-/**
  * Minimum interval between {@link JobQueueWorker.processJobs} loop-error logs.
  * A persistent storage failure throws every iteration; without rate-limiting
  * that would flood the log at the poll rate. We still log the first occurrence
  * immediately so operators get a prompt signal.
  */
 const LOOP_ERROR_LOG_INTERVAL_MS = 5_000;
-
-/**
- * Size of the recent-window ring buffer feeding
- * {@link JobQueueWorker.getAverageProcessingTime}. Bounds memory and keeps the
- * reported average representative of recent throughput.
- */
-const MAX_PROCESSING_TIME_SAMPLES = 1_000;
 
 /**
  * Events emitted by JobQueueWorker
@@ -107,9 +93,24 @@ export interface JobQueueWorkerOptions<Input, Output> {
    * How long (ms) the worker's lease on a claimed job lasts before another
    * worker may re-claim it. Must be long enough to cover the maximum
    * expected job duration if extendLeaseWhileRunning is false.
-   * Defaults to max(30_000, pollIntervalMs * 60).
+   * Defaults to max(DEFAULT_LIMITS.jobQueueLeaseFloorMs, pollIntervalMs * 60).
    */
   readonly leaseMs?: number;
+  /**
+   * Upper bound (ms) on {@link JobQueueWorker.getLimiterWakeDelay}. Prevents a
+   * misconfigured or stuck limiter (e.g. one whose `getNextAvailableTime`
+   * returns hours in the future) from making the worker unresponsive — it
+   * wakes at least this often regardless of what the limiter says.
+   * Defaults to {@link DEFAULT_LIMITS.jobQueueLimiterMaxWakeMs}.
+   */
+  readonly limiterMaxWakeMs?: number;
+  /**
+   * Size of the recent-window ring buffer feeding
+   * {@link JobQueueWorker.getAverageProcessingTime}. Bounds memory and keeps
+   * the reported average representative of recent throughput. Defaults to
+   * {@link DEFAULT_LIMITS.jobQueueMaxProcessingTimeSamples}.
+   */
+  readonly maxProcessingTimeSamples?: number;
   /**
    * Dead-letter queue to forward exhausted jobs to, or "discard" to drop them.
    * Default: "discard".
@@ -143,6 +144,8 @@ export class JobQueueWorker<
   protected readonly stopTimeoutMs: number;
   protected readonly extendLeaseWhileRunning: boolean;
   protected readonly leaseMs: number;
+  protected readonly limiterMaxWakeMs: number;
+  protected readonly maxProcessingTimeSamples: number;
   protected readonly events = new EventEmitter<JobQueueWorkerEventListeners<Input, Output>>();
   protected readonly deadLetter: IMessageQueue<DeadLetter<Input>> | "discard";
   protected readonly prefetch: number;
@@ -198,7 +201,7 @@ export class JobQueueWorker<
   /**
    * Recent per-job processing durations (ms) used for
    * {@link getAverageProcessingTime}. Bounded to the most recent
-   * {@link MAX_PROCESSING_TIME_SAMPLES} entries so a long-lived worker doesn't
+   * {@link JobQueueWorker.maxProcessingTimeSamples} entries so a long-lived worker doesn't
    * accumulate one entry per distinct job id forever, and so the reported
    * average reflects a recent window rather than all-time.
    */
@@ -217,10 +220,14 @@ export class JobQueueWorker<
     this.jobStore = options.jobStore;
     this.jobClass = jobClass;
     this.limiter = options.limiter ?? new NullLimiter();
-    this.pollIntervalMs = options.pollIntervalMs ?? 100;
+    this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_LIMITS.jobQueuePollIntervalMs;
     this.stopTimeoutMs = options.stopTimeoutMs ?? 30_000;
     this.extendLeaseWhileRunning = options.extendLeaseWhileRunning ?? false;
-    this.leaseMs = options.leaseMs ?? Math.max(30_000, this.pollIntervalMs * 60);
+    this.leaseMs =
+      options.leaseMs ?? Math.max(DEFAULT_LIMITS.jobQueueLeaseFloorMs, this.pollIntervalMs * 60);
+    this.limiterMaxWakeMs = options.limiterMaxWakeMs ?? DEFAULT_LIMITS.jobQueueLimiterMaxWakeMs;
+    this.maxProcessingTimeSamples =
+      options.maxProcessingTimeSamples ?? DEFAULT_LIMITS.jobQueueMaxProcessingTimeSamples;
     this.deadLetter = options.deadLetter ?? "discard";
     this.prefetch = Math.max(1, options.prefetch ?? 1);
   }
@@ -352,7 +359,7 @@ export class JobQueueWorker<
 
   /**
    * Average processing time over the most recent
-   * {@link MAX_PROCESSING_TIME_SAMPLES} completed jobs (a recent window, not
+   * {@link JobQueueWorker.maxProcessingTimeSamples} completed jobs (a recent window, not
    * the worker's all-time history). Returns undefined until at least one job
    * has completed.
    */
@@ -612,7 +619,7 @@ export class JobQueueWorker<
    * How long to sleep when the limiter rejected an acquire. Reads the limiter's
    * own next-available time so we wake exactly when capacity opens, instead of
    * polling every {@link pollIntervalMs}. Clamped to {@link pollIntervalMs}
-   * (lower bound) and {@link MAX_LIMITER_WAKE_MS} (upper bound) so a
+   * (lower bound) and {@link JobQueueWorker.limiterMaxWakeMs} (upper bound) so a
    * misconfigured/stuck limiter still wakes occasionally.
    */
   private async getLimiterWakeDelay(): Promise<number> {
@@ -620,7 +627,7 @@ export class JobQueueWorker<
       const next = await this.limiter.getNextAvailableTime();
       const delay = next.getTime() - Date.now();
       if (delay <= 0) return this.pollIntervalMs;
-      return Math.min(Math.max(delay, this.pollIntervalMs), MAX_LIMITER_WAKE_MS);
+      return Math.min(Math.max(delay, this.pollIntervalMs), this.limiterMaxWakeMs);
     } catch {
       return this.pollIntervalMs;
     }
@@ -775,7 +782,7 @@ export class JobQueueWorker<
 
       const elapsed = Date.now() - startTime;
       this.processingTimes.push(elapsed);
-      if (this.processingTimes.length > MAX_PROCESSING_TIME_SAMPLES) {
+      if (this.processingTimes.length > this.maxProcessingTimeSamples) {
         this.processingTimes.shift();
       }
 

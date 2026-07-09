@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { SECURITY_LIMITS } from "@workglow/util";
+
 /**
  * Maximum number of decoded pixels (width * height) accepted by the image raster codec.
  *
@@ -14,7 +16,7 @@
  * Defends against header-declared pixel bombs where a small compressed payload
  * claims billions of pixels to force a downstream OOM.
  */
-export const MAX_DECODED_PIXELS = 100_000_000;
+export const MAX_DECODED_PIXELS = SECURITY_LIMITS.imageMaxDecodedPixels;
 
 /**
  * Maximum raw (base64-decoded) byte size of an incoming data URI on the Node codec.
@@ -23,7 +25,7 @@ export const MAX_DECODED_PIXELS = 100_000_000;
  * additionally enforces {@link MAX_DECODED_PIXELS} via sharp's header-level
  * `limitInputPixels`, so 64 MiB is a comfortable ceiling on the server side.
  */
-export const MAX_INPUT_BYTES_NODE = 64 * 1024 * 1024;
+export const MAX_INPUT_BYTES_NODE = SECURITY_LIMITS.imageMaxInputBytesNode;
 
 /**
  * Maximum raw byte size of an incoming data URI on the browser codec.
@@ -38,7 +40,7 @@ export const MAX_INPUT_BYTES_NODE = 64 * 1024 * 1024;
  * photos sit at 10–20 MiB. Anything larger than this is either an 8K image
  * or a malformed input and should be downscaled before upload.
  */
-export const MAX_INPUT_BYTES_BROWSER = 32 * 1024 * 1024;
+export const MAX_INPUT_BYTES_BROWSER = SECURITY_LIMITS.imageMaxInputBytesBrowser;
 
 /**
  * Mime types rejected at decode time because rasterization would silently lose

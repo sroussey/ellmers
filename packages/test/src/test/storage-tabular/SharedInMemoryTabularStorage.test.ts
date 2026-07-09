@@ -5,7 +5,7 @@
  */
 
 import { SharedInMemoryTabularStorage } from "@workglow/storage";
-import { setLogger, uuid4 } from "@workglow/util";
+import { DEFAULT_LIMITS, setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
@@ -52,6 +52,34 @@ describe("SharedInMemoryTabularStorage.queryIndex", () => {
     const ids = rows.map((r) => r.id).sort();
     expect(ids).toEqual(["1", "2"]);
     storage.destroy();
+  });
+});
+
+describe("SharedInMemoryTabularStorage maxPendingMessages override", () => {
+  it("uses the DEFAULT_LIMITS.storageMaxPendingMessages value when not overridden", () => {
+    const store = new SharedInMemoryTabularStorage<typeof SearchSchema, typeof SearchPK>(
+      `pending-default-${uuid4()}`,
+      SearchSchema,
+      SearchPK
+    );
+    // @ts-expect-error accessing private internal for the assertion
+    expect(store.maxPendingMessages).toBe(DEFAULT_LIMITS.storageMaxPendingMessages);
+    store.destroy();
+  });
+
+  it("accepts an explicit maxPendingMessages override", () => {
+    const store = new SharedInMemoryTabularStorage<typeof SearchSchema, typeof SearchPK>(
+      `pending-override-${uuid4()}`,
+      SearchSchema,
+      SearchPK,
+      [],
+      "if-missing",
+      undefined,
+      5
+    );
+    // @ts-expect-error accessing private internal for the assertion
+    expect(store.maxPendingMessages).toBe(5);
+    store.destroy();
   });
 });
 

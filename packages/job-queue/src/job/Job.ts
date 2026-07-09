@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { DEFAULT_LIMITS } from "@workglow/util";
 import { JobStatus } from "../queue-storage/IQueueStorage";
 import { JobError } from "./JobError";
 import type { JobProgressListener, StreamEventLike } from "./JobQueueEventListeners";
@@ -105,7 +106,7 @@ export class Job<Input, Output> {
     errorCode = null,
     fingerprint = undefined,
     output = null,
-    maxAttempts = 10,
+    maxAttempts = DEFAULT_LIMITS.jobMaxAttempts,
     createdAt = new Date(),
     completedAt = null,
     status = JobStatus.PENDING,

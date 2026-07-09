@@ -18,6 +18,7 @@
  * `packages/tasks/src/bun.ts` via `registerSafeFetch`.
  */
 
+import { SECURITY_LIMITS } from "@workglow/util";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { Agent, fetch as undiciFetch } from "undici";
 import {
@@ -28,7 +29,7 @@ import {
 import { registerSafeFetch, type SafeFetchFn, type SafeFetchOptions } from "./SafeFetch";
 import { classifyIpLiteral, classifyUrl, urlMatchesScope } from "./UrlClassifier";
 
-const MAX_REDIRECT_HOPS = 20;
+const MAX_REDIRECT_HOPS = SECURITY_LIMITS.safeFetchMaxRedirectHops;
 
 /**
  * Close an undici {@link Agent} if it exposes a `close` method.

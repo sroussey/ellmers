@@ -16,6 +16,7 @@ export * from "./utilities/Misc";
 export * from "./utilities/objectOfArraysAsArrayOfObjects";
 export * from "./utilities/TypeUtilities";
 export * from "./worker/WorkerManager";
+export * from "./limits";
 export * from "./credentials";
 export * from "./crypto/WebCrypto";
 export * from "./crypto/Hmac";

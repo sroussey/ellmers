@@ -312,6 +312,16 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
           return [...receiver].some(callback, thisArg);
         };
       }
+      if (prop === "slice") {
+        // Native `Array.prototype.slice` copies an index only when
+        // `HasProperty` reports it present. The `has` trap below now answers
+        // truthfully for in-range indices, but implement `slice` explicitly
+        // too — it mirrors the other materializing methods and keeps the
+        // common case correct regardless of how a host walks the receiver.
+        return function (start?: number, end?: number) {
+          return [...receiver].slice(start, end);
+        };
+      }
 
       if (typeof prop === "string" && !isNaN(Number(prop))) {
         const index = Number(prop);
@@ -330,6 +340,21 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
       }
 
       return Reflect.get(target, prop, receiver);
+    },
+    has(target, prop) {
+      // Without this trap, `HasProperty` for a numeric index falls through to
+      // the empty backing array and reports `false`, so native array methods
+      // that probe presence (`slice`, `concat`, `at`, `flat`, …) treat every
+      // row as an absent hole and silently drop the data. Report in-range
+      // indices — and `length` — as present so those methods see real rows.
+      if (typeof prop === "string" && !isNaN(Number(prop))) {
+        const index = Number(prop);
+        return index >= 0 && index < data[keys[0]].length;
+      }
+      if (prop === "length") {
+        return true;
+      }
+      return Reflect.has(target, prop);
     },
     set(target, prop, value, receiver) {
       if (typeof prop === "string" && !isNaN(Number(prop))) {

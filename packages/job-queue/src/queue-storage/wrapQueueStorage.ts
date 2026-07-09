@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { getLogger } from "@workglow/util";
+import { DEFAULT_LIMITS, getLogger } from "@workglow/util";
 import type { StreamChunkRow, StreamEventLike } from "../job/JobQueueEventListeners";
 import type { IClaim } from "./IClaim";
 import type { IJobStore, JobRecord } from "./IJobStore";
@@ -16,17 +16,6 @@ import type {
   QueueChangePayload,
   QueueSubscribeOptions,
 } from "./IQueueStorage";
-
-/**
- * Upper bound on the number of PENDING + PROCESSING rows scanned by the
- * wrapper-fallback {@link WrappedJobStore.findActiveByFingerprint}. The
- * native storage path (Postgres/SQLite/Supabase) uses a partial unique
- * index for O(1) lookup; this wrapper fallback only runs for backends
- * that don't expose `findActiveByFingerprint` on the storage layer
- * (in-memory, IndexedDB). 10k is enough to keep dedup correct for any
- * realistic single-queue working set without unbounded scans under load.
- */
-const MAX_FINGERPRINT_SCAN = 10_000;
 
 class WrappedClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Output>> {
   constructor(
@@ -224,7 +213,10 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
    */
   private fingerprintScanExhaustedWarned = false;
 
-  constructor(private readonly storage: IQueueStorage<Input, Output>) {}
+  constructor(
+    private readonly storage: IQueueStorage<Input, Output>,
+    private readonly maxFingerprintScan: number = DEFAULT_LIMITS.jobQueueMaxFingerprintScan
+  ) {}
 
   get(id: MessageId): Promise<JobRecord<Input, Output> | undefined> {
     return this.storage.get(id);
@@ -287,10 +279,10 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
     }
 
     // Fallback for backends without a native implementation (in-memory,
-    // IndexedDB): single bounded peek per status, up to MAX_FINGERPRINT_SCAN
+    // IndexedDB): single bounded peek per status, up to this.maxFingerprintScan
     // total rows across PENDING + PROCESSING. The actual cap is the minimum
-    // of MAX_FINGERPRINT_SCAN and whatever the underlying peek() impl
-    // chooses to cap `num` at internally. We rely on MAX_FINGERPRINT_SCAN as
+    // of this.maxFingerprintScan and whatever the underlying peek() impl
+    // chooses to cap `num` at internally. We rely on this.maxFingerprintScan as
     // a hard ceiling and surface a one-shot warning when we exhaust it
     // without finding a match. The wrapped storage is already scoped to a
     // single queue, so any row found here is in "this" queue — the
@@ -298,20 +290,20 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
     // used for filtering.
     let scanned = 0;
     for (const status of ["PENDING", "PROCESSING"] as const) {
-      const remaining = MAX_FINGERPRINT_SCAN - scanned;
+      const remaining = this.maxFingerprintScan - scanned;
       if (remaining <= 0) break;
       const rows = await this.storage.peek(status, remaining);
       for (const r of rows) {
         scanned += 1;
         if (r.fingerprint === fingerprint) return r;
-        if (scanned >= MAX_FINGERPRINT_SCAN) break;
+        if (scanned >= this.maxFingerprintScan) break;
       }
     }
 
-    if (scanned >= MAX_FINGERPRINT_SCAN && !this.fingerprintScanExhaustedWarned) {
+    if (scanned >= this.maxFingerprintScan && !this.fingerprintScanExhaustedWarned) {
       this.fingerprintScanExhaustedWarned = true;
       getLogger().warn(
-        "WrappedJobStore.findActiveByFingerprint: scanned MAX_FINGERPRINT_SCAN rows without a match; dedup may be best-effort under load"
+        `WrappedJobStore.findActiveByFingerprint: scanned ${scanned} rows (max ${this.maxFingerprintScan}) without a match; dedup may be best-effort under load`
       );
     }
     return undefined;
@@ -409,14 +401,20 @@ function applySendOptions<Input, Output>(
   return out;
 }
 
+export interface WrapQueueStorageOptions {
+  /** Overrides {@link DEFAULT_LIMITS.jobQueueMaxFingerprintScan}. */
+  readonly maxFingerprintScan?: number;
+}
+
 export function wrapQueueStorage<Input, Output>(
-  storage: IQueueStorage<Input, Output>
+  storage: IQueueStorage<Input, Output>,
+  options: WrapQueueStorageOptions = {}
 ): {
   messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
   jobStore: IJobStore<Input, Output>;
 } {
   return {
     messageQueue: new WrappedMessageQueue(storage),
-    jobStore: new WrappedJobStore(storage),
+    jobStore: new WrappedJobStore(storage, options.maxFingerprintScan),
   };
 }

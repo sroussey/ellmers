@@ -106,4 +106,41 @@ describe("Object of arrays to array of objects proxy", () => {
     }
     expect(data.name).toEqual(["Alice Updated", "Bob Updated", "Charlie Updated"]);
   });
+
+  it("slice returns dense rows, not sparse holes", () => {
+    // Regression: without a `has` trap, native Array.prototype.slice sees every
+    // index as an absent hole and returns a sparse array whose spread becomes
+    // [undefined, undefined].
+    const data = { a: [1, 2, 3, 4], b: ["w", "x", "y", "z"] };
+    const proxy = objectOfArraysAsArrayOfObjects(data);
+    const head = proxy.slice(0, 2);
+    expect(head.length).toBe(2);
+    expect([...head]).toEqual([
+      { a: 1, b: "w" },
+      { a: 2, b: "x" },
+    ]);
+    expect(head.some((r) => r === undefined)).toBe(false);
+    expect(head.map((r) => r.a)).toEqual([1, 2]);
+    expect(proxy.slice(2).map((r) => r.a)).toEqual([3, 4]);
+    expect(proxy.slice(-1).map((r) => r.a)).toEqual([4]);
+  });
+
+  it("reports in-range indices as present via the `in` operator", () => {
+    const data = { a: [1, 2, 3, 4], b: ["w", "x", "y", "z"] };
+    const proxy = objectOfArraysAsArrayOfObjects(data);
+    expect(0 in proxy).toBe(true);
+    expect(3 in proxy).toBe(true);
+    expect(4 in proxy).toBe(false);
+    expect("length" in proxy).toBe(true);
+  });
+
+  it("supports native methods that probe presence (at, concat)", () => {
+    const data = { a: [1, 2, 3, 4], b: ["w", "x", "y", "z"] };
+    const proxy = objectOfArraysAsArrayOfObjects(data);
+    expect((proxy.at?.(1) as { b: string } | undefined)?.b).toBe("x");
+    const combined = ([] as { a: number; b: string }[]).concat(
+      proxy as unknown as { a: number; b: string }[]
+    );
+    expect(combined.map((r) => r.a)).toEqual([1, 2, 3, 4]);
+  });
 });
