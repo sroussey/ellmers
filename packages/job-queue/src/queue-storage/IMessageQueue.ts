@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { StreamChunkRow, StreamEventLike } from "../job/JobQueueEventListeners";
 import type { IClaim } from "./IClaim";
 import type { QueueChangePayload, QueueStorageScope, QueueSubscribeOptions } from "./IQueueStorage";
 
@@ -51,5 +52,25 @@ export interface IMessageQueue<Body> {
   subscribeToChanges?(
     callback: (change: QueueChangePayload<any, any>) => void,
     options?: QueueSubscribeOptions
+  ): () => void;
+  /**
+   * OPTIONAL — append a live stream event to job `jobId`'s ordered side-stream.
+   * Present only on carriers that can fan a job's stream out of process. The
+   * CARRIER assigns the monotonic 1-based `seq` (returned on each row) from a
+   * per-job counter it owns, so the sequence is correct across workers — a
+   * retry claimed by a different worker continues the same job's sequence
+   * instead of restarting at 1 and colliding with the prior attempt. Absent on
+   * pull-only backends.
+   */
+  publishStreamChunk?(jobId: unknown, event: StreamEventLike): Promise<void>;
+  /**
+   * OPTIONAL — subscribe to a job's stream side-stream. Any already-published
+   * rows with `seq > sinceSeq` are replayed before live delivery (the
+   * reconnect-gap story). Returns an unsubscribe function.
+   */
+  subscribeToStream?(
+    jobId: unknown,
+    sinceSeq: number,
+    callback: (row: StreamChunkRow) => void
   ): () => void;
 }

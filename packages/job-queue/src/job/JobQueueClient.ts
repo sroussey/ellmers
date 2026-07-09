@@ -27,10 +27,23 @@ import {
   JobQueueEventParameters,
   JobQueueEvents,
   JobStreamListener,
+  type StreamChunkRow,
   type StreamEventLike,
 } from "./JobQueueEventListeners";
 import type { JobQueueServer } from "./JobQueueServer";
 import { storageToClass } from "./JobStorageConverters";
+import { StreamReassembler } from "./StreamReassembler";
+
+/**
+ * Grace window (ms) to keep a job's channel stream subscription open after the
+ * job settles, so a trailing `finish`/`error` stream event still in flight on
+ * an async carrier — which raced (and lost to) the storage-completion signal —
+ * can still be delivered before teardown. The terminal stream event itself
+ * tears down early, so this only elapses when a job settles without one ever
+ * arriving (e.g. a crash), bounding the leak. Unref'd so it never holds the
+ * process open.
+ */
+const STREAM_FINISH_GRACE_MS = 30_000;
 
 /**
  * Handle returned when submitting a job, providing methods to interact with the job
@@ -121,6 +134,25 @@ export class JobQueueClient<Input, Output> {
    */
   protected readonly jobStreamListeners: Map<unknown, Set<JobStreamListener>> = new Map();
 
+  /** Active cross-process stream-channel unsubscribers, keyed by job id. */
+  private readonly jobStreamUnsubscribers: Map<unknown, () => void> = new Map();
+
+  /**
+   * Highest in-order stream `seq` already delivered per job. Persisted across
+   * teardown/re-subscribe (unlike the subscription itself) so a re-subscribe —
+   * e.g. a listener removed and re-added while the job is still running —
+   * resumes from where it left off instead of replaying the whole log and
+   * double-delivering every prior event. Cleared when the job settles.
+   */
+  private readonly jobStreamCursor: Map<unknown, number> = new Map();
+
+  /**
+   * Grace-teardown timers for channel stream subscriptions whose job settled
+   * before the terminal stream event arrived. Keyed by job id; cleared when the
+   * terminal event lands (early teardown) or the timer fires.
+   */
+  private readonly jobStreamGraceTimers: Map<unknown, ReturnType<typeof setTimeout>> = new Map();
+
   /**
    * Last known progress state for each job
    */
@@ -151,6 +183,21 @@ export class JobQueueClient<Input, Output> {
     this.server = server;
     server.addClient(this);
 
+    // The attached server now delivers stream events via the direct fast path
+    // (`forwardToClients` → `handleJobStream`). Tear down any channel stream
+    // subscriptions opened while we were storage-only, or every event would be
+    // delivered twice (fast path + channel reassembler). Keep the listeners
+    // themselves (the fast path serves them) but cancel any pending grace timer
+    // so it can't later clear them.
+    for (const jobId of [...this.jobStreamUnsubscribers.keys()]) {
+      this.teardownStreamSubscription(jobId);
+      const timer = this.jobStreamGraceTimers.get(jobId);
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        this.jobStreamGraceTimers.delete(jobId);
+      }
+    }
+
     // Unsubscribe from storage if we were using it
     if (this.storageUnsubscribe) {
       this.storageUnsubscribe();
@@ -165,6 +212,12 @@ export class JobQueueClient<Input, Output> {
     if (this.server) {
       this.server.removeClient(this);
       this.server = null;
+    }
+    // No longer server-attached: re-open channel stream subscriptions for jobs
+    // that still have listeners, so `onStream` keeps delivering via the queue
+    // channel now that the fast path is gone.
+    for (const jobId of this.jobStreamListeners.keys()) {
+      this.ensureStreamSubscription(jobId);
     }
   }
 
@@ -484,6 +537,7 @@ export class JobQueueClient<Input, Output> {
     }
     const listeners = this.jobStreamListeners.get(jobId)!;
     listeners.add(listener);
+    this.ensureStreamSubscription(jobId);
 
     return () => {
       const listeners = this.jobStreamListeners.get(jobId);
@@ -491,9 +545,80 @@ export class JobQueueClient<Input, Output> {
         listeners.delete(listener);
         if (listeners.size === 0) {
           this.jobStreamListeners.delete(jobId);
+          this.teardownStreamSubscription(jobId);
         }
       }
     };
+  }
+
+  /**
+   * For a storage-only client (no attached server) on a channel-capable queue,
+   * open a stream subscription for `jobId` and feed rows through a
+   * {@link StreamReassembler} into the same `handleJobStream` path the
+   * same-process fast path uses. Server-attached clients get delivery via
+   * `forwardToClients` and must NOT also subscribe (double-delivery).
+   */
+  private ensureStreamSubscription(jobId: unknown): void {
+    if (this.server) return;
+    const subscribe = this.messageQueue.subscribeToStream;
+    if (typeof subscribe !== "function") return;
+    if (this.jobStreamUnsubscribers.has(jobId)) return;
+    // Resume from the last seq already delivered so a re-subscribe replays only
+    // the gap, not the whole log. The reassembler dispatches strictly in order
+    // from `sinceSeq + 1`, so counting dispatches tracks the delivered seq.
+    const sinceSeq = this.jobStreamCursor.get(jobId) ?? 0;
+    let cursor = sinceSeq;
+    const reassembler = new StreamReassembler((event: StreamEventLike) => {
+      cursor += 1;
+      this.jobStreamCursor.set(jobId, cursor);
+      this.handleJobStream(jobId, event);
+      // A terminal stream event means the stream is genuinely done: tear the
+      // channel subscription down now (this is the normal teardown path, driven
+      // by the stream itself rather than the racy job-completion signal) and
+      // cancel any grace timer a completion may have scheduled.
+      if (event.type === "finish" || event.type === "error") {
+        this.finalizeStreamTeardown(jobId);
+      }
+    }, sinceSeq);
+    const unsub = subscribe.call(this.messageQueue, jobId, sinceSeq, (row: StreamChunkRow) => {
+      reassembler.push(row);
+    });
+    this.jobStreamUnsubscribers.set(jobId, unsub);
+  }
+
+  private teardownStreamSubscription(jobId: unknown): void {
+    const unsub = this.jobStreamUnsubscribers.get(jobId);
+    if (unsub) {
+      unsub();
+      this.jobStreamUnsubscribers.delete(jobId);
+    }
+  }
+
+  /**
+   * When a job settles while a channel stream subscription is still open, defer
+   * stream teardown by a grace window instead of tearing down immediately: the
+   * terminal `finish`/`error` stream event may still be in flight on an async
+   * carrier (the completion signal and the stream channel are independent
+   * transports). The terminal-event handler finalizes early; this timer is only
+   * reached when no terminal event ever arrives, bounding the leak.
+   */
+  private scheduleStreamGraceTeardown(jobId: unknown): void {
+    if (this.jobStreamGraceTimers.has(jobId)) return;
+    const timer = setTimeout(() => this.finalizeStreamTeardown(jobId), STREAM_FINISH_GRACE_MS);
+    (timer as { unref?: () => void }).unref?.();
+    this.jobStreamGraceTimers.set(jobId, timer);
+  }
+
+  /** Tear down a job's stream subscription, listeners, cursor, and grace timer. */
+  private finalizeStreamTeardown(jobId: unknown): void {
+    const timer = this.jobStreamGraceTimers.get(jobId);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.jobStreamGraceTimers.delete(jobId);
+    }
+    this.teardownStreamSubscription(jobId);
+    this.jobStreamListeners.delete(jobId);
+    this.jobStreamCursor.delete(jobId);
   }
 
   // ========================================================================
@@ -663,10 +788,11 @@ export class JobQueueClient<Input, Output> {
       abort: () => this.abort(id),
       onProgress: (callback: JobProgressListener) => this.onJobProgress(id, callback),
     };
-    // Stream delivery requires a same-process server-attached transport — the
-    // same signal `connect()` uses. Storage-only backends omit `onStream`, so
+    // Stream delivery requires either a same-process server-attached transport
+    // (direct in-memory fast path) or a channel-capable message queue (the
+    // cross-process side-stream). Backends with neither omit `onStream`, so
     // callers branch on `typeof handle.onStream === "function"`.
-    if (this.server) {
+    if (this.server || typeof this.messageQueue.subscribeToStream === "function") {
       handle.onStream = (callback: JobStreamListener) => this.onJobStream(id, callback);
     }
     // Streaming result reads require a cache backing reachable from this
@@ -682,7 +808,18 @@ export class JobQueueClient<Input, Output> {
     this.activeJobPromises.delete(jobId);
     this.lastKnownProgress.delete(jobId);
     this.jobProgressListeners.delete(jobId);
-    this.jobStreamListeners.delete(jobId);
+    if (this.jobStreamUnsubscribers.has(jobId)) {
+      // A channel stream subscription is still open: the terminal stream event
+      // may lag the completion signal on an async carrier. Defer stream teardown
+      // (listeners + subscription + cursor) a grace window so it can arrive; the
+      // terminal-event handler finalizes early when it does.
+      this.scheduleStreamGraceTeardown(jobId);
+    } else {
+      // No channel subscription (same-process fast path already delivered the
+      // terminal event before completion): clear stream state immediately.
+      this.jobStreamListeners.delete(jobId);
+      this.jobStreamCursor.delete(jobId);
+    }
   }
 
   private handleStorageChange(change: QueueChangePayload<Input, Output>): void {

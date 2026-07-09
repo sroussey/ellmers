@@ -888,7 +888,21 @@ export class JobQueueWorker<
    * subscribed clients. Storage is not touched.
    */
   protected emitStreamEvent(jobId: unknown, event: StreamEventLike): void {
+    // In-memory fast path (same-process attached clients) — unchanged.
     this.events.emit("job_stream", jobId, event);
+
+    // Cross-process side-channel (best-effort). The CARRIER assigns the per-job
+    // `seq` from a counter it owns, so the sequence is continuous across
+    // attempts: a retry claimed by a different worker continues the same job's
+    // sequence instead of restarting at 1 and colliding with the prior
+    // attempt's events (which the subscriber's reassembler would then drop). A
+    // publish failure must never fail the job.
+    const publish = this.messageQueue.publishStreamChunk;
+    if (typeof publish === "function") {
+      void publish.call(this.messageQueue, jobId, event).catch((err) => {
+        getLogger().error("publishStreamChunk failed", { jobId, error: err });
+      });
+    }
   }
 
   /** Internal — resolve the active claim for a job id, throw if missing. */

@@ -5,6 +5,7 @@
  */
 
 import { createServiceToken } from "@workglow/util";
+import type { StreamChunkRow, StreamEventLike } from "../job/JobQueueEventListeners";
 
 export const QUEUE_STORAGE = createServiceToken<IQueueStorage<any, any>>("jobqueue.storage");
 
@@ -399,5 +400,22 @@ export interface IQueueStorage<Input, Output> {
   subscribeToChanges(
     callback: (change: QueueChangePayload<Input, Output>) => void,
     options?: QueueSubscribeOptions
+  ): () => void;
+  /**
+   * OPTIONAL — append a live stream event to job `jobId`'s ordered side-stream;
+   * the storage assigns the monotonic per-job `seq`. See
+   * {@link IMessageQueue.publishStreamChunk}. Absent on backends that cannot
+   * carry a job's live stream out of process.
+   */
+  publishStreamChunk?(jobId: unknown, event: StreamEventLike): Promise<void>;
+  /**
+   * OPTIONAL — subscribe to a job's stream side-stream, replaying rows with
+   * `seq > sinceSeq` before live delivery. See
+   * {@link IMessageQueue.subscribeToStream}.
+   */
+  subscribeToStream?(
+    jobId: unknown,
+    sinceSeq: number,
+    callback: (row: StreamChunkRow) => void
   ): () => void;
 }
