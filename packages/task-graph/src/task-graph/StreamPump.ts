@@ -12,6 +12,7 @@ import type { ITask } from "../task/ITask";
 import type { StreamEvent, StreamMode } from "../task/StreamTypes";
 import {
   DEFAULT_BINARY_HIGH_WATER_BYTES,
+  DEFAULT_STREAM_GATE_WATCHDOG_MS,
   edgeNeedsAccumulation,
   getOutputStreamMode,
   getPortStreamMode,
@@ -54,6 +55,11 @@ export interface StreamingRunOptions {
   readonly noAccumulation?: boolean;
   /** High-water mark (bytes) for the no-accumulation passthrough gate. */
   readonly streamHighWaterBytes?: number;
+  /**
+   * Liveness watchdog (ms) for the no-accumulation passthrough gate. When
+   * omitted, `DEFAULT_STREAM_GATE_WATCHDOG_MS` applies; `0` disables.
+   */
+  readonly streamGateWatchdogMs?: number;
   readonly updateProgress: (
     task: ITask,
     progress: number | undefined,
@@ -80,6 +86,18 @@ export interface StreamingRunOptions {
 interface EdgeGateState {
   readonly gate: BackpressureGate;
   readonly pendingCosts: number[];
+  /**
+   * Per-gate liveness helpers: `armWatchdog` (re)starts the fail timer; the
+   * consumer-side wrapper calls it on every pull/credit so a live consumer
+   * keeps rearming, and only a genuinely stuck consumer trips it.
+   * `abortListener` releases the ctx.signal listener installed by
+   * {@link buildPassthroughEdgeGates}. `disposeWatchdog` clears any pending
+   * fail timer. Both are cleared by the finally block in
+   * {@link runStreamingTask}.
+   */
+  armWatchdog(): void;
+  disposeWatchdog(): void;
+  abortListener?: () => void;
 }
 
 /**
@@ -216,7 +234,7 @@ export class StreamPump {
     // The edge stream charges the gate as events are enqueued and credits it
     // as the consumer reads; the producer's StreamProcessor parks on the
     // `edgeBackpressure` thunk after each delta, pacing it to the consumer.
-    const edgeGates = this.buildPassthroughEdgeGates(task, options);
+    const edgeGates = this.buildPassthroughEdgeGates(task, options, ctx);
     const edgeBackpressure = edgeGates
       ? async (port?: string): Promise<void> => {
           if (port !== undefined) {
@@ -310,6 +328,7 @@ export class StreamPump {
         runId: options.runId,
         noAccumulation: options.noAccumulation,
         streamHighWaterBytes: options.streamHighWaterBytes,
+        streamGateWatchdogMs: options.streamGateWatchdogMs,
         edgeBackpressure,
         // Sinks are installed regardless of downstream needs: when both an
         // accumulator and a router exist (downstream needs materialized + cache
@@ -333,7 +352,15 @@ export class StreamPump {
       for (const cleanup of gateCleanups) cleanup();
       // Idempotent: normally already closed by the edge stream's end/terminate
       // handlers; this covers runs that never flipped to STREAMING at all.
-      if (edgeGates) for (const state of edgeGates.values()) state.gate.close();
+      // Also releases the ctx-abort listener and clears any pending watchdog
+      // timer, so a terminated run does not leak listeners or timers.
+      if (edgeGates) {
+        for (const state of edgeGates.values()) {
+          state.disposeWatchdog();
+          state.abortListener?.();
+          state.gate.close();
+        }
+      }
     }
   }
 
@@ -576,13 +603,18 @@ export class StreamPump {
    */
   private buildPassthroughEdgeGates(
     task: ITask,
-    options: StreamingRunOptions
+    options: StreamingRunOptions,
+    ctx: RunContext
   ): Map<string, EdgeGateState> | undefined {
     if (options.noAccumulation !== true) return undefined;
     const highWaterMark =
       options.streamHighWaterBytes !== undefined && options.streamHighWaterBytes > 0
         ? options.streamHighWaterBytes
         : DEFAULT_BINARY_HIGH_WATER_BYTES;
+    const watchdogMs =
+      options.streamGateWatchdogMs !== undefined
+        ? options.streamGateWatchdogMs
+        : DEFAULT_STREAM_GATE_WATCHDOG_MS;
     let reachable: ReadonlySet<TaskIdType> | undefined;
     let gates: Map<string, EdgeGateState> | undefined;
     for (const df of this.graph.getTargetDataflows(task.id)) {
@@ -595,10 +627,50 @@ export class StreamPump {
       // The passthrough predicate guarantees a single consumer per source
       // port, so one gate per port is exactly one gate per edge.
       gates ??= new Map();
-      gates.set(df.sourceTaskPortId, {
-        gate: new BackpressureGate(highWaterMark),
+      const gate = new BackpressureGate(highWaterMark);
+
+      // Liveness: an aborted run must release the parked producer immediately
+      // (otherwise the consumer's abort-triggered close listener is the only
+      // release path, and any code path that skips that listener wedges the
+      // run). A watchdog timer additionally trips fail() when a producer stays
+      // parked without any pull/credit progress for `watchdogMs`, surfacing a
+      // dead consumer as a run-level error instead of a wedged process.
+      let watchdogTimer: ReturnType<typeof setTimeout> | undefined;
+      const armWatchdog =
+        watchdogMs > 0
+          ? () => {
+              if (watchdogTimer) clearTimeout(watchdogTimer);
+              watchdogTimer = setTimeout(() => {
+                gate.fail(
+                  new Error(
+                    `Passthrough edge gate stalled for ${watchdogMs}ms without pull or credit progress.`
+                  )
+                );
+              }, watchdogMs);
+            }
+          : () => {};
+      const disposeWatchdog = () => {
+        if (watchdogTimer) {
+          clearTimeout(watchdogTimer);
+          watchdogTimer = undefined;
+        }
+      };
+      const onAbort = () => gate.close();
+      ctx.abortController.signal.addEventListener("abort", onAbort, { once: true });
+
+      const state: EdgeGateState = {
+        gate,
         pendingCosts: [],
-      });
+        armWatchdog,
+        disposeWatchdog,
+        abortListener: () => ctx.abortController.signal.removeEventListener("abort", onAbort),
+      };
+      // Arm the watchdog immediately so a consumer that never even starts
+      // reading still trips it — otherwise the first arm only happens on
+      // the first pull, and a wedged consumer that never reads keeps the
+      // watchdog dormant.
+      armWatchdog();
+      gates.set(df.sourceTaskPortId, state);
     }
     return gates;
   }
@@ -634,6 +706,9 @@ export class StreamPump {
     const reader = stream.getReader();
     return new ReadableStream<StreamEvent>({
       async pull(controller) {
+        // Every pull is progress: rearm the watchdog so a live consumer keeps
+        // resetting the fail timer for as long as it keeps reading.
+        state.armWatchdog();
         let done: boolean;
         let value: StreamEvent | undefined;
         try {
@@ -648,6 +723,7 @@ export class StreamPump {
           return;
         }
         state.gate.credit(state.pendingCosts.shift() ?? streamEventCost(value));
+        state.armWatchdog();
         controller.enqueue(value);
       },
       cancel(reason) {

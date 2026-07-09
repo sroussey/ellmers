@@ -192,6 +192,15 @@ export interface IRunConfig {
   streamHighWaterBytes?: number;
 
   /**
+   * Liveness watchdog (milliseconds) for the no-accumulation passthrough gate:
+   * if the gate sees neither a pull nor a credit within this window while a
+   * producer is parked, the gate fails so the producer's `push()` rejects
+   * rather than hanging the run. When omitted, `DEFAULT_STREAM_GATE_WATCHDOG_MS`
+   * applies; pass `0` to disable the watchdog.
+   */
+  streamGateWatchdogMs?: number;
+
+  /**
    * Graph-installed producer park for the no-accumulation passthrough path.
    * The graph runner owns the consumer-edge gates (it is the only layer that
    * knows the edges); this thunk closes over them so the task-level streaming

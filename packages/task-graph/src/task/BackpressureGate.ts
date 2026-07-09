@@ -38,6 +38,7 @@ export class BackpressureGate {
    * {@link close}, or {@link fail} drops the gate below the mark or releases it.
    */
   charge(cost: number): Promise<void> {
+    if (this.failureError) return Promise.reject(this.failureError);
     if (this.finished) return Promise.resolve();
     this.bufferedCost += cost;
     if (this.bufferedCost < this.highWaterMarkCost) return Promise.resolve();
@@ -87,6 +88,7 @@ export class BackpressureGate {
    * task emitting via a side channel can park until the consumer drains.
    */
   awaitBelowMark(): Promise<void> {
+    if (this.failureError) return Promise.reject(this.failureError);
     if (this.finished) return Promise.resolve();
     if (this.bufferedCost < this.highWaterMarkCost) return Promise.resolve();
     return this.park();
@@ -113,16 +115,22 @@ export class BackpressureGate {
   }
 
   private park(): Promise<void> {
-    return new Promise<void>((res) => {
+    return new Promise<void>((res, rej) => {
       // Chain resolvers so a credit that crosses the mark releases every
-      // producer parked since the last wake, not just the most recent.
+      // producer parked since the last wake, not just the most recent. A
+      // fail() after the park settles here rejects — producers must see the
+      // watchdog / abort error, not silently resume as if the buffer drained.
       const prev = this.drainNotify;
       this.drainNotify = prev
         ? () => {
             prev();
-            res();
+            if (this.failureError) rej(this.failureError);
+            else res();
           }
-        : res;
+        : () => {
+            if (this.failureError) rej(this.failureError);
+            else res();
+          };
     });
   }
 
