@@ -38,13 +38,23 @@ export interface RunPrivateCacheRepoOptions {
 export class RunPrivateCacheRepo extends TaskOutputRepository {
   private static fallbackWarned = false;
 
-  private readonly backing: TaskOutputRepository;
+  private readonly _backing: TaskOutputRepository;
+  /**
+   * Read-only view of the wrapped backing repository. Exposed so config-time
+   * guards (e.g. in `TaskRunner`) can detect when the same instance is also
+   * wired as the deterministic tier — a configuration that lets a foreign-run
+   * ref rejected by this wrapper still resolve through the unscoped
+   * deterministic reader, reopening the cross-run leak this wrapper closes.
+   */
+  public get backing(): TaskOutputRepository {
+    return this._backing;
+  }
   private readonly runId: string;
   private observedFallback: boolean = false;
 
   constructor({ backing, runId }: RunPrivateCacheRepoOptions) {
     super({ outputCompression: backing.outputCompression });
-    this.backing = backing;
+    this._backing = backing;
     this.runId = runId;
 
     // Streaming is a per-backing capability: only backings with a sidecar
@@ -124,14 +134,14 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     output: TaskOutput,
     createdAt?: Date
   ): Promise<void> {
-    await this.backing.saveOutputForRun(this.runId, cacheIdentity, inputs, output, createdAt);
+    await this._backing.saveOutputForRun(this.runId, cacheIdentity, inputs, output, createdAt);
   }
 
   public async getOutput(
     cacheIdentity: string,
     inputs: TaskInput
   ): Promise<TaskOutput | undefined> {
-    return this.backing.getOutputForRun(this.runId, cacheIdentity, inputs);
+    return this._backing.getOutputForRun(this.runId, cacheIdentity, inputs);
   }
 
   /**
@@ -149,7 +159,7 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
    * on the backing's runId-leading primary key — not a table scan.
    */
   public async clearRun(): Promise<void> {
-    await this.backing.deleteRun(this.runId);
+    await this._backing.deleteRun(this.runId);
   }
 
   /**
@@ -157,7 +167,7 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
    * `saveOutput`/`getOutput`/`clear()` being run-scoped.
    */
   public async size(): Promise<number> {
-    return this.backing.sizeForRun(this.runId);
+    return this._backing.sizeForRun(this.runId);
   }
 
   /**
@@ -166,10 +176,10 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
    * private rows. An indexed `deleteSearch({ runId, createdAt: { "<" } })`.
    */
   public async clearOlderThan(olderThanInMs: number): Promise<void> {
-    await this.backing.deleteRunOlderThan(this.runId, olderThanInMs);
+    await this._backing.deleteRunOlderThan(this.runId, olderThanInMs);
   }
 
   public isDurable(): boolean {
-    return this.backing.isDurable();
+    return this._backing.isDurable();
   }
 }

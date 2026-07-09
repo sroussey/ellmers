@@ -67,6 +67,11 @@ export interface TaskGraphRunConfig {
    */
   streamHighWaterBytes?: number;
   /**
+   * Liveness watchdog (ms) for the no-accumulation passthrough gate. See
+   * {@link IRunConfig.streamGateWatchdogMs}.
+   */
+  streamGateWatchdogMs?: number;
+  /**
    * Maximum time in milliseconds for the entire graph execution.
    * When exceeded, all in-progress tasks are aborted and a TaskTimeoutError is thrown.
    */
@@ -177,6 +182,7 @@ export class TaskGraph implements ITaskGraph {
       accumulateLeafOutputs: config?.accumulateLeafOutputs,
       noAccumulation: config?.noAccumulation,
       streamHighWaterBytes: config?.streamHighWaterBytes,
+      streamGateWatchdogMs: config?.streamGateWatchdogMs,
       registry: config?.registry,
       timeout: config?.timeout,
       maxTasks: config?.maxTasks,

@@ -530,6 +530,14 @@ export class BinaryStreamRouter {
   push(chunk: Uint8Array): Promise<void> {
     if (this.gate.closed) return Promise.resolve();
     this.buffer.push(chunk);
+    // Between the fast-path check above and here, another turn may have called
+    // `end()` / `fail()`. If so, un-stage the chunk so it never surfaces to the
+    // consumer and return without waking or charging the gate — the sink has
+    // already been told the stream ended.
+    if (this.gate.closed) {
+      this.buffer.pop();
+      return Promise.resolve();
+    }
     this.wakeChunk();
     return this.gate.charge(chunk.byteLength);
   }
@@ -579,6 +587,10 @@ export class BinaryStreamRouter {
 
   private async *iterable(): AsyncIterable<Uint8Array> {
     while (true) {
+      // Failure takes priority over buffered chunks so a `fail()` mid-stream
+      // surfaces to the sink before any already-buffered payload — a consumer
+      // that saw the chunk first would treat a partial payload as complete.
+      if (this.gate.failure) throw this.gate.failure;
       while (this.buffer.length > 0) {
         const chunk = this.buffer.shift()!;
         // Credit the gate as we hand the chunk to the sink; this wakes any

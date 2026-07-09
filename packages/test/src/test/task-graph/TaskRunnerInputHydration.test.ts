@@ -3,10 +3,17 @@
  * Copyright 2026 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
-import { CACHE_REGISTRY, DefaultCacheRegistry, makeCacheRef, Task } from "@workglow/task-graph";
+import {
+  CACHE_REGISTRY,
+  DefaultCacheRegistry,
+  makeCacheRef,
+  RunPrivateCacheRepo,
+  Task,
+} from "@workglow/task-graph";
 import { Container, ServiceRegistry } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { beforeEach, describe, expect, it } from "vitest";
+import { RunPrivateInMemoryTaskOutputRepository } from "../../binding/RunPrivateInMemoryTaskOutputRepository";
 import { StreamingMemoryRepo } from "../../binding/StreamingMemoryRepo";
 
 async function* gen(...chunks: Uint8Array[]): AsyncIterable<Uint8Array> {
@@ -105,5 +112,55 @@ describe("TaskRunner input-side CacheRef hydration", () => {
     const task = new BlobInputTask();
     await task.run({ bytes: ref }, { registry: bare });
     expect(task.received).toBe(ref);
+  });
+});
+
+describe("TaskRunner rejects a CacheRegistry whose private and deterministic tiers share a backing", () => {
+  it("throws when both slots resolve to the same backing instance", async () => {
+    const shared = new RunPrivateInMemoryTaskOutputRepository();
+    const badServices = new ServiceRegistry(new Container());
+    badServices.registerInstance(
+      CACHE_REGISTRY,
+      new DefaultCacheRegistry({
+        deterministic: shared,
+        private: new RunPrivateCacheRepo({ backing: shared, runId: "r" }),
+      })
+    );
+    const task = new BlobInputTask();
+    await expect(
+      task.run({ bytes: new Blob([new Uint8Array([1])]) }, { registry: badServices })
+    ).rejects.toThrow(/same backing/);
+  });
+
+  it("accepts distinct backing instances for the two slots", async () => {
+    const detBacking = new StreamingMemoryRepo({});
+    const privBacking = new RunPrivateInMemoryTaskOutputRepository();
+    const okServices = new ServiceRegistry(new Container());
+    okServices.registerInstance(
+      CACHE_REGISTRY,
+      new DefaultCacheRegistry({
+        deterministic: detBacking,
+        private: new RunPrivateCacheRepo({ backing: privBacking, runId: "r" }),
+      })
+    );
+    const task = new BlobInputTask();
+    await expect(
+      task.run({ bytes: new Blob([new Uint8Array([2])]) }, { registry: okServices })
+    ).resolves.toBeDefined();
+  });
+
+  it("accepts a private-only registry (deterministic slot unset)", async () => {
+    const privBacking = new RunPrivateInMemoryTaskOutputRepository();
+    const okServices = new ServiceRegistry(new Container());
+    okServices.registerInstance(
+      CACHE_REGISTRY,
+      new DefaultCacheRegistry({
+        private: new RunPrivateCacheRepo({ backing: privBacking, runId: "r" }),
+      })
+    );
+    const task = new BlobInputTask();
+    await expect(
+      task.run({ bytes: new Blob([new Uint8Array([3])]) }, { registry: okServices })
+    ).resolves.toBeDefined();
   });
 });

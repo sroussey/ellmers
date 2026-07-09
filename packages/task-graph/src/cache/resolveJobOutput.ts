@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { DataPortSchema } from "@workglow/util/schema";
+import { getStreamingPorts } from "../task/StreamTypes";
 import type { CacheRef } from "./CacheRef";
 import { isCacheRef } from "./CacheRef";
 import type { CacheRefResolver, RefStreamBacking, ResolveOutputOptions } from "./resolveRef";
@@ -54,58 +56,42 @@ function asResolver(backing: RefBacking): CacheRefResolver | undefined {
   return (ref) => get.call(backing, ref);
 }
 
-function collectCacheRefs(
-  value: unknown,
-  out: CacheRef[],
-  visited: WeakSet<object> = new WeakSet()
-): void {
-  if (isCacheRef(value)) {
-    out.push(value);
-    return;
-  }
-  if (value === null || typeof value !== "object") return;
-  if (visited.has(value as object)) return;
-  visited.add(value as object);
-  if (Array.isArray(value)) {
-    for (const v of value) collectCacheRefs(v, out, visited);
-    return;
-  }
-  if (value instanceof Map) {
-    for (const v of value.values()) collectCacheRefs(v, out, visited);
-    return;
-  }
-  if (value instanceof Set) {
-    for (const v of value) collectCacheRefs(v, out, visited);
-    return;
-  }
-  // Opaque-by-default: only plain objects (Object.prototype / null prototype)
-  // are walked structurally. Every class instance — Blob, ArrayBuffer, typed
-  // arrays, Error, URL, Headers, Request, Response, FormData,
-  // URLSearchParams, ReadableStream, user classes — is opaque (matches the
-  // `resolveRef.ts` walker so both stop at the same boundary).
-  const proto = Object.getPrototypeOf(value);
-  if (proto !== null && proto !== Object.prototype) return;
-  const source = value as Record<string, unknown>;
-  for (const k of Object.keys(source)) collectCacheRefs(source[k], out, visited);
-}
-
 async function outputValueToStream(
   output: unknown,
   backing: RefStreamBacking,
-  port?: string
+  port?: string,
+  outputSchema?: DataPortSchema
 ): Promise<AsyncIterable<Uint8Array> | undefined> {
   let candidate: unknown;
   if (port !== undefined) {
     candidate = (output as Record<string, unknown> | undefined)?.[port];
   } else {
-    const refs: CacheRef[] = [];
-    collectCacheRefs(output, refs);
-    if (refs.length > 1) {
-      throw new Error(
-        `resolveJobOutputStream: output contains ${refs.length} cache refs; pass an explicit port.`
+    // Portless discovery: only consider ports the output schema declares as
+    // streamable. A whole-output deep walk would resolve a crafted branded ref
+    // that a job copied from untrusted input against the backing; restricting
+    // to declared streaming ports removes that class of side-channel.
+    if (outputSchema === undefined) {
+      throw new TypeError(
+        "resolveJobOutputStream: portless discovery requires the task's output " +
+          "schema to enumerate declared streamable ports. Pass an explicit port " +
+          "or supply outputSchema."
       );
     }
-    candidate = refs[0];
+    const streamingPorts = getStreamingPorts(outputSchema);
+    const record = output as Record<string, unknown> | undefined;
+    const candidates: CacheRef[] = [];
+    if (record !== undefined) {
+      for (const { port: p } of streamingPorts) {
+        const v = record[p];
+        if (isCacheRef(v)) candidates.push(v);
+      }
+    }
+    if (candidates.length > 1) {
+      throw new Error(
+        `resolveJobOutputStream: output contains ${candidates.length} cache refs; pass an explicit port.`
+      );
+    }
+    candidate = candidates[0];
   }
   if (candidate === undefined) return undefined;
   if (isCacheRef(candidate)) return streamRefViaBacking(candidate, backing);
@@ -150,25 +136,21 @@ async function outputValueToStream(
 /**
  * Await a job's completion and stream its binary result back out of the
  * output cache without materializing it. `port` selects the output port;
- * when omitted, the single branded {@link CacheRef} reachable in the output
- * is used (two or more refs without a port is an error; zero resolves
- * `undefined`). Inline values at a named port — `Blob` / `ArrayBuffer` /
- * `Uint8Array`, plus the `string` and plain object/array forms a
- * below-threshold append/object ref hydrates to — are adapted to a stream so
- * callers don't branch on whether the reference threshold kept the value
- * inline.
- *
- * Portless discovery walks the ENTIRE output, including fields whose content
- * the job may have copied from untrusted input — a crafted branded ref shape
- * embedded there would be resolved against the backing. Pass an explicit
- * `port` whenever the producer of the output is not fully trusted.
+ * when omitted, the caller must supply `outputSchema` and portless discovery
+ * enumerates only the ports the schema declares as streamable via `x-stream`
+ * (two or more refs across those ports is an error; zero resolves `undefined`).
+ * Inline values at a named port — `Blob` / `ArrayBuffer` / `Uint8Array`, plus
+ * the `string` and plain object/array forms a below-threshold append/object
+ * ref hydrates to — are adapted to a stream so callers don't branch on
+ * whether the reference threshold kept the value inline.
  */
 export async function resolveJobOutputStream<Output>(
   handle: JobHandleLike<Output>,
   backing: RefStreamBacking,
-  port?: string
+  port?: string,
+  outputSchema?: DataPortSchema
 ): Promise<AsyncIterable<Uint8Array> | undefined> {
-  return outputValueToStream(await handle.waitFor(), backing, port);
+  return outputValueToStream(await handle.waitFor(), backing, port, outputSchema);
 }
 
 /**
@@ -178,7 +160,8 @@ export async function resolveJobOutputStream<Output>(
  * other way — so the resolver is injected as a structural function).
  */
 export function makeJobOutputStreamResolver(
-  backing: RefStreamBacking
+  backing: RefStreamBacking,
+  outputSchema?: DataPortSchema
 ): (output: unknown, port?: string) => Promise<AsyncIterable<Uint8Array> | undefined> {
-  return (output, port) => outputValueToStream(output, backing, port);
+  return (output, port) => outputValueToStream(output, backing, port, outputSchema);
 }
