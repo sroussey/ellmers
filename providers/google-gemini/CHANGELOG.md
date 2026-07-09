@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.24
+
+### Features
+
+- add updateWhere method for atomic conditional updates across all storage backends (#616)
+
+### Bug Fixes
+
+#### google-gemini
+
+- migrate to @google/genai; fix thinking-model tool calls and structured output (#620)
+
 ## 0.3.23
 
 ## 0.3.22

@@ -1,5 +1,19 @@
 # @workglow/task-graph
 
+## 0.3.24
+
+### Features
+
+- add updateWhere method for atomic conditional updates across all storage backends (#616)
+
+### Refactors
+
+- consolidate hardcoded limits into DEFAULT_LIMITS/SECURITY_LIMITS (#609)
+
+#### task-graph
+
+- update cache imports for better organization
+
 ## 0.3.23
 
 ### Refactors

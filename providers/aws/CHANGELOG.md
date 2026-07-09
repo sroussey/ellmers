@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.24
+
+### Features
+
+- add updateWhere method for atomic conditional updates across all storage backends (#616)
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1084.0
+
 ## 0.3.23
 
 ### Chores

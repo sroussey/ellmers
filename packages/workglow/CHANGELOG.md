@@ -1,5 +1,15 @@
 # workglow
 
+## 0.3.24
+
+### Features
+
+- add updateWhere method for atomic conditional updates across all storage backends (#616)
+
+### Updated Dependencies
+
+- `tslog`: ^4.11.0
+
 ## 0.3.23
 
 ### Chores

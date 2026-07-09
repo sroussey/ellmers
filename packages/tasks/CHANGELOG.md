@@ -1,5 +1,25 @@
 # @workglow/tasks
 
+## 0.3.24
+
+### Features
+
+- add updateWhere method for atomic conditional updates across all storage backends (#616)
+
+### Bug Fixes
+
+#### tasks
+
+- route SafeFetch.server redirect ceiling through SECURITY_LIMITS
+
+### Refactors
+
+- consolidate hardcoded limits into DEFAULT_LIMITS/SECURITY_LIMITS (#609)
+
+### Updated Dependencies
+
+- `undici`: ^8.7.0
+
 ## 0.3.23
 
 ### Bug Fixes
