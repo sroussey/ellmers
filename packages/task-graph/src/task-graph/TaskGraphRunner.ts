@@ -129,6 +129,9 @@ export class TaskGraphRunner {
   /** High-water mark (bytes) for the no-accumulation passthrough gate. */
   protected streamHighWaterBytes?: number;
 
+  /** Liveness watchdog (ms) for the no-accumulation passthrough gate. */
+  protected streamGateWatchdogMs?: number;
+
   /**
    * Service registry for this graph run.
    * Read by EdgeMaterializer via bracket access (`runner["registry"]`).
@@ -530,6 +533,7 @@ export class TaskGraphRunner {
         accumulateLeafOutputs: this.accumulateLeafOutputs,
         noAccumulation: this.noAccumulation,
         streamHighWaterBytes: this.streamHighWaterBytes,
+        streamGateWatchdogMs: this.streamGateWatchdogMs,
         updateProgress: (t, p, m, ...a) =>
           this.runScheduler.handleProgress(this.currentCtx!, t, p, m, ...a),
         runId: this.runId,
@@ -703,6 +707,7 @@ export class TaskGraphRunner {
     this.accumulateLeafOutputs = config?.accumulateLeafOutputs !== false;
     this.noAccumulation = config?.noAccumulation === true;
     this.streamHighWaterBytes = config?.streamHighWaterBytes;
+    this.streamGateWatchdogMs = config?.streamGateWatchdogMs;
 
     if (config?.outputCache !== undefined) {
       if (typeof config.outputCache === "boolean") {

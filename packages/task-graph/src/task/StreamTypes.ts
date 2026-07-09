@@ -427,6 +427,18 @@ export type BinaryFormat = "blob" | "binary";
  */
 export const DEFAULT_BINARY_HIGH_WATER_BYTES = 8 * 1024 * 1024;
 
+/**
+ * Default watchdog timeout (milliseconds) for the no-accumulation passthrough
+ * gate: if a producer parks at the high-water mark and neither pull nor credit
+ * progresses within this window, the gate fails so the producer's `push()`
+ * rejects rather than hanging the run. 60 s is long enough to survive a normal
+ * consumer stall (GC pause, disk fsync spike) while short enough that a truly
+ * dead consumer surfaces as a run-level error instead of a wedged process.
+ * Callers can override per-run via `IRunConfig.streamGateWatchdogMs`; pass `0`
+ * to disable the watchdog entirely.
+ */
+export const DEFAULT_STREAM_GATE_WATCHDOG_MS = 60_000;
+
 const streamCostEncoder = new TextEncoder();
 
 /**
