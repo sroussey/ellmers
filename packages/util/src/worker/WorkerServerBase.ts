@@ -25,9 +25,17 @@ const EVICT_BATCH = 500;
 /**
  * Extracts transferables from an object.
  * @param obj - The object to extract transferables from.
+ * @param ownedBuffersOnly - When true, a TypedArray's backing `ArrayBuffer` is
+ *   transferred only if the view owns the whole buffer (`byteOffset === 0` and
+ *   it spans the full length). Partial views — `subarray()` slices and small
+ *   Node `Buffer`s carved from the shared allocation pool — are left to
+ *   structured clone instead, so transferring one payload can never detach a
+ *   buffer that a *later* payload (or worker-retained state) still aliases.
+ *   Callers that emit many payloads over time (streaming) must pass true;
+ *   one-shot callers (`postResult`) keep the default zero-copy-everything path.
  * @returns An array of transferables.
  */
-function extractTransferables(obj: any) {
+function extractTransferables(obj: any, ownedBuffersOnly: boolean = false): Transferable[] {
   const transferables: Transferable[] = [];
   const seen = new WeakSet();
 
@@ -41,11 +49,9 @@ function extractTransferables(obj: any) {
     }
 
     // Handle TypedArrays
-    if (value instanceof Float32Array || value instanceof Int16Array) {
-      transferables.push(value.buffer);
-    }
-    // Handle other TypedArrays
-    else if (
+    if (
+      value instanceof Float32Array ||
+      value instanceof Int16Array ||
       value instanceof Uint8Array ||
       value instanceof Uint8ClampedArray ||
       value instanceof Int8Array ||
@@ -56,7 +62,11 @@ function extractTransferables(obj: any) {
       value instanceof BigInt64Array ||
       value instanceof BigUint64Array
     ) {
-      transferables.push(value.buffer);
+      const ownsWholeBuffer =
+        value.byteOffset === 0 && value.byteLength === value.buffer.byteLength;
+      if (!ownedBuffersOnly || ownsWholeBuffer) {
+        transferables.push(value.buffer);
+      }
     }
     // Handle OffscreenCanvas
     else if (typeof OffscreenCanvas !== "undefined" && value instanceof OffscreenCanvas) {
@@ -231,11 +241,15 @@ export class WorkerServerBase {
     if (this.completedRequests.has(id)) {
       return;
     }
-    // Mirror postResult: transfer (not clone) any binary payload a stream event
-    // carries (binary-delta buffers, snapshot image bytes) across the worker
-    // boundary. Non-binary events (text-delta, object-delta, phase, finish)
-    // yield an empty list and clone byte-for-byte exactly as before.
-    const transferables = [...new Set(extractTransferables(event))];
+    // Transfer (not clone) any binary payload a stream event carries
+    // (binary-delta buffers, snapshot image bytes) across the worker boundary.
+    // `ownedBuffersOnly` transfers only fully-owned buffers: a stream emits many
+    // payloads over the job's life, so transferring a partial view (a subarray
+    // chunk, or a pooled Node Buffer) would detach a buffer a later chunk still
+    // aliases — throwing DataCloneError on the next emit or neutering the
+    // worker's Buffer pool. Those views clone byte-for-byte instead. Non-binary
+    // events (text-delta, object-delta, phase, finish) yield an empty list.
+    const transferables = [...new Set(extractTransferables(event, true))];
     // @ts-expect-error - Ignore type mismatch between standard Transferable and Bun.Transferable
     postMessage({ id, type: "stream_chunk", data: event }, transferables);
   };
