@@ -79,7 +79,7 @@ describe("GoogleGeminiQueuedProvider.inferCapabilities", () => {
   });
 
   it("infers image.generation + image.editing for gemini-*-image-* models", () => {
-    const caps = provider.inferCapabilities(model("gemini-3.1-flash-image-preview"));
+    const caps = provider.inferCapabilities(model("gemini-3.1-flash-image"));
     expect(caps).toContain("image.generation");
     expect(caps).toContain("image.editing");
     expect(caps).not.toContain("text.generation");
