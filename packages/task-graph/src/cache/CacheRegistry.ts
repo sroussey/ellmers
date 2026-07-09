@@ -19,6 +19,17 @@ import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
  *
  * Both slots are optional. When a slot is unset, caching for matching tasks is
  * a silent no-op — the task still runs correctly, just uncached.
+ *
+ * Invariant: `private` and `deterministic` must not resolve to the same backing
+ * repository instance. When they share a backing, the private wrapper's
+ * run-scope rejection of a foreign-run ref is undone by the deterministic
+ * tier's unscoped fallback in `TaskRunner.hydrateInputRefs`, reopening the
+ * cross-run leak the wrapper exists to close. `TaskRunner` rejects this
+ * misconfiguration at run start with a `TaskConfigurationError` when
+ * `private instanceof RunPrivateCacheRepo && private.backing === deterministic`.
+ * The same-folder-path-but-different-instance variant is a residual, currently
+ * undetected case; wrap the shared folder with a single backing instance
+ * dedicated to one tier.
  */
 export interface CacheRegistry {
   deterministic?: TaskOutputRepository;
