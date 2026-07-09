@@ -227,6 +227,47 @@ describe("InMemoryTabularStorage delete change payloads", () => {
   });
 });
 
+describe("InMemoryTabularStorage updateWhere invariants", () => {
+  it("emits an UPDATE (not INSERT) to change subscribers after a prior insert", async () => {
+    const storage = new InMemoryTabularStorage<
+      typeof CompoundSchema,
+      typeof CompoundPrimaryKeyNames
+    >(CompoundSchema, CompoundPrimaryKeyNames);
+    // Prior insert leaves `_lastPutWasInsert = true`; the updateWhere below
+    // must not inherit that classification.
+    await storage.put({ name: "n1", type: "t1", option: "v1", success: true });
+
+    const changes: TabularChangePayload<FromSchema<typeof CompoundSchema>>[] = [];
+    const unsubscribe = storage.subscribeToChanges((c) => changes.push(c));
+    await storage.updateWhere({ name: "n1", type: "t1" }, { option: "v2" });
+    unsubscribe();
+
+    const ourChange = changes.find(
+      (c) => (c.new as { option?: string } | undefined)?.option === "v2"
+    );
+    expect(ourChange?.type).toBe("UPDATE");
+  });
+
+  it("rejects an updateWhere that would collide with a unique index and leaves the row intact", async () => {
+    const storage = new InMemoryTabularStorage<
+      typeof CompoundSchema,
+      typeof CompoundPrimaryKeyNames
+    >(CompoundSchema, CompoundPrimaryKeyNames, [], "if-missing", undefined, "inmemory", [
+      ["option"],
+    ]);
+    await storage.put({ name: "n1", type: "t1", option: "opt-a", success: true });
+    await storage.put({ name: "n2", type: "t2", option: "opt-b", success: false });
+
+    // Patching n2's option to n1's value would duplicate the unique tuple.
+    await expect(
+      storage.updateWhere({ name: "n2", type: "t2" }, { option: "opt-a" })
+    ).rejects.toThrow();
+
+    const n2 = await storage.get({ name: "n2", type: "t2" });
+    expect(n2?.option).toBe("opt-b");
+  });
+});
+
 describe("InMemoryTabularStorage putBulk atomicity", () => {
   afterEach(() => {
     vi.restoreAllMocks();
