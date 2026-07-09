@@ -26,24 +26,30 @@ export async function loadGeminiSDK(): Promise<GoogleGenAIConstructor> {
   return _loadPromise;
 }
 
-const _clientByKey = new Map<string, GoogleGenAI>();
+const _clientByKey = new Map<string, Promise<GoogleGenAI>>();
 
 /**
  * Load the SDK and return a client bound to the resolved API key. The
  * `@google/genai` `GoogleGenAI` facade stands up auth wiring and several
  * sub-service objects, so it is memoized per API key rather than rebuilt on
- * every run-fn invocation.
+ * every run-fn invocation. The in-flight promise is cached (set synchronously
+ * before the first await) so concurrent calls for the same key share one client
+ * instead of racing to construct duplicates; a failed load evicts the entry so
+ * the next call can retry.
  */
-export async function createGeminiClient(
-  model: GeminiModelConfig | undefined
-): Promise<GoogleGenAI> {
+export function createGeminiClient(model: GeminiModelConfig | undefined): Promise<GoogleGenAI> {
   const apiKey = getApiKey(model);
-  const cached = _clientByKey.get(apiKey);
-  if (cached) return cached;
-  const GoogleGenAICtor = await loadGeminiSDK();
-  const client = new GoogleGenAICtor({ apiKey });
-  _clientByKey.set(apiKey, client);
-  return client;
+  let clientPromise = _clientByKey.get(apiKey);
+  if (!clientPromise) {
+    clientPromise = loadGeminiSDK()
+      .then((GoogleGenAICtor) => new GoogleGenAICtor({ apiKey }))
+      .catch((err) => {
+        _clientByKey.delete(apiKey);
+        throw err;
+      });
+    _clientByKey.set(apiKey, clientPromise);
+  }
+  return clientPromise;
 }
 
 interface ResolvedProviderConfig {

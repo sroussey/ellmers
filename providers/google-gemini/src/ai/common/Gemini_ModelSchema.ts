@@ -50,9 +50,10 @@ export const GeminiModelSchema = {
         thinking_budget: {
           type: "number",
           description:
-            "Reasoning token allowance for thinking models (2.5+/3.x), separate from " +
-            "maxOutputTokens. 0 disables thinking; -1 lets the model choose. When unset, " +
-            "the provider applies a sensible default for structured generation.",
+            "Reasoning token allowance for thinking models (2.5+/3.x). Gemini counts " +
+            "thinking tokens against maxOutputTokens, so the provider pads the output cap " +
+            "by this budget to leave room for the answer. 0 disables thinking; -1 lets the " +
+            "model choose. When unset, structured generation applies a sensible default.",
         },
       },
       required: ["model_name"],
