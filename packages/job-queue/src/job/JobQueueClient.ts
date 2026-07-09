@@ -127,6 +127,15 @@ export class JobQueueClient<Input, Output> {
   private readonly jobStreamUnsubscribers: Map<unknown, () => void> = new Map();
 
   /**
+   * Highest in-order stream `seq` already delivered per job. Persisted across
+   * teardown/re-subscribe (unlike the subscription itself) so a re-subscribe —
+   * e.g. a listener removed and re-added while the job is still running —
+   * resumes from where it left off instead of replaying the whole log and
+   * double-delivering every prior event. Cleared when the job settles.
+   */
+  private readonly jobStreamCursor: Map<unknown, number> = new Map();
+
+  /**
    * Last known progress state for each job
    */
   protected readonly lastKnownProgress: Map<
@@ -156,6 +165,14 @@ export class JobQueueClient<Input, Output> {
     this.server = server;
     server.addClient(this);
 
+    // The attached server now delivers stream events via the direct fast path
+    // (`forwardToClients` → `handleJobStream`). Tear down any channel stream
+    // subscriptions opened while we were storage-only, or every event would be
+    // delivered twice (fast path + channel reassembler).
+    for (const jobId of [...this.jobStreamUnsubscribers.keys()]) {
+      this.teardownStreamSubscription(jobId);
+    }
+
     // Unsubscribe from storage if we were using it
     if (this.storageUnsubscribe) {
       this.storageUnsubscribe();
@@ -170,6 +187,12 @@ export class JobQueueClient<Input, Output> {
     if (this.server) {
       this.server.removeClient(this);
       this.server = null;
+    }
+    // No longer server-attached: re-open channel stream subscriptions for jobs
+    // that still have listeners, so `onStream` keeps delivering via the queue
+    // channel now that the fast path is gone.
+    for (const jobId of this.jobStreamListeners.keys()) {
+      this.ensureStreamSubscription(jobId);
     }
   }
 
@@ -515,10 +538,17 @@ export class JobQueueClient<Input, Output> {
     const subscribe = this.messageQueue.subscribeToStream;
     if (typeof subscribe !== "function") return;
     if (this.jobStreamUnsubscribers.has(jobId)) return;
-    const reassembler = new StreamReassembler((event: StreamEventLike) =>
-      this.handleJobStream(jobId, event)
-    );
-    const unsub = subscribe.call(this.messageQueue, jobId, 0, (row: StreamChunkRow) => {
+    // Resume from the last seq already delivered so a re-subscribe replays only
+    // the gap, not the whole log. The reassembler dispatches strictly in order
+    // from `sinceSeq + 1`, so counting dispatches tracks the delivered seq.
+    const sinceSeq = this.jobStreamCursor.get(jobId) ?? 0;
+    let cursor = sinceSeq;
+    const reassembler = new StreamReassembler((event: StreamEventLike) => {
+      cursor += 1;
+      this.jobStreamCursor.set(jobId, cursor);
+      this.handleJobStream(jobId, event);
+    }, sinceSeq);
+    const unsub = subscribe.call(this.messageQueue, jobId, sinceSeq, (row: StreamChunkRow) => {
       reassembler.push(row);
     });
     this.jobStreamUnsubscribers.set(jobId, unsub);
@@ -721,6 +751,7 @@ export class JobQueueClient<Input, Output> {
     this.jobProgressListeners.delete(jobId);
     this.jobStreamListeners.delete(jobId);
     this.teardownStreamSubscription(jobId);
+    this.jobStreamCursor.delete(jobId);
   }
 
   private handleStorageChange(change: QueueChangePayload<Input, Output>): void {
