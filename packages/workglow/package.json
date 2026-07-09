@@ -208,6 +208,6 @@
     "@workglow/mcp": "workspace:*",
     "@workglow/tasks": "workspace:*",
     "@workglow/util": "workspace:*",
-    "tslog": "^4.9.3"
+    "tslog": "^4.11.0"
   }
 }
