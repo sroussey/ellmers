@@ -18,7 +18,7 @@ import { getTestingLogger } from "../../binding/TestingLogger";
 import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 
 const RUN = !!process.env.GOOGLE_API_KEY || !!process.env.GEMINI_API_KEY;
-const MODEL_ID = "gemini:gemini-3.1-flash";
+const MODEL_ID = "gemini:gemini-3.5-flash";
 const EMBED_MODEL_ID = "gemini:gemini-embedding-001";
 
 runAiProviderConformance({
@@ -34,11 +34,11 @@ runAiProviderConformance({
       await registerGeminiInline();
       await getGlobalModelRepository().addModel({
         model_id: MODEL_ID,
-        title: "Gemini 3.1 Flash",
-        description: "Google Gemini 3.1 Flash",
+        title: "Gemini 3.5 Flash",
+        description: "Google Gemini 3.5 Flash",
         capabilities: ["text.generation", "text.rewriter", "text.summary", "tool-use", "json-mode"],
         provider: GOOGLE_GEMINI as typeof GOOGLE_GEMINI,
-        provider_config: { model_name: "gemini-3.1-flash" },
+        provider_config: { model_name: "gemini-3.5-flash" },
         metadata: {},
       });
       await getGlobalModelRepository().addModel({
