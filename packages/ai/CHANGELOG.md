@@ -1,5 +1,15 @@
 # @workglow/ai
 
+## 0.3.23
+
+### Refactors
+
+- consolidate hardcoded limits into DEFAULT_LIMITS/SECURITY_LIMITS (#609)
+
+### Chores
+
+- format / lint
+
 ## 0.3.22
 
 ### Bug Fixes

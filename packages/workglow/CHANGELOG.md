@@ -1,5 +1,15 @@
 # workglow
 
+## 0.3.23
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `tslog`: ^4.11.0
+
 ## 0.3.22
 
 ## 0.3.21

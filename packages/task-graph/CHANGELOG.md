@@ -1,5 +1,19 @@
 # @workglow/task-graph
 
+## 0.3.23
+
+### Refactors
+
+- consolidate hardcoded limits into DEFAULT_LIMITS/SECURITY_LIMITS (#609)
+
+#### task-graph
+
+- update cache imports for better organization
+
+### Chores
+
+- format / lint
+
 ## 0.3.22
 
 ### Bug Fixes
