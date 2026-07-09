@@ -77,4 +77,32 @@ describe("WorkerServerBase.postStreamChunk transferables", () => {
     // Terminal completion still posts.
     expect(stub.captured.some((c) => c.msg.type === "complete")).toBe(true);
   });
+
+  it("clones (does not transfer) a partial-view binary-delta so a shared buffer is not detached", async () => {
+    const server = new WorkerServerBase();
+    // A subarray view: byteOffset 1, spans 2 of the backing buffer's 5 bytes.
+    // Transferring its backing buffer would detach bytes a later chunk may alias.
+    const backing = new Uint8Array([9, 8, 7, 6, 5]);
+    const view = backing.subarray(1, 3); // [8, 7]
+    server.registerRunFunction("emitView", async (_i, _m, _sig, emit) => {
+      emit({ type: "binary-delta", port: "bytes", binaryDelta: view });
+    });
+
+    await server.handleMessage({
+      type: "message",
+      data: {
+        id: "r2",
+        type: "call",
+        functionName: "emitView",
+        args: [{}, undefined, undefined, undefined],
+        run: true,
+      },
+    });
+
+    const chunk = stub.captured.find((c) => c.msg.type === "stream_chunk")!;
+    // Partial view → nothing transferred (structured-cloned), backing not detached.
+    expect(chunk.transfer).toEqual([]);
+    expect(backing.byteLength).toBe(5); // still intact
+    expect(Array.from(chunk.msg.data.binaryDelta as Uint8Array)).toEqual([8, 7]);
+  });
 });
