@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ModelRecord } from "@workglow/ai";
+import type { ChatMessage, ModelRecord } from "@workglow/ai";
 import { GEMINI_FALLBACK_MODELS, _testOnly } from "@workglow/google-gemini/ai";
 import { describe, expect, it } from "vitest";
 
@@ -191,5 +191,106 @@ describe("GEMINI_RUN_FNS shape", () => {
   it("tiebreaks `text.generation` to the smallest serves entry (plain text-gen)", () => {
     const candidates = GEMINI_RUN_FNS.filter((r) => r.serves.includes("text.generation"));
     expect(candidates.some((r) => r.serves.length === 1)).toBe(true);
+  });
+});
+
+describe("buildGeminiContents multi-turn", () => {
+  const { buildGeminiContents } = _testOnly;
+
+  // Helper: pull every functionResponse name out of the built contents, in order.
+  function functionResponseNames(contents: any[]): string[] {
+    const names: string[] = [];
+    for (const c of contents) {
+      for (const part of c.parts ?? []) {
+        if (part.functionResponse) names.push(part.functionResponse.name);
+      }
+    }
+    return names;
+  }
+
+  it("resolves each tool_result to the tool_use it answers even when ids collide across turns", () => {
+    // The provider assigns tool-call ids per run starting at `call_0`, so two
+    // separate turns can each carry a tool_use with id `call_0`. Each turn's
+    // functionResponse must still get its own turn's function name.
+    const messages: ChatMessage[] = [
+      { role: "user", content: [{ type: "text", text: "weather?" }] },
+      {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "call_0", name: "get_weather", input: {} }],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "call_0",
+            content: [{ type: "text", text: '{"temp":22}' }],
+            is_error: undefined,
+          },
+        ],
+      },
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "and the time?" },
+          { type: "tool_use", id: "call_0", name: "get_time", input: {} },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "call_0",
+            content: [{ type: "text", text: '{"time":"noon"}' }],
+            is_error: undefined,
+          },
+        ],
+      },
+    ];
+
+    const contents = buildGeminiContents(messages, "");
+    // Turn 1's response must map to get_weather, turn 2's to get_time — a global
+    // last-write-wins map would mislabel the first as get_time.
+    expect(functionResponseNames(contents)).toEqual(["get_weather", "get_time"]);
+  });
+
+  it("replays the tool_use providerSignature as thoughtSignature on the functionCall part", () => {
+    const messages: ChatMessage[] = [
+      { role: "user", content: [{ type: "text", text: "weather?" }] },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            id: "call_0",
+            name: "get_weather",
+            input: { city: "Tokyo" },
+            providerSignature: "sig-abc",
+          },
+        ],
+      },
+    ];
+
+    const contents = buildGeminiContents(messages, "");
+    const modelTurn = contents.find((c) => c.role === "model");
+    const fnPart = modelTurn.parts.find((p: any) => p.functionCall);
+    expect(fnPart.functionCall.name).toBe("get_weather");
+    expect(fnPart.thoughtSignature).toBe("sig-abc");
+  });
+
+  it("omits thoughtSignature when the tool_use has no providerSignature", () => {
+    const messages: ChatMessage[] = [
+      { role: "user", content: [{ type: "text", text: "weather?" }] },
+      {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "call_0", name: "get_weather", input: {} }],
+      },
+    ];
+
+    const contents = buildGeminiContents(messages, "");
+    const modelTurn = contents.find((c) => c.role === "model");
+    const fnPart = modelTurn.parts.find((p: any) => p.functionCall);
+    expect("thoughtSignature" in fnPart).toBe(false);
   });
 });

@@ -25,17 +25,14 @@ export function buildGeminiContents(
     return [{ role: "user", parts: [{ text: prompt }] }];
   }
 
-  // Index tool_use ids → names from any prior assistant turn (Gemini wants
-  // the function name on the functionResponse, not just the id).
+  // Resolve tool_use id → name for the functionResponse (Gemini wants the
+  // function name there, not just the id). Built during the single ordered pass
+  // rather than up front: the provider assigns ids per run starting at `call_0`,
+  // so ids collide across turns. Updating the map as each assistant turn is
+  // processed makes every tool_result resolve against the most-recent preceding
+  // tool_use with that id — the call it actually answers — instead of a global
+  // last-write-wins that would mislabel earlier turns.
   const toolUseNames = new Map<string, string>();
-  for (const msg of messages) {
-    if (msg.role !== "assistant") continue;
-    for (const block of msg.content) {
-      if (block.type === "tool_use") {
-        toolUseNames.set(block.id, block.name);
-      }
-    }
-  }
 
   const contents: any[] = [];
   for (const msg of messages) {
@@ -55,6 +52,7 @@ export function buildGeminiContents(
         if (block.type === "text" && block.text) {
           parts.push({ text: block.text });
         } else if (block.type === "tool_use") {
+          toolUseNames.set(block.id, block.name);
           // Thinking models (Gemini 2.5+/3.x) return an opaque `thoughtSignature`
           // alongside each functionCall part. It MUST be echoed back verbatim on
           // the same part in later turns or the API rejects the request with
