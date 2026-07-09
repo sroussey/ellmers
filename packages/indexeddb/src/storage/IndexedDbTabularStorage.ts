@@ -970,6 +970,7 @@ export class IndexedDbTabularStorage<
     match: SearchCriteria<Entity>,
     patch: Partial<Entity>
   ): Promise<Entity | undefined> {
+    this.assertPatchKeepsPrimaryKey(patch);
     const matches = (await this.query(match)) ?? [];
     if (matches.length === 0) return undefined;
     const updated = { ...matches[0], ...patch } as Entity;

@@ -1275,6 +1275,7 @@ export class SqliteTabularStorage<
     match: SearchCriteria<Entity>,
     patch: Partial<Entity>
   ): Promise<Entity | undefined> {
+    this.assertPatchKeepsPrimaryKey(patch);
     return this.mutex(() => this._updateWhereInternal(match, patch));
   }
 

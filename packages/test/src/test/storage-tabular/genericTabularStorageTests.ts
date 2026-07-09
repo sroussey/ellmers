@@ -949,6 +949,26 @@ export function runGenericTabularStorageTests(
         const changed = (await repository.query({ value: 999 } as never)) ?? [];
         expect(changed.length).toBe(1);
       });
+
+      it("rejects a patch that changes a primary-key column", async () => {
+        const ts = new Date().toISOString();
+        await repository.put({
+          id: "pk1",
+          category: "a",
+          subcategory: "s",
+          value: 1,
+          createdAt: ts,
+          updatedAt: ts,
+        } as never);
+        // `id` is the primary key; updateWhere updates a row in place and must
+        // not move its identity.
+        await expect(
+          repository.updateWhere({ id: "pk1" } as never, { id: "pk2" } as never)
+        ).rejects.toThrow();
+        // The original row is untouched.
+        expect(await repository.get({ id: "pk1" } as never)).toBeDefined();
+        expect(await repository.get({ id: "pk2" } as never)).toBeUndefined();
+      });
     });
 
     describe(`query tests`, () => {

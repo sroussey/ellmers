@@ -907,6 +907,24 @@ export abstract class BaseTabularStorage<
     return columns;
   }
 
+  /**
+   * Guards {@link ITabularStorage.updateWhere}: a patch must not include a
+   * primary-key column. `updateWhere` updates a single matched row in place;
+   * changing its identity is a delete+insert, not an update, and moving the row
+   * would orphan the old key on the read-modify-write backends. Callers patch
+   * non-key columns and select the row via `match`.
+   */
+  protected assertPatchKeepsPrimaryKey(patch: Partial<Entity>): void {
+    const record = patch as Record<string, unknown>;
+    for (const col of this.primaryKeyColumns()) {
+      if (record[String(col)] !== undefined) {
+        throw new StorageValidationError(
+          `updateWhere patch must not include primary-key column "${String(col)}"`
+        );
+      }
+    }
+  }
+
   protected valueColumns(): Array<keyof Value> {
     const columns: Array<keyof Value> = [];
     for (const key of Object.keys(this.valueSchema.properties)) {

@@ -825,6 +825,7 @@ export class SupabaseTabularStorage<
     patch: Partial<Entity>
   ): Promise<Entity | undefined> {
     if (Object.keys(patch).length === 0) return undefined;
+    this.assertPatchKeepsPrimaryKey(patch);
 
     const pkColumns = this.primaryKeyColumns() as unknown as Array<keyof Entity>;
 

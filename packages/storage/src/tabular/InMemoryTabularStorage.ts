@@ -402,6 +402,7 @@ export class InMemoryTabularStorage<
     match: SearchCriteria<Entity>,
     patch: Partial<Entity>
   ): Promise<Entity | undefined> {
+    this.assertPatchKeepsPrimaryKey(patch);
     const criteriaKeys = Object.keys(match) as Array<keyof Entity>;
     for (const [id, entity] of Array.from(this.values.entries())) {
       let matched = true;
@@ -439,16 +440,12 @@ export class InMemoryTabularStorage<
       if (!matched) continue;
 
       const updated = { ...entity, ...patch } as Entity;
-      // If the patch touched a primary-key column the fingerprint id changes;
-      // move the row to its new id so reads by key still resolve.
-      const { key } = this.separateKeyValueFromCombined(updated);
-      const newId = await makeFingerprint(key);
+      // The guard above forbids primary-key changes, so the row keeps its id.
       // Enforce the same invariants as put(): reject a patch that would collide
       // with another row's UNIQUE tuple, and mark this write as an UPDATE (not
       // an INSERT) so change subscribers classify the emitted "put" correctly.
-      this.assertUniqueIndexes(updated, newId);
-      if (newId !== id) this.values.delete(id);
-      this.values.set(newId, updated);
+      this.assertUniqueIndexes(updated, id);
+      this.values.set(id, updated);
       this._lastPutWasInsert = false;
       safeEmit(this.events, "put", updated);
       return updated;
