@@ -157,7 +157,7 @@ function setOptions(opts) {
  * @returns {!Object}
  */
 var getLineInfo = function (input, offset) {
-  for (var line = 1, cur = 0; ; ) {
+  for (var line = 1, cur = 0; ;) {
     lineBreak.lastIndex = cur;
     var match = lineBreak.exec(input);
     if (match && match.index < offset) {
@@ -1695,7 +1695,7 @@ function parseStatement() {
       // nodes. `cur` is used to keep the node that we are currently
       // adding statements to.
 
-      for (var cur, sawDefault; tokType !== _braceR; ) {
+      for (var cur, sawDefault; tokType !== _braceR;) {
         if (tokType === _case || tokType === _default) {
           var isCase = tokType === _case;
           if (cur) {

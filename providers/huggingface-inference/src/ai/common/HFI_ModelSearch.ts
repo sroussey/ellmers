@@ -51,8 +51,8 @@ export const HFI_ModelSearch: AiProviderRunFn<ModelSearchTaskInput, ModelSearchT
   if (!input.credential_key) {
     const fallback = buildFallbackResults();
     const labeled = fallback.map((r) => ({ label: r.label, value: r.id }));
-    const filtered = filterLabeledModelsByQuery(labeled, query).map(
-      (m) => fallback.find((r) => r.id === m.value)!
+    const filtered = filterLabeledModelsByQuery(labeled, query).map((m) =>
+      fallback.find((r) => r.id === m.value)!
     );
     emit({ type: "finish", data: { results: filtered } });
     return;
