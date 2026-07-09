@@ -272,14 +272,26 @@ export type AiChatWithKbTaskInput = Omit<
       | (
           | { type: "text"; text: string }
           | { type: "image"; mimeType: string; data: string }
-          | { type: "tool_use"; id: string; name: string; input: { [x: string]: unknown } }
+          | {
+              type: "tool_use";
+              id: string;
+              name: string;
+              input: { [x: string]: unknown };
+              providerSignature?: string | undefined;
+            }
           | {
               is_error?: boolean | undefined;
               type: "tool_result";
               content: (
                 | { type: "text"; text: string }
                 | { type: "image"; mimeType: string; data: string }
-                | { type: "tool_use"; id: string; name: string; input: { [x: string]: unknown } }
+                | {
+                    type: "tool_use";
+                    id: string;
+                    name: string;
+                    input: { [x: string]: unknown };
+                    providerSignature?: string | undefined;
+                  }
               )[];
               tool_use_id: string;
             }

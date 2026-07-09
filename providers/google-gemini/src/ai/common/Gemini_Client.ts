@@ -26,12 +26,24 @@ export async function loadGeminiSDK(): Promise<GoogleGenAIConstructor> {
   return _loadPromise;
 }
 
-/** Load the SDK and construct a client bound to the resolved API key. */
+const _clientByKey = new Map<string, GoogleGenAI>();
+
+/**
+ * Load the SDK and return a client bound to the resolved API key. The
+ * `@google/genai` `GoogleGenAI` facade stands up auth wiring and several
+ * sub-service objects, so it is memoized per API key rather than rebuilt on
+ * every run-fn invocation.
+ */
 export async function createGeminiClient(
   model: GeminiModelConfig | undefined
 ): Promise<GoogleGenAI> {
+  const apiKey = getApiKey(model);
+  const cached = _clientByKey.get(apiKey);
+  if (cached) return cached;
   const GoogleGenAICtor = await loadGeminiSDK();
-  return new GoogleGenAICtor({ apiKey: getApiKey(model) });
+  const client = new GoogleGenAICtor({ apiKey });
+  _clientByKey.set(apiKey, client);
+  return client;
 }
 
 interface ResolvedProviderConfig {
@@ -66,4 +78,30 @@ export function getModelName(model: GeminiModelConfig | undefined): string {
 export function getThinkingBudget(model: GeminiModelConfig | undefined): number | undefined {
   const budget = model?.provider_config?.thinking_budget;
   return typeof budget === "number" ? budget : undefined;
+}
+
+/**
+ * Resolves the thinking-related request fields consistently across run-fns.
+ * Gemini counts thinking tokens against `maxOutputTokens`, so a positive budget
+ * is added on top of the caller's cap to leave room for the visible answer.
+ *
+ * @param defaultBudget applied when the model has no configured budget. Pass a
+ *   value for tasks that always need bounded reasoning (structured generation);
+ *   omit it for tasks that should inherit the model's own default thinking
+ *   (plain generation, tool calling) and only opt in when explicitly configured.
+ */
+export function resolveThinkingConfig(
+  model: GeminiModelConfig | undefined,
+  maxTokens: number | undefined,
+  defaultBudget?: number
+): {
+  thinkingConfig: { thinkingBudget: number } | undefined;
+  maxOutputTokens: number | undefined;
+} {
+  const budget = getThinkingBudget(model) ?? defaultBudget;
+  if (budget === undefined) {
+    return { thinkingConfig: undefined, maxOutputTokens: maxTokens };
+  }
+  const maxOutputTokens = maxTokens !== undefined && budget > 0 ? maxTokens + budget : maxTokens;
+  return { thinkingConfig: { thinkingBudget: budget }, maxOutputTokens };
 }

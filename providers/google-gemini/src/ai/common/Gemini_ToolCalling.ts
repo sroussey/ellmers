@@ -13,7 +13,7 @@ import type {
   ToolDefinition,
 } from "@workglow/ai";
 import { buildToolDescription, filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
-import { createGeminiClient, getModelName, getThinkingBudget } from "./Gemini_Client";
+import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { sanitizeSchemaForGemini } from "./Gemini_Schema";
 
@@ -131,7 +131,10 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
 
   const contents = buildGeminiContents(input.messages, input.prompt);
 
-  const thinkingBudget = getThinkingBudget(model);
+  // Thinking is opt-in here (no default budget): the model uses its own default
+  // reasoning unless `provider_config.thinking_budget` is set, in which case the
+  // output cap is padded so reasoning can't starve the tool call / answer.
+  const { thinkingConfig, maxOutputTokens } = resolveThinkingConfig(model, input.maxTokens);
 
   const result = await ai.models.generateContentStream({
     model: getModelName(model),
@@ -139,11 +142,11 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
     config: {
       abortSignal: signal ?? undefined,
       systemInstruction: input.systemPrompt || undefined,
-      maxOutputTokens: input.maxTokens,
+      maxOutputTokens,
       temperature: input.temperature,
       tools: [{ functionDeclarations }],
       toolConfig: toolConfig as any,
-      ...(thinkingBudget !== undefined ? { thinkingConfig: { thinkingBudget } } : {}),
+      thinkingConfig,
     },
   });
 

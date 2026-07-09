@@ -10,7 +10,7 @@ import type {
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
 import { parsePartialJson } from "@workglow/util/worker";
-import { createGeminiClient, getModelName, getThinkingBudget } from "./Gemini_Client";
+import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { sanitizeSchemaForGemini } from "./Gemini_Schema";
 
@@ -46,16 +46,15 @@ export const Gemini_StructuredGeneration_Stream: AiProviderRunFn<
   const schema = input.outputSchema ?? outputSchema;
   const sanitizedSchema = sanitizeSchemaForGemini(schema as Record<string, unknown>);
 
-  const thinkingBudget = getThinkingBudget(model) ?? DEFAULT_STRUCTURED_THINKING_BUDGET;
-
   // Gemini counts thinking tokens against `maxOutputTokens`, so a caller's small
-  // output cap (e.g. 100) would be entirely consumed by reasoning and truncate
-  // the JSON to nothing. Give the answer the caller's full budget by adding the
-  // thinking allowance on top of it; the emitted JSON still respects maxTokens.
-  const maxOutputTokens =
-    input.maxTokens !== undefined && thinkingBudget > 0
-      ? input.maxTokens + thinkingBudget
-      : input.maxTokens;
+  // output cap (e.g. 100) would otherwise be consumed by reasoning and truncate
+  // the JSON to nothing. resolveThinkingConfig adds the thinking allowance on top
+  // of the caller's cap; the emitted JSON still respects maxTokens.
+  const { thinkingConfig, maxOutputTokens } = resolveThinkingConfig(
+    model,
+    input.maxTokens,
+    DEFAULT_STRUCTURED_THINKING_BUDGET
+  );
 
   const result = await ai.models.generateContentStream({
     model: getModelName(model),
@@ -66,7 +65,7 @@ export const Gemini_StructuredGeneration_Stream: AiProviderRunFn<
       responseSchema: sanitizedSchema as any,
       maxOutputTokens,
       temperature: input.temperature,
-      thinkingConfig: { thinkingBudget },
+      thinkingConfig,
     },
   });
 

@@ -10,7 +10,7 @@ import type {
   TextGenerationTaskOutput,
 } from "@workglow/ai";
 import { getLogger } from "@workglow/util/worker";
-import { createGeminiClient, getModelName, getThinkingBudget } from "./Gemini_Client";
+import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { buildGeminiContents } from "./Gemini_ToolCalling";
 
@@ -82,7 +82,9 @@ export const Gemini_TextGeneration_Stream: AiProviderRunFn<
         )
       : [{ role: "user", parts: [{ text: input.prompt }] }];
 
-    const thinkingBudget = getThinkingBudget(model);
+    // Thinking is opt-in here (no default budget); when a budget is configured,
+    // the output cap is padded so reasoning can't starve the visible answer.
+    const { thinkingConfig, maxOutputTokens } = resolveThinkingConfig(model, input.maxTokens);
 
     const result = await ai.models.generateContentStream({
       model: getModelName(model),
@@ -92,7 +94,9 @@ export const Gemini_TextGeneration_Stream: AiProviderRunFn<
         // Only the chat path carries a system prompt; the prompt path has none.
         systemInstruction: hasMessages ? unified.systemPrompt || undefined : undefined,
         ...buildGenerationConfig(input),
-        ...(thinkingBudget !== undefined ? { thinkingConfig: { thinkingBudget } } : {}),
+        // Override maxOutputTokens from buildGenerationConfig with the thinking-aware value.
+        maxOutputTokens,
+        thinkingConfig,
       },
     });
 

@@ -125,6 +125,12 @@ const ToolCallSchema = {
       description: "The input arguments for the tool call",
       additionalProperties: true,
     },
+    providerSignature: {
+      type: "string",
+      title: "Provider Signature",
+      description:
+        "Opaque provider-scoped signature (e.g. Gemini's thoughtSignature) to replay on later turns",
+    },
   },
   required: ["id", "name", "input"],
   additionalProperties: false,
