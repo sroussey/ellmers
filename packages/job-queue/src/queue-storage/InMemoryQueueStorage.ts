@@ -49,6 +49,13 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
   private readonly streamLog = new Map<string, StreamChunkRow[]>();
   /** Per-job live stream subscribers. */
   private readonly streamSubscribers = new Map<string, Set<(row: StreamChunkRow) => void>>();
+  /**
+   * Per-job monotonic stream `seq` counter. The carrier owns it (not the
+   * worker) so the sequence is continuous across attempts: a retry claimed by a
+   * different worker continues the same job's sequence rather than restarting at
+   * 1. Persists across retries; evicted with the job's stream on row deletion.
+   */
+  private readonly streamSeq = new Map<string, number>();
 
   /**
    * Creates a new in-memory job queue
@@ -613,12 +620,10 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     return true;
   }
 
-  public async publishStreamChunk(
-    jobId: unknown,
-    seq: number,
-    event: StreamEventLike
-  ): Promise<void> {
+  public async publishStreamChunk(jobId: unknown, event: StreamEventLike): Promise<void> {
     const key = String(jobId);
+    const seq = (this.streamSeq.get(key) ?? 0) + 1;
+    this.streamSeq.set(key, seq);
     const row: StreamChunkRow = { jobId, seq, event };
     const log = this.streamLog.get(key);
     if (log) log.push(row);
@@ -652,11 +657,12 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     };
   }
 
-  /** Drop a job's stream log + subscribers (rides row deletion). */
+  /** Drop a job's stream log + subscribers + seq counter (rides row deletion). */
   private evictStream(jobId: unknown): void {
     const key = String(jobId);
     this.streamLog.delete(key);
     this.streamSubscribers.delete(key);
+    this.streamSeq.delete(key);
   }
 
   /**

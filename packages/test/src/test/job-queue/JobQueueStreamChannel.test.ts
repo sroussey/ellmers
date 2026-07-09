@@ -92,8 +92,8 @@ describe("job-queue cross-process stream channel (storage-only client)", () => {
 
   it("resumes from the last delivered seq on re-subscribe (no duplicate replay)", async () => {
     const jobId = "manual-resub-job";
-    await storage.publishStreamChunk!(jobId, 1, { type: "text-delta", port: "p", textDelta: "a" });
-    await storage.publishStreamChunk!(jobId, 2, { type: "text-delta", port: "p", textDelta: "b" });
+    await storage.publishStreamChunk!(jobId, { type: "text-delta", port: "p", textDelta: "a" }); // seq 1
+    await storage.publishStreamChunk!(jobId, { type: "text-delta", port: "p", textDelta: "b" }); // seq 2
 
     const first: string[] = [];
     const unsubA = observer.onJobStream(jobId, (e) => first.push(e.textDelta as string));
@@ -105,7 +105,23 @@ describe("job-queue cross-process stream channel (storage-only client)", () => {
     observer.onJobStream(jobId, (e) => second.push(e.textDelta as string));
     expect(second).toEqual([]); // re-subscribe must NOT replay 1..2 again
 
-    await storage.publishStreamChunk!(jobId, 3, { type: "text-delta", port: "p", textDelta: "c" });
+    await storage.publishStreamChunk!(jobId, { type: "text-delta", port: "p", textDelta: "c" }); // seq 3
     expect(second).toEqual(["c"]); // only the new event, delivered once
+  });
+
+  it("tears down the channel subscription once the terminal finish event is delivered", async () => {
+    const jobId = "manual-finish-job";
+    const received: string[] = [];
+    observer.onJobStream(jobId, (e) => received.push(e.type));
+
+    await storage.publishStreamChunk!(jobId, { type: "text-delta", port: "p", textDelta: "x" });
+    await storage.publishStreamChunk!(jobId, { type: "finish", data: {} }); // terminal
+
+    expect(received).toEqual(["text-delta", "finish"]);
+
+    // Subscription is torn down on the terminal event, so a later stray row on
+    // the same job is not delivered.
+    await storage.publishStreamChunk!(jobId, { type: "text-delta", port: "p", textDelta: "after" });
+    expect(received).toEqual(["text-delta", "finish"]);
   });
 });

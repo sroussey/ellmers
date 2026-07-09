@@ -44,8 +44,7 @@ export class TelemetryQueueStorage<Input, Output> implements IQueueStorage<Input
     // forwards (like subscribeToChanges): publishStreamChunk is per-delta hot,
     // so it is not wrapped in a span.
     if (typeof inner.publishStreamChunk === "function") {
-      this.publishStreamChunk = (jobId, seq, event) =>
-        this.inner.publishStreamChunk!(jobId, seq, event);
+      this.publishStreamChunk = (jobId, event) => this.inner.publishStreamChunk!(jobId, event);
     }
     if (typeof inner.subscribeToStream === "function") {
       this.subscribeToStream = (jobId, sinceSeq, callback) =>
@@ -68,11 +67,7 @@ export class TelemetryQueueStorage<Input, Output> implements IQueueStorage<Input
   ) => Promise<JobStorageFormat<Input, Output> | undefined>;
 
   /** Conditionally assigned in the constructor — mirrors the inner's presence. */
-  public readonly publishStreamChunk?: (
-    jobId: unknown,
-    seq: number,
-    event: StreamEventLike
-  ) => Promise<void>;
+  public readonly publishStreamChunk?: (jobId: unknown, event: StreamEventLike) => Promise<void>;
 
   /** Conditionally assigned in the constructor — mirrors the inner's presence. */
   public readonly subscribeToStream?: (

@@ -129,11 +129,7 @@ class WrappedMessageQueue<Input, Output> implements IMessageQueue<JobStorageForm
    * reflects the storage, mirroring how `JobHandle` conditionally exposes
    * `onStream`.
    */
-  readonly publishStreamChunk?: (
-    jobId: unknown,
-    seq: number,
-    event: StreamEventLike
-  ) => Promise<void>;
+  readonly publishStreamChunk?: (jobId: unknown, event: StreamEventLike) => Promise<void>;
   readonly subscribeToStream?: (
     jobId: unknown,
     sinceSeq: number,
@@ -142,8 +138,7 @@ class WrappedMessageQueue<Input, Output> implements IMessageQueue<JobStorageForm
 
   constructor(private readonly storage: IQueueStorage<Input, Output>) {
     if (typeof storage.publishStreamChunk === "function") {
-      this.publishStreamChunk = (jobId, seq, event) =>
-        storage.publishStreamChunk!(jobId, seq, event);
+      this.publishStreamChunk = (jobId, event) => storage.publishStreamChunk!(jobId, event);
     }
     if (typeof storage.subscribeToStream === "function") {
       this.subscribeToStream = (jobId, sinceSeq, callback) =>

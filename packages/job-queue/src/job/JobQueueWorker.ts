@@ -162,9 +162,6 @@ export class JobQueueWorker<
    */
   private readonly activeClaims: Map<unknown, IClaim<JobStorageFormat<Input, Output>>> = new Map();
 
-  /** Monotonic per-job stream sequence counter for the cross-process channel. */
-  private readonly streamSeq: Map<unknown, number> = new Map();
-
   /**
    * Resolve function for the idle wait promise.
    * When set, the worker is idle and waiting for either a notification or poll timeout.
@@ -894,24 +891,15 @@ export class JobQueueWorker<
     // In-memory fast path (same-process attached clients) — unchanged.
     this.events.emit("job_stream", jobId, event);
 
-    // Cross-process side-channel (best-effort). Assign the seq synchronously so
-    // ordering is well-defined regardless of publish resolution order; the
-    // client reorders by seq. A publish failure must never fail the job.
-    //
-    // The seq counter is per-worker-instance, so it is monotonic for the whole
-    // of a single execution (one worker holds the lease at a time). Across a
-    // RETRY claimed by a *different* worker on the same channel-capable carrier,
-    // the new worker restarts at 1 and those seqs collide with the prior
-    // attempt's — a subscriber spanning the retry would see the new attempt's
-    // events dropped by its reassembler. Robust multi-attempt streaming
-    // (carrier-assigned seq, or a per-attempt stream reset) is deferred to the
-    // durable carriers, where the store is the natural place to assign seq; the
-    // InMemory reference and the single-attempt common case are unaffected.
+    // Cross-process side-channel (best-effort). The CARRIER assigns the per-job
+    // `seq` from a counter it owns, so the sequence is continuous across
+    // attempts: a retry claimed by a different worker continues the same job's
+    // sequence instead of restarting at 1 and colliding with the prior
+    // attempt's events (which the subscriber's reassembler would then drop). A
+    // publish failure must never fail the job.
     const publish = this.messageQueue.publishStreamChunk;
     if (typeof publish === "function") {
-      const seq = (this.streamSeq.get(jobId) ?? 0) + 1;
-      this.streamSeq.set(jobId, seq);
-      void publish.call(this.messageQueue, jobId, seq, event).catch((err) => {
+      void publish.call(this.messageQueue, jobId, event).catch((err) => {
         getLogger().error("publishStreamChunk failed", { jobId, error: err });
       });
     }
@@ -1200,7 +1188,6 @@ export class JobQueueWorker<
   protected cleanupJob(jobId: unknown): void {
     this.activeJobAbortControllers.delete(jobId);
     this.activeClaims.delete(jobId);
-    this.streamSeq.delete(jobId);
   }
 
   /**
