@@ -47,6 +47,7 @@
     "@workglow/node-llama-cpp": "workspace:*",
     "@workglow/ollama": "workspace:*",
     "@workglow/openai": "workspace:*",
+    "@workglow/xai": "workspace:*",
     "@workglow/playwright": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/task-graph": "workspace:*",

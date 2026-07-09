@@ -30,6 +30,7 @@
     { "path": "../../providers/node-llama-cpp" },
     { "path": "../../providers/ollama" },
     { "path": "../../providers/openai" },
+    { "path": "../../providers/xai" },
     { "path": "../../providers/playwright" },
     { "path": "../../providers/aws" },
     { "path": "../../providers/cloudflare" },
