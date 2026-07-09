@@ -47,6 +47,13 @@ export const GeminiModelSchema = {
           description: "Task type hint for embedding models.",
           default: null,
         },
+        thinking_budget: {
+          type: "number",
+          description:
+            "Reasoning token allowance for thinking models (2.5+/3.x), separate from " +
+            "maxOutputTokens. 0 disables thinking; -1 lets the model choose. When unset, " +
+            "the provider applies a sensible default for structured generation.",
+        },
       },
       required: ["model_name"],
       additionalProperties: false,

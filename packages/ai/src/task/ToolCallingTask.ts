@@ -280,7 +280,12 @@ export type ToolCallingTaskInput = Omit<
 
 export type ToolCallingTaskOutput = {
   text: string;
-  toolCalls: { id: string; name: string; input: { [x: string]: unknown } }[];
+  toolCalls: {
+    id: string;
+    name: string;
+    input: { [x: string]: unknown };
+    providerSignature?: string;
+  }[];
 };
 export type ToolCallingTaskConfig = TaskConfig<ToolCallingTaskInput>;
 

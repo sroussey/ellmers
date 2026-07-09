@@ -18,16 +18,15 @@ import { getTestingLogger } from "../../binding/TestingLogger";
 import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 
 const RUN = !!process.env.GOOGLE_API_KEY || !!process.env.GEMINI_API_KEY;
-// Google retired `gemini-2.5-flash` (the live API now returns 404 "no longer
-// available"), which fails this conformance suite. Temporarily disabled until
-// the model id is refreshed; flip to false to re-enable.
-const MODEL_RETIRED: boolean = true;
-const MODEL_ID = "gemini:gemini-2.5-flash";
+// gemini-2.5-flash was retired from the v1beta API. Exercise a current
+// "thinking" model so the thought-signature and structured-generation paths
+// are covered live.
+const MODEL_ID = "gemini:gemini-3.5-flash";
 const EMBED_MODEL_ID = "gemini:gemini-embedding-001";
 
 runAiProviderConformance({
   name: "Google Gemini",
-  skip: !RUN || MODEL_RETIRED,
+  skip: !RUN,
   timeout: 30_000,
   factory: async () => ({
     register: async () => {
@@ -38,11 +37,11 @@ runAiProviderConformance({
       await registerGeminiInline();
       await getGlobalModelRepository().addModel({
         model_id: MODEL_ID,
-        title: "Gemini 2.5 Flash",
-        description: "Google Gemini 2.5 Flash",
+        title: "Gemini 3.5 Flash",
+        description: "Google Gemini 3.5 Flash",
         capabilities: ["text.generation", "text.rewriter", "text.summary", "tool-use", "json-mode"],
         provider: GOOGLE_GEMINI as typeof GOOGLE_GEMINI,
-        provider_config: { model_name: "gemini-2.5-flash" },
+        provider_config: { model_name: "gemini-3.5-flash" },
         metadata: {},
       });
       await getGlobalModelRepository().addModel({

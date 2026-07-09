@@ -14,7 +14,7 @@ import type { ImageValue } from "@workglow/util/media";
 import { getLogger } from "@workglow/util/worker";
 
 import { dataUriToImageValue, modelIdForError } from "@workglow/ai/provider-utils";
-import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
+import { createGeminiClient, getModelName } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 
 /** Decode a base64 string with an explicit mime type into an ImageValue. */
@@ -36,19 +36,17 @@ export const Gemini_ImageGenerate_Stream: AiProviderRunFn<
   const timer = `gemini:ImageGenerate:${modelIdForError(model, "gemini")}`;
   logger.time(timer, { model: modelIdForError(model, "gemini") });
   try {
-    const GoogleGenerativeAI = await loadGeminiSDK();
-    const genAI = new GoogleGenerativeAI(getApiKey(model));
+    const ai = await createGeminiClient(model);
     const modelName = getModelName(model);
-    const genModel = genAI.getGenerativeModel({ model: modelName });
 
     const parts: Array<{ text: string }> = [{ text: input.prompt }];
 
     try {
-      const result = await genModel.generateContent({ contents: [{ role: "user", parts }] }, {
-        signal,
-      } as any);
-
-      const response = result.response;
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: [{ role: "user", parts }],
+        config: { abortSignal: signal ?? undefined },
+      });
 
       if (
         !response.candidates ||

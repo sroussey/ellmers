@@ -53,6 +53,12 @@ export interface ToolCall {
   id: string;
   name: string;
   input: Record<string, unknown>;
+  /**
+   * Opaque, provider-scoped signature the model attached to this call that must
+   * be echoed back verbatim when the call is replayed in a later turn (e.g.
+   * Gemini's `thoughtSignature`). Undefined for providers without the concept.
+   */
+  providerSignature?: string;
 }
 
 export type ToolCalls = Array<ToolCall>;

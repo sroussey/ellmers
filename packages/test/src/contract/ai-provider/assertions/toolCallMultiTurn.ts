@@ -52,7 +52,16 @@ export function toolCallMultiTurnBlock(
               role: "assistant",
               content: [
                 { type: "text", text: r1.text || fixture.multiTurnTranscript[1].text },
-                { type: "tool_use", id: call.id, name: call.name, input: call.input },
+                {
+                  type: "tool_use",
+                  id: call.id,
+                  name: call.name,
+                  input: call.input,
+                  // Round-trip the opaque provider signature (e.g. Gemini's
+                  // thoughtSignature) — thinking models reject a replayed tool
+                  // call whose signature was dropped.
+                  providerSignature: call.providerSignature,
+                },
               ],
             },
             {

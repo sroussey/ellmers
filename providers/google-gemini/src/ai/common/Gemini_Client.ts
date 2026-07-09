@@ -4,25 +4,34 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { GoogleGenAI } from "@google/genai";
 import { resolveApiKey } from "@workglow/ai/provider-utils";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 
-type GeminiSDKModule = typeof import("@google/generative-ai");
-type GoogleGenerativeAIConstructor = GeminiSDKModule["GoogleGenerativeAI"];
+type GeminiSDKModule = typeof import("@google/genai");
+type GoogleGenAIConstructor = GeminiSDKModule["GoogleGenAI"];
 
-let _loadPromise: Promise<GoogleGenerativeAIConstructor> | undefined;
+let _loadPromise: Promise<GoogleGenAIConstructor> | undefined;
 
 // NOTE: we do not want to de-dup this in the provider-utils, vite wants direct import with string literals.
-export async function loadGeminiSDK(): Promise<GoogleGenerativeAIConstructor> {
-  _loadPromise ??= import("@google/generative-ai")
-    .then((mod) => mod.GoogleGenerativeAI)
+export async function loadGeminiSDK(): Promise<GoogleGenAIConstructor> {
+  _loadPromise ??= import("@google/genai")
+    .then((mod) => mod.GoogleGenAI)
     .catch(() => {
       _loadPromise = undefined;
       throw new Error(
-        "@google/generative-ai is required for Gemini tasks. Install it with: bun add @google/generative-ai"
+        "@google/genai is required for Gemini tasks. Install it with: bun add @google/genai"
       );
     });
   return _loadPromise;
+}
+
+/** Load the SDK and construct a client bound to the resolved API key. */
+export async function createGeminiClient(
+  model: GeminiModelConfig | undefined
+): Promise<GoogleGenAI> {
+  const GoogleGenAICtor = await loadGeminiSDK();
+  return new GoogleGenAICtor({ apiKey: getApiKey(model) });
 }
 
 interface ResolvedProviderConfig {
@@ -47,4 +56,14 @@ export function getModelName(model: GeminiModelConfig | undefined): string {
     throw new Error("Missing model name in provider_config.model_name.");
   }
   return name;
+}
+
+/**
+ * Reasoning-token budget for thinking models, sourced from the model's
+ * `provider_config.thinking_budget`. Returns `undefined` when unset so callers
+ * can decide whether to apply a task-specific default.
+ */
+export function getThinkingBudget(model: GeminiModelConfig | undefined): number | undefined {
+  const budget = model?.provider_config?.thinking_budget;
+  return typeof budget === "number" ? budget : undefined;
 }

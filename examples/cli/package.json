@@ -62,7 +62,7 @@
     "node-llama-cpp": "catalog:",
     "@huggingface/inference": "catalog:",
     "@anthropic-ai/sdk": "catalog:",
-    "@google/generative-ai": "catalog:",
+    "@google/genai": "catalog:",
     "@napi-rs/keyring": "^1.3.0",
     "@inkjs/ui": "^2.0.0",
     "chalk": "^5.6.2",

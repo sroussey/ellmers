@@ -10,7 +10,7 @@ import type {
   TextGenerationTaskOutput,
 } from "@workglow/ai";
 import { getLogger } from "@workglow/util/worker";
-import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
+import { createGeminiClient, getModelName, getThinkingBudget } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { buildGeminiContents } from "./Gemini_ToolCalling";
 
@@ -73,47 +73,34 @@ export const Gemini_TextGeneration_Stream: AiProviderRunFn<
     const unified = input as UnifiedTextGenerationInput;
     const hasMessages = Array.isArray(unified.messages) && unified.messages.length > 0;
 
-    const GoogleGenerativeAI = await loadGeminiSDK();
-    const genAI = new GoogleGenerativeAI(getApiKey(model));
+    const ai = await createGeminiClient(model);
 
-    if (hasMessages) {
-      // Chat path — use buildGeminiContents to map the messages array.
-      const genModel = genAI.getGenerativeModel({
-        model: getModelName(model),
-        systemInstruction: unified.systemPrompt || undefined,
-        generationConfig: buildGenerationConfig(input),
-      });
+    const contents = hasMessages
+      ? buildGeminiContents(
+          unified.messages as Parameters<typeof buildGeminiContents>[0],
+          unified.prompt ?? ""
+        )
+      : [{ role: "user", parts: [{ text: input.prompt }] }];
 
-      const contents = buildGeminiContents(
-        unified.messages as Parameters<typeof buildGeminiContents>[0],
-        unified.prompt ?? ""
-      );
+    const thinkingBudget = getThinkingBudget(model);
 
-      const result = await genModel.generateContentStream({ contents }, { signal });
+    const result = await ai.models.generateContentStream({
+      model: getModelName(model),
+      contents,
+      config: {
+        abortSignal: signal ?? undefined,
+        // Only the chat path carries a system prompt; the prompt path has none.
+        systemInstruction: hasMessages ? unified.systemPrompt || undefined : undefined,
+        ...buildGenerationConfig(input),
+        ...(thinkingBudget !== undefined ? { thinkingConfig: { thinkingBudget } } : {}),
+      },
+    });
 
-      for await (const chunk of result.stream) {
-        const text = chunk.text();
-        if (text) {
-          emit({ type: "text-delta", port: "text", textDelta: text });
-        }
-      }
-    } else {
-      // Prompt path — simple single-user-message generation.
-      const genModel = genAI.getGenerativeModel({
-        model: getModelName(model),
-        generationConfig: buildGenerationConfig(input),
-      });
-
-      const result = await genModel.generateContentStream(
-        { contents: [{ role: "user", parts: [{ text: input.prompt }] }] },
-        { signal }
-      );
-
-      for await (const chunk of result.stream) {
-        const text = chunk.text();
-        if (text) {
-          emit({ type: "text-delta", port: "text", textDelta: text });
-        }
+    for await (const chunk of result) {
+      // `chunk.text` concatenates answer text and already skips thought parts.
+      const text = chunk.text;
+      if (text) {
+        emit({ type: "text-delta", port: "text", textDelta: text });
       }
     }
 

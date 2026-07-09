@@ -5,7 +5,7 @@
  */
 
 import type { AiProviderRunFn, TextSummaryTaskInput, TextSummaryTaskOutput } from "@workglow/ai";
-import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
+import { createGeminiClient, getModelName } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 
 export const Gemini_TextSummary_Stream: AiProviderRunFn<
@@ -13,20 +13,19 @@ export const Gemini_TextSummary_Stream: AiProviderRunFn<
   TextSummaryTaskOutput,
   GeminiModelConfig
 > = async (input, model, signal, emit) => {
-  const GoogleGenerativeAI = await loadGeminiSDK();
-  const genAI = new GoogleGenerativeAI(getApiKey(model));
-  const genModel = genAI.getGenerativeModel({
+  const ai = await createGeminiClient(model);
+
+  const result = await ai.models.generateContentStream({
     model: getModelName(model),
-    systemInstruction: "Summarize the following text concisely.",
+    contents: [{ role: "user", parts: [{ text: input.text }] }],
+    config: {
+      abortSignal: signal ?? undefined,
+      systemInstruction: "Summarize the following text concisely.",
+    },
   });
 
-  const result = await genModel.generateContentStream(
-    { contents: [{ role: "user", parts: [{ text: input.text }] }] },
-    { signal }
-  );
-
-  for await (const chunk of result.stream) {
-    const text = chunk.text();
+  for await (const chunk of result) {
+    const text = chunk.text;
     if (text) {
       emit({ type: "text-delta", port: "text", textDelta: text });
     }
