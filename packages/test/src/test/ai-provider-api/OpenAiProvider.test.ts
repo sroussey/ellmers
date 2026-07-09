@@ -42,6 +42,17 @@ describe("OpenAiQueuedProvider.inferCapabilities", () => {
     expect(caps).not.toContain("vision-input");
   });
 
+  it("infers chat + tool-use + json-mode + vision-input for the gpt-5.6 sol/terra/luna family", () => {
+    for (const id of ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+      const caps = provider.inferCapabilities(model(id));
+      expect(caps, id).toContain("text.generation");
+      expect(caps, id).toContain("tool-use");
+      expect(caps, id).toContain("json-mode");
+      expect(caps, id).toContain("vision-input");
+      expect(caps, id).toContain("model.count-tokens");
+    }
+  });
+
   it("infers chat capabilities for the o1/o3 reasoning families", () => {
     const o1 = provider.inferCapabilities(model("o1-mini"));
     expect(o1).toContain("text.generation");

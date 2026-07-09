@@ -16,7 +16,7 @@ import {
   mapOpenAIToolChoice,
 } from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, toOpenAIMessages } from "@workglow/ai/worker";
-import { getClient, getModelName } from "./OpenAI_Client";
+import { getClient, getModelName, getReasoningEffort } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /**
@@ -39,6 +39,7 @@ export const OpenAI_ToolCalling_Stream: AiProviderRunFn<
   const tools = buildOpenAITools(input.tools);
   const messages = toOpenAIMessages(input);
   const toolChoice = mapOpenAIToolChoice(input.toolChoice, true);
+  const reasoningEffort = getReasoningEffort(model);
 
   const stream = await client.chat.completions.create(
     {
@@ -46,6 +47,7 @@ export const OpenAI_ToolCalling_Stream: AiProviderRunFn<
       messages,
       max_completion_tokens: input.maxTokens,
       temperature: input.temperature,
+      ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
       stream: true,
       tools,
       tool_choice: toolChoice,

@@ -35,6 +35,7 @@ interface ResolvedProviderConfig {
   readonly model_name?: string;
   readonly base_url?: string;
   readonly organization?: string;
+  readonly reasoning_effort?: string;
   /**
    * When `true`, accept the `base_url` even if its hostname is not in
    * {@link OPENAI_ALLOWED_HOSTS}. Use only for known-good custom enterprise
@@ -79,4 +80,14 @@ export function getModelName(model: OpenAiModelConfig | undefined): string {
     throw new Error("Missing model name in provider_config.model_name.");
   }
   return name;
+}
+
+/**
+ * Resolves the configured reasoning effort for reasoning-capable models
+ * (the GPT-5.6 sol/terra/luna family and the o-series). Returns `undefined`
+ * when unset so non-reasoning models and callers that don't opt in send no
+ * `reasoning_effort` parameter.
+ */
+export function getReasoningEffort(model: OpenAiModelConfig | undefined): string | undefined {
+  return (model?.provider_config as ResolvedProviderConfig | undefined)?.reasoning_effort;
 }

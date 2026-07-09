@@ -11,7 +11,7 @@ import type {
 } from "@workglow/ai";
 import { toOpenAIMessages } from "@workglow/ai/worker";
 import { getLogger } from "@workglow/util/worker";
-import { getClient, getModelName } from "./OpenAI_Client";
+import { getClient, getModelName, getReasoningEffort } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /**
@@ -49,6 +49,8 @@ function buildChatParams(
     model: getModelName(model),
     messages,
   };
+  const reasoningEffort = getReasoningEffort(model);
+  if (reasoningEffort !== undefined) params.reasoning_effort = reasoningEffort;
   if (input.maxTokens !== undefined) params.max_completion_tokens = input.maxTokens;
   if (input.temperature !== undefined) params.temperature = input.temperature;
   if ((input as { topP?: number }).topP !== undefined)

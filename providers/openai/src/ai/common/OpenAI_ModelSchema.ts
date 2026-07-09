@@ -45,6 +45,12 @@ export const OpenAiModelSchema = {
           type: "string",
           description: "OpenAI organization ID (optional).",
         },
+        reasoning_effort: {
+          type: "string",
+          enum: ["none", "low", "medium", "high", "xhigh", "max"],
+          description:
+            "Reasoning effort for reasoning-capable models (e.g. the GPT-5.6 sol/terra/luna family). Higher effort trades latency and cost for quality — 'max' is the quality-first 'pro' configuration.",
+        },
       },
       required: ["model_name"],
       additionalProperties: false,

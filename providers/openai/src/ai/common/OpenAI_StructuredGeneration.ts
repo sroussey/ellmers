@@ -10,7 +10,7 @@ import type {
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
 import { parsePartialJson } from "@workglow/util/worker";
-import { getClient, getModelName } from "./OpenAI_Client";
+import { getClient, getModelName, getReasoningEffort } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /**
@@ -28,6 +28,7 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
   const modelName = getModelName(model);
 
   const schema = input.outputSchema ?? outputSchema;
+  const reasoningEffort = getReasoningEffort(model);
 
   const stream = await client.chat.completions.create(
     {
@@ -43,6 +44,7 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
       } as never,
       max_completion_tokens: input.maxTokens,
       temperature: input.temperature,
+      ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
       stream: true,
     },
     { signal }
