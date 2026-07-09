@@ -294,4 +294,34 @@ export abstract class TaskOutputRepository {
     chunks: AsyncIterable<Uint8Array>,
     metadata: Record<string, unknown>
   ): Promise<CacheRef>;
+
+  /**
+   * OPTIONAL run-scoped reader counterpart of {@link getOutputByRef}. A `ref`
+   * that was NOT produced by a `*ForRun` writer for the given `runId` MUST
+   * resolve to `undefined` — foreign refs are treated as cache misses, never
+   * as errors, to match {@link getOutputByRef}'s idempotency contract.
+   * {@link RunPrivateCacheRepo} routes its by-ref reads through this method
+   * so a wrapper never resolves another run's blob.
+   */
+  getOutputByRefForRun?(ref: CacheRef, runId: string): Promise<Blob | undefined>;
+
+  /**
+   * OPTIONAL run-scoped streaming reader counterpart of
+   * {@link getOutputStreamByRef}. A `ref` that was NOT produced by a `*ForRun`
+   * writer for the given `runId` MUST resolve to `undefined`; foreign refs
+   * never throw. Same synchronous / Promise-returning shape as the unscoped
+   * variant so async backings can probe existence before returning an iterable.
+   */
+  getOutputStreamByRefForRun?(
+    ref: CacheRef,
+    runId: string
+  ): AsyncIterable<Uint8Array> | undefined | Promise<AsyncIterable<Uint8Array> | undefined>;
+
+  /**
+   * OPTIONAL run-scoped counterpart of {@link deleteOutputByRef}. A `ref` that
+   * was NOT produced by a `*ForRun` writer for the given `runId` MUST be a
+   * no-op — foreign refs never touch disk / storage, matching the base
+   * contract's best-effort idempotency (no throw on missing entry).
+   */
+  deleteOutputByRefForRun?(ref: CacheRef, runId: string): Promise<void>;
 }
