@@ -35,17 +35,22 @@ function sanitize(s: string): string {
 /**
  * Fold a `runId` into the `taskType` axis. FsFolder has no runId column — rows
  * are keyed `(taskType, key)` and blob names lead with `sanitize(taskType)` —
- * so scoping a private run means prefixing its taskType. The `::` terminator
- * keeps one runId's namespace from being a prefix of another's (e.g. `a` vs
- * `ab`), so a run's rows and sidecar blobs are prefix-selectable for cleanup.
+ * so scoping a private run means prefixing its taskType with {@link runScopePrefix}.
  */
 function runScopedType(runId: string, taskType: string): string {
-  return `__run:${runId}::${taskType}`;
+  return `${runScopePrefix(runId)}${taskType}`;
 }
 
-/** The taskType-namespace prefix for a run (see {@link runScopedType}). */
+/**
+ * Netstring-length prefix for a run's taskType namespace. The length digits
+ * force any two distinct runIds to diverge before either one's content is
+ * compared, so no sanitized prefix can ever be a strict prefix of another's.
+ * Necessary because {@link sanitize} collapses `:` → `-`, which would otherwise
+ * let `runA` (sanitized `__run-runA--`) look like a prefix of `runA-`
+ * (sanitized `__run-runA---`) and leak reads/deletes across runs.
+ */
 function runScopePrefix(runId: string): string {
-  return `__run:${runId}::`;
+  return `__run:${runId.length}:${runId}::`;
 }
 
 /**

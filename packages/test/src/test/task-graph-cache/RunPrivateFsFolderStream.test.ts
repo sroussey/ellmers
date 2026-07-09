@@ -223,6 +223,57 @@ describe("run-private streaming over an FsFolder backing", () => {
       expect(blobNames(folder).length).toBe(before - 1);
     });
 
+    describe("prefix-boundary collision", () => {
+      it.each([
+        ["session1", "session1-"],
+        ["run-1", "run-1:x"],
+        ["x", "x-y"],
+      ])("victim=%s cannot access blobs written by attacker=%s", async (victimId, attackerId) => {
+        const codec = getStreamPortCodec("append");
+        const mk = (t: string): AsyncIterable<Uint8Array> =>
+          codec.encode(fromArray([{ type: "text-delta", port: "text", textDelta: t }]), "text");
+
+        const victim = new RunPrivateCacheRepo({ backing, runId: victimId });
+        const attacker = new RunPrivateCacheRepo({ backing, runId: attackerId });
+
+        const attackerRef = await attacker.saveOutputStreamPort!(
+          "T",
+          { p: 1 },
+          "text",
+          "append",
+          mk("attacker"),
+          {}
+        );
+        const blobsBefore = blobNames(folder).length;
+
+        // (a) The victim cannot read the attacker's blob through either reader.
+        expect(await victim.getOutputStreamByRef!(attackerRef)).toBeUndefined();
+        expect(await victim.getOutputByRef!(attackerRef)).toBeUndefined();
+
+        // (b) The victim's delete is a no-op — the blob count is unchanged
+        // and the attacker's blob still resolves through its own wrapper.
+        await expect(victim.deleteOutputByRef!(attackerRef)).resolves.toBeUndefined();
+        expect(blobNames(folder).length).toBe(blobsBefore);
+
+        const roundTrip = await attacker.getOutputStreamByRef!(attackerRef);
+        expect(roundTrip).toBeDefined();
+        expect(await codec.materialize(roundTrip!, "text")).toBe("attacker");
+
+        // (c) The attacker can still round-trip its own ref.
+        const ownRef = await attacker.saveOutputStreamPort!(
+          "T",
+          { p: 2 },
+          "text",
+          "append",
+          mk("attacker-own"),
+          {}
+        );
+        const ownStream = await attacker.getOutputStreamByRef!(ownRef);
+        expect(ownStream).toBeDefined();
+        expect(await codec.materialize(ownStream!, "text")).toBe("attacker-own");
+      });
+    });
+
     it("uniformly rejects malformed and foreign-scheme refs", async () => {
       const wrapperA = new RunPrivateCacheRepo({ backing, runId: "run-A" });
 
