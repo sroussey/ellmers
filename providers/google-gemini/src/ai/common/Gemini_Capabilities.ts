@@ -63,10 +63,11 @@ export function inferGeminiCapabilities(model: CapabilityHints): readonly Capabi
     return ["image.generation", "model.info", "model.search"];
   }
 
-  // Gemini image-output model variants — e.g. gemini-3.1-flash-image-preview,
-  // gemini-3-pro-image-preview. These come from the fallback list with explicit
-  // capabilities and also need to be covered by inference.
-  if (/^gemini-.*-image-/i.test(id)) {
+  // Gemini image-output model variants — e.g. gemini-3.1-flash-image,
+  // gemini-3-pro-image (and their older -image-preview forms). These come from
+  // the fallback list with explicit capabilities and also need to be covered by
+  // inference. Match `-image` at the end or followed by a suffix (`-preview`).
+  if (/^gemini-.*-image(?:-|$)/i.test(id)) {
     return ["image.generation", "image.editing", "model.info", "model.search"];
   }
 

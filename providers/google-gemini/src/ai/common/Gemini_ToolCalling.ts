@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { FunctionCallingMode } from "@google/generative-ai";
+import { FunctionCallingConfigMode } from "@google/genai";
 import type {
   AiProviderRunFn,
   ChatMessage,
@@ -13,7 +13,7 @@ import type {
   ToolDefinition,
 } from "@workglow/ai";
 import { buildToolDescription, filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
-import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
+import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { sanitizeSchemaForGemini } from "./Gemini_Schema";
 
@@ -25,17 +25,14 @@ export function buildGeminiContents(
     return [{ role: "user", parts: [{ text: prompt }] }];
   }
 
-  // Index tool_use ids → names from any prior assistant turn (Gemini wants
-  // the function name on the functionResponse, not just the id).
+  // Resolve tool_use id → name for the functionResponse (Gemini wants the
+  // function name there, not just the id). Built during the single ordered pass
+  // rather than up front: the provider assigns ids per run starting at `call_0`,
+  // so ids collide across turns. Updating the map as each assistant turn is
+  // processed makes every tool_result resolve against the most-recent preceding
+  // tool_use with that id — the call it actually answers — instead of a global
+  // last-write-wins that would mislabel earlier turns.
   const toolUseNames = new Map<string, string>();
-  for (const msg of messages) {
-    if (msg.role !== "assistant") continue;
-    for (const block of msg.content) {
-      if (block.type === "tool_use") {
-        toolUseNames.set(block.id, block.name);
-      }
-    }
-  }
 
   const contents: any[] = [];
   for (const msg of messages) {
@@ -55,7 +52,18 @@ export function buildGeminiContents(
         if (block.type === "text" && block.text) {
           parts.push({ text: block.text });
         } else if (block.type === "tool_use") {
-          parts.push({ functionCall: { name: block.name, args: block.input } });
+          toolUseNames.set(block.id, block.name);
+          // Thinking models (Gemini 2.5+/3.x) return an opaque `thoughtSignature`
+          // alongside each functionCall part. It MUST be echoed back verbatim on
+          // the same part in later turns or the API rejects the request with
+          // "Function call is missing a thought_signature".
+          const part: Record<string, unknown> = {
+            functionCall: { name: block.name, args: block.input },
+          };
+          if (block.providerSignature) {
+            part.thoughtSignature = block.providerSignature;
+          }
+          parts.push(part);
         }
       }
       if (parts.length > 0) contents.push({ role: "model", parts });
@@ -85,20 +93,20 @@ export function buildGeminiContents(
 function mapGeminiToolConfig(
   toolChoice: string | undefined
 ):
-  | { functionCallingConfig: { mode: FunctionCallingMode; allowedFunctionNames?: string[] } }
+  | { functionCallingConfig: { mode: FunctionCallingConfigMode; allowedFunctionNames?: string[] } }
   | undefined {
   if (!toolChoice || toolChoice === "auto") {
-    return { functionCallingConfig: { mode: "AUTO" as FunctionCallingMode } };
+    return { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } };
   }
   if (toolChoice === "none") {
-    return { functionCallingConfig: { mode: "NONE" as FunctionCallingMode } };
+    return { functionCallingConfig: { mode: FunctionCallingConfigMode.NONE } };
   }
   if (toolChoice === "required") {
-    return { functionCallingConfig: { mode: "ANY" as FunctionCallingMode } };
+    return { functionCallingConfig: { mode: FunctionCallingConfigMode.ANY } };
   }
   return {
     functionCallingConfig: {
-      mode: "ANY" as FunctionCallingMode,
+      mode: FunctionCallingConfigMode.ANY,
       allowedFunctionNames: [toolChoice],
     },
   };
@@ -109,8 +117,7 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
   ToolCallingTaskOutput,
   GeminiModelConfig
 > = async (input, model, signal, emit) => {
-  const GoogleGenerativeAI = await loadGeminiSDK();
-  const genAI = new GoogleGenerativeAI(getApiKey(model));
+  const ai = await createGeminiClient(model);
 
   const functionDeclarations = input.tools.map((t: ToolDefinition) => ({
     name: t.name,
@@ -120,30 +127,36 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
 
   const toolConfig = mapGeminiToolConfig(input.toolChoice);
 
-  const genModel = genAI.getGenerativeModel({
+  const contents = buildGeminiContents(input.messages, input.prompt);
+
+  // Thinking is opt-in here (no default budget): the model uses its own default
+  // reasoning unless `provider_config.thinking_budget` is set, in which case the
+  // output cap is padded so reasoning can't starve the tool call / answer.
+  const { thinkingConfig, maxOutputTokens } = resolveThinkingConfig(model, input.maxTokens);
+
+  const result = await ai.models.generateContentStream({
     model: getModelName(model),
-    tools: [{ functionDeclarations }],
-    toolConfig: toolConfig as any,
-    systemInstruction: input.systemPrompt || undefined,
-    generationConfig: {
-      maxOutputTokens: input.maxTokens,
+    contents,
+    config: {
+      abortSignal: signal ?? undefined,
+      systemInstruction: input.systemPrompt || undefined,
+      maxOutputTokens,
       temperature: input.temperature,
+      tools: [{ functionDeclarations }],
+      toolConfig: toolConfig as any,
+      thinkingConfig,
     },
   });
 
-  const contents = buildGeminiContents(input.messages, input.prompt);
-
-  const result = await genModel.generateContentStream({ contents }, { signal });
-
   let callIndex = 0;
 
-  for await (const chunk of result.stream) {
+  for await (const chunk of result) {
     const parts = chunk.candidates?.[0]?.content?.parts ?? [];
     for (const part of parts) {
-      if ("text" in part && part.text) {
+      if (part.text && !part.thought) {
         emit({ type: "text-delta", port: "text", textDelta: part.text });
       }
-      if ("functionCall" in part && part.functionCall) {
+      if (part.functionCall) {
         const id = `call_${callIndex++}`;
         // Defence-in-depth: drop tool calls whose name isn't in the
         // declared tool set before emitting. Gemini's tool API respects
@@ -153,10 +166,13 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
           [
             {
               id,
-              name: part.functionCall.name,
+              name: part.functionCall.name ?? "",
               input: sanitizeToolArgs(
                 (part.functionCall.args as Record<string, unknown>) ?? {}
               ) as Record<string, unknown>,
+              // Carry the opaque thinking-model signature so the consumer can
+              // replay it on the next turn (see buildGeminiContents).
+              ...(part.thoughtSignature ? { providerSignature: part.thoughtSignature } : {}),
             },
           ],
           input.tools

@@ -14,6 +14,7 @@ export * from "./registerGemini";
 
 import { GEMINI_RUN_FN_SPECS } from "./common/Gemini_Capabilities";
 import { GEMINI_RUN_FNS } from "./common/Gemini_JobRunFns";
+import { buildGeminiContents } from "./common/Gemini_ToolCalling";
 import { GoogleGeminiQueuedProvider } from "./GoogleGeminiQueuedProvider";
 
 /**
@@ -23,4 +24,5 @@ export const _testOnly = {
   GoogleGeminiQueuedProvider,
   GEMINI_RUN_FN_SPECS,
   GEMINI_RUN_FNS,
+  buildGeminiContents,
 } as const;

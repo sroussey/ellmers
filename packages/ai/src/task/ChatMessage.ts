@@ -22,6 +22,14 @@ export type ContentBlockToolUse = {
   readonly id: string;
   readonly name: string;
   readonly input: Record<string, unknown>;
+  /**
+   * Opaque, provider-scoped signature that some models attach to a tool call
+   * and require to be echoed back verbatim on the corresponding request part in
+   * later turns. Gemini "thinking" models (2.5+/3.x) return a `thoughtSignature`
+   * here; replaying it is mandatory or the API rejects the multi-turn request.
+   * Providers that have no such concept leave it undefined.
+   */
+  readonly providerSignature?: string;
 };
 
 /**
@@ -79,6 +87,7 @@ const ContentBlockToolUseSchema = {
     id: { type: "string" },
     name: { type: "string" },
     input: { type: "object", additionalProperties: true },
+    providerSignature: { type: "string" },
   },
   required: ["type", "id", "name", "input"],
   additionalProperties: false,

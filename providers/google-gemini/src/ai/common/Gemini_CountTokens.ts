@@ -10,19 +10,20 @@ import type {
   CountTokensTaskInput,
   CountTokensTaskOutput,
 } from "@workglow/ai";
-import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
+import { createGeminiClient, getModelName } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 
 export const Gemini_CountTokens_Stream: AiProviderRunFn<
   CountTokensTaskInput,
   CountTokensTaskOutput,
   GeminiModelConfig
-> = async (input, model, signal, emit) => {
-  const GoogleGenerativeAI = await loadGeminiSDK();
-  const genAI = new GoogleGenerativeAI(getApiKey(model));
-  const genModel = genAI.getGenerativeModel({ model: getModelName(model) });
-  const result = await genModel.countTokens(input.text);
-  emit({ type: "finish", data: { count: result.totalTokens } });
+> = async (input, model, _signal, emit) => {
+  const ai = await createGeminiClient(model);
+  const result = await ai.models.countTokens({
+    model: getModelName(model),
+    contents: input.text,
+  });
+  emit({ type: "finish", data: { count: result.totalTokens ?? 0 } });
 };
 
 export const Gemini_CountTokens_Preview: AiProviderPreviewRunFn<

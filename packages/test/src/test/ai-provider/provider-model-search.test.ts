@@ -73,8 +73,8 @@ describe("provider model search samples", () => {
       modelIdsForSearch(Gemini_ModelSearch, "gemini-3.1-pro-preview")
     ).resolves.toContain("gemini-3.1-pro-preview");
     await expect(
-      modelIdsForSearch(Gemini_ModelSearch, "gemini-3.1-flash-image-preview")
-    ).resolves.toContain("gemini-3.1-flash-image-preview");
+      modelIdsForSearch(Gemini_ModelSearch, "gemini-3.1-flash-image")
+    ).resolves.toContain("gemini-3.1-flash-image");
     await expect(modelIdsForSearch(Gemini_ModelSearch, "gemini-embedding-2")).resolves.toContain(
       "gemini-embedding-2"
     );

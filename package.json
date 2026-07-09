@@ -65,7 +65,7 @@
     "@mediapipe/tasks-genai": "^0.10.29",
     "@anthropic-ai/sdk": "^0.110.0",
     "electron": "^42.5.0",
-    "@google/generative-ai": "^0.24.1",
+    "@google/genai": "^2.10.0",
     "node-llama-cpp": "^3.19.0",
     "needle-rs": "^0.1.0",
     "@huggingface/inference": "^4.13.23",
