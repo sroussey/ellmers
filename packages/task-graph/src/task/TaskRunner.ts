@@ -971,6 +971,25 @@ export class TaskRunner<
         : undefined;
     }
 
+    // The private tier's whole job is to reject foreign-run refs. If the two
+    // slots are wired to the same backing instance, the private wrapper rejects
+    // the ref but hydrateInputRefs' deterministic fallback resolves it anyway
+    // through the unscoped reader, reopening the same cross-run leak. Reject
+    // the misconfiguration up front rather than let hydration silently bypass
+    // the scope.
+    if (
+      this.cacheRegistry?.private instanceof RunPrivateCacheRepo &&
+      this.cacheRegistry.deterministic !== undefined &&
+      this.cacheRegistry.private.backing === this.cacheRegistry.deterministic
+    ) {
+      throw new TaskConfigurationError(
+        "CacheRegistry: the `private` and `deterministic` slots resolve to the same " +
+          "backing repository. Run-scoping via RunPrivateCacheRepo is bypassed when a " +
+          "foreign-run ref rejected by the private wrapper still resolves through the " +
+          "unscoped deterministic reader. Point the two slots at distinct backings."
+      );
+    }
+
     // shouldAccumulate defaults to true (backward-compatible for standalone runs)
     ctx.shouldAccumulate = config.shouldAccumulate !== false;
 
