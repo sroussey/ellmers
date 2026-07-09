@@ -8,8 +8,17 @@ import {
   makeJobOutputStreamResolver,
   resolveJobOutputStream,
 } from "@workglow/task-graph";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 import { StreamingMemoryRepo } from "../../binding/StreamingMemoryRepo";
+
+const schemaWithStreaming = (mode: "binary" | "append" | "object", port = "audio") =>
+  ({
+    type: "object",
+    properties: {
+      [port]: { format: mode === "binary" ? "binary" : "string", "x-stream": mode },
+    },
+  }) as const satisfies DataPortSchema;
 
 async function* gen(...chunks: Uint8Array[]): AsyncIterable<Uint8Array> {
   for (const c of chunks) yield c;
@@ -33,26 +42,73 @@ describe("resolveJobOutputStream", () => {
     expect(await collect(stream!)).toEqual([1, 2, 3]);
   });
 
-  it("auto-discovers a single nested ref without a port", async () => {
+  it("auto-discovers a ref at a declared streamable port when the schema is supplied", async () => {
     const repo = new StreamingMemoryRepo({});
     const ref = await repo.saveOutputStream("T", { a: 2 }, gen(new Uint8Array([9, 8])), {});
-    const handle = handleFor({ meta: { inner: [ref] }, note: "x" });
-    const stream = await resolveJobOutputStream(handle, repo);
+    const handle = handleFor({ audio: ref });
+    const stream = await resolveJobOutputStream(
+      handle,
+      repo,
+      undefined,
+      schemaWithStreaming("binary", "audio")
+    );
     expect(await collect(stream!)).toEqual([9, 8]);
   });
 
-  it("resolves undefined when the output has no refs and no port given", async () => {
+  it("resolves undefined when the schema declares streaming ports but none carry a ref", async () => {
     const repo = new StreamingMemoryRepo({});
-    expect(await resolveJobOutputStream(handleFor({ text: "plain" }), repo)).toBeUndefined();
+    expect(
+      await resolveJobOutputStream(
+        handleFor({ audio: undefined }),
+        repo,
+        undefined,
+        schemaWithStreaming("binary", "audio")
+      )
+    ).toBeUndefined();
   });
 
-  it("throws for two refs without an explicit port", async () => {
+  it("throws for two refs across declared streamable ports without an explicit port", async () => {
     const repo = new StreamingMemoryRepo({});
     const r1 = await repo.saveOutputStream("T", { a: 3 }, gen(new Uint8Array([1])), {});
     const r2 = await repo.saveOutputStream("T", { a: 4 }, gen(new Uint8Array([2])), {});
-    await expect(resolveJobOutputStream(handleFor({ x: r1, y: r2 }), repo)).rejects.toThrow(
-      /explicit port/
+    const twoPortSchema = {
+      type: "object",
+      properties: {
+        x: { format: "binary", "x-stream": "binary" },
+        y: { format: "binary", "x-stream": "binary" },
+      },
+    } as const satisfies DataPortSchema;
+    await expect(
+      resolveJobOutputStream(handleFor({ x: r1, y: r2 }), repo, undefined, twoPortSchema)
+    ).rejects.toThrow(/explicit port/);
+  });
+
+  it("throws when portless discovery is requested without a schema", async () => {
+    const repo = new StreamingMemoryRepo({});
+    const ref = await repo.saveOutputStream("T", { a: 6 }, gen(new Uint8Array([1])), {});
+    await expect(resolveJobOutputStream(handleFor({ audio: ref }), repo)).rejects.toThrow(
+      TypeError
     );
+  });
+
+  it("ignores a crafted ref shape embedded at a non-streamable port", async () => {
+    const repo = new StreamingMemoryRepo({});
+    const ref = await repo.saveOutputStream("T", { a: 7 }, gen(new Uint8Array([1, 2, 3])), {});
+    const schema = {
+      type: "object",
+      properties: {
+        audio: { format: "binary", "x-stream": "binary" },
+        note: { type: "string" },
+      },
+    } as const satisfies DataPortSchema;
+    // A ref smuggled into the untrusted `note` port must NOT be discovered.
+    const stream = await resolveJobOutputStream(
+      handleFor({ audio: undefined, note: ref }),
+      repo,
+      undefined,
+      schema
+    );
+    expect(stream).toBeUndefined();
   });
 
   it("adapts inline Blob / ArrayBuffer / Uint8Array values at a named port", async () => {
