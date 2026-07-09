@@ -358,13 +358,14 @@ export class FsFolderTabularStorage<
   }
 
   async updateWhere(
-    match: SearchCriteria<Entity>,
-    patch: Partial<Entity>
+    _match: SearchCriteria<Entity>,
+    _patch: Partial<Entity>
   ): Promise<Entity | undefined> {
-    const matches = (await this.query(match)) ?? [];
-    if (matches.length === 0) return undefined;
-    const updated = { ...matches[0], ...patch } as Entity;
-    return this.put(updated as never);
+    // A conditional update needs query support, which this folder-backed store
+    // does not provide (query/queryIndex/deleteSearch all throw). Fail with the
+    // same unsupported-operation error rather than the misleading "query"
+    // variant the old query-then-put body produced.
+    throw new StorageUnsupportedError("updateWhere", "FsFolderTabularStorage");
   }
 
   /** Lazy-init so all subscriptions share a single polling loop per interval. */
