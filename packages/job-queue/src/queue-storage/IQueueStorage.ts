@@ -402,11 +402,12 @@ export interface IQueueStorage<Input, Output> {
     options?: QueueSubscribeOptions
   ): () => void;
   /**
-   * OPTIONAL — append a live stream event to job `jobId`'s ordered side-stream.
-   * See {@link IMessageQueue.publishStreamChunk}. Absent on backends that cannot
+   * OPTIONAL — append a live stream event to job `jobId`'s ordered side-stream;
+   * the storage assigns the monotonic per-job `seq`. See
+   * {@link IMessageQueue.publishStreamChunk}. Absent on backends that cannot
    * carry a job's live stream out of process.
    */
-  publishStreamChunk?(jobId: unknown, seq: number, event: StreamEventLike): Promise<void>;
+  publishStreamChunk?(jobId: unknown, event: StreamEventLike): Promise<void>;
   /**
    * OPTIONAL — subscribe to a job's stream side-stream, replaying rows with
    * `seq > sinceSeq` before live delivery. See

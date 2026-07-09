@@ -50,4 +50,19 @@ describe("StreamReassembler", () => {
     r.push(row(3, "c"));
     expect(out).toEqual(["c"]);
   });
+
+  it("skips a permanently-missing seq once the gap buffer overflows (bounded, no stall)", () => {
+    const out: string[] = [];
+    const r = new StreamReassembler((e) => out.push(e.textDelta as string), 0, 2); // maxGapBuffer = 2
+    r.push(row(1, "a"));
+    r.push(row(3, "c"));
+    r.push(row(4, "d"));
+    expect(out).toEqual(["a"]); // gap {3,4} size 2 (not > 2); still waiting on seq 2
+    r.push(row(5, "e"));
+    // gap {3,4,5} size 3 > 2 → treat seq 2 as dropped, skip and flush 3,4,5
+    expect(out).toEqual(["a", "c", "d", "e"]);
+    // A late seq 2 is now a duplicate (< expected) and ignored.
+    r.push(row(2, "late"));
+    expect(out).toEqual(["a", "c", "d", "e"]);
+  });
 });
