@@ -12,6 +12,7 @@ import type {
 import { parsePartialJson } from "@workglow/util/worker";
 import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
+import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
 import { sanitizeSchemaForGemini } from "./Gemini_Schema";
 
 /**
@@ -70,6 +71,7 @@ export const Gemini_StructuredGeneration_Stream: AiProviderRunFn<
   });
 
   let accumulatedJson = "";
+  let refusalCategory: string | undefined;
   for await (const chunk of result) {
     // `chunk.text` concatenates the answer text (thought parts are excluded).
     const text = chunk.text;
@@ -80,7 +82,9 @@ export const Gemini_StructuredGeneration_Stream: AiProviderRunFn<
         emit({ type: "object-delta", port: "object", objectDelta: partial });
       }
     }
+    refusalCategory = refusalCategory ?? geminiRefusalCategory(chunk);
   }
+  emitGeminiRefusal(emit, refusalCategory);
 
   let finalObject: Record<string, unknown>;
   try {

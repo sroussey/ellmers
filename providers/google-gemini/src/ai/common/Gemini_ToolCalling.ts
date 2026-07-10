@@ -15,6 +15,7 @@ import type {
 import { buildToolDescription, filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
 import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
+import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
 import { sanitizeSchemaForGemini } from "./Gemini_Schema";
 
 export function buildGeminiContents(
@@ -149,8 +150,10 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
   });
 
   let callIndex = 0;
+  let refusalCategory: string | undefined;
 
   for await (const chunk of result) {
+    refusalCategory = refusalCategory ?? geminiRefusalCategory(chunk);
     const parts = chunk.candidates?.[0]?.content?.parts ?? [];
     for (const part of parts) {
       if (part.text && !part.thought) {
@@ -188,5 +191,6 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
     }
   }
 
+  emitGeminiRefusal(emit, refusalCategory);
   emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
 };

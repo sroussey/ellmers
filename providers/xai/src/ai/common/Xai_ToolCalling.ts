@@ -11,7 +11,7 @@ import type {
   ToolCalls,
 } from "@workglow/ai";
 import {
-  accumulateOpenAIStream,
+  accumulateOpenAIChatStream,
   buildOpenAITools,
   mapOpenAIToolChoice,
 } from "@workglow/ai/provider-utils";
@@ -22,7 +22,7 @@ import type { XaiModelConfig } from "./Xai_ModelSchema";
 /**
  * Streaming run-fn for `["text.generation", "tool-use"]`. Calls the xAI
  * chat-completions endpoint (OpenAI-compatible) with `stream: true` and
- * forwards delta events via {@link accumulateOpenAIStream}, which emits
+ * forwards delta events via {@link accumulateOpenAIChatStream}, which emits
  * `text-delta` and tool-call `object-delta` events plus a final empty
  * `finish`.
  *
@@ -54,7 +54,7 @@ export const Xai_ToolCalling_Stream: AiProviderRunFn<
     { signal }
   );
 
-  await accumulateOpenAIStream(stream, (event) => {
+  await accumulateOpenAIChatStream(stream, (event) => {
     if (event.type === "object-delta" && event.port === "toolCalls") {
       const validated = filterValidToolCalls(event.objectDelta as ToolCalls, input.tools);
       if (validated.length > 0) {

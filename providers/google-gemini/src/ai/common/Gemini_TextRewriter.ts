@@ -7,6 +7,7 @@
 import type { AiProviderRunFn, TextRewriterTaskInput, TextRewriterTaskOutput } from "@workglow/ai";
 import { createGeminiClient, getModelName } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
+import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
 
 export const Gemini_TextRewriter_Stream: AiProviderRunFn<
   TextRewriterTaskInput,
@@ -24,11 +25,14 @@ export const Gemini_TextRewriter_Stream: AiProviderRunFn<
     },
   });
 
+  let refusalCategory: string | undefined;
   for await (const chunk of result) {
     const text = chunk.text;
     if (text) {
       emit({ type: "text-delta", port: "text", textDelta: text });
     }
+    refusalCategory = refusalCategory ?? geminiRefusalCategory(chunk);
   }
+  emitGeminiRefusal(emit, refusalCategory);
   emit({ type: "finish", data: {} as TextRewriterTaskOutput });
 };

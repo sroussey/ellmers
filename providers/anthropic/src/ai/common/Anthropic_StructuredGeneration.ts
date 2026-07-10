@@ -12,6 +12,7 @@ import type {
 import { parsePartialJson } from "@workglow/util/worker";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
+import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
 
 /**
  * Streaming run-fn for the `["text.generation", "json-mode"]` capability.
@@ -54,6 +55,7 @@ export const Anthropic_StructuredGeneration_Stream: AiProviderRunFn<
 
   let accumulatedJson = "";
   for await (const event of stream) {
+    maybeEmitAnthropicRefusal(event, emit);
     if (event.type === "content_block_delta" && event.delta.type === "input_json_delta") {
       accumulatedJson += event.delta.partial_json;
       const partial = parsePartialJson(accumulatedJson);

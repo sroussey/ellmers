@@ -151,6 +151,14 @@ export async function accumulateOpenAIChatStream(
       emit({ type: "text-delta", port: "text", textDelta: contentDelta });
     }
 
+    // OpenAI-compatible chat completions surface safety refusals as a `refusal`
+    // string on the delta (distinct from `content`). Emit it as a first-class
+    // refusal event so it lands in the reserved `refusal` output field.
+    const refusalDelta: string = choice.delta?.refusal ?? "";
+    if (refusalDelta) {
+      emit({ type: "refusal", refusal: refusalDelta });
+    }
+
     const tcDeltas = choice.delta?.tool_calls;
     if (!Array.isArray(tcDeltas)) continue;
 

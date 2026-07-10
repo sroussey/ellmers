@@ -12,6 +12,7 @@ import type {
 import { getLogger } from "@workglow/util/worker";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
+import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
 import { buildAnthropicMessages } from "./Anthropic_ToolCalling";
 
 /**
@@ -104,6 +105,7 @@ export const Anthropic_TextGeneration_Stream: AiProviderRunFn<
       if (e.type === "content_block_delta" && e.delta?.type === "text_delta") {
         emit({ type: "text-delta", port: "text", textDelta: e.delta.text ?? "" });
       }
+      maybeEmitAnthropicRefusal(event, emit);
     }
     emit({ type: "finish", data: {} as TextGenerationTaskOutput });
   } finally {
