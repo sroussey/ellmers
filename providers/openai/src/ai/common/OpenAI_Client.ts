@@ -35,7 +35,7 @@ interface ResolvedProviderConfig {
   readonly model_name?: string;
   readonly base_url?: string;
   readonly organization?: string;
-  readonly reasoning_effort?: string;
+  readonly reasoning?: { readonly effort?: string; readonly mode?: string };
   /**
    * When `true`, accept the `base_url` even if its hostname is not in
    * {@link OPENAI_ALLOWED_HOSTS}. Use only for known-good custom enterprise
@@ -83,11 +83,17 @@ export function getModelName(model: OpenAiModelConfig | undefined): string {
 }
 
 /**
- * Resolves the configured reasoning effort for reasoning-capable models
- * (the GPT-5.6 sol/terra/luna family and the o-series). Returns `undefined`
- * when unset so non-reasoning models and callers that don't opt in send no
- * `reasoning_effort` parameter.
+ * Resolves the configured `reasoning` object for reasoning-capable models
+ * (the GPT-5.6 sol/terra/luna family and the o-series), sent verbatim as the
+ * Responses `reasoning` parameter. Returns `undefined` when unset so
+ * non-reasoning models and callers that don't opt in send no reasoning field.
  */
-export function getReasoningEffort(model: OpenAiModelConfig | undefined): string | undefined {
-  return (model?.provider_config as ResolvedProviderConfig | undefined)?.reasoning_effort;
+export function getReasoningConfig(
+  model: OpenAiModelConfig | undefined
+): { effort?: string; mode?: string } | undefined {
+  const reasoning = (model?.provider_config as ResolvedProviderConfig | undefined)?.reasoning;
+  if (!reasoning || (reasoning.effort === undefined && reasoning.mode === undefined)) {
+    return undefined;
+  }
+  return reasoning;
 }

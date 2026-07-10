@@ -10,7 +10,7 @@ import type {
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
 import { parsePartialJson } from "@workglow/util/worker";
-import { getClient, getModelName, getReasoningEffort } from "./OpenAI_Client";
+import { getClient, getModelName, getReasoningConfig } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /**
@@ -28,31 +28,32 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
   const modelName = getModelName(model);
 
   const schema = input.outputSchema ?? outputSchema;
-  const reasoningEffort = getReasoningEffort(model);
+  const reasoning = getReasoningConfig(model);
 
-  const stream = await client.chat.completions.create(
-    {
-      model: modelName,
-      messages: [{ role: "user", content: input.prompt }],
-      response_format: {
-        type: "json_schema" as never,
-        json_schema: {
-          name: "structured_output",
-          schema: schema,
-          strict: true,
-        },
-      } as never,
-      max_completion_tokens: input.maxTokens,
-      temperature: input.temperature,
-      ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
-      stream: true,
+  const params: Record<string, unknown> = {
+    model: modelName,
+    input: input.prompt,
+    text: {
+      format: {
+        type: "json_schema",
+        name: "structured_output",
+        schema: schema,
+        strict: true,
+      },
     },
+  };
+  if (input.maxTokens !== undefined) params.max_output_tokens = input.maxTokens;
+  if (input.temperature !== undefined) params.temperature = input.temperature;
+  if (reasoning !== undefined) params.reasoning = reasoning;
+
+  const stream = await client.responses.create(
+    { ...params, stream: true } as Parameters<typeof client.responses.create>[0],
     { signal }
   );
 
   let accumulatedJson = "";
-  for await (const chunk of stream) {
-    const delta = chunk.choices[0]?.delta?.content ?? "";
+  for await (const event of stream as AsyncIterable<{ type?: string; delta?: string }>) {
+    const delta = event.type === "response.output_text.delta" ? (event.delta ?? "") : "";
     if (delta) {
       accumulatedJson += delta;
       const partial = parsePartialJson(accumulatedJson);

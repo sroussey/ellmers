@@ -5,7 +5,8 @@
  */
 
 import type { AiProviderRunFn, TextSummaryTaskInput, TextSummaryTaskOutput } from "@workglow/ai";
-import { getClient, getModelName } from "./OpenAI_Client";
+import { accumulateOpenAIResponsesStream } from "@workglow/ai/provider-utils";
+import { getClient, getModelName, getReasoningConfig } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /**
@@ -18,25 +19,20 @@ export const OpenAI_TextSummary_Stream: AiProviderRunFn<
   OpenAiModelConfig
 > = async (input, model, signal, emit) => {
   const client = await getClient(model);
-  const modelName = getModelName(model);
+  const reasoning = getReasoningConfig(model);
 
-  const stream = await client.chat.completions.create(
-    {
-      model: modelName,
-      messages: [
-        { role: "system", content: "Summarize the following text concisely." },
-        { role: "user", content: input.text },
-      ],
-      stream: true,
-    },
+  const params: Record<string, unknown> = {
+    model: getModelName(model),
+    instructions: "Summarize the following text concisely.",
+    input: input.text,
+  };
+  if (reasoning !== undefined) params.reasoning = reasoning;
+
+  const stream = await client.responses.create(
+    { ...params, stream: true } as Parameters<typeof client.responses.create>[0],
     { signal }
   );
 
-  for await (const chunk of stream) {
-    const delta = chunk.choices[0]?.delta?.content ?? "";
-    if (delta) {
-      emit({ type: "text-delta", port: "text", textDelta: delta });
-    }
-  }
+  await accumulateOpenAIResponsesStream(stream as AsyncIterable<unknown>, emit);
   emit({ type: "finish", data: {} as TextSummaryTaskOutput });
 };

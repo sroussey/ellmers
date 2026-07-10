@@ -229,9 +229,64 @@ describe("buildResponsesInput", () => {
     ]);
   });
 
-  it("coerces unknown roles to user", () => {
-    const result = buildResponsesInput({ messages: [{ role: "tool", content: "result" }] });
-    expect(result.input).toEqual([{ role: "user", content: "result" }]);
+  it("translates a tool-result message into a function_call_output item", () => {
+    const result = buildResponsesInput({
+      messages: [{ role: "tool", content: "72F and sunny", tool_call_id: "call_abc" }],
+    });
+    expect(result.input).toEqual([
+      { type: "function_call_output", call_id: "call_abc", output: "72F and sunny" },
+    ]);
+  });
+
+  it("translates an assistant tool_calls message into function_call items", () => {
+    const result = buildResponsesInput({
+      messages: [
+        {
+          role: "assistant",
+          content: "let me check",
+          tool_calls: [
+            { id: "call_abc", function: { name: "get_weather", arguments: '{"city":"NYC"}' } },
+          ],
+        },
+      ],
+    });
+    expect(result.input).toEqual([
+      { role: "assistant", content: "let me check" },
+      {
+        type: "function_call",
+        call_id: "call_abc",
+        name: "get_weather",
+        arguments: '{"city":"NYC"}',
+      },
+    ]);
+  });
+
+  it("maps user image_url parts to Responses input_image parts", () => {
+    const result = buildResponsesInput({
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "what is this?" },
+            { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+          ],
+        },
+      ],
+    });
+    expect(result.input).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "input_text", text: "what is this?" },
+          { type: "input_image", image_url: "data:image/png;base64,AAAA" },
+        ],
+      },
+    ]);
+  });
+
+  it("coerces an unknown role to a user message", () => {
+    const result = buildResponsesInput({ messages: [{ role: "weird", content: "hi" }] });
+    expect(result.input).toEqual([{ role: "user", content: "hi" }]);
   });
 });
 

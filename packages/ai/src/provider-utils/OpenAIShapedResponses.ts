@@ -29,21 +29,54 @@ import { buildToolDescription, sanitizeToolArgs } from "../task/ToolCallingUtils
  *    streaming convention in CLAUDE.md.
  */
 
-/** Chat-shaped message (string content) as produced by `toOpenAIMessages`. */
+/**
+ * Chat-shaped message as produced by `toOpenAIMessages`. Content is either a
+ * string, a parts array (`text` / `image_url`), or null; assistant messages may
+ * carry `tool_calls`; tool-result messages carry `tool_call_id`.
+ */
 export interface OpenAIResponsesMessageSource {
   readonly role: string;
   readonly content: unknown;
+  readonly tool_calls?: readonly {
+    readonly id?: string;
+    readonly function?: { readonly name?: string; readonly arguments?: string };
+  }[];
+  readonly tool_call_id?: string;
 }
 
-/** A Responses request `input` item (subset we emit: role messages). */
-export interface OpenAIResponsesInputItem {
-  readonly role: "user" | "assistant" | "system" | "developer";
-  readonly content: unknown;
-}
+/** A Responses request `input` item — a role message or a tool item. */
+export type OpenAIResponsesInputItem = Record<string, unknown>;
 
 export interface OpenAIResponsesInput {
   readonly input: string | OpenAIResponsesInputItem[];
   readonly instructions: string | undefined;
+}
+
+/** Map a chat-shaped content parts array to Responses input content parts. */
+function mapContentParts(content: readonly any[]): Record<string, unknown>[] {
+  const parts: Record<string, unknown>[] = [];
+  for (const block of content) {
+    if (block?.type === "text") {
+      parts.push({ type: "input_text", text: block.text });
+    } else if (block?.type === "image_url") {
+      // Responses `input_image.image_url` is the URL string itself, not the
+      // chat-shape `{ url }` object.
+      const url = typeof block.image_url === "string" ? block.image_url : block.image_url?.url;
+      parts.push({ type: "input_image", image_url: url });
+    }
+  }
+  return parts;
+}
+
+/** Coerce a message's content into a plain string (for tool-result output). */
+function contentToString(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((b) => (b?.type === "text" ? b.text : typeof b === "string" ? b : ""))
+      .join("");
+  }
+  return content == null ? "" : String(content);
 }
 
 /** Responses-shape function tool. Flatter than the chat `{function:{…}}` nesting. */
@@ -93,11 +126,39 @@ export function buildResponsesInput(args: {
       if (typeof message.content === "string") instructionParts.push(message.content);
       continue;
     }
-    const role =
-      message.role === "assistant" || message.role === "user"
-        ? (message.role as "assistant" | "user")
-        : "user";
-    items.push({ role, content: message.content });
+
+    if (message.role === "tool") {
+      // Chat `{ role: "tool", tool_call_id, content }` -> Responses
+      // `function_call_output` item.
+      items.push({
+        type: "function_call_output",
+        call_id: message.tool_call_id ?? "",
+        output: contentToString(message.content),
+      });
+      continue;
+    }
+
+    if (message.role === "assistant") {
+      // Preserve any assistant text, then each tool call as a `function_call`
+      // item (Responses represents tool calls as items, not message fields).
+      const text = contentToString(message.content);
+      if (text) items.push({ role: "assistant", content: text });
+      for (const tc of message.tool_calls ?? []) {
+        items.push({
+          type: "function_call",
+          call_id: tc.id ?? "",
+          name: tc.function?.name ?? "",
+          arguments: tc.function?.arguments ?? "",
+        });
+      }
+      continue;
+    }
+
+    // user (and any unknown role, coerced to user)
+    const content = Array.isArray(message.content)
+      ? mapContentParts(message.content)
+      : message.content;
+    items.push({ role: "user", content });
   }
 
   return {
