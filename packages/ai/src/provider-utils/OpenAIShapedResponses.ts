@@ -259,6 +259,14 @@ export async function accumulateOpenAIResponsesStream(
         break;
       }
 
+      case "response.refusal.delta": {
+        // Surface refusals as text so the caller sees why the model declined,
+        // instead of silently completing with empty output.
+        const delta: string = event.delta ?? "";
+        if (delta) emit({ type: "text-delta", port: "text", textDelta: delta });
+        break;
+      }
+
       case "response.output_item.added": {
         const item = event.item;
         if (item?.type === "function_call") {
@@ -304,7 +312,7 @@ export async function accumulateOpenAIResponsesStream(
 
       default:
         // Ignore lifecycle (created/in_progress/completed), reasoning summaries,
-        // refusals, and non-function tool events.
+        // and non-function tool events.
         break;
     }
   }

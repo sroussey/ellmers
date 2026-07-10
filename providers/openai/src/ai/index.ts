@@ -16,6 +16,7 @@ export * from "./registerOpenAi";
 import { OPENAI_RUN_FN_SPECS } from "./common/OpenAI_Capabilities";
 import { getReasoningConfig, resolvePromptCacheKey } from "./common/OpenAI_Client";
 import { OPENAI_RUN_FNS } from "./common/OpenAI_JobRunFns";
+import { isStrictCompatibleSchema } from "./common/OpenAI_StructuredGeneration";
 import { OpenAiQueuedProvider } from "./OpenAiQueuedProvider";
 
 /**
@@ -27,4 +28,5 @@ export const _testOnly = {
   OPENAI_RUN_FNS,
   getReasoningConfig,
   resolvePromptCacheKey,
+  isStrictCompatibleSchema,
 } as const;

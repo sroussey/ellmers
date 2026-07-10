@@ -14,6 +14,40 @@ import { finalizeResponsesRequest, getClient, getModelName } from "./OpenAI_Clie
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /**
+ * Whether a JSON schema satisfies the Responses `strict` subset — every object
+ * has `additionalProperties: false` and lists all of its properties in
+ * `required`, recursively. Combinators (`anyOf`/`oneOf`/`allOf`) and `$ref` are
+ * treated conservatively as non-strict. When false we send `strict: false` so
+ * the request isn't rejected with a 400; the `StructuredGenerationTask` consumer
+ * still re-validates (and retries) the output against the original schema.
+ */
+export function isStrictCompatibleSchema(schema: unknown): boolean {
+  if (schema === null || typeof schema !== "object") return true;
+  const s = schema as Record<string, unknown>;
+  if (s.$ref !== undefined) return false;
+  if (Array.isArray(s.anyOf) || Array.isArray(s.oneOf) || Array.isArray(s.allOf)) return false;
+
+  const isObject = s.type === "object" || (s.type === undefined && s.properties !== undefined);
+  if (isObject) {
+    if (s.additionalProperties !== false) return false;
+    const props = (s.properties as Record<string, unknown> | undefined) ?? {};
+    const required = Array.isArray(s.required) ? (s.required as string[]) : [];
+    for (const key of Object.keys(props)) {
+      if (!required.includes(key)) return false;
+      if (!isStrictCompatibleSchema(props[key])) return false;
+    }
+    return true;
+  }
+
+  const isArray = s.type === "array" || s.items !== undefined;
+  if (isArray) {
+    if (Array.isArray(s.items)) return s.items.every(isStrictCompatibleSchema);
+    return isStrictCompatibleSchema(s.items);
+  }
+  return true;
+}
+
+/**
  * Streaming run-fn for `["text.generation", "json-mode"]`. Emits
  * `object-delta` events with progressively-completed partial JSON snapshots
  * on the `object` port, ending with a `finish` event carrying the parsed
@@ -37,7 +71,7 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
         type: "json_schema",
         name: "structured_output",
         schema: schema,
-        strict: true,
+        strict: isStrictCompatibleSchema(schema),
       },
     },
   };
@@ -51,15 +85,24 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
   );
 
   let accumulatedJson = "";
+  let refusal = "";
   for await (const event of stream as AsyncIterable<{ type?: string; delta?: string }>) {
-    const delta = event.type === "response.output_text.delta" ? (event.delta ?? "") : "";
-    if (delta) {
-      accumulatedJson += delta;
-      const partial = parsePartialJson(accumulatedJson);
-      if (partial !== undefined) {
-        emit({ type: "object-delta", port: "object", objectDelta: partial });
+    if (event.type === "response.output_text.delta") {
+      const delta = event.delta ?? "";
+      if (delta) {
+        accumulatedJson += delta;
+        const partial = parsePartialJson(accumulatedJson);
+        if (partial !== undefined) {
+          emit({ type: "object-delta", port: "object", objectDelta: partial });
+        }
       }
+    } else if (event.type === "response.refusal.delta") {
+      refusal += event.delta ?? "";
     }
+  }
+
+  if (!accumulatedJson && refusal) {
+    throw new Error(`OpenAI refused the structured-generation request: ${refusal}`);
   }
 
   let finalObject: Record<string, unknown>;

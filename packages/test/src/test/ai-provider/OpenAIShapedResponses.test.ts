@@ -155,6 +155,19 @@ describe("accumulateOpenAIResponsesStream", () => {
     expect(out[0].objectDelta[0].id).toBe("fc_orphan");
   });
 
+  it("surfaces refusal deltas as text on the text port", async () => {
+    const out = await collect([
+      { type: "response.created" },
+      { type: "response.refusal.delta", delta: "I can't ", item_id: "msg", output_index: 0 },
+      { type: "response.refusal.delta", delta: "help with that.", item_id: "msg", output_index: 0 },
+      { type: "response.completed" },
+    ]);
+    expect(out).toEqual([
+      { type: "text-delta", port: "text", textDelta: "I can't " },
+      { type: "text-delta", port: "text", textDelta: "help with that." },
+    ]);
+  });
+
   it("ignores reasoning-summary and lifecycle events", async () => {
     const out = await collect([
       { type: "response.created" },

@@ -14,6 +14,7 @@ const {
   OPENAI_RUN_FNS,
   getReasoningConfig,
   resolvePromptCacheKey,
+  isStrictCompatibleSchema,
 } = _testOnly;
 
 function modelWithConfig(provider_config: Record<string, unknown>): ModelRecord {
@@ -155,6 +156,79 @@ describe("getReasoningConfig", () => {
         modelWithConfig({ model_name: "gpt-5.6-terra", reasoning: { effort: "high" } })
       )
     ).toEqual({ effort: "high" });
+  });
+});
+
+describe("isStrictCompatibleSchema", () => {
+  it("accepts an object with additionalProperties:false and all properties required", () => {
+    expect(
+      isStrictCompatibleSchema({
+        type: "object",
+        additionalProperties: false,
+        properties: { a: { type: "string" }, b: { type: "number" } },
+        required: ["a", "b"],
+      })
+    ).toBe(true);
+  });
+
+  it("rejects an object missing additionalProperties:false", () => {
+    expect(
+      isStrictCompatibleSchema({
+        type: "object",
+        properties: { a: { type: "string" } },
+        required: ["a"],
+      })
+    ).toBe(false);
+  });
+
+  it("rejects an object with an optional (non-required) property", () => {
+    expect(
+      isStrictCompatibleSchema({
+        type: "object",
+        additionalProperties: false,
+        properties: { a: { type: "string" }, b: { type: "number" } },
+        required: ["a"],
+      })
+    ).toBe(false);
+  });
+
+  it("recurses into nested objects and array items", () => {
+    expect(
+      isStrictCompatibleSchema({
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: { x: { type: "string" } },
+              required: ["x"],
+            },
+          },
+        },
+        required: ["items"],
+      })
+    ).toBe(true);
+  });
+
+  it("rejects a nested object that is not strict", () => {
+    expect(
+      isStrictCompatibleSchema({
+        type: "object",
+        additionalProperties: false,
+        properties: { nested: { type: "object", properties: { y: { type: "string" } } } },
+        required: ["nested"],
+      })
+    ).toBe(false);
+  });
+
+  it("treats anyOf/oneOf/allOf and $ref conservatively as non-strict", () => {
+    expect(isStrictCompatibleSchema({ anyOf: [{ type: "string" }, { type: "number" }] })).toBe(
+      false
+    );
+    expect(isStrictCompatibleSchema({ $ref: "#/$defs/Foo" })).toBe(false);
   });
 });
 
