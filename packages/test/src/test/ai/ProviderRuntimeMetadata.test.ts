@@ -8,11 +8,13 @@ import { _testOnly as _anthropicTestOnly } from "@workglow/anthropic/ai";
 import { _testOnly } from "@workglow/chrome-ai/ai";
 import { _testOnly as _ollamaTestOnly } from "@workglow/ollama/ai";
 import { _testOnly as _openaiTestOnly } from "@workglow/openai/ai";
+import { _testOnly as _xaiTestOnly } from "@workglow/xai/ai";
 import { afterEach, describe, expect, it } from "vitest";
 
 const { WebBrowserProvider } = _testOnly;
 const { AnthropicQueuedProvider } = _anthropicTestOnly;
 const { OpenAiQueuedProvider } = _openaiTestOnly;
+const { XaiQueuedProvider } = _xaiTestOnly;
 const { OllamaQueuedProvider } = _ollamaTestOnly;
 
 describe("WebBrowserProvider.isAvailable", () => {
@@ -64,6 +66,13 @@ describe("provider runtime-placement metadata", () => {
       // OpenAiQueuedProvider: mixin default makes supportsBrowser=true
       {
         provider: new OpenAiQueuedProvider(),
+        supportsBrowser: true,
+        supportsServer: true,
+        isLocal: false,
+      },
+      // XaiQueuedProvider: mixin default makes supportsBrowser=true
+      {
+        provider: new XaiQueuedProvider(),
         supportsBrowser: true,
         supportsServer: true,
         isLocal: false,

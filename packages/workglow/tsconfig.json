@@ -28,6 +28,7 @@
     { "path": "../../providers/ollama" },
     { "path": "../../providers/openai" },
     { "path": "../../providers/openrouter" },
+    { "path": "../../providers/xai" },
     { "path": "../../providers/postgres" },
     { "path": "../../providers/sqlite" },
     { "path": "../../providers/tf-mediapipe" }
