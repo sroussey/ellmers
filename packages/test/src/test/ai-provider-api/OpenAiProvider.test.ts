@@ -5,6 +5,7 @@
  */
 
 import type { ModelRecord } from "@workglow/ai";
+import type { OpenAiModelConfig } from "@workglow/openai/ai";
 import { _testOnly } from "@workglow/openai/ai";
 import { describe, expect, it } from "vitest";
 
@@ -17,7 +18,7 @@ const {
   isStrictCompatibleSchema,
 } = _testOnly;
 
-function modelWithConfig(provider_config: Record<string, unknown>): ModelRecord {
+function modelWithConfig(provider_config: Record<string, unknown>): OpenAiModelConfig {
   return {
     model_id: "m",
     title: "m",
@@ -26,7 +27,7 @@ function modelWithConfig(provider_config: Record<string, unknown>): ModelRecord 
     provider_config,
     capabilities: [],
     metadata: {},
-  } as ModelRecord;
+  } as unknown as OpenAiModelConfig;
 }
 
 function model(model_id: string, capabilities: readonly string[] = []): ModelRecord {
