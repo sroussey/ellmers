@@ -88,6 +88,10 @@ function makeFakeServer(
           await storage.deleteSearch(body.criteria);
           return new Response(JSON.stringify({ ok: true }), { status: 200 });
         }
+        case "updateWhere": {
+          const entity = await storage.updateWhere(body.match, body.patch);
+          return new Response(JSON.stringify({ entity: entity ?? null }), { status: 200 });
+        }
         case "getOffsetPage": {
           const entities = await storage.getOffsetPage(body.offset, body.limit);
           return new Response(JSON.stringify({ entities: entities ?? null }), { status: 200 });

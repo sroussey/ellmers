@@ -969,6 +969,32 @@ export function runGenericTabularStorageTests(
         expect(await repository.get({ id: "pk1" } as never)).toBeDefined();
         expect(await repository.get({ id: "pk2" } as never)).toBeUndefined();
       });
+
+      it("is CAS under a raced update on the same match", async () => {
+        // Two updateWhere calls with the same before-value predicate race for a
+        // single row. A genuine CAS implementation must let exactly one win —
+        // an unlocked read-modify-write would let both "succeed" and the last
+        // writer would silently clobber the first.
+        const ts = new Date().toISOString();
+        await repository.put({
+          id: "cas1",
+          category: "a",
+          subcategory: "s",
+          value: 0,
+          createdAt: ts,
+          updatedAt: ts,
+        } as never);
+
+        const [a, b] = await Promise.all([
+          repository.updateWhere({ id: "cas1", value: 0 } as never, { value: 1 } as never),
+          repository.updateWhere({ id: "cas1", value: 0 } as never, { value: 2 } as never),
+        ]);
+        const winners = [a, b].filter(Boolean) as Array<{ value: number }>;
+        expect(winners).toHaveLength(1);
+        const row = (await repository.get({ id: "cas1" } as never)) as
+          { value: number } | undefined;
+        expect(row?.value).toBe(winners[0]!.value);
+      });
     });
 
     describe(`query tests`, () => {
