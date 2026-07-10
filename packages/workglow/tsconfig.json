@@ -27,6 +27,7 @@
     { "path": "../../providers/huggingface-transformers" },
     { "path": "../../providers/ollama" },
     { "path": "../../providers/openai" },
+    { "path": "../../providers/openrouter" },
     { "path": "../../providers/postgres" },
     { "path": "../../providers/sqlite" },
     { "path": "../../providers/tf-mediapipe" }
