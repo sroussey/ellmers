@@ -28,14 +28,21 @@ export const OpenRouter_StructuredGeneration_Stream: AiProviderRunFn<
   const modelName = getModelName(model);
   const schema = input.outputSchema ?? outputSchema;
 
+  // With a schema, request strict json_schema mode; without one, fall back to
+  // json_object so the request never carries an undefined schema (which the API
+  // rejects).
+  const responseFormat = schema
+    ? {
+        type: "json_schema" as never,
+        json_schema: { name: "structured_output", schema: schema, strict: true },
+      }
+    : { type: "json_object" as never };
+
   const stream = await client.chat.completions.create(
     {
       model: modelName,
       messages: [{ role: "user", content: input.prompt }],
-      response_format: {
-        type: "json_schema" as never,
-        json_schema: { name: "structured_output", schema: schema, strict: true },
-      } as never,
+      response_format: responseFormat as never,
       max_completion_tokens: input.maxTokens,
       temperature: input.temperature,
       stream: true,
