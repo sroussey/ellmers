@@ -5,6 +5,7 @@
  */
 
 import type { StreamEvent, TaskOutput } from "@workglow/task-graph";
+import { REFUSAL_CATEGORY_OUTPUT_KEY, REFUSAL_OUTPUT_KEY } from "@workglow/task-graph";
 
 const isNonEmptyObject = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length > 0;
@@ -52,6 +53,8 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
   private snapshotAccumulator: T | undefined;
   private finished = false;
   private finishData: T | undefined;
+  private refusalText = "";
+  private refusalCategory: string | undefined;
   /**
    * The `type` of the most recent observed event. Surfaced in the
    * no-finish materialise error so operators can see what the stream
@@ -101,6 +104,15 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
       case "phase":
         this.lastEventType = "phase";
         return;
+      case "refusal": {
+        // A refusal is a valid outcome (not an error): accumulate it and surface
+        // it via the reserved `refusal` field in materialize().
+        this.lastEventType = "refusal";
+        const e = event as Extract<StreamEvent<T>, { type: "refusal" }>;
+        this.refusalText += e.refusal;
+        if (e.category) this.refusalCategory = e.category;
+        return;
+      }
       case "error":
         this.lastEventType = "error";
         throw (event as { error: unknown }).error;
@@ -129,16 +141,19 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
     }
     // One-shot: finish carries the complete payload.
     if (!this.hasTextDeltas && !this.hasObjectDeltas && !this.hasSnapshots) {
-      if (isNonEmptyObject(this.finishData)) return this.finishData;
-      return this.finishData as unknown as T;
+      if (isNonEmptyObject(this.finishData)) return this.applyRefusal(this.finishData);
+      return this.applyRefusal(this.finishData as unknown as T);
     }
 
     // Snapshot (replace) mode — last snapshot wins, finish merged on top.
     if (this.hasSnapshots && !this.hasTextDeltas && !this.hasObjectDeltas) {
       if (isNonEmptyObject(this.finishData)) {
-        return { ...(this.snapshotAccumulator as object), ...(this.finishData as object) } as T;
+        return this.applyRefusal({
+          ...(this.snapshotAccumulator as object),
+          ...(this.finishData as object),
+        } as T);
       }
-      return this.snapshotAccumulator as T;
+      return this.applyRefusal(this.snapshotAccumulator as T);
     }
 
     // Delta mode — text and/or object deltas. Accumulated deltas take precedence
@@ -159,6 +174,23 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
     for (const [port, obj] of this.objectAccumulator) {
       result[port] = obj;
     }
-    return result as unknown as T;
+    return this.applyRefusal(result as unknown as T);
+  }
+
+  /**
+   * Folds an accumulated refusal into the reserved `refusal` output field so
+   * programmatic consumers can detect it. No-op when no refusal was observed.
+   */
+  private applyRefusal(output: T): T {
+    if (!this.refusalText) return output;
+    const base = (output !== null && typeof output === "object" ? output : {}) as Record<
+      string,
+      unknown
+    >;
+    return {
+      ...base,
+      [REFUSAL_OUTPUT_KEY]: this.refusalText,
+      ...(this.refusalCategory ? { [REFUSAL_CATEGORY_OUTPUT_KEY]: this.refusalCategory } : {}),
+    } as unknown as T;
   }
 }

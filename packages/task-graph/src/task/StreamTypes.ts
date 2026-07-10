@@ -74,6 +74,27 @@ export type StreamError = {
 };
 
 /**
+ * Signals that the model refused to answer (a policy/safety decline). A refusal
+ * is a *valid* outcome, distinct from `error` (nothing failed) and from ordinary
+ * content (the caller wants to detect it): the task still COMPLETES, with the
+ * refusal accumulated into the reserved `refusal` output field. `refusal` text
+ * may stream in fragments (consumer concatenates); `category` is an optional,
+ * provider-normalized reason (e.g. "output-refusal", "input-blocked").
+ */
+export type StreamRefusal = {
+  type: "refusal";
+  refusal: string;
+  category?: string;
+};
+
+/**
+ * Reserved output-port name that refusal text is accumulated into. Not a
+ * declared task port — kept out of dataflow like `__cv` (cache versioning).
+ */
+export const REFUSAL_OUTPUT_KEY = "refusal";
+export const REFUSAL_CATEGORY_OUTPUT_KEY = "refusalCategory";
+
+/**
  * Phase / status event yielded by a streaming source to signal a named
  * phase transition (e.g. "Preparing", "Generating", "Tool: search").
  *
@@ -107,6 +128,7 @@ export type StreamEvent<Output = Record<string, any>> =
   | StreamSnapshot<Output>
   | StreamFinish<Output>
   | StreamError
+  | StreamRefusal
   | StreamPhase;
 
 // ========================================================================

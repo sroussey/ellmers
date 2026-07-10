@@ -11,7 +11,7 @@ import type {
   ToolCalls,
 } from "@workglow/ai";
 import {
-  accumulateOpenAIStream,
+  accumulateOpenAIChatStream,
   buildOpenAITools,
   mapOpenAIToolChoice,
 } from "@workglow/ai/provider-utils";
@@ -22,7 +22,7 @@ import { buildOpenRouterExtras } from "./OpenRouter_RequestParams";
 
 /**
  * Streaming run-fn for `["text.generation", "tool-use"]`. Forwards deltas via
- * {@link accumulateOpenAIStream}; each tool-call delta is filtered against
+ * {@link accumulateOpenAIChatStream}; each tool-call delta is filtered against
  * `input.tools` so a hallucinated function name never reaches the consumer.
  */
 export const OpenRouter_ToolCalling_Stream: AiProviderRunFn<
@@ -51,7 +51,7 @@ export const OpenRouter_ToolCalling_Stream: AiProviderRunFn<
     { signal }
   );
 
-  await accumulateOpenAIStream(stream, (event) => {
+  await accumulateOpenAIChatStream(stream, (event) => {
     if (event.type === "object-delta" && event.port === "toolCalls") {
       const validated = filterValidToolCalls(event.objectDelta as ToolCalls, input.tools);
       if (validated.length > 0) {

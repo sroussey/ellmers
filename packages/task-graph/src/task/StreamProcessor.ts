@@ -8,7 +8,12 @@ import type { ResourceScope, ServiceRegistry } from "@workglow/util";
 import type { Taskish } from "../task-graph/Conversions";
 import type { ITask } from "./ITask";
 import type { StreamEvent, StreamMode } from "./StreamTypes";
-import { getOutputStreamMode, getStreamingPorts } from "./StreamTypes";
+import {
+  getOutputStreamMode,
+  getStreamingPorts,
+  REFUSAL_CATEGORY_OUTPUT_KEY,
+  REFUSAL_OUTPUT_KEY,
+} from "./StreamTypes";
 import { TaskAbortedError, TaskError } from "./TaskError";
 import type { TaskRunContext } from "./TaskRunContext";
 import type { TaskInput, TaskOutput } from "./TaskTypes";
@@ -72,6 +77,8 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
       : undefined;
     let streamingStarted = false;
     let finalOutput: Output | undefined;
+    let refusalText = "";
+    let refusalCategory: string | undefined;
 
     this.task.emit("stream_start");
 
@@ -214,6 +221,21 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
           }
           break;
         }
+        case "refusal": {
+          // A refusal is a valid outcome, not an error: flip to STREAMING like a
+          // data event, accumulate the text, and surface it via the reserved
+          // `refusal` output field after the stream ends. The task still
+          // COMPLETES; consumers detect it by checking `output.refusal`.
+          if (!streamingStarted) {
+            streamingStarted = true;
+            this.task.status = TaskStatus.STREAMING;
+            this.task.emit("status", this.task.status);
+          }
+          refusalText += event.refusal;
+          if (event.category) refusalCategory = event.category;
+          this.task.emit("stream_chunk", event as StreamEvent);
+          break;
+        }
         case "error": {
           throw event.error;
         }
@@ -227,6 +249,18 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
 
     if (finalOutput !== undefined) {
       this.task.runOutputData = finalOutput;
+    }
+
+    // Fold an accumulated refusal into the final output's reserved field so
+    // programmatic consumers (run() result, collectStream, agent loops) can
+    // detect it. Kept off streamed data edges (Dataflow treats refusal as
+    // metadata, like phase).
+    if (refusalText.length > 0) {
+      this.task.runOutputData = {
+        ...(this.task.runOutputData as Record<string, unknown> | undefined),
+        [REFUSAL_OUTPUT_KEY]: refusalText,
+        ...(refusalCategory ? { [REFUSAL_CATEGORY_OUTPUT_KEY]: refusalCategory } : {}),
+      } as unknown as Output;
     }
 
     this.task.emit("stream_end", this.task.runOutputData as Output);

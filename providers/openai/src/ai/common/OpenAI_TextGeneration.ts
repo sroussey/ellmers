@@ -9,9 +9,10 @@ import type {
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
 } from "@workglow/ai";
+import { accumulateOpenAIResponsesStream, buildResponsesInput } from "@workglow/ai/provider-utils";
 import { toOpenAIMessages } from "@workglow/ai/worker";
 import { getLogger } from "@workglow/util/worker";
-import { getClient, getModelName } from "./OpenAI_Client";
+import { finalizeResponsesRequest, getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /**
@@ -27,11 +28,12 @@ interface UnifiedTextGenerationInput extends TextGenerationTaskInput {
 }
 
 /**
- * Build the OpenAI chat-completion request parameters from the unified input
- * shape — preferring a populated `messages` array (AiChatTask) and falling
- * back to wrapping `prompt` as a single user message (TextGenerationTask).
+ * Build the OpenAI Responses request parameters from the unified input shape —
+ * preferring a populated `messages` array (AiChatTask) and falling back to the
+ * `prompt` string (TextGenerationTask). Note: the Responses API does not accept
+ * `frequency_penalty` / `presence_penalty`, so those are not forwarded.
  */
-function buildChatParams(
+function buildResponsesParams(
   input: UnifiedTextGenerationInput,
   model: OpenAiModelConfig | undefined
 ): Record<string, unknown> {
@@ -43,20 +45,23 @@ function buildChatParams(
         prompt: "",
         tools: [],
       } as never)
-    : [{ role: "user" as const, content: input.prompt }];
+    : undefined;
+
+  const { input: responsesInput, instructions } = buildResponsesInput({
+    messages,
+    prompt: hasMessages ? undefined : input.prompt,
+    systemPrompt: hasMessages ? undefined : input.systemPrompt,
+  });
 
   const params: Record<string, unknown> = {
     model: getModelName(model),
-    messages,
+    input: responsesInput,
   };
-  if (input.maxTokens !== undefined) params.max_completion_tokens = input.maxTokens;
+  if (instructions !== undefined) params.instructions = instructions;
+  if (input.maxTokens !== undefined) params.max_output_tokens = input.maxTokens;
   if (input.temperature !== undefined) params.temperature = input.temperature;
   if ((input as { topP?: number }).topP !== undefined)
     params.top_p = (input as { topP?: number }).topP;
-  if ((input as { frequencyPenalty?: number }).frequencyPenalty !== undefined)
-    params.frequency_penalty = (input as { frequencyPenalty?: number }).frequencyPenalty;
-  if ((input as { presencePenalty?: number }).presencePenalty !== undefined)
-    params.presence_penalty = (input as { presencePenalty?: number }).presencePenalty;
   return params;
 }
 
@@ -77,21 +82,17 @@ export const OpenAI_TextGeneration_Stream: AiProviderRunFn<
   logger.time(timerLabel, { model: getModelName(model) });
   try {
     const client = await getClient(model);
-    const params = buildChatParams(input as UnifiedTextGenerationInput, model);
+    const params = finalizeResponsesRequest(
+      model,
+      buildResponsesParams(input as UnifiedTextGenerationInput, model)
+    );
 
-    const stream = await client.chat.completions.create(
-      { ...params, stream: true } as Parameters<typeof client.chat.completions.create>[0],
+    const stream = await client.responses.create(
+      { ...params, stream: true } as Parameters<typeof client.responses.create>[0],
       { signal }
     );
 
-    for await (const chunk of stream as AsyncIterable<{
-      choices?: Array<{ delta?: { content?: string | null } }>;
-    }>) {
-      const delta = chunk.choices?.[0]?.delta?.content ?? "";
-      if (delta) {
-        emit({ type: "text-delta", port: "text", textDelta: delta });
-      }
-    }
+    await accumulateOpenAIResponsesStream(stream as AsyncIterable<unknown>, emit);
     emit({ type: "finish", data: {} as TextGenerationTaskOutput });
   } finally {
     logger.timeEnd(timerLabel, { model: getModelName(model) });

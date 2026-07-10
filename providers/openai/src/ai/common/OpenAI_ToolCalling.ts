@@ -11,18 +11,19 @@ import type {
   ToolCalls,
 } from "@workglow/ai";
 import {
-  accumulateOpenAIStream,
-  buildOpenAITools,
-  mapOpenAIToolChoice,
+  accumulateOpenAIResponsesStream,
+  buildResponsesInput,
+  buildResponsesTools,
+  mapResponsesToolChoice,
 } from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, toOpenAIMessages } from "@workglow/ai/worker";
-import { getClient, getModelName } from "./OpenAI_Client";
+import { finalizeResponsesRequest, getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /**
  * Streaming run-fn for `["text.generation", "tool-use"]`. Calls the OpenAI
- * chat-completions endpoint with `stream: true` and forwards delta events via
- * {@link accumulateOpenAIStream}, which emits `text-delta` and tool-call
+ * Responses endpoint with `stream: true` and forwards delta events via
+ * {@link accumulateOpenAIResponsesStream}, which emits `text-delta` and tool-call
  * `object-delta` events plus a final empty `finish`.
  *
  * Defence-in-depth: each tool-call `object-delta` is filtered against
@@ -36,32 +37,40 @@ export const OpenAI_ToolCalling_Stream: AiProviderRunFn<
   const client = await getClient(model);
   const modelName = getModelName(model);
 
-  const tools = buildOpenAITools(input.tools);
-  const messages = toOpenAIMessages(input);
-  const toolChoice = mapOpenAIToolChoice(input.toolChoice, true);
+  const tools = buildResponsesTools(input.tools);
+  const { input: responsesInput, instructions } = buildResponsesInput({
+    messages: toOpenAIMessages(input),
+  });
+  const toolChoice = mapResponsesToolChoice(input.toolChoice);
 
-  const stream = await client.chat.completions.create(
-    {
-      model: modelName,
-      messages,
-      max_completion_tokens: input.maxTokens,
-      temperature: input.temperature,
-      stream: true,
-      tools,
-      tool_choice: toolChoice,
-    },
+  const params: Record<string, unknown> = {
+    model: modelName,
+    input: responsesInput,
+    tools,
+    tool_choice: toolChoice,
+  };
+  if (instructions !== undefined) params.instructions = instructions;
+  if (input.maxTokens !== undefined) params.max_output_tokens = input.maxTokens;
+  if (input.temperature !== undefined) params.temperature = input.temperature;
+  finalizeResponsesRequest(model, params);
+
+  const stream = await client.responses.create(
+    { ...params, stream: true } as Parameters<typeof client.responses.create>[0],
     { signal }
   );
 
-  await accumulateOpenAIStream(stream, (event) => {
-    if (event.type === "object-delta" && event.port === "toolCalls") {
-      const validated = filterValidToolCalls(event.objectDelta as ToolCalls, input.tools);
-      if (validated.length > 0) {
-        emit({ type: "object-delta", port: "toolCalls", objectDelta: validated });
+  await accumulateOpenAIResponsesStream<ToolCallingTaskOutput>(
+    stream as AsyncIterable<unknown>,
+    (event) => {
+      if (event.type === "object-delta" && event.port === "toolCalls") {
+        const validated = filterValidToolCalls(event.objectDelta as ToolCalls, input.tools);
+        if (validated.length > 0) {
+          emit({ type: "object-delta", port: "toolCalls", objectDelta: validated });
+        }
+        return;
       }
-      return;
+      emit(event);
     }
-    emit(event);
-  });
+  );
   emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
 };

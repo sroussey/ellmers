@@ -7,6 +7,7 @@
 import type { AiProviderRunFn, TextRewriterTaskInput, TextRewriterTaskOutput } from "@workglow/ai";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
+import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
 
 export const Anthropic_TextRewriter_Stream: AiProviderRunFn<
   TextRewriterTaskInput,
@@ -27,6 +28,7 @@ export const Anthropic_TextRewriter_Stream: AiProviderRunFn<
   );
 
   for await (const event of stream) {
+    maybeEmitAnthropicRefusal(event, emit);
     if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
       emit({ type: "text-delta", port: "text", textDelta: event.delta.text });
     }

@@ -45,6 +45,31 @@ export const OpenAiModelSchema = {
           type: "string",
           description: "OpenAI organization ID (optional).",
         },
+        prompt_cache_key: {
+          type: "string",
+          description:
+            "Overrides the auto-derived Responses prompt_cache_key. Requests sharing a key share a cached prefix; leave unset to derive a stable key from the model + system instructions + tools.",
+          "x-ui-hidden": true,
+        },
+        reasoning: {
+          type: "object",
+          description:
+            "Reasoning controls for reasoning-capable models (e.g. the GPT-5.6 sol/terra/luna family), sent on the Responses API.",
+          properties: {
+            effort: {
+              type: "string",
+              enum: ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+              description: "Reasoning effort. Higher effort trades latency and cost for quality.",
+            },
+            mode: {
+              type: "string",
+              enum: ["pro"],
+              description:
+                "Set to 'pro' for the quality-first pro configuration on supported models.",
+            },
+          },
+          additionalProperties: false,
+        },
       },
       required: ["model_name"],
       additionalProperties: false,

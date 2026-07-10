@@ -193,9 +193,17 @@ export class StructuredGenerationTask extends StreamingAiTask<
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       let lastObject: Record<string, unknown> | undefined;
+      let refused = false;
 
       for await (const event of super.executeStream(currentInput, context)) {
-        if (event.type === "object-delta" && event.port === "object") {
+        if (event.type === "refusal") {
+          // The model declined: a refusal is a terminal outcome for this task —
+          // there is no object to validate and retrying would burn attempts. Pass
+          // the refusal through (folded into the reserved `refusal` field) and
+          // complete on finish without validation.
+          refused = true;
+          yield event;
+        } else if (event.type === "object-delta" && event.port === "object") {
           // Track the latest structured-output state for validation but also
           // pass the delta through so UIs can render progressive JSON.
           const delta = event.objectDelta;
@@ -204,6 +212,10 @@ export class StructuredGenerationTask extends StreamingAiTask<
           }
           yield event;
         } else if (event.type === "finish") {
+          if (refused) {
+            yield event as StreamEvent<StructuredGenerationTaskOutput>;
+            return;
+          }
           // Prefer the finish payload's object (some providers populate it);
           // fall back to the last object-delta.
           const data = event.data as StructuredGenerationTaskOutput | undefined;

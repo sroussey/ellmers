@@ -36,6 +36,10 @@ export const OpenRouter_TextSummary_Stream: AiProviderRunFn<
     if (delta) {
       emit({ type: "text-delta", port: "text", textDelta: delta });
     }
+    const refusalDelta = chunk.choices[0]?.delta?.refusal ?? "";
+    if (refusalDelta) {
+      emit({ type: "refusal", refusal: refusalDelta });
+    }
   }
   emit({ type: "finish", data: {} as TextSummaryTaskOutput });
 };

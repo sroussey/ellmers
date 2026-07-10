@@ -74,7 +74,7 @@ export function mapOpenAIToolChoice(
 }
 
 /** Best-effort JSON parse: full parse first, then partial-JSON fallback, then `{}`. */
-function parseToolArgs(raw: string): Record<string, unknown> {
+export function parseToolArgs(raw: string): Record<string, unknown> {
   if (!raw) return {};
   try {
     return JSON.parse(raw) as Record<string, unknown>;
@@ -136,7 +136,7 @@ interface ToolCallAccumulatorEntry {
  * {@link ToolCallingTaskOutput} even when the model streams only
  * `tool_calls` (no `content` deltas).
  */
-export async function accumulateOpenAIStream(
+export async function accumulateOpenAIChatStream(
   stream: AsyncIterable<any>,
   emit: (event: StreamEvent<ToolCallingTaskOutput>) => void
 ): Promise<void> {
@@ -149,6 +149,14 @@ export async function accumulateOpenAIStream(
     const contentDelta: string = choice.delta?.content ?? "";
     if (contentDelta) {
       emit({ type: "text-delta", port: "text", textDelta: contentDelta });
+    }
+
+    // OpenAI-compatible chat completions surface safety refusals as a `refusal`
+    // string on the delta (distinct from `content`). Emit it as a first-class
+    // refusal event so it lands in the reserved `refusal` output field.
+    const refusalDelta: string = choice.delta?.refusal ?? "";
+    if (refusalDelta) {
+      emit({ type: "refusal", refusal: refusalDelta });
     }
 
     const tcDeltas = choice.delta?.tool_calls;

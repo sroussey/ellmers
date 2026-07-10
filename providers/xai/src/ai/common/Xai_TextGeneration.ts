@@ -85,11 +85,15 @@ export const Xai_TextGeneration_Stream: AiProviderRunFn<
     );
 
     for await (const chunk of stream as AsyncIterable<{
-      choices?: Array<{ delta?: { content?: string | null } }>;
+      choices?: Array<{ delta?: { content?: string | null; refusal?: string | null } }>;
     }>) {
       const delta = chunk.choices?.[0]?.delta?.content ?? "";
       if (delta) {
         emit({ type: "text-delta", port: "text", textDelta: delta });
+      }
+      const refusalDelta = chunk.choices?.[0]?.delta?.refusal ?? "";
+      if (refusalDelta) {
+        emit({ type: "refusal", refusal: refusalDelta });
       }
     }
     emit({ type: "finish", data: {} as TextGenerationTaskOutput });

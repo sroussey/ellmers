@@ -5,12 +5,14 @@
  */
 
 import type { AiProviderRunFn, TextRewriterTaskInput, TextRewriterTaskOutput } from "@workglow/ai";
-import { getClient, getModelName } from "./OpenAI_Client";
+import { accumulateOpenAIResponsesStream } from "@workglow/ai/provider-utils";
+import { finalizeResponsesRequest, getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /**
  * Streaming run-fn for `["text.rewriter"]`. Emits `text-delta` events on
- * the `text` port and a final empty `finish` event.
+ * the `text` port and a final empty `finish` event. The rewrite instruction
+ * is sent as the Responses `instructions` (system) channel.
  */
 export const OpenAI_TextRewriter_Stream: AiProviderRunFn<
   TextRewriterTaskInput,
@@ -18,25 +20,19 @@ export const OpenAI_TextRewriter_Stream: AiProviderRunFn<
   OpenAiModelConfig
 > = async (input, model, signal, emit) => {
   const client = await getClient(model);
-  const modelName = getModelName(model);
 
-  const stream = await client.chat.completions.create(
-    {
-      model: modelName,
-      messages: [
-        { role: "system", content: input.prompt },
-        { role: "user", content: input.text },
-      ],
-      stream: true,
-    },
+  const params: Record<string, unknown> = {
+    model: getModelName(model),
+    instructions: input.prompt,
+    input: input.text,
+  };
+  finalizeResponsesRequest(model, params);
+
+  const stream = await client.responses.create(
+    { ...params, stream: true } as Parameters<typeof client.responses.create>[0],
     { signal }
   );
 
-  for await (const chunk of stream) {
-    const delta = chunk.choices[0]?.delta?.content ?? "";
-    if (delta) {
-      emit({ type: "text-delta", port: "text", textDelta: delta });
-    }
-  }
+  await accumulateOpenAIResponsesStream(stream as AsyncIterable<unknown>, emit);
   emit({ type: "finish", data: {} as TextRewriterTaskOutput });
 };

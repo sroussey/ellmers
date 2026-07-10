@@ -129,6 +129,37 @@ describe("StreamEventAccumulator", () => {
     expect(err.message).toMatch(/lastEventType=phase/);
   });
 
+  it("folds refusal deltas into the reserved refusal field (one-shot finish)", () => {
+    const acc = new StreamEventAccumulator<Out>();
+    acc.observe({ type: "refusal", refusal: "I can't " } as StreamEvent<Out>);
+    acc.observe({ type: "refusal", refusal: "help with that." } as StreamEvent<Out>);
+    acc.observeFinish({ type: "finish", data: {} });
+    expect(acc.materialize()).toEqual({ refusal: "I can't help with that." });
+  });
+
+  it("carries refusal alongside accumulated text and a category", () => {
+    const acc = new StreamEventAccumulator<Out>();
+    acc.observe({ type: "text-delta", port: "text", textDelta: "partial" } as StreamEvent<Out>);
+    acc.observe({
+      type: "refusal",
+      refusal: "declined",
+      category: "output-refusal",
+    } as StreamEvent<Out>);
+    acc.observeFinish({ type: "finish", data: {} });
+    expect(acc.materialize()).toEqual({
+      text: "partial",
+      refusal: "declined",
+      refusalCategory: "output-refusal",
+    });
+  });
+
+  it("does not add a refusal field when no refusal was observed", () => {
+    const acc = new StreamEventAccumulator<Out>();
+    acc.observe({ type: "text-delta", port: "text", textDelta: "hi" } as StreamEvent<Out>);
+    acc.observeFinish({ type: "finish", data: {} });
+    expect(acc.materialize()).toEqual({ text: "hi" });
+  });
+
   it("includes lastEventType=(none) when materialize is called with no events at all", () => {
     const acc = new StreamEventAccumulator<Out>();
     let caught: unknown;

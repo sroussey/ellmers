@@ -5,10 +5,30 @@
  */
 
 import type { ModelRecord } from "@workglow/ai";
+import type { OpenAiModelConfig } from "@workglow/openai/ai";
 import { _testOnly } from "@workglow/openai/ai";
 import { describe, expect, it } from "vitest";
 
-const { OpenAiQueuedProvider, OPENAI_RUN_FN_SPECS, OPENAI_RUN_FNS } = _testOnly;
+const {
+  OpenAiQueuedProvider,
+  OPENAI_RUN_FN_SPECS,
+  OPENAI_RUN_FNS,
+  getReasoningConfig,
+  resolvePromptCacheKey,
+  isStrictCompatibleSchema,
+} = _testOnly;
+
+function modelWithConfig(provider_config: Record<string, unknown>): OpenAiModelConfig {
+  return {
+    model_id: "m",
+    title: "m",
+    description: "",
+    provider: "OPENAI",
+    provider_config,
+    capabilities: [],
+    metadata: {},
+  } as unknown as OpenAiModelConfig;
+}
 
 function model(model_id: string, capabilities: readonly string[] = []): ModelRecord {
   return {
@@ -40,6 +60,17 @@ describe("OpenAiQueuedProvider.inferCapabilities", () => {
     expect(caps).toContain("tool-use");
     expect(caps).toContain("json-mode");
     expect(caps).not.toContain("vision-input");
+  });
+
+  it("infers chat + tool-use + json-mode + vision-input for the gpt-5.6 sol/terra/luna family", () => {
+    for (const id of ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+      const caps = provider.inferCapabilities(model(id));
+      expect(caps, id).toContain("text.generation");
+      expect(caps, id).toContain("tool-use");
+      expect(caps, id).toContain("json-mode");
+      expect(caps, id).toContain("vision-input");
+      expect(caps, id).toContain("model.count-tokens");
+    }
   });
 
   it("infers chat capabilities for the o1/o3 reasoning families", () => {
@@ -106,6 +137,121 @@ describe("OpenAiQueuedProvider.inferCapabilities", () => {
     const caps = provider.inferCapabilities(model("text-embedding-3-small"));
     const sorted = [...caps].sort();
     expect(sorted).toEqual(["model.count-tokens", "model.info", "model.search", "text.embedding"]);
+  });
+});
+
+describe("getReasoningConfig", () => {
+  it("returns undefined when no reasoning is configured", () => {
+    expect(getReasoningConfig(modelWithConfig({ model_name: "gpt-5.6-sol" }))).toBeUndefined();
+    expect(
+      getReasoningConfig(modelWithConfig({ model_name: "gpt-5.6-sol", reasoning: {} }))
+    ).toBeUndefined();
+  });
+
+  it("returns the reasoning object when effort or mode is set", () => {
+    expect(
+      getReasoningConfig(modelWithConfig({ model_name: "gpt-5.6-sol", reasoning: { mode: "pro" } }))
+    ).toEqual({ mode: "pro" });
+    expect(
+      getReasoningConfig(
+        modelWithConfig({ model_name: "gpt-5.6-terra", reasoning: { effort: "high" } })
+      )
+    ).toEqual({ effort: "high" });
+  });
+});
+
+describe("isStrictCompatibleSchema", () => {
+  it("accepts an object with additionalProperties:false and all properties required", () => {
+    expect(
+      isStrictCompatibleSchema({
+        type: "object",
+        additionalProperties: false,
+        properties: { a: { type: "string" }, b: { type: "number" } },
+        required: ["a", "b"],
+      })
+    ).toBe(true);
+  });
+
+  it("rejects an object missing additionalProperties:false", () => {
+    expect(
+      isStrictCompatibleSchema({
+        type: "object",
+        properties: { a: { type: "string" } },
+        required: ["a"],
+      })
+    ).toBe(false);
+  });
+
+  it("rejects an object with an optional (non-required) property", () => {
+    expect(
+      isStrictCompatibleSchema({
+        type: "object",
+        additionalProperties: false,
+        properties: { a: { type: "string" }, b: { type: "number" } },
+        required: ["a"],
+      })
+    ).toBe(false);
+  });
+
+  it("recurses into nested objects and array items", () => {
+    expect(
+      isStrictCompatibleSchema({
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: { x: { type: "string" } },
+              required: ["x"],
+            },
+          },
+        },
+        required: ["items"],
+      })
+    ).toBe(true);
+  });
+
+  it("rejects a nested object that is not strict", () => {
+    expect(
+      isStrictCompatibleSchema({
+        type: "object",
+        additionalProperties: false,
+        properties: { nested: { type: "object", properties: { y: { type: "string" } } } },
+        required: ["nested"],
+      })
+    ).toBe(false);
+  });
+
+  it("treats anyOf/oneOf/allOf and $ref conservatively as non-strict", () => {
+    expect(isStrictCompatibleSchema({ anyOf: [{ type: "string" }, { type: "number" }] })).toBe(
+      false
+    );
+    expect(isStrictCompatibleSchema({ $ref: "#/$defs/Foo" })).toBe(false);
+  });
+});
+
+describe("resolvePromptCacheKey", () => {
+  const model = modelWithConfig({ model_name: "gpt-5.6-sol" });
+
+  it("is stable for the same model + instructions + tools", () => {
+    const params = { model: "gpt-5.6-sol", instructions: "be terse", tools: [{ name: "t" }] };
+    expect(resolvePromptCacheKey(model, params)).toBe(resolvePromptCacheKey(model, params));
+  });
+
+  it("differs when the stable prefix differs", () => {
+    const a = resolvePromptCacheKey(model, { model: "gpt-5.6-sol", instructions: "A" });
+    const b = resolvePromptCacheKey(model, { model: "gpt-5.6-sol", instructions: "B" });
+    expect(a).not.toBe(b);
+  });
+
+  it("honors an explicit prompt_cache_key override", () => {
+    const overridden = modelWithConfig({ model_name: "gpt-5.6-sol", prompt_cache_key: "my-key" });
+    expect(resolvePromptCacheKey(overridden, { model: "gpt-5.6-sol", instructions: "x" })).toBe(
+      "my-key"
+    );
   });
 });
 

@@ -15,6 +15,7 @@ export * from "./registerAnthropic";
 import { AnthropicQueuedProvider } from "./AnthropicQueuedProvider";
 import { ANTHROPIC_RUN_FN_SPECS } from "./common/Anthropic_Capabilities";
 import { ANTHROPIC_RUN_FNS } from "./common/Anthropic_JobRunFns";
+import { maybeEmitAnthropicRefusal } from "./common/Anthropic_Refusal";
 
 /**
  * @internal Symbols exported only for use by `@workglow/test`. Not part of the stable public API.
@@ -23,4 +24,5 @@ export const _testOnly = {
   AnthropicQueuedProvider,
   ANTHROPIC_RUN_FN_SPECS,
   ANTHROPIC_RUN_FNS,
+  maybeEmitAnthropicRefusal,
 } as const;

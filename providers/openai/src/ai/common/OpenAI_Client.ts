@@ -35,6 +35,8 @@ interface ResolvedProviderConfig {
   readonly model_name?: string;
   readonly base_url?: string;
   readonly organization?: string;
+  readonly prompt_cache_key?: string;
+  readonly reasoning?: { readonly effort?: string; readonly mode?: string };
   /**
    * When `true`, accept the `base_url` even if its hostname is not in
    * {@link OPENAI_ALLOWED_HOSTS}. Use only for known-good custom enterprise
@@ -79,4 +81,69 @@ export function getModelName(model: OpenAiModelConfig | undefined): string {
     throw new Error("Missing model name in provider_config.model_name.");
   }
   return name;
+}
+
+/**
+ * Resolves the configured `reasoning` object for reasoning-capable models
+ * (the GPT-5.6 sol/terra/luna family and the o-series), sent verbatim as the
+ * Responses `reasoning` parameter. Returns `undefined` when unset so
+ * non-reasoning models and callers that don't opt in send no reasoning field.
+ */
+export function getReasoningConfig(
+  model: OpenAiModelConfig | undefined
+): { effort?: string; mode?: string } | undefined {
+  const reasoning = (model?.provider_config as ResolvedProviderConfig | undefined)?.reasoning;
+  if (!reasoning || (reasoning.effort === undefined && reasoning.mode === undefined)) {
+    return undefined;
+  }
+  return reasoning;
+}
+
+/** Deterministic 32-bit FNV-1a hash → 8-char hex. Worker-safe (no crypto import). */
+function fnv1aHex(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+/**
+ * Resolves the Responses `prompt_cache_key`. Uses an explicit
+ * `provider_config.prompt_cache_key` override when set, otherwise derives a
+ * stable key from the request's cache-relevant prefix (model + system
+ * instructions + tools) so requests sharing that prefix converge on one key and
+ * hit the cache. GPT-5.6 bills cache writes, so a stable key (not a random one)
+ * is the cost-correct default.
+ */
+export function resolvePromptCacheKey(
+  model: OpenAiModelConfig | undefined,
+  params: { model?: unknown; instructions?: unknown; tools?: unknown }
+): string {
+  const override = (model?.provider_config as ResolvedProviderConfig | undefined)?.prompt_cache_key;
+  if (override) return override;
+  const material = JSON.stringify([
+    params.model ?? "",
+    params.instructions ?? "",
+    params.tools ?? null,
+  ]);
+  return `wg-${fnv1aHex(material)}`;
+}
+
+/**
+ * Applies the per-request Responses fields common to every OpenAI text run-fn:
+ * the model's `reasoning` config (when set) and a stable `prompt_cache_key`.
+ * Mutates and returns `params` so callers can inline it into the create call.
+ * Call this last, after model/instructions/tools are populated, so the cache
+ * key sees the full prefix.
+ */
+export function finalizeResponsesRequest(
+  model: OpenAiModelConfig | undefined,
+  params: Record<string, unknown>
+): Record<string, unknown> {
+  const reasoning = getReasoningConfig(model);
+  if (reasoning !== undefined) params.reasoning = reasoning;
+  params.prompt_cache_key = resolvePromptCacheKey(model, params);
+  return params;
 }

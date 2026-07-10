@@ -16,6 +16,7 @@ import { buildToolDescription, filterValidToolCalls, sanitizeToolArgs } from "@w
 import { parsePartialJson } from "@workglow/util/worker";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
+import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
 
 export function buildAnthropicMessages(
   messages: ReadonlyArray<ChatMessage> | undefined,
@@ -167,6 +168,7 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
     filterValidToolCalls(toolCallsInStreamOrder(), input.tools);
 
   for await (const event of stream) {
+    maybeEmitAnthropicRefusal(event, emit);
     if (event.type === "content_block_start") {
       const block = event.content_block;
       const index = event.index as number;
