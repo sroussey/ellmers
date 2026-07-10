@@ -74,7 +74,7 @@ export function mapOpenAIToolChoice(
 }
 
 /** Best-effort JSON parse: full parse first, then partial-JSON fallback, then `{}`. */
-function parseToolArgs(raw: string): Record<string, unknown> {
+export function parseToolArgs(raw: string): Record<string, unknown> {
   if (!raw) return {};
   try {
     return JSON.parse(raw) as Record<string, unknown>;

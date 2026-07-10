@@ -12,12 +12,7 @@ import type {
 import { accumulateOpenAIResponsesStream, buildResponsesInput } from "@workglow/ai/provider-utils";
 import { toOpenAIMessages } from "@workglow/ai/worker";
 import { getLogger } from "@workglow/util/worker";
-import {
-  getClient,
-  getModelName,
-  getReasoningConfig,
-  resolvePromptCacheKey,
-} from "./OpenAI_Client";
+import { finalizeResponsesRequest, getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /**
@@ -63,8 +58,6 @@ function buildResponsesParams(
     input: responsesInput,
   };
   if (instructions !== undefined) params.instructions = instructions;
-  const reasoning = getReasoningConfig(model);
-  if (reasoning !== undefined) params.reasoning = reasoning;
   if (input.maxTokens !== undefined) params.max_output_tokens = input.maxTokens;
   if (input.temperature !== undefined) params.temperature = input.temperature;
   if ((input as { topP?: number }).topP !== undefined)
@@ -89,8 +82,10 @@ export const OpenAI_TextGeneration_Stream: AiProviderRunFn<
   logger.time(timerLabel, { model: getModelName(model) });
   try {
     const client = await getClient(model);
-    const params = buildResponsesParams(input as UnifiedTextGenerationInput, model);
-    params.prompt_cache_key = resolvePromptCacheKey(model, params);
+    const params = finalizeResponsesRequest(
+      model,
+      buildResponsesParams(input as UnifiedTextGenerationInput, model)
+    );
 
     const stream = await client.responses.create(
       { ...params, stream: true } as Parameters<typeof client.responses.create>[0],

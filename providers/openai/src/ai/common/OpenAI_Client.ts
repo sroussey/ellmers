@@ -130,3 +130,20 @@ export function resolvePromptCacheKey(
   ]);
   return `wg-${fnv1aHex(material)}`;
 }
+
+/**
+ * Applies the per-request Responses fields common to every OpenAI text run-fn:
+ * the model's `reasoning` config (when set) and a stable `prompt_cache_key`.
+ * Mutates and returns `params` so callers can inline it into the create call.
+ * Call this last, after model/instructions/tools are populated, so the cache
+ * key sees the full prefix.
+ */
+export function finalizeResponsesRequest(
+  model: OpenAiModelConfig | undefined,
+  params: Record<string, unknown>
+): Record<string, unknown> {
+  const reasoning = getReasoningConfig(model);
+  if (reasoning !== undefined) params.reasoning = reasoning;
+  params.prompt_cache_key = resolvePromptCacheKey(model, params);
+  return params;
+}

@@ -5,10 +5,10 @@
  */
 
 import type { StreamEvent } from "@workglow/task-graph";
-import { parsePartialJson } from "@workglow/util/worker";
 import type { ToolCallingTaskOutput } from "../task/ToolCallingTask";
 import type { ToolCalls, ToolDefinition } from "../task/ToolCallingUtils";
 import { buildToolDescription, sanitizeToolArgs } from "../task/ToolCallingUtils";
+import { parseToolArgs } from "./OpenAIShapedChat";
 
 /**
  * Shared helpers for the OpenAI **Responses** API (`client.responses.create`),
@@ -190,17 +190,6 @@ export function mapResponsesToolChoice(toolChoice: string | undefined): OpenAIRe
   if (toolChoice === "none") return "none";
   if (toolChoice === "required") return "required";
   return { type: "function", name: toolChoice };
-}
-
-/** Best-effort JSON parse: full parse first, then partial-JSON fallback, then `{}`. */
-function parseToolArgs(raw: string): Record<string, unknown> {
-  if (!raw) return {};
-  try {
-    return JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    const partial = parsePartialJson(raw);
-    return partial && typeof partial === "object" ? (partial as Record<string, unknown>) : {};
-  }
 }
 
 /**
