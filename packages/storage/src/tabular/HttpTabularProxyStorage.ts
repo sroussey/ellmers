@@ -200,9 +200,13 @@ export class HttpTabularProxyStorage<
     patch: Partial<Entity>
   ): Promise<Entity | undefined> {
     this.assertPatchKeepsPrimaryKey(patch);
-    const matches = (await this.query(match)) ?? [];
-    if (matches.length === 0) return undefined;
-    return this.put({ ...matches[0], ...patch } as never);
+    const { entity } = await this.call<{ entity: Entity | null }>("updateWhere", {
+      match,
+      patch,
+    });
+    const result = entity ?? undefined;
+    if (result) safeEmit(this.events, "put", result);
+    return result;
   }
 
   async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
