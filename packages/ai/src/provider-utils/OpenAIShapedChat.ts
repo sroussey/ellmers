@@ -136,7 +136,7 @@ interface ToolCallAccumulatorEntry {
  * {@link ToolCallingTaskOutput} even when the model streams only
  * `tool_calls` (no `content` deltas).
  */
-export async function accumulateOpenAIStream(
+export async function accumulateOpenAIChatStream(
   stream: AsyncIterable<any>,
   emit: (event: StreamEvent<ToolCallingTaskOutput>) => void
 ): Promise<void> {

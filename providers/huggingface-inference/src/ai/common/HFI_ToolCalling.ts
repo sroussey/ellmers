@@ -6,7 +6,7 @@
 
 import type { AiProviderRunFn, ToolCallingTaskInput, ToolCallingTaskOutput } from "@workglow/ai";
 import {
-  accumulateOpenAIStream,
+  accumulateOpenAIChatStream,
   buildOpenAITools,
   mapOpenAIToolChoice,
 } from "@workglow/ai/provider-utils";
@@ -42,6 +42,6 @@ export const HFI_ToolCalling_Stream: AiProviderRunFn<
 
   const stream = client.chatCompletionStream(params, { signal });
 
-  await accumulateOpenAIStream(stream, emit);
+  await accumulateOpenAIChatStream(stream, emit);
   emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
 };
