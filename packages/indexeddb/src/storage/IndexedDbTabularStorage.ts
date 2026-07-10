@@ -960,21 +960,76 @@ export class IndexedDbTabularStorage<
   }
 
   /**
-   * Read-modify-write over {@link query}/{@link put}. IndexedDB has no
-   * native conditional-update primitive, so this is not a true atomic CAS
-   * like the SQL backends' `UPDATE ... WHERE ... RETURNING` — concurrent
-   * writers could race between the read and the write. Matches the
-   * unoptimized `query`+`put` fallback used by the other non-SQL backends.
+   * Compare-and-swap `updateWhere`: opens a single `readwrite` transaction
+   * on the object store, walks the first cursor row satisfying `match`,
+   * applies `patch` in place via `cursor.update()`, and resolves on
+   * `tx.oncomplete`. Two concurrent callers with overlapping `match`
+   * criteria therefore serialize on the underlying IDB transaction rather
+   * than racing between a `query()` and a `put()`. Uniqueness is enforced
+   * by IDB's native UNIQUE indexes — a patch that collides with another
+   * row rejects the cursor request with `ConstraintError`, which aborts
+   * the transaction (mirroring how {@link put} propagates the same error).
+   *
+   * The cursor source is picked with the same equality-prefix planner
+   * {@link createIndexedRange} uses for {@link count}: an index scan when
+   * an equality prefix narrows the criteria, otherwise a full store scan.
    */
   async updateWhere(
     match: SearchCriteria<Entity>,
     patch: Partial<Entity>
   ): Promise<Entity | undefined> {
     this.assertPatchKeepsPrimaryKey(patch);
-    const matches = (await this.query(match)) ?? [];
-    if (matches.length === 0) return undefined;
-    const updated = { ...matches[0], ...patch } as Entity;
-    return this.put(updated as never);
+    this.validateQueryParams(match);
+    const db = await this.getDb();
+
+    return new Promise<Entity | undefined>((resolve, reject) => {
+      let tx: IDBTransaction;
+      try {
+        tx = db.transaction(this.table, "readwrite");
+      } catch (err) {
+        reject(err);
+        return;
+      }
+      const store = tx.objectStore(this.table);
+      const plan = this.createIndexedRange(store, match);
+      const source = plan?.source ?? store;
+      const range = plan?.range;
+
+      let updated: Entity | undefined;
+
+      tx.oncomplete = () => {
+        if (updated !== undefined) {
+          safeEmit(this.events, "put", updated);
+          this.hybridManager?.notifyLocalChange();
+        }
+        resolve(updated);
+      };
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error("updateWhere transaction aborted"));
+
+      const request = source.openCursor(range);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+
+        const record = cursor.value as Entity;
+        if (!this.matchesCriteria(record, match)) {
+          cursor.continue();
+          return;
+        }
+
+        const candidate = { ...record, ...patch } as Entity;
+        const updateRequest = cursor.update(candidate);
+        updateRequest.onsuccess = () => {
+          updated = candidate;
+        };
+        updateRequest.onerror = () => {
+          // Let the ConstraintError (unique-index collision) abort the
+          // transaction; tx.onabort surfaces it to the caller.
+        };
+      };
+    });
   }
 
   private getEqualityCriterionValue(
