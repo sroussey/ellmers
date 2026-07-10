@@ -6,8 +6,8 @@
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { FsFolderJsonKvStorage } from "../../packages/storage/src/kv/FsFolderJsonKvStorage";
 import { LazyEncryptedCredentialStore } from "../../packages/storage/src/credentials/LazyEncryptedCredentialStore";
+import { FsFolderJsonKvStorage } from "../../packages/storage/src/kv/FsFolderJsonKvStorage";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../..");
@@ -21,6 +21,7 @@ export const CREDENTIAL_TO_ENV: Readonly<Record<string, string>> = {
   "google-api-key": "GOOGLE_API_KEY",
   "gemini-api-key": "GEMINI_API_KEY",
   "hf-token": "HF_TOKEN",
+  "xai-api-key": "XAI_API_KEY",
 };
 
 export interface BuiltStore {

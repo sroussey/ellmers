@@ -17,6 +17,7 @@ import { LlamaCppModelRecordSchema } from "@workglow/node-llama-cpp/ai";
 import { OllamaModelRecordSchema } from "@workglow/ollama/ai";
 import { OpenAiModelRecordSchema } from "@workglow/openai/ai";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
+import { XaiModelRecordSchema } from "@workglow/xai/ai";
 import type { Command } from "commander";
 import { loadConfig } from "../config";
 import { editStringInExternalEditor } from "../editInEditor";
@@ -36,6 +37,7 @@ import { formatError, formatTable } from "../util";
 const PROVIDER_SCHEMAS: Record<string, DataPortSchemaObject> = {
   ANTHROPIC: AnthropicModelRecordSchema,
   OPENAI: OpenAiModelRecordSchema,
+  XAI: XaiModelRecordSchema,
   GOOGLE_GEMINI: GeminiModelRecordSchema,
   OLLAMA: OllamaModelRecordSchema,
   HF_INFERENCE: HfInferenceModelRecordSchema,

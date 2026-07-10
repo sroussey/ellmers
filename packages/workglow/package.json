@@ -136,6 +136,22 @@
       "types": "./dist/openai-runtime.d.ts",
       "import": "./dist/openai-runtime.js"
     },
+    "./xai": {
+      "browser": {
+        "types": "./dist/xai.d.ts",
+        "import": "./dist/xai.browser.js"
+      },
+      "bun": {
+        "types": "./dist/xai.d.ts",
+        "import": "./dist/xai.bun.js"
+      },
+      "types": "./dist/xai.d.ts",
+      "import": "./dist/xai.js"
+    },
+    "./xai/runtime": {
+      "types": "./dist/xai-runtime.d.ts",
+      "import": "./dist/xai-runtime.js"
+    },
     "./tf-mediapipe": {
       "types": "./dist/tf-mediapipe.d.ts",
       "import": "./dist/tf-mediapipe.js"
@@ -191,6 +207,7 @@
     "@workglow/ai": "workspace:*",
     "@workglow/anthropic": "workspace:*",
     "@workglow/openai": "workspace:*",
+    "@workglow/xai": "workspace:*",
     "@workglow/google-gemini": "workspace:*",
     "@workglow/ollama": "workspace:*",
     "@workglow/huggingface-transformers": "workspace:*",
