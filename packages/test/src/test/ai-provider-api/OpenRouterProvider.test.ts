@@ -5,8 +5,14 @@
  */
 
 import type { ModelRecord } from "@workglow/ai";
-import { deriveCapabilitiesFromMeta, inferOpenRouterCapabilities } from "@workglow/openrouter/ai";
+import {
+  _testOnly,
+  deriveCapabilitiesFromMeta,
+  inferOpenRouterCapabilities,
+} from "@workglow/openrouter/ai";
 import { describe, expect, it } from "vitest";
+
+const { OpenRouterQueuedProvider, OPENROUTER_RUN_FN_SPECS, OPENROUTER_RUN_FNS } = _testOnly;
 
 function model(
   model_id: string,
@@ -79,5 +85,41 @@ describe("inferOpenRouterCapabilities", () => {
     const caps = inferOpenRouterCapabilities(model("some/model", {}, []));
     expect(caps).toContain("text.generation");
     expect(caps).toContain("model.search");
+  });
+});
+
+describe("OpenRouterQueuedProvider.inferCapabilities", () => {
+  const provider = new OpenRouterQueuedProvider(OPENROUTER_RUN_FNS);
+
+  it("infers a full chat+vision set for a multimodal tool model", () => {
+    const caps = provider.inferCapabilities({
+      model_id: "anthropic/claude-sonnet-4",
+      title: "",
+      description: "",
+      provider: "OPENROUTER",
+      provider_config: { model_name: "anthropic/claude-sonnet-4" },
+      capabilities: [],
+      metadata: {
+        architecture: { input_modalities: ["text", "image"] },
+        supported_parameters: ["tools", "response_format"],
+      },
+    } as never);
+    expect(caps).toContain("text.generation");
+    expect(caps).toContain("tool-use");
+    expect(caps).toContain("json-mode");
+    expect(caps).toContain("vision-input");
+  });
+});
+
+describe("OpenRouter capability-set parity", () => {
+  it("OPENROUTER_RUN_FN_SPECS matches OPENROUTER_RUN_FNS serves shapes", () => {
+    const fnsServes = OPENROUTER_RUN_FNS.map((r) => [...r.serves].sort().join(","));
+    const specsServes = OPENROUTER_RUN_FN_SPECS.map((s) => [...s.serves].sort().join(","));
+    expect(specsServes).toEqual(fnsServes);
+  });
+
+  it("tiebreaks text.generation to the smallest serves entry", () => {
+    const candidates = OPENROUTER_RUN_FNS.filter((r) => r.serves.includes("text.generation"));
+    expect(candidates.some((r) => r.serves.length === 1)).toBe(true);
   });
 });

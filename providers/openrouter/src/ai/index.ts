@@ -6,14 +6,27 @@
 
 // organize-imports-ignore
 
+export { OPENROUTER_ALLOWED_HOSTS } from "./common/OpenRouter_Client";
 export * from "./common/OpenRouter_Constants";
 export * from "./common/OpenRouter_Capabilities";
+export * from "./common/OpenRouter_ModelSchema";
+export * from "./common/OpenRouter_ModelSearch";
+export * from "./registerOpenRouter";
 
-import { buildChatParams, buildOpenRouterExtras } from "./common/OpenRouter_RequestParams";
+import { OPENROUTER_RUN_FN_SPECS } from "./common/OpenRouter_Capabilities";
+import { OPENROUTER_RUN_FNS } from "./common/OpenRouter_JobRunFns";
 import { mapOpenRouterModels } from "./common/OpenRouter_ModelSearch";
+import { buildChatParams, buildOpenRouterExtras } from "./common/OpenRouter_RequestParams";
+import { OpenRouterQueuedProvider } from "./OpenRouterQueuedProvider";
 
-/** @internal Symbols exported only for `@workglow/test`. Not a stable API. */
+/**
+ * @internal Symbols exported only for use by `@workglow/test`. Not part of the
+ * stable public API.
+ */
 export const _testOnly = {
+  OpenRouterQueuedProvider,
+  OPENROUTER_RUN_FN_SPECS,
+  OPENROUTER_RUN_FNS,
   buildChatParams,
   buildOpenRouterExtras,
   mapOpenRouterModels,
