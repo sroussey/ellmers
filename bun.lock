@@ -309,6 +309,7 @@
         "@workglow/node-llama-cpp": "workspace:*",
         "@workglow/ollama": "workspace:*",
         "@workglow/openai": "workspace:*",
+        "@workglow/openrouter": "workspace:*",
         "@workglow/playwright": "workspace:*",
         "@workglow/postgres": "workspace:*",
         "@workglow/sqlite": "workspace:*",
@@ -355,8 +356,10 @@
         "@workglow/job-queue": "workspace:*",
         "@workglow/knowledge-base": "workspace:*",
         "@workglow/mcp": "workspace:*",
+        "@workglow/node-llama-cpp": "workspace:*",
         "@workglow/ollama": "workspace:*",
         "@workglow/openai": "workspace:*",
+        "@workglow/openrouter": "workspace:*",
         "@workglow/postgres": "workspace:*",
         "@workglow/sqlite": "workspace:*",
         "@workglow/storage": "workspace:*",
@@ -627,6 +630,27 @@
         "js-tiktoken": "catalog:",
         "openai": "catalog:",
         "tiktoken": "catalog:",
+      },
+      "devDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
+    "providers/openrouter": {
+      "name": "@workglow/openrouter",
+      "version": "0.0.1",
+      "dependencies": {
+        "openai": "catalog:",
       },
       "devDependencies": {
         "@workglow/ai": "workspace:*",
@@ -1489,6 +1513,8 @@
     "@workglow/ollama": ["@workglow/ollama@workspace:providers/ollama"],
 
     "@workglow/openai": ["@workglow/openai@workspace:providers/openai"],
+
+    "@workglow/openrouter": ["@workglow/openrouter@workspace:providers/openrouter"],
 
     "@workglow/playwright": ["@workglow/playwright@workspace:providers/playwright"],
 
