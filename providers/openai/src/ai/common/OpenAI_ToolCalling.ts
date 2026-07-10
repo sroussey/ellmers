@@ -59,15 +59,18 @@ export const OpenAI_ToolCalling_Stream: AiProviderRunFn<
     { signal }
   );
 
-  await accumulateOpenAIResponsesStream(stream as AsyncIterable<unknown>, (event) => {
-    if (event.type === "object-delta" && event.port === "toolCalls") {
-      const validated = filterValidToolCalls(event.objectDelta as ToolCalls, input.tools);
-      if (validated.length > 0) {
-        emit({ type: "object-delta", port: "toolCalls", objectDelta: validated });
+  await accumulateOpenAIResponsesStream<ToolCallingTaskOutput>(
+    stream as AsyncIterable<unknown>,
+    (event) => {
+      if (event.type === "object-delta" && event.port === "toolCalls") {
+        const validated = filterValidToolCalls(event.objectDelta as ToolCalls, input.tools);
+        if (validated.length > 0) {
+          emit({ type: "object-delta", port: "toolCalls", objectDelta: validated });
+        }
+        return;
       }
-      return;
+      emit(event);
     }
-    emit(event);
-  });
+  );
   emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
 };

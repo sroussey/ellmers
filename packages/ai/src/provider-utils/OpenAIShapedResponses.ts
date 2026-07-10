@@ -5,7 +5,6 @@
  */
 
 import type { StreamEvent } from "@workglow/task-graph";
-import type { ToolCallingTaskOutput } from "../task/ToolCallingTask";
 import type { ToolCalls, ToolDefinition } from "../task/ToolCallingUtils";
 import { buildToolDescription, sanitizeToolArgs } from "../task/ToolCallingUtils";
 import { parseToolArgs } from "./OpenAIShapedChat";
@@ -224,18 +223,20 @@ interface ResponsesToolCallEntry {
  * Adapt an OpenAI **Responses** streaming response to workglow stream events.
  * Forwards via the `emit` callback:
  *  - `text-delta` for each `response.output_text.delta`.
+ *  - `refusal` for each `response.refusal.delta` (folded into the reserved
+ *    `refusal` output field so a decline is distinguishable from an answer).
  *  - `object-delta` (single-element array) per function-call args delta, keyed
  *    by the output item so concurrent tool calls (distinct `output_index`) never
  *    collide. The downstream `StreamProcessor` upserts by `id`.
  *
- * Reasoning-summary, refusal, and lifecycle events are ignored here. The caller
- * emits its own `finish` event after this returns (per the streaming convention),
- * typically with structural defaults so the output satisfies
- * {@link ToolCallingTaskOutput} even when only tool calls streamed.
+ * Reasoning-summary and lifecycle events are ignored here. The caller emits its
+ * own `finish` event after this returns (per the streaming convention). Generic
+ * over the output type so non-tool-calling run-fns (TextGeneration / Rewriter /
+ * Summary) can pass their own `emit` under `strictFunctionTypes`.
  */
-export async function accumulateOpenAIResponsesStream(
+export async function accumulateOpenAIResponsesStream<Output = Record<string, any>>(
   stream: AsyncIterable<any>,
-  emit: (event: StreamEvent<ToolCallingTaskOutput>) => void
+  emit: (event: StreamEvent<Output>) => void
 ): Promise<void> {
   // Keyed by `output_index`: Responses assigns each output item (message,
   // function_call, reasoning) a stable index within the response.

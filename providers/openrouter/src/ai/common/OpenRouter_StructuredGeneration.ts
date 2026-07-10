@@ -52,6 +52,7 @@ export const OpenRouter_StructuredGeneration_Stream: AiProviderRunFn<
   );
 
   let accumulatedJson = "";
+  let refusal = "";
   for await (const chunk of stream) {
     const delta = chunk.choices[0]?.delta?.content ?? "";
     if (delta) {
@@ -61,6 +62,11 @@ export const OpenRouter_StructuredGeneration_Stream: AiProviderRunFn<
         emit({ type: "object-delta", port: "object", objectDelta: partial });
       }
     }
+    refusal += chunk.choices[0]?.delta?.refusal ?? "";
+  }
+
+  if (refusal) {
+    emit({ type: "refusal", refusal });
   }
 
   let finalObject: Record<string, unknown>;
