@@ -168,6 +168,14 @@
       "types": "./dist/xai-runtime.d.ts",
       "import": "./dist/xai-runtime.js"
     },
+    "./node-llama": {
+      "types": "./dist/node-llama.d.ts",
+      "import": "./dist/node-llama.js"
+    },
+    "./node-llama/runtime": {
+      "types": "./dist/node-llama-runtime.d.ts",
+      "import": "./dist/node-llama-runtime.js"
+    },
     "./tf-mediapipe": {
       "types": "./dist/tf-mediapipe.d.ts",
       "import": "./dist/tf-mediapipe.js"
@@ -229,6 +237,7 @@
     "@workglow/ollama": "workspace:*",
     "@workglow/huggingface-transformers": "workspace:*",
     "@workglow/huggingface-inference": "workspace:*",
+    "@workglow/node-llama-cpp": "workspace:*",
     "@workglow/tf-mediapipe": "workspace:*",
     "@workglow/chrome-ai": "workspace:*",
     "@workglow/knowledge-base": "workspace:*",
