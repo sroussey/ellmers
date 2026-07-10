@@ -101,8 +101,10 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
     }
   }
 
-  if (!accumulatedJson && refusal) {
-    throw new Error(`OpenAI refused the structured-generation request: ${refusal}`);
+  if (refusal) {
+    // Surface the refusal as a first-class event; the consumer completes with
+    // the reserved `refusal` field instead of retrying against empty JSON.
+    emit({ type: "refusal", refusal });
   }
 
   let finalObject: Record<string, unknown>;

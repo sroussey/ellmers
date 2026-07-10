@@ -11,6 +11,7 @@ import { RunPrivateCacheRepo } from "../cache/RunPrivateCacheRepo";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ITask } from "./ITask";
 import type { StreamEvent } from "./StreamTypes";
+import { REFUSAL_OUTPUT_KEY } from "./StreamTypes";
 import { Task } from "./Task";
 import type { TaskRunContext } from "./TaskRunContext";
 import type { TaskInput, TaskOutput } from "./TaskTypes";
@@ -145,6 +146,15 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     policy: CachePolicy
   ): Promise<void> {
     if (!outputCache || !this.task.cacheable || output === undefined) return;
+    // Never memoize a refused output: a transient refusal (e.g. a safety-classifier
+    // flake) would otherwise replay as "the answer" until a cache-version bump.
+    if (
+      output !== null &&
+      typeof output === "object" &&
+      (output as Record<string, unknown>)[REFUSAL_OUTPUT_KEY]
+    ) {
+      return;
+    }
     const outputSchema = (this.task.constructor as typeof Task).outputSchema();
     const wireOutputs = await CacheCoordinator.serializeOutputPorts(
       output as Record<string, unknown>,

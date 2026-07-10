@@ -260,10 +260,11 @@ export async function accumulateOpenAIResponsesStream(
       }
 
       case "response.refusal.delta": {
-        // Surface refusals as text so the caller sees why the model declined,
-        // instead of silently completing with empty output.
+        // Surface refusals as a first-class refusal event (folded into the
+        // reserved `refusal` output field) rather than as ordinary text, so the
+        // caller can distinguish a decline from a normal answer.
         const delta: string = event.delta ?? "";
-        if (delta) emit({ type: "text-delta", port: "text", textDelta: delta });
+        if (delta) emit({ type: "refusal", refusal: delta });
         break;
       }
 
