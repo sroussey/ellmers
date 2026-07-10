@@ -51,16 +51,20 @@ export const OPENROUTER_FALLBACK_MODELS: OpenRouterRawModel[] = [
 ];
 
 export async function fetchOpenRouterModels(
-  baseUrl = "https://openrouter.ai/api/v1"
+  baseUrl = "https://openrouter.ai/api/v1",
+  signal?: AbortSignal
 ): Promise<OpenRouterRawModel[]> {
   try {
-    const res = await fetch(`${baseUrl.replace(/\/$/, "")}/models`);
+    const res = await fetch(`${baseUrl.replace(/\/$/, "")}/models`, { signal });
     if (!res.ok) return OPENROUTER_FALLBACK_MODELS;
     const body = (await res.json()) as { data?: OpenRouterRawModel[] };
     return Array.isArray(body.data) && body.data.length > 0
       ? body.data
       : OPENROUTER_FALLBACK_MODELS;
-  } catch {
+  } catch (err) {
+    // Propagate a genuine cancellation instead of masking it as a fallback
+    // result; only degrade to the curated list on network/parse failures.
+    if (signal?.aborted) throw err;
     return OPENROUTER_FALLBACK_MODELS;
   }
 }
@@ -102,8 +106,8 @@ export function mapOpenRouterModels(raw: readonly OpenRouterRawModel[]): ModelSe
 export const OpenRouter_ModelSearch_Stream: AiProviderRunFn<
   ModelSearchTaskInput,
   ModelSearchTaskOutput
-> = async (input, _model, _signal, emit) => {
-  const raw = await fetchOpenRouterModels();
+> = async (input, _model, signal, emit) => {
+  const raw = await fetchOpenRouterModels(undefined, signal);
   const labeled = raw.map((m) => ({ label: m.name ?? m.id, value: m.id, raw: m }));
   const filtered = filterLabeledModelsByQuery(labeled, input.query);
   const results = mapOpenRouterModels(filtered.map((f) => f.raw));

@@ -70,6 +70,17 @@ export const OpenRouterModelSchema = {
         web_search: {
           description:
             "Enable the OpenRouter web-search plugin. `true` enables defaults; an object customizes it.",
+          oneOf: [
+            { type: "boolean" },
+            {
+              type: "object",
+              properties: {
+                max_results: { type: "number" },
+                engine: { type: "string" },
+              },
+              additionalProperties: true,
+            },
+          ],
           "x-ui-hidden": true,
         },
         app_referer: {
