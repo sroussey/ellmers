@@ -136,6 +136,22 @@
       "types": "./dist/openai-runtime.d.ts",
       "import": "./dist/openai-runtime.js"
     },
+    "./openrouter": {
+      "browser": {
+        "types": "./dist/openrouter.d.ts",
+        "import": "./dist/openrouter.browser.js"
+      },
+      "bun": {
+        "types": "./dist/openrouter.d.ts",
+        "import": "./dist/openrouter.bun.js"
+      },
+      "types": "./dist/openrouter.d.ts",
+      "import": "./dist/openrouter.js"
+    },
+    "./openrouter/runtime": {
+      "types": "./dist/openrouter-runtime.d.ts",
+      "import": "./dist/openrouter-runtime.js"
+    },
     "./xai": {
       "browser": {
         "types": "./dist/xai.d.ts",
@@ -207,6 +223,7 @@
     "@workglow/ai": "workspace:*",
     "@workglow/anthropic": "workspace:*",
     "@workglow/openai": "workspace:*",
+    "@workglow/openrouter": "workspace:*",
     "@workglow/xai": "workspace:*",
     "@workglow/google-gemini": "workspace:*",
     "@workglow/ollama": "workspace:*",
