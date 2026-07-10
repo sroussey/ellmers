@@ -17,7 +17,12 @@ import {
   mapResponsesToolChoice,
 } from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, toOpenAIMessages } from "@workglow/ai/worker";
-import { getClient, getModelName, getReasoningConfig } from "./OpenAI_Client";
+import {
+  getClient,
+  getModelName,
+  getReasoningConfig,
+  resolvePromptCacheKey,
+} from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /**
@@ -54,6 +59,7 @@ export const OpenAI_ToolCalling_Stream: AiProviderRunFn<
   if (input.maxTokens !== undefined) params.max_output_tokens = input.maxTokens;
   if (input.temperature !== undefined) params.temperature = input.temperature;
   if (reasoning !== undefined) params.reasoning = reasoning;
+  params.prompt_cache_key = resolvePromptCacheKey(model, params);
 
   const stream = await client.responses.create(
     { ...params, stream: true } as Parameters<typeof client.responses.create>[0],

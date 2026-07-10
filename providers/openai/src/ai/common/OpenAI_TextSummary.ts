@@ -6,7 +6,12 @@
 
 import type { AiProviderRunFn, TextSummaryTaskInput, TextSummaryTaskOutput } from "@workglow/ai";
 import { accumulateOpenAIResponsesStream } from "@workglow/ai/provider-utils";
-import { getClient, getModelName, getReasoningConfig } from "./OpenAI_Client";
+import {
+  getClient,
+  getModelName,
+  getReasoningConfig,
+  resolvePromptCacheKey,
+} from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /**
@@ -27,6 +32,7 @@ export const OpenAI_TextSummary_Stream: AiProviderRunFn<
     input: input.text,
   };
   if (reasoning !== undefined) params.reasoning = reasoning;
+  params.prompt_cache_key = resolvePromptCacheKey(model, params);
 
   const stream = await client.responses.create(
     { ...params, stream: true } as Parameters<typeof client.responses.create>[0],

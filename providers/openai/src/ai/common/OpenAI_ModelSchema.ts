@@ -45,6 +45,12 @@ export const OpenAiModelSchema = {
           type: "string",
           description: "OpenAI organization ID (optional).",
         },
+        prompt_cache_key: {
+          type: "string",
+          description:
+            "Overrides the auto-derived Responses prompt_cache_key. Requests sharing a key share a cached prefix; leave unset to derive a stable key from the model + system instructions + tools.",
+          "x-ui-hidden": true,
+        },
         reasoning: {
           type: "object",
           description:

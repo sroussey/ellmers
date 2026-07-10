@@ -12,7 +12,12 @@ import type {
 import { accumulateOpenAIResponsesStream, buildResponsesInput } from "@workglow/ai/provider-utils";
 import { toOpenAIMessages } from "@workglow/ai/worker";
 import { getLogger } from "@workglow/util/worker";
-import { getClient, getModelName, getReasoningConfig } from "./OpenAI_Client";
+import {
+  getClient,
+  getModelName,
+  getReasoningConfig,
+  resolvePromptCacheKey,
+} from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /**
@@ -85,6 +90,7 @@ export const OpenAI_TextGeneration_Stream: AiProviderRunFn<
   try {
     const client = await getClient(model);
     const params = buildResponsesParams(input as UnifiedTextGenerationInput, model);
+    params.prompt_cache_key = resolvePromptCacheKey(model, params);
 
     const stream = await client.responses.create(
       { ...params, stream: true } as Parameters<typeof client.responses.create>[0],

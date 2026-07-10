@@ -8,7 +8,25 @@ import type { ModelRecord } from "@workglow/ai";
 import { _testOnly } from "@workglow/openai/ai";
 import { describe, expect, it } from "vitest";
 
-const { OpenAiQueuedProvider, OPENAI_RUN_FN_SPECS, OPENAI_RUN_FNS } = _testOnly;
+const {
+  OpenAiQueuedProvider,
+  OPENAI_RUN_FN_SPECS,
+  OPENAI_RUN_FNS,
+  getReasoningConfig,
+  resolvePromptCacheKey,
+} = _testOnly;
+
+function modelWithConfig(provider_config: Record<string, unknown>): ModelRecord {
+  return {
+    model_id: "m",
+    title: "m",
+    description: "",
+    provider: "OPENAI",
+    provider_config,
+    capabilities: [],
+    metadata: {},
+  } as ModelRecord;
+}
 
 function model(model_id: string, capabilities: readonly string[] = []): ModelRecord {
   return {
@@ -117,6 +135,48 @@ describe("OpenAiQueuedProvider.inferCapabilities", () => {
     const caps = provider.inferCapabilities(model("text-embedding-3-small"));
     const sorted = [...caps].sort();
     expect(sorted).toEqual(["model.count-tokens", "model.info", "model.search", "text.embedding"]);
+  });
+});
+
+describe("getReasoningConfig", () => {
+  it("returns undefined when no reasoning is configured", () => {
+    expect(getReasoningConfig(modelWithConfig({ model_name: "gpt-5.6-sol" }))).toBeUndefined();
+    expect(
+      getReasoningConfig(modelWithConfig({ model_name: "gpt-5.6-sol", reasoning: {} }))
+    ).toBeUndefined();
+  });
+
+  it("returns the reasoning object when effort or mode is set", () => {
+    expect(
+      getReasoningConfig(modelWithConfig({ model_name: "gpt-5.6-sol", reasoning: { mode: "pro" } }))
+    ).toEqual({ mode: "pro" });
+    expect(
+      getReasoningConfig(
+        modelWithConfig({ model_name: "gpt-5.6-terra", reasoning: { effort: "high" } })
+      )
+    ).toEqual({ effort: "high" });
+  });
+});
+
+describe("resolvePromptCacheKey", () => {
+  const model = modelWithConfig({ model_name: "gpt-5.6-sol" });
+
+  it("is stable for the same model + instructions + tools", () => {
+    const params = { model: "gpt-5.6-sol", instructions: "be terse", tools: [{ name: "t" }] };
+    expect(resolvePromptCacheKey(model, params)).toBe(resolvePromptCacheKey(model, params));
+  });
+
+  it("differs when the stable prefix differs", () => {
+    const a = resolvePromptCacheKey(model, { model: "gpt-5.6-sol", instructions: "A" });
+    const b = resolvePromptCacheKey(model, { model: "gpt-5.6-sol", instructions: "B" });
+    expect(a).not.toBe(b);
+  });
+
+  it("honors an explicit prompt_cache_key override", () => {
+    const overridden = modelWithConfig({ model_name: "gpt-5.6-sol", prompt_cache_key: "my-key" });
+    expect(resolvePromptCacheKey(overridden, { model: "gpt-5.6-sol", instructions: "x" })).toBe(
+      "my-key"
+    );
   });
 });
 

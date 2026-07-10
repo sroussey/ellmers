@@ -35,6 +35,7 @@ interface ResolvedProviderConfig {
   readonly model_name?: string;
   readonly base_url?: string;
   readonly organization?: string;
+  readonly prompt_cache_key?: string;
   readonly reasoning?: { readonly effort?: string; readonly mode?: string };
   /**
    * When `true`, accept the `base_url` even if its hostname is not in
@@ -96,4 +97,36 @@ export function getReasoningConfig(
     return undefined;
   }
   return reasoning;
+}
+
+/** Deterministic 32-bit FNV-1a hash → 8-char hex. Worker-safe (no crypto import). */
+function fnv1aHex(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+/**
+ * Resolves the Responses `prompt_cache_key`. Uses an explicit
+ * `provider_config.prompt_cache_key` override when set, otherwise derives a
+ * stable key from the request's cache-relevant prefix (model + system
+ * instructions + tools) so requests sharing that prefix converge on one key and
+ * hit the cache. GPT-5.6 bills cache writes, so a stable key (not a random one)
+ * is the cost-correct default.
+ */
+export function resolvePromptCacheKey(
+  model: OpenAiModelConfig | undefined,
+  params: { model?: unknown; instructions?: unknown; tools?: unknown }
+): string {
+  const override = (model?.provider_config as ResolvedProviderConfig | undefined)?.prompt_cache_key;
+  if (override) return override;
+  const material = JSON.stringify([
+    params.model ?? "",
+    params.instructions ?? "",
+    params.tools ?? null,
+  ]);
+  return `wg-${fnv1aHex(material)}`;
 }
