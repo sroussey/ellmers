@@ -10,9 +10,11 @@ export * from "./common/OpenRouter_Constants";
 export * from "./common/OpenRouter_Capabilities";
 
 import { buildChatParams, buildOpenRouterExtras } from "./common/OpenRouter_RequestParams";
+import { mapOpenRouterModels } from "./common/OpenRouter_ModelSearch";
 
 /** @internal Symbols exported only for `@workglow/test`. Not a stable API. */
 export const _testOnly = {
   buildChatParams,
   buildOpenRouterExtras,
+  mapOpenRouterModels,
 } as const;
