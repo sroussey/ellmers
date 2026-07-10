@@ -2,7 +2,7 @@
   "name": "@workglow/openrouter",
   "type": "module",
   "sideEffects": false,
-  "version": "0.0.1",
+  "version": "0.3.25",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
@@ -55,11 +55,21 @@
     "@workglow/util": "workspace:*"
   },
   "peerDependenciesMeta": {
-    "@workglow/ai": { "optional": false },
-    "@workglow/job-queue": { "optional": false },
-    "@workglow/storage": { "optional": false },
-    "@workglow/task-graph": { "optional": false },
-    "@workglow/util": { "optional": false }
+    "@workglow/ai": {
+      "optional": false
+    },
+    "@workglow/job-queue": {
+      "optional": false
+    },
+    "@workglow/storage": {
+      "optional": false
+    },
+    "@workglow/task-graph": {
+      "optional": false
+    },
+    "@workglow/util": {
+      "optional": false
+    }
   },
   "devDependencies": {
     "@workglow/ai": "workspace:*",
@@ -68,6 +78,11 @@
     "@workglow/task-graph": "workspace:*",
     "@workglow/util": "workspace:*"
   },
-  "files": ["dist", "src/**/*.md"],
-  "publishConfig": { "access": "public" }
+  "files": [
+    "dist",
+    "src/**/*.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

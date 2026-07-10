@@ -1,5 +1,21 @@
 # @workglow/test
 
+## 0.3.25
+
+### Features
+
+- add OpenRouter provider for @workglow/ai (#626)
+
+#### providers
+
+- add xAI (Grok) AI provider(#622)
+
+### Bug Fixes
+
+#### storage
+
+- genuine CAS for updateWhere on IndexedDb + HttpTabularProxy (#628)
+
 ## 0.3.24
 
 ### Features

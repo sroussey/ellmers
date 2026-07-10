@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.25
+
+### Bug Fixes
+
+#### storage
+
+- genuine CAS for updateWhere on IndexedDb + HttpTabularProxy (#628)
+
 ## 0.3.24
 
 ### Features

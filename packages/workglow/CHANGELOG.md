@@ -1,5 +1,16 @@
 # workglow
 
+## 0.3.25
+
+### Features
+
+- add node-llama-cpp provider to workglow meta-package (#629)
+- add OpenRouter provider for @workglow/ai (#626)
+
+#### providers
+
+- add xAI (Grok) AI provider(#622)
+
 ## 0.3.24
 
 ### Features
