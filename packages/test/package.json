@@ -58,6 +58,7 @@
     "@workglow/node-llama-cpp": "workspace:*",
     "@workglow/ollama": "workspace:*",
     "@workglow/openai": "workspace:*",
+    "@workglow/openrouter": "workspace:*",
     "@workglow/playwright": "workspace:*",
     "@workglow/postgres": "workspace:*",
     "@workglow/sqlite": "workspace:*",
