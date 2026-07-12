@@ -178,6 +178,131 @@ describe("accumulateOpenAIResponsesStream", () => {
     ]);
     expect(out).toEqual([{ type: "text-delta", port: "text", textDelta: "hi" }]);
   });
+
+  it("keeps concurrent tool calls separate by item id when output_index is absent", async () => {
+    const out = await collect([
+      {
+        type: "response.output_item.added",
+        item: {
+          type: "function_call",
+          id: "fc_a",
+          call_id: "call_a",
+          name: "alpha",
+          arguments: "",
+        },
+      },
+      {
+        type: "response.output_item.added",
+        item: { type: "function_call", id: "fc_b", call_id: "call_b", name: "beta", arguments: "" },
+      },
+      {
+        type: "response.function_call_arguments.delta",
+        item_id: "fc_a",
+        delta: '{"a":1}',
+      },
+      {
+        type: "response.function_call_arguments.delta",
+        item_id: "fc_b",
+        delta: '{"b":2}',
+      },
+      {
+        type: "response.output_item.done",
+        item: {
+          type: "function_call",
+          id: "fc_a",
+          call_id: "call_a",
+          name: "alpha",
+          arguments: '{"a":1}',
+        },
+      },
+      {
+        type: "response.output_item.done",
+        item: {
+          type: "function_call",
+          id: "fc_b",
+          call_id: "call_b",
+          name: "beta",
+          arguments: '{"b":2}',
+        },
+      },
+      { type: "response.completed" },
+    ]);
+
+    const a = out.find((e) => e.objectDelta[0].id === "call_a");
+    const b = out.find((e) => e.objectDelta[0].id === "call_b");
+    expect(a.objectDelta[0]).toMatchObject({ name: "alpha", input: { a: 1 } });
+    expect(b.objectDelta[0]).toMatchObject({ name: "beta", input: { b: 2 } });
+  });
+
+  it("falls back to output_index when neither item.id nor item_id is provided", async () => {
+    const out = await collect([
+      {
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { type: "function_call", call_id: "call_a", name: "alpha", arguments: "" },
+      },
+      {
+        type: "response.output_item.added",
+        output_index: 1,
+        item: { type: "function_call", call_id: "call_b", name: "beta", arguments: "" },
+      },
+      {
+        type: "response.function_call_arguments.delta",
+        output_index: 0,
+        delta: '{"a":1}',
+      },
+      {
+        type: "response.function_call_arguments.delta",
+        output_index: 1,
+        delta: '{"b":2}',
+      },
+      { type: "response.completed" },
+    ]);
+
+    const a = out.find((e) => e.objectDelta[0].id === "call_a");
+    const b = out.find((e) => e.objectDelta[0].id === "call_b");
+    expect(a.objectDelta[0]).toMatchObject({ name: "alpha", input: { a: 1 } });
+    expect(b.objectDelta[0]).toMatchObject({ name: "beta", input: { b: 2 } });
+  });
+
+  it("prefers item id over a colliding output_index", async () => {
+    const out = await collect([
+      {
+        type: "response.output_item.added",
+        output_index: 0,
+        item: {
+          type: "function_call",
+          id: "fc_x",
+          call_id: "call_x",
+          name: "alpha",
+          arguments: "",
+        },
+      },
+      {
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { type: "function_call", id: "fc_y", call_id: "call_y", name: "beta", arguments: "" },
+      },
+      {
+        type: "response.function_call_arguments.delta",
+        output_index: 0,
+        item_id: "fc_x",
+        delta: '{"a":1}',
+      },
+      {
+        type: "response.function_call_arguments.delta",
+        output_index: 0,
+        item_id: "fc_y",
+        delta: '{"b":2}',
+      },
+      { type: "response.completed" },
+    ]);
+
+    const x = out.find((e) => e.objectDelta[0].id === "call_x");
+    const y = out.find((e) => e.objectDelta[0].id === "call_y");
+    expect(x.objectDelta[0]).toMatchObject({ name: "alpha", input: { a: 1 } });
+    expect(y.objectDelta[0]).toMatchObject({ name: "beta", input: { b: 2 } });
+  });
 });
 
 const TOOL: ToolDefinition = {

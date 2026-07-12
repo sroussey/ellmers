@@ -238,9 +238,12 @@ export async function accumulateOpenAIResponsesStream<Output = Record<string, an
   stream: AsyncIterable<any>,
   emit: (event: StreamEvent<Output>) => void
 ): Promise<void> {
-  // Keyed by `output_index`: Responses assigns each output item (message,
-  // function_call, reasoning) a stable index within the response.
-  const toolCalls = new Map<number, ResponsesToolCallEntry>();
+  // Keyed by the output item's stable id (`item.id` on `output_item.{added,done}`,
+  // `item_id` on `function_call_arguments.delta`). Falls back to `output_index`
+  // only for gateways that omit both — keying purely on `output_index` collapses
+  // concurrent function calls that share (or lack) the index onto one slot,
+  // silently dropping every call but the last.
+  const toolCalls = new Map<string, ResponsesToolCallEntry>();
 
   const emitToolCall = (entry: ResponsesToolCallEntry): void => {
     const parsed = parseToolArgs(entry.arguments);
@@ -272,9 +275,9 @@ export async function accumulateOpenAIResponsesStream<Output = Record<string, an
       case "response.output_item.added": {
         const item = event.item;
         if (item?.type === "function_call") {
-          const index: number = event.output_index ?? 0;
-          toolCalls.set(index, {
-            id: (item.call_id as string) || (item.id as string) || `call_${index}`,
+          const key = String(event.item?.id ?? event.item_id ?? event.output_index ?? 0);
+          toolCalls.set(key, {
+            id: (item.call_id as string) || (item.id as string) || `call_${key}`,
             name: (item.name as string) ?? "",
             arguments: (item.arguments as string) ?? "",
           });
@@ -283,31 +286,57 @@ export async function accumulateOpenAIResponsesStream<Output = Record<string, an
       }
 
       case "response.function_call_arguments.delta": {
-        const index: number = event.output_index ?? 0;
-        let entry = toolCalls.get(index);
-        if (!entry) {
+        // Delta events carry `item_id` (not `item.id`); prefer it. Fall back to
+        // `output_index` when no entry is registered under the id — the added
+        // event may have registered under the index alone for legacy shapes.
+        const idKey = event.item_id ?? event.item?.id;
+        const indexKey = event.output_index;
+        let key: string;
+        let entry: ResponsesToolCallEntry | undefined;
+        if (idKey !== undefined && toolCalls.has(String(idKey))) {
+          key = String(idKey);
+          entry = toolCalls.get(key);
+        } else if (indexKey !== undefined && toolCalls.has(String(indexKey))) {
+          key = String(indexKey);
+          entry = toolCalls.get(key);
+        } else {
           // Defensive: a delta arrived before we saw `output_item.added`.
-          entry = { id: (event.item_id as string) || `call_${index}`, name: "", arguments: "" };
-          toolCalls.set(index, entry);
+          key = String(idKey ?? indexKey ?? 0);
+          entry = { id: (event.item_id as string) || `call_${key}`, name: "", arguments: "" };
+          toolCalls.set(key, entry);
         }
-        entry.arguments += event.delta ?? "";
-        emitToolCall(entry);
+        entry!.arguments += event.delta ?? "";
+        emitToolCall(entry!);
         break;
       }
 
       case "response.output_item.done": {
         const item = event.item;
         if (item?.type === "function_call") {
-          const index: number = event.output_index ?? 0;
-          const entry = toolCalls.get(index) ?? {
-            id: (item.call_id as string) || (item.id as string) || `call_${index}`,
-            name: (item.name as string) ?? "",
-            arguments: "",
-          };
+          // Same lookup order as delta: id first, then output_index, so an entry
+          // registered under either shape by `added` is found.
+          const idKey = event.item?.id ?? event.item_id;
+          const indexKey = event.output_index;
+          let key: string;
+          let entry: ResponsesToolCallEntry | undefined;
+          if (idKey !== undefined && toolCalls.has(String(idKey))) {
+            key = String(idKey);
+            entry = toolCalls.get(key);
+          } else if (indexKey !== undefined && toolCalls.has(String(indexKey))) {
+            key = String(indexKey);
+            entry = toolCalls.get(key);
+          } else {
+            key = String(idKey ?? indexKey ?? 0);
+            entry = {
+              id: (item.call_id as string) || (item.id as string) || `call_${key}`,
+              name: (item.name as string) ?? "",
+              arguments: "",
+            };
+          }
           // The `done` item carries the authoritative full arguments string.
-          if (typeof item.arguments === "string") entry.arguments = item.arguments;
-          if (item.name) entry.name = item.name;
-          emitToolCall(entry);
+          if (typeof item.arguments === "string") entry!.arguments = item.arguments;
+          if (item.name) entry!.name = item.name;
+          emitToolCall(entry!);
         }
         break;
       }
