@@ -170,8 +170,8 @@ export function getActualModelPath(model: LlamaCppModelConfig): string {
   return resolved ?? model.provider_config.model_path;
 }
 
-/** Substrings (lower-cased) that identify a llama.cpp allocation failure we can retry after freeing VRAM. */
-const VRAM_ERROR_PATTERNS: readonly string[] = [
+/** Substrings (lower-cased) for allocation failures after confirming a VRAM/GPU/CUDA signal in the message. */
+const ALLOCATION_ERROR_PATTERNS: readonly string[] = [
   "not enough vram",
   "too large for the available vram",
   "out of memory",
@@ -184,7 +184,7 @@ function isVramError(err: unknown): boolean {
   if (!msg.includes("vram") && !msg.includes("cuda") && !msg.includes("gpu")) {
     return false;
   }
-  return VRAM_ERROR_PATTERNS.some((pattern) => msg.includes(pattern));
+  return ALLOCATION_ERROR_PATTERNS.some((pattern) => msg.includes(pattern));
 }
 
 /** Move a cached model to the most-recently-used end of the insertion-ordered cache. */
@@ -317,6 +317,8 @@ export async function getOrCreateTextContext(model: LlamaCppModelConfig): Promis
 
 /** How long {@link acquireContextSequence} waits for a disposed sequence to be reclaimed. */
 const SEQUENCE_RECLAIM_TIMEOUT_MS = 30_000;
+/** node-llama-cpp currently throws this message from `getSequence()` when no slots are available. */
+const NO_SEQUENCES_LEFT_ERROR_SUBSTRING = "no sequences left";
 
 /**
  * Acquire a sequence from a (typically cached, single-sequence) context, tolerating
@@ -343,7 +345,7 @@ export async function acquireContextSequence(context: LlamaContext): Promise<Lla
         return context.getSequence();
       } catch (err) {
         const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
-        if (!msg.includes("no sequences left")) {
+        if (!msg.includes(NO_SEQUENCES_LEFT_ERROR_SUBSTRING)) {
           throw err;
         }
       }
