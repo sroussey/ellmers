@@ -9,43 +9,12 @@ import type {
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
+import { isStrictCompatibleSchema } from "@workglow/ai/provider-utils";
 import { parsePartialJson } from "@workglow/util/worker";
 import { finalizeResponsesRequest, getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
-/**
- * Whether a JSON schema satisfies the Responses `strict` subset — every object
- * has `additionalProperties: false` and lists all of its properties in
- * `required`, recursively. Combinators (`anyOf`/`oneOf`/`allOf`) and `$ref` are
- * treated conservatively as non-strict. When false we send `strict: false` so
- * the request isn't rejected with a 400; the `StructuredGenerationTask` consumer
- * still re-validates (and retries) the output against the original schema.
- */
-export function isStrictCompatibleSchema(schema: unknown): boolean {
-  if (schema === null || typeof schema !== "object") return true;
-  const s = schema as Record<string, unknown>;
-  if (s.$ref !== undefined) return false;
-  if (Array.isArray(s.anyOf) || Array.isArray(s.oneOf) || Array.isArray(s.allOf)) return false;
-
-  const isObject = s.type === "object" || (s.type === undefined && s.properties !== undefined);
-  if (isObject) {
-    if (s.additionalProperties !== false) return false;
-    const props = (s.properties as Record<string, unknown> | undefined) ?? {};
-    const required = Array.isArray(s.required) ? (s.required as string[]) : [];
-    for (const key of Object.keys(props)) {
-      if (!required.includes(key)) return false;
-      if (!isStrictCompatibleSchema(props[key])) return false;
-    }
-    return true;
-  }
-
-  const isArray = s.type === "array" || s.items !== undefined;
-  if (isArray) {
-    if (Array.isArray(s.items)) return s.items.every(isStrictCompatibleSchema);
-    return isStrictCompatibleSchema(s.items);
-  }
-  return true;
-}
+export { isStrictCompatibleSchema };
 
 /**
  * Streaming run-fn for `["text.generation", "json-mode"]`. Emits

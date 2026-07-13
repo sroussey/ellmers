@@ -5,6 +5,7 @@
  */
 
 import type { ModelRecord } from "@workglow/ai";
+import { isStrictCompatibleSchema } from "@workglow/ai/provider-utils";
 import { _testOnly } from "@workglow/xai/ai";
 import { describe, expect, it } from "vitest";
 
@@ -111,5 +112,28 @@ describe("XAI_RUN_FNS shape", () => {
   it("tiebreaks `text.generation` to the smallest serves entry (plain text-gen)", () => {
     const candidates = XAI_RUN_FNS.filter((r) => r.serves.includes("text.generation"));
     expect(candidates.some((r) => r.serves.length === 1)).toBe(true);
+  });
+});
+
+describe("isStrictCompatibleSchema wiring", () => {
+  it("resolves the shared helper from @workglow/ai/provider-utils (parity with OpenAI)", () => {
+    expect(typeof isStrictCompatibleSchema).toBe("function");
+  });
+
+  it("returns false for combinator schemas (anyOf/oneOf/allOf)", () => {
+    expect(isStrictCompatibleSchema({ anyOf: [{ type: "string" }, { type: "number" }] })).toBe(
+      false
+    );
+  });
+
+  it("returns true for an object with additionalProperties:false and all-required properties", () => {
+    expect(
+      isStrictCompatibleSchema({
+        type: "object",
+        additionalProperties: false,
+        required: ["a"],
+        properties: { a: { type: "string" } },
+      })
+    ).toBe(true);
   });
 });

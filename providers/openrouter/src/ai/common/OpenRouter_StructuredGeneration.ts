@@ -9,6 +9,7 @@ import type {
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
+import { isStrictCompatibleSchema } from "@workglow/ai/provider-utils";
 import { parsePartialJson } from "@workglow/util/worker";
 import { getClient, getModelName } from "./OpenRouter_Client";
 import type { OpenRouterModelConfig } from "./OpenRouter_ModelSchema";
@@ -34,7 +35,11 @@ export const OpenRouter_StructuredGeneration_Stream: AiProviderRunFn<
   const responseFormat = schema
     ? {
         type: "json_schema" as never,
-        json_schema: { name: "structured_output", schema: schema, strict: true },
+        json_schema: {
+          name: "structured_output",
+          schema: schema,
+          strict: isStrictCompatibleSchema(schema),
+        },
       }
     : { type: "json_object" as never };
 
@@ -54,7 +59,7 @@ export const OpenRouter_StructuredGeneration_Stream: AiProviderRunFn<
   let accumulatedJson = "";
   let refusal = "";
   for await (const chunk of stream) {
-    const delta = chunk.choices[0]?.delta?.content ?? "";
+    const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
       accumulatedJson += delta;
       const partial = parsePartialJson(accumulatedJson);
@@ -62,7 +67,7 @@ export const OpenRouter_StructuredGeneration_Stream: AiProviderRunFn<
         emit({ type: "object-delta", port: "object", objectDelta: partial });
       }
     }
-    refusal += chunk.choices[0]?.delta?.refusal ?? "";
+    refusal += chunk.choices?.[0]?.delta?.refusal ?? "";
   }
 
   if (refusal) {

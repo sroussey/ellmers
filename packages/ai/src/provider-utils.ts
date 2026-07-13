@@ -24,6 +24,7 @@ export * from "./provider-utils/BaseCloudProvider";
 export * from "./provider-utils/CloudProviderClient";
 export * from "./provider-utils/OpenAIShapedChat";
 export * from "./provider-utils/OpenAIShapedResponses";
+export * from "./provider-utils/OpenAIShapedJsonSchema";
 export * from "./provider-utils/RefusalHelpers";
 export * from "./provider-utils/IBackendsTransport";
 export * from "./provider-utils/localUrl";
