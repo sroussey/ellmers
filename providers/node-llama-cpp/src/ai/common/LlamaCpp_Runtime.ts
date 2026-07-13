@@ -108,10 +108,9 @@ export async function releaseLlamaCppTransientSessions(): Promise<void> {
  * resolved on-disk path; both spellings are tried so callers don't have to
  * know which form ended up in the context cache.
  *
- * If `reloadModel` is true the cached `LlamaModel` is disposed as well, so the
- * next request reloads weights from disk. Use this when prior runs may have
- * leaked sequence-pool slots at the C level — disposing the context alone may
- * not be sufficient to reclaim them inside the same model lifetime.
+ * If `reloadModel` is true the cached `LlamaModel` and any cached embedding
+ * context for the same key are disposed as well, so the next request reloads
+ * weights from disk.
  */
 export async function recycleLlamaCppTextContext(
   modelKey: string,
@@ -129,6 +128,13 @@ export async function recycleLlamaCppTextContext(
   }
   if (options.reloadModel) {
     for (const key of candidates) {
+      const embeddingContext = llamaCppEmbeddingContexts.get(key);
+      if (embeddingContext) {
+        llamaCppEmbeddingContexts.delete(key);
+        await (embeddingContext as unknown as { dispose?: () => Promise<void> })
+          .dispose?.()
+          .catch(() => {});
+      }
       const loadedModel = llamaCppModels.get(key);
       if (loadedModel) {
         llamaCppModels.delete(key);
@@ -170,21 +176,38 @@ export function getActualModelPath(model: LlamaCppModelConfig): string {
   return resolved ?? model.provider_config.model_path;
 }
 
-/** Substrings (lower-cased) for allocation failures after confirming a VRAM/GPU/CUDA signal in the message. */
-const ALLOCATION_ERROR_PATTERNS: readonly string[] = [
+/**
+ * Substrings (lower-cased) that identify a device-memory allocation failure
+ * across ggml backends (CUDA, Metal, ROCm/HIP, Vulkan, generic ggml). Any
+ * single match on the lowercased error message is enough — a flat OR beats
+ * the previous two-gate design, which missed messages that spelled the
+ * backend without one of the "vram|cuda|gpu" tokens (Metal / ROCm / Vulkan)
+ * or that used allocation phrases outside the previous whitelist.
+ */
+const VRAM_ERROR_PATTERNS: readonly string[] = [
   "not enough vram",
   "too large for the available vram",
   "out of memory",
   "failed to allocate",
   "cuda out of memory",
+  "cudamalloc",
+  "ggml_backend_cuda",
+  "ggml_cuda",
+  "cublas",
+  "allocating buffer",
+  "allocation failed",
+  "mtlbuffer",
+  "metal allocation",
+  "hipmalloc",
+  "hip out of memory",
+  "vkdevicememory",
+  "vk_error_out_of_device_memory",
 ];
 
-function isVramError(err: unknown): boolean {
+/** @internal exported for unit tests. */
+export function isVramError(err: unknown): boolean {
   const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
-  if (!msg.includes("vram") && !msg.includes("cuda") && !msg.includes("gpu")) {
-    return false;
-  }
-  return ALLOCATION_ERROR_PATTERNS.some((pattern) => msg.includes(pattern));
+  return VRAM_ERROR_PATTERNS.some((pattern) => msg.includes(pattern));
 }
 
 /** Move a cached model to the most-recently-used end of the insertion-ordered cache. */
@@ -372,7 +395,7 @@ export async function getOrCreateEmbeddingContext(
 
   const loadedModel = await getOrLoadModel(model);
 
-  const context = await loadedModel.createEmbeddingContext();
+  const context = await withVramEviction(modelPath, () => loadedModel.createEmbeddingContext());
 
   llamaCppEmbeddingContexts.set(modelPath, context);
   return context;
