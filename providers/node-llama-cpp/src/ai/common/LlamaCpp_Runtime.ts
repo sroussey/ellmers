@@ -174,14 +174,16 @@ export function getActualModelPath(model: LlamaCppModelConfig): string {
 const VRAM_ERROR_PATTERNS: readonly string[] = [
   "not enough vram",
   "too large for the available vram",
-  "insufficient",
   "out of memory",
   "failed to allocate",
-  "failed to create",
+  "cuda out of memory",
 ];
 
 function isVramError(err: unknown): boolean {
   const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  if (!msg.includes("vram") && !msg.includes("cuda") && !msg.includes("gpu")) {
+    return false;
+  }
   return VRAM_ERROR_PATTERNS.some((pattern) => msg.includes(pattern));
 }
 
@@ -292,7 +294,10 @@ export function llamaCppChatSessionConstructorSpread(model: LlamaCppModelConfig)
 export async function getOrCreateTextContext(model: LlamaCppModelConfig): Promise<LlamaContext> {
   const modelPath = getActualModelPath(model);
   const cached = llamaCppTextContexts.get(modelPath);
-  if (cached) return cached;
+  if (cached) {
+    touchModel(modelPath);
+    return cached;
+  }
 
   const loadedModel = await getOrLoadModel(model);
   const config = model.provider_config;
@@ -331,9 +336,18 @@ const SEQUENCE_RECLAIM_TIMEOUT_MS = 30_000;
  * a larger pool would regress memory on VRAM-constrained hosts).
  */
 export async function acquireContextSequence(context: LlamaContext): Promise<LlamaContextSequence> {
-  if (context.sequencesLeft > 0) return context.getSequence();
   const deadline = Date.now() + SEQUENCE_RECLAIM_TIMEOUT_MS;
-  while (context.sequencesLeft <= 0) {
+  while (true) {
+    if (context.sequencesLeft > 0) {
+      try {
+        return context.getSequence();
+      } catch (err) {
+        const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+        if (!msg.includes("no sequences left")) {
+          throw err;
+        }
+      }
+    }
     if (Date.now() > deadline) {
       throw new Error(
         "Timed out waiting for a llama.cpp context sequence to be reclaimed after dispose."
@@ -342,7 +356,6 @@ export async function acquireContextSequence(context: LlamaContext): Promise<Lla
     // Yield a macrotask so the lock-guarded reclaim callback can run.
     await new Promise<void>((resolve) => setTimeout(resolve, 1));
   }
-  return context.getSequence();
 }
 
 export async function getOrCreateEmbeddingContext(
@@ -350,7 +363,10 @@ export async function getOrCreateEmbeddingContext(
 ): Promise<LlamaEmbeddingContext> {
   const modelPath = getActualModelPath(model);
   const cached = llamaCppEmbeddingContexts.get(modelPath);
-  if (cached) return cached;
+  if (cached) {
+    touchModel(modelPath);
+    return cached;
+  }
 
   const loadedModel = await getOrLoadModel(model);
 
