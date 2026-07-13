@@ -7,6 +7,7 @@
 import type { AiProviderRunFn, TextSummaryTaskInput, TextSummaryTaskOutput } from "@workglow/ai";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
+  acquireContextSequence,
   getOrCreateTextContext,
   llamaCppChatSessionConstructorSpread,
   llamaCppSeedPromptSpread,
@@ -24,7 +25,7 @@ export const LlamaCpp_TextSummary_Stream: AiProviderRunFn<
   const { LlamaChatSession } = await loadSdk();
 
   const context = await getOrCreateTextContext(model);
-  const sequence = context.getSequence();
+  const sequence = await acquireContextSequence(context);
   const session = new LlamaChatSession({
     contextSequence: sequence,
     ...llamaCppChatSessionConstructorSpread(model),

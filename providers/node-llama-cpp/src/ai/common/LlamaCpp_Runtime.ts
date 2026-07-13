@@ -7,6 +7,7 @@
 import type { StreamEvent } from "@workglow/task-graph";
 import type {
   LlamaContext,
+  LlamaContextSequence,
   LlamaEmbeddingContext,
   Llama as LlamaInstance,
   LlamaModel,
@@ -169,18 +170,81 @@ export function getActualModelPath(model: LlamaCppModelConfig): string {
   return resolved ?? model.provider_config.model_path;
 }
 
+/** Substrings (lower-cased) that identify a llama.cpp allocation failure we can retry after freeing VRAM. */
+const VRAM_ERROR_PATTERNS: readonly string[] = [
+  "not enough vram",
+  "too large for the available vram",
+  "insufficient",
+  "out of memory",
+  "failed to allocate",
+  "failed to create",
+];
+
+function isVramError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return VRAM_ERROR_PATTERNS.some((pattern) => msg.includes(pattern));
+}
+
+/** Move a cached model to the most-recently-used end of the insertion-ordered cache. */
+function touchModel(modelPath: string): void {
+  const cached = llamaCppModels.get(modelPath);
+  if (cached) {
+    llamaCppModels.delete(modelPath);
+    llamaCppModels.set(modelPath, cached);
+  }
+}
+
+/**
+ * Evict the least-recently-used cached model (and its text context) to free
+ * VRAM, skipping `exceptPath` (the model currently being loaded). `llamaCppModels`
+ * is kept in access order by {@link touchModel}, so the first key is the LRU one.
+ * Returns the evicted path, or undefined when nothing else is cached.
+ */
+async function evictLeastRecentlyUsedModel(exceptPath: string): Promise<string | undefined> {
+  for (const path of llamaCppModels.keys()) {
+    if (path === exceptPath) continue;
+    await recycleLlamaCppTextContext(path, { reloadModel: true });
+    return path;
+  }
+  return undefined;
+}
+
+/**
+ * Run `attempt`, and if it fails with a VRAM allocation error, evict the LRU
+ * cached model and retry — repeating until it succeeds or there is nothing left
+ * to evict (then the original error is rethrown). This lets a large model or a
+ * large KV cache load by reclaiming VRAM still held by earlier models the worker
+ * cached but no longer needs (e.g. successive candidates in an eval sweep).
+ */
+async function withVramEviction<T>(exceptPath: string, attempt: () => Promise<T>): Promise<T> {
+  while (true) {
+    try {
+      return await attempt();
+    } catch (err) {
+      if (!isVramError(err)) throw err;
+      const evicted = await evictLeastRecentlyUsedModel(exceptPath);
+      if (evicted === undefined) throw err;
+    }
+  }
+}
+
 export async function getOrLoadModel(model: LlamaCppModelConfig): Promise<LlamaModel> {
   const modelPath = getActualModelPath(model);
   const cached = llamaCppModels.get(modelPath);
-  if (cached) return cached;
+  if (cached) {
+    touchModel(modelPath);
+    return cached;
+  }
 
   const llama = await getLlamaInstance();
   const config = model.provider_config;
 
-  const loadedModel = await llama.loadModel({
-    modelPath,
-    ...(config.gpu_layers !== undefined && { gpuLayers: config.gpu_layers }),
-  });
+  const loadedModel = await withVramEviction(modelPath, () =>
+    llama.loadModel({
+      modelPath,
+      ...(config.gpu_layers !== undefined && { gpuLayers: config.gpu_layers }),
+    })
+  );
 
   llamaCppModels.set(modelPath, loadedModel);
   return loadedModel;
@@ -233,13 +297,52 @@ export async function getOrCreateTextContext(model: LlamaCppModelConfig): Promis
   const loadedModel = await getOrLoadModel(model);
   const config = model.provider_config;
 
-  const context = await loadedModel.createContext({
-    ...(config.context_size && { contextSize: config.context_size }),
-    ...(config.flash_attention !== undefined && { flashAttention: config.flash_attention }),
-  });
+  // Evict other cached models on a VRAM error so the KV cache can fit; keep this
+  // model (modelPath) resident since we are building its context.
+  const context = await withVramEviction(modelPath, () =>
+    loadedModel.createContext({
+      ...(config.context_size && { contextSize: config.context_size }),
+      ...(config.flash_attention !== undefined && { flashAttention: config.flash_attention }),
+    })
+  );
 
   llamaCppTextContexts.set(modelPath, context);
   return context;
+}
+
+/** How long {@link acquireContextSequence} waits for a disposed sequence to be reclaimed. */
+const SEQUENCE_RECLAIM_TIMEOUT_MS = 30_000;
+
+/**
+ * Acquire a sequence from a (typically cached, single-sequence) context, tolerating
+ * node-llama-cpp's **asynchronous** sequence reclamation.
+ *
+ * `LlamaContextSequence.dispose()` returns synchronously, but it frees the sequence
+ * id via `_reclaimUnusedSequenceId`, which pushes the id back into the context's pool
+ * inside a `withLock([context])` async callback — so the slot is not actually free
+ * when `dispose()` returns. On a cached single-sequence context, a fast serial
+ * re-acquire (the next task reusing the same context) can therefore observe
+ * `sequencesLeft === 0` and make `getSequence()` throw `"No sequences left"`, even
+ * though the previous sequence was disposed. It is a race, not a leak — which is why
+ * it surfaces on slow models (large sections, MoE) but not on fast ones.
+ *
+ * Waiting for `sequencesLeft > 0` before allocating closes the race without growing
+ * the sequence pool (each extra sequence costs another `contextSize` of KV cells, so
+ * a larger pool would regress memory on VRAM-constrained hosts).
+ */
+export async function acquireContextSequence(context: LlamaContext): Promise<LlamaContextSequence> {
+  if (context.sequencesLeft > 0) return context.getSequence();
+  const deadline = Date.now() + SEQUENCE_RECLAIM_TIMEOUT_MS;
+  while (context.sequencesLeft <= 0) {
+    if (Date.now() > deadline) {
+      throw new Error(
+        "Timed out waiting for a llama.cpp context sequence to be reclaimed after dispose."
+      );
+    }
+    // Yield a macrotask so the lock-guarded reclaim callback can run.
+    await new Promise<void>((resolve) => setTimeout(resolve, 1));
+  }
+  return context.getSequence();
 }
 
 export async function getOrCreateEmbeddingContext(

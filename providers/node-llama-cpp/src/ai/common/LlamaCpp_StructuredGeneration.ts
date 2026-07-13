@@ -12,6 +12,7 @@ import type {
 import { parsePartialJson } from "@workglow/util/worker";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
+  acquireContextSequence,
   getLlamaCppSdk,
   getLlamaInstance,
   getOrCreateTextContext,
@@ -33,7 +34,7 @@ export const LlamaCpp_StructuredGeneration_Stream: AiProviderRunFn<
   const context = await getOrCreateTextContext(model);
   const grammar = await llama.createGrammarForJsonSchema(input.outputSchema as any);
 
-  const sequence = context.getSequence();
+  const sequence = await acquireContextSequence(context);
   const { LlamaChatSession } = getLlamaCppSdk();
   const session = new LlamaChatSession({
     contextSequence: sequence,

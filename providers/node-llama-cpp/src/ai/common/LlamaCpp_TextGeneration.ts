@@ -11,6 +11,7 @@ import type {
 } from "@workglow/ai";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
+  acquireContextSequence,
   getConfigKey,
   getLlamaCppSession,
   getOrCreateTextContext,
@@ -32,7 +33,7 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderRunFn<
 
   const cached = sessionId ? getLlamaCppSession(sessionId) : undefined;
   const context = cached ? undefined : await getOrCreateTextContext(model);
-  const sequence = cached ? cached.sequence : context!.getSequence();
+  const sequence = cached ? cached.sequence : await acquireContextSequence(context!);
   const session =
     cached?.session ??
     new LlamaChatSession({
