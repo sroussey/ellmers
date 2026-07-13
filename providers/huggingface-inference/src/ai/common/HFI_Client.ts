@@ -10,9 +10,11 @@ import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 type HfInferenceSDKModule = typeof import("@huggingface/inference");
 
 let _loadPromise: Promise<HfInferenceSDKModule> | undefined;
+let _sdkOverride: HfInferenceSDKModule | undefined;
 
 // NOTE: we do not want to de-dup this in the provider-utils, vite wants direct import with string literals.
 export async function loadHfInferenceSDK(): Promise<HfInferenceSDKModule> {
+  if (_sdkOverride) return _sdkOverride;
   _loadPromise ??= import(/* @vite-ignore */ "@huggingface/inference")
     .then((mod) => mod as HfInferenceSDKModule)
     .catch(() => {
@@ -22,6 +24,16 @@ export async function loadHfInferenceSDK(): Promise<HfInferenceSDKModule> {
       );
     });
   return _loadPromise;
+}
+
+/**
+ * @internal Test-only injection point. The dynamic `import()` in
+ * {@link loadHfInferenceSDK} carries a `@vite-ignore` directive, so `vi.mock`
+ * cannot intercept it; tests set a fake SDK module here instead.
+ */
+export function _setHfInferenceSDKForTesting(sdk: HfInferenceSDKModule | undefined): void {
+  _sdkOverride = sdk;
+  _loadPromise = undefined;
 }
 
 interface ResolvedProviderConfig {

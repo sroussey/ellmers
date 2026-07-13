@@ -30,7 +30,7 @@ export const HFI_TextSummary_Stream: AiProviderRunFn<
   );
 
   for await (const chunk of stream) {
-    const delta = chunk.choices[0]?.delta?.content ?? "";
+    const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
       emit({ type: "text-delta", port: "text", textDelta: delta });
     }
