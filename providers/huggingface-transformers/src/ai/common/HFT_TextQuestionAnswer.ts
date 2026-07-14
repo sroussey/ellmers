@@ -28,9 +28,9 @@ export const HFT_TextQuestionAnswer: AiProviderRunFn<
   HfTransformersOnnxModelConfig
 > = async (input, model, signal, emit) => {
   const generateAnswer = (await getPipeline(model!, emit, {}, signal)) as QuestionAnsweringPipeline;
-  const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
 
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
     const streamer = createStreamingTextStreamer(
       generateAnswer.tokenizer,
       (text) => emit({ type: "text-delta", port: "text", textDelta: text }),

@@ -21,9 +21,9 @@ export const HFT_TextSummary: AiProviderRunFn<
   HfTransformersOnnxModelConfig
 > = async (input, model, signal, emit) => {
   const generateSummary = (await getPipeline(model!, emit, {}, signal)) as SummarizationPipeline;
-  const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
 
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
     const streamer = createStreamingTextStreamer(
       generateSummary.tokenizer,
       (text) => emit({ type: "text-delta", port: "text", textDelta: text }),
