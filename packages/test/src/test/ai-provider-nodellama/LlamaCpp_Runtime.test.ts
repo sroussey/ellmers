@@ -7,13 +7,17 @@
 import {
   acquireContextSequence,
   acquireModelInUse,
+  disposeLlamaCppSessionsForModel,
   getOrCreateEmbeddingContext,
   isVramError,
   llamaCppEmbeddingContexts,
   llamaCppModels,
+  llamaCppSessions,
   llamaCppTextContexts,
   recycleLlamaCppTextContext,
   releaseModelInUse,
+  resolvedPaths,
+  setLlamaCppSession,
   withSequence,
   withVramEviction,
 } from "@workglow/node-llama-cpp/ai-runtime";
@@ -289,6 +293,76 @@ describe("withVramEviction concurrent-safety", () => {
     } finally {
       releaseModelInUse("/tmp/A.gguf");
     }
+  });
+});
+
+describe("disposeLlamaCppSessionsForModel key-spelling tolerance", () => {
+  afterEach(() => {
+    llamaCppSessions.clear();
+    resolvedPaths.clear();
+  });
+
+  it("disposes sessions stored under the config key when called with the resolved on-disk path", async () => {
+    // Sessions are stored with `modelKey: getConfigKey(model)` (typically `model_url`),
+    // but `evictLeastRecentlyUsedModel` iterates `llamaCppModels` keys, which are
+    // resolved filesystem paths. The dispose helper must match both spellings.
+    const configKey = "https://huggingface.co/example/model.gguf";
+    const resolvedPath = "/tmp/example/model.gguf";
+    resolvedPaths.set(configKey, resolvedPath);
+
+    const sessionDispose = vi.fn(async () => {});
+    const sequenceDispose = vi.fn(async () => {});
+    setLlamaCppSession("session-1", {
+      session: { dispose: sessionDispose } as unknown as never,
+      sequence: { dispose: sequenceDispose } as unknown as never,
+      modelKey: configKey,
+    } as never);
+
+    await disposeLlamaCppSessionsForModel(resolvedPath);
+
+    expect(sessionDispose).toHaveBeenCalledTimes(1);
+    expect(sequenceDispose).toHaveBeenCalledTimes(1);
+    expect(llamaCppSessions.has("session-1")).toBe(false);
+  });
+
+  it("still disposes sessions when the caller passes the exact stored key", async () => {
+    const configKey = "/tmp/local/model.gguf";
+    const sessionDispose = vi.fn(async () => {});
+    setLlamaCppSession("session-2", {
+      session: { dispose: sessionDispose } as unknown as never,
+      sequence: undefined as unknown as never,
+      modelKey: configKey,
+    } as never);
+
+    await disposeLlamaCppSessionsForModel(configKey);
+
+    expect(sessionDispose).toHaveBeenCalledTimes(1);
+    expect(llamaCppSessions.has("session-2")).toBe(false);
+  });
+
+  it("does not dispose sessions belonging to a different model", async () => {
+    resolvedPaths.set("url-A", "/tmp/A.gguf");
+    resolvedPaths.set("url-B", "/tmp/B.gguf");
+
+    const sessionADispose = vi.fn(async () => {});
+    const sessionBDispose = vi.fn(async () => {});
+    setLlamaCppSession("sess-A", {
+      session: { dispose: sessionADispose } as unknown as never,
+      sequence: undefined as unknown as never,
+      modelKey: "url-A",
+    } as never);
+    setLlamaCppSession("sess-B", {
+      session: { dispose: sessionBDispose } as unknown as never,
+      sequence: undefined as unknown as never,
+      modelKey: "url-B",
+    } as never);
+
+    await disposeLlamaCppSessionsForModel("/tmp/A.gguf");
+
+    expect(sessionADispose).toHaveBeenCalledTimes(1);
+    expect(sessionBDispose).not.toHaveBeenCalled();
+    expect(llamaCppSessions.has("sess-A")).toBe(false);
+    expect(llamaCppSessions.has("sess-B")).toBe(true);
   });
 });
 

@@ -146,7 +146,13 @@ export async function recycleLlamaCppTextContext(
 
 export async function disposeLlamaCppSessionsForModel(modelKey: string): Promise<void> {
   for (const [id, state] of llamaCppSessions) {
-    if (state.modelKey === modelKey) {
+    // Sessions are stored with `modelKey = getConfigKey(model)` (typically the
+    // caller's `model_url`), but callers may dispose by the resolved on-disk
+    // path (e.g. `evictLeastRecentlyUsedModel` iterates `llamaCppModels` keys,
+    // which are resolved paths). Match on both spellings so eviction actually
+    // clears the session state instead of stranding it against a disposed model.
+    const matches = state.modelKey === modelKey || resolvedPaths.get(state.modelKey) === modelKey;
+    if (matches) {
       try {
         await state.session?.dispose?.({ disposeSequence: false });
       } catch {}
