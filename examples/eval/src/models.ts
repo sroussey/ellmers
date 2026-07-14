@@ -11,7 +11,7 @@ import { evalHome } from "./config";
 import { hfAuthHeaders } from "./hf/auth";
 import { sanitizeHubRepoId } from "./hf/ids";
 
-export type EvalKind = "classify" | "similarity";
+export type EvalKind = "classify" | "similarity" | "extract";
 
 const GGUF_PREFIX = "gguf:";
 

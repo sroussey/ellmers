@@ -10,6 +10,7 @@ import type { EvalKind } from "../models";
 import { ensureEmbeddingDimensions, ensureModelDownloaded, resolveModelConfig } from "../models";
 import type { DatasetRowRecord, EvalStores } from "../storage";
 import { makeClassifyExecutor } from "./classify";
+import { makeExtractExecutor } from "./extract";
 import { makeSimilarityExecutor } from "./similarity";
 import type { ColumnOptions, DatasetContext, RowExecutor } from "./types";
 
@@ -24,15 +25,22 @@ export interface SweepOptions {
     ((done: number, total: number, model: string, ok: boolean) => void) | undefined;
 }
 
+const EXECUTORS: Record<
+  EvalKind,
+  (model: ModelConfig, columns: ColumnOptions, context: DatasetContext) => RowExecutor
+> = {
+  classify: makeClassifyExecutor,
+  similarity: makeSimilarityExecutor,
+  extract: makeExtractExecutor,
+};
+
 function makeExecutor(
   kind: EvalKind,
   model: ModelConfig,
   columns: ColumnOptions,
   context: DatasetContext
 ): RowExecutor {
-  return kind === "classify"
-    ? makeClassifyExecutor(model, columns, context)
-    : makeSimilarityExecutor(model, columns, context);
+  return EXECUTORS[kind](model, columns, context);
 }
 
 /**

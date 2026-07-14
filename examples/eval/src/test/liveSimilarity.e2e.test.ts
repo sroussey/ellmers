@@ -55,6 +55,10 @@ describe("live similarity eval", () => {
           labels: undefined,
           pairColumn: "sentence2",
           scoreColumn: "score",
+          expectedColumn: "expected",
+          keyField: "name",
+          fields: undefined,
+          instruction: undefined,
         },
         context: {
           columns: JSON.parse(meta!.columns) as string[],

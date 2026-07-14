@@ -7,6 +7,8 @@
 import type { EvalKind } from "../models";
 import { scoreClassification } from "../score/classification";
 import { pearson, spearman } from "../score/correlation";
+import type { ExtractedRow, ExtractionCounts } from "../score/extraction";
+import { combineExtractionCounts, scoreExtraction } from "../score/extraction";
 import type { EvalResultRecord } from "../storage";
 
 export interface ModelReport {
@@ -18,17 +20,35 @@ export interface ModelReport {
   /** similarity: correlations of predicted vs gold over ok rows (NaN when degenerate). */
   readonly pearson: number;
   readonly spearman: number;
+  /** extract: field agreement / entity recall / distinct-row precision (NaN when unscored). */
+  readonly score: number;
+  readonly found: number;
+  readonly prec: number;
   readonly avgLatencyMs: number;
 }
+
+/** Per-kind scoring inputs beyond the stored results (extract only). */
+export interface AggregateOptions {
+  readonly keyField?: string | undefined;
+  readonly fields?: readonly string[] | undefined;
+}
+
+const RANKING_METRIC: Record<EvalKind, (r: ModelReport) => number> = {
+  classify: (r) => r.accuracy,
+  similarity: (r) => r.spearman,
+  extract: (r) => r.score,
+};
 
 /**
  * Aggregate stored per-row results into one line per model, ranked best-first
  * by the metric that matches the eval kind (accuracy for classify, Spearman
- * for similarity), with average latency as the tie-breaker.
+ * for similarity, field agreement for extract), with average latency as the
+ * tie-breaker.
  */
 export function aggregateResults(
   kind: EvalKind,
-  results: readonly EvalResultRecord[]
+  results: readonly EvalResultRecord[],
+  options: AggregateOptions = {}
 ): ModelReport[] {
   const byModel = new Map<string, EvalResultRecord[]>();
   for (const result of results) {
@@ -50,23 +70,54 @@ export function aggregateResults(
     );
     const expectedValues = numeric.map((r) => r.expected_value as number);
     const predictedValues = numeric.map((r) => r.predicted_value as number);
+    const extraction =
+      kind === "extract"
+        ? combineExtractionCounts(extractionCountsFor(pairs, options))
+        : { score: NaN, found: NaN, prec: NaN };
     const latency =
       rows.length > 0 ? rows.reduce((sum, r) => sum + r.latency_ms, 0) / rows.length : NaN;
     reports.push({
       model,
       rows: rows.length,
       okRows: ok.length,
-      accuracy: scoreClassification(pairs).accuracy,
+      accuracy: kind === "extract" ? NaN : scoreClassification(pairs).accuracy,
       pearson: pearson(predictedValues, expectedValues),
       spearman: spearman(predictedValues, expectedValues),
+      score: extraction.score,
+      found: extraction.found,
+      prec: extraction.prec,
       avgLatencyMs: latency,
     });
   }
 
   const metric = (r: ModelReport): number => {
-    const value = kind === "classify" ? r.accuracy : r.spearman;
+    const value = RANKING_METRIC[kind](r);
     return Number.isNaN(value) ? -Infinity : value;
   };
   reports.sort((a, b) => metric(b) - metric(a) || a.avgLatencyMs - b.avgLatencyMs);
   return reports;
+}
+
+/**
+ * Extract runs store the gold and candidate row arrays as JSON per dataset
+ * row; re-score each pair and micro-average. An unparseable pair contributes
+ * nothing (its row already carries its own failure state).
+ */
+function extractionCountsFor(
+  pairs: readonly { expected: string; predicted: string }[],
+  options: AggregateOptions
+): ExtractionCounts[] {
+  const keyField = options.keyField ?? "name";
+  const counts: ExtractionCounts[] = [];
+  for (const pair of pairs) {
+    try {
+      const expected = JSON.parse(pair.expected) as ExtractedRow[];
+      const predicted = JSON.parse(pair.predicted) as ExtractedRow[];
+      if (!Array.isArray(expected) || !Array.isArray(predicted)) continue;
+      counts.push(scoreExtraction(predicted, expected, keyField, options.fields));
+    } catch {
+      continue;
+    }
+  }
+  return counts;
 }

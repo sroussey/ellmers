@@ -27,6 +27,14 @@ export interface ColumnOptions {
   readonly pairColumn: string;
   /** similarity: gold similarity score column. */
   readonly scoreColumn: string;
+  /** extract: gold column holding an array of objects (or its JSON string). */
+  readonly expectedColumn: string;
+  /** extract: field that identifies an entity when aligning rows. */
+  readonly keyField: string;
+  /** extract: fields to request and score; defaults to keys seen in the gold rows. */
+  readonly fields?: readonly string[] | undefined;
+  /** extract: task sentence at the top of the prompt. */
+  readonly instruction?: string | undefined;
 }
 
 export interface DatasetContext {

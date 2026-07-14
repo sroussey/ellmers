@@ -17,11 +17,22 @@ import { printReport } from "./report";
 const DEFAULT_MODELS: Record<EvalKind, string> = {
   classify: "onnx-community/LFM2.5-350M-ONNX",
   similarity: "Xenova/all-MiniLM-L6-v2",
+  extract: "onnx-community/LFM2.5-350M-ONNX",
 };
 
 const DEFAULT_TEXT_COLUMN: Record<EvalKind, string> = {
   classify: "text",
   similarity: "sentence1",
+  extract: "text",
+};
+
+const DESCRIPTIONS: Record<EvalKind, string> = {
+  classify:
+    "Classify each stored row with each model (StructuredGenerationTask) and score accuracy",
+  similarity:
+    "Embed stored sentence pairs with each model (TextEmbeddingTask) and correlate cosine similarity with the gold score",
+  extract:
+    "Extract structured records from each stored row (StructuredGenerationTask) and score field agreement, entity recall, and precision against the gold rows",
 };
 
 interface RunFlags {
@@ -34,6 +45,10 @@ interface RunFlags {
   readonly labels?: string | undefined;
   readonly pairColumn?: string | undefined;
   readonly scoreColumn?: string | undefined;
+  readonly expectedColumn?: string | undefined;
+  readonly keyField?: string | undefined;
+  readonly fields?: string | undefined;
+  readonly instruction?: string | undefined;
   readonly format: string;
 }
 
@@ -42,14 +57,10 @@ export function registerRunCommand(
   openStores: () => Promise<EvalStores>,
   ensureProviders: () => Promise<void>
 ): void {
-  for (const kind of ["classify", "similarity"] as const) {
-    const description =
-      kind === "classify"
-        ? "Classify each stored row with each model (StructuredGenerationTask) and score accuracy"
-        : "Embed stored sentence pairs with each model (TextEmbeddingTask) and correlate cosine similarity with the gold score";
+  for (const kind of ["classify", "similarity", "extract"] as const) {
     const command = program
       .command(`run-${kind}`)
-      .description(description)
+      .description(DESCRIPTIONS[kind])
       .requiredOption("--dataset <id>", "a dataset previously stored via `dataset pull`")
       .option("--split <split>", "dataset split", "test")
       .option("--models <list>", `comma-separated model ids (default: ${DEFAULT_MODELS[kind]})`)
@@ -60,10 +71,16 @@ export function registerRunCommand(
       command
         .option("--label-column <name>", "gold label column", "label")
         .option("--labels <list>", "comma-separated candidate labels override");
-    } else {
+    } else if (kind === "similarity") {
       command
         .option("--pair-column <name>", "second sentence column", "sentence2")
         .option("--score-column <name>", "gold score column", "score");
+    } else {
+      command
+        .option("--expected-column <name>", "gold column: array of objects or JSON", "expected")
+        .option("--key-field <name>", "field that identifies an entity when aligning", "name")
+        .option("--fields <list>", "comma-separated fields to extract and score")
+        .option("--instruction <text>", "task sentence at the top of the prompt");
     }
     command.action(async (flags: RunFlags) => {
       try {
@@ -99,6 +116,10 @@ async function runEval(kind: EvalKind, flags: RunFlags, stores: EvalStores): Pro
     labels: flags.labels ? flags.labels.split(",").map((l) => l.trim()) : undefined,
     pairColumn: flags.pairColumn ?? "sentence2",
     scoreColumn: flags.scoreColumn ?? "score",
+    expectedColumn: flags.expectedColumn ?? "expected",
+    keyField: flags.keyField ?? "name",
+    fields: flags.fields ? flags.fields.split(",").map((f) => f.trim()) : undefined,
+    instruction: flags.instruction,
   };
   const context: DatasetContext = {
     columns: JSON.parse(meta.columns) as string[],

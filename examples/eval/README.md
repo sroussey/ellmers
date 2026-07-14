@@ -73,6 +73,37 @@ Works out of the box with `mteb/stsbenchmark-sts`:
   --models "Xenova/all-MiniLM-L6-v2,text-embedding-3-small"
 ```
 
+### `run-extract` — structured extraction quality
+
+Each row runs a one-task workflow: `StructuredGenerationTask` with an `items`
+array output schema, extracting structured records (people, deals, entities…)
+from the row's prose. The gold column (`--expected-column`, default
+`expected`) holds an array of objects — parquet struct/list columns and JSON
+strings both work. Candidate items are aligned to gold rows by
+`--key-field` (default `name`, case/punctuation-insensitive) and scored on
+three axes, micro-averaged across the split:
+
+- **score** — field-level agreement over matched rows (the ranking metric)
+- **found** — entity recall (gold rows matched by key)
+- **prec** — precision over distinct candidate rows (1 − hallucinated rows)
+
+`--fields "a,b,c"` limits which fields are requested and scored (default: the
+keys seen in the gold rows); `--instruction "…"` replaces the task sentence at
+the top of the prompt.
+
+```bash
+./dist/workglow-eval.js run-extract --dataset my-org/people-extraction --split test \
+  --key-field name --fields "name,role" \
+  --instruction "Extract every person mentioned in the text." \
+  --models "claude-haiku-4-5,onnx-community/LFM2.5-350M-ONNX,gguf:prism-ml/Bonsai-27B-gguf:Q1_0"
+```
+
+This is the generalized form of the SEC repo's extraction eval: same
+alignment-by-key scoring (a model that emits the same entity twice is
+over-producing rows, not hallucinating, so precision is computed over
+distinct rows), but driven by any HuggingFace dataset instead of committed
+fixtures.
+
 ## Model ids
 
 Model ids resolve to an inline `ModelConfig` by shape — no model repository

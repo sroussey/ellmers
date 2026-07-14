@@ -18,12 +18,18 @@ export async function printReport(
 ): Promise<void> {
   const run = await stores.runs.get({ run_id: runId });
   if (!run) throw new Error(`run ${runId} not found`);
-  if (run.kind !== "classify" && run.kind !== "similarity") {
+  if (run.kind !== "classify" && run.kind !== "similarity" && run.kind !== "extract") {
     throw new Error(`run ${runId} has unknown eval kind "${run.kind}"`);
   }
   const kind: EvalKind = run.kind;
   const results = (await stores.results.query({ run_id: runId })) ?? [];
-  const reports = aggregateResults(kind, results);
+  // Extract runs re-score their stored row JSON, which needs the key/field
+  // options the sweep ran with; those live on the run record.
+  const runOptions = JSON.parse(run.options) as {
+    keyField?: string;
+    fields?: readonly string[];
+  };
+  const reports = aggregateResults(kind, results, runOptions);
 
   if (format === "json") {
     console.log(JSON.stringify({ run, reports }, null, 2));
@@ -31,10 +37,11 @@ export async function printReport(
   }
 
   console.log(`run ${run.run_id} — ${run.kind} on ${run.dataset} [${run.split}]`);
-  const columns =
-    kind === "classify"
-      ? ["model", "rows", "ok", "accuracy", "avg_ms"]
-      : ["model", "rows", "ok", "pearson", "spearman", "avg_ms"];
+  const REPORT_COLUMNS: Record<EvalKind, string[]> = {
+    classify: ["model", "rows", "ok", "accuracy", "avg_ms"],
+    similarity: ["model", "rows", "ok", "pearson", "spearman", "avg_ms"],
+    extract: ["model", "rows", "ok", "score", "found", "prec", "avg_ms"],
+  };
   const tableRows = reports.map((r) => ({
     model: r.model,
     rows: String(r.rows),
@@ -42,9 +49,12 @@ export async function printReport(
     accuracy: formatMetric(r.accuracy),
     pearson: formatMetric(r.pearson),
     spearman: formatMetric(r.spearman),
+    score: formatMetric(r.score),
+    found: formatMetric(r.found),
+    prec: formatMetric(r.prec),
     avg_ms: formatMetric(r.avgLatencyMs, 0),
   }));
-  console.log(formatTable(tableRows, columns));
+  console.log(formatTable(tableRows, REPORT_COLUMNS[kind]));
 
   const failures = results.filter((r) => r.ok !== 1);
   if (failures.length > 0) {
