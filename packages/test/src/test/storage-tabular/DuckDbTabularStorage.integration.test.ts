@@ -6,7 +6,11 @@
 
 import { DuckDbTabularStorage } from "@workglow/duckdb/storage";
 import { setLogger, uuid4 } from "@workglow/util";
-import { describe, expect, it } from "vitest";
+import type { DataPortSchemaObject } from "@workglow/util/schema";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   runTabularStorageContract,
@@ -111,6 +115,182 @@ describe("DuckDbTabularStorage", () => {
       await storage.setupDatabase();
       return storage;
     },
+  });
+});
+
+describe("DuckDbTabularStorage regressions", () => {
+  const JunctionSchema = {
+    type: "object",
+    properties: { a: { type: "string" }, b: { type: "string" } },
+    required: ["a", "b"],
+    additionalProperties: false,
+  } as const satisfies DataPortSchemaObject;
+
+  const tempDir = mkdtempSync(join(tmpdir(), "duckdb-test-"));
+  afterAll(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("re-put of an existing row on an all-primary-key table is an upsert, not an error", async () => {
+    const storage = new DuckDbTabularStorage<typeof JunctionSchema, readonly ["a", "b"]>(
+      ":memory:",
+      "junction",
+      JunctionSchema,
+      ["a", "b"] as const
+    );
+    await storage.setupDatabase();
+    await storage.put({ a: "x", b: "y" });
+    const again = await storage.put({ a: "x", b: "y" });
+    expect(again).toEqual({ a: "x", b: "y" });
+    expect(await storage.size()).toBe(1);
+  });
+
+  it("two storages opened with the same file path share one database", async () => {
+    const path = join(tempDir, "shared.duckdb");
+    const s1 = new DuckDbTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      path,
+      "shared_tbl",
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+    const s2 = new DuckDbTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      path,
+      "shared_tbl",
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+    await s1.setupDatabase();
+    await s2.setupDatabase();
+    await s1.put({ name: "k", type: "t", option: "v", success: true });
+    const seen = await s2.get({ name: "k", type: "t" });
+    expect(seen?.option).toBe("v");
+    s1.destroy();
+    s2.destroy();
+  });
+
+  it("a sibling same-path storage's transaction does not roll back this storage's writes", async () => {
+    const path = join(tempDir, "tx-isolated.duckdb");
+    const a = new DuckDbTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      path,
+      "iso_a",
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+    const b = new DuckDbTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      path,
+      "iso_b",
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+    await a.setupDatabase();
+    await b.setupDatabase();
+
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const txPromise = a.withTransaction(async (tx) => {
+      await tx.put({ name: "a-row", type: "t", option: "tx", success: true });
+      await gate;
+      throw new Error("rollback");
+    });
+    await Promise.resolve();
+    await b.put({ name: "b-row", type: "t", option: "independent", success: true });
+    release();
+    await expect(txPromise).rejects.toThrow("rollback");
+
+    expect(await a.get({ name: "a-row", type: "t" })).toBeUndefined();
+    const bRow = await b.get({ name: "b-row", type: "t" });
+    expect(bRow?.option).toBe("independent");
+    a.destroy();
+    b.destroy();
+  });
+
+  it("tx.updateWhere enforces the primary-key immutability guard", async () => {
+    const storage = new DuckDbTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      ":memory:",
+      "pk_guard",
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+    await storage.setupDatabase();
+    await storage.put({ name: "n", type: "t", option: "v", success: true });
+    await expect(
+      storage.withTransaction(async (tx) => {
+        await tx.updateWhere({ option: "v" }, { name: "renamed" } as any);
+      })
+    ).rejects.toThrow();
+    expect((await storage.get({ name: "n", type: "t" }))?.option).toBe("v");
+  });
+
+  it("tx.getBulk with an empty key list returns [] instead of emitting IN ()", async () => {
+    const storage = new DuckDbTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      ":memory:",
+      "empty_bulk",
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+    await storage.setupDatabase();
+    const rows = await storage.withTransaction(async (tx) => tx.getBulk([]));
+    expect(rows).toEqual([]);
+  });
+
+  it("tx.getPage without a request object uses the default page request", async () => {
+    const storage = new DuckDbTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      ":memory:",
+      "page_default",
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+    await storage.setupDatabase();
+    await storage.put({ name: "p", type: "t", option: "v", success: true });
+    const page = await storage.withTransaction(async (tx) => tx.getPage());
+    expect(page.items).toHaveLength(1);
+  });
+
+  it("rejects negative values for columns declared with minimum 0", async () => {
+    const UnsignedSchema = {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        count: { type: "integer", minimum: 0 },
+      },
+      required: ["id", "count"],
+      additionalProperties: false,
+    } as const satisfies DataPortSchemaObject;
+    const storage = new DuckDbTabularStorage<typeof UnsignedSchema, readonly ["id"]>(
+      ":memory:",
+      "unsigned_check",
+      UnsignedSchema,
+      ["id"] as const
+    );
+    await storage.setupDatabase();
+    await storage.put({ id: "ok", count: 5 });
+    await expect(storage.put({ id: "bad", count: -5 })).rejects.toThrow(/CHECK/i);
+  });
+
+  it("a put listener can start a follow-up transaction from the post-commit event flush", async () => {
+    const storage = new DuckDbTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      ":memory:",
+      "flush_order",
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+    await storage.setupDatabase();
+    let followUp: Promise<unknown> | undefined;
+    storage.on("put", (entity) => {
+      if (entity.name === "first") {
+        followUp = storage.withTransaction(async (tx) => {
+          await tx.put({ name: "second", type: "t", option: "v", success: true });
+        });
+      }
+    });
+    await storage.withTransaction(async (tx) => {
+      await tx.put({ name: "first", type: "t", option: "v", success: true });
+    });
+    expect(followUp).toBeDefined();
+    await followUp;
+    expect(await storage.get({ name: "second", type: "t" })).toBeDefined();
   });
 });
 

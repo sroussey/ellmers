@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
+
 type DuckDbModule = typeof import("@duckdb/node-api");
-type DuckDBInstance = import("@duckdb/node-api").DuckDBInstance;
-type DuckDBConnection = import("@duckdb/node-api").DuckDBConnection;
 
 let _duckdb: DuckDbModule | undefined;
 let initPromise: Promise<void> | undefined;
@@ -23,10 +23,17 @@ function initDuckDb(): Promise<void> {
     }
     try {
       _duckdb = await import("@duckdb/node-api");
-    } catch {
+    } catch (cause) {
       initPromise = undefined;
+      // Distinguish "not installed" from "installed but failed to load"
+      // (missing prebuild for this OS/arch, ABI mismatch, ...) by carrying
+      // the loader's actual error along.
       throw new Error(
-        'The "@duckdb/node-api" package is required for @workglow/duckdb/storage on Node.js or Bun. Install: bun add @duckdb/node-api'
+        'The "@duckdb/node-api" package is required for @workglow/duckdb/storage on Node.js or Bun. ' +
+          `Install: bun add @duckdb/node-api (loader error: ${String(
+            cause instanceof Error ? cause.message : cause
+          )})`,
+        { cause }
       );
     }
   })());
@@ -62,8 +69,9 @@ function toDuckDbParam(mod: DuckDbModule, value: unknown): unknown {
 /**
  * Normalizes a DuckDB result value to the JS shapes the storage layer expects:
  * `BIGINT`/`HUGEINT`/`COUNT(*)` arrive as `bigint` (converted to `number` when
- * within the safe-integer range), BLOBs arrive as `DuckDBBlobValue` (converted
- * to `Uint8Array`). Everything else passes through untouched.
+ * within the safe-integer range; larger values stay `bigint` so precision is
+ * never silently lost), BLOBs arrive as `DuckDBBlobValue` (converted to
+ * `Uint8Array`). Everything else passes through untouched.
  */
 function fromDuckDbValue(value: unknown): unknown {
   if (typeof value === "bigint") {
@@ -82,22 +90,33 @@ function fromDuckDbValue(value: unknown): unknown {
 }
 
 /**
- * A DuckDB database handle: one instance + one connection, queried with
+ * A DuckDB database handle: one connection to an instance, queried with
  * Postgres-style `$1..$N` placeholders and positional parameter arrays.
  *
- * DuckDB is an embedded single-process database; all statements issued through
- * this handle run on a single connection, so `BEGIN`/`COMMIT` issued through
- * {@link query} bracket every other statement on the same handle (the storage
- * layer serializes access with its own mutex).
+ * File-backed databases are opened through DuckDB's per-path instance cache
+ * ({@link DuckDBInstance.fromCache}), so any number of handles opened with the
+ * same path share one underlying database while each handle gets its own
+ * connection — and therefore its own transaction context. In-memory databases
+ * (`":memory:"`) are private to the handle, matching the SQLite backend's
+ * semantics.
+ *
+ * A single handle carries a single connection: statements issued through one
+ * handle share one transaction context, so `BEGIN`/`COMMIT` issued through it
+ * bracket every other statement on the same handle. Do not share one handle
+ * across storages that use transactions — give each storage its own handle
+ * (or just pass the same path; the cache dedupes the instance).
  */
 export class DuckDbDatabase {
   readonly #instance: DuckDBInstance;
   readonly #connection: DuckDBConnection;
+  /** True when this handle exclusively owns the instance (in-memory DBs). */
+  readonly #ownsInstance: boolean;
   #closed = false;
 
-  private constructor(instance: DuckDBInstance, connection: DuckDBConnection) {
+  private constructor(instance: DuckDBInstance, connection: DuckDBConnection, owns: boolean) {
     this.#instance = instance;
     this.#connection = connection;
+    this.#ownsInstance = owns;
   }
 
   /**
@@ -107,9 +126,25 @@ export class DuckDbDatabase {
   static async open(path: string = ":memory:"): Promise<DuckDbDatabase> {
     await initDuckDb();
     const mod = assertLoaded();
-    const instance = await mod.DuckDBInstance.create(path);
+    if (path === ":memory:") {
+      // A fresh private instance per handle — cached in-memory instances
+      // would share one catalog across unrelated storages.
+      const instance = await mod.DuckDBInstance.create(path);
+      const connection = await instance.connect();
+      return new DuckDbDatabase(instance, connection, true);
+    }
+    // The path cache shares one native instance per file, so independent
+    // handles on the same path see one database (each with its own
+    // connection and transaction context) instead of forking it.
+    const instance = await mod.DuckDBInstance.fromCache(path);
     const connection = await instance.connect();
-    return new DuckDbDatabase(instance, connection);
+    return new DuckDbDatabase(instance, connection, false);
+  }
+
+  #assertOpen(): void {
+    if (this.#closed) {
+      throw new Error("DuckDbDatabase is closed.");
+    }
   }
 
   /** Runs `sql` with optional positional `$N` parameters and returns all rows. */
@@ -117,33 +152,40 @@ export class DuckDbDatabase {
     sql: string,
     params?: readonly unknown[]
   ): Promise<DuckDbQueryResult<R>> {
+    this.#assertOpen();
     const mod = assertLoaded();
     const boundParams = params?.map((p) => toDuckDbParam(mod, p));
     const reader = await this.#connection.runAndReadAll(
       sql,
       boundParams as Parameters<DuckDBConnection["runAndReadAll"]>[1]
     );
-    const rows = reader.getRowObjects().map((row) => {
-      const out: Record<string, unknown> = {};
+    const rows = reader.getRowObjects();
+    for (const row of rows) {
       for (const key of Object.keys(row)) {
-        out[key] = fromDuckDbValue(row[key]);
+        row[key] = fromDuckDbValue(row[key]) as (typeof row)[string];
       }
-      return out as R;
-    });
-    return { rows };
+    }
+    return { rows: rows as R[] };
   }
 
-  /** Runs `sql` without reading results. */
+  /** Runs `sql` without reading results (DDL, BEGIN/COMMIT/ROLLBACK, ...). */
   async exec(sql: string): Promise<void> {
+    this.#assertOpen();
     await this.#connection.run(sql);
   }
 
-  /** Closes the connection and the instance. Idempotent. */
+  /**
+   * Closes the connection (and, for in-memory databases, the private
+   * instance). File-backed instances stay in DuckDB's path cache so sibling
+   * handles on the same path keep working. Idempotent.
+   */
   close(): void {
     if (this.#closed) return;
     this.#closed = true;
     this.#connection.closeSync();
-    this.#instance.closeSync();
+    if (this.#ownsInstance) {
+      this.#instance.closeSync();
+    }
   }
 }
 

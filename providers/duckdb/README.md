@@ -41,22 +41,31 @@ await storage.put({ id: "e1", kind: "click", createdAt: new Date().toISOString()
 const rows = await storage.query({ kind: "click" });
 ```
 
-To share one database across several tables, open the handle once and pass it
-to each storage:
+To share one database across several tables, construct each storage with the
+same path — file-backed opens go through DuckDB's per-path instance cache, so
+the storages share one database while each gets its own connection (and
+therefore its own transaction context):
 
 ```typescript
-import { DuckDb } from "@workglow/duckdb/storage";
-
-const db = await DuckDb.open("analytics.duckdb");
-const events = new DuckDbTabularStorage(db, "events", eventSchema, ["id"] as const);
-const users = new DuckDbTabularStorage(db, "users", userSchema, ["id"] as const);
+const events = new DuckDbTabularStorage("analytics.duckdb", "events", eventSchema, ["id"] as const);
+const users = new DuckDbTabularStorage("analytics.duckdb", "users", userSchema, ["id"] as const);
 ```
+
+You can also open a handle yourself with `DuckDb.open(path)` and pass it in —
+but a single `DuckDbDatabase` carries a single connection, so storages sharing
+one handle share one transaction context: another storage's write issued while
+a `withTransaction` is open on the same handle joins that transaction and rolls
+back with it. Only share a handle across storages that never use
+`withTransaction`/`putBulk` concurrently; otherwise prefer the same-path
+pattern above.
 
 ## Notes
 
-- DuckDB is an embedded single-connection engine; each storage instance
-  serializes its operations, and `withTransaction` runs `BEGIN`/`COMMIT` on
-  the shared connection (mirroring the SQLite backend).
+- DuckDB is an embedded engine; each storage instance serializes its own
+  operations, and `withTransaction` runs `BEGIN`/`COMMIT` on the storage's
+  connection (mirroring the SQLite backend).
+- `destroy()` closes the database handle when the storage opened it from a
+  path; caller-provided handles are closed by the caller via `db.close()`.
 - The SQL dialect is Postgres-shaped (double-quoted identifiers, `$N`
   placeholders), so query semantics match the Postgres backend.
 - `subscribeToChanges` is not supported (same as the SQLite and Postgres
