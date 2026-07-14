@@ -587,7 +587,13 @@ export class DuckDbTabularStorage<
       `
         : "";
 
-    const sql = `
+    // A schema whose only column is a db-generated key inserts no columns
+    // at all; `INSERT INTO t () VALUES ()` is a parser error, so use the
+    // DEFAULT VALUES form (no conflict is possible on a fresh key).
+    const sql =
+      columnsToInsert.length === 0
+        ? `INSERT INTO "${this.table}" DEFAULT VALUES RETURNING *`
+        : `
       INSERT INTO "${this.table}" (${columnList})
       VALUES (${placeholders})
       ${conflictClause}

@@ -248,6 +248,28 @@ describe("DuckDbTabularStorage regressions", () => {
     expect(page.items).toHaveLength(1);
   });
 
+  it("put({}) works for a schema whose only column is an auto-generated key", async () => {
+    const IdOnlySchema = {
+      type: "object",
+      properties: {
+        id: { type: "integer", "x-auto-generated": true },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    } as const satisfies DataPortSchemaObject;
+    const storage = new DuckDbTabularStorage<typeof IdOnlySchema, readonly ["id"]>(
+      ":memory:",
+      "id_only",
+      IdOnlySchema,
+      ["id"] as const
+    );
+    await storage.setupDatabase();
+    const first = await storage.put({} as any);
+    const second = await storage.put({} as any);
+    expect(typeof first.id).toBe("number");
+    expect(second.id).toBeGreaterThan(first.id);
+  });
+
   it("rejects negative values for columns declared with minimum 0", async () => {
     const UnsignedSchema = {
       type: "object",
