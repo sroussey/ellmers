@@ -14,7 +14,7 @@ import { imageValueToBlob } from "@workglow/ai/provider-utils";
 import type { ImageValue } from "@workglow/util/media";
 import { imageValueFromBitmap, imageValueFromBuffer } from "@workglow/util/media";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
-import { getPipeline } from "./HFT_Pipeline";
+import { getPipeline, getPipelineCacheKey, withHftPipelineInUse } from "./HFT_Pipeline";
 
 async function rawImageToImageValue(image: RawImage): Promise<ImageValue> {
   const raw = image as unknown as {
@@ -65,26 +65,28 @@ export const HFT_ImageSegmentation: AiProviderRunFn<
   HfTransformersOnnxModelConfig
 > = async (input, model, signal, emit) => {
   const segmenter = (await getPipeline(model!, emit, {}, signal)) as ImageSegmentationPipeline;
-  const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
-  const result = await segmenter(imageArg, {
-    threshold: input.threshold,
-    mask_threshold: input.maskThreshold,
-  });
+  await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
+    const result = await segmenter(imageArg, {
+      threshold: input.threshold,
+      mask_threshold: input.maskThreshold,
+    });
 
-  const masks = Array.isArray(result) ? result : [result];
+    const masks = Array.isArray(result) ? result : [result];
 
-  const processedMasks = await Promise.all(
-    masks.map(async (mask) => ({
-      label: mask.label || "",
-      score: mask.score || 0,
-      mask: await rawImageToImageValue(mask.mask),
-    }))
-  );
+    const processedMasks = await Promise.all(
+      masks.map(async (mask) => ({
+        label: mask.label || "",
+        score: mask.score || 0,
+        mask: await rawImageToImageValue(mask.mask),
+      }))
+    );
 
-  emit({
-    type: "finish",
-    data: {
-      masks: processedMasks,
-    },
+    emit({
+      type: "finish",
+      data: {
+        masks: processedMasks,
+      },
+    });
   });
 };

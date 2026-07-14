@@ -13,7 +13,7 @@ import type {
 import { imageValueToBlob } from "@workglow/ai/provider-utils";
 import { getLogger, TypedArray } from "@workglow/util/worker";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
-import { getPipeline } from "./HFT_Pipeline";
+import { getPipeline, getPipelineCacheKey, withHftPipelineInUse } from "./HFT_Pipeline";
 
 export const HFT_ImageEmbedding: AiProviderRunFn<
   ImageEmbeddingTaskInput,
@@ -30,24 +30,26 @@ export const HFT_ImageEmbedding: AiProviderRunFn<
     model: model?.provider_config.model_path,
   });
 
-  if (Array.isArray(input.image)) {
-    const vectors: TypedArray[] = [];
-    for (const image of input.image) {
-      const imageArg = await imageValueToBlob(image);
-      const result = await embedder(imageArg);
-      vectors.push(result.data as TypedArray);
+  await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    if (Array.isArray(input.image)) {
+      const vectors: TypedArray[] = [];
+      for (const image of input.image) {
+        const imageArg = await imageValueToBlob(image);
+        const result = await embedder(imageArg);
+        vectors.push(result.data as TypedArray);
+      }
+      logger.timeEnd(timerLabel, { count: vectors.length });
+      emit({ type: "finish", data: { vector: vectors } as ImageEmbeddingTaskOutput });
+      return;
     }
-    logger.timeEnd(timerLabel, { count: vectors.length });
-    emit({ type: "finish", data: { vector: vectors } as ImageEmbeddingTaskOutput });
-    return;
-  }
 
-  const imageArg = await imageValueToBlob(input.image);
-  const result = await embedder(imageArg);
+    const imageArg = await imageValueToBlob(input.image);
+    const result = await embedder(imageArg);
 
-  logger.timeEnd(timerLabel, { dimensions: result?.data?.length });
-  emit({
-    type: "finish",
-    data: { vector: result.data as TypedArray } as ImageEmbeddingTaskOutput,
+    logger.timeEnd(timerLabel, { dimensions: result?.data?.length });
+    emit({
+      type: "finish",
+      data: { vector: result.data as TypedArray } as ImageEmbeddingTaskOutput,
+    });
   });
 };

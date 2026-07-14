@@ -7,7 +7,7 @@
 import type { FillMaskPipeline } from "@huggingface/transformers";
 import type { AiProviderRunFn, TextFillMaskTaskInput, TextFillMaskTaskOutput } from "@workglow/ai";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
-import { getPipeline } from "./HFT_Pipeline";
+import { getPipeline, getPipelineCacheKey, withHftPipelineInUse } from "./HFT_Pipeline";
 
 export const HFT_TextFillMask: AiProviderRunFn<
   TextFillMaskTaskInput,
@@ -15,16 +15,18 @@ export const HFT_TextFillMask: AiProviderRunFn<
   HfTransformersOnnxModelConfig
 > = async (input, model, signal, emit) => {
   const unmasker = (await getPipeline(model!, emit, {}, signal)) as FillMaskPipeline;
-  const predictions = await unmasker(input.text);
+  await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const predictions = await unmasker(input.text);
 
-  emit({
-    type: "finish",
-    data: {
-      predictions: predictions.map((prediction) => ({
-        entity: prediction.token_str,
-        score: prediction.score,
-        sequence: prediction.sequence,
-      })),
-    },
+    emit({
+      type: "finish",
+      data: {
+        predictions: predictions.map((prediction) => ({
+          entity: prediction.token_str,
+          score: prediction.score,
+          sequence: prediction.sequence,
+        })),
+      },
+    });
   });
 };

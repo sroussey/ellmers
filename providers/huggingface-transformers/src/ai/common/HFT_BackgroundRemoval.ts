@@ -13,7 +13,7 @@ import type {
 import { dataUriToImageValue, imageValueToBlob } from "@workglow/ai/provider-utils";
 import type { ImageValue } from "@workglow/util/media";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
-import { getPipeline } from "./HFT_Pipeline";
+import { getPipeline, getPipelineCacheKey, withHftPipelineInUse } from "./HFT_Pipeline";
 
 function rawImageToBase64Png(image: RawImage): string {
   const fn = (image as unknown as { toBase64?: () => string }).toBase64;
@@ -31,16 +31,18 @@ export const HFT_BackgroundRemoval: AiProviderRunFn<
   HfTransformersOnnxModelConfig
 > = async (input, model, signal, emit) => {
   const remover = (await getPipeline(model!, emit, {}, signal)) as BackgroundRemovalPipeline;
-  const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
-  const result = await remover(imageArg);
+  await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
+    const result = await remover(imageArg);
 
-  const resultImage = Array.isArray(result) ? result[0] : result;
-  const dataUri = `data:image/png;base64,${rawImageToBase64Png(resultImage)}`;
+    const resultImage = Array.isArray(result) ? result[0] : result;
+    const dataUri = `data:image/png;base64,${rawImageToBase64Png(resultImage)}`;
 
-  emit({
-    type: "finish",
-    data: {
-      image: await dataUriToImageValue(dataUri),
-    },
+    emit({
+      type: "finish",
+      data: {
+        image: await dataUriToImageValue(dataUri),
+      },
+    });
   });
 };

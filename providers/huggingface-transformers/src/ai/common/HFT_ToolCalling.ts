@@ -26,7 +26,14 @@ import {
 } from "@workglow/ai/worker";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import type { HftPrefixRewindSession } from "./HFT_Pipeline";
-import { getHftSession, getPipeline, loadTransformersSDK, setHftSession } from "./HFT_Pipeline";
+import {
+  getHftSession,
+  getPipeline,
+  getPipelineCacheKey,
+  loadTransformersSDK,
+  setHftSession,
+  withHftPipelineInUse,
+} from "./HFT_Pipeline";
 import { createStreamingTextStreamer } from "./HFT_Streaming";
 import { createToolCallMarkupFilter } from "./HFT_ToolMarkup";
 
@@ -300,101 +307,103 @@ export const HFT_ToolCalling: AiProviderRunFn<
 > = async (input, model, signal, emit, _outputSchema, sessionId) => {
   const generateText = (await getPipeline(model!, emit, {}, signal)) as TextGenerationPipeline;
   const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
-  const modelFamily = detectModelFamilyFromConfig(model!);
-  const { prompt, responsePrefix } = buildPromptAndPrefix(
-    generateText.tokenizer,
-    input,
-    modelFamily
-  );
+  await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const modelFamily = detectModelFamilyFromConfig(model!);
+    const { prompt, responsePrefix } = buildPromptAndPrefix(
+      generateText.tokenizer,
+      input,
+      modelFamily
+    );
 
-  // Accumulate raw tokens for post-hoc tool-call parsing, and feed each
-  // delta through a markup filter that emits cleaned text-delta events.
-  let fullText = "";
-  const filter = createToolCallMarkupFilter((text) => {
-    emit({ type: "text-delta", port: "text", textDelta: text });
-  });
-
-  const streamer = createStreamingTextStreamer(
-    generateText.tokenizer,
-    (text) => {
-      fullText += text;
-      filter.feed(text);
-    },
-    TextStreamer
-  );
-  const stopping_criteria = new InterruptableStoppingCriteria();
-  if (signal) {
-    signal.addEventListener("abort", () => stopping_criteria.interrupt(), { once: true });
-  }
-
-  // Session cache: prefix-rewind for tool calling (streaming)
-  const modelPath = model!.provider_config.model_path;
-  let session = sessionId ? getHftSession(sessionId) : undefined;
-  let past_key_values: any = undefined;
-
-  if (sessionId && !session) {
-    const { DynamicCache } = await loadTransformersSDK();
-    const hfModel = generateText.model;
-    const hfTokenizer = generateText.tokenizer;
-    const cache = new DynamicCache();
-    const tokenized = hfTokenizer(prompt);
-    await hfModel.generate({
-      ...tokenized,
-      max_new_tokens: 0,
-      past_key_values: cache,
+    // Accumulate raw tokens for post-hoc tool-call parsing, and feed each
+    // delta through a markup filter that emits cleaned text-delta events.
+    let fullText = "";
+    const filter = createToolCallMarkupFilter((text) => {
+      emit({ type: "text-delta", port: "text", textDelta: text });
     });
-    // Snapshot the prefix entries so we can create fresh caches on each rewind
-    const baseEntries: Record<string, any> = {};
-    for (const key of Object.keys(cache)) {
-      baseEntries[key] = cache[key];
+
+    const streamer = createStreamingTextStreamer(
+      generateText.tokenizer,
+      (text) => {
+        fullText += text;
+        filter.feed(text);
+      },
+      TextStreamer
+    );
+    const stopping_criteria = new InterruptableStoppingCriteria();
+    if (signal) {
+      signal.addEventListener("abort", () => stopping_criteria.interrupt(), { once: true });
     }
-    const newSession: HftPrefixRewindSession = {
-      mode: "prefix-rewind",
-      baseEntries,
-      baseSeqLength: cache.get_seq_length(),
-      modelPath,
-    };
-    setHftSession(sessionId, newSession);
-    session = newSession;
-  }
 
-  if (session?.mode === "prefix-rewind") {
-    // Create a fresh DynamicCache from the prefix snapshot for this call
-    const { DynamicCache } = await loadTransformersSDK();
-    past_key_values = new DynamicCache(session.baseEntries);
-  }
+    // Session cache: prefix-rewind for tool calling (streaming)
+    const modelPath = model!.provider_config.model_path;
+    let session = sessionId ? getHftSession(sessionId) : undefined;
+    let past_key_values: any = undefined;
 
-  try {
-    await generateText(prompt, {
-      max_new_tokens: input.maxTokens ?? 1024,
-      temperature: input.temperature ?? undefined,
-      return_full_text: false,
-      streamer,
-      stopping_criteria: [stopping_criteria],
-      ...(past_key_values ? { past_key_values } : {}),
+    if (sessionId && !session) {
+      const { DynamicCache } = await loadTransformersSDK();
+      const hfModel = generateText.model;
+      const hfTokenizer = generateText.tokenizer;
+      const cache = new DynamicCache();
+      const tokenized = hfTokenizer(prompt);
+      await hfModel.generate({
+        ...tokenized,
+        max_new_tokens: 0,
+        past_key_values: cache,
+      });
+      // Snapshot the prefix entries so we can create fresh caches on each rewind
+      const baseEntries: Record<string, any> = {};
+      for (const key of Object.keys(cache)) {
+        baseEntries[key] = cache[key];
+      }
+      const newSession: HftPrefixRewindSession = {
+        mode: "prefix-rewind",
+        baseEntries,
+        baseSeqLength: cache.get_seq_length(),
+        modelPath,
+      };
+      setHftSession(sessionId, newSession);
+      session = newSession;
+    }
+
+    if (session?.mode === "prefix-rewind") {
+      // Create a fresh DynamicCache from the prefix snapshot for this call
+      const { DynamicCache } = await loadTransformersSDK();
+      past_key_values = new DynamicCache(session.baseEntries);
+    }
+
+    try {
+      await generateText(prompt, {
+        max_new_tokens: input.maxTokens ?? 1024,
+        temperature: input.temperature ?? undefined,
+        return_full_text: false,
+        streamer,
+        stopping_criteria: [stopping_criteria],
+        ...(past_key_values ? { past_key_values } : {}),
+      });
+    } finally {
+      filter.flush();
+    }
+
+    // Parse the accumulated text for tool calls using the model-family-aware parser.
+    // For models that use a generation prefix, prepend it so the parser sees the
+    // full markup pattern.
+    const parseableFullText = responsePrefix ? `${responsePrefix}${fullText}` : fullText;
+    const { text: cleanedText, toolCalls } = adaptParserResult(
+      parseToolCalls(parseableFullText, { parser: modelFamily })
+    );
+    const validToolCalls = filterValidToolCalls(
+      normalizeParsedToolCalls(input, toolCalls),
+      input.tools
+    );
+
+    if (validToolCalls.length > 0) {
+      emit({ type: "object-delta", port: "toolCalls", objectDelta: [...validToolCalls] });
+    }
+
+    emit({
+      type: "finish",
+      data: { text: cleanedText, toolCalls: validToolCalls } as ToolCallingTaskOutput,
     });
-  } finally {
-    filter.flush();
-  }
-
-  // Parse the accumulated text for tool calls using the model-family-aware parser.
-  // For models that use a generation prefix, prepend it so the parser sees the
-  // full markup pattern.
-  const parseableFullText = responsePrefix ? `${responsePrefix}${fullText}` : fullText;
-  const { text: cleanedText, toolCalls } = adaptParserResult(
-    parseToolCalls(parseableFullText, { parser: modelFamily })
-  );
-  const validToolCalls = filterValidToolCalls(
-    normalizeParsedToolCalls(input, toolCalls),
-    input.tools
-  );
-
-  if (validToolCalls.length > 0) {
-    emit({ type: "object-delta", port: "toolCalls", objectDelta: [...validToolCalls] });
-  }
-
-  emit({
-    type: "finish",
-    data: { text: cleanedText, toolCalls: validToolCalls } as ToolCallingTaskOutput,
   });
 };

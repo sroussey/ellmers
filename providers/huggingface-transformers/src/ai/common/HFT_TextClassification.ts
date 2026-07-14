@@ -14,7 +14,7 @@ import type {
   TextClassificationTaskOutput,
 } from "@workglow/ai";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
-import { getPipeline } from "./HFT_Pipeline";
+import { getPipeline, getPipelineCacheKey, withHftPipelineInUse } from "./HFT_Pipeline";
 
 export const HFT_TextClassification: AiProviderRunFn<
   TextClassificationTaskInput,
@@ -36,16 +36,22 @@ export const HFT_TextClassification: AiProviderRunFn<
       {},
       signal
     )) as ZeroShotClassificationPipeline;
-    const result: any = await zeroShotClassifier(input.text, input.candidateLabels as string[], {});
+    await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+      const result: any = await zeroShotClassifier(
+        input.text,
+        input.candidateLabels as string[],
+        {}
+      );
 
-    emit({
-      type: "finish",
-      data: {
-        categories: result.labels.map((label: string, idx: number) => ({
-          label,
-          score: result.scores[idx],
-        })),
-      },
+      emit({
+        type: "finish",
+        data: {
+          categories: result.labels.map((label: string, idx: number) => ({
+            label,
+            score: result.scores[idx],
+          })),
+        },
+      });
     });
     return;
   }
@@ -56,17 +62,19 @@ export const HFT_TextClassification: AiProviderRunFn<
     {},
     signal
   )) as TextClassificationPipeline;
-  const result = await TextClassification(input.text, {
-    top_k: input.maxCategories || undefined,
-  });
+  await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const result = await TextClassification(input.text, {
+      top_k: input.maxCategories || undefined,
+    });
 
-  emit({
-    type: "finish",
-    data: {
-      categories: result.map((category) => ({
-        label: category.label,
-        score: category.score,
-      })),
-    },
+    emit({
+      type: "finish",
+      data: {
+        categories: result.map((category) => ({
+          label: category.label,
+          score: category.score,
+        })),
+      },
+    });
   });
 };

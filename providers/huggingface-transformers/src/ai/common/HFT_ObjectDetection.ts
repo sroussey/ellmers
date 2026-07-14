@@ -16,7 +16,7 @@ import type {
 import { imageValueToBlob } from "@workglow/ai/provider-utils";
 import type { ImageValue } from "@workglow/util/media";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
-import { getPipeline } from "./HFT_Pipeline";
+import { getPipeline, getPipelineCacheKey, withHftPipelineInUse } from "./HFT_Pipeline";
 
 /**
  * Auto-selects between regular and zero-shot detection based on
@@ -37,38 +37,42 @@ export const HFT_ObjectDetection: AiProviderRunFn<
       {},
       signal
     )) as ZeroShotObjectDetectionPipeline;
+    await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+      const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
+      const result = await zeroShotDetector(imageArg, Array.from(input.labels!), {
+        threshold: input.threshold,
+      });
+
+      emit({
+        type: "finish",
+        data: {
+          detections: result.map((d: any) => ({
+            label: d.label,
+            score: d.score,
+            box: d.box,
+          })),
+        },
+      });
+    });
+    return;
+  }
+
+  const detector = (await getPipeline(model!, emit, {}, signal)) as ObjectDetectionPipeline;
+  await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
     const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
-    const result = await zeroShotDetector(imageArg, Array.from(input.labels!), {
+    const detections = await detector(imageArg, {
       threshold: input.threshold,
     });
 
     emit({
       type: "finish",
       data: {
-        detections: result.map((d: any) => ({
+        detections: detections.map((d) => ({
           label: d.label,
           score: d.score,
           box: d.box,
         })),
-      },
+      } as unknown as ObjectDetectionTaskOutput,
     });
-    return;
-  }
-
-  const detector = (await getPipeline(model!, emit, {}, signal)) as ObjectDetectionPipeline;
-  const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
-  const detections = await detector(imageArg, {
-    threshold: input.threshold,
-  });
-
-  emit({
-    type: "finish",
-    data: {
-      detections: detections.map((d) => ({
-        label: d.label,
-        score: d.score,
-        box: d.box,
-      })),
-    } as unknown as ObjectDetectionTaskOutput,
   });
 };

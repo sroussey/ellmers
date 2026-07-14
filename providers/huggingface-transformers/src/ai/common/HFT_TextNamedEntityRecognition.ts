@@ -11,7 +11,7 @@ import type {
   TextNamedEntityRecognitionTaskOutput,
 } from "@workglow/ai";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
-import { getPipeline } from "./HFT_Pipeline";
+import { getPipeline, getPipelineCacheKey, withHftPipelineInUse } from "./HFT_Pipeline";
 
 export const HFT_TextNamedEntityRecognition: AiProviderRunFn<
   TextNamedEntityRecognitionTaskInput,
@@ -24,18 +24,20 @@ export const HFT_TextNamedEntityRecognition: AiProviderRunFn<
     {},
     signal
   )) as TokenClassificationPipeline;
-  const results = await textNamedEntityRecognition(input.text, {
-    ignore_labels: input.blockList as string[] | undefined,
-  });
+  await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const results = await textNamedEntityRecognition(input.text, {
+      ignore_labels: input.blockList as string[] | undefined,
+    });
 
-  emit({
-    type: "finish",
-    data: {
-      entities: results.map((entity) => ({
-        entity: entity.entity,
-        score: entity.score,
-        word: entity.word,
-      })),
-    },
+    emit({
+      type: "finish",
+      data: {
+        entities: results.map((entity) => ({
+          entity: entity.entity,
+          score: entity.score,
+          word: entity.word,
+        })),
+      },
+    });
   });
 };
