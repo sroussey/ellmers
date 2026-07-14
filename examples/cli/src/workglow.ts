@@ -62,7 +62,10 @@ await seedSamplesIfRepoEmpty(workflowRepo);
 process.env.WORKGLOW_MODEL_CACHE = path.join(config.directories.cache, "onnx");
 
 await registerHuggingFaceTransformers({
-  worker: () => new Worker(new URL("./worker_hft.ts", import.meta.url), { type: "module" }),
+  // ".js" resolves in both modes: bun maps it to worker_hft.ts when running
+  // from source, and the built dist contains worker_hft.js (a ".ts" specifier
+  // would fail in dist — bun build does not rewrite worker URLs).
+  worker: () => new Worker(new URL("./worker_hft.js", import.meta.url), { type: "module" }),
 });
 
 program.version("2.0.0").description("Workglow CLI — manage models, workflows, agents, and tasks");
