@@ -17,6 +17,7 @@ import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
 import type { StreamEvent } from "@workglow/task-graph";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
+  acquireContextSequence,
   getLlamaCppSdk,
   getOrCreateTextContext,
   llamaCppChatSessionConstructorSpread,
@@ -270,7 +271,7 @@ export const LlamaCpp_ToolCalling_Stream: AiProviderRunFn<
 
   const context = await getOrCreateTextContext(model);
 
-  const sequence = context.getSequence();
+  const sequence = await acquireContextSequence(context);
   const { LlamaChat } = getLlamaCppSdk();
   const systemPrompt = buildSystemPrompt(input);
 

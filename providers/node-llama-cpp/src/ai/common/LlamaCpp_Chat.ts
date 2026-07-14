@@ -12,6 +12,7 @@ import type {
 } from "@workglow/ai";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
+  acquireContextSequence,
   getConfigKey,
   getLlamaCppSession,
   getOrCreateTextContext,
@@ -37,7 +38,7 @@ async function getOrCreateChatSession(
 
   const { LlamaChatSession } = await loadSdk();
   const context = await getOrCreateTextContext(model);
-  const sequence = context.getSequence();
+  const sequence = await acquireContextSequence(context);
   const session = new LlamaChatSession({
     contextSequence: sequence,
     ...(systemPrompt !== undefined && { systemPrompt }),
