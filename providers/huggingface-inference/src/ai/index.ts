@@ -14,6 +14,7 @@ export * from "./common/HFI_ModelSearch";
 export * from "./registerHfInference";
 
 import { HFI_RUN_FN_SPECS } from "./common/HFI_Capabilities";
+import { _setHfInferenceSDKForTesting } from "./common/HFI_Client";
 import { HFI_RUN_FNS } from "./common/HFI_JobRunFns";
 import { HfInferenceQueuedProvider } from "./HfInferenceQueuedProvider";
 
@@ -24,4 +25,5 @@ export const _testOnly = {
   HfInferenceQueuedProvider,
   HFI_RUN_FN_SPECS,
   HFI_RUN_FNS,
+  _setHfInferenceSDKForTesting,
 } as const;
