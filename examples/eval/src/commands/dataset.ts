@@ -7,7 +7,7 @@
 import type { Command } from "commander";
 import { pullDatasetIntoStorage } from "../hf/pullDataset";
 import type { EvalStores } from "../storage";
-import { formatError, formatTable } from "../util";
+import { formatError, formatTable, parseIntFlag } from "../util";
 
 export function registerDatasetCommand(
   program: Command,
@@ -36,8 +36,8 @@ export function registerDatasetCommand(
             dataset: id,
             split: opts.split,
             config: opts.config,
-            limit: Number(opts.limit),
-            offset: Number(opts.offset),
+            limit: parseIntFlag(opts.limit, "--limit", 1),
+            offset: parseIntFlag(opts.offset, "--offset", 0),
           });
           console.log(`stored ${numRows} rows of ${id} [${opts.split}] (via ${source})`);
         } catch (err) {

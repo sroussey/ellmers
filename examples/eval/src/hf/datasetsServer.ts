@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { hfAuthHeaders } from "./auth";
 import type { DatasetRow, FetchDatasetOptions, FetchedDataset, LabelNames } from "./types";
 
 const DATASETS_SERVER = "https://datasets-server.huggingface.co";
@@ -17,17 +18,16 @@ interface RowsResponseFeature {
 
 interface RowsResponse {
   readonly features: readonly RowsResponseFeature[];
-  readonly rows: readonly { readonly row_idx: number; readonly row: DatasetRow }[];
+  readonly rows: readonly {
+    readonly row_idx: number;
+    readonly row: DatasetRow;
+    readonly truncated_cells?: readonly string[];
+  }[];
   readonly num_rows_total: number;
 }
 
-function authHeaders(token: string | undefined): Record<string, string> {
-  const t = token ?? process.env.HF_TOKEN;
-  return t ? { Authorization: `Bearer ${t}` } : {};
-}
-
 async function getJson<T>(url: string, token: string | undefined): Promise<T> {
-  const res = await fetch(url, { headers: authHeaders(token) });
+  const res = await fetch(url, { headers: hfAuthHeaders(token) });
   if (!res.ok) {
     throw new Error(`datasets-server request failed (${res.status}): ${url}`);
   }
@@ -72,6 +72,7 @@ export async function fetchViaDatasetsServer(
   const rows: DatasetRow[] = [];
   let columns: readonly string[] = [];
   let labelNames: LabelNames = {};
+  let truncatedRows = 0;
 
   while (rows.length < limit) {
     const length = Math.min(PAGE_SIZE, limit - rows.length);
@@ -84,9 +85,19 @@ export async function fetchViaDatasetsServer(
       columns = page.features.map((f) => f.name);
       labelNames = extractLabelNames(page.features);
     }
-    for (const r of page.rows) rows.push(r.row);
+    for (const r of page.rows) {
+      if (r.truncated_cells && r.truncated_cells.length > 0) truncatedRows++;
+      rows.push(r.row);
+    }
     if (page.rows.length < length || offset + rows.length >= page.num_rows_total) break;
   }
 
-  return { rows, columns, labelNames, source: "datasets-server" };
+  if (truncatedRows > 0) {
+    console.error(
+      `warning: the datasets viewer truncated large cells in ${truncatedRows} row(s); ` +
+        `evals will run on the truncated text`
+    );
+  }
+
+  return { rows, columns, labelNames, config, source: "datasets-server" };
 }

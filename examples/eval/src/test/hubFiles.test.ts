@@ -51,6 +51,31 @@ describe("sanitizeRow", () => {
   it("converts BigInt values (parquet int64) to numbers", () => {
     expect(sanitizeRow({ text: "hi", label: 3n })).toEqual({ text: "hi", label: 3 });
   });
+
+  it("converts BigInts nested in list and struct columns", () => {
+    expect(sanitizeRow({ ids: [1n, 2n], meta: { count: 3n } })).toEqual({
+      ids: [1, 2],
+      meta: { count: 3 },
+    });
+    expect(() => JSON.stringify(sanitizeRow({ deep: [{ v: [4n] }] }))).not.toThrow();
+  });
+
+  it("converts Date values (parquet timestamps) to ISO strings", () => {
+    expect(sanitizeRow({ at: new Date("2026-01-02T03:04:05Z") })).toEqual({
+      at: "2026-01-02T03:04:05.000Z",
+    });
+  });
+});
+
+describe("scoreFileForSplit with unusual split names", () => {
+  it("does not throw on regex metacharacters in the split", () => {
+    expect(() => scoreFileForSplit("data/train-00000-of-00001.parquet", "c++")).not.toThrow();
+    expect(() => scoreFileForSplit("data/train-00000-of-00001.parquet", "a[b")).not.toThrow();
+  });
+
+  it("does not treat '.' in a split name as a wildcard", () => {
+    expect(scoreFileForSplit("data/tost.parquet", "t.st")).toBeUndefined();
+  });
 });
 
 describe("parseJsonLines", () => {

@@ -7,6 +7,7 @@
 import { parquetMetadataAsync, parquetReadObjects } from "hyparquet";
 import { compressors } from "hyparquet-compressors";
 import { gunzipSync } from "node:zlib";
+import { hfAuthHeaders } from "./auth";
 import type { DatasetRow, FetchDatasetOptions, FetchedDataset, LabelNames } from "./types";
 
 const HUB = "https://huggingface.co";
@@ -14,19 +15,17 @@ const HUB = "https://huggingface.co";
 export interface HubTreeEntry {
   readonly type: "file" | "directory";
   readonly path: string;
-  readonly size?: number;
 }
 
 const SUPPORTED_EXTENSIONS = [".parquet", ".jsonl.gz", ".jsonl", ".ndjson", ".json.gz", ".json"];
 
-function authHeaders(token: string | undefined): Record<string, string> {
-  const t = token ?? process.env.HF_TOKEN;
-  return t ? { Authorization: `Bearer ${t}` } : {};
-}
-
 function fileExtension(path: string): string | undefined {
   const lower = path.toLowerCase();
   return SUPPORTED_EXTENSIONS.find((ext) => lower.endsWith(ext));
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
@@ -42,7 +41,7 @@ export function scoreFileForSplit(path: string, split: string): number | undefin
   const s = split.toLowerCase();
   if (name === `${s}${fileExtension(name)}`) return 3;
   if (name.startsWith(`${s}-`) || name.startsWith(`${s}.`) || name.startsWith(`${s}_`)) return 2;
-  if (new RegExp(`(^|[/_.-])${s}([/_.-]|$)`).test(lower)) return 1;
+  if (new RegExp(`(^|[/_.-])${escapeRegExp(s)}([/_.-]|$)`).test(lower)) return 1;
   return undefined;
 }
 
@@ -62,13 +61,26 @@ export function selectSplitFiles(files: readonly string[], split: string): strin
   return selected.sort();
 }
 
-/** JSON-safe copy of a row: BigInt column values (parquet int64) → number. */
-export function sanitizeRow(row: DatasetRow): DatasetRow {
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(row)) {
-    out[key] = typeof value === "bigint" ? Number(value) : value;
+/**
+ * JSON-safe copy of a value: BigInt (parquet int64, including inside list and
+ * struct columns) → number, Date (parquet timestamps) → ISO string.
+ * `JSON.stringify` throws on BigInt, so this must recurse into containers.
+ */
+function sanitizeValue(value: unknown): unknown {
+  if (typeof value === "bigint") return Number(value);
+  if (value instanceof Date) return value.toISOString();
+  if (Array.isArray(value)) return value.map(sanitizeValue);
+  if (value !== null && typeof value === "object" && value.constructor === Object) {
+    const out: Record<string, unknown> = {};
+    for (const [key, inner] of Object.entries(value)) out[key] = sanitizeValue(inner);
+    return out;
   }
-  return out;
+  return value;
+}
+
+/** JSON-safe copy of a row; see {@link sanitizeValue}. */
+export function sanitizeRow(row: DatasetRow): DatasetRow {
+  return sanitizeValue(row) as DatasetRow;
 }
 
 export function parseJsonLines(text: string): DatasetRow[] {
@@ -131,7 +143,7 @@ export async function parseDatasetFile(
 
 async function listRepoFiles(dataset: string, token: string | undefined): Promise<string[]> {
   const url = `${HUB}/api/datasets/${dataset}/tree/main?recursive=true`;
-  const res = await fetch(url, { headers: authHeaders(token) });
+  const res = await fetch(url, { headers: hfAuthHeaders(token) });
   if (!res.ok) {
     throw new Error(`hub tree listing failed (${res.status}) for dataset ${dataset}`);
   }
@@ -145,7 +157,7 @@ async function downloadRepoFile(
   token: string | undefined
 ): Promise<ArrayBuffer> {
   const url = `${HUB}/datasets/${dataset}/resolve/main/${path}`;
-  const res = await fetch(url, { headers: authHeaders(token) });
+  const res = await fetch(url, { headers: hfAuthHeaders(token) });
   if (!res.ok) {
     throw new Error(`hub file download failed (${res.status}) for ${dataset}/${path}`);
   }
@@ -185,6 +197,6 @@ export async function fetchViaHubFiles(options: FetchDatasetOptions): Promise<Fe
   }
 
   const windowed = rows.slice(offset, wanted);
-  const columns = Object.keys(windowed[0] ?? {});
-  return { rows: windowed, columns, labelNames, source: "hub-files" };
+  const columns = [...new Set(windowed.flatMap((row) => Object.keys(row)))];
+  return { rows: windowed, columns, labelNames, config: options.config ?? "", source: "hub-files" };
 }

@@ -29,3 +29,12 @@ export function formatMetric(value: number, digits = 3): string {
 export function formatError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
+
+/** Parse an integer CLI flag, rejecting NaN and out-of-range values loudly. */
+export function parseIntFlag(value: string, flag: string, minimum: number): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < minimum) {
+    throw new Error(`${flag} must be an integer >= ${minimum} (got "${value}")`);
+  }
+  return parsed;
+}

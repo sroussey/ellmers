@@ -16,10 +16,14 @@ import type { EvalStores } from "./storage";
 import { createSqliteStores } from "./storage";
 
 const config = loadConfig();
-await registerEvalProviders(config);
 
 let stores: Promise<EvalStores> | undefined;
 const openStores = (): Promise<EvalStores> => (stores ??= createSqliteStores(config));
+
+// Task/provider registration is only needed by the run-* commands; keeping it
+// lazy spares --help and the read-only commands the full model-stack startup.
+let providers: Promise<void> | undefined;
+const ensureProviders = (): Promise<void> => (providers ??= registerEvalProviders(config));
 
 program
   .version("2.0.0")
@@ -29,7 +33,7 @@ program
   );
 
 registerDatasetCommand(program, openStores);
-registerRunCommand(program, openStores);
+registerRunCommand(program, openStores, ensureProviders);
 registerReportCommand(program, openStores);
 
 await program.parseAsync(process.argv);

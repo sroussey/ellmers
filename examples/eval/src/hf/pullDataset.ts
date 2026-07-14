@@ -28,8 +28,11 @@ export async function fetchDataset(options: FetchDatasetOptions): Promise<Fetche
 
 /**
  * Fetch a dataset split and persist it into tabular storage: one metadata row
- * per (dataset, split) plus one row per example. Re-pulling replaces the
- * stored split so `run` always sees exactly what the metadata row describes.
+ * per (dataset, split) plus one row per example. A plain re-pull replaces the
+ * stored split; a pull with `--offset` extends it (only rows from the offset
+ * onward are replaced), so a split can be paged in incrementally. The replace
+ * runs in a transaction so a failed pull cannot leave the split half-wiped
+ * (real rollback on SQLite; best-effort on backends without transactions).
  */
 export async function pullDatasetIntoStorage(
   stores: EvalStores,
@@ -37,21 +40,30 @@ export async function pullDatasetIntoStorage(
 ): Promise<{ numRows: number; source: string }> {
   const fetched = await fetchDataset(options);
   const { dataset, split } = options;
+  const offset = options.offset ?? 0;
 
-  await stores.rows.deleteSearch({ dataset, split });
-  await stores.rows.putBulk(
-    fetched.rows.map((row, i) => ({
-      dataset,
-      split,
-      row_index: (options.offset ?? 0) + i,
-      data: JSON.stringify(row),
-    }))
-  );
+  await stores.rows.withTransaction(async (tx) => {
+    if (offset > 0) {
+      await tx.deleteSearch({ dataset, split, row_index: { value: offset, operator: ">=" } });
+    } else {
+      await tx.deleteSearch({ dataset, split });
+    }
+    await tx.putBulk(
+      fetched.rows.map((row, i) => ({
+        dataset,
+        split,
+        row_index: offset + i,
+        data: JSON.stringify(row),
+      }))
+    );
+  });
+
+  const numRows = await stores.rows.count({ dataset, split });
   await stores.datasets.put({
     dataset,
     split,
-    config: options.config ?? "",
-    num_rows: fetched.rows.length,
+    config: fetched.config || (options.config ?? ""),
+    num_rows: numRows,
     columns: JSON.stringify(fetched.columns),
     label_names:
       Object.keys(fetched.labelNames).length > 0 ? JSON.stringify(fetched.labelNames) : null,
@@ -59,5 +71,5 @@ export async function pullDatasetIntoStorage(
     fetched_at: new Date().toISOString(),
   });
 
-  return { numRows: fetched.rows.length, source: fetched.source };
+  return { numRows, source: fetched.source };
 }

@@ -48,6 +48,17 @@ describe("aggregateResults", () => {
     expect(report.accuracy).toBeCloseTo(1);
   });
 
+  it("excludes NaN values from correlations instead of poisoning them", () => {
+    const gold = [0, 1, 2, 3, 4];
+    const results: EvalResultRecord[] = gold.map((g, i) =>
+      result({ model: "m", row_index: i, expected_value: g, predicted_value: g / 5 })
+    );
+    results.push(result({ model: "m", row_index: 99, expected_value: NaN, predicted_value: 0.5 }));
+    const [report] = aggregateResults("similarity", results);
+    expect(report.pearson).toBeCloseTo(1, 6);
+    expect(report.spearman).toBeCloseTo(1, 6);
+  });
+
   it("computes correlations for similarity runs", () => {
     const gold = [0, 1, 2, 3, 4];
     const results: EvalResultRecord[] = gold.map((g, i) =>

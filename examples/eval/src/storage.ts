@@ -31,7 +31,6 @@ export const DatasetMetaSchema = {
 } as const satisfies DataPortSchemaObject;
 
 export const DatasetMetaPrimaryKeyNames = ["dataset", "split"] as const;
-export type DatasetMetaRecord = FromSchema<typeof DatasetMetaSchema>;
 
 /** One dataset row, stored as the raw JSON object the dataset provides. */
 export const DatasetRowSchema = {
@@ -66,7 +65,6 @@ export const EvalRunSchema = {
 } as const satisfies DataPortSchemaObject;
 
 export const EvalRunPrimaryKeyNames = ["run_id"] as const;
-export type EvalRunRecord = FromSchema<typeof EvalRunSchema>;
 
 /**
  * One workflow execution result: (run, model, dataset row) → prediction.
@@ -112,13 +110,19 @@ export async function createSqliteStores(config: EvalConfig): Promise<EvalStores
       DatasetMetaSchema,
       DatasetMetaPrimaryKeyNames
     ),
-    rows: new SqliteTabularStorage(db, "eval_dataset_row", DatasetRowSchema, [
-      ...DatasetRowPrimaryKeyNames,
-    ]),
+    rows: new SqliteTabularStorage(
+      db,
+      "eval_dataset_row",
+      DatasetRowSchema,
+      DatasetRowPrimaryKeyNames
+    ),
     runs: new SqliteTabularStorage(db, "eval_run", EvalRunSchema, EvalRunPrimaryKeyNames),
-    results: new SqliteTabularStorage(db, "eval_result", EvalResultSchema, [
-      ...EvalResultPrimaryKeyNames,
-    ]),
+    results: new SqliteTabularStorage(
+      db,
+      "eval_result",
+      EvalResultSchema,
+      EvalResultPrimaryKeyNames
+    ),
   };
   await setupStores(stores);
   return stores;

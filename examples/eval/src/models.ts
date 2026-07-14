@@ -5,31 +5,41 @@
  */
 
 import type { ModelConfig } from "@workglow/ai";
+import { hfAuthHeaders } from "./hf/auth";
 
-export const EvalKinds = {
-  classify: "classify",
-  similarity: "similarity",
-} as const;
-
-export type EvalKind = keyof typeof EvalKinds;
+export type EvalKind = "classify" | "similarity";
 
 /**
  * Map a model id string to an inline {@link ModelConfig} by its shape, so any
  * model can be named on the command line without a model repository:
  *
- * - `claude-*` → Anthropic
- * - `gpt-*`, `o<n>*`, `chatgpt-*`, `text-embedding-*` → OpenAI
- * - `gemini-*` → Google Gemini
- * - `grok-*` → xAI
  * - `org/name` (contains a slash) → local HuggingFace Transformers ONNX;
  *   the pipeline follows the eval kind (`text-generation` for classify,
  *   `feature-extraction` for similarity). Append `:dtype` to override the
  *   quantization (e.g. `onnx-community/Qwen3-0.6B-ONNX:q4`).
+ * - `claude-*` → Anthropic
+ * - `gpt-*`, `o<n>*`, `chatgpt-*`, `text-embedding-*` → OpenAI
+ * - `gemini-*` → Google Gemini
+ * - `grok-*` → xAI
+ *
+ * The slash check runs first: hub paths are unambiguous, and org names can
+ * legitimately start with a cloud prefix (e.g. `gpt-omni/mini-omni`).
  *
  * Inline configs skip the capability gate (treated as unverified-allow), so
  * newly released model ids work without registering capability lists.
  */
 export function resolveModelConfig(id: string, kind: EvalKind): ModelConfig {
+  if (id.includes("/")) {
+    const [path, dtype] = splitDtype(id);
+    return {
+      provider: "HF_TRANSFORMERS_ONNX",
+      provider_config: {
+        model_path: path,
+        pipeline: kind === "similarity" ? "feature-extraction" : "text-generation",
+        dtype: dtype ?? (kind === "similarity" ? "q8" : "q4"),
+      },
+    };
+  }
   if (/^claude-/.test(id)) {
     return { provider: "ANTHROPIC", provider_config: { model_name: id, max_tokens: 1024 } };
   }
@@ -41,17 +51,6 @@ export function resolveModelConfig(id: string, kind: EvalKind): ModelConfig {
   }
   if (/^grok-/.test(id)) {
     return { provider: "XAI", provider_config: { model_name: id } };
-  }
-  if (id.includes("/")) {
-    const [path, dtype] = splitDtype(id);
-    return {
-      provider: "HF_TRANSFORMERS_ONNX",
-      provider_config: {
-        model_path: path,
-        pipeline: kind === "similarity" ? "feature-extraction" : "text-generation",
-        dtype: dtype ?? (kind === "similarity" ? "q8" : "q4"),
-      },
-    };
   }
   throw new Error(
     `cannot infer a provider for model "${id}" — use a claude-*/gpt-*/gemini-*/grok-* cloud id ` +
@@ -70,10 +69,7 @@ export async function ensureEmbeddingDimensions(config: ModelConfig): Promise<Mo
   if (config.provider_config.native_dimensions !== undefined) return config;
   const path = config.provider_config.model_path as string;
   const url = `https://huggingface.co/${path}/resolve/main/config.json`;
-  const token = process.env.HF_TOKEN;
-  const res = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+  const res = await fetch(url, { headers: hfAuthHeaders() });
   if (!res.ok) {
     throw new Error(`could not read ${path} config.json (${res.status}) to determine dimensions`);
   }

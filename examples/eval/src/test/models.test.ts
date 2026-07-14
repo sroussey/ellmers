@@ -33,6 +33,15 @@ describe("resolveModelConfig", () => {
     expect(generate.provider_config.dtype).toBe("q4");
   });
 
+  it("routes org/name paths to local ONNX even when the org matches a cloud prefix", () => {
+    expect(resolveModelConfig("gpt-omni/mini-omni", "classify").provider).toBe(
+      "HF_TRANSFORMERS_ONNX"
+    );
+    expect(resolveModelConfig("o1-labs/some-model", "classify").provider).toBe(
+      "HF_TRANSFORMERS_ONNX"
+    );
+  });
+
   it("honors a :dtype suffix on local model paths", () => {
     const config = resolveModelConfig("onnx-community/Qwen3-0.6B-ONNX:fp16", "classify");
     expect(config.provider_config.model_path).toBe("onnx-community/Qwen3-0.6B-ONNX");

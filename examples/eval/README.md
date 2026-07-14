@@ -39,7 +39,8 @@ bun run build-example
 ```
 
 Everything is stored under `~/.workglow/eval` (override with
-`WORKGLOW_EVAL_HOME`).
+`WORKGLOW_EVAL_HOME`). Re-pulling a split replaces it; pulling with `--offset`
+extends the stored split, so large splits can be paged in incrementally.
 
 ## Eval workflows
 
@@ -54,7 +55,8 @@ insensitive).
 Works out of the box with classification datasets such as `dair-ai/emotion` or
 `SetFit/sst2`. Integer-coded label columns are mapped through the dataset's
 `ClassLabel` names automatically; use `--labels "a,b,c"` when the dataset
-doesn't declare them.
+doesn't declare them (integer gold labels are then mapped through that list,
+in order).
 
 ### `run-similarity` — embedding quality
 

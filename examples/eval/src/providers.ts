@@ -35,7 +35,10 @@ export async function registerEvalProviders(config: EvalConfig): Promise<void> {
       "HF_TRANSFORMERS_ONNX",
       () =>
         registerHuggingFaceTransformers({
-          worker: () => new Worker(new URL("./worker_hft.ts", import.meta.url), { type: "module" }),
+          // ".js" resolves in both modes: bun maps it to worker_hft.ts when running
+          // from source, and the built dist contains worker_hft.js (a ".ts"
+          // specifier would 404 in dist — bun build does not rewrite worker URLs).
+          worker: () => new Worker(new URL("./worker_hft.js", import.meta.url), { type: "module" }),
         }),
     ],
     ["ANTHROPIC", () => registerAnthropicInline()],

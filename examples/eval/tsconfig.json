@@ -8,16 +8,35 @@
     "rootDir": "./src"
   },
   "references": [
-    { "path": "../../packages/util" },
-    { "path": "../../packages/storage" },
-    { "path": "../../packages/task-graph" },
-    { "path": "../../packages/tasks" },
-    { "path": "../../packages/ai" },
-    { "path": "../../providers/anthropic" },
-    { "path": "../../providers/google-gemini" },
-    { "path": "../../providers/huggingface-transformers" },
-    { "path": "../../providers/openai" },
-    { "path": "../../providers/sqlite" },
-    { "path": "../../providers/xai" }
+    {
+      "path": "../../packages/util"
+    },
+    {
+      "path": "../../packages/storage"
+    },
+    {
+      "path": "../../packages/task-graph"
+    },
+    {
+      "path": "../../packages/ai"
+    },
+    {
+      "path": "../../providers/anthropic"
+    },
+    {
+      "path": "../../providers/google-gemini"
+    },
+    {
+      "path": "../../providers/huggingface-transformers"
+    },
+    {
+      "path": "../../providers/openai"
+    },
+    {
+      "path": "../../providers/sqlite"
+    },
+    {
+      "path": "../../providers/xai"
+    }
   ]
 }

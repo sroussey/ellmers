@@ -17,6 +17,8 @@ export interface FetchedDataset {
   readonly rows: readonly DatasetRow[];
   readonly columns: readonly string[];
   readonly labelNames: LabelNames;
+  /** The config the rows came from ("" when unknown, e.g. unfiltered hub files). */
+  readonly config: string;
   /** Which fetch path produced the rows. */
   readonly source: "datasets-server" | "hub-files";
 }

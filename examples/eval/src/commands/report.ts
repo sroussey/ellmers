@@ -18,8 +18,12 @@ export async function printReport(
 ): Promise<void> {
   const run = await stores.runs.get({ run_id: runId });
   if (!run) throw new Error(`run ${runId} not found`);
+  if (run.kind !== "classify" && run.kind !== "similarity") {
+    throw new Error(`run ${runId} has unknown eval kind "${run.kind}"`);
+  }
+  const kind: EvalKind = run.kind;
   const results = (await stores.results.query({ run_id: runId })) ?? [];
-  const reports = aggregateResults(run.kind as EvalKind, results);
+  const reports = aggregateResults(kind, results);
 
   if (format === "json") {
     console.log(JSON.stringify({ run, reports }, null, 2));
@@ -28,7 +32,7 @@ export async function printReport(
 
   console.log(`run ${run.run_id} — ${run.kind} on ${run.dataset} [${run.split}]`);
   const columns =
-    run.kind === "classify"
+    kind === "classify"
       ? ["model", "rows", "ok", "accuracy", "avg_ms"]
       : ["model", "rows", "ok", "pearson", "spearman", "avg_ms"];
   const tableRows = reports.map((r) => ({
@@ -62,7 +66,7 @@ export function registerReportCommand(
     .action(async () => {
       const stores = await openStores();
       const all = (await stores.runs.getAll()) ?? [];
-      all.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+      all.sort((a, b) => b.created_at.localeCompare(a.created_at));
       const rows = all.map((r) => ({
         run: r.run_id,
         kind: r.kind,
@@ -84,7 +88,7 @@ export function registerReportCommand(
         let target = runId;
         if (!target) {
           const all = (await stores.runs.getAll()) ?? [];
-          all.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+          all.sort((a, b) => b.created_at.localeCompare(a.created_at));
           target = all[0]?.run_id;
         }
         if (!target) throw new Error("no stored runs — run `run-classify` or `run-similarity`");

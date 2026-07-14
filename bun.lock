@@ -102,7 +102,6 @@
         "@workglow/sqlite": "workspace:*",
         "@workglow/storage": "workspace:*",
         "@workglow/task-graph": "workspace:*",
-        "@workglow/tasks": "workspace:*",
         "@workglow/util": "workspace:*",
         "@workglow/xai": "workspace:*",
         "commander": "^15.0.0",

@@ -40,8 +40,16 @@ export function makeSimilarityExecutor(
     if (vectors.length < 2) {
       throw new Error(`expected 2 embeddings, got ${vectors.length}`);
     }
+    const gold = Number(row[options.scoreColumn]);
+    if (!Number.isFinite(gold)) {
+      throw new Error(
+        `row has no numeric "${options.scoreColumn}" value (got ${JSON.stringify(
+          row[options.scoreColumn]
+        )})`
+      );
+    }
     return {
-      expectedValue: Number(row[options.scoreColumn]),
+      expectedValue: gold,
       predictedValue: cosineSimilarity(vectors[0], vectors[1]),
     };
   };

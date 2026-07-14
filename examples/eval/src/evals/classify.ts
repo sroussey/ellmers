@@ -11,18 +11,20 @@ import type { ColumnOptions, DatasetContext, RowExecutor } from "./types";
 
 /**
  * Resolve the gold label for a row: integer-coded labels (HuggingFace
- * `ClassLabel`) are mapped through the dataset's label names; string labels
- * pass through unchanged.
+ * `ClassLabel`) are mapped through the dataset's label names, falling back to
+ * the candidate label list (`--labels`) when the dataset doesn't declare
+ * names; string labels pass through unchanged.
  */
 export function expectedLabel(
   row: DatasetRow,
   labelColumn: string,
-  labelNames: LabelNames
+  labelNames: LabelNames,
+  candidateLabels: readonly string[] = []
 ): string {
   const raw = row[labelColumn];
   if (typeof raw === "number" && Number.isInteger(raw)) {
-    const names = labelNames[labelColumn];
-    if (names && raw >= 0 && raw < names.length) return names[raw];
+    const names = labelNames[labelColumn] ?? candidateLabels;
+    if (raw >= 0 && raw < names.length) return names[raw];
   }
   return String(raw);
 }
@@ -60,6 +62,15 @@ export function makeClassifyExecutor(
   options: ColumnOptions,
   context: DatasetContext
 ): RowExecutor {
+  for (const column of [options.textColumn, options.labelColumn]) {
+    if (context.columns.length > 0 && !context.columns.includes(column)) {
+      throw new Error(
+        `dataset has no column "${column}" (columns: ${context.columns.join(", ")}) — ` +
+          `set --text-column/--label-column`
+      );
+    }
+  }
+
   const labels = resolveCandidateLabels(options, context);
   const outputSchema = {
     type: "object",
@@ -76,11 +87,11 @@ export function makeClassifyExecutor(
       prompt: buildClassifyPrompt(text, labels),
       outputSchema,
       temperature: 0,
-      maxTokens: 64,
+      maxTokens: 256,
     });
     const result = (await workflow.run()) as { object?: { label?: unknown } };
     return {
-      expected: expectedLabel(row, options.labelColumn, context.labelNames),
+      expected: expectedLabel(row, options.labelColumn, context.labelNames, labels),
       predicted: String(result.object?.label ?? ""),
     };
   };

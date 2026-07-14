@@ -55,6 +55,17 @@ export async function runSweep(
     created_at: new Date().toISOString(),
   });
 
+  // Rows are model-independent: parse each once for the whole sweep, and turn
+  // an unparseable row into a per-row failure instead of aborting.
+  const parsedRows = rows.map((record) => {
+    try {
+      return { record, row: JSON.parse(record.data) as DatasetRow, parseError: undefined };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { record, row: undefined, parseError: `invalid stored row: ${message}` };
+    }
+  });
+
   const total = rows.length * options.models.length;
   let done = 0;
 
@@ -69,26 +80,13 @@ export async function runSweep(
       setupError = err instanceof Error ? err.message : String(err);
     }
 
-    for (const record of rows) {
-      const row = JSON.parse(record.data) as DatasetRow;
+    for (const { record, row, parseError } of parsedRows) {
       const t0 = performance.now();
-      let outcome: {
-        ok: number;
-        error: string | null;
-        expected: string | null;
-        predicted: string | null;
-        expected_value: number | null;
-        predicted_value: number | null;
-      };
+      let outcome: SweepOutcome;
       if (!executor) {
-        outcome = {
-          ok: 0,
-          error: setupError ?? "executor unavailable",
-          expected: null,
-          predicted: null,
-          expected_value: null,
-          predicted_value: null,
-        };
+        outcome = failedOutcome(setupError ?? "executor unavailable");
+      } else if (!row) {
+        outcome = failedOutcome(parseError ?? "invalid stored row");
       } else {
         try {
           const prediction = await executor(row);
@@ -101,14 +99,7 @@ export async function runSweep(
             predicted_value: prediction.predictedValue ?? null,
           };
         } catch (err) {
-          outcome = {
-            ok: 0,
-            error: err instanceof Error ? err.message : String(err),
-            expected: null,
-            predicted: null,
-            expected_value: null,
-            predicted_value: null,
-          };
+          outcome = failedOutcome(err instanceof Error ? err.message : String(err));
         }
       }
       const latency = performance.now() - t0;
@@ -125,4 +116,24 @@ export async function runSweep(
   }
 
   return run.run_id;
+}
+
+interface SweepOutcome {
+  readonly ok: number;
+  readonly error: string | null;
+  readonly expected: string | null;
+  readonly predicted: string | null;
+  readonly expected_value: number | null;
+  readonly predicted_value: number | null;
+}
+
+function failedOutcome(error: string): SweepOutcome {
+  return {
+    ok: 0,
+    error,
+    expected: null,
+    predicted: null,
+    expected_value: null,
+    predicted_value: null,
+  };
 }

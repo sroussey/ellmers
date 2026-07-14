@@ -43,7 +43,11 @@ export function aggregateResults(
     const pairs = ok
       .filter((r) => r.expected != null && r.predicted != null)
       .map((r) => ({ expected: r.expected as string, predicted: r.predicted as string }));
-    const numeric = ok.filter((r) => r.expected_value != null && r.predicted_value != null);
+    // Number.isFinite (not just != null) so a stray NaN cannot poison the
+    // correlations — NaN passes a null check and corrupts ranks() silently.
+    const numeric = ok.filter(
+      (r) => Number.isFinite(r.expected_value ?? NaN) && Number.isFinite(r.predicted_value ?? NaN)
+    );
     const expectedValues = numeric.map((r) => r.expected_value as number);
     const predictedValues = numeric.map((r) => r.predicted_value as number);
     const latency =
