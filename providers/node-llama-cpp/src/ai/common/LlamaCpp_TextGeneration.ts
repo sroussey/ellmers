@@ -12,6 +12,7 @@ import type {
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
   acquireContextSequence,
+  getActualModelPath,
   getConfigKey,
   getLlamaCppSession,
   getOrCreateTextContext,
@@ -20,6 +21,7 @@ import {
   loadSdk,
   setLlamaCppSession,
   streamFromSession,
+  withModelInUse,
 } from "./LlamaCpp_Runtime";
 
 export const LlamaCpp_TextGeneration_Stream: AiProviderRunFn<
@@ -30,47 +32,63 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderRunFn<
   if (!model) throw new Error("Model config is required for TextGenerationTask.");
 
   const { LlamaChatSession } = await loadSdk();
+  const modelPath = getActualModelPath(model);
 
-  const cached = sessionId ? getLlamaCppSession(sessionId) : undefined;
-  const context = cached ? undefined : await getOrCreateTextContext(model);
-  const sequence = cached ? cached.sequence : await acquireContextSequence(context!);
-  const session =
-    cached?.session ??
-    new LlamaChatSession({
-      contextSequence: sequence,
-      ...llamaCppChatSessionConstructorSpread(model),
-    });
+  await withModelInUse(modelPath, async () => {
+    const cached = sessionId ? getLlamaCppSession(sessionId) : undefined;
+    const context = cached ? undefined : await getOrCreateTextContext(model);
+    const sequence = cached ? cached.sequence : await acquireContextSequence(context!, signal);
+    // Sequence ownership only transfers to the session once its constructor
+    // returns; a throw before that would strand the sequence and eventually
+    // exhaust the per-context sequence pool, so free it in the failure path.
+    let session: any;
+    if (cached?.session) {
+      session = cached.session;
+    } else {
+      try {
+        session = new LlamaChatSession({
+          contextSequence: sequence,
+          ...llamaCppChatSessionConstructorSpread(model),
+        });
+      } catch (err) {
+        try {
+          await sequence.dispose();
+        } catch {}
+        throw err;
+      }
+    }
 
-  if (sessionId && !cached) {
-    setLlamaCppSession(sessionId, {
-      mode: "progressive",
-      sequence,
-      session,
-      modelKey: getConfigKey(model),
-    });
-  }
-
-  try {
-    for await (const e of streamFromSession<TextGenerationTaskOutput>((onTextChunk) => {
-      return session.prompt(input.prompt, {
-        signal,
-        onTextChunk,
-        ...llamaCppSeedPromptSpread(model.provider_config),
-        ...(input.temperature !== undefined && { temperature: input.temperature }),
-        ...(input.maxTokens !== undefined && { maxTokens: input.maxTokens }),
-        ...(input.topP !== undefined && { topP: input.topP }),
+    if (sessionId && !cached) {
+      setLlamaCppSession(sessionId, {
+        mode: "progressive",
+        sequence,
+        session,
+        modelKey: getConfigKey(model),
       });
-    }, signal)) {
-      emit(e);
     }
-  } finally {
-    if (!sessionId) {
-      try {
-        await session.dispose({ disposeSequence: false });
-      } catch {}
-      try {
-        await sequence.dispose();
-      } catch {}
+
+    try {
+      for await (const e of streamFromSession<TextGenerationTaskOutput>((onTextChunk) => {
+        return session.prompt(input.prompt, {
+          signal,
+          onTextChunk,
+          ...llamaCppSeedPromptSpread(model.provider_config),
+          ...(input.temperature !== undefined && { temperature: input.temperature }),
+          ...(input.maxTokens !== undefined && { maxTokens: input.maxTokens }),
+          ...(input.topP !== undefined && { topP: input.topP }),
+        });
+      }, signal)) {
+        emit(e);
+      }
+    } finally {
+      if (!sessionId) {
+        try {
+          await session.dispose({ disposeSequence: false });
+        } catch {}
+        try {
+          await sequence.dispose();
+        } catch {}
+      }
     }
-  }
+  });
 };

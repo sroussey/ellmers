@@ -220,14 +220,58 @@ function touchModel(modelPath: string): void {
 }
 
 /**
+ * Reference count of in-flight callers using each cached model path. Prevents
+ * {@link evictLeastRecentlyUsedModel} from disposing a model that is currently
+ * powering another run — without this guard, one caller's VRAM OOM can pull
+ * the `LlamaModel` (and its contexts / sessions) out from under a concurrent
+ * task on a different model.
+ */
+const modelInUse = new Map<string, number>();
+
+export function acquireModelInUse(modelPath: string): void {
+  modelInUse.set(modelPath, (modelInUse.get(modelPath) ?? 0) + 1);
+}
+
+export function releaseModelInUse(modelPath: string): void {
+  const current = modelInUse.get(modelPath) ?? 0;
+  if (current <= 1) {
+    modelInUse.delete(modelPath);
+  } else {
+    modelInUse.set(modelPath, current - 1);
+  }
+}
+
+/** @internal exported for unit tests. */
+export function isModelInUse(modelPath: string): boolean {
+  return (modelInUse.get(modelPath) ?? 0) > 0;
+}
+
+/**
+ * Acquire an in-use refcount on `modelPath` for the lifetime of `fn`, so a
+ * concurrent LRU eviction on a different task cannot dispose this task's
+ * model / context / session mid-flight.
+ */
+export async function withModelInUse<T>(modelPath: string, fn: () => Promise<T>): Promise<T> {
+  acquireModelInUse(modelPath);
+  try {
+    return await fn();
+  } finally {
+    releaseModelInUse(modelPath);
+  }
+}
+
+/**
  * Evict the least-recently-used cached model (and its text context) to free
- * VRAM, skipping `exceptPath` (the model currently being loaded). `llamaCppModels`
- * is kept in access order by {@link touchModel}, so the first key is the LRU one.
- * Returns the evicted path, or undefined when nothing else is cached.
+ * VRAM, skipping `exceptPath` (the model currently being loaded) and any model
+ * with a live in-use refcount. `llamaCppModels` is kept in access order by
+ * {@link touchModel}, so the first eligible key is the LRU one. Returns the
+ * evicted path, or undefined when every non-`exceptPath` candidate is in use
+ * (in which case the caller's VRAM error propagates unchanged).
  */
 async function evictLeastRecentlyUsedModel(exceptPath: string): Promise<string | undefined> {
   for (const path of llamaCppModels.keys()) {
     if (path === exceptPath) continue;
+    if (isModelInUse(path)) continue;
     await recycleLlamaCppTextContext(path, { reloadModel: true });
     return path;
   }
@@ -237,11 +281,15 @@ async function evictLeastRecentlyUsedModel(exceptPath: string): Promise<string |
 /**
  * Run `attempt`, and if it fails with a VRAM allocation error, evict the LRU
  * cached model and retry — repeating until it succeeds or there is nothing left
- * to evict (then the original error is rethrown). This lets a large model or a
- * large KV cache load by reclaiming VRAM still held by earlier models the worker
- * cached but no longer needs (e.g. successive candidates in an eval sweep).
+ * to evict (then the original error is rethrown, unchanged). This lets a large
+ * model or a large KV cache load by reclaiming VRAM still held by earlier
+ * models the worker cached but no longer needs (e.g. successive candidates in
+ * an eval sweep). In-use models are skipped by {@link evictLeastRecentlyUsedModel}.
  */
-async function withVramEviction<T>(exceptPath: string, attempt: () => Promise<T>): Promise<T> {
+export async function withVramEviction<T>(
+  exceptPath: string,
+  attempt: () => Promise<T>
+): Promise<T> {
   while (true) {
     try {
       return await attempt();
@@ -360,9 +408,18 @@ const NO_SEQUENCES_LEFT_ERROR_SUBSTRING = "no sequences left";
  * the sequence pool (each extra sequence costs another `contextSize` of KV cells, so
  * a larger pool would regress memory on VRAM-constrained hosts).
  */
-export async function acquireContextSequence(context: LlamaContext): Promise<LlamaContextSequence> {
+export async function acquireContextSequence(
+  context: LlamaContext,
+  signal?: AbortSignal
+): Promise<LlamaContextSequence> {
+  const abortReason = (): Error => {
+    const raw = (signal as { reason?: unknown } | undefined)?.reason;
+    return raw instanceof Error ? raw : new Error("acquireContextSequence aborted");
+  };
+
   const deadline = Date.now() + SEQUENCE_RECLAIM_TIMEOUT_MS;
   while (true) {
+    if (signal?.aborted) throw abortReason();
     if (context.sequencesLeft > 0) {
       try {
         return context.getSequence();
@@ -378,8 +435,45 @@ export async function acquireContextSequence(context: LlamaContext): Promise<Lla
         "Timed out waiting for a llama.cpp context sequence to be reclaimed after dispose."
       );
     }
-    // Yield a macrotask so the lock-guarded reclaim callback can run.
-    await new Promise<void>((resolve) => setTimeout(resolve, 1));
+    // Yield a macrotask so the lock-guarded reclaim callback can run. Short-circuit
+    // the wait on abort so a queued cancellation doesn't have to burn a full poll tick.
+    await new Promise<void>((resolve) => {
+      let onAbort: (() => void) | null = null;
+      const timer = setTimeout(() => {
+        if (onAbort && signal) signal.removeEventListener("abort", onAbort);
+        resolve();
+      }, 1);
+      if (signal) {
+        onAbort = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+    });
+  }
+}
+
+/**
+ * Acquire a sequence, run `body`, and always dispose the sequence — even when
+ * `body` throws (e.g. a `LlamaChatSession` / `LlamaChat` constructor throwing
+ * partway through, which would otherwise strand the sequence and eventually
+ * exhaust the per-context sequence pool).
+ */
+export async function withSequence<T>(
+  context: LlamaContext,
+  body: (sequence: LlamaContextSequence) => Promise<T>,
+  options: { readonly signal?: AbortSignal } = {}
+): Promise<T> {
+  const sequence = await acquireContextSequence(context, options.signal);
+  try {
+    return await body(sequence);
+  } finally {
+    try {
+      await sequence.dispose();
+    } catch {
+      // best-effort dispose
+    }
   }
 }
 

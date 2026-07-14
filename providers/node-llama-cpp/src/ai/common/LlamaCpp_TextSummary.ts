@@ -7,12 +7,14 @@
 import type { AiProviderRunFn, TextSummaryTaskInput, TextSummaryTaskOutput } from "@workglow/ai";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
-  acquireContextSequence,
+  getActualModelPath,
   getOrCreateTextContext,
   llamaCppChatSessionConstructorSpread,
   llamaCppSeedPromptSpread,
   loadSdk,
   streamFromSession,
+  withModelInUse,
+  withSequence,
 } from "./LlamaCpp_Runtime";
 
 export const LlamaCpp_TextSummary_Stream: AiProviderRunFn<
@@ -23,30 +25,35 @@ export const LlamaCpp_TextSummary_Stream: AiProviderRunFn<
   if (!model) throw new Error("Model config is required for TextSummaryTask.");
 
   const { LlamaChatSession } = await loadSdk();
+  const modelPath = getActualModelPath(model);
 
-  const context = await getOrCreateTextContext(model);
-  const sequence = await acquireContextSequence(context);
-  const session = new LlamaChatSession({
-    contextSequence: sequence,
-    ...llamaCppChatSessionConstructorSpread(model),
-    systemPrompt: "Summarize the following text concisely, preserving the key points.",
+  await withModelInUse(modelPath, async () => {
+    const context = await getOrCreateTextContext(model);
+    await withSequence(
+      context,
+      async (sequence) => {
+        const session = new LlamaChatSession({
+          contextSequence: sequence,
+          ...llamaCppChatSessionConstructorSpread(model),
+          systemPrompt: "Summarize the following text concisely, preserving the key points.",
+        });
+        try {
+          for await (const e of streamFromSession<TextSummaryTaskOutput>((onTextChunk) => {
+            return session.prompt(input.text, {
+              signal,
+              onTextChunk,
+              ...llamaCppSeedPromptSpread(model.provider_config),
+            });
+          }, signal)) {
+            emit(e);
+          }
+        } finally {
+          try {
+            await session.dispose({ disposeSequence: false });
+          } catch {}
+        }
+      },
+      { signal }
+    );
   });
-  try {
-    for await (const e of streamFromSession<TextSummaryTaskOutput>((onTextChunk) => {
-      return session.prompt(input.text, {
-        signal,
-        onTextChunk,
-        ...llamaCppSeedPromptSpread(model.provider_config),
-      });
-    }, signal)) {
-      emit(e);
-    }
-  } finally {
-    try {
-      await session.dispose({ disposeSequence: false });
-    } catch {}
-    try {
-      await sequence.dispose();
-    } catch {}
-  }
 };
