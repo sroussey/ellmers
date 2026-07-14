@@ -29,6 +29,7 @@
   "devDependencies": {
     "@aws-sdk/client-sqs": "^3.1084.0",
     "@cloudflare/workers-types": "^4.20260702.1",
+    "@duckdb/node-api": "catalog:",
     "@electric-sql/pglite": "catalog:",
     "@electric-sql/pglite-pgvector": "catalog:",
     "@modelcontextprotocol/sdk": "catalog:",
@@ -44,6 +45,7 @@
     "@workglow/cactus": "workspace:*",
     "@workglow/chrome-ai": "workspace:*",
     "@workglow/cloudflare": "workspace:*",
+    "@workglow/duckdb": "workspace:*",
     "@workglow/electron": "workspace:*",
     "@workglow/google-gemini": "workspace:*",
     "@workglow/huggingface-inference": "workspace:*",

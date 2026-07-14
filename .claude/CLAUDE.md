@@ -155,7 +155,7 @@ Required static properties: `type`, `category`, `title`, `description`, `cacheab
 
 Unified interfaces across backends: `IKvStorage`, `ITabularStorage`, `IQueueStorage`, `IVectorStorage`.
 
-Backends: InMemory, SQLite, PostgreSQL, Supabase, IndexedDB (browser), FsFolder.
+Backends: InMemory, SQLite, PostgreSQL, DuckDB, Supabase, IndexedDB (browser), FsFolder.
 
 Event-driven: storages emit `put`, `get`, `delete`, `deleteAll`.
 

@@ -32,6 +32,7 @@ A collection of storage implementations for tabular data with multiple backend s
   - In-memory (for testing/caching)
   - SQLite (embedded database)
   - PostgreSQL (relational database)
+  - DuckDB (embedded analytical database)
   - IndexedDB (browser storage)
   - Filesystem (JSON file per record)
 - Type-safe schema definitions
@@ -382,9 +383,7 @@ const repo = new SqliteTabularStorage<
 ```typescript
 import type { Pool } from "@workglow/storage/postgres";
 
-const pool = new Pool({
-  /* config */
-});
+const pool = new Pool({/* config */});
 const repo = new PostgresTabularStorage<
   typeof schema,
   typeof primaryKeys,
@@ -397,6 +396,30 @@ const repo = new PostgresTabularStorage<
   schema,
   primaryKeys,
   [["name", "active"], "age"] as const
+);
+```
+
+### DuckDbTabularStorage
+
+- Embedded DuckDB database (via `@workglow/duckdb/storage`)
+- File-based or in-memory
+- Postgres-flavored SQL under the hood
+
+```typescript
+import { DuckDbTabularStorage } from "@workglow/duckdb/storage";
+
+const repo = new DuckDbTabularStorage<
+  typeof schema,
+  typeof primaryKeys,
+  Entity, // required if using TypeBox, Zod, etc, otherwise automatically created
+  PrimaryKeyEntity, // should be automatically created
+  ValueEntity // should be automatically created
+>(
+  ":memory:", // Database path (or an open DuckDbDatabase)
+  "users", // Table name
+  schema,
+  primaryKeys,
+  [["name", "active"], "age"] as const // Indexes
 );
 ```
 
