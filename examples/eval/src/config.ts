@@ -15,6 +15,13 @@ export interface EvalConfig {
   readonly dbPath: string;
   /** ONNX model cache directory for the HuggingFace Transformers worker. */
   readonly modelCache: string;
+  /** GGUF weights directory for the node-llama-cpp worker. */
+  readonly ggufCache: string;
+}
+
+/** The eval home directory (no side effects; safe to call from pure helpers). */
+export function evalHome(): string {
+  return process.env.WORKGLOW_EVAL_HOME ?? join(homedir(), ".workglow", "eval");
 }
 
 /**
@@ -23,11 +30,12 @@ export interface EvalConfig {
  * one directory so it is easy to inspect and easy to delete.
  */
 export function loadConfig(): EvalConfig {
-  const home = process.env.WORKGLOW_EVAL_HOME ?? join(homedir(), ".workglow", "eval");
+  const home = evalHome();
   mkdirSync(home, { recursive: true });
   return {
     home,
     dbPath: join(home, "eval.sqlite"),
     modelCache: join(home, "cache", "onnx"),
+    ggufCache: join(home, "cache", "gguf"),
   };
 }

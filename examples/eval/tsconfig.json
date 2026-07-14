@@ -37,6 +37,9 @@
     },
     {
       "path": "../../providers/xai"
+    },
+    {
+      "path": "../../providers/node-llama-cpp"
     }
   ]
 }

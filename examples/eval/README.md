@@ -85,14 +85,34 @@ setup needed:
 | `gemini-*`                               | Google Gemini (`GEMINI_API_KEY`)    |
 | `grok-*`                                 | xAI (`XAI_API_KEY`)                 |
 | `org/name` (optionally `org/name:dtype`) | Local HuggingFace Transformers ONNX |
+| `gguf:org/repo:Quant` or `gguf:*.gguf`   | Local node-llama-cpp (GGUF)         |
 
 Local models download on first use into the eval home's cache and run in a
-worker; no API key required. Embedding dimensions are read from the model's
-`config.json` on the hub. Note that small instruct models vary widely in JSON
-mode reliability — `onnx-community/LFM2.5-350M-ONNX` (the classify default)
-follows the schema; e.g. SmolLM2-360M echoes the schema back instead of an
-answer. A model that fails a row is recorded as a failed result (visible in the
-report), never a crashed sweep.
+worker; no API key required. Embedding dimensions for ONNX models are read from
+the model's `config.json` on the hub; GGUF references resolve through
+node-llama-cpp's `hf:` URIs (an explicit `gguf:` prefix is required because a
+GGUF repo id is indistinguishable from an ONNX one). Note that small instruct
+models vary widely in JSON mode reliability — `onnx-community/LFM2.5-350M-ONNX`
+(the classify default) follows the schema; e.g. SmolLM2-360M echoes the schema
+back instead of an answer. A model that fails a row is recorded as a failed
+result (visible in the report), never a crashed sweep.
+
+### Bonsai 27B
+
+The Bonsai 27B release (2026-07, Qwen3.6-27B base) is the kind of model this
+harness is for — a 1-bit/ternary model whose claim is cloud-class quality at
+local cost. Compare it against a cloud model on the same rows:
+
+```bash
+./dist/workglow-eval.js run-classify --dataset dair-ai/emotion --split test \
+  --models "gguf:prism-ml/Bonsai-27B-gguf:Q1_0,claude-haiku-4-5"
+```
+
+The ternary variant is `gguf:prism-ml/Ternary-Bonsai-27B-gguf:Q2_0`. As of the
+release only GGUF/MLX/AWQ conversions exist — when `onnx-community` publishes
+the 27B ONNX conversion it slots straight in as
+`onnx-community/Bonsai-27B-ONNX` (the smaller Bonsai ONNX sizes,
+e.g. `onnx-community/Bonsai-8B-ONNX`, work today).
 
 ## Dataset fetching
 
@@ -121,6 +141,6 @@ them with `InMemoryTabularStorage`, the CLI uses `SqliteTabularStorage`.
 bun run test          # unit tests (scorers, parsers, storage round-trip)
 ```
 
-`src/test/liveSimilarity.e2e.test.ts` is a live end-to-end check (network +
-model download) and is excluded from the default vitest run like the rest of
-the repo's `.e2e.test.ts` files.
+`src/test/liveSimilarity.e2e.test.ts` (ONNX) and `src/test/ggufSmoke.e2e.test.ts`
+(GGUF) are live end-to-end checks (network + model download) and are excluded
+from the default vitest run like the rest of the repo's `.e2e.test.ts` files.

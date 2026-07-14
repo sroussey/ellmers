@@ -8,6 +8,7 @@ import { registerAiTasks } from "@workglow/ai";
 import { registerAnthropicInline } from "@workglow/anthropic/ai-runtime";
 import { registerGeminiInline } from "@workglow/google-gemini/ai-runtime";
 import { registerHuggingFaceTransformers } from "@workglow/huggingface-transformers/ai";
+import { registerLlamaCpp } from "@workglow/node-llama-cpp/ai";
 import { registerOpenAiInline } from "@workglow/openai/ai-runtime";
 import { registerBaseTasks, registerBuiltInTransforms } from "@workglow/task-graph";
 import { EnvCredentialStore, setGlobalCredentialStore } from "@workglow/util";
@@ -17,10 +18,11 @@ import type { EvalConfig } from "./config";
 /**
  * Register task types and every AI provider the eval can route to. Cloud
  * providers read their API keys from the environment (ANTHROPIC_API_KEY,
- * OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY) at call time, and the local
- * HuggingFace Transformers provider runs in a worker with its ONNX cache under
- * the eval home. Each registration is defensive: a provider that fails to load
- * only fails runs that target it, never the whole CLI.
+ * OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY) at call time; the local
+ * HuggingFace Transformers (ONNX) and node-llama-cpp (GGUF) providers run in
+ * workers with their caches under the eval home. Each registration is
+ * defensive: a provider that fails to load only fails runs that target it,
+ * never the whole CLI.
  */
 export async function registerEvalProviders(config: EvalConfig): Promise<void> {
   registerBaseTasks();
@@ -39,6 +41,14 @@ export async function registerEvalProviders(config: EvalConfig): Promise<void> {
           // from source, and the built dist contains worker_hft.js (a ".ts"
           // specifier would 404 in dist — bun build does not rewrite worker URLs).
           worker: () => new Worker(new URL("./worker_hft.js", import.meta.url), { type: "module" }),
+        }),
+    ],
+    [
+      "LOCAL_LLAMACPP",
+      () =>
+        registerLlamaCpp({
+          worker: () =>
+            new Worker(new URL("./worker_llamacpp.js", import.meta.url), { type: "module" }),
         }),
     ],
     ["ANTHROPIC", () => registerAnthropicInline()],

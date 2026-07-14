@@ -5,14 +5,23 @@
  */
 
 import type { ModelConfig } from "@workglow/ai";
+import { downloadModel } from "@workglow/ai";
+import { join } from "node:path";
+import { evalHome } from "./config";
 import { hfAuthHeaders } from "./hf/auth";
 
 export type EvalKind = "classify" | "similarity";
+
+const GGUF_PREFIX = "gguf:";
 
 /**
  * Map a model id string to an inline {@link ModelConfig} by its shape, so any
  * model can be named on the command line without a model repository:
  *
+ * - `gguf:…` → local node-llama-cpp. The rest is a HuggingFace GGUF reference
+ *   (`gguf:org/repo:Quant`, e.g. `gguf:prism-ml/Bonsai-27B-gguf:Q1_0`), an
+ *   `hf:`/`https:` URL, or a path to a local `.gguf` file. The explicit prefix
+ *   is needed because a GGUF repo id is indistinguishable from an ONNX one.
  * - `org/name` (contains a slash) → local HuggingFace Transformers ONNX;
  *   the pipeline follows the eval kind (`text-generation` for classify,
  *   `feature-extraction` for similarity). Append `:dtype` to override the
@@ -22,13 +31,29 @@ export type EvalKind = "classify" | "similarity";
  * - `gemini-*` → Google Gemini
  * - `grok-*` → xAI
  *
- * The slash check runs first: hub paths are unambiguous, and org names can
- * legitimately start with a cloud prefix (e.g. `gpt-omni/mini-omni`).
+ * The slash check runs after the `gguf:` prefix but before the cloud
+ * prefixes: hub paths are unambiguous, and org names can legitimately start
+ * with a cloud prefix (e.g. `gpt-omni/mini-omni`).
  *
  * Inline configs skip the capability gate (treated as unverified-allow), so
  * newly released model ids work without registering capability lists.
  */
 export function resolveModelConfig(id: string, kind: EvalKind): ModelConfig {
+  if (id.startsWith(GGUF_PREFIX)) {
+    const ref = id.slice(GGUF_PREFIX.length);
+    const provider_config: { [key: string]: unknown } = {
+      models_dir: join(evalHome(), "cache", "gguf"),
+    };
+    if (kind === "similarity") provider_config.embedding = true;
+    if (/^(?:hf:|https?:)/.test(ref)) {
+      provider_config.model_url = ref;
+    } else if (ref.endsWith(".gguf")) {
+      provider_config.model_path = ref;
+    } else {
+      provider_config.model_url = `hf:${ref}`;
+    }
+    return { provider: "LOCAL_LLAMACPP", provider_config };
+  }
   if (id.includes("/")) {
     const [path, dtype] = splitDtype(id);
     return {
@@ -82,6 +107,18 @@ export async function ensureEmbeddingDimensions(config: ModelConfig): Promise<Mo
     ...config,
     provider_config: { ...config.provider_config, native_dimensions: dimensions },
   };
+}
+
+/**
+ * GGUF weights are fetched by an explicit download step (the llama.cpp
+ * provider's generation run-fns load from disk only, unlike the ONNX provider
+ * which downloads inside its pipeline). Idempotent — an already-downloaded
+ * file is reused. No-op for every other provider.
+ */
+export async function ensureModelDownloaded(config: ModelConfig): Promise<void> {
+  if (config.provider !== "LOCAL_LLAMACPP") return;
+  if (config.provider_config.model_url === undefined) return;
+  await downloadModel({ model: config });
 }
 
 function splitDtype(id: string): [string, string | undefined] {

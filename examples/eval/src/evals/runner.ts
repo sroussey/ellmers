@@ -7,7 +7,7 @@
 import type { ModelConfig } from "@workglow/ai";
 import type { DatasetRow } from "../hf/types";
 import type { EvalKind } from "../models";
-import { ensureEmbeddingDimensions, resolveModelConfig } from "../models";
+import { ensureEmbeddingDimensions, ensureModelDownloaded, resolveModelConfig } from "../models";
 import type { DatasetRowRecord, EvalStores } from "../storage";
 import { makeClassifyExecutor } from "./classify";
 import { makeSimilarityExecutor } from "./similarity";
@@ -75,6 +75,7 @@ export async function runSweep(
     try {
       let config = resolveModelConfig(modelId, options.kind);
       if (options.kind === "similarity") config = await ensureEmbeddingDimensions(config);
+      await ensureModelDownloaded(config);
       executor = makeExecutor(options.kind, config, options.columns, options.context);
     } catch (err) {
       setupError = err instanceof Error ? err.message : String(err);

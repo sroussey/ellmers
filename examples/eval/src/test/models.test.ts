@@ -51,6 +51,34 @@ describe("resolveModelConfig", () => {
   it("rejects ids with no recognizable shape", () => {
     expect(() => resolveModelConfig("mystery-model", "classify")).toThrow(/cannot infer/);
   });
+
+  it("routes gguf: ids to local node-llama-cpp with an hf: download url", () => {
+    const config = resolveModelConfig("gguf:prism-ml/Bonsai-27B-gguf:Q1_0", "classify");
+    expect(config.provider).toBe("LOCAL_LLAMACPP");
+    expect(config.provider_config.model_url).toBe("hf:prism-ml/Bonsai-27B-gguf:Q1_0");
+    expect(config.provider_config.model_path).toBeUndefined();
+    expect(config.provider_config.models_dir).toMatch(/gguf$/);
+    expect(config.provider_config.embedding).toBeUndefined();
+  });
+
+  it("passes through explicit hf:/https: gguf urls and local .gguf paths", () => {
+    expect(
+      resolveModelConfig("gguf:hf:prism-ml/Bonsai-27B-gguf:Q1_0", "classify").provider_config
+        .model_url
+    ).toBe("hf:prism-ml/Bonsai-27B-gguf:Q1_0");
+    expect(
+      resolveModelConfig("gguf:/tmp/models/Bonsai-27B-Q1_0.gguf", "classify").provider_config
+        .model_path
+    ).toBe("/tmp/models/Bonsai-27B-Q1_0.gguf");
+  });
+
+  it("enables embedding mode for gguf models on similarity evals", () => {
+    const config = resolveModelConfig(
+      "gguf:CompendiumLabs/bge-small-en-v1.5-gguf:Q8_0",
+      "similarity"
+    );
+    expect(config.provider_config.embedding).toBe(true);
+  });
 });
 
 describe("parseModelList", () => {
