@@ -6,7 +6,7 @@
 
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 export interface EvalConfig {
   /** Directory holding the SQLite database and model cache. */
@@ -19,9 +19,15 @@ export interface EvalConfig {
   readonly ggufCache: string;
 }
 
-/** The eval home directory (no side effects; safe to call from pure helpers). */
+/**
+ * The eval home directory (no side effects; safe to call from pure helpers).
+ * WORKGLOW_EVAL_HOME is set by the invoking user for their own machine — the
+ * same trust domain as the process itself, like HOME or XDG_DATA_HOME — and is
+ * normalized to an absolute path so a relative value anchors predictably.
+ */
 export function evalHome(): string {
-  return process.env.WORKGLOW_EVAL_HOME ?? join(homedir(), ".workglow", "eval");
+  const override = process.env.WORKGLOW_EVAL_HOME;
+  return override ? resolve(override) : join(homedir(), ".workglow", "eval");
 }
 
 /**

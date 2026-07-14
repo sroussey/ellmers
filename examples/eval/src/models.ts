@@ -9,6 +9,7 @@ import { downloadModel } from "@workglow/ai";
 import { join } from "node:path";
 import { evalHome } from "./config";
 import { hfAuthHeaders } from "./hf/auth";
+import { sanitizeHubRepoId } from "./hf/ids";
 
 export type EvalKind = "classify" | "similarity";
 
@@ -92,7 +93,7 @@ export function resolveModelConfig(id: string, kind: EvalKind): ModelConfig {
 export async function ensureEmbeddingDimensions(config: ModelConfig): Promise<ModelConfig> {
   if (config.provider !== "HF_TRANSFORMERS_ONNX") return config;
   if (config.provider_config.native_dimensions !== undefined) return config;
-  const path = config.provider_config.model_path as string;
+  const path = sanitizeHubRepoId(config.provider_config.model_path as string);
   const url = `https://huggingface.co/${path}/resolve/main/config.json`;
   const res = await fetch(url, { headers: hfAuthHeaders() });
   if (!res.ok) {

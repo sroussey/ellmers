@@ -5,6 +5,7 @@
  */
 
 import { hfAuthHeaders } from "./auth";
+import { sanitizeHubRepoId } from "./ids";
 import type { DatasetRow, FetchDatasetOptions, FetchedDataset, LabelNames } from "./types";
 
 const DATASETS_SERVER = "https://datasets-server.huggingface.co";
@@ -65,7 +66,8 @@ function extractLabelNames(features: readonly RowsResponseFeature[]): LabelNames
 export async function fetchViaDatasetsServer(
   options: FetchDatasetOptions
 ): Promise<FetchedDataset> {
-  const { dataset, split, limit, token } = options;
+  const { split, limit, token } = options;
+  const dataset = sanitizeHubRepoId(options.dataset);
   const config = options.config ?? (await resolveConfig(dataset, token));
   const offset = options.offset ?? 0;
 

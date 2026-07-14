@@ -8,6 +8,7 @@ import { parquetMetadataAsync, parquetReadObjects } from "hyparquet";
 import { compressors } from "hyparquet-compressors";
 import { gunzipSync } from "node:zlib";
 import { hfAuthHeaders } from "./auth";
+import { sanitizeHubFilePath, sanitizeHubRepoId } from "./ids";
 import type { DatasetRow, FetchDatasetOptions, FetchedDataset, LabelNames } from "./types";
 
 const HUB = "https://huggingface.co";
@@ -142,7 +143,7 @@ export async function parseDatasetFile(
 }
 
 async function listRepoFiles(dataset: string, token: string | undefined): Promise<string[]> {
-  const url = `${HUB}/api/datasets/${dataset}/tree/main?recursive=true`;
+  const url = `${HUB}/api/datasets/${sanitizeHubRepoId(dataset)}/tree/main?recursive=true`;
   const res = await fetch(url, { headers: hfAuthHeaders(token) });
   if (!res.ok) {
     throw new Error(`hub tree listing failed (${res.status}) for dataset ${dataset}`);
@@ -156,7 +157,7 @@ async function downloadRepoFile(
   path: string,
   token: string | undefined
 ): Promise<ArrayBuffer> {
-  const url = `${HUB}/datasets/${dataset}/resolve/main/${path}`;
+  const url = `${HUB}/datasets/${sanitizeHubRepoId(dataset)}/resolve/main/${sanitizeHubFilePath(path)}`;
   const res = await fetch(url, { headers: hfAuthHeaders(token) });
   if (!res.ok) {
     throw new Error(`hub file download failed (${res.status}) for ${dataset}/${path}`);
