@@ -34,6 +34,7 @@
     { "path": "../../providers/playwright" },
     { "path": "../../providers/aws" },
     { "path": "../../providers/cloudflare" },
+    { "path": "../../providers/duckdb" },
     { "path": "../../providers/postgres" },
     { "path": "../../providers/sqlite" },
     { "path": "../../providers/supabase" },

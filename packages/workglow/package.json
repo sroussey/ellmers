@@ -242,6 +242,7 @@
     "@workglow/chrome-ai": "workspace:*",
     "@workglow/knowledge-base": "workspace:*",
     "@workglow/job-queue": "workspace:*",
+    "@workglow/duckdb": "workspace:*",
     "@workglow/postgres": "workspace:*",
     "@workglow/sqlite": "workspace:*",
     "@workglow/storage": "workspace:*",

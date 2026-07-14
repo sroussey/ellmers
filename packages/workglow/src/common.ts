@@ -13,6 +13,7 @@ export * from "@workglow/sqlite/storage";
 export * from "@workglow/sqlite/job-queue";
 export * from "@workglow/postgres/storage";
 export * from "@workglow/postgres/job-queue";
+export * from "@workglow/duckdb/storage";
 export * from "@workglow/storage";
 export * from "@workglow/task-graph";
 export * from "@workglow/browser-control/task";

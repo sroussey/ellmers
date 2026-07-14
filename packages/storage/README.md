@@ -126,6 +126,7 @@ const ProductSchema = {
 | IndexedDB    | ❌      | ❌  | ✅      | ✅          |
 | SQLite       | ✅      | ✅  | ❌      | ✅          |
 | PostgreSQL   | ✅      | ✅  | ❌      | ✅          |
+| DuckDB       | ✅      | ✅  | ❌      | ✅          |
 | Supabase     | ✅      | ✅  | ✅      | ✅          |
 | FileSystem   | ✅      | ✅  | ❌      | ✅          |
 
