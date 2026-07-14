@@ -13,6 +13,7 @@ import type {
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
   acquireContextSequence,
+  getActualModelPath,
   getConfigKey,
   getLlamaCppSession,
   getOrCreateTextContext,
@@ -20,12 +21,14 @@ import {
   llamaCppSeedPromptSpread,
   loadSdk,
   setLlamaCppSession,
+  withModelInUse,
 } from "./LlamaCpp_Runtime";
 
 async function getOrCreateChatSession(
   sessionId: string | undefined,
   model: LlamaCppModelConfig,
-  systemPrompt: string | undefined
+  systemPrompt: string | undefined,
+  signal: AbortSignal
 ): Promise<{ session: any; sequence: any }> {
   if (sessionId) {
     const existing = getLlamaCppSession(sessionId);
@@ -38,12 +41,23 @@ async function getOrCreateChatSession(
 
   const { LlamaChatSession } = await loadSdk();
   const context = await getOrCreateTextContext(model);
-  const sequence = await acquireContextSequence(context);
-  const session = new LlamaChatSession({
-    contextSequence: sequence,
-    ...(systemPrompt !== undefined && { systemPrompt }),
-    ...llamaCppChatSessionConstructorSpread(model),
-  });
+  const sequence = await acquireContextSequence(context, signal);
+  // Sequence ownership only transfers to the session once its constructor
+  // returns; a throw before that would strand the sequence and eventually
+  // exhaust the per-context sequence pool, so free it in the failure path.
+  let session: any;
+  try {
+    session = new LlamaChatSession({
+      contextSequence: sequence,
+      ...(systemPrompt !== undefined && { systemPrompt }),
+      ...llamaCppChatSessionConstructorSpread(model),
+    });
+  } catch (err) {
+    try {
+      await sequence.dispose();
+    } catch {}
+    throw err;
+  }
 
   if (sessionId) {
     setLlamaCppSession(sessionId, {
@@ -76,47 +90,56 @@ export const LlamaCpp_Chat_Stream: AiProviderRunFn<
 > = async (input, model, signal, emit, _outputSchema, sessionId) => {
   if (!model) throw new Error("Model config is required for AiChatTask.");
 
-  const { session, sequence } = await getOrCreateChatSession(sessionId, model, input.systemPrompt);
+  const modelPath = getActualModelPath(model);
 
-  const userText = lastUserText(input.messages ?? []);
+  await withModelInUse(modelPath, async () => {
+    const { session, sequence } = await getOrCreateChatSession(
+      sessionId,
+      model,
+      input.systemPrompt,
+      signal
+    );
 
-  const queue: string[] = [];
-  let done = false;
-  let resolver: (() => void) | undefined;
+    const userText = lastUserText(input.messages ?? []);
 
-  const promptPromise = session
-    .prompt(userText, {
-      signal,
-      ...llamaCppSeedPromptSpread(model.provider_config),
-      ...(input.temperature !== undefined && { temperature: input.temperature }),
-      ...(input.maxTokens !== undefined && { maxTokens: input.maxTokens }),
-      onTextChunk: (chunk: string) => {
-        queue.push(chunk);
+    const queue: string[] = [];
+    let done = false;
+    let resolver: (() => void) | undefined;
+
+    const promptPromise = session
+      .prompt(userText, {
+        signal,
+        ...llamaCppSeedPromptSpread(model.provider_config),
+        ...(input.temperature !== undefined && { temperature: input.temperature }),
+        ...(input.maxTokens !== undefined && { maxTokens: input.maxTokens }),
+        onTextChunk: (chunk: string) => {
+          queue.push(chunk);
+          resolver?.();
+        },
+      })
+      .finally(async () => {
+        done = true;
         resolver?.();
-      },
-    })
-    .finally(async () => {
-      done = true;
-      resolver?.();
-      if (!sessionId) {
-        try {
-          await session.dispose({ disposeSequence: false });
-        } catch {}
-        try {
-          await sequence.dispose();
-        } catch {}
-      }
-    });
+        if (!sessionId) {
+          try {
+            await session.dispose({ disposeSequence: false });
+          } catch {}
+          try {
+            await sequence.dispose();
+          } catch {}
+        }
+      });
 
-  while (!done || queue.length > 0) {
-    if (queue.length === 0 && !done) {
-      await new Promise<void>((res) => (resolver = res));
-      resolver = undefined;
+    while (!done || queue.length > 0) {
+      if (queue.length === 0 && !done) {
+        await new Promise<void>((res) => (resolver = res));
+        resolver = undefined;
+      }
+      while (queue.length > 0) {
+        emit({ type: "text-delta", port: "text", textDelta: queue.shift()! });
+      }
     }
-    while (queue.length > 0) {
-      emit({ type: "text-delta", port: "text", textDelta: queue.shift()! });
-    }
-  }
-  await promptPromise;
-  emit({ type: "finish", data: {} as AiChatProviderOutput });
+    await promptPromise;
+    emit({ type: "finish", data: {} as AiChatProviderOutput });
+  });
 };

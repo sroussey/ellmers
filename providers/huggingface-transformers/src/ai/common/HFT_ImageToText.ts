@@ -9,7 +9,7 @@ import type { AiProviderRunFn, ImageToTextTaskInput, ImageToTextTaskOutput } fro
 import { imageValueToBlob } from "@workglow/ai/provider-utils";
 import type { ImageValue } from "@workglow/util/media";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
-import { getPipeline } from "./HFT_Pipeline";
+import { getPipeline, getPipelineCacheKey, withHftPipelineInUse } from "./HFT_Pipeline";
 
 export const HFT_ImageToText: AiProviderRunFn<
   ImageToTextTaskInput,
@@ -17,17 +17,21 @@ export const HFT_ImageToText: AiProviderRunFn<
   HfTransformersOnnxModelConfig
 > = async (input, model, signal, emit) => {
   const captioner = (await getPipeline(model!, emit, {}, signal)) as ImageToTextPipeline;
-  const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
-  const result = await captioner(imageArg, {
-    max_new_tokens: input.maxTokens,
-  });
+  await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
+    const result = await captioner(imageArg, {
+      max_new_tokens: input.maxTokens,
+    });
 
-  const text = Array.isArray(result[0]) ? result[0][0]?.generated_text : result[0]?.generated_text;
+    const text = Array.isArray(result[0])
+      ? result[0][0]?.generated_text
+      : result[0]?.generated_text;
 
-  emit({
-    type: "finish",
-    data: {
-      text: text || "",
-    },
+    emit({
+      type: "finish",
+      data: {
+        text: text || "",
+      },
+    });
   });
 };

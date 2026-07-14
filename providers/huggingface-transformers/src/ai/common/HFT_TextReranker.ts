@@ -9,7 +9,7 @@ import type { AiProviderRunFn, TextRerankerTaskInput, TextRerankerTaskOutput } f
 import { KbRerankerOutputError } from "@workglow/ai";
 import { getLogger } from "@workglow/util/worker";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
-import { getPipeline } from "./HFT_Pipeline";
+import { getPipeline, getPipelineCacheKey, withHftPipelineInUse } from "./HFT_Pipeline";
 
 /**
  * Narrow guard: an entry from the text-classification pipeline must be an
@@ -108,32 +108,34 @@ export const HFT_TextReranker: AiProviderRunFn<
 
   const reranker: TextClassificationPipeline = await getPipeline(model!, emit, {}, signal);
 
-  // Transformers.js' text-classification pipeline accepts an array of
-  // { text, text_pair } objects for sentence-pair tasks (which cross-encoder
-  // rerankers are). The pipeline returns one score per input pair (or an
-  // array of scored entries per pair when `top_k > 1`).
-  const pairs = input.documents.map((doc) => ({ text: input.query, text_pair: doc }));
+  await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    // Transformers.js' text-classification pipeline accepts an array of
+    // { text, text_pair } objects for sentence-pair tasks (which cross-encoder
+    // rerankers are). The pipeline returns one score per input pair (or an
+    // array of scored entries per pair when `top_k > 1`).
+    const pairs = input.documents.map((doc) => ({ text: input.query, text_pair: doc }));
 
-  // We cast the *input parameter* shape (transformers.js types the pipeline
-  // very loosely) but keep the return as `Promise<unknown>` so the guard at
-  // `validateAndExtractRerankerScores` is the only path to a typed score.
-  // Casting the return to a typed score shape would erase the safety net and
-  // let a mismatched pipeline silently return garbage.
-  const callable = reranker as unknown as (
-    inputs: ReadonlyArray<{ text: string; text_pair: string }>,
-    options?: Record<string, unknown>
-  ) => Promise<unknown>;
-  const rawResults: unknown = await callable(pairs, { top_k: 1 });
+    // We cast the *input parameter* shape (transformers.js types the pipeline
+    // very loosely) but keep the return as `Promise<unknown>` so the guard at
+    // `validateAndExtractRerankerScores` is the only path to a typed score.
+    // Casting the return to a typed score shape would erase the safety net and
+    // let a mismatched pipeline silently return garbage.
+    const callable = reranker as unknown as (
+      inputs: ReadonlyArray<{ text: string; text_pair: string }>,
+      options?: Record<string, unknown>
+    ) => Promise<unknown>;
+    const rawResults: unknown = await callable(pairs, { top_k: 1 });
 
-  const scores = validateAndExtractRerankerScores(rawResults, modelPath);
+    const scores = validateAndExtractRerankerScores(rawResults, modelPath);
 
-  const indices = scores
-    .map((score, idx) => ({ score, idx }))
-    .sort((a, b) => b.score - a.score)
-    .map((p) => p.idx);
+    const indices = scores
+      .map((score, idx) => ({ score, idx }))
+      .sort((a, b) => b.score - a.score)
+      .map((p) => p.idx);
 
-  const limited = typeof input.topK === "number" ? indices.slice(0, input.topK) : indices;
+    const limited = typeof input.topK === "number" ? indices.slice(0, input.topK) : indices;
 
-  logger.timeEnd(timerLabel, { docs: input.documents.length });
-  emit({ type: "finish", data: { scores, indices: limited } });
+    logger.timeEnd(timerLabel, { docs: input.documents.length });
+    emit({ type: "finish", data: { scores, indices: limited } });
+  });
 };

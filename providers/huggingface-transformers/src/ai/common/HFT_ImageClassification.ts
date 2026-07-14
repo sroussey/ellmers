@@ -16,7 +16,7 @@ import type {
 import { imageValueToBlob } from "@workglow/ai/provider-utils";
 import type { ImageValue } from "@workglow/util/media";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
-import { getPipeline } from "./HFT_Pipeline";
+import { getPipeline, getPipelineCacheKey, withHftPipelineInUse } from "./HFT_Pipeline";
 
 /**
  * Auto-selects between regular and zero-shot classification based on
@@ -38,38 +38,42 @@ export const HFT_ImageClassification: AiProviderRunFn<
       {},
       signal
     )) as ZeroShotImageClassificationPipeline;
+    await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+      const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
+      const result = await zeroShotClassifier(imageArg, input.categories! as string[], {});
+
+      const results = Array.isArray(result) ? result : [result];
+
+      emit({
+        type: "finish",
+        data: {
+          categories: results.map((r) => ({
+            label: r.label,
+            score: r.score,
+          })),
+        },
+      });
+    });
+    return;
+  }
+
+  const classifier = (await getPipeline(model!, emit, {}, signal)) as ImageClassificationPipeline;
+  await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
     const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
-    const result = await zeroShotClassifier(imageArg, input.categories! as string[], {});
+    const result = await classifier(imageArg, {
+      top_k: input.maxCategories,
+    });
 
     const results = Array.isArray(result) ? result : [result];
 
     emit({
       type: "finish",
       data: {
-        categories: results.map((r) => ({
+        categories: results.map((r: any) => ({
           label: r.label,
           score: r.score,
         })),
       },
     });
-    return;
-  }
-
-  const classifier = (await getPipeline(model!, emit, {}, signal)) as ImageClassificationPipeline;
-  const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
-  const result = await classifier(imageArg, {
-    top_k: input.maxCategories,
-  });
-
-  const results = Array.isArray(result) ? result : [result];
-
-  emit({
-    type: "finish",
-    data: {
-      categories: results.map((r: any) => ({
-        label: r.label,
-        score: r.score,
-      })),
-    },
   });
 };

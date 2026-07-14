@@ -17,12 +17,14 @@ import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
 import type { StreamEvent } from "@workglow/task-graph";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
-  acquireContextSequence,
+  getActualModelPath,
   getLlamaCppSdk,
   getOrCreateTextContext,
   llamaCppChatSessionConstructorSpread,
   llamaCppSeedPromptSpread,
   loadSdk,
+  withModelInUse,
+  withSequence,
 } from "./LlamaCpp_Runtime";
 import { extractToolCallsFromText } from "./LlamaCpp_ToolParser";
 
@@ -269,62 +271,68 @@ export const LlamaCpp_ToolCalling_Stream: AiProviderRunFn<
 
   await loadSdk();
 
-  const context = await getOrCreateTextContext(model);
+  const modelPath = getActualModelPath(model);
 
-  const sequence = await acquireContextSequence(context);
-  const { LlamaChat } = getLlamaCppSdk();
-  const systemPrompt = buildSystemPrompt(input);
+  await withModelInUse(modelPath, async () => {
+    const context = await getOrCreateTextContext(model);
 
-  const llamaChat = new LlamaChat({
-    contextSequence: sequence,
-    ...llamaCppChatSessionConstructorSpread(model),
-  });
+    await withSequence(
+      context,
+      async (sequence) => {
+        const { LlamaChat } = getLlamaCppSdk();
+        const systemPrompt = buildSystemPrompt(input);
 
-  const promptText =
-    typeof input.prompt === "string" ? input.prompt : extractMessageText(input.prompt);
-  const chatHistory = convertMessagesToChatHistory(input.messages, promptText, systemPrompt);
-  const functions = buildChatModelFunctions(input.tools);
+        const llamaChat = new LlamaChat({
+          contextSequence: sequence,
+          ...llamaCppChatSessionConstructorSpread(model),
+        });
 
-  const gen = streamTextChunks(
-    (onTextChunk) =>
-      llamaChat.generateResponse(chatHistory, {
-        signal,
-        ...llamaCppChatGenerateOptions(input, model),
-        functions,
-        ...(toolChoiceForcesToolCall(input.toolChoice) && { documentFunctionParams: true }),
-        onTextChunk,
-      }),
-    signal,
-    async () => {
-      try {
-        await llamaChat.dispose({ disposeSequence: false });
-      } catch {}
-      try {
-        await sequence.dispose();
-      } catch {}
-    }
-  );
-  let step = await gen.next();
-  while (!step.done) {
-    emit(step.value);
-    step = await gen.next();
-  }
-  const { text: accumulatedText, result: chatResponse } = step.value;
+        const promptText =
+          typeof input.prompt === "string" ? input.prompt : extractMessageText(input.prompt);
+        const chatHistory = convertMessagesToChatHistory(input.messages, promptText, systemPrompt);
+        const functions = buildChatModelFunctions(input.tools);
 
-  const toolCalls = extractNativeFunctionCalls(chatResponse?.functionCalls);
+        const gen = streamTextChunks(
+          (onTextChunk) =>
+            llamaChat.generateResponse(chatHistory, {
+              signal,
+              ...llamaCppChatGenerateOptions(input, model),
+              functions,
+              ...(toolChoiceForcesToolCall(input.toolChoice) && { documentFunctionParams: true }),
+              onTextChunk,
+            }),
+          signal,
+          async () => {
+            try {
+              await llamaChat.dispose({ disposeSequence: false });
+            } catch {}
+          }
+        );
+        let step = await gen.next();
+        while (!step.done) {
+          emit(step.value);
+          step = await gen.next();
+        }
+        const { text: accumulatedText, result: chatResponse } = step.value;
 
-  // Fallback: parse tool calls from text if native parsing found nothing
-  if (toolCalls.length === 0 && input.tools.length > 0 && input.toolChoice !== "none") {
-    toolCalls.push(...extractToolCallsFromText(accumulatedText, input));
-  }
-  const validToolCalls = filterValidToolCalls(toolCalls, input.tools);
+        const toolCalls = extractNativeFunctionCalls(chatResponse?.functionCalls);
 
-  if (validToolCalls.length > 0) {
-    emit({ type: "object-delta", port: "toolCalls", objectDelta: [...validToolCalls] });
-  }
+        // Fallback: parse tool calls from text if native parsing found nothing
+        if (toolCalls.length === 0 && input.tools.length > 0 && input.toolChoice !== "none") {
+          toolCalls.push(...extractToolCallsFromText(accumulatedText, input));
+        }
+        const validToolCalls = filterValidToolCalls(toolCalls, input.tools);
 
-  emit({
-    type: "finish",
-    data: { text: accumulatedText, toolCalls: validToolCalls } as ToolCallingTaskOutput,
+        if (validToolCalls.length > 0) {
+          emit({ type: "object-delta", port: "toolCalls", objectDelta: [...validToolCalls] });
+        }
+
+        emit({
+          type: "finish",
+          data: { text: accumulatedText, toolCalls: validToolCalls } as ToolCallingTaskOutput,
+        });
+      },
+      { signal }
+    );
   });
 };

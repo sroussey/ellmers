@@ -11,7 +11,12 @@ import type {
   TextTranslationTaskOutput,
 } from "@workglow/ai";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
-import { getPipeline, loadTransformersSDK } from "./HFT_Pipeline";
+import {
+  getPipeline,
+  getPipelineCacheKey,
+  loadTransformersSDK,
+  withHftPipelineInUse,
+} from "./HFT_Pipeline";
 import { createStreamingTextStreamer } from "./HFT_Streaming";
 
 export const HFT_TextTranslation: AiProviderRunFn<
@@ -20,23 +25,25 @@ export const HFT_TextTranslation: AiProviderRunFn<
   HfTransformersOnnxModelConfig
 > = async (input, model, signal, emit) => {
   const translate = (await getPipeline(model!, emit, {}, signal)) as TranslationPipeline;
-  const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
 
-  const streamer = createStreamingTextStreamer(
-    translate.tokenizer,
-    (text) => emit({ type: "text-delta", port: "text", textDelta: text }),
-    TextStreamer
-  );
-  const stopping_criteria = new InterruptableStoppingCriteria();
-  if (signal) {
-    signal.addEventListener("abort", () => stopping_criteria.interrupt(), { once: true });
-  }
+  await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
+    const streamer = createStreamingTextStreamer(
+      translate.tokenizer,
+      (text) => emit({ type: "text-delta", port: "text", textDelta: text }),
+      TextStreamer
+    );
+    const stopping_criteria = new InterruptableStoppingCriteria();
+    if (signal) {
+      signal.addEventListener("abort", () => stopping_criteria.interrupt(), { once: true });
+    }
 
-  await translate(input.text, {
-    src_lang: input.source_lang,
-    tgt_lang: input.target_lang,
-    streamer,
-    stopping_criteria: [stopping_criteria],
+    await translate(input.text, {
+      src_lang: input.source_lang,
+      tgt_lang: input.target_lang,
+      streamer,
+      stopping_criteria: [stopping_criteria],
+    });
+    emit({ type: "finish", data: { target_lang: input.target_lang } as TextTranslationTaskOutput });
   });
-  emit({ type: "finish", data: { target_lang: input.target_lang } as TextTranslationTaskOutput });
 };

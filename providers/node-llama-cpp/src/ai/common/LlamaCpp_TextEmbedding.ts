@@ -10,7 +10,11 @@ import type {
   TextEmbeddingTaskOutput,
 } from "@workglow/ai";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
-import { getOrCreateEmbeddingContext } from "./LlamaCpp_Runtime";
+import {
+  getActualModelPath,
+  getOrCreateEmbeddingContext,
+  withModelInUse,
+} from "./LlamaCpp_Runtime";
 
 export const LlamaCpp_TextEmbedding: AiProviderRunFn<
   TextEmbeddingTaskInput,
@@ -19,17 +23,21 @@ export const LlamaCpp_TextEmbedding: AiProviderRunFn<
 > = async (input, model, _signal, emit) => {
   if (!model) throw new Error("Model config is required for TextEmbeddingTask.");
 
-  const context = await getOrCreateEmbeddingContext(model);
+  const modelPath = getActualModelPath(model);
 
-  const texts = Array.isArray(input.text) ? input.text : [input.text];
+  await withModelInUse(modelPath, async () => {
+    const context = await getOrCreateEmbeddingContext(model);
 
-  const embeddings = await Promise.all(
-    texts.map((text) => context.getEmbeddingFor(text).then((e) => new Float32Array(e.vector)))
-  );
+    const texts = Array.isArray(input.text) ? input.text : [input.text];
 
-  if (Array.isArray(input.text)) {
-    emit({ type: "finish", data: { vector: embeddings } });
-    return;
-  }
-  emit({ type: "finish", data: { vector: embeddings[0] } });
+    const embeddings = await Promise.all(
+      texts.map((text) => context.getEmbeddingFor(text).then((e) => new Float32Array(e.vector)))
+    );
+
+    if (Array.isArray(input.text)) {
+      emit({ type: "finish", data: { vector: embeddings } });
+      return;
+    }
+    emit({ type: "finish", data: { vector: embeddings[0] } });
+  });
 };

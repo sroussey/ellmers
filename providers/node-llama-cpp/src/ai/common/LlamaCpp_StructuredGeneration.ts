@@ -12,13 +12,15 @@ import type {
 import { parsePartialJson } from "@workglow/util/worker";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
-  acquireContextSequence,
+  getActualModelPath,
   getLlamaCppSdk,
   getLlamaInstance,
   getOrCreateTextContext,
   llamaCppChatSessionConstructorSpread,
   llamaCppSeedPromptSpread,
   loadSdk,
+  withModelInUse,
+  withSequence,
 } from "./LlamaCpp_Runtime";
 
 export const LlamaCpp_StructuredGeneration_Stream: AiProviderRunFn<
@@ -30,94 +32,100 @@ export const LlamaCpp_StructuredGeneration_Stream: AiProviderRunFn<
 
   await loadSdk();
 
-  const llama = await getLlamaInstance();
-  const context = await getOrCreateTextContext(model);
-  const grammar = await llama.createGrammarForJsonSchema(input.outputSchema as any);
+  const modelPath = getActualModelPath(model);
 
-  const sequence = await acquireContextSequence(context);
-  const { LlamaChatSession } = getLlamaCppSdk();
-  const session = new LlamaChatSession({
-    contextSequence: sequence,
-    ...llamaCppChatSessionConstructorSpread(model),
-  });
+  await withModelInUse(modelPath, async () => {
+    const llama = await getLlamaInstance();
+    const context = await getOrCreateTextContext(model);
+    const grammar = await llama.createGrammarForJsonSchema(input.outputSchema as any);
 
-  const queue: string[] = [];
-  let isComplete = false;
-  let completionError: unknown;
-  let resolveWait: (() => void) | null = null;
+    await withSequence(
+      context,
+      async (sequence) => {
+        const { LlamaChatSession } = getLlamaCppSdk();
+        const session = new LlamaChatSession({
+          contextSequence: sequence,
+          ...llamaCppChatSessionConstructorSpread(model),
+        });
 
-  const notifyWaiter = () => {
-    resolveWait?.();
-    resolveWait = null;
-  };
+        const queue: string[] = [];
+        let isComplete = false;
+        let completionError: unknown;
+        let resolveWait: (() => void) | null = null;
 
-  let accumulatedText = "";
-  const promptPromise = session
-    .prompt(input.prompt as string, {
-      signal,
-      grammar,
-      ...llamaCppSeedPromptSpread(model.provider_config),
-      onTextChunk: (chunk: string) => {
-        queue.push(chunk);
-        notifyWaiter();
-      },
-      ...(input.temperature !== undefined && { temperature: input.temperature }),
-      ...(input.maxTokens !== undefined && { maxTokens: input.maxTokens }),
-    })
-    .then(() => {
-      isComplete = true;
-      notifyWaiter();
-    })
-    .catch((err: unknown) => {
-      completionError = err;
-      isComplete = true;
-      notifyWaiter();
-    });
+        const notifyWaiter = () => {
+          resolveWait?.();
+          resolveWait = null;
+        };
 
-  try {
-    while (true) {
-      while (queue.length > 0) {
-        const chunk = queue.shift()!;
-        accumulatedText += chunk;
-        const partial = parsePartialJson(accumulatedText);
-        if (partial !== undefined) {
-          emit({
-            type: "object-delta",
-            port: "object",
-            objectDelta: partial as Record<string, unknown>,
+        let accumulatedText = "";
+        const promptPromise = session
+          .prompt(input.prompt as string, {
+            signal,
+            grammar,
+            ...llamaCppSeedPromptSpread(model.provider_config),
+            onTextChunk: (chunk: string) => {
+              queue.push(chunk);
+              notifyWaiter();
+            },
+            ...(input.temperature !== undefined && { temperature: input.temperature }),
+            ...(input.maxTokens !== undefined && { maxTokens: input.maxTokens }),
+          })
+          .then(() => {
+            isComplete = true;
+            notifyWaiter();
+          })
+          .catch((err: unknown) => {
+            completionError = err;
+            isComplete = true;
+            notifyWaiter();
           });
+
+        try {
+          while (true) {
+            while (queue.length > 0) {
+              const chunk = queue.shift()!;
+              accumulatedText += chunk;
+              const partial = parsePartialJson(accumulatedText);
+              if (partial !== undefined) {
+                emit({
+                  type: "object-delta",
+                  port: "object",
+                  objectDelta: partial as Record<string, unknown>,
+                });
+              }
+            }
+            if (isComplete) break;
+            await new Promise<void>((r) => {
+              resolveWait = r;
+            });
+          }
+          while (queue.length > 0) {
+            const chunk = queue.shift()!;
+            accumulatedText += chunk;
+          }
+        } finally {
+          await promptPromise.catch(() => {});
+          try {
+            await session.dispose({ disposeSequence: false });
+          } catch {}
         }
-      }
-      if (isComplete) break;
-      await new Promise<void>((r) => {
-        resolveWait = r;
-      });
-    }
-    while (queue.length > 0) {
-      const chunk = queue.shift()!;
-      accumulatedText += chunk;
-    }
-  } finally {
-    await promptPromise.catch(() => {});
-    try {
-      await session.dispose({ disposeSequence: false });
-    } catch {}
-    try {
-      await sequence.dispose();
-    } catch {}
-  }
 
-  if (completionError) {
-    if (signal.aborted) return;
-    throw completionError;
-  }
+        if (completionError) {
+          if (signal.aborted) return;
+          throw completionError;
+        }
 
-  let finalObject: Record<string, unknown>;
-  try {
-    finalObject = JSON.parse(accumulatedText);
-  } catch {
-    finalObject = (parsePartialJson(accumulatedText) as Record<string, unknown>) ?? {};
-  }
+        let finalObject: Record<string, unknown>;
+        try {
+          finalObject = JSON.parse(accumulatedText);
+        } catch {
+          finalObject = (parsePartialJson(accumulatedText) as Record<string, unknown>) ?? {};
+        }
 
-  emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
+        emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
+      },
+      { signal }
+    );
+  });
 };

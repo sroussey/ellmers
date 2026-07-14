@@ -6,12 +6,20 @@
 
 import {
   acquireContextSequence,
+  acquireModelInUse,
+  disposeLlamaCppSessionsForModel,
   getOrCreateEmbeddingContext,
   isVramError,
   llamaCppEmbeddingContexts,
   llamaCppModels,
+  llamaCppSessions,
   llamaCppTextContexts,
   recycleLlamaCppTextContext,
+  releaseModelInUse,
+  resolvedPaths,
+  setLlamaCppSession,
+  withSequence,
+  withVramEviction,
 } from "@workglow/node-llama-cpp/ai-runtime";
 import type {
   LlamaContext,
@@ -21,7 +29,11 @@ import type {
 } from "node-llama-cpp";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-function makeFakeContext(reclaimAfter: number): {
+/**
+ * Fake context whose `sequencesLeft` reports zero for the first `reclaimAfter`
+ * `sequencesLeft` reads, simulating the async reclaim path.
+ */
+function makeReclaimAfterContext(reclaimAfter: number): {
   context: LlamaContext;
   getSequenceCalls: () => number;
 } {
@@ -50,19 +62,105 @@ function makeFakeContext(reclaimAfter: number): {
   return { context, getSequenceCalls: () => calls };
 }
 
+/**
+ * Fake context whose `sequencesLeft` always returns 1 but whose `getSequence`
+ * throws `"No sequences left"` for the first `retriesBeforeSuccess` calls —
+ * exactly the race path {@link acquireContextSequence} was written to tolerate.
+ */
+function makeGetSequenceRetryContext(retriesBeforeSuccess: number): {
+  context: LlamaContext;
+  getSequenceCalls: () => number;
+} {
+  let calls = 0;
+  const context = {
+    get sequencesLeft(): number {
+      return 1;
+    },
+    getSequence(): LlamaContextSequence {
+      calls += 1;
+      if (calls <= retriesBeforeSuccess) throw new Error("No sequences left");
+      return { id: "seq" } as unknown as LlamaContextSequence;
+    },
+  } as unknown as LlamaContext;
+  return { context, getSequenceCalls: () => calls };
+}
+
 describe("acquireContextSequence", () => {
   it("returns immediately when a sequence is already free", async () => {
-    const { context, getSequenceCalls } = makeFakeContext(0);
+    const { context, getSequenceCalls } = makeReclaimAfterContext(0);
     const seq = await acquireContextSequence(context);
     expect(seq).toBeDefined();
     expect(getSequenceCalls()).toBe(1);
   });
 
-  it("waits for a deferred reclaim instead of throwing 'No sequences left'", async () => {
-    const { context, getSequenceCalls } = makeFakeContext(3);
+  it("waits for a deferred reclaim before calling getSequence", async () => {
+    const { context, getSequenceCalls } = makeReclaimAfterContext(3);
     const seq = await acquireContextSequence(context);
     expect(seq).toBeDefined();
     expect(getSequenceCalls()).toBe(1);
+  });
+
+  it("retries when getSequence throws 'No sequences left' while sequencesLeft says slots are free", async () => {
+    const { context, getSequenceCalls } = makeGetSequenceRetryContext(3);
+    const seq = await acquireContextSequence(context);
+    expect(seq).toBeDefined();
+    // 3 failing calls then a fourth that succeeds.
+    expect(getSequenceCalls()).toBe(4);
+  });
+
+  it("rejects immediately when the abort signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const context = {
+      get sequencesLeft(): number {
+        return 1;
+      },
+      getSequence(): LlamaContextSequence {
+        return { id: "seq" } as unknown as LlamaContextSequence;
+      },
+    } as unknown as LlamaContext;
+
+    await expect(acquireContextSequence(context, controller.signal)).rejects.toBeDefined();
+  });
+});
+
+describe("withSequence", () => {
+  it("disposes the sequence exactly once when the body throws", async () => {
+    const seqDispose = vi.fn(async () => {});
+    const stubSequence = { dispose: seqDispose } as unknown as LlamaContextSequence;
+    const context = {
+      get sequencesLeft(): number {
+        return 1;
+      },
+      getSequence(): LlamaContextSequence {
+        return stubSequence;
+      },
+    } as unknown as LlamaContext;
+
+    await expect(
+      withSequence(context, async () => {
+        throw new Error("session ctor failed");
+      })
+    ).rejects.toThrow("session ctor failed");
+
+    expect(seqDispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("disposes the sequence after a successful run", async () => {
+    const seqDispose = vi.fn(async () => {});
+    const stubSequence = { dispose: seqDispose } as unknown as LlamaContextSequence;
+    const context = {
+      get sequencesLeft(): number {
+        return 1;
+      },
+      getSequence(): LlamaContextSequence {
+        return stubSequence;
+      },
+    } as unknown as LlamaContext;
+
+    const result = await withSequence(context, async () => "ok");
+    expect(result).toBe("ok");
+    expect(seqDispose).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -138,6 +236,133 @@ describe("recycleLlamaCppTextContext with reloadModel disposes embedding context
     expect(modelDisposeB).not.toHaveBeenCalled();
     expect(textDisposeB).not.toHaveBeenCalled();
     expect(embeddingDisposeB).not.toHaveBeenCalled();
+  });
+});
+
+describe("withVramEviction concurrent-safety", () => {
+  afterEach(() => {
+    llamaCppModels.clear();
+    llamaCppTextContexts.clear();
+    llamaCppEmbeddingContexts.clear();
+  });
+
+  it("skips models marked in-use during LRU eviction", async () => {
+    const modelDisposeA = vi.fn(async () => {});
+    const modelDisposeB = vi.fn(async () => {});
+    const modelA = { dispose: modelDisposeA } as unknown as LlamaModel;
+    const modelB = { dispose: modelDisposeB } as unknown as LlamaModel;
+    llamaCppModels.set("/tmp/A.gguf", modelA);
+    llamaCppModels.set("/tmp/B.gguf", modelB);
+
+    // B is powering a concurrent run and must survive the eviction sweep.
+    acquireModelInUse("/tmp/B.gguf");
+
+    let attempts = 0;
+    const attempt = async (): Promise<string> => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("cuda out of memory");
+      return "ok";
+    };
+
+    try {
+      const result = await withVramEviction("/tmp/C.gguf", attempt);
+
+      expect(result).toBe("ok");
+      expect(modelDisposeA).toHaveBeenCalledTimes(1);
+      expect(modelDisposeB).not.toHaveBeenCalled();
+      expect(llamaCppModels.has("/tmp/A.gguf")).toBe(false);
+      expect(llamaCppModels.get("/tmp/B.gguf")).toBe(modelB);
+    } finally {
+      releaseModelInUse("/tmp/B.gguf");
+    }
+  });
+
+  it("rethrows the original VRAM error when every candidate is in-use", async () => {
+    const modelDisposeA = vi.fn(async () => {});
+    const modelA = { dispose: modelDisposeA } as unknown as LlamaModel;
+    llamaCppModels.set("/tmp/A.gguf", modelA);
+    acquireModelInUse("/tmp/A.gguf");
+
+    const original = new Error("cuda out of memory");
+    const attempt = () => Promise.reject(original);
+
+    try {
+      await expect(withVramEviction("/tmp/B.gguf", attempt)).rejects.toBe(original);
+      expect(modelDisposeA).not.toHaveBeenCalled();
+      expect(llamaCppModels.get("/tmp/A.gguf")).toBe(modelA);
+    } finally {
+      releaseModelInUse("/tmp/A.gguf");
+    }
+  });
+});
+
+describe("disposeLlamaCppSessionsForModel key-spelling tolerance", () => {
+  afterEach(() => {
+    llamaCppSessions.clear();
+    resolvedPaths.clear();
+  });
+
+  it("disposes sessions stored under the config key when called with the resolved on-disk path", async () => {
+    // Sessions are stored with `modelKey: getConfigKey(model)` (typically `model_url`),
+    // but `evictLeastRecentlyUsedModel` iterates `llamaCppModels` keys, which are
+    // resolved filesystem paths. The dispose helper must match both spellings.
+    const configKey = "https://huggingface.co/example/model.gguf";
+    const resolvedPath = "/tmp/example/model.gguf";
+    resolvedPaths.set(configKey, resolvedPath);
+
+    const sessionDispose = vi.fn(async () => {});
+    const sequenceDispose = vi.fn(async () => {});
+    setLlamaCppSession("session-1", {
+      session: { dispose: sessionDispose } as unknown as never,
+      sequence: { dispose: sequenceDispose } as unknown as never,
+      modelKey: configKey,
+    } as never);
+
+    await disposeLlamaCppSessionsForModel(resolvedPath);
+
+    expect(sessionDispose).toHaveBeenCalledTimes(1);
+    expect(sequenceDispose).toHaveBeenCalledTimes(1);
+    expect(llamaCppSessions.has("session-1")).toBe(false);
+  });
+
+  it("still disposes sessions when the caller passes the exact stored key", async () => {
+    const configKey = "/tmp/local/model.gguf";
+    const sessionDispose = vi.fn(async () => {});
+    setLlamaCppSession("session-2", {
+      session: { dispose: sessionDispose } as unknown as never,
+      sequence: undefined as unknown as never,
+      modelKey: configKey,
+    } as never);
+
+    await disposeLlamaCppSessionsForModel(configKey);
+
+    expect(sessionDispose).toHaveBeenCalledTimes(1);
+    expect(llamaCppSessions.has("session-2")).toBe(false);
+  });
+
+  it("does not dispose sessions belonging to a different model", async () => {
+    resolvedPaths.set("url-A", "/tmp/A.gguf");
+    resolvedPaths.set("url-B", "/tmp/B.gguf");
+
+    const sessionADispose = vi.fn(async () => {});
+    const sessionBDispose = vi.fn(async () => {});
+    setLlamaCppSession("sess-A", {
+      session: { dispose: sessionADispose } as unknown as never,
+      sequence: undefined as unknown as never,
+      modelKey: "url-A",
+    } as never);
+    setLlamaCppSession("sess-B", {
+      session: { dispose: sessionBDispose } as unknown as never,
+      sequence: undefined as unknown as never,
+      modelKey: "url-B",
+    } as never);
+
+    await disposeLlamaCppSessionsForModel("/tmp/A.gguf");
+
+    expect(sessionADispose).toHaveBeenCalledTimes(1);
+    expect(sessionBDispose).not.toHaveBeenCalled();
+    expect(llamaCppSessions.has("sess-A")).toBe(false);
+    expect(llamaCppSessions.has("sess-B")).toBe(true);
   });
 });
 

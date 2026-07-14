@@ -8,7 +8,14 @@ import type { AiChatProviderInput, AiChatProviderOutput, AiProviderRunFn } from 
 import type { StreamPhase } from "@workglow/task-graph";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import type { HftPrefixRewindSession } from "./HFT_Pipeline";
-import { getHftSession, getPipeline, loadTransformersSDK, setHftSession } from "./HFT_Pipeline";
+import {
+  getHftSession,
+  getPipeline,
+  getPipelineCacheKey,
+  loadTransformersSDK,
+  setHftSession,
+  withHftPipelineInUse,
+} from "./HFT_Pipeline";
 import { createStreamingTextStreamer, createTextStreamer } from "./HFT_Streaming";
 import { buildHFTMessages } from "./HFT_ToolCalling";
 
@@ -143,8 +150,13 @@ export const HFT_Chat: AiProviderRunFn<
   AiChatProviderOutput,
   HfTransformersOnnxModelConfig
 > = async (input, model, signal, emit, _outputSchema, sessionId) => {
-  await generateTurn(input, model!, sessionId, emit, signal, (piece) => {
-    emit({ type: "text-delta", port: "text", textDelta: piece });
+  // Refcount the pipeline for the duration of a single turn — long-lived
+  // conversations are not held across turns; only active inference is
+  // protected from concurrent LRU eviction.
+  await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    await generateTurn(input, model!, sessionId, emit, signal, (piece) => {
+      emit({ type: "text-delta", port: "text", textDelta: piece });
+    });
+    emit({ type: "finish", data: {} as AiChatProviderOutput });
   });
-  emit({ type: "finish", data: {} as AiChatProviderOutput });
 };

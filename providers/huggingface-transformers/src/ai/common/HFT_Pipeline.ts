@@ -184,7 +184,81 @@ function abortableFetch(url: string, options?: RequestInit): Promise<Response> {
   );
 }
 
-const pipelines = new Map<string, Awaited<ReturnType<TransformersSDKModule["pipeline"]>>>();
+/** @internal Cached pipelines keyed by {@link getPipelineCacheKey}. Exported for unit tests. */
+export const pipelines = new Map<string, Awaited<ReturnType<TransformersSDKModule["pipeline"]>>>();
+
+/**
+ * Upper bound on cached pipelines. Each pipeline pins an ONNX session (WASM
+ * heap / WebGPU buffers) that is never reclaimed by V8 GC — only an explicit
+ * `session.release()` frees it. Without a cap, a caller cycling through
+ * embed + classify + generate + rerank keeps every pipeline for the process
+ * lifetime, and browser/WASM contexts have no OOM retry path.
+ *
+ * Overridable via `HFT_MAX_CACHED_PIPELINES`. Guarded for browser contexts
+ * where `process` is undefined.
+ */
+export const MAX_CACHED_PIPELINES: number = (() => {
+  if (typeof process === "undefined" || !process.env) return 6;
+  const raw = process.env.HFT_MAX_CACHED_PIPELINES;
+  if (!raw) return 6;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 6;
+})();
+
+/**
+ * Move `cacheKey` to the most-recently-used end of the `pipelines` iteration
+ * order. Map iteration follows insertion order, so delete-then-set is the
+ * canonical LRU-touch pattern. No-op if the key isn't cached.
+ */
+function touchPipeline(cacheKey: string): void {
+  const pipeline = pipelines.get(cacheKey);
+  if (pipeline === undefined) return;
+  pipelines.delete(cacheKey);
+  pipelines.set(cacheKey, pipeline);
+}
+
+// ============================================================================
+// Refcount: protect in-use pipelines from housekeeping eviction
+// ============================================================================
+
+/**
+ * Reference count of in-flight callers holding each cached pipeline. Prevents
+ * the bounded-LRU sweep in {@link getPipeline} from disposing a pipeline that
+ * is currently powering another run — without this guard, one caller pushing
+ * the cache over cap could release the ONNX session of a concurrent inference.
+ */
+const hftPipelineInUse = new Map<string, number>();
+
+export function acquireHftPipelineInUse(cacheKey: string): void {
+  hftPipelineInUse.set(cacheKey, (hftPipelineInUse.get(cacheKey) ?? 0) + 1);
+}
+
+export function releaseHftPipelineInUse(cacheKey: string): void {
+  const current = hftPipelineInUse.get(cacheKey) ?? 0;
+  if (current <= 1) {
+    hftPipelineInUse.delete(cacheKey);
+  } else {
+    hftPipelineInUse.set(cacheKey, current - 1);
+  }
+}
+
+export function isHftPipelineInUse(cacheKey: string): boolean {
+  return (hftPipelineInUse.get(cacheKey) ?? 0) > 0;
+}
+
+/**
+ * Hold an in-use refcount on `cacheKey` for the lifetime of `fn`, so a
+ * concurrent LRU housekeeping pass on a different task cannot dispose this
+ * task's pipeline mid-inference.
+ */
+export async function withHftPipelineInUse<T>(cacheKey: string, fn: () => Promise<T>): Promise<T> {
+  acquireHftPipelineInUse(cacheKey);
+  try {
+    return await fn();
+  } finally {
+    releaseHftPipelineInUse(cacheKey);
+  }
+}
 
 // ============================================================================
 // Session cache for multi-turn conversations
@@ -319,8 +393,15 @@ export function hasCachedPipeline(cacheKey: string): boolean {
  * (e.g. inside HFT_DownloadRemove's async generator) so the WASM release completes
  * before the next operation. Best-effort: dispose failure does not prevent
  * cache eviction.
+ *
+ * Skips (returns `false`) when the pipeline is currently in-use — releasing
+ * its ONNX session out from under a concurrent inference would crash the
+ * WASM worker. Callers doing housekeeping should pick a different candidate.
  */
 export async function removeCachedPipeline(cacheKey: string): Promise<boolean> {
+  if (isHftPipelineInUse(cacheKey)) {
+    return false;
+  }
   const pipeline = pipelines.get(cacheKey);
   const deleted = pipelines.delete(cacheKey);
   if (pipeline) {
@@ -332,6 +413,47 @@ export async function removeCachedPipeline(cacheKey: string): Promise<boolean> {
     }
   }
   return deleted;
+}
+
+/**
+ * Iterate cached pipelines in LRU order and dispose the first non-in-use
+ * candidate, skipping `exceptKey` (the freshly loaded pipeline the caller
+ * must not evict). Returns the evicted cache key, or `undefined` when every
+ * eligible pipeline is currently in-use (in which case the caller should
+ * leave the cache over cap for this cycle — a housekeeping eviction must
+ * never block active inference).
+ */
+async function evictLeastRecentlyUsedPipeline(
+  exceptKey: string | undefined
+): Promise<string | undefined> {
+  for (const key of pipelines.keys()) {
+    if (key === exceptKey) continue;
+    if (isHftPipelineInUse(key)) continue;
+    const removed = await removeCachedPipeline(key);
+    if (removed) return key;
+  }
+  return undefined;
+}
+
+/**
+ * Bring the pipeline cache back to at most {@link MAX_CACHED_PIPELINES} by
+ * evicting LRU non-in-use entries. `exceptKey` is the freshly loaded pipeline
+ * that must not be evicted. If every other eviction candidate is in-use,
+ * leaves the cache over cap for this cycle — housekeeping never blocks or
+ * waits on active inference.
+ */
+async function enforcePipelineCacheCap(exceptKey: string): Promise<void> {
+  while (pipelines.size > MAX_CACHED_PIPELINES) {
+    const evicted = await evictLeastRecentlyUsedPipeline(exceptKey);
+    if (evicted === undefined) {
+      getLogger().debug(
+        "HFT pipeline cache over cap but every entry is in-use; deferring eviction",
+        { size: pipelines.size, cap: MAX_CACHED_PIPELINES }
+      );
+      return;
+    }
+    getLogger().debug("HFT pipeline cache evicted LRU entry", { evicted });
+  }
 }
 
 /**
@@ -364,6 +486,7 @@ export async function getPipeline(
   const cacheKey = getPipelineCacheKey(model);
   if (pipelines.has(cacheKey)) {
     getLogger().debug("HFT pipeline cache hit", { cacheKey });
+    touchPipeline(cacheKey);
     return pipelines.get(cacheKey);
   }
 
@@ -545,6 +668,7 @@ const doGetPipeline = async (
 
     logger.timeEnd(pipelineTimerLabel, { status: "loaded" });
     pipelines.set(cacheKey, result);
+    await enforcePipelineCacheCap(cacheKey);
     return result;
   } catch (error: any) {
     logger.timeEnd(pipelineTimerLabel, { status: "error", error: String(error) });

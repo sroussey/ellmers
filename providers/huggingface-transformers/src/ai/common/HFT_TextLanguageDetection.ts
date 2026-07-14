@@ -11,7 +11,7 @@ import type {
   TextLanguageDetectionTaskOutput,
 } from "@workglow/ai";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
-import { getPipeline } from "./HFT_Pipeline";
+import { getPipeline, getPipelineCacheKey, withHftPipelineInUse } from "./HFT_Pipeline";
 
 export const HFT_TextLanguageDetection: AiProviderRunFn<
   TextLanguageDetectionTaskInput,
@@ -24,17 +24,19 @@ export const HFT_TextLanguageDetection: AiProviderRunFn<
     {},
     signal
   )) as TextClassificationPipeline;
-  const result = await TextClassification(input.text, {
-    top_k: input.maxLanguages || undefined,
-  });
+  await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const result = await TextClassification(input.text, {
+      top_k: input.maxLanguages || undefined,
+    });
 
-  emit({
-    type: "finish",
-    data: {
-      languages: result.map((category) => ({
-        language: category.label,
-        score: category.score,
-      })),
-    },
+    emit({
+      type: "finish",
+      data: {
+        languages: result.map((category) => ({
+          language: category.label,
+          score: category.score,
+        })),
+      },
+    });
   });
 };
