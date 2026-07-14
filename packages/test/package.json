@@ -27,7 +27,7 @@
     "test-concurrently": "bash -c 'cmds=(); for d in ./src/test/*/; do cmds+=(\"cd $d && bun test\"); done; concurrently \"${cmds[@]}\"'"
   },
   "devDependencies": {
-    "@aws-sdk/client-sqs": "^3.1084.0",
+    "@aws-sdk/client-sqs": "^3.1088.0",
     "@cloudflare/workers-types": "^5.20260715.1",
     "@duckdb/node-api": "catalog:",
     "@electric-sql/pglite": "catalog:",
@@ -74,7 +74,7 @@
     "@workglow/xai": "workspace:*",
     "aws-sdk-client-mock": "^4.0.0",
     "fake-indexeddb": "^6.2.4",
-    "miniflare": "^4.20260708.1",
+    "miniflare": "^4.20260710.0",
     "node-llama-cpp": "catalog:",
     "pg": "catalog:",
     "playwright": "catalog:",
