@@ -60,6 +60,14 @@ describe("sanitizeRow", () => {
     expect(() => JSON.stringify(sanitizeRow({ deep: [{ v: [4n] }] }))).not.toThrow();
   });
 
+  it("preserves int64 values beyond the safe-integer range as decimal strings", () => {
+    expect(sanitizeRow({ big: 9007199254740993n, small: 7n })).toEqual({
+      big: "9007199254740993",
+      small: 7,
+    });
+    expect(sanitizeRow({ neg: -9007199254740993n })).toEqual({ neg: "-9007199254740993" });
+  });
+
   it("converts Date values (parquet timestamps) to ISO strings", () => {
     expect(sanitizeRow({ at: new Date("2026-01-02T03:04:05Z") })).toEqual({
       at: "2026-01-02T03:04:05.000Z",

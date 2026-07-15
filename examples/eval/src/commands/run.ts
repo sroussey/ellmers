@@ -94,6 +94,16 @@ export function registerRunCommand(
   }
 }
 
+/** Split a comma-separated flag, dropping empties from stray commas ("a,b," → [a, b]). */
+function parseNameList(value: string | undefined): string[] | undefined {
+  if (!value) return undefined;
+  const names = value
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+  return names.length > 0 ? names : undefined;
+}
+
 async function runEval(kind: EvalKind, flags: RunFlags, stores: EvalStores): Promise<void> {
   const meta = await stores.datasets.get({ dataset: flags.dataset, split: flags.split });
   if (!meta) {
@@ -113,12 +123,12 @@ async function runEval(kind: EvalKind, flags: RunFlags, stores: EvalStores): Pro
   const columns: ColumnOptions = {
     textColumn: flags.textColumn ?? DEFAULT_TEXT_COLUMN[kind],
     labelColumn: flags.labelColumn ?? "label",
-    labels: flags.labels ? flags.labels.split(",").map((l) => l.trim()) : undefined,
+    labels: parseNameList(flags.labels),
     pairColumn: flags.pairColumn ?? "sentence2",
     scoreColumn: flags.scoreColumn ?? "score",
     expectedColumn: flags.expectedColumn ?? "expected",
     keyField: flags.keyField ?? "name",
-    fields: flags.fields ? flags.fields.split(",").map((f) => f.trim()) : undefined,
+    fields: parseNameList(flags.fields),
     instruction: flags.instruction,
   };
   const context: DatasetContext = {

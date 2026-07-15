@@ -30,6 +30,11 @@ export function evalHome(): string {
   return override ? resolve(override) : join(homedir(), ".workglow", "eval");
 }
 
+/** GGUF weights directory; shared by {@link loadConfig} and the model resolver. */
+export function ggufCacheDir(): string {
+  return join(evalHome(), "cache", "gguf");
+}
+
 /**
  * Resolve the eval home directory. Everything the harness persists (dataset
  * rows, eval runs, per-row results, downloaded local models) lives under this
@@ -42,6 +47,6 @@ export function loadConfig(): EvalConfig {
     home,
     dbPath: join(home, "eval.sqlite"),
     modelCache: join(home, "cache", "onnx"),
-    ggufCache: join(home, "cache", "gguf"),
+    ggufCache: ggufCacheDir(),
   };
 }

@@ -6,8 +6,7 @@
 
 import type { ModelConfig } from "@workglow/ai";
 import { downloadModel } from "@workglow/ai";
-import { join } from "node:path";
-import { evalHome } from "./config";
+import { ggufCacheDir } from "./config";
 import { hfAuthHeaders } from "./hf/auth";
 import { sanitizeHubRepoId } from "./hf/ids";
 
@@ -43,7 +42,7 @@ export function resolveModelConfig(id: string, kind: EvalKind): ModelConfig {
   if (id.startsWith(GGUF_PREFIX)) {
     const ref = id.slice(GGUF_PREFIX.length);
     const provider_config: { [key: string]: unknown } = {
-      models_dir: join(evalHome(), "cache", "gguf"),
+      models_dir: ggufCacheDir(),
     };
     if (kind === "similarity") provider_config.embedding = true;
     if (/^(?:hf:|https?:)/.test(ref)) {

@@ -72,15 +72,21 @@ export function registerDatasetCommand(
     .description("Print stored rows of a dataset split as JSON lines")
     .action(async (id: string, opts: { split: string; limit: string }) => {
       const stores = await openStores();
-      const rows = await stores.rows.query({ dataset: id, split: opts.split });
-      if (!rows || rows.length === 0) {
-        console.error(`No stored rows for ${id} [${opts.split}] — run \`dataset pull\` first.`);
+      try {
+        const limit = parseIntFlag(opts.limit, "--limit", 1);
+        const rows = await stores.rows.query({ dataset: id, split: opts.split });
+        if (!rows || rows.length === 0) {
+          console.error(`No stored rows for ${id} [${opts.split}] — run \`dataset pull\` first.`);
+          process.exitCode = 1;
+          return;
+        }
+        rows.sort((a, b) => a.row_index - b.row_index);
+        for (const row of rows.slice(0, limit)) {
+          console.log(row.data);
+        }
+      } catch (err) {
+        console.error(`Error: ${formatError(err)}`);
         process.exitCode = 1;
-        return;
-      }
-      rows.sort((a, b) => a.row_index - b.row_index);
-      for (const row of rows.slice(0, Number(opts.limit))) {
-        console.log(row.data);
       }
     });
 }

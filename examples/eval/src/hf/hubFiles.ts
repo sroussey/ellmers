@@ -64,11 +64,17 @@ export function selectSplitFiles(files: readonly string[], split: string): strin
 
 /**
  * JSON-safe copy of a value: BigInt (parquet int64, including inside list and
- * struct columns) → number, Date (parquet timestamps) → ISO string.
- * `JSON.stringify` throws on BigInt, so this must recurse into containers.
+ * struct columns) → number, or a decimal string when the value exceeds the
+ * safe-integer range so precision is preserved rather than corrupted; Date
+ * (parquet timestamps) → ISO string. `JSON.stringify` throws on BigInt, so
+ * this must recurse into containers.
  */
 function sanitizeValue(value: unknown): unknown {
-  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "bigint") {
+    return value >= BigInt(Number.MIN_SAFE_INTEGER) && value <= BigInt(Number.MAX_SAFE_INTEGER)
+      ? Number(value)
+      : value.toString();
+  }
   if (value instanceof Date) return value.toISOString();
   if (Array.isArray(value)) return value.map(sanitizeValue);
   if (value !== null && typeof value === "object" && value.constructor === Object) {

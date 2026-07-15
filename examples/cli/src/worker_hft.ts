@@ -13,4 +13,4 @@ if (process.env.WORKGLOW_MODEL_CACHE) {
   setHftCacheDir(process.env.WORKGLOW_MODEL_CACHE);
 }
 
-registerHuggingFaceTransformersWorker();
+await registerHuggingFaceTransformersWorker();
