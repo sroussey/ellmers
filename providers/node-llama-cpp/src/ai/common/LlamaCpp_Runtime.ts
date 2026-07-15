@@ -392,6 +392,35 @@ export async function getOrCreateTextContext(model: LlamaCppModelConfig): Promis
   return context;
 }
 
+/**
+ * Create a NEW, **uncached** text context for a one-shot generation; the caller
+ * owns it and must dispose it when done.
+ *
+ * Independent generations (e.g. an eval sweep, or successive structured-output
+ * calls) must NOT share {@link getOrCreateTextContext}'s cached context: the
+ * second generation acquires a sequence from the same context while the first
+ * generation's sequence teardown is still in flight (the reclaim runs inside an
+ * async `withLock([context])` callback). That race surfaces either as
+ * `"No sequences left"` or — on some model architectures (observed with Gemma) —
+ * a native use-after-free **segfault** on the second generation. A fresh context
+ * has its own sequence pool and no prior-generation teardown pending, so both
+ * failure modes disappear. The `LlamaModel` stays cached via
+ * {@link getOrLoadModel}, so only the KV cache is rebuilt, not the weights.
+ */
+export async function createDisposableTextContext(
+  model: LlamaCppModelConfig
+): Promise<LlamaContext> {
+  const modelPath = getActualModelPath(model);
+  const loadedModel = await getOrLoadModel(model);
+  const config = model.provider_config;
+  return withVramEviction(modelPath, () =>
+    loadedModel.createContext({
+      ...(config.context_size && { contextSize: config.context_size }),
+      ...(config.flash_attention !== undefined && { flashAttention: config.flash_attention }),
+    })
+  );
+}
+
 /** How long {@link acquireContextSequence} waits for a disposed sequence to be reclaimed. */
 const SEQUENCE_RECLAIM_TIMEOUT_MS = 30_000;
 /** node-llama-cpp currently throws this message from `getSequence()` when no slots are available. */
