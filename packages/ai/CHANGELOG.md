@@ -1,5 +1,17 @@
 # @workglow/ai
 
+## 0.3.26
+
+### Bug Fixes
+
+#### ai
+
+- key OpenAIShapedResponses tool-call accumulator on stable item id
+
+#### xai,openrouter
+
+- guard chunk.choices access and downshift strict schema
+
 ## 0.3.25
 
 ### Features

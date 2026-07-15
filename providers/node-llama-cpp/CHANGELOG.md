@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.26
+
+### Bug Fixes
+
+#### node-llama-cpp
+
+- address structured generation review feedback
+- fresh context per structured generation
+- eviction disposes embedding, broaden isVramError, retry embedding create
+- address review feedback on VRAM/LRU/sequence handling
+- close sequence-reclaim race and auto-evict on VRAM pressure
+
+#### node-llama-cpp,huggingface-transformers
+
+- concurrency + sequence-leak + bounded pipeline cache (#634)
+
+### Chores
+
+#### node-llama-cpp
+
+- clarify allocation and sequence error matching constants
+
 ## 0.3.25
 
 ## 0.3.24

@@ -1,5 +1,23 @@
 # workglow
 
+## 0.3.26
+
+### Features
+
+#### storage
+
+- add DuckDB tabular storage backend (@workglow/duckdb) (#635)
+
+### Chores
+
+#### deps
+
+- update @cloudflare/workers-types to 5.x and tslog to 5.x
+
+### Updated Dependencies
+
+- `tslog`: ^5.0.0
+
 ## 0.3.25
 
 ### Features

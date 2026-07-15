@@ -1,5 +1,58 @@
 # @workglow/test
 
+## 0.3.26
+
+### Features
+
+- add Workglow Eval: CLI harness for model evaluation on HuggingFace datasets (#636)
+
+#### storage
+
+- add DuckDB tabular storage backend (@workglow/duckdb) (#635)
+
+### Bug Fixes
+
+#### node-llama-cpp,huggingface-transformers
+
+- concurrency + sequence-leak + bounded pipeline cache (#634)
+
+#### node-llama-cpp
+
+- eviction disposes embedding, broaden isVramError, retry embedding create
+- address review feedback on VRAM/LRU/sequence handling
+
+#### huggingface-inference
+
+- guard chunk.choices[0] in streaming run-fns
+
+#### ai
+
+- key OpenAIShapedResponses tool-call accumulator on stable item id
+
+#### xai,openrouter
+
+- guard chunk.choices access and downshift strict schema
+
+### Tests
+
+#### huggingface-transformers
+
+- regressions for H1 (refcount race) and H2 (AbortController key)
+
+### Chores
+
+- update deps
+
+#### deps
+
+- update @cloudflare/workers-types to 5.x and tslog to 5.x
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1088.0
+- `@cloudflare/workers-types`: ^5.20260715.1
+- `miniflare`: ^4.20260710.0
+
 ## 0.3.25
 
 ### Features

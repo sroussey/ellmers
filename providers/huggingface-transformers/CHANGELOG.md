@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.26
+
+### Bug Fixes
+
+#### huggingface-transformers
+
+- key model AbortControllers per-controller to survive concurrent loads
+- hold pipeline refcount before getPipeline lookup
+
+#### node-llama-cpp,huggingface-transformers
+
+- concurrency + sequence-leak + bounded pipeline cache (#634)
+
 ## 0.3.25
 
 ## 0.3.24

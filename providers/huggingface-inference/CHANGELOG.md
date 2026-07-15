@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.26
+
+### Bug Fixes
+
+#### huggingface-inference
+
+- guard chunk.choices[0] in streaming run-fns
+
 ## 0.3.25
 
 ## 0.3.24

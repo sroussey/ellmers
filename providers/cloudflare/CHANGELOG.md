@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.26
+
+### Chores
+
+#### deps
+
+- update @cloudflare/workers-types to 5.x and tslog to 5.x
+
+### Updated Dependencies
+
+- `@cloudflare/workers-types`: ^5.20260715.1
+
 ## 0.3.25
 
 ## 0.3.24

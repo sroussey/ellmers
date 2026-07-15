@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.26
+
+### Bug Fixes
+
+#### xai,openrouter
+
+- guard chunk.choices access and downshift strict schema
+
 ## 0.3.25
 
 ### Features
