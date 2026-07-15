@@ -47,8 +47,51 @@ export async function loadTransformersSDK(): Promise<TransformersSDKModule> {
   return _loadPromise;
 }
 
-/** Per-model AbortControllers used by abortableFetch; keyed by model_path. */
-const modelAbortControllers = new Map<string, AbortController>();
+/**
+ * Per-model AbortControllers used by abortableFetch; keyed by model_path.
+ *
+ * A Set is used (not a single controller) because two concurrent
+ * `getPipeline` calls for the same `model_path` but different pipeline /
+ * dtype / device combinations produce different cache keys — the load
+ * dedupe in {@link pipelineLoadPromises} misses, so both loads race and
+ * each registers its own controller. Overwriting orphans the first
+ * caller's controller.
+ *
+ * @internal Exported for unit tests.
+ */
+export const modelAbortControllers = new Map<string, Set<AbortController>>();
+
+/**
+ * Segment-based match between a URL pathname and a HuggingFace `model_path`.
+ * Prevents substring collisions such as
+ * `Xenova/bge-reranker-base` matching `Xenova/bge-reranker-base-v2`.
+ *
+ * @internal Exported for unit tests.
+ */
+export function pathMatchesModelSegment(pathname: string, modelPath: string): boolean {
+  const modelSegments = modelPath.split("/").filter(Boolean);
+  if (modelSegments.length === 0) return false;
+  const pathSegments = pathname.split("/").filter(Boolean);
+  outer: for (let i = 0; i + modelSegments.length <= pathSegments.length; i++) {
+    for (let j = 0; j < modelSegments.length; j++) {
+      if (pathSegments[i + j] !== modelSegments[j]) continue outer;
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Remove `controller` from the set registered under `modelPath`, and delete
+ * the map entry entirely when its set becomes empty so `abortableFetch`
+ * doesn't linearly walk stale keys forever.
+ */
+function removeModelController(modelPath: string, controller: AbortController): void {
+  const active = modelAbortControllers.get(modelPath);
+  if (!active) return;
+  active.delete(controller);
+  if (active.size === 0) modelAbortControllers.delete(modelPath);
+}
 
 function combineAbortSignals(
   existingSignal: AbortSignal | null | undefined,
@@ -167,12 +210,19 @@ function abortableFetch(url: string, options?: RequestInit): Promise<Response> {
   let modelSignal: AbortSignal | undefined;
   try {
     const pathname = new URL(url).pathname;
-    for (const [modelPath, controller] of modelAbortControllers) {
-      if (pathname.includes(`/${modelPath}/`)) {
-        modelSignal = controller.signal;
-        break;
-      }
+    const matchedSignals: AbortSignal[] = [];
+    for (const [modelPath, controllers] of modelAbortControllers) {
+      if (!pathMatchesModelSegment(pathname, modelPath)) continue;
+      for (const controller of controllers) matchedSignals.push(controller.signal);
     }
+    modelSignal =
+      matchedSignals.length === 0
+        ? undefined
+        : matchedSignals.length === 1
+          ? matchedSignals[0]
+          : typeof AbortSignal.any === "function"
+            ? AbortSignal.any(matchedSignals)
+            : matchedSignals[0];
   } catch {
     /* not a parseable URL, proceed without abort */
   }
@@ -584,7 +634,12 @@ const doGetPipeline = async (
   // Register a per-model AbortController so abortableFetch can cancel in-flight fetches
   const modelPath = model.provider_config.model_path;
   const modelController = new AbortController();
-  modelAbortControllers.set(modelPath, modelController);
+  let controllers = modelAbortControllers.get(modelPath);
+  if (!controllers) {
+    controllers = new Set();
+    modelAbortControllers.set(modelPath, controllers);
+  }
+  controllers.add(modelController);
   if (abortSignal) {
     if (abortSignal.aborted) {
       modelController.abort();
@@ -619,7 +674,7 @@ const doGetPipeline = async (
 
   // Check if already aborted before starting
   if (abortSignal?.aborted) {
-    modelAbortControllers.delete(modelPath);
+    removeModelController(modelPath, modelController);
     throw new Error("Operation aborted before pipeline creation");
   }
 
@@ -682,7 +737,7 @@ const doGetPipeline = async (
     }
     throw error;
   } finally {
-    modelAbortControllers.delete(modelPath);
+    removeModelController(modelPath, modelController);
     const { random } = await loadTransformersSDK();
     random.seed(model.provider_config.seed ?? undefined);
   }

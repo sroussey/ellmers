@@ -14,8 +14,8 @@ export const HFT_TextFillMask: AiProviderRunFn<
   TextFillMaskTaskOutput,
   HfTransformersOnnxModelConfig
 > = async (input, model, signal, emit) => {
-  const unmasker = (await getPipeline(model!, emit, {}, signal)) as FillMaskPipeline;
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const unmasker = (await getPipeline(model!, emit, {}, signal)) as FillMaskPipeline;
     const predictions = await unmasker(input.text);
 
     emit({

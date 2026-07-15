@@ -30,13 +30,13 @@ export const HFT_TextClassification: AiProviderRunFn<
       throw new Error("Zero-shot text classification requires candidate labels");
     }
 
-    const zeroShotClassifier = (await getPipeline(
-      model!,
-      emit,
-      {},
-      signal
-    )) as ZeroShotClassificationPipeline;
     await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+      const zeroShotClassifier = (await getPipeline(
+        model!,
+        emit,
+        {},
+        signal
+      )) as ZeroShotClassificationPipeline;
       const result: any = await zeroShotClassifier(
         input.text,
         input.candidateLabels as string[],
@@ -56,13 +56,13 @@ export const HFT_TextClassification: AiProviderRunFn<
     return;
   }
 
-  const TextClassification = (await getPipeline(
-    model!,
-    emit,
-    {},
-    signal
-  )) as TextClassificationPipeline;
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const TextClassification = (await getPipeline(
+      model!,
+      emit,
+      {},
+      signal
+    )) as TextClassificationPipeline;
     const result = await TextClassification(input.text, {
       top_k: input.maxCategories || undefined,
     });

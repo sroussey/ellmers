@@ -29,19 +29,19 @@ export const HFT_TextEmbedding: AiProviderRunFn<
   const timerLabel = `hft:TextEmbedding:${model?.provider_config.model_path}:${uuid}`;
   logger.time(timerLabel, { model: model?.provider_config.model_path });
 
-  const generateEmbedding = (await getPipeline(
-    model!,
-    emit,
-    {},
-    signal
-  )) as FeatureExtractionPipeline;
-
-  logger.debug("HFT TextEmbedding: pipeline ready, generating embedding", {
-    model: model?.provider_config.model_path,
-    inputLength: Array.isArray(input.text) ? input.text.length : input.text?.length,
-  });
-
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const generateEmbedding = (await getPipeline(
+      model!,
+      emit,
+      {},
+      signal
+    )) as FeatureExtractionPipeline;
+
+    logger.debug("HFT TextEmbedding: pipeline ready, generating embedding", {
+      model: model?.provider_config.model_path,
+      inputLength: Array.isArray(input.text) ? input.text.length : input.text?.length,
+    });
+
     // Generate the embedding
     const hfVector = await generateEmbedding(input.text, {
       pooling: model?.provider_config.pooling || "mean",

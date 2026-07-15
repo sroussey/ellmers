@@ -20,9 +20,8 @@ export const HFT_TextRewriter: AiProviderRunFn<
   TextRewriterTaskOutput,
   HfTransformersOnnxModelConfig
 > = async (input, model, signal, emit) => {
-  const generateText = (await getPipeline(model!, emit, {}, signal)) as TextGenerationPipeline;
-
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const generateText = (await getPipeline(model!, emit, {}, signal)) as TextGenerationPipeline;
     const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
     const streamer = createStreamingTextStreamer(
       generateText.tokenizer,

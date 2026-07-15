@@ -31,13 +31,13 @@ export const HFT_ObjectDetection: AiProviderRunFn<
     if (!input.labels || !Array.isArray(input.labels) || input.labels.length === 0) {
       throw new Error("Zero-shot object detection requires labels");
     }
-    const zeroShotDetector = (await getPipeline(
-      model!,
-      emit,
-      {},
-      signal
-    )) as ZeroShotObjectDetectionPipeline;
     await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+      const zeroShotDetector = (await getPipeline(
+        model!,
+        emit,
+        {},
+        signal
+      )) as ZeroShotObjectDetectionPipeline;
       const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
       const result = await zeroShotDetector(imageArg, Array.from(input.labels!), {
         threshold: input.threshold,
@@ -57,8 +57,8 @@ export const HFT_ObjectDetection: AiProviderRunFn<
     return;
   }
 
-  const detector = (await getPipeline(model!, emit, {}, signal)) as ObjectDetectionPipeline;
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const detector = (await getPipeline(model!, emit, {}, signal)) as ObjectDetectionPipeline;
     const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
     const detections = await detector(imageArg, {
       threshold: input.threshold,
