@@ -15,6 +15,7 @@ describe("sanitizeHubRepoId", () => {
       "onnx-community/Bonsai-8B-ONNX"
     );
     expect(sanitizeHubRepoId("prism-ml/Bonsai-27B-gguf")).toBe("prism-ml/Bonsai-27B-gguf");
+    expect(sanitizeHubRepoId("_underscore/model-v1.0")).toBe("_underscore/model-v1.0");
   });
 
   it("rejects ids that could redirect the request path", () => {

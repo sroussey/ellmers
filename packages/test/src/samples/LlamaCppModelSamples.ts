@@ -10,8 +10,10 @@ import { LOCAL_LLAMACPP } from "@workglow/node-llama-cpp/ai";
 
 /**
  * Registers local GGUF (node-llama-cpp) model records. Metadata only — weights
- * download on first use via ModelDownloadTask (`model_url`), landing at
- * `model_path` under the default models dir.
+ * must be downloaded before generation via ModelDownloadTask (`model_url`),
+ * which stores them in the provider's cache layout under its models dir and
+ * remembers the resolved location worker-side; `model_path` is the fallback
+ * location generation tries when no download resolution exists.
  *
  * The Bonsai 27B family (released 2026-07, Qwen3.6-27B base) currently ships
  * GGUF, MLX, and AWQ conversions only; `onnx-community` ONNX conversions stop

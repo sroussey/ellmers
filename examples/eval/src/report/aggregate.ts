@@ -36,7 +36,10 @@ export interface AggregateOptions {
 const RANKING_METRIC: Record<EvalKind, (r: ModelReport) => number> = {
   classify: (r) => r.accuracy,
   similarity: (r) => r.spearman,
-  extract: (r) => r.score,
+  // Field agreement is NaN when no candidate row matched a gold row; a model
+  // that found nothing must still rank below one that found entities but
+  // disagreed on fields, so fall back to entity recall.
+  extract: (r) => (Number.isFinite(r.score) ? r.score : r.found),
 };
 
 /**
@@ -65,9 +68,13 @@ export function aggregateResults(
       .map((r) => ({ expected: r.expected as string, predicted: r.predicted as string }));
     // Number.isFinite (not just != null) so a stray NaN cannot poison the
     // correlations — NaN passes a null check and corrupts ranks() silently.
-    const numeric = ok.filter(
-      (r) => Number.isFinite(r.expected_value ?? NaN) && Number.isFinite(r.predicted_value ?? NaN)
-    );
+    const numeric =
+      kind === "similarity"
+        ? ok.filter(
+            (r) =>
+              Number.isFinite(r.expected_value ?? NaN) && Number.isFinite(r.predicted_value ?? NaN)
+          )
+        : [];
     const expectedValues = numeric.map((r) => r.expected_value as number);
     const predictedValues = numeric.map((r) => r.predicted_value as number);
     const extraction =
@@ -80,7 +87,7 @@ export function aggregateResults(
       model,
       rows: rows.length,
       okRows: ok.length,
-      accuracy: kind === "extract" ? NaN : scoreClassification(pairs).accuracy,
+      accuracy: kind === "classify" ? scoreClassification(pairs).accuracy : NaN,
       pearson: pearson(predictedValues, expectedValues),
       spearman: spearman(predictedValues, expectedValues),
       score: extraction.score,

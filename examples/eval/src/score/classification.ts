@@ -4,11 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/** Case/whitespace/punctuation-insensitive label comparison key. */
+/**
+ * Case/whitespace/punctuation-insensitive label comparison key. Unicode-aware:
+ * letters and digits in any script survive (an ASCII-only class would collapse
+ * every accented or CJK label to the same empty key).
+ */
 export function normalizeLabel(label: string): string {
   return label
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
 }
 

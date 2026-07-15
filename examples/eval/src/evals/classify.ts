@@ -7,6 +7,7 @@
 import type { ModelConfig } from "@workglow/ai";
 import { Workflow } from "@workglow/task-graph";
 import type { DatasetRow, LabelNames } from "../hf/types";
+import { fenceText } from "./prompt";
 import type { ColumnOptions, DatasetContext, RowExecutor } from "./types";
 
 /**
@@ -47,7 +48,7 @@ export function buildClassifyPrompt(text: string, labels: readonly string[]): st
   return (
     `Classify the following text into exactly one of these labels: ` +
     `${labels.join(", ")}.\n\n` +
-    `Text:\n"""\n${text}\n"""\n\n` +
+    `Text:\n${fenceText(text)}\n\n` +
     `Respond with a JSON object of the form {"label": "<one of the labels>"}.`
   );
 }

@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import { buildExtractPrompt, parseExpectedRows, resolveExtractionFields } from "../evals/extract";
+import { fenceText } from "../evals/prompt";
 import { aggregateResults } from "../report/aggregate";
 import { combineExtractionCounts, scoreExtraction } from "../score/extraction";
 import type { EvalResultRecord } from "../storage";
@@ -31,8 +32,9 @@ describe("scoreExtraction", () => {
     const s = scoreExtraction(candidate, expected, "name");
     expect(s.found).toBe(1); // both entities found
     expect(s.prec).toBe(1); // no hallucinated rows
-    // 4 scored fields (name+title per entity), Alice's title disagrees
-    expect(s.score).toBeCloseTo(3 / 4);
+    // 2 scored fields (title per entity — the key is alignment, not agreement),
+    // and Alice's title disagrees
+    expect(s.score).toBeCloseTo(1 / 2);
   });
 
   it("counts missing entities against recall and invented rows against precision", () => {
@@ -57,9 +59,24 @@ describe("scoreExtraction", () => {
   });
 
   it("limits scoring to the requested fields", () => {
-    const candidate = [{ name: "Alice Chen", title: "wrong" }];
-    const s = scoreExtraction(candidate, [expected[0]], "name", ["name"]);
-    expect(s.score).toBe(1);
+    const candidate = [{ name: "Alice Chen", title: "CEO", extra: "mismatch" }];
+    const s = scoreExtraction(candidate, [{ ...expected[0], extra: "gold" }], "name", ["title"]);
+    expect(s.score).toBe(1); // "extra" disagrees but is not requested
+  });
+
+  it("never scores the key field itself", () => {
+    const candidate = [{ name: "Alice Chen" }];
+    const s = scoreExtraction(candidate, [{ name: "Alice Chen" }], "name", ["name"]);
+    expect(s.found).toBe(1);
+    expect(s.score).toBeNaN(); // a matched pair agrees on the key by construction
+  });
+
+  it("compares structured field values by content, not object identity", () => {
+    const gold = [{ name: "A", tags: ["x", "y"] }];
+    const same = scoreExtraction([{ name: "A", tags: ["x", "y"] }], gold, "name");
+    const different = scoreExtraction([{ name: "A", tags: ["z"] }], gold, "name");
+    expect(same.score).toBe(1);
+    expect(different.score).toBe(0);
   });
 
   it("is NaN-safe on empty inputs", () => {
@@ -86,8 +103,10 @@ describe("parseExpectedRows", () => {
     expect(parseExpectedRows('[{"name":"A"}]', "expected")).toEqual([{ name: "A" }]);
   });
 
-  it("rejects non-array gold values", () => {
+  it("rejects non-array gold values and non-object elements", () => {
     expect(() => parseExpectedRows({ name: "A" }, "expected")).toThrow(/array of objects/);
+    expect(() => parseExpectedRows([["A"]], "expected")).toThrow(/array of objects/);
+    expect(() => parseExpectedRows(["A"], "expected")).toThrow(/array of objects/);
     expect(() => parseExpectedRows("not json", "expected")).toThrow();
   });
 });
@@ -102,6 +121,14 @@ describe("resolveExtractionFields", () => {
   it("prepends the key field to an explicit list when missing", () => {
     expect(resolveExtractionFields([], "name", ["role"])).toEqual(["name", "role"]);
   });
+
+  it("drops prototype-polluting field names", () => {
+    expect(resolveExtractionFields([{ name: "A", ["__proto__"]: "x" }], "name", undefined)).toEqual(
+      ["name"]
+    );
+    expect(resolveExtractionFields([], "name", ["__proto__", "role"])).toEqual(["name", "role"]);
+    expect(() => resolveExtractionFields([], "__proto__", undefined)).toThrow(/key-field/);
+  });
 });
 
 describe("buildExtractPrompt", () => {
@@ -110,6 +137,18 @@ describe("buildExtractPrompt", () => {
     expect(prompt).toContain("Extract people.");
     expect(prompt).toContain("name, role");
     expect(prompt).toContain('"""\nSome text.\n"""');
+  });
+});
+
+describe("fenceText", () => {
+  it("wraps text in a triple-quote fence", () => {
+    expect(fenceText("hello")).toBe('"""\nhello\n"""');
+  });
+
+  it("grows the fence when the text contains the delimiter", () => {
+    const fenced = fenceText('end """ and """" more');
+    expect(fenced.startsWith('"""""\n')).toBe(true);
+    expect(fenced.endsWith('\n"""""')).toBe(true);
   });
 });
 
@@ -139,6 +178,18 @@ describe("aggregateResults for extract runs", () => {
     expect(reports.map((r) => r.model)).toEqual(["good", "bad"]);
     expect(reports[0].score).toBe(1);
     expect(reports[0].found).toBe(1);
-    expect(reports[1].score).toBeCloseTo(1 / 2);
+    expect(reports[1].score).toBe(0); // the only non-key field disagrees
+  });
+
+  it("ranks a model with unscored fields by recall instead of tying at the bottom", () => {
+    const gold = [{ name: "Alice", role: "CEO" }];
+    const results = [
+      // Matched the entity (score NaN — key-only rows leave nothing to score).
+      result("recalls", [{ name: "Alice" }], [{ name: "Alice" }]),
+      // Found nothing at all.
+      result("empty", gold, []),
+    ];
+    const reports = aggregateResults("extract", results, { keyField: "name" });
+    expect(reports.map((r) => r.model)).toEqual(["recalls", "empty"]);
   });
 });

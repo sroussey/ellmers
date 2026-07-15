@@ -38,6 +38,9 @@ export interface ExtractionScore extends ExtractionCounts {
 }
 
 function normalizeValue(value: unknown): string {
+  // String(object) is "[object Object]" for every object, which would score
+  // two different structured values as agreeing; compare their JSON instead.
+  if (typeof value === "object" && value !== null) return normalizeLabel(JSON.stringify(value));
   return normalizeLabel(String(value ?? ""));
 }
 
@@ -55,7 +58,9 @@ function distinctByKey(rows: readonly ExtractedRow[], keyField: string): Map<str
  * Compare extracted rows against expected rows, aligning by `keyField`
  * (case/punctuation-insensitive). `fields` limits which fields are scored for
  * agreement; when omitted, every field present in the expected rows (other
- * than empty values) is scored. A model that emits the same entity twice is
+ * than empty values) is scored. The key field itself is never scored — a
+ * matched pair agrees on it by construction, so including it would inflate
+ * every score toward 1. A model that emits the same entity twice is
  * over-producing rows, not inventing new ones, so precision is computed over
  * distinct candidate rows.
  */
@@ -77,8 +82,9 @@ export function scoreExtraction(
     const candidateRow = candidateByKey.get(key);
     if (!candidateRow) continue;
     matched++;
-    const scoredFields =
-      fields ?? Object.keys(expectedRow).filter((f) => normalizeValue(expectedRow[f]).length > 0);
+    const scoredFields = (
+      fields ?? Object.keys(expectedRow).filter((f) => normalizeValue(expectedRow[f]).length > 0)
+    ).filter((field) => field !== keyField);
     for (const field of scoredFields) {
       const expectedValue = normalizeValue(expectedRow[field]);
       if (expectedValue.length === 0) continue;

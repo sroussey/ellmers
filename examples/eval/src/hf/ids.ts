@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-const ID_SEGMENT = /^[A-Z0-9][\w.-]*$/i;
+// First char must not be "." (rejects "." / ".." traversal); otherwise the
+// hub's id alphabet — letters, digits, "_", "-", "." — including ids that
+// start with "_" or "-" (both exist on the hub).
+const ID_SEGMENT = /^[\w-][\w.-]*$/;
 
 /**
  * Validate and re-encode a HuggingFace repo id (`name` or `org/name`) for use
@@ -40,10 +43,10 @@ export function sanitizeHubFilePath(path: string): string {
 }
 
 function encodeIdSegment(segment: string, id: string): string {
-  if (!ID_SEGMENT.test(segment) || /^\.+$/.test(segment)) {
+  if (!ID_SEGMENT.test(segment)) {
     throw new Error(
       `invalid HuggingFace repo id "${id}" — segments may contain letters, digits, ` +
-        `".", "_", "-" and must start with a letter or digit`
+        `".", "_", "-" and must not start with "."`
     );
   }
   return encodeURIComponent(segment);

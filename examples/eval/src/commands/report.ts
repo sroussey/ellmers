@@ -24,11 +24,19 @@ export async function printReport(
   const kind: EvalKind = run.kind;
   const results = (await stores.results.query({ run_id: runId })) ?? [];
   // Extract runs re-score their stored row JSON, which needs the key/field
-  // options the sweep ran with; those live on the run record.
-  const runOptions = JSON.parse(run.options) as {
-    keyField?: string;
-    fields?: readonly string[];
-  };
+  // options the sweep ran with; those live on the run record. A malformed
+  // options blob falls back to the defaults rather than sinking the report.
+  let runOptions: { keyField?: string; fields?: readonly string[] } = {};
+  if (kind === "extract") {
+    try {
+      const parsed = JSON.parse(run.options) as unknown;
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+        runOptions = parsed as { keyField?: string; fields?: readonly string[] };
+      }
+    } catch {
+      // fall through with defaults
+    }
+  }
   const reports = aggregateResults(kind, results, runOptions);
 
   if (format === "json") {
@@ -101,7 +109,11 @@ export function registerReportCommand(
           all.sort((a, b) => b.created_at.localeCompare(a.created_at));
           target = all[0]?.run_id;
         }
-        if (!target) throw new Error("no stored runs — run `run-classify` or `run-similarity`");
+        if (!target) {
+          throw new Error(
+            "no stored runs — run `run-classify`, `run-similarity`, or `run-extract`"
+          );
+        }
         await printReport(stores, target, opts.format);
       } catch (err) {
         console.error(`Error: ${formatError(err)}`);

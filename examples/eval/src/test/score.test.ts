@@ -54,6 +54,13 @@ describe("normalizeLabel", () => {
     expect(normalizeLabel("very_positive")).toBe("very positive");
     expect(normalizeLabel("Very  Positive")).toBe("very positive");
   });
+
+  it("keeps non-ASCII letters and digits distinct", () => {
+    expect(normalizeLabel("Zoë!")).toBe("zoë");
+    expect(normalizeLabel("положительный")).toBe("положительный");
+    expect(normalizeLabel("正面")).toBe("正面");
+    expect(normalizeLabel("正面")).not.toBe(normalizeLabel("负面"));
+  });
 });
 
 describe("scoreClassification", () => {

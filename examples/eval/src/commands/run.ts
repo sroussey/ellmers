@@ -69,16 +69,22 @@ export function registerRunCommand(
       .option("--format <fmt>", "report output: table or json", "table");
     if (kind === "classify") {
       command
-        .option("--label-column <name>", "gold label column", "label")
+        .option("--label-column <name>", "gold label column (default: label)")
         .option("--labels <list>", "comma-separated candidate labels override");
     } else if (kind === "similarity") {
       command
-        .option("--pair-column <name>", "second sentence column", "sentence2")
-        .option("--score-column <name>", "gold score column", "score");
+        .option("--pair-column <name>", "second sentence column (default: sentence2)")
+        .option("--score-column <name>", "gold score column (default: score)");
     } else {
       command
-        .option("--expected-column <name>", "gold column: array of objects or JSON", "expected")
-        .option("--key-field <name>", "field that identifies an entity when aligning", "name")
+        .option(
+          "--expected-column <name>",
+          "gold column: array of objects or JSON (default: expected)"
+        )
+        .option(
+          "--key-field <name>",
+          "field that identifies an entity when aligning (default: name)"
+        )
         .option("--fields <list>", "comma-separated fields to extract and score")
         .option("--instruction <text>", "task sentence at the top of the prompt");
     }
@@ -94,14 +100,23 @@ export function registerRunCommand(
   }
 }
 
-/** Split a comma-separated flag, dropping empties from stray commas ("a,b," → [a, b]). */
-function parseNameList(value: string | undefined): string[] | undefined {
-  if (!value) return undefined;
-  const names = value
-    .split(",")
-    .map((name) => name.trim())
-    .filter((name) => name.length > 0);
-  return names.length > 0 ? names : undefined;
+/**
+ * Split a comma-separated flag, trimming, deduplicating, and dropping empties
+ * from stray commas ("a,b," → [a, b]). A flag that was passed but holds no
+ * names is an error, not a silent fall-through to the defaults.
+ */
+function parseNameList(value: string | undefined, flag: string): string[] | undefined {
+  if (value === undefined) return undefined;
+  const names = [
+    ...new Set(
+      value
+        .split(",")
+        .map((name) => name.trim())
+        .filter((name) => name.length > 0)
+    ),
+  ];
+  if (names.length === 0) throw new Error(`${flag} was given but contains no names`);
+  return names;
 }
 
 async function runEval(kind: EvalKind, flags: RunFlags, stores: EvalStores): Promise<void> {
@@ -120,15 +135,17 @@ async function runEval(kind: EvalKind, flags: RunFlags, stores: EvalStores): Pro
   if (limited.length === 0) throw new Error("no stored rows to evaluate");
 
   const models = parseModelList(flags.models ?? DEFAULT_MODELS[kind]);
+  const keyField = (flags.keyField ?? "name").trim();
+  if (keyField.length === 0) throw new Error("--key-field must not be empty");
   const columns: ColumnOptions = {
     textColumn: flags.textColumn ?? DEFAULT_TEXT_COLUMN[kind],
     labelColumn: flags.labelColumn ?? "label",
-    labels: parseNameList(flags.labels),
+    labels: parseNameList(flags.labels, "--labels"),
     pairColumn: flags.pairColumn ?? "sentence2",
     scoreColumn: flags.scoreColumn ?? "score",
     expectedColumn: flags.expectedColumn ?? "expected",
-    keyField: flags.keyField ?? "name",
-    fields: parseNameList(flags.fields),
+    keyField,
+    fields: parseNameList(flags.fields, "--fields"),
     instruction: flags.instruction,
   };
   const context: DatasetContext = {

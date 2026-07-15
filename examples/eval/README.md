@@ -83,7 +83,9 @@ strings both work. Candidate items are aligned to gold rows by
 `--key-field` (default `name`, case/punctuation-insensitive) and scored on
 three axes, micro-averaged across the split:
 
-- **score** — field-level agreement over matched rows (the ranking metric)
+- **score** — field-level agreement over matched rows, excluding the key
+  field itself (a matched pair agrees on it by construction). The ranking
+  metric; falls back to **found** when no fields were scored.
 - **found** — entity recall (gold rows matched by key)
 - **prec** — precision over distinct candidate rows (1 − hallucinated rows)
 

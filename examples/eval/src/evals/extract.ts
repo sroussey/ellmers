@@ -7,9 +7,17 @@
 import type { ModelConfig } from "@workglow/ai";
 import { Workflow } from "@workglow/task-graph";
 import type { ExtractedRow } from "../score/extraction";
+import { fenceText } from "./prompt";
 import type { ColumnOptions, DatasetContext, RowExecutor } from "./types";
 
 const DEFAULT_INSTRUCTION = "Extract every entity mentioned in the text.";
+
+/**
+ * Assigning `obj["__proto__"] = ...` on a plain object mutates its prototype
+ * instead of adding a key, so these names can neither be schema properties nor
+ * scored fields.
+ */
+const UNSAFE_FIELDS = new Set(["__proto__", "constructor", "prototype"]);
 
 /**
  * Parse a gold extraction column: parquet struct/list columns and
@@ -18,7 +26,10 @@ const DEFAULT_INSTRUCTION = "Extract every entity mentioned in the text.";
  */
 export function parseExpectedRows(value: unknown, column: string): ExtractedRow[] {
   const parsed = typeof value === "string" ? (JSON.parse(value) as unknown) : value;
-  if (!Array.isArray(parsed) || parsed.some((row) => row === null || typeof row !== "object")) {
+  if (
+    !Array.isArray(parsed) ||
+    parsed.some((row) => row === null || typeof row !== "object" || Array.isArray(row))
+  ) {
     throw new Error(`column "${column}" must hold an array of objects (or its JSON string)`);
   }
   return parsed as ExtractedRow[];
@@ -30,11 +41,17 @@ export function resolveExtractionFields(
   keyField: string,
   fields: readonly string[] | undefined
 ): string[] {
+  if (UNSAFE_FIELDS.has(keyField)) {
+    throw new Error(`--key-field "${keyField}" is not a usable field name`);
+  }
   if (fields && fields.length > 0) {
-    return fields.includes(keyField) ? [...fields] : [keyField, ...fields];
+    const safe = fields.filter((field) => !UNSAFE_FIELDS.has(field));
+    return safe.includes(keyField) ? [...safe] : [keyField, ...safe];
   }
   const seen = new Set<string>([keyField]);
-  for (const row of expectedRows) for (const key of Object.keys(row)) seen.add(key);
+  for (const row of expectedRows) {
+    for (const key of Object.keys(row)) if (!UNSAFE_FIELDS.has(key)) seen.add(key);
+  }
   return [...seen];
 }
 
@@ -47,11 +64,40 @@ export function buildExtractPrompt(
   return (
     `${instruction}\n\n` +
     `For each one, report the fields: ${fields.join(", ")}. ` +
-    `"${keyField}" identifies the entity; leave a field out if the text does not state it.\n\n` +
-    `Text:\n"""\n${text}\n"""\n\n` +
+    `"${keyField}" identifies the entity; use null when the text does not state a field.\n\n` +
+    `Text:\n${fenceText(text)}\n\n` +
     `Respond with a JSON object of the form {"items": [{"${keyField}": "...", ...}, ...]}. ` +
     `Report each entity once; use only information from the text.`
   );
+}
+
+/**
+ * Output schema for one extraction call: an `items` array of objects over
+ * `fields`. Non-key fields are nullable because grammar-constrained local
+ * backends emit every declared property regardless of `required` — null gives
+ * them an honest value for fields the text never states.
+ */
+function buildItemsSchema(fields: readonly string[], keyField: string): Record<string, unknown> {
+  const itemProperties: Record<string, unknown> = {};
+  for (const field of fields) {
+    itemProperties[field] = field === keyField ? { type: "string" } : { type: ["string", "null"] };
+  }
+  return {
+    type: "object",
+    properties: {
+      items: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: itemProperties,
+          required: [keyField],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["items"],
+    additionalProperties: false,
+  };
 }
 
 /**
@@ -75,30 +121,22 @@ export function makeExtractExecutor(
     }
   }
   const instruction = options.instruction ?? DEFAULT_INSTRUCTION;
+  // With an explicit --fields list the field set (and thus the schema) is the
+  // same for every row; only the derived-from-gold-rows path is per-row.
+  const explicitFields =
+    options.fields && options.fields.length > 0
+      ? resolveExtractionFields([], options.keyField, options.fields)
+      : undefined;
+  const explicitSchema = explicitFields
+    ? buildItemsSchema(explicitFields, options.keyField)
+    : undefined;
 
   return async (row) => {
     const text = String(row[options.textColumn] ?? "");
     const expectedRows = parseExpectedRows(row[options.expectedColumn], options.expectedColumn);
-    const fields = resolveExtractionFields(expectedRows, options.keyField, options.fields);
-
-    const itemProperties: Record<string, unknown> = {};
-    for (const field of fields) itemProperties[field] = { type: "string" };
-    const outputSchema = {
-      type: "object",
-      properties: {
-        items: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: itemProperties,
-            required: [options.keyField],
-            additionalProperties: false,
-          },
-        },
-      },
-      required: ["items"],
-      additionalProperties: false,
-    };
+    const fields =
+      explicitFields ?? resolveExtractionFields(expectedRows, options.keyField, undefined);
+    const outputSchema = explicitSchema ?? buildItemsSchema(fields, options.keyField);
 
     const workflow = new Workflow();
     workflow.structuredGeneration({
