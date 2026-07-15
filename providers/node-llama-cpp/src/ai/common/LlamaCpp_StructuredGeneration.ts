@@ -41,9 +41,9 @@ export const LlamaCpp_StructuredGeneration_Stream: AiProviderRunFn<
     // call's sequence teardown, which throws "No sequences left" or segfaults on
     // some architectures (Gemma). See createDisposableTextContext.
     const context = await createDisposableTextContext(model);
-    const grammar = await llama.createGrammarForJsonSchema(input.outputSchema as any);
 
     try {
+      const grammar = await llama.createGrammarForJsonSchema(input.outputSchema as any);
       await withSequence(
         context,
         async (sequence) => {
@@ -108,6 +108,14 @@ export const LlamaCpp_StructuredGeneration_Stream: AiProviderRunFn<
             while (queue.length > 0) {
               const chunk = queue.shift()!;
               accumulatedText += chunk;
+              const partial = parsePartialJson(accumulatedText);
+              if (partial !== undefined) {
+                emit({
+                  type: "object-delta",
+                  port: "object",
+                  objectDelta: partial as Record<string, unknown>,
+                });
+              }
             }
           } finally {
             await promptPromise.catch(() => {});
