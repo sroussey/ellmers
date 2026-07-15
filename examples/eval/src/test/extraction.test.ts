@@ -123,9 +123,10 @@ describe("resolveExtractionFields", () => {
   });
 
   it("drops prototype-polluting field names", () => {
-    expect(resolveExtractionFields([{ name: "A", ["__proto__"]: "x" }], "name", undefined)).toEqual(
-      ["name"]
-    );
+    // JSON.parse creates "__proto__" as an own enumerable key — exactly how a
+    // hostile gold row would arrive from a stored dataset.
+    const hostileRow = JSON.parse('{"name":"A","__proto__":"x"}') as Record<string, unknown>;
+    expect(resolveExtractionFields([hostileRow], "name", undefined)).toEqual(["name"]);
     expect(resolveExtractionFields([], "name", ["__proto__", "role"])).toEqual(["name", "role"]);
     expect(() => resolveExtractionFields([], "__proto__", undefined)).toThrow(/key-field/);
   });
