@@ -24,9 +24,8 @@ export const HFT_TextTranslation: AiProviderRunFn<
   TextTranslationTaskOutput,
   HfTransformersOnnxModelConfig
 > = async (input, model, signal, emit) => {
-  const translate = (await getPipeline(model!, emit, {}, signal)) as TranslationPipeline;
-
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const translate = (await getPipeline(model!, emit, {}, signal)) as TranslationPipeline;
     const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
     const streamer = createStreamingTextStreamer(
       translate.tokenizer,

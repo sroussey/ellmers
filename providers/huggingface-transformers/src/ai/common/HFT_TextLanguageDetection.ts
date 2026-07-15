@@ -18,13 +18,13 @@ export const HFT_TextLanguageDetection: AiProviderRunFn<
   TextLanguageDetectionTaskOutput,
   HfTransformersOnnxModelConfig
 > = async (input, model, signal, emit) => {
-  const TextClassification = (await getPipeline(
-    model!,
-    emit,
-    {},
-    signal
-  )) as TextClassificationPipeline;
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const TextClassification = (await getPipeline(
+      model!,
+      emit,
+      {},
+      signal
+    )) as TextClassificationPipeline;
     const result = await TextClassification(input.text, {
       top_k: input.maxLanguages || undefined,
     });

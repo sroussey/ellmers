@@ -30,8 +30,8 @@ export const HFT_BackgroundRemoval: AiProviderRunFn<
   BackgroundRemovalTaskOutput,
   HfTransformersOnnxModelConfig
 > = async (input, model, signal, emit) => {
-  const remover = (await getPipeline(model!, emit, {}, signal)) as BackgroundRemovalPipeline;
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const remover = (await getPipeline(model!, emit, {}, signal)) as BackgroundRemovalPipeline;
     const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
     const result = await remover(imageArg);
 

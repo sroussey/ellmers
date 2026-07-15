@@ -305,8 +305,8 @@ export const HFT_ToolCalling: AiProviderRunFn<
   ToolCallingTaskOutput,
   HfTransformersOnnxModelConfig
 > = async (input, model, signal, emit, _outputSchema, sessionId) => {
-  const generateText = (await getPipeline(model!, emit, {}, signal)) as TextGenerationPipeline;
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const generateText = (await getPipeline(model!, emit, {}, signal)) as TextGenerationPipeline;
     const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
     const modelFamily = detectModelFamilyFromConfig(model!);
     const { prompt, responsePrefix } = buildPromptAndPrefix(

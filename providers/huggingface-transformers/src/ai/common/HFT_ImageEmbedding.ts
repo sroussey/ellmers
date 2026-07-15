@@ -24,13 +24,18 @@ export const HFT_ImageEmbedding: AiProviderRunFn<
   const timerLabel = `hft:ImageEmbedding:${model?.provider_config.model_path}`;
   logger.time(timerLabel, { model: model?.provider_config.model_path });
 
-  const embedder = (await getPipeline(model!, emit, {}, signal)) as ImageFeatureExtractionPipeline;
-
-  logger.debug("HFT ImageEmbedding: pipeline ready, generating embedding", {
-    model: model?.provider_config.model_path,
-  });
-
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const embedder = (await getPipeline(
+      model!,
+      emit,
+      {},
+      signal
+    )) as ImageFeatureExtractionPipeline;
+
+    logger.debug("HFT ImageEmbedding: pipeline ready, generating embedding", {
+      model: model?.provider_config.model_path,
+    });
+
     if (Array.isArray(input.image)) {
       const vectors: TypedArray[] = [];
       for (const image of input.image) {

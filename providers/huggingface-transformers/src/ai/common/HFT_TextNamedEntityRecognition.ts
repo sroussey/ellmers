@@ -18,13 +18,13 @@ export const HFT_TextNamedEntityRecognition: AiProviderRunFn<
   TextNamedEntityRecognitionTaskOutput,
   HfTransformersOnnxModelConfig
 > = async (input, model, signal, emit) => {
-  const textNamedEntityRecognition = (await getPipeline(
-    model!,
-    emit,
-    {},
-    signal
-  )) as TokenClassificationPipeline;
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const textNamedEntityRecognition = (await getPipeline(
+      model!,
+      emit,
+      {},
+      signal
+    )) as TokenClassificationPipeline;
     const results = await textNamedEntityRecognition(input.text, {
       ignore_labels: input.blockList as string[] | undefined,
     });

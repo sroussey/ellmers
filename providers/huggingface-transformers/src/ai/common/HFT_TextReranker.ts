@@ -106,9 +106,8 @@ export const HFT_TextReranker: AiProviderRunFn<
   const timerLabel = `hft:TextReranker:${modelPath}`;
   logger.time(timerLabel, { docs: input.documents.length });
 
-  const reranker: TextClassificationPipeline = await getPipeline(model!, emit, {}, signal);
-
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const reranker: TextClassificationPipeline = await getPipeline(model!, emit, {}, signal);
     // Transformers.js' text-classification pipeline accepts an array of
     // { text, text_pair } objects for sentence-pair tasks (which cross-encoder
     // rerankers are). The pipeline returns one score per input pair (or an

@@ -32,13 +32,13 @@ export const HFT_ImageClassification: AiProviderRunFn<
       console.warn("Zero-shot image classification requires categories", input);
       throw new Error("Zero-shot image classification requires categories");
     }
-    const zeroShotClassifier = (await getPipeline(
-      model!,
-      emit,
-      {},
-      signal
-    )) as ZeroShotImageClassificationPipeline;
     await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+      const zeroShotClassifier = (await getPipeline(
+        model!,
+        emit,
+        {},
+        signal
+      )) as ZeroShotImageClassificationPipeline;
       const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
       const result = await zeroShotClassifier(imageArg, input.categories! as string[], {});
 
@@ -57,8 +57,8 @@ export const HFT_ImageClassification: AiProviderRunFn<
     return;
   }
 
-  const classifier = (await getPipeline(model!, emit, {}, signal)) as ImageClassificationPipeline;
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
+    const classifier = (await getPipeline(model!, emit, {}, signal)) as ImageClassificationPipeline;
     const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
     const result = await classifier(imageArg, {
       top_k: input.maxCategories,
