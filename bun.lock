@@ -86,6 +86,30 @@
         "@types/react": "^19.2.17",
       },
     },
+    "examples/eval": {
+      "name": "@workglow/eval",
+      "version": "0.3.25",
+      "bin": {
+        "workglow-eval": "./dist/workglow-eval.js",
+      },
+      "dependencies": {
+        "@huggingface/transformers": "catalog:",
+        "@workglow/ai": "workspace:*",
+        "@workglow/anthropic": "workspace:*",
+        "@workglow/google-gemini": "workspace:*",
+        "@workglow/huggingface-transformers": "workspace:*",
+        "@workglow/node-llama-cpp": "workspace:*",
+        "@workglow/openai": "workspace:*",
+        "@workglow/sqlite": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+        "@workglow/xai": "workspace:*",
+        "commander": "^15.0.0",
+        "hyparquet": "^1.26.2",
+        "hyparquet-compressors": "^1.1.1",
+      },
+    },
     "examples/web": {
       "name": "@workglow/web",
       "version": "0.3.25",
@@ -1531,6 +1555,8 @@
 
     "@workglow/electron": ["@workglow/electron@workspace:providers/electron"],
 
+    "@workglow/eval": ["@workglow/eval@workspace:examples/eval"],
+
     "@workglow/google-gemini": ["@workglow/google-gemini@workspace:providers/google-gemini"],
 
     "@workglow/huggingface-inference": ["@workglow/huggingface-inference@workspace:providers/huggingface-inference"],
@@ -1995,6 +2021,8 @@
 
     "functions-have-names": ["functions-have-names@1.2.3", "", {}, "sha512-xckBUXyTIqT97tq2x2AMb+g163b5JFysYk0x4qxNFwbfQkmNZoiRHb6sPzI9/QV33WeuvVYBUIiD4NzNIyqaRQ=="],
 
+    "fzstd": ["fzstd@0.1.1", "", {}, "sha512-dkuVSOKKwh3eas5VkJy1AW1vFpet8TA/fGmVA5krThl8YcOVE/8ZIoEA1+U1vEn5ckxxhLirSdY837azmbaNHA=="],
+
     "gaxios": ["gaxios@7.2.0", "", { "dependencies": { "extend": "^3.0.2", "https-proxy-agent": "^7.0.1", "node-fetch": "^3.3.2" } }, "sha512-CUVb4wcYe+771XevyH6HtGmXFAGGKkIC3kswAP8Z1JCe0j80JMaTPZH930DWFrvo0atjh18Arc0pEyUCWa5bfg=="],
 
     "gcp-metadata": ["gcp-metadata@8.1.2", "", { "dependencies": { "gaxios": "^7.0.0", "google-logging-utils": "^1.0.0", "json-bigint": "^1.0.0" } }, "sha512-zV/5HKTfCeKWnxG0Dmrw51hEWFGfcF2xiXqcA3+J90WDuP0SvoiSO5ORvcBsifmx/FoIjgQN3oNOGaQ5PhLFkg=="],
@@ -2066,6 +2094,12 @@
     "https-proxy-agent": ["https-proxy-agent@7.0.6", "", { "dependencies": { "agent-base": "^7.1.2", "debug": "4" } }, "sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw=="],
 
     "husky": ["husky@9.1.7", "", { "bin": { "husky": "bin.js" } }, "sha512-5gs5ytaNjBrh5Ow3zrvdUUY+0VxIuWVL4i9irt6friV+BqdCfmV11CQTWMiBYWHbXhco+J1kHfTOUkePhCDvMA=="],
+
+    "hyparquet": ["hyparquet@1.26.2", "", {}, "sha512-6qjyK7R2tZ4vnYP1J8NpcCeDPK1UIYk3xh5XgtQUnUM1iwkYbvI6Mz3xtmpMd6AfCCeoUoJVbEq29k5GReZRWA=="],
+
+    "hyparquet-compressors": ["hyparquet-compressors@1.1.1", "", { "dependencies": { "fzstd": "0.1.1", "hysnappy": "1.0.0" } }, "sha512-yx7aA3Rhj0YycbdV71+XznQSLAefa4cT0urpgNXy4aM6eSeCknaVDNne8y45Uz74Fb15yyXUzOStlceOJBan7A=="],
+
+    "hysnappy": ["hysnappy@1.0.0", "", {}, "sha512-MNrC4NfwDGPb889O6gIfEtbvEZCSWUsSEhsz4Oq2FRcpGtXHfeVz3KciSPp5Pnnz1NjFMgDQNfxdJozymJEDDA=="],
 
     "iceberg-js": ["iceberg-js@0.8.1", "", {}, "sha512-1dhVQZXhcHje7798IVM+xoo/1ZdVfzOMIc8/rgVSijRK38EDqOJoGula9N/8ZI5RD8QTxNQtK/Gozpr+qUqRRA=="],
 
