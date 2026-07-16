@@ -9,6 +9,7 @@ import type {
   AiProviderRunFn,
   CacheCheckpointTaskInput,
   CacheCheckpointTaskOutput,
+  ChatMessage,
   CheckpointPrefix,
 } from "@workglow/ai";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
@@ -39,6 +40,38 @@ export function renderHftPrefixPrompt(
     ...(prefix.tools && prefix.tools.length > 0 ? { tools: mapHFTTools(prefix.tools) as any } : {}),
     tokenize: false,
     add_generation_prompt: false,
+  }) as string;
+}
+
+/**
+ * Renders the checkpoint prefix followed by one more user turn carrying
+ * `prompt`, with the generation prompt appended — the prompt a checkpoint
+ * consumer feeds to the model.
+ *
+ * It mirrors {@link renderHftPrefixPrompt}'s template options exactly (same
+ * tools / systemPrompt), only appending the extra user message and
+ * `add_generation_prompt: true`. Chat templates render messages sequentially,
+ * so for a concatenative template this output begins byte-for-byte with the
+ * {@link renderHftPrefixPrompt} rendering — the invariant prefix-rewind KV
+ * reuse relies on. Consumers still verify with `startsWith` before trusting
+ * cached KV, because some templates rewrite earlier turns.
+ */
+export function renderHftContinuationPrompt(
+  tokenizer: TextGenerationPipeline["tokenizer"],
+  prefix: CheckpointPrefix,
+  prompt: string
+): string {
+  const userMessage: ChatMessage = { role: "user", content: [{ type: "text", text: prompt }] };
+  const messages = buildHFTMessages(
+    [...(prefix.messages ?? []), userMessage],
+    prefix.systemPrompt,
+    undefined,
+    undefined
+  );
+  return tokenizer.apply_chat_template(messages as any, {
+    ...(prefix.tools && prefix.tools.length > 0 ? { tools: mapHFTTools(prefix.tools) as any } : {}),
+    tokenize: false,
+    add_generation_prompt: true,
   }) as string;
 }
 
