@@ -8,6 +8,7 @@ import type {
   AiJobInput,
   AiProviderRunFn,
   AiProviderRunFnRegistration,
+  AiSessionContext,
   Capability,
   ModelConfig,
   ToolCallingTaskInput,
@@ -51,8 +52,8 @@ describe("SessionCaching", () => {
       let capturedSessionId: string | undefined;
 
       const streamFn: AiProviderRunFn = mock().mockImplementation(
-        async (_input, _model, _signal, emit, _outputSchema, sessionId) => {
-          capturedSessionId = sessionId;
+        async (_input, _model, _signal, emit, _outputSchema, session) => {
+          capturedSessionId = session?.sessionId;
           emit({
             type: "finish",
             data: { result: "ok" },
@@ -75,7 +76,7 @@ describe("SessionCaching", () => {
           new AbortController().signal,
           emit,
           undefined,
-          "session-abc-123"
+          { sessionId: "session-abc-123" } satisfies AiSessionContext
         );
       }
 
@@ -86,7 +87,7 @@ describe("SessionCaching", () => {
         expect.any(AbortSignal),
         expect.any(Function),
         undefined,
-        "session-abc-123"
+        { sessionId: "session-abc-123" }
       );
     });
 
@@ -94,8 +95,8 @@ describe("SessionCaching", () => {
       let capturedSessionId: string | undefined = "should-be-overwritten";
 
       const streamFn: AiProviderRunFn = mock().mockImplementation(
-        async (_input, _model, _signal, emit, _outputSchema, sessionId) => {
-          capturedSessionId = sessionId;
+        async (_input, _model, _signal, emit, _outputSchema, session) => {
+          capturedSessionId = session?.sessionId;
           emit({
             type: "finish",
             data: { result: "ok" },
@@ -129,9 +130,9 @@ describe("SessionCaching", () => {
         _signal,
         emit,
         _outputSchema,
-        sessionId
+        session
       ) => {
-        capturedSessionId = sessionId;
+        capturedSessionId = session?.sessionId;
         emit({
           type: "finish",
           data: { result: "streamed" },
@@ -156,7 +157,7 @@ describe("SessionCaching", () => {
         new AbortController().signal,
         emit,
         undefined,
-        "session-stream-456"
+        { sessionId: "session-stream-456" } satisfies AiSessionContext
       );
 
       expect(capturedSessionId).toBe("session-stream-456");
@@ -173,9 +174,9 @@ describe("SessionCaching", () => {
         _signal,
         emit,
         _outputSchema,
-        sessionId
+        session
       ) => {
-        capturedSessionId = sessionId;
+        capturedSessionId = session?.sessionId;
         emit({ type: "finish", data: {} } as StreamEvent<TaskOutput>);
       };
 
@@ -200,8 +201,8 @@ describe("SessionCaching", () => {
       let capturedSessionId: string | undefined;
 
       const streamFn: AiProviderRunFn = mock().mockImplementation(
-        async (_input, _model, _signal, emit, _outputSchema, sessionId) => {
-          capturedSessionId = sessionId;
+        async (_input, _model, _signal, emit, _outputSchema, session) => {
+          capturedSessionId = session?.sessionId;
           emit({
             type: "finish",
             data: { result: "from-job" },
@@ -232,7 +233,7 @@ describe("SessionCaching", () => {
         taskType: "TextGenerationTask",
         requires: TEXT_GENERATION,
         taskInput: { text: "test", model } as TaskInput & { model: ModelConfig },
-        sessionId: "job-session-789",
+        session: { sessionId: "job-session-789" },
       };
 
       const job = new AiJob({
@@ -264,9 +265,9 @@ describe("SessionCaching", () => {
         _signal,
         emit,
         _outputSchema,
-        sessionId
+        session
       ) => {
-        capturedSessionId = sessionId;
+        capturedSessionId = session?.sessionId;
         emit({
           type: "text-delta",
           port: "text",
@@ -298,7 +299,7 @@ describe("SessionCaching", () => {
         taskType: "TextGenerationTask",
         requires: TEXT_GENERATION,
         taskInput: { text: "test", model } as TaskInput & { model: ModelConfig },
-        sessionId: "stream-job-session-101",
+        session: { sessionId: "stream-job-session-101" },
       };
 
       const job = new AiJob({
@@ -328,8 +329,8 @@ describe("SessionCaching", () => {
       let capturedSessionId: string | undefined = "should-be-overwritten";
 
       const streamFn: AiProviderRunFn = mock().mockImplementation(
-        async (_input, _model, _signal, emit, _outputSchema, sessionId) => {
-          capturedSessionId = sessionId;
+        async (_input, _model, _signal, emit, _outputSchema, session) => {
+          capturedSessionId = session?.sessionId;
           emit({
             type: "finish",
             data: { result: "ok" },
@@ -360,7 +361,7 @@ describe("SessionCaching", () => {
         taskType: "TextGenerationTask",
         requires: TEXT_GENERATION,
         taskInput: { text: "test", model } as TaskInput & { model: ModelConfig },
-        // no sessionId
+        // no session
       };
 
       const job = new AiJob({
