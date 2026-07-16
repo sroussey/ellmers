@@ -252,7 +252,7 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
     }
     // Delegate to base so timeoutMs, outputSchema, and any future base fields
     // are always populated. The base reads (input as any).sessionId and
-    // forwards it into jobInput.sessionId.
+    // forwards it as jobInput.session.sessionId.
     return super.getJobInput({ ...input, sessionId: this._sessionId } as AiChatTaskInput & {
       sessionId: string;
     });

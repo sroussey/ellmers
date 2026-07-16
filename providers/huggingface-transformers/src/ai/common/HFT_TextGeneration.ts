@@ -26,7 +26,8 @@ export const HFT_TextGeneration: AiProviderRunFn<
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, signal, emit, _outputSchema, sessionId) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
+  const sessionId = sessionContext?.sessionId;
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
     const generateText = (await getPipeline(model!, emit, {}, signal)) as TextGenerationPipeline;
     const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();

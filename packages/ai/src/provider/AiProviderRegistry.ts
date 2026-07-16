@@ -14,6 +14,28 @@ import { DirectExecutionStrategy } from "../execution/DirectExecutionStrategy";
 import type { AiStrategyResolver, IAiExecutionStrategy } from "../execution/IAiExecutionStrategy";
 import type { ModelConfig } from "../model/ModelSchema";
 import type { AiProvider } from "./AiProvider";
+import type { CheckpointPrefix } from "./CheckpointRegistry";
+
+/**
+ * Session/checkpoint context passed to provider run functions.
+ *
+ * - `sessionId`: session to use / rewind source. For checkpoint consumers this
+ *   is the checkpoint id; state may live worker-side under this key.
+ * - `emitCheckpointId`: pre-minted id the provider should snapshot post-turn
+ *   state under at finish (local KV providers only; cloud providers annotate
+ *   the final turn for server-side caching instead).
+ * - `supersedeParent`: dispose `sessionId`'s worker-side state after a
+ *   successful `emitCheckpointId` snapshot.
+ * - `prefix`: resolved prefix content — cloud replay payload and local
+ *   re-encode fallback. When present, run-fns must treat `sessionId` as an
+ *   immutable checkpoint (never write back under it).
+ */
+export interface AiSessionContext {
+  readonly sessionId?: string;
+  readonly emitCheckpointId?: string;
+  readonly supersedeParent?: boolean;
+  readonly prefix?: CheckpointPrefix;
+}
 
 /**
  * Type for the preview run function for AiTask.executePreview().
@@ -44,7 +66,7 @@ export type AiProviderRunFn<
   signal: AbortSignal,
   emit: AiEmit<Output>,
   outputSchema?: JsonSchema,
-  sessionId?: string
+  session?: AiSessionContext
 ) => Promise<void>;
 
 /**
@@ -252,13 +274,13 @@ export class AiProviderRegistry {
       signal: AbortSignal,
       emit: AiEmit,
       outputSchema?: JsonSchema,
-      sessionId?: string
+      session?: AiSessionContext
     ): Promise<void> => {
       const workerManager = globalServiceRegistry.get(WORKER_MANAGER);
       await workerManager.callWorkerRunFunction<StreamEvent<TaskOutput>>(
         providerName,
         key,
-        [input, model, outputSchema, sessionId],
+        [input, model, outputSchema, session],
         { signal, emit }
       );
     };

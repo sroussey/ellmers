@@ -43,7 +43,8 @@ export const Anthropic_TextGeneration_Stream: AiProviderRunFn<
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
   AnthropicModelConfig
-> = async (input, model, signal, emit, _outputSchema, sessionId) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
+  const sessionId = sessionContext?.sessionId;
   const logger = getLogger();
   const timerLabel = `anthropic:TextGeneration:${getModelName(model)}`;
   logger.time(timerLabel, { model: getModelName(model) });

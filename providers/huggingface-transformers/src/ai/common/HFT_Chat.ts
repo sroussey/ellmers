@@ -151,7 +151,8 @@ export const HFT_Chat: AiProviderRunFn<
   AiChatProviderInput,
   AiChatProviderOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, signal, emit, _outputSchema, sessionId) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
+  const sessionId = sessionContext?.sessionId;
   // Refcount the pipeline for the duration of a single turn — long-lived
   // conversations are not held across turns; only active inference is
   // protected from concurrent LRU eviction.

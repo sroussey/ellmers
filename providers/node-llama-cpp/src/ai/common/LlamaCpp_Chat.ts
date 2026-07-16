@@ -87,7 +87,8 @@ export const LlamaCpp_Chat_Stream: AiProviderRunFn<
   AiChatProviderInput,
   AiChatProviderOutput,
   LlamaCppModelConfig
-> = async (input, model, signal, emit, _outputSchema, sessionId) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
+  const sessionId = sessionContext?.sessionId;
   if (!model) throw new Error("Model config is required for AiChatTask.");
 
   const modelPath = getActualModelPath(model);

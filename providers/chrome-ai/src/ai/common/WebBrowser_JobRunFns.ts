@@ -44,12 +44,12 @@ export const WebBrowser_TextGeneration_Unified: AiProviderRunFn<
   any,
   any,
   WebBrowserModelConfig
-> = async (input, model, signal, emit, outputSchema, sessionId) => {
+> = async (input, model, signal, emit, outputSchema, sessionContext) => {
   const maybeMessages = (input as { messages?: unknown }).messages;
   if (Array.isArray(maybeMessages) && maybeMessages.length > 0) {
-    await WebBrowser_Chat(input, model, signal, emit, outputSchema, sessionId);
+    await WebBrowser_Chat(input, model, signal, emit, outputSchema, sessionContext);
   } else {
-    await WebBrowser_TextGeneration(input, model, signal, emit, outputSchema, sessionId);
+    await WebBrowser_TextGeneration(input, model, signal, emit, outputSchema, sessionContext);
   }
 };
 
