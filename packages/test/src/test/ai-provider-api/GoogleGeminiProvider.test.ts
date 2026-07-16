@@ -124,6 +124,7 @@ describe("GoogleGeminiQueuedProvider.inferCapabilities", () => {
     const caps = provider.inferCapabilities(model("gemini-2.5-pro"));
     const sorted = [...caps].sort();
     expect(sorted).toEqual([
+      "cache.checkpoint",
       "json-mode",
       "model.count-tokens",
       "model.info",

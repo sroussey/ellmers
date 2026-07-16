@@ -17,6 +17,7 @@ import {
   mapResponsesToolChoice,
 } from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, toOpenAIMessages } from "@workglow/ai/worker";
+import { mergeOpenAICheckpointPrefix } from "./OpenAI_CacheCheckpoint";
 import { finalizeResponsesRequest, getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
@@ -33,13 +34,26 @@ export const OpenAI_ToolCalling_Stream: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   OpenAiModelConfig
-> = async (input, model, signal, emit) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
   const client = await getClient(model);
   const modelName = getModelName(model);
 
   const tools = buildResponsesTools(input.tools);
+  // Checkpoint consumption: replay the prefix content ahead of the tail so the
+  // request's literal prefix matches the warm-up and hits the automatic
+  // server-side prompt cache.
+  const merged = mergeOpenAICheckpointPrefix(sessionContext, input);
   const { input: responsesInput, instructions } = buildResponsesInput({
-    messages: toOpenAIMessages(input),
+    messages: toOpenAIMessages(
+      merged
+        ? ({
+            ...input,
+            messages: merged.messages,
+            systemPrompt: merged.systemPrompt,
+            prompt: "",
+          } as ToolCallingTaskInput)
+        : input
+    ),
   });
   const toolChoice = mapResponsesToolChoice(input.toolChoice);
 

@@ -28,6 +28,7 @@ export const OPENAI_IMAGE_EDITING = ["image.editing"] as const satisfies Capabil
 export const OPENAI_COUNT_TOKENS = ["model.count-tokens"] as const satisfies Capability[];
 export const OPENAI_MODEL_SEARCH = ["model.search"] as const satisfies Capability[];
 export const OPENAI_MODEL_INFO = ["model.info"] as const satisfies Capability[];
+export const OPENAI_CACHE_CHECKPOINT = ["cache.checkpoint"] as const satisfies Capability[];
 
 /** Aggregated list — for `workerRunFnSpecs()` derivation. Order MUST match `OPENAI_RUN_FNS`. */
 export const OPENAI_CAPABILITY_SETS = [
@@ -42,4 +43,5 @@ export const OPENAI_CAPABILITY_SETS = [
   OPENAI_COUNT_TOKENS,
   OPENAI_MODEL_SEARCH,
   OPENAI_MODEL_INFO,
+  OPENAI_CACHE_CHECKPOINT,
 ] as const;

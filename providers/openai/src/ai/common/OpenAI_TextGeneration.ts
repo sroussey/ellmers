@@ -12,6 +12,7 @@ import type {
 import { accumulateOpenAIResponsesStream, buildResponsesInput } from "@workglow/ai/provider-utils";
 import { toOpenAIMessages } from "@workglow/ai/worker";
 import { getLogger } from "@workglow/util/worker";
+import { mergeOpenAICheckpointPrefix } from "./OpenAI_CacheCheckpoint";
 import { finalizeResponsesRequest, getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 import { warnPenaltyDroppedOnce } from "./OpenAI_ResponsesWarnings";
@@ -91,16 +92,21 @@ export const OpenAI_TextGeneration_Stream: AiProviderRunFn<
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
   OpenAiModelConfig
-> = async (input, model, signal, emit) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
   const logger = getLogger();
   const timerLabel = `openai:TextGeneration:${getModelName(model)}`;
   logger.time(timerLabel, { model: getModelName(model) });
   try {
     const client = await getClient(model);
-    const params = finalizeResponsesRequest(
-      model,
-      buildResponsesParams(input as UnifiedTextGenerationInput, model)
-    );
+    // Checkpoint consumption: replay the prefix content ahead of the tail so
+    // the request's literal prefix matches the warm-up and hits the automatic
+    // server-side prompt cache.
+    const unified = input as UnifiedTextGenerationInput;
+    const merged = mergeOpenAICheckpointPrefix(sessionContext, unified);
+    const effective: UnifiedTextGenerationInput = merged
+      ? { ...unified, messages: merged.messages, systemPrompt: merged.systemPrompt, prompt: "" }
+      : unified;
+    const params = finalizeResponsesRequest(model, buildResponsesParams(effective, model));
 
     const stream = await client.responses.create(
       { ...params, stream: true } as Parameters<typeof client.responses.create>[0],
