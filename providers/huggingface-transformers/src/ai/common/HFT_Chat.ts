@@ -4,11 +4,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiChatProviderInput, AiChatProviderOutput, AiProviderRunFn } from "@workglow/ai";
+import type {
+  AiChatProviderInput,
+  AiChatProviderOutput,
+  AiProviderRunFn,
+  AiSessionContext,
+} from "@workglow/ai";
 import type { StreamPhase } from "@workglow/task-graph";
+import { renderHftPrefixPrompt } from "./HFT_CacheCheckpoint";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import type { HftPrefixRewindSession } from "./HFT_Pipeline";
 import {
+  deleteHftSession,
   getHftSession,
   getPipeline,
   getPipelineCacheKey,
@@ -36,7 +43,7 @@ import { buildHFTMessages } from "./HFT_ToolCalling";
 async function generateTurn(
   input: AiChatProviderInput,
   model: HfTransformersOnnxModelConfig,
-  sessionId: string | undefined,
+  sessionContext: AiSessionContext | undefined,
   emit: (event: StreamPhase) => void,
   signal: AbortSignal | undefined,
   onDelta: ((text: string) => void) | undefined
@@ -44,6 +51,8 @@ async function generateTurn(
   const generateText = await getPipeline(model, emit, {}, signal);
   const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
 
+  const sessionId = sessionContext?.sessionId;
+  const isCheckpoint = sessionContext?.prefix !== undefined;
   const hfTokenizer = generateText.tokenizer;
   const hfModel = generateText.model;
 
@@ -68,13 +77,36 @@ async function generateTurn(
   // Session cache: prefix-rewind growing with the conversation.
   const modelPath = model.provider_config.model_path;
   const cacheKey = getPipelineCacheKey(model);
-  let session = sessionId ? getHftSession(sessionId) : undefined;
+  let hftSession = sessionId ? getHftSession(sessionId) : undefined;
   let past_key_values: any = undefined;
 
-  if (session?.mode === "prefix-rewind" && session.modelPath === modelPath) {
+  if (sessionId && !hftSession && isCheckpoint) {
+    // Worker restarted or state evicted: re-encode the serialized prefix
+    // and re-store the snapshot under the checkpoint id.
+    const { DynamicCache } = await loadTransformersSDK();
+    const cache = new DynamicCache();
+    const prefixPrompt = renderHftPrefixPrompt(hfTokenizer, sessionContext!.prefix!);
+    const prefixInputs = hfTokenizer(prefixPrompt);
+    await hfModel.generate({ ...prefixInputs, max_new_tokens: 0, past_key_values: cache });
+    const baseEntries: Record<string, any> = {};
+    for (const key of Object.keys(cache)) {
+      baseEntries[key] = cache[key];
+    }
+    const restored: HftPrefixRewindSession = {
+      mode: "prefix-rewind",
+      baseEntries,
+      baseSeqLength: cache.get_seq_length(),
+      modelPath,
+      cacheKey,
+    };
+    setHftSession(sessionId, restored);
+    hftSession = restored;
+  }
+
+  if (hftSession?.mode === "prefix-rewind" && hftSession.modelPath === modelPath) {
     // Reconstruct a fresh DynamicCache from the previous turn's snapshot.
     const { DynamicCache } = await loadTransformersSDK();
-    past_key_values = new DynamicCache(session.baseEntries);
+    past_key_values = new DynamicCache(hftSession.baseEntries);
   }
 
   // Accumulator used regardless of streaming mode.
@@ -118,8 +150,11 @@ async function generateTurn(
     accumulated = hfTokenizer.decode(newTokens, { skip_special_tokens: true });
   }
 
-  // Snapshot the output KV cache for the next turn.
-  if (sessionId) {
+  // Snapshot the output KV cache for the next turn. Checkpoint sessions are
+  // immutable: snapshot under emitCheckpointId (if any), never overwrite the
+  // checkpoint id itself.
+  const snapshotTargetId = isCheckpoint ? sessionContext?.emitCheckpointId : sessionId;
+  if (snapshotTargetId) {
     let outputCache: any;
     if (past_key_values) {
       // The cache was mutated in-place during generation.
@@ -140,8 +175,17 @@ async function generateTurn(
         modelPath,
         cacheKey,
       };
-      setHftSession(sessionId, newSession);
+      setHftSession(snapshotTargetId, newSession);
     }
+  }
+
+  if (
+    isCheckpoint &&
+    sessionContext?.supersedeParent &&
+    sessionId &&
+    sessionContext?.emitCheckpointId
+  ) {
+    deleteHftSession(sessionId);
   }
 
   return accumulated;
@@ -152,12 +196,11 @@ export const HFT_Chat: AiProviderRunFn<
   AiChatProviderOutput,
   HfTransformersOnnxModelConfig
 > = async (input, model, signal, emit, _outputSchema, sessionContext) => {
-  const sessionId = sessionContext?.sessionId;
   // Refcount the pipeline for the duration of a single turn — long-lived
   // conversations are not held across turns; only active inference is
   // protected from concurrent LRU eviction.
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
-    await generateTurn(input, model!, sessionId, emit, signal, (piece) => {
+    await generateTurn(input, model!, sessionContext, emit, signal, (piece) => {
       emit({ type: "text-delta", port: "text", textDelta: piece });
     });
     emit({ type: "finish", data: {} as AiChatProviderOutput });
