@@ -10,6 +10,7 @@ import type {
   TextGenerationTaskOutput,
 } from "@workglow/ai";
 import { getLogger } from "@workglow/util/worker";
+import { applyAnthropicPrefixReplay } from "./Anthropic_CacheCheckpoint";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
@@ -70,18 +71,14 @@ export const Anthropic_TextGeneration_Stream: AiProviderRunFn<
 
     if (unified.systemPrompt) {
       params.system = sessionId
-        ? [
-            {
-              type: "text",
-              text: unified.systemPrompt,
-              cache_control: { type: "ephemeral" },
-            },
-          ]
+        ? [{ type: "text", text: unified.systemPrompt, cache_control: { type: "ephemeral" } }]
         : unified.systemPrompt;
     }
 
-    // Prompt caching: annotate the last user message block when sessionId is present.
-    if (sessionId && hasMessages && Array.isArray(messages) && messages.length > 0) {
+    if (sessionContext?.prefix) {
+      applyAnthropicPrefixReplay(params, sessionContext);
+    } else if (sessionId && hasMessages && Array.isArray(messages) && messages.length > 0) {
+      // Plain session (no checkpoint): annotate the last user block per turn.
       const last = messages[messages.length - 1] as { content: unknown };
       if (Array.isArray(last.content) && last.content.length > 0) {
         const blocks = last.content as Array<Record<string, unknown>>;
