@@ -8,8 +8,10 @@ import type {
   AiChatProviderInput,
   AiChatProviderOutput,
   AiProviderRunFn,
+  AiSessionContext,
   ChatMessage,
 } from "@workglow/ai";
+import { renderLlamaCppPrefixText } from "./LlamaCpp_CacheCheckpoint";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
   acquireContextSequence,
@@ -25,16 +27,20 @@ import {
 } from "./LlamaCpp_Runtime";
 
 async function getOrCreateChatSession(
-  sessionId: string | undefined,
+  sessionContext: AiSessionContext | undefined,
   model: LlamaCppModelConfig,
   systemPrompt: string | undefined,
   signal: AbortSignal
 ): Promise<{ session: any; sequence: any }> {
+  const sessionId = sessionContext?.sessionId;
+  const isCheckpoint = sessionContext?.prefix !== undefined;
+
   if (sessionId) {
     const existing = getLlamaCppSession(sessionId);
-    if (existing?.mode === "progressive") {
-      // Session already created with its system prompt baked in — ignore the
-      // systemPrompt argument on subsequent turns.
+    if (existing !== undefined) {
+      // Session already created with its prompt state baked in (progressive
+      // turn history or a prefix-rewind checkpoint) — ignore the systemPrompt
+      // argument on subsequent turns.
       return { session: existing.session, sequence: existing.sequence };
     }
   }
@@ -42,6 +48,10 @@ async function getOrCreateChatSession(
   const { LlamaChatSession } = await loadSdk();
   const context = await getOrCreateTextContext(model);
   const sequence = await acquireContextSequence(context, signal);
+  // When rebuilding a missing checkpoint, reconstruct it the way the warm-up
+  // run-fn did: bake the prefix's system prompt into the constructor and
+  // preload the rendered prefix text below.
+  const effectiveSystemPrompt = isCheckpoint ? sessionContext!.prefix!.systemPrompt : systemPrompt;
   // Sequence ownership only transfers to the session once its constructor
   // returns; a throw before that would strand the sequence and eventually
   // exhaust the per-context sequence pool, so free it in the failure path.
@@ -49,7 +59,7 @@ async function getOrCreateChatSession(
   try {
     session = new LlamaChatSession({
       contextSequence: sequence,
-      ...(systemPrompt !== undefined && { systemPrompt }),
+      ...(effectiveSystemPrompt !== undefined && { systemPrompt: effectiveSystemPrompt }),
       ...llamaCppChatSessionConstructorSpread(model),
     });
   } catch (err) {
@@ -59,9 +69,18 @@ async function getOrCreateChatSession(
     throw err;
   }
 
+  // Missing-state fallback: a checkpoint id was supplied but its worker-side
+  // sequence is gone. Re-encode the prefix so the turn continues from it.
+  if (isCheckpoint) {
+    const prefixText = renderLlamaCppPrefixText(sessionContext!.prefix!);
+    if (prefixText) {
+      await session.preloadPrompt(prefixText, { signal });
+    }
+  }
+
   if (sessionId) {
     setLlamaCppSession(sessionId, {
-      mode: "progressive",
+      mode: isCheckpoint ? "prefix-rewind" : "progressive",
       session,
       sequence,
       modelKey: getConfigKey(model),
@@ -95,7 +114,7 @@ export const LlamaCpp_Chat_Stream: AiProviderRunFn<
 
   await withModelInUse(modelPath, async () => {
     const { session, sequence } = await getOrCreateChatSession(
-      sessionId,
+      sessionContext,
       model,
       input.systemPrompt,
       signal
