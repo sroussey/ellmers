@@ -44,14 +44,14 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderRunFn<
 
     // Missing-state fallback: a checkpoint id was supplied but its worker-side
     // sequence is gone (e.g. evicted). Re-encode the prefix into a fresh
-    // sequence and store it under the checkpoint id so consumption proceeds.
+    // sequence for this turn (ownership is taken below, so it is not stored
+    // back under the checkpoint id).
     if (sessionId && !cached && isCheckpoint) {
       const prefix = sessionContext!.prefix!;
       const context = await getOrCreateTextContext(model);
       const sequence = await acquireContextSequence(context, signal);
-      // Sequence ownership only transfers once the state is recorded in the
-      // session map; free the session/sequence on any throw before that (e.g. an
-      // aborted preload) so a failed re-encode does not strand the slot.
+      // Free the session/sequence on any throw before ownership is settled
+      // (e.g. an aborted preload) so a failed re-encode does not strand the slot.
       let chatSession: any;
       let state: LlamaCppSessionState | undefined;
       try {
@@ -70,7 +70,6 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderRunFn<
           session: chatSession,
           modelKey: getConfigKey(model),
         };
-        setLlamaCppSession(sessionId, state);
       } catch (err) {
         if (chatSession) {
           try {
@@ -83,6 +82,19 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderRunFn<
         throw err;
       }
       cached = state;
+    }
+
+    // A live llama.cpp sequence advances in place during generation — there is
+    // no cheap KV clone like HFT's DynamicCache copy. Consuming a checkpoint
+    // therefore takes SOLE ownership of its live session: the map entry is
+    // removed so a later consumer of the same checkpoint id re-encodes a
+    // pristine prefix (registry fallback) instead of seeing this turn's tokens,
+    // and so an emitted checkpoint never aliases the parent id. The stolen
+    // session is disposed at turn end unless re-keyed under emitCheckpointId.
+    let ownedByMap = Boolean(cached);
+    if (isCheckpoint && sessionId && cached) {
+      llamaCppSessions.delete(sessionId);
+      ownedByMap = false;
     }
 
     const context = cached ? undefined : await getOrCreateTextContext(model);
@@ -114,12 +126,9 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderRunFn<
         session,
         modelKey: getConfigKey(model),
       });
+      ownedByMap = true;
     }
 
-    // True once an ephemeral (no sessionId) sequence has been re-keyed under the
-    // emit checkpoint id — from that point the map owns it. Until then a throw
-    // from the prompt/stream must dispose it like the plain ephemeral path.
-    let storedForEmit = false;
     try {
       for await (const e of streamFromSession<TextGenerationTaskOutput>((onTextChunk) => {
         return session.prompt(input.prompt, {
@@ -134,26 +143,22 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderRunFn<
         emit(e);
       }
 
-      // Re-key the live sequence under the emitted checkpoint id.
+      // Re-key the live sequence under the emitted checkpoint id. The consumed
+      // parent's map entry was already removed above, so the emit id is the
+      // sequence's only key — kept parents fall back to a prefix re-encode.
       if (sessionContext?.emitCheckpointId) {
-        if (sessionId && cached) {
-          setLlamaCppSession(sessionContext.emitCheckpointId, cached);
-          if (sessionContext.supersedeParent) {
-            // Move ownership of the live sequence to the new id WITHOUT disposing.
-            llamaCppSessions.delete(sessionId);
-          }
-        } else if (!sessionId) {
-          setLlamaCppSession(sessionContext.emitCheckpointId, {
-            mode: "prefix-rewind",
-            sequence,
-            session,
-            modelKey: getConfigKey(model),
-          });
-          storedForEmit = true;
-        }
+        setLlamaCppSession(sessionContext.emitCheckpointId, {
+          mode: "prefix-rewind",
+          sequence,
+          session,
+          modelKey: getConfigKey(model),
+        });
+        ownedByMap = true;
       }
     } finally {
-      if (!sessionId && !storedForEmit) {
+      // Dispose any live session no map entry owns: plain ephemeral turns and
+      // consumed checkpoint sessions that were not re-keyed for an emit.
+      if (!ownedByMap) {
         try {
           await session.dispose({ disposeSequence: false });
         } catch {}

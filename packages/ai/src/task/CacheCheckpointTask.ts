@@ -15,11 +15,11 @@ import type { CheckpointEntry, CheckpointPrefix } from "../provider/CheckpointRe
 import {
   checkpointModelKey,
   deleteCheckpoint,
-  getCheckpoint,
   registerCheckpoint,
 } from "../provider/CheckpointRegistry";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
+import { mergeCheckpointPrefix, validateParentCheckpoint } from "./base/CheckpointPorts";
 import type { ChatMessage } from "./ChatMessage";
 import { ChatMessageSchema } from "./ChatMessage";
 import { ToolDefinitionSchema } from "./ToolCallingTask";
@@ -128,7 +128,6 @@ export class CacheCheckpointTask extends AiTask<
 
   private _checkpointId: string | undefined;
   private _mergedPrefix: CheckpointPrefix | undefined;
-  private _parent: CheckpointEntry | undefined;
   private _parentId: string | undefined;
 
   private prepareCheckpoint(input: CacheCheckpointTaskInput, context: IExecuteContext): void {
@@ -139,39 +138,21 @@ export class CacheCheckpointTask extends AiTask<
       );
     }
 
-    let parent: CheckpointEntry | undefined;
-    if (input.checkpoint) {
-      parent = getCheckpoint(input.checkpoint);
-      if (!parent) {
-        throw new TaskConfigurationError(
-          `CacheCheckpointTask: unknown cache checkpoint "${input.checkpoint}".`
-        );
-      }
-      if (parent.provider !== model.provider) {
-        throw new TaskConfigurationError(
-          `CacheCheckpointTask: checkpoint "${input.checkpoint}" belongs to provider ` +
-            `"${parent.provider}" but the model uses "${model.provider}".`
-        );
-      }
-      const key = checkpointModelKey(model);
-      if (parent.modelKey && key && parent.modelKey !== key) {
-        throw new TaskConfigurationError(
-          `CacheCheckpointTask: checkpoint "${input.checkpoint}" was created for model ` +
-            `"${parent.modelKey}" but the task model is "${key}".`
-        );
-      }
-    }
+    const parent: CheckpointEntry | undefined = input.checkpoint
+      ? validateParentCheckpoint(input.checkpoint, model, "CacheCheckpointTask")
+      : undefined;
 
-    const prefix: CheckpointPrefix = {
-      systemPrompt: input.systemPrompt ?? parent?.prefix.systemPrompt,
-      tools: input.tools ?? parent?.prefix.tools,
-      messages: [...(parent?.prefix.messages ?? []), ...(input.messages ?? [])],
-    };
+    const prefix = mergeCheckpointPrefix(parent?.prefix, {
+      systemPrompt: input.systemPrompt,
+      tools: input.tools,
+      messages: input.messages ?? [],
+    });
 
     const registry = getAiProviderRegistry();
-    const id = registry.createSession(model.provider, model);
+    const providerName = model.provider;
+    const id = registry.createSession(providerName, model);
     registerCheckpoint(id, {
-      provider: model.provider,
+      provider: providerName,
       modelKey: checkpointModelKey(model),
       prefix,
       ...(input.checkpoint ? { parentId: input.checkpoint } : {}),
@@ -179,14 +160,13 @@ export class CacheCheckpointTask extends AiTask<
 
     if (context.resourceScope) {
       context.resourceScope.register(`ai:session:${id}`, async () => {
-        await registry.disposeSession(model.provider, id);
+        await registry.disposeSession(providerName, id);
         deleteCheckpoint(id);
       });
     }
 
     this._checkpointId = id;
     this._mergedPrefix = prefix;
-    this._parent = parent;
     this._parentId = input.checkpoint;
   }
 
@@ -207,7 +187,7 @@ export class CacheCheckpointTask extends AiTask<
     this.prepareCheckpoint(input, executeContext);
     const output = await super.execute(input, executeContext);
 
-    if (this._parentId && this._parent && !input.keepParent) {
+    if (this._parentId && !input.keepParent) {
       const model = input.model as ModelConfig;
       await getAiProviderRegistry().disposeSession(model.provider, this._parentId);
       deleteCheckpoint(this._parentId);

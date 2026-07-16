@@ -8,7 +8,7 @@ import { TaskConfigurationError } from "@workglow/task-graph";
 import type { ModelConfig } from "../../model/ModelSchema";
 import type { AiSessionContext } from "../../provider/AiProviderRegistry";
 import { getAiProviderRegistry } from "../../provider/AiProviderRegistry";
-import type { CheckpointEntry } from "../../provider/CheckpointRegistry";
+import type { CheckpointEntry, CheckpointPrefix } from "../../provider/CheckpointRegistry";
 import {
   checkpointModelKey,
   deleteCheckpoint,
@@ -52,9 +52,9 @@ export const CheckpointOutputProperty = {
 } as const;
 
 export interface CheckpointPortsInput {
-  readonly checkpoint?: string;
-  readonly emitCheckpoint?: boolean;
-  readonly keepParentCheckpoint?: boolean;
+  readonly checkpoint?: string | undefined;
+  readonly emitCheckpoint?: boolean | undefined;
+  readonly keepParentCheckpoint?: boolean | undefined;
 }
 
 export interface ResolvedCheckpoint {
@@ -65,9 +65,59 @@ export interface ResolvedCheckpoint {
 }
 
 /**
+ * Validates a parent checkpoint id against the registry and the task's model,
+ * returning the registry entry. Throws {@link TaskConfigurationError} on
+ * unknown ids and provider / model-key mismatches.
+ */
+export function validateParentCheckpoint(
+  checkpointId: string,
+  model: ModelConfig,
+  taskType: string
+): CheckpointEntry {
+  const parentEntry = getCheckpoint(checkpointId);
+  if (!parentEntry) {
+    throw new TaskConfigurationError(`${taskType}: unknown cache checkpoint "${checkpointId}".`);
+  }
+  if (parentEntry.provider !== model.provider) {
+    throw new TaskConfigurationError(
+      `${taskType}: checkpoint "${checkpointId}" belongs to provider ` +
+        `"${parentEntry.provider}" but the model uses "${model.provider}".`
+    );
+  }
+  const key = checkpointModelKey(model);
+  if (parentEntry.modelKey && key && parentEntry.modelKey !== key) {
+    throw new TaskConfigurationError(
+      `${taskType}: checkpoint "${checkpointId}" was created for model ` +
+        `"${parentEntry.modelKey}" but the task model is "${key}".`
+    );
+  }
+  return parentEntry;
+}
+
+/**
+ * Merges new prefix content onto a parent checkpoint's prefix: scalar fields
+ * fall back to the parent's, messages append after the parent's.
+ */
+export function mergeCheckpointPrefix(
+  parentPrefix: CheckpointPrefix | undefined,
+  content: {
+    readonly systemPrompt: string | undefined;
+    readonly tools: readonly ToolDefinition[] | undefined;
+    readonly messages: readonly ChatMessage[];
+  }
+): CheckpointPrefix {
+  return {
+    systemPrompt: content.systemPrompt ?? parentPrefix?.systemPrompt,
+    tools: content.tools ?? parentPrefix?.tools,
+    messages: [...(parentPrefix?.messages ?? []), ...content.messages],
+  };
+}
+
+/**
  * Resolves the checkpoint ports of a task input into an {@link AiSessionContext}.
- * Returns undefined when neither port is used. Throws on unknown checkpoint ids
- * and provider/model mismatches — before any provider dispatch.
+ * Returns undefined when neither port is used. Throws on unknown checkpoint ids,
+ * provider/model mismatches, and providers without cache-checkpoint support —
+ * before any provider dispatch.
  */
 export function resolveCheckpointSession(
   input: CheckpointPortsInput,
@@ -76,28 +126,20 @@ export function resolveCheckpointSession(
 ): ResolvedCheckpoint | undefined {
   if (!input.checkpoint && !input.emitCheckpoint) return undefined;
 
-  let parentEntry: CheckpointEntry | undefined;
-  if (input.checkpoint) {
-    parentEntry = getCheckpoint(input.checkpoint);
-    if (!parentEntry) {
-      throw new TaskConfigurationError(
-        `${taskType}: unknown cache checkpoint "${input.checkpoint}".`
-      );
-    }
-    if (parentEntry.provider !== model.provider) {
-      throw new TaskConfigurationError(
-        `${taskType}: checkpoint "${input.checkpoint}" belongs to provider ` +
-          `"${parentEntry.provider}" but the model uses "${model.provider}".`
-      );
-    }
-    const key = checkpointModelKey(model);
-    if (parentEntry.modelKey && key && parentEntry.modelKey !== key) {
-      throw new TaskConfigurationError(
-        `${taskType}: checkpoint "${input.checkpoint}" was created for model ` +
-          `"${parentEntry.modelKey}" but the task model is "${key}".`
-      );
-    }
+  // Providers that never registered a cache.checkpoint run-fn ignore
+  // session.prefix / emitCheckpointId entirely, which would silently drop the
+  // checkpoint's context (consume) or return a handle backed by nothing (emit).
+  // Fail loudly instead, mirroring the dispatch error CacheCheckpointTask gets.
+  if (!getAiProviderRegistry().getRunFnFor(model.provider, ["cache.checkpoint"])) {
+    throw new TaskConfigurationError(
+      `${taskType}: provider "${model.provider}" does not support cache checkpoints ` +
+        `(no run function serving ["cache.checkpoint"]).`
+    );
   }
+
+  const parentEntry: CheckpointEntry | undefined = input.checkpoint
+    ? validateParentCheckpoint(input.checkpoint, model, taskType)
+    : undefined;
 
   const emitCheckpointId = input.emitCheckpoint
     ? getAiProviderRegistry().createSession(model.provider, model)
@@ -151,15 +193,14 @@ export async function finalizeEmittedCheckpoint(opts: {
 }): Promise<void> {
   const { model, resolved } = opts;
   if (!resolved.emitCheckpointId) return;
-  const parentPrefix = resolved.parentEntry?.prefix;
   registerCheckpoint(resolved.emitCheckpointId, {
     provider: model.provider,
     modelKey: checkpointModelKey(model),
-    prefix: {
-      systemPrompt: opts.systemPrompt ?? parentPrefix?.systemPrompt,
-      tools: opts.tools ?? parentPrefix?.tools,
-      messages: [...(parentPrefix?.messages ?? []), ...opts.tailMessages, opts.assistantMessage],
-    },
+    prefix: mergeCheckpointPrefix(resolved.parentEntry?.prefix, {
+      systemPrompt: opts.systemPrompt,
+      tools: opts.tools,
+      messages: [...opts.tailMessages, opts.assistantMessage],
+    }),
     ...(resolved.parentId ? { parentId: resolved.parentId } : {}),
   });
   if (resolved.session.supersedeParent && resolved.parentId) {

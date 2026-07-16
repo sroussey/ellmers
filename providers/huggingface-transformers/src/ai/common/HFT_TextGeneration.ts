@@ -97,6 +97,13 @@ export const HFT_TextGeneration: AiProviderRunFn<
         }
       }
 
+      if (sessionContext?.emitCheckpointId && !past_key_values) {
+        // Parity fell back to a full re-encode: attach an empty cache so this
+        // turn's KV can still be snapshotted under the emitted checkpoint id.
+        const { DynamicCache } = await loadTransformersSDK();
+        past_key_values = new DynamicCache();
+      }
+
       await generateText(prompt, {
         streamer,
         do_sample: false,
@@ -148,6 +155,13 @@ export const HFT_TextGeneration: AiProviderRunFn<
       past_key_values = session.cache;
     }
 
+    if (sessionContext?.emitCheckpointId && !past_key_values) {
+      // Emit without a consumed checkpoint: attach an empty cache so this
+      // turn's KV can be snapshotted under the emitted checkpoint id.
+      const sdk = await loadTransformersSDK();
+      past_key_values = new sdk.DynamicCache();
+    }
+
     // Use the chat-template format for instruction-tuned models. Passing a raw
     // prompt string skips the chat template and most instruct models produce no
     // output.
@@ -160,6 +174,18 @@ export const HFT_TextGeneration: AiProviderRunFn<
       stopping_criteria: [stopping_criteria],
       ...(past_key_values ? { past_key_values } : {}),
     });
+
+    if (sessionContext?.emitCheckpointId && past_key_values) {
+      const baseEntries: Record<string, any> = {};
+      for (const key of Object.keys(past_key_values)) baseEntries[key] = past_key_values[key];
+      setHftSession(sessionContext.emitCheckpointId, {
+        mode: "prefix-rewind",
+        baseEntries,
+        baseSeqLength: past_key_values.get_seq_length ? past_key_values.get_seq_length() : 0,
+        modelPath,
+      });
+    }
+
     emit({ type: "finish", data: {} as TextGenerationTaskOutput });
   });
 };
