@@ -20,16 +20,23 @@ import {
   setHftSession,
   withHftPipelineInUse,
 } from "./HFT_Pipeline";
-import { buildHFTMessages } from "./HFT_ToolCalling";
+import { buildHFTMessages, mapHFTTools } from "./HFT_ToolCalling";
 
-/** Renders a checkpoint prefix with the model's chat template (no generation prompt). */
+/**
+ * Renders a checkpoint prefix with the model's chat template (no generation prompt).
+ *
+ * The prefix must tokenize identically to the consuming run-fn's prompt: prefix-rewind
+ * trusts the cached KV tokens for positions [0:L] without re-checking them, so any
+ * divergence corrupts generation. Tools therefore go through the same {@link mapHFTTools}
+ * mapping used by HFT_ToolCalling so warm-up and consumption produce the same tokens.
+ */
 export function renderHftPrefixPrompt(
   tokenizer: TextGenerationPipeline["tokenizer"],
   prefix: CheckpointPrefix
 ): string {
   const messages = buildHFTMessages(prefix.messages, prefix.systemPrompt, undefined, undefined);
   return tokenizer.apply_chat_template(messages as any, {
-    ...(prefix.tools && prefix.tools.length > 0 ? { tools: prefix.tools as any } : {}),
+    ...(prefix.tools && prefix.tools.length > 0 ? { tools: mapHFTTools(prefix.tools) as any } : {}),
     tokenize: false,
     add_generation_prompt: false,
   }) as string;

@@ -89,7 +89,7 @@ function normalizeParsedToolCalls(
 // HFT tool mapping
 // ============================================================================
 
-function mapHFTTools(tools: ReadonlyArray<ToolDefinition>) {
+export function mapHFTTools(tools: ReadonlyArray<ToolDefinition>) {
   return tools.map((t) => ({
     type: "function" as const,
     function: {
