@@ -9,6 +9,7 @@ import type {
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
 } from "@workglow/ai";
+import { renderLlamaCppPrefixText } from "./LlamaCpp_CacheCheckpoint";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
   acquireContextSequence,
@@ -18,6 +19,7 @@ import {
   getOrCreateTextContext,
   llamaCppChatSessionConstructorSpread,
   llamaCppSeedPromptSpread,
+  llamaCppSessions,
   loadSdk,
   setLlamaCppSession,
   streamFromSession,
@@ -30,13 +32,49 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderRunFn<
   LlamaCppModelConfig
 > = async (input, model, signal, emit, _outputSchema, sessionContext) => {
   const sessionId = sessionContext?.sessionId;
+  const isCheckpoint = sessionContext?.prefix !== undefined;
   if (!model) throw new Error("Model config is required for TextGenerationTask.");
 
   const { LlamaChatSession } = await loadSdk();
   const modelPath = getActualModelPath(model);
 
   await withModelInUse(modelPath, async () => {
-    const cached = sessionId ? getLlamaCppSession(sessionId) : undefined;
+    let cached = sessionId ? getLlamaCppSession(sessionId) : undefined;
+
+    // Missing-state fallback: a checkpoint id was supplied but its worker-side
+    // sequence is gone (e.g. evicted). Re-encode the prefix into a fresh
+    // sequence and store it under the checkpoint id so consumption proceeds.
+    if (sessionId && !cached && isCheckpoint) {
+      const prefix = sessionContext!.prefix!;
+      const context = await getOrCreateTextContext(model);
+      const sequence = await acquireContextSequence(context, signal);
+      let chatSession: any;
+      try {
+        chatSession = new LlamaChatSession({
+          contextSequence: sequence,
+          ...(prefix.systemPrompt !== undefined && { systemPrompt: prefix.systemPrompt }),
+          ...llamaCppChatSessionConstructorSpread(model),
+        });
+      } catch (err) {
+        try {
+          await sequence.dispose();
+        } catch {}
+        throw err;
+      }
+      const prefixText = renderLlamaCppPrefixText(prefix);
+      if (prefixText) {
+        await chatSession.preloadPrompt(prefixText, { signal });
+      }
+      const state = {
+        mode: "prefix-rewind" as const,
+        sequence,
+        session: chatSession,
+        modelKey: getConfigKey(model),
+      };
+      setLlamaCppSession(sessionId, state);
+      cached = state;
+    }
+
     const context = cached ? undefined : await getOrCreateTextContext(model);
     const sequence = cached ? cached.sequence : await acquireContextSequence(context!, signal);
     // Sequence ownership only transfers to the session once its constructor
@@ -81,8 +119,26 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderRunFn<
       }, signal)) {
         emit(e);
       }
+
+      // Re-key the live sequence under the emitted checkpoint id.
+      if (sessionContext?.emitCheckpointId) {
+        if (sessionId && cached) {
+          setLlamaCppSession(sessionContext.emitCheckpointId, cached);
+          if (sessionContext.supersedeParent) {
+            // Move ownership of the live sequence to the new id WITHOUT disposing.
+            llamaCppSessions.delete(sessionId);
+          }
+        } else if (!sessionId) {
+          setLlamaCppSession(sessionContext.emitCheckpointId, {
+            mode: "prefix-rewind",
+            sequence,
+            session,
+            modelKey: getConfigKey(model),
+          });
+        }
+      }
     } finally {
-      if (!sessionId) {
+      if (!sessionId && !sessionContext?.emitCheckpointId) {
         try {
           await session.dispose({ disposeSequence: false });
         } catch {}

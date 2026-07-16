@@ -10,6 +10,7 @@ import type {
   AiProviderRunFnRegistration,
 } from "@workglow/ai";
 import {
+  LLAMACPP_CACHE_CHECKPOINT,
   LLAMACPP_COUNT_TOKENS,
   LLAMACPP_JSON_MODE,
   LLAMACPP_MODEL_DOWNLOAD,
@@ -38,6 +39,7 @@ export {
   streamFromSession,
 } from "./LlamaCpp_Runtime";
 
+import { LlamaCpp_CacheCheckpoint_Stream } from "./LlamaCpp_CacheCheckpoint";
 import { LlamaCpp_Chat_Stream } from "./LlamaCpp_Chat";
 import { LlamaCpp_CountTokens, LlamaCpp_CountTokens_Preview } from "./LlamaCpp_CountTokens";
 import { LlamaCpp_Download } from "./LlamaCpp_Download";
@@ -94,6 +96,7 @@ export const LLAMACPP_RUN_FNS: readonly AiProviderRunFnRegistration<
   { serves: LLAMACPP_MODEL_DOWNLOAD, runFn: LlamaCpp_Download },
   { serves: LLAMACPP_MODEL_SEARCH, runFn: LlamaCpp_ModelSearch },
   { serves: LLAMACPP_MODEL_INFO, runFn: LlamaCpp_ModelInfo },
+  { serves: LLAMACPP_CACHE_CHECKPOINT, runFn: LlamaCpp_CacheCheckpoint_Stream },
 ];
 
 export const LLAMACPP_PREVIEW_TASKS: Record<
