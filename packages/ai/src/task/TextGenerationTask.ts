@@ -10,6 +10,7 @@ import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
+import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
 import type { ResolvedCheckpoint } from "./base/CheckpointPorts";
 import {
@@ -132,6 +133,16 @@ export class TextGenerationTask extends StreamingAiTask<
 
   private _resolvedCheckpoint: ResolvedCheckpoint | undefined;
 
+  /**
+   * Clear the checkpoint resolved by a prior run of a reused task instance.
+   * Done via a method (not an inline assignment) so control-flow analysis does
+   * not narrow {@link _resolvedCheckpoint} to `undefined` for the rest of the
+   * caller — {@link getJobInput} repopulates it before it is read.
+   */
+  private resetResolvedCheckpoint(): void {
+    this._resolvedCheckpoint = undefined;
+  }
+
   protected override async getJobInput(
     input: TextGenerationTaskInput
   ): Promise<AiJobInput<TextGenerationTaskInput>> {
@@ -159,13 +170,41 @@ export class TextGenerationTask extends StreamingAiTask<
     });
   }
 
+  /**
+   * Best-effort dispose of a minted-but-unfinalized emit checkpoint session.
+   * When the run fails before {@link finalizeCheckpoint} records the registry
+   * entry, only the provider session leaks (no checkpoint entry exists yet), so
+   * dispose it directly. Dispose errors are swallowed.
+   */
+  private async disposeUnfinalizedEmitSession(
+    input: TextGenerationTaskInput,
+    emitId: string
+  ): Promise<void> {
+    const model = input.model as ModelConfig;
+    if (!model || typeof model !== "object") return;
+    try {
+      await getAiProviderRegistry().disposeSession(model.provider, emitId);
+    } catch {
+      // Best-effort cleanup: a dispose failure must not mask the original error.
+    }
+  }
+
   override async execute(
     input: TextGenerationTaskInput,
     executeContext: IExecuteContext
   ): Promise<TextGenerationTaskOutput | undefined> {
+    // Reset any checkpoint resolved by a prior run of this reused instance so we
+    // don't re-emit a stale minted id or re-supersede an already-gone parent.
+    this.resetResolvedCheckpoint();
     await this.getJobInput(input);
-    const output = await super.execute(input, executeContext);
     const emitId = this._resolvedCheckpoint?.emitCheckpointId;
+    let output: TextGenerationTaskOutput | undefined;
+    try {
+      output = await super.execute(input, executeContext);
+    } catch (err) {
+      if (emitId) await this.disposeUnfinalizedEmitSession(input, emitId);
+      throw err;
+    }
     if (output && emitId) {
       await this.finalizeCheckpoint(input, output.text);
       return { ...output, checkpoint: emitId };
@@ -177,6 +216,9 @@ export class TextGenerationTask extends StreamingAiTask<
     input: TextGenerationTaskInput,
     context: IExecuteContext
   ): AsyncIterable<StreamEvent<TextGenerationTaskOutput>> {
+    // Reset any checkpoint resolved by a prior run of this reused instance so we
+    // don't re-emit a stale minted id or re-supersede an already-gone parent.
+    this.resetResolvedCheckpoint();
     await this.getJobInput(input);
     const emitId = this._resolvedCheckpoint?.emitCheckpointId;
     if (!emitId) {
@@ -184,19 +226,27 @@ export class TextGenerationTask extends StreamingAiTask<
       return;
     }
     let text = "";
-    for await (const event of super.executeStream(input, context)) {
-      if (event.type === "text-delta" && (event.port ?? "text") === "text") {
-        text += event.textDelta;
+    let finalized = false;
+    try {
+      for await (const event of super.executeStream(input, context)) {
+        if (event.type === "text-delta" && (event.port ?? "text") === "text") {
+          text += event.textDelta;
+        }
+        if (event.type === "finish") {
+          await this.finalizeCheckpoint(input, text);
+          finalized = true;
+          yield {
+            type: "text-delta",
+            port: "checkpoint",
+            textDelta: emitId,
+          } as StreamEvent<TextGenerationTaskOutput>;
+        }
+        yield event;
       }
-      if (event.type === "finish") {
-        await this.finalizeCheckpoint(input, text);
-        yield {
-          type: "text-delta",
-          port: "checkpoint",
-          textDelta: emitId,
-        } as StreamEvent<TextGenerationTaskOutput>;
-      }
-      yield event;
+    } finally {
+      // Stream error or abandonment before the finish event leaves the minted
+      // emit session allocated but never registered — dispose it.
+      if (!finalized) await this.disposeUnfinalizedEmitSession(input, emitId);
     }
   }
 }

@@ -11,6 +11,7 @@ import type {
 } from "@workglow/ai";
 import { renderLlamaCppPrefixText } from "./LlamaCpp_CacheCheckpoint";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
+import type { LlamaCppSessionState } from "./LlamaCpp_Runtime";
 import {
   acquireContextSequence,
   getActualModelPath,
@@ -52,7 +53,7 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderRunFn<
       // session map; free the session/sequence on any throw before that (e.g. an
       // aborted preload) so a failed re-encode does not strand the slot.
       let chatSession: any;
-      let state;
+      let state: LlamaCppSessionState | undefined;
       try {
         chatSession = new LlamaChatSession({
           contextSequence: sequence,

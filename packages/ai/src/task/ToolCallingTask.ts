@@ -336,6 +336,16 @@ export class ToolCallingTask extends StreamingAiTask<
   private _resolvedCheckpoint: ResolvedCheckpoint | undefined;
 
   /**
+   * Clear the checkpoint resolved by a prior run of a reused task instance.
+   * Done via a method (not an inline assignment) so control-flow analysis does
+   * not narrow {@link _resolvedCheckpoint} to `undefined` for the rest of the
+   * caller — {@link getJobInput} repopulates it before it is read.
+   */
+  private resetResolvedCheckpoint(): void {
+    this._resolvedCheckpoint = undefined;
+  }
+
+  /**
    * Override to auto-compute a prefix-rewind session ID from tools + systemPrompt
    * + runnerId when no explicit sessionId is provided. The runnerId scopes the
    * cache to the current graph run so it's cleaned up via ResourceScope.
@@ -413,10 +423,32 @@ export class ToolCallingTask extends StreamingAiTask<
     });
   }
 
+  /**
+   * Best-effort dispose of a minted-but-unfinalized emit checkpoint session.
+   * When the run fails before {@link finalizeCheckpoint} records the registry
+   * entry, only the provider session leaks (no checkpoint entry exists yet), so
+   * dispose it directly. Dispose errors are swallowed.
+   */
+  private async disposeUnfinalizedEmitSession(
+    input: ToolCallingTaskInput,
+    emitId: string
+  ): Promise<void> {
+    const model = input.model as ModelConfig;
+    if (!model || typeof model !== "object") return;
+    try {
+      await getAiProviderRegistry().disposeSession(model.provider, emitId);
+    } catch {
+      // Best-effort cleanup: a dispose failure must not mask the original error.
+    }
+  }
+
   override async execute(
     input: ToolCallingTaskInput,
     executeContext: IExecuteContext
   ): Promise<ToolCallingTaskOutput | undefined> {
+    // Reset any checkpoint resolved by a prior run of this reused instance so we
+    // don't re-emit a stale minted id or re-supersede an already-gone parent.
+    this.resetResolvedCheckpoint();
     // Register the session disposer BEFORE running so it still fires if
     // super.execute() throws or the stream aborts mid-iteration — the provider
     // may already have allocated the session on the first run-fn invocation.
@@ -424,8 +456,14 @@ export class ToolCallingTask extends StreamingAiTask<
     // so computing the session id up front and registering early is safe.
     await this.getJobInput(input);
     this.registerSessionDispose(input, executeContext);
-    const output = await super.execute(input, executeContext);
     const emitId = this._resolvedCheckpoint?.emitCheckpointId;
+    let output: ToolCallingTaskOutput | undefined;
+    try {
+      output = await super.execute(input, executeContext);
+    } catch (err) {
+      if (emitId) await this.disposeUnfinalizedEmitSession(input, emitId);
+      throw err;
+    }
     if (output && emitId) {
       await this.finalizeCheckpoint(input, output);
       return { ...output, checkpoint: emitId };
@@ -437,6 +475,9 @@ export class ToolCallingTask extends StreamingAiTask<
     input: ToolCallingTaskInput,
     context: IExecuteContext
   ): AsyncIterable<StreamEvent<ToolCallingTaskOutput>> {
+    // Reset any checkpoint resolved by a prior run of this reused instance so we
+    // don't re-emit a stale minted id or re-supersede an already-gone parent.
+    this.resetResolvedCheckpoint();
     // Register the session disposer BEFORE streaming for the same reason as
     // execute(): an abort or throw mid-stream must still leave the disposer
     // registered so disposeSession runs on scope teardown.
@@ -451,21 +492,29 @@ export class ToolCallingTask extends StreamingAiTask<
 
     let text = "";
     let toolCalls: ToolCallingTaskOutput["toolCalls"] = [];
-    for await (const event of super.executeStream(input, context)) {
-      if (event.type === "text-delta" && (event.port ?? "text") === "text") {
-        text += event.textDelta;
-      } else if (event.type === "object-delta" && event.port === "toolCalls") {
-        toolCalls = event.objectDelta as ToolCallingTaskOutput["toolCalls"];
+    let finalized = false;
+    try {
+      for await (const event of super.executeStream(input, context)) {
+        if (event.type === "text-delta" && (event.port ?? "text") === "text") {
+          text += event.textDelta;
+        } else if (event.type === "object-delta" && event.port === "toolCalls") {
+          toolCalls = event.objectDelta as ToolCallingTaskOutput["toolCalls"];
+        }
+        if (event.type === "finish") {
+          await this.finalizeCheckpoint(input, { text, toolCalls });
+          finalized = true;
+          yield {
+            type: "text-delta",
+            port: "checkpoint",
+            textDelta: emitId,
+          } as StreamEvent<ToolCallingTaskOutput>;
+        }
+        yield event;
       }
-      if (event.type === "finish") {
-        await this.finalizeCheckpoint(input, { text, toolCalls });
-        yield {
-          type: "text-delta",
-          port: "checkpoint",
-          textDelta: emitId,
-        } as StreamEvent<ToolCallingTaskOutput>;
-      }
-      yield event;
+    } finally {
+      // Stream error or abandonment before the finish event leaves the minted
+      // emit session allocated but never registered — dispose it.
+      if (!finalized) await this.disposeUnfinalizedEmitSession(input, emitId);
     }
   }
 }

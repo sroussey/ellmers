@@ -99,8 +99,10 @@ export type CacheCheckpointTaskConfig = TaskConfig<CacheCheckpointTaskInput>;
 /**
  * Eagerly warms a prompt-prefix cache (provider prompt caching or local KV
  * state) and outputs an opaque checkpoint handle other AI tasks can start
- * from. The handle doubles as a provider session id; disposal is registered
- * on the run's resource scope.
+ * from. The handle doubles as a provider session id. Lifecycle: an emitted
+ * chained checkpoint supersedes its parent (disposing the parent's session and
+ * registry entry) unless `keepParent` is set; otherwise the checkpoint persists
+ * until explicitly disposed via {@link AiProviderRegistry.disposeSession}.
  */
 export class CacheCheckpointTask extends AiTask<
   CacheCheckpointTaskInput,
