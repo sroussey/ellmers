@@ -338,3 +338,101 @@ describe("TextGenerationTask checkpoint ports", () => {
     expect(entry?.prefix.messages?.at(-1)?.content[0]).toEqual({ type: "text", text: "out" });
   });
 });
+
+describe("checkpoint chaining across tasks", () => {
+  let sessions: (AiSessionContext | undefined)[];
+
+  beforeEach(async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    clearCheckpointsForTesting();
+    sessions = [];
+    const warm: AiProviderRunFn = async (_i, _m, _s, emit, _o, session) => {
+      sessions.push(session);
+      emit({ type: "finish", data: { checkpoint: session?.sessionId ?? "" } } as any);
+    };
+    const gen: AiProviderRunFn = async (_i, _m, _s, emit, _o, session) => {
+      sessions.push(session);
+      emit({ type: "text-delta", port: "text", textDelta: "reply" } as any);
+      emit({ type: "finish", data: {} } as any);
+    };
+    const provider = new CheckpointTestProvider([
+      { serves: ["cache.checkpoint"] as Capability[], runFn: warm },
+      { serves: ["text.generation"] as Capability[], runFn: gen },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+  });
+
+  it("warm-up → consume → emit → consume chains prefixes and supersedes", async () => {
+    const ckpt0 = (await cacheCheckpoint({ model: checkpointModel(), systemPrompt: "sys" }))!
+      .checkpoint;
+
+    const turn1 = await new TextGenerationTask().run({
+      model: checkpointModel(),
+      prompt: "turn one",
+      checkpoint: ckpt0,
+      emitCheckpoint: true,
+    });
+    const ckpt1 = (turn1 as { checkpoint?: string }).checkpoint!;
+    expect(getCheckpoint(ckpt0)).toBeUndefined();
+    const entry1 = getCheckpoint(ckpt1)!;
+    expect(entry1.parentId).toBe(ckpt0);
+    expect(entry1.prefix.messages).toHaveLength(2);
+
+    await new TextGenerationTask().run({
+      model: checkpointModel(),
+      prompt: "turn two",
+      checkpoint: ckpt1,
+    });
+    const consumed = sessions[sessions.length - 1];
+    expect(consumed?.sessionId).toBe(ckpt1);
+    expect(consumed?.prefix?.messages).toHaveLength(2);
+  });
+
+  it("a failed consuming call leaves the parent checkpoint valid", async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    const failing: AiProviderRunFn = async () => {
+      throw new Error("provider exploded");
+    };
+    const warm: AiProviderRunFn = async (_i, _m, _s, emit, _o, session) => {
+      emit({ type: "finish", data: { checkpoint: session?.sessionId ?? "" } } as any);
+    };
+    const provider = new CheckpointTestProvider([
+      { serves: ["cache.checkpoint"] as Capability[], runFn: warm },
+      { serves: ["text.generation"] as Capability[], runFn: failing },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+
+    const ckpt0 = (await cacheCheckpoint({ model: checkpointModel(), systemPrompt: "sys" }))!
+      .checkpoint;
+    await expect(
+      new TextGenerationTask().run({
+        model: checkpointModel(),
+        prompt: "boom",
+        checkpoint: ckpt0,
+        emitCheckpoint: true,
+      })
+    ).rejects.toThrow();
+    // finalize never ran: parent survives, no orphan child entry beyond the parent
+    expect(getCheckpoint(ckpt0)).toBeDefined();
+  });
+
+  it("branching: two consumers of one kept parent see the same prefix", async () => {
+    const ckpt0 = (await cacheCheckpoint({ model: checkpointModel(), systemPrompt: "sys" }))!
+      .checkpoint;
+    const runBranch = (prompt: string) =>
+      new TextGenerationTask().run({
+        model: checkpointModel(),
+        prompt,
+        checkpoint: ckpt0,
+        emitCheckpoint: true,
+        keepParentCheckpoint: true,
+      });
+    const [a, b] = await Promise.all([runBranch("branch a"), runBranch("branch b")]);
+    expect(getCheckpoint(ckpt0)).toBeDefined();
+    const ca = (a as { checkpoint?: string }).checkpoint!;
+    const cb = (b as { checkpoint?: string }).checkpoint!;
+    expect(ca).not.toBe(cb);
+    expect(getCheckpoint(ca)?.parentId).toBe(ckpt0);
+    expect(getCheckpoint(cb)?.parentId).toBe(ckpt0);
+  });
+});

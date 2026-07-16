@@ -186,6 +186,22 @@ Task categories: text generation/embedding/summary/translation/rewriting/classif
 
 RAG tasks: `ChunkVectorUpsertTask` (input: `knowledgeBase` + `chunks` + `vector`, optional `doc_title`), `ChunkRetrievalTask` (input: `knowledgeBase` + `query` + `model`, with `method: "similarity" | "hybrid"`), `HierarchyJoinTask`, `RerankerTask`, `QueryExpanderTask`, `TextChunkerTask`, `HierarchicalChunkerTask`.
 
+Cache checkpoints: `CacheCheckpointTask` (requires `["cache.checkpoint"]`) eagerly
+warms a prompt prefix (system prompt + tools + messages) and outputs a
+`checkpoint` handle (`format: "cache-checkpoint"`). `ToolCallingTask`,
+`TextGenerationTask`, and `AiChatTask` accept a `checkpoint` input to start from
+that prefix (send only the tail); `ToolCallingTask` / `TextGenerationTask` can
+also set `emitCheckpoint` to output a new chained checkpoint including their
+turn (superseding the parent unless `keepParentCheckpoint`). Run-fns receive an
+`AiSessionContext` (`sessionId` = rewind source, `emitCheckpointId` = snapshot
+target, `prefix` = replay/fallback content) instead of the old scalar sessionId.
+Cloud providers map checkpoints to prompt-cache breakpoints (Anthropic
+`cache_control` at the checkpoint boundary); local providers (HFT, llama-cpp)
+map them to KV-state sessions with re-encode fallback after worker restarts.
+An emitted checkpoint supersedes its parent (disposing the parent's session and
+registry entry) unless `keepParentCheckpoint` is set; checkpoints otherwise
+persist until explicitly disposed via `AiProviderRegistry.disposeSession`.
+
 ### `providers/*` — provider implementations
 
 Each provider is a standalone package with optional third-party peer dependencies. They each expose `./ai` (main-thread shell) and `./ai-runtime` (worker / inline runtime):
