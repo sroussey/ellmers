@@ -17,6 +17,7 @@ import {
   AiProviderRegistry,
   CAPABILITIES,
   CacheCheckpointTask,
+  TextGenerationTask,
   ToolCallingTask,
   cacheCheckpoint,
   checkpointModelKey,
@@ -293,5 +294,47 @@ describe("ToolCallingTask checkpoint ports", () => {
     await task.run({ model: toolModel(), prompt: "hi", tools: [aTool] });
     expect(toolCalls[0].session?.sessionId).toBeTruthy();
     expect(toolCalls[0].session?.prefix).toBeUndefined();
+  });
+});
+
+describe("TextGenerationTask checkpoint ports", () => {
+  let genCalls: { session: AiSessionContext | undefined }[];
+
+  const genFn: AiProviderRunFn = async (_input, _model, _signal, emit, _schema, session) => {
+    genCalls.push({ session });
+    emit({ type: "text-delta", port: "text", textDelta: "out" } as any);
+    emit({ type: "finish", data: {} } as any);
+  };
+
+  beforeEach(async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    clearCheckpointsForTesting();
+    genCalls = [];
+    const provider = new CheckpointTestProvider([
+      { serves: ["text.generation"] as Capability[], runFn: genFn },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+  });
+
+  it("consumes a checkpoint and emits a chained one", async () => {
+    registerCheckpoint("gen-parent", {
+      provider: CKPT_PROVIDER,
+      modelKey: "test:ckpt-model:v1",
+      prefix: { systemPrompt: "sys", messages: [] },
+    });
+    const task = new TextGenerationTask();
+    const out = await task.run({
+      model: checkpointModel(),
+      prompt: "continue",
+      checkpoint: "gen-parent",
+      emitCheckpoint: true,
+    });
+    expect(genCalls[0].session?.sessionId).toBe("gen-parent");
+    expect(genCalls[0].session?.prefix?.systemPrompt).toBe("sys");
+    const emitted = (out as { checkpoint?: string }).checkpoint;
+    expect(emitted).toBeTruthy();
+    const entry = getCheckpoint(emitted!);
+    expect(entry?.prefix.messages?.at(-1)?.role).toBe("assistant");
+    expect(entry?.prefix.messages?.at(-1)?.content[0]).toEqual({ type: "text", text: "out" });
   });
 });
