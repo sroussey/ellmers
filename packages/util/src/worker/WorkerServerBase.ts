@@ -167,7 +167,7 @@ export class WorkerServerBase {
       signal: AbortSignal,
       emit: (event: unknown) => void,
       outputSchema?: unknown,
-      sessionId?: string
+      session?: unknown
     ) => Promise<void>
   > = {};
   private previewFunctions: Record<string, (input: any, model: any) => Promise<any>> = {};
