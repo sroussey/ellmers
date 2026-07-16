@@ -199,8 +199,10 @@ Cloud providers map checkpoints to prompt-cache breakpoints (Anthropic
 `cache_control` at the checkpoint boundary); local providers (HFT, llama-cpp)
 map them to KV-state sessions with re-encode fallback after worker restarts.
 An emitted checkpoint supersedes its parent (disposing the parent's session and
-registry entry) unless `keepParentCheckpoint` is set; checkpoints otherwise
-persist until explicitly disposed via `AiProviderRegistry.disposeSession`.
+registry entry) unless `keepParentCheckpoint` is set; all checkpoints are
+additionally run-scoped — disposed with the run's ResourceScope at run end;
+inject a shared `resourceScope` in the run config to share checkpoints across
+separate runs.
 
 ### `providers/*` — provider implementations
 
