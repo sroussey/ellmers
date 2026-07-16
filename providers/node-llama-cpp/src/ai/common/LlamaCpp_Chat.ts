@@ -52,9 +52,9 @@ async function getOrCreateChatSession(
   // run-fn did: bake the prefix's system prompt into the constructor and
   // preload the rendered prefix text below.
   const effectiveSystemPrompt = isCheckpoint ? sessionContext!.prefix!.systemPrompt : systemPrompt;
-  // Sequence ownership only transfers to the session once its constructor
-  // returns; a throw before that would strand the sequence and eventually
-  // exhaust the per-context sequence pool, so free it in the failure path.
+  // Sequence ownership only transfers once the session is stored in the map (or
+  // returned to the caller, which disposes it); free the session/sequence on any
+  // throw before that (e.g. an aborted preload) so it does not strand the slot.
   let session: any;
   try {
     session = new LlamaChatSession({
@@ -62,29 +62,34 @@ async function getOrCreateChatSession(
       ...(effectiveSystemPrompt !== undefined && { systemPrompt: effectiveSystemPrompt }),
       ...llamaCppChatSessionConstructorSpread(model),
     });
+
+    // Missing-state fallback: a checkpoint id was supplied but its worker-side
+    // sequence is gone. Re-encode the prefix so the turn continues from it.
+    if (isCheckpoint) {
+      const prefixText = renderLlamaCppPrefixText(sessionContext!.prefix!);
+      if (prefixText) {
+        await session.preloadPrompt(prefixText, { signal });
+      }
+    }
+
+    if (sessionId) {
+      setLlamaCppSession(sessionId, {
+        mode: isCheckpoint ? "prefix-rewind" : "progressive",
+        session,
+        sequence,
+        modelKey: getConfigKey(model),
+      });
+    }
   } catch (err) {
+    if (session) {
+      try {
+        await session.dispose({ disposeSequence: false });
+      } catch {}
+    }
     try {
       await sequence.dispose();
     } catch {}
     throw err;
-  }
-
-  // Missing-state fallback: a checkpoint id was supplied but its worker-side
-  // sequence is gone. Re-encode the prefix so the turn continues from it.
-  if (isCheckpoint) {
-    const prefixText = renderLlamaCppPrefixText(sessionContext!.prefix!);
-    if (prefixText) {
-      await session.preloadPrompt(prefixText, { signal });
-    }
-  }
-
-  if (sessionId) {
-    setLlamaCppSession(sessionId, {
-      mode: isCheckpoint ? "prefix-rewind" : "progressive",
-      session,
-      sequence,
-      modelKey: getConfigKey(model),
-    });
   }
 
   return { session, sequence };
