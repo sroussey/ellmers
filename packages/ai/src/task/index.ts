@@ -17,6 +17,7 @@ export * from "./base/AiTaskSchemas";
 export * from "./base/responseFormat";
 export * from "./base/runWithIterable";
 export * from "./base/StreamingAiTask";
+export * from "./CacheCheckpointTask";
 export * from "./ChatMessage";
 export * from "./ChunkRetrievalTask";
 export * from "./ChunkVectorUpsertTask";

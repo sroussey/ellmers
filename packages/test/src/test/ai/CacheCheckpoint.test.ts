@@ -4,16 +4,30 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { CheckpointEntry, ModelConfig } from "@workglow/ai";
+import type {
+  AiProviderRunFn,
+  AiProviderRunFnRegistration,
+  AiSessionContext,
+  Capability,
+  CheckpointEntry,
+  ModelConfig,
+} from "@workglow/ai";
 import {
+  AiProvider,
+  AiProviderRegistry,
   CAPABILITIES,
+  CacheCheckpointTask,
+  cacheCheckpoint,
   checkpointModelKey,
   clearCheckpointsForTesting,
   deleteCheckpoint,
+  getAiProviderRegistry,
   getCheckpoint,
   registerCheckpoint,
+  setAiProviderRegistry,
 } from "@workglow/ai";
-import { beforeEach, describe, expect, it } from "vitest";
+import type { StreamEvent, TaskOutput } from "@workglow/task-graph";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("cache.checkpoint capability", () => {
   it("is a recognized capability", () => {
@@ -55,5 +69,125 @@ describe("CheckpointRegistry", () => {
   it("checkpointModelKey uses model_id and falls back to empty string", () => {
     expect(checkpointModelKey({ model_id: "m1" } as unknown as ModelConfig)).toBe("m1");
     expect(checkpointModelKey({} as ModelConfig)).toBe("");
+  });
+});
+
+const CKPT_PROVIDER = "checkpoint-test-provider";
+const CACHE_CHECKPOINT: readonly Capability[] = ["cache.checkpoint"];
+
+function checkpointModel(): ModelConfig {
+  return {
+    model_id: "test:ckpt-model:v1",
+    title: "ckpt-model",
+    description: "ckpt-model",
+    capabilities: ["cache.checkpoint", "text.generation"],
+    provider: CKPT_PROVIDER,
+    provider_config: {},
+    metadata: {},
+  } as unknown as ModelConfig;
+}
+
+class CheckpointTestProvider extends AiProvider {
+  readonly name = CKPT_PROVIDER;
+  readonly displayName = "Checkpoint Test";
+  readonly isLocal = true;
+  readonly supportsBrowser = true;
+  readonly supportsServer = true;
+  constructor(runFns?: readonly AiProviderRunFnRegistration[]) {
+    super(runFns);
+  }
+}
+
+describe("CacheCheckpointTask", () => {
+  let warmupCalls: { session: AiSessionContext | undefined }[];
+
+  const warmupFn: AiProviderRunFn = async (_input, _model, _signal, emit, _schema, session) => {
+    warmupCalls.push({ session });
+    emit({
+      type: "finish",
+      data: { checkpoint: session?.sessionId ?? "" },
+    } as unknown as StreamEvent<TaskOutput>);
+  };
+
+  beforeEach(async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    clearCheckpointsForTesting();
+    warmupCalls = [];
+    const provider = new CheckpointTestProvider([
+      { serves: CACHE_CHECKPOINT as Capability[], runFn: warmupFn },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+  });
+
+  afterEach(() => {
+    setAiProviderRegistry(new AiProviderRegistry());
+  });
+
+  it("exposes its task type and required capability", () => {
+    expect(CacheCheckpointTask.type).toBe("CacheCheckpointTask");
+    expect(CacheCheckpointTask.requires).toContain("cache.checkpoint");
+  });
+
+  it("warms once and outputs the minted checkpoint id", async () => {
+    const out = await cacheCheckpoint({
+      model: checkpointModel(),
+      systemPrompt: "You are helpful.",
+      tools: [{ name: "a", description: "A", inputSchema: { type: "object" } }],
+    });
+    expect(warmupCalls).toHaveLength(1);
+    expect(out?.checkpoint).toBe(warmupCalls[0].session?.sessionId);
+    const entry = getCheckpoint(out!.checkpoint);
+    expect(entry?.provider).toBe(CKPT_PROVIDER);
+    expect(entry?.prefix.systemPrompt).toBe("You are helpful.");
+    expect(warmupCalls[0].session?.prefix?.tools).toHaveLength(1);
+  });
+
+  it("extends a parent checkpoint and supersedes it by default", async () => {
+    const first = await cacheCheckpoint({
+      model: checkpointModel(),
+      systemPrompt: "sys",
+      messages: [{ role: "user", content: [{ type: "text", text: "one" }] }],
+    });
+    const disposeSpy = vi.spyOn(getAiProviderRegistry(), "disposeSession");
+    const second = await cacheCheckpoint({
+      model: checkpointModel(),
+      checkpoint: first!.checkpoint,
+      messages: [{ role: "user", content: [{ type: "text", text: "two" }] }],
+    });
+    const entry = getCheckpoint(second!.checkpoint);
+    expect(entry?.parentId).toBe(first!.checkpoint);
+    expect(entry?.prefix.systemPrompt).toBe("sys");
+    expect(entry?.prefix.messages).toHaveLength(2);
+    expect(getCheckpoint(first!.checkpoint)).toBeUndefined();
+    expect(disposeSpy).toHaveBeenCalledWith(CKPT_PROVIDER, first!.checkpoint);
+  });
+
+  it("keepParent preserves the parent entry", async () => {
+    const first = await cacheCheckpoint({ model: checkpointModel(), systemPrompt: "sys" });
+    const second = await cacheCheckpoint({
+      model: checkpointModel(),
+      checkpoint: first!.checkpoint,
+      keepParent: true,
+      messages: [{ role: "user", content: [{ type: "text", text: "tail" }] }],
+    });
+    expect(getCheckpoint(first!.checkpoint)).toBeDefined();
+    expect(getCheckpoint(second!.checkpoint)?.parentId).toBe(first!.checkpoint);
+  });
+
+  it("rejects an unknown parent checkpoint", async () => {
+    await expect(
+      cacheCheckpoint({ model: checkpointModel(), checkpoint: "missing-ckpt" })
+    ).rejects.toThrow(/unknown cache checkpoint/i);
+  });
+
+  it("rejects a provider-mismatched parent checkpoint", async () => {
+    registerCheckpoint("foreign", {
+      provider: "OTHER_PROVIDER",
+      modelKey: "",
+      prefix: {},
+    });
+    await expect(
+      cacheCheckpoint({ model: checkpointModel(), checkpoint: "foreign" })
+    ).rejects.toThrow(/provider/i);
   });
 });
