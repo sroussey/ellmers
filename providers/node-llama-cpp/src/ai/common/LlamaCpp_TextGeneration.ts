@@ -28,7 +28,8 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderRunFn<
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
   LlamaCppModelConfig
-> = async (input, model, signal, emit, _outputSchema, sessionId) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
+  const sessionId = sessionContext?.sessionId;
   if (!model) throw new Error("Model config is required for TextGenerationTask.");
 
   const { LlamaChatSession } = await loadSdk();

@@ -76,13 +76,13 @@ const HFT_TextGeneration_Unified: AiProviderRunFn<any, any, HfTransformersOnnxMo
   signal,
   emit,
   outputSchema,
-  sessionId
+  sessionContext
 ) => {
   const maybeMessages = (input as { messages?: unknown }).messages;
   if (Array.isArray(maybeMessages) && maybeMessages.length > 0) {
-    await HFT_Chat(input, model, signal, emit, outputSchema, sessionId);
+    await HFT_Chat(input, model, signal, emit, outputSchema, sessionContext);
   } else {
-    await HFT_TextGeneration(input, model, signal, emit, outputSchema, sessionId);
+    await HFT_TextGeneration(input, model, signal, emit, outputSchema, sessionContext);
   }
 };
 

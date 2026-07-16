@@ -328,13 +328,14 @@ export class ToolCallingTask extends StreamingAiTask<
   ): Promise<AiJobInput<ToolCallingTaskInput>> {
     const jobInput = await super.getJobInput(input);
 
-    if (!jobInput.sessionId && input.tools && input.tools.length > 0) {
-      jobInput.sessionId = await makeFingerprint({
+    if (!jobInput.session?.sessionId && input.tools && input.tools.length > 0) {
+      const sessionId = await makeFingerprint({
         tools: input.tools,
         systemPrompt: input.systemPrompt,
         runnerId: this.runConfig.runnerId,
       });
-      this._computedSessionId = jobInput.sessionId;
+      jobInput.session = { sessionId };
+      this._computedSessionId = sessionId;
     }
 
     return jobInput;

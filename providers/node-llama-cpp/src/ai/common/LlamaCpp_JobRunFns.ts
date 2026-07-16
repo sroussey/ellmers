@@ -64,7 +64,7 @@ const LlamaCpp_TextGeneration_Unified: AiProviderRunFn<any, any, LlamaCppModelCo
   signal,
   emit,
   outputSchema,
-  sessionId
+  sessionContext
 ) => {
   if (signal.aborted) {
     throw signal.reason ?? defaultAbortError();
@@ -72,9 +72,9 @@ const LlamaCpp_TextGeneration_Unified: AiProviderRunFn<any, any, LlamaCppModelCo
 
   const maybeMessages = (input as { messages?: unknown }).messages;
   if (Array.isArray(maybeMessages) && maybeMessages.length > 0) {
-    await LlamaCpp_Chat_Stream(input, model, signal, emit, outputSchema, sessionId);
+    await LlamaCpp_Chat_Stream(input, model, signal, emit, outputSchema, sessionContext);
   } else {
-    await LlamaCpp_TextGeneration_Stream(input, model, signal, emit, outputSchema, sessionId);
+    await LlamaCpp_TextGeneration_Stream(input, model, signal, emit, outputSchema, sessionContext);
   }
 };
 
