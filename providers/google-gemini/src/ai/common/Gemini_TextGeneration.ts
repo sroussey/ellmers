@@ -10,6 +10,8 @@ import type {
   TextGenerationTaskOutput,
 } from "@workglow/ai";
 import { getLogger } from "@workglow/util/worker";
+import { buildGeminiPrefixedContents } from "./Gemini_CacheCheckpoint";
+import { getGeminiCachedContent } from "./Gemini_CacheStore";
 import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
@@ -65,7 +67,7 @@ export const Gemini_TextGeneration_Stream: AiProviderRunFn<
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
   GeminiModelConfig
-> = async (input, model, signal, emit) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
   const logger = getLogger();
   const timerLabel = `gemini:TextGeneration:${getModelName(model)}`;
   logger.time(timerLabel, { model: getModelName(model) });
@@ -76,12 +78,41 @@ export const Gemini_TextGeneration_Stream: AiProviderRunFn<
 
     const ai = await createGeminiClient(model);
 
-    const contents = hasMessages
-      ? buildGeminiContents(
-          unified.messages as Parameters<typeof buildGeminiContents>[0],
-          unified.prompt ?? ""
-        )
-      : [{ role: "user", parts: [{ text: input.prompt }] }];
+    // Checkpoint consumption. Preferred path: reference the warm-up's explicit
+    // CachedContent and send only the tail. The API rejects requests that set
+    // systemInstruction alongside cachedContent, so the cache handle is only
+    // usable when the call carries no system prompt of its own (or the same
+    // one the cache was created with). Otherwise — including after the cache's
+    // TTL expiry — replay the prefix content inline; implicit caching still
+    // applies there.
+    const prefix = sessionContext?.prefix;
+    const cachedEntry = sessionContext?.sessionId
+      ? getGeminiCachedContent(sessionContext.sessionId)
+      : undefined;
+    const ownSystemPrompt = hasMessages ? unified.systemPrompt || undefined : undefined;
+    const useCachedContent =
+      prefix !== undefined &&
+      cachedEntry !== undefined &&
+      (ownSystemPrompt === undefined || ownSystemPrompt === cachedEntry.systemPrompt);
+
+    let contents: any[];
+    let systemInstruction: string | undefined;
+    if (prefix && !useCachedContent) {
+      contents = buildGeminiPrefixedContents(
+        prefix,
+        hasMessages ? (unified.messages as Parameters<typeof buildGeminiContents>[0]) : undefined,
+        unified.prompt
+      );
+      systemInstruction = ownSystemPrompt ?? prefix.systemPrompt;
+    } else {
+      contents = hasMessages
+        ? buildGeminiContents(
+            unified.messages as Parameters<typeof buildGeminiContents>[0],
+            unified.prompt ?? ""
+          )
+        : [{ role: "user", parts: [{ text: input.prompt }] }];
+      systemInstruction = useCachedContent ? undefined : ownSystemPrompt;
+    }
 
     // Thinking is opt-in here (no default budget); when a budget is configured,
     // the output cap is padded so reasoning can't starve the visible answer.
@@ -92,8 +123,8 @@ export const Gemini_TextGeneration_Stream: AiProviderRunFn<
       contents,
       config: {
         abortSignal: signal ?? undefined,
-        // Only the chat path carries a system prompt; the prompt path has none.
-        systemInstruction: hasMessages ? unified.systemPrompt || undefined : undefined,
+        systemInstruction,
+        ...(useCachedContent ? { cachedContent: cachedEntry!.name } : {}),
         ...buildGenerationConfig(input),
         // Override maxOutputTokens from buildGenerationConfig with the thinking-aware value.
         maxOutputTokens,

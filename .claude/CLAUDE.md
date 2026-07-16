@@ -195,9 +195,15 @@ also set `emitCheckpoint` to output a new chained checkpoint including their
 turn (superseding the parent unless `keepParentCheckpoint`). Run-fns receive an
 `AiSessionContext` (`sessionId` = rewind source, `emitCheckpointId` = snapshot
 target, `prefix` = replay/fallback content) instead of the old scalar sessionId.
-Cloud providers map checkpoints to prompt-cache breakpoints (Anthropic
-`cache_control` at the checkpoint boundary); local providers (HFT, llama-cpp)
-map them to KV-state sessions with re-encode fallback after worker restarts.
+Cloud providers map checkpoints to their caching primitive: Anthropic writes
+`cache_control` breakpoints at the checkpoint boundary; OpenAI replays the
+prefix content verbatim (its prompt cache is automatic — the derived
+`prompt_cache_key` aligns warm-up and consumers); Gemini creates an explicit
+server-side CachedContent (TTL-bound, deleted on dispose) that consumers
+reference with tail-only requests, degrading to inline prefix replay when the
+cache is too small, expired, or the call adds its own system prompt/tool
+choice. Local providers (HFT, llama-cpp) map checkpoints to KV-state sessions
+with re-encode fallback after worker restarts.
 An emitted checkpoint supersedes its parent (disposing the parent's session and
 registry entry) unless `keepParentCheckpoint` is set; all checkpoints are
 additionally run-scoped — disposed with the run's ResourceScope at run end;

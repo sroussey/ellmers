@@ -126,6 +126,7 @@ export function inferGeminiCapabilities(model: CapabilityHints): readonly Capabi
       "tool-use",
       "json-mode",
       "vision-input",
+      "cache.checkpoint",
       "model.count-tokens",
       "model.info",
       "model.search",

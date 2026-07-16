@@ -6,6 +6,7 @@
 
 import type { AiProviderPreviewRunFn, AiProviderRunFnRegistration } from "@workglow/ai";
 import {
+  GEMINI_CACHE_CHECKPOINT,
   GEMINI_COUNT_TOKENS,
   GEMINI_IMAGE_EDITING,
   GEMINI_IMAGE_GENERATION,
@@ -23,6 +24,7 @@ import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 export { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
 export { sanitizeSchemaForGemini } from "./Gemini_Schema";
 
+import { Gemini_CacheCheckpoint_Stream } from "./Gemini_CacheCheckpoint";
 import { Gemini_CountTokens_Preview, Gemini_CountTokens_Stream } from "./Gemini_CountTokens";
 import { Gemini_ImageEdit_Stream } from "./Gemini_ImageEdit";
 import { Gemini_ImageGenerate_Stream } from "./Gemini_ImageGenerate";
@@ -55,6 +57,7 @@ export const GEMINI_RUN_FNS: readonly AiProviderRunFnRegistration<any, any, Gemi
   { serves: GEMINI_COUNT_TOKENS, runFn: Gemini_CountTokens_Stream },
   { serves: GEMINI_MODEL_SEARCH, runFn: Gemini_ModelSearch_Stream },
   { serves: GEMINI_MODEL_INFO, runFn: Gemini_ModelInfo_Stream },
+  { serves: GEMINI_CACHE_CHECKPOINT, runFn: Gemini_CacheCheckpoint_Stream },
 ];
 
 export const GEMINI_PREVIEW_TASKS: Record<
