@@ -14,6 +14,14 @@ import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
+import type { ResolvedCheckpoint } from "./base/CheckpointPorts";
+import {
+  CheckpointInputProperties,
+  CheckpointOutputProperty,
+  finalizeEmittedCheckpoint,
+  promptToUserMessage,
+  resolveCheckpointSession,
+} from "./base/CheckpointPorts";
 import { StreamingAiTask } from "./base/StreamingAiTask";
 import type { ChatMessage } from "./ChatMessage";
 import { ChatMessageSchema } from "./ChatMessage";
@@ -213,6 +221,7 @@ export const ToolCallingInputSchema = {
       maximum: 2,
       "x-ui-group": "Configuration",
     },
+    ...CheckpointInputProperties,
   },
   required: ["model", "prompt", "tools"],
   additionalProperties: false,
@@ -234,6 +243,7 @@ export const ToolCallingOutputSchema = {
       description: "Tool calls requested by the model",
       "x-stream": "object",
     },
+    ...CheckpointOutputProperty,
   },
   required: ["text", "toolCalls"],
   additionalProperties: false,
@@ -282,6 +292,9 @@ export type ToolCallingTaskInput = Omit<
   readonly tools: ToolDefinition[];
   readonly messages?: ReadonlyArray<ChatMessage>;
   readonly sessionId?: string;
+  readonly checkpoint?: string;
+  readonly emitCheckpoint?: boolean;
+  readonly keepParentCheckpoint?: boolean;
 };
 
 export type ToolCallingTaskOutput = {
@@ -292,6 +305,7 @@ export type ToolCallingTaskOutput = {
     input: { [x: string]: unknown };
     providerSignature?: string;
   }[];
+  checkpoint?: string;
 };
 export type ToolCallingTaskConfig = TaskConfig<ToolCallingTaskInput>;
 
@@ -318,15 +332,30 @@ export class ToolCallingTask extends StreamingAiTask<
   /** Session ID computed during getJobInput, used to register cleanup. */
   private _computedSessionId: string | undefined;
 
+  /** Resolved checkpoint ports (rewind/emit) when the task consumes/emits checkpoints. */
+  private _resolvedCheckpoint: ResolvedCheckpoint | undefined;
+
   /**
    * Override to auto-compute a prefix-rewind session ID from tools + systemPrompt
    * + runnerId when no explicit sessionId is provided. The runnerId scopes the
    * cache to the current graph run so it's cleaned up via ResourceScope.
+   *
+   * Explicit checkpoint ports (rewind/emit) take precedence over the
+   * auto-fingerprint session.
    */
   protected override async getJobInput(
     input: ToolCallingTaskInput
   ): Promise<AiJobInput<ToolCallingTaskInput>> {
     const jobInput = await super.getJobInput(input);
+
+    const model = input.model as ModelConfig;
+    if ((input.checkpoint || input.emitCheckpoint) && model && typeof model === "object") {
+      this._resolvedCheckpoint ??= resolveCheckpointSession(input, model, "ToolCallingTask");
+      if (this._resolvedCheckpoint) {
+        jobInput.session = this._resolvedCheckpoint.session;
+        return jobInput;
+      }
+    }
 
     if (!jobInput.session?.sessionId && input.tools && input.tools.length > 0) {
       const sessionId = await makeFingerprint({
@@ -354,6 +383,36 @@ export class ToolCallingTask extends StreamingAiTask<
     });
   }
 
+  private async finalizeCheckpoint(
+    input: ToolCallingTaskInput,
+    out: { text: string; toolCalls: ToolCallingTaskOutput["toolCalls"] }
+  ): Promise<void> {
+    const resolved = this._resolvedCheckpoint;
+    if (!resolved?.emitCheckpointId) return;
+    const model = input.model as ModelConfig;
+    const tailMessages: ChatMessage[] =
+      input.messages && input.messages.length > 0
+        ? [...input.messages]
+        : [promptToUserMessage(input.prompt)];
+    const assistantMessage: ChatMessage = {
+      role: "assistant",
+      content: [
+        ...(out.text ? ([{ type: "text", text: out.text }] as const) : []),
+        ...out.toolCalls.map(
+          (tc) => ({ type: "tool_use", id: tc.id, name: tc.name, input: tc.input }) as const
+        ),
+      ],
+    };
+    await finalizeEmittedCheckpoint({
+      model,
+      resolved,
+      tailMessages,
+      assistantMessage,
+      systemPrompt: input.systemPrompt,
+      tools: input.tools,
+    });
+  }
+
   override async execute(
     input: ToolCallingTaskInput,
     executeContext: IExecuteContext
@@ -365,7 +424,13 @@ export class ToolCallingTask extends StreamingAiTask<
     // so computing the session id up front and registering early is safe.
     await this.getJobInput(input);
     this.registerSessionDispose(input, executeContext);
-    return super.execute(input, executeContext);
+    const output = await super.execute(input, executeContext);
+    const emitId = this._resolvedCheckpoint?.emitCheckpointId;
+    if (output && emitId) {
+      await this.finalizeCheckpoint(input, output);
+      return { ...output, checkpoint: emitId };
+    }
+    return output;
   }
 
   override async *executeStream(
@@ -377,7 +442,31 @@ export class ToolCallingTask extends StreamingAiTask<
     // registered so disposeSession runs on scope teardown.
     await this.getJobInput(input);
     this.registerSessionDispose(input, context);
-    yield* super.executeStream(input, context);
+
+    const emitId = this._resolvedCheckpoint?.emitCheckpointId;
+    if (!emitId) {
+      yield* super.executeStream(input, context);
+      return;
+    }
+
+    let text = "";
+    let toolCalls: ToolCallingTaskOutput["toolCalls"] = [];
+    for await (const event of super.executeStream(input, context)) {
+      if (event.type === "text-delta" && (event.port ?? "text") === "text") {
+        text += event.textDelta;
+      } else if (event.type === "object-delta" && event.port === "toolCalls") {
+        toolCalls = event.objectDelta as ToolCallingTaskOutput["toolCalls"];
+      }
+      if (event.type === "finish") {
+        await this.finalizeCheckpoint(input, { text, toolCalls });
+        yield {
+          type: "text-delta",
+          port: "checkpoint",
+          textDelta: emitId,
+        } as StreamEvent<ToolCallingTaskOutput>;
+      }
+      yield event;
+    }
   }
 }
 

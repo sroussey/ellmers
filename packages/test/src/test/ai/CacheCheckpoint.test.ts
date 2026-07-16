@@ -17,6 +17,7 @@ import {
   AiProviderRegistry,
   CAPABILITIES,
   CacheCheckpointTask,
+  ToolCallingTask,
   cacheCheckpoint,
   checkpointModelKey,
   clearCheckpointsForTesting,
@@ -189,5 +190,108 @@ describe("CacheCheckpointTask", () => {
     await expect(
       cacheCheckpoint({ model: checkpointModel(), checkpoint: "foreign" })
     ).rejects.toThrow(/provider/i);
+  });
+});
+
+describe("ToolCallingTask checkpoint ports", () => {
+  let toolCalls: { session: AiSessionContext | undefined }[];
+
+  const toolUseFn: AiProviderRunFn = async (_input, _model, _signal, emit, _schema, session) => {
+    toolCalls.push({ session });
+    emit({ type: "text-delta", port: "text", textDelta: "done" } as any);
+    emit({ type: "finish", data: { text: "", toolCalls: [] } } as any);
+  };
+
+  function toolModel(): ModelConfig {
+    return {
+      ...checkpointModel(),
+      capabilities: ["text.generation", "tool-use", "cache.checkpoint"],
+    } as unknown as ModelConfig;
+  }
+
+  const aTool = { name: "a", description: "A", inputSchema: { type: "object" as const } };
+
+  beforeEach(async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    clearCheckpointsForTesting();
+    toolCalls = [];
+    const provider = new CheckpointTestProvider([
+      { serves: ["text.generation", "tool-use"] as Capability[], runFn: toolUseFn },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+  });
+
+  it("consumes a checkpoint: session carries the id and prefix", async () => {
+    registerCheckpoint("ckpt-parent", {
+      provider: CKPT_PROVIDER,
+      modelKey: "test:ckpt-model:v1",
+      prefix: { systemPrompt: "sys", tools: [aTool], messages: [] },
+    });
+    const task = new ToolCallingTask();
+    await task.run({ model: toolModel(), prompt: "hi", tools: [aTool], checkpoint: "ckpt-parent" });
+    expect(toolCalls).toHaveLength(1);
+    expect(toolCalls[0].session?.sessionId).toBe("ckpt-parent");
+    expect(toolCalls[0].session?.prefix?.systemPrompt).toBe("sys");
+  });
+
+  it("emitCheckpoint mints a new id, registers the turn, supersedes the parent", async () => {
+    registerCheckpoint("ckpt-parent", {
+      provider: CKPT_PROVIDER,
+      modelKey: "test:ckpt-model:v1",
+      prefix: { systemPrompt: "sys", tools: [aTool], messages: [] },
+    });
+    const task = new ToolCallingTask();
+    const out = await task.run({
+      model: toolModel(),
+      prompt: "hi",
+      tools: [aTool],
+      checkpoint: "ckpt-parent",
+      emitCheckpoint: true,
+    });
+    const emitted = (out as { checkpoint?: string }).checkpoint;
+    expect(emitted).toBeTruthy();
+    expect(toolCalls[0].session?.emitCheckpointId).toBe(emitted);
+    expect(toolCalls[0].session?.supersedeParent).toBe(true);
+    const entry = getCheckpoint(emitted!);
+    expect(entry?.parentId).toBe("ckpt-parent");
+    // parent superseded
+    expect(getCheckpoint("ckpt-parent")).toBeUndefined();
+    // new prefix = parent messages + user turn + assistant turn
+    expect(entry?.prefix.messages?.at(-1)?.role).toBe("assistant");
+    expect(entry?.prefix.messages?.at(-2)?.role).toBe("user");
+  });
+
+  it("keepParentCheckpoint preserves the parent", async () => {
+    registerCheckpoint("ckpt-parent", {
+      provider: CKPT_PROVIDER,
+      modelKey: "test:ckpt-model:v1",
+      prefix: { systemPrompt: "sys", tools: [aTool], messages: [] },
+    });
+    const task = new ToolCallingTask();
+    await task.run({
+      model: toolModel(),
+      prompt: "hi",
+      tools: [aTool],
+      checkpoint: "ckpt-parent",
+      emitCheckpoint: true,
+      keepParentCheckpoint: true,
+    });
+    expect(getCheckpoint("ckpt-parent")).toBeDefined();
+    expect(toolCalls[0].session?.supersedeParent).toBeUndefined();
+  });
+
+  it("unknown checkpoint fails before dispatch", async () => {
+    const task = new ToolCallingTask();
+    await expect(
+      task.run({ model: toolModel(), prompt: "hi", tools: [aTool], checkpoint: "missing" })
+    ).rejects.toThrow(/unknown cache checkpoint/i);
+    expect(toolCalls).toHaveLength(0);
+  });
+
+  it("without checkpoint ports the auto-fingerprint session still applies", async () => {
+    const task = new ToolCallingTask();
+    await task.run({ model: toolModel(), prompt: "hi", tools: [aTool] });
+    expect(toolCalls[0].session?.sessionId).toBeTruthy();
+    expect(toolCalls[0].session?.prefix).toBeUndefined();
   });
 });
