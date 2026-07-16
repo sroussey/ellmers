@@ -13,6 +13,7 @@
  */
 // organize-imports-ignore
 
+export * from "./common/Anthropic_CacheCheckpoint";
 export * from "./common/Anthropic_Client";
 export * from "./registerAnthropicInline";
 export * from "./registerAnthropicWorker";

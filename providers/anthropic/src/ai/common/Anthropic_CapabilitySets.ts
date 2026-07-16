@@ -30,6 +30,7 @@ export const ANTHROPIC_TEXT_SUMMARY = ["text.summary"] as const satisfies Capabi
 export const ANTHROPIC_COUNT_TOKENS = ["model.count-tokens"] as const satisfies Capability[];
 export const ANTHROPIC_MODEL_SEARCH = ["model.search"] as const satisfies Capability[];
 export const ANTHROPIC_MODEL_INFO = ["model.info"] as const satisfies Capability[];
+export const ANTHROPIC_CACHE_CHECKPOINT = ["cache.checkpoint"] as const satisfies Capability[];
 
 /** Aggregated list — for `workerRunFnSpecs()` derivation. Order MUST match `ANTHROPIC_RUN_FNS`; validated by the `capability-set parity` test in `AnthropicProvider.test.ts`. */
 export const ANTHROPIC_CAPABILITY_SETS = [
@@ -41,4 +42,5 @@ export const ANTHROPIC_CAPABILITY_SETS = [
   ANTHROPIC_COUNT_TOKENS,
   ANTHROPIC_MODEL_SEARCH,
   ANTHROPIC_MODEL_INFO,
+  ANTHROPIC_CACHE_CHECKPOINT,
 ] as const;
