@@ -99,10 +99,13 @@ export type CacheCheckpointTaskConfig = TaskConfig<CacheCheckpointTaskInput>;
 /**
  * Eagerly warms a prompt-prefix cache (provider prompt caching or local KV
  * state) and outputs an opaque checkpoint handle other AI tasks can start
- * from. The handle doubles as a provider session id. Lifecycle: an emitted
- * chained checkpoint supersedes its parent (disposing the parent's session and
- * registry entry) unless `keepParent` is set; otherwise the checkpoint persists
- * until explicitly disposed via {@link AiProviderRegistry.disposeSession}.
+ * from. The handle doubles as a provider session id. Lifecycle: the handle
+ * lives for the duration of the run's ResourceScope and is auto-disposed at
+ * run end. Within a run, an emitted chained checkpoint
+ * supersedes its parent (disposing the parent's session and registry entry)
+ * unless `keepParent` is set. To span multiple standalone runs, callers inject
+ * a shared `resourceScope` via the run config so the handle survives across
+ * each `.run()`.
  */
 export class CacheCheckpointTask extends AiTask<
   CacheCheckpointTaskInput,
@@ -128,7 +131,7 @@ export class CacheCheckpointTask extends AiTask<
   private _parent: CheckpointEntry | undefined;
   private _parentId: string | undefined;
 
-  private prepareCheckpoint(input: CacheCheckpointTaskInput): void {
+  private prepareCheckpoint(input: CacheCheckpointTaskInput, context: IExecuteContext): void {
     const model = input.model as ModelConfig;
     if (!model || typeof model !== "object") {
       throw new TaskConfigurationError(
@@ -174,6 +177,13 @@ export class CacheCheckpointTask extends AiTask<
       ...(input.checkpoint ? { parentId: input.checkpoint } : {}),
     });
 
+    if (context.resourceScope) {
+      context.resourceScope.register(`ai:session:${id}`, async () => {
+        await registry.disposeSession(model.provider, id);
+        deleteCheckpoint(id);
+      });
+    }
+
     this._checkpointId = id;
     this._mergedPrefix = prefix;
     this._parent = parent;
@@ -194,7 +204,7 @@ export class CacheCheckpointTask extends AiTask<
     input: CacheCheckpointTaskInput,
     executeContext: IExecuteContext
   ): Promise<CacheCheckpointTaskOutput | undefined> {
-    this.prepareCheckpoint(input);
+    this.prepareCheckpoint(input, executeContext);
     const output = await super.execute(input, executeContext);
 
     if (this._parentId && this._parent && !input.keepParent) {

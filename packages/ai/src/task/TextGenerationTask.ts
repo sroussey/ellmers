@@ -11,6 +11,7 @@ import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
+import { deleteCheckpoint } from "../provider/CheckpointRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
 import type { ResolvedCheckpoint } from "./base/CheckpointPorts";
 import {
@@ -157,6 +158,22 @@ export class TextGenerationTask extends StreamingAiTask<
     return jobInput;
   }
 
+  private registerCheckpointDispose(
+    input: TextGenerationTaskInput,
+    context: IExecuteContext
+  ): void {
+    if (!context.resourceScope) return;
+    const model = input.model as ModelConfig;
+    if (!model || typeof model !== "object") return;
+    const emitId = this._resolvedCheckpoint?.emitCheckpointId;
+    if (!emitId) return;
+    const providerName = model.provider;
+    context.resourceScope.register(`ai:session:${emitId}`, async () => {
+      await getAiProviderRegistry().disposeSession(providerName, emitId);
+      deleteCheckpoint(emitId);
+    });
+  }
+
   private async finalizeCheckpoint(input: TextGenerationTaskInput, text: string): Promise<void> {
     const resolved = this._resolvedCheckpoint;
     if (!resolved?.emitCheckpointId) return;
@@ -197,6 +214,7 @@ export class TextGenerationTask extends StreamingAiTask<
     // don't re-emit a stale minted id or re-supersede an already-gone parent.
     this.resetResolvedCheckpoint();
     await this.getJobInput(input);
+    this.registerCheckpointDispose(input, executeContext);
     const emitId = this._resolvedCheckpoint?.emitCheckpointId;
     let output: TextGenerationTaskOutput | undefined;
     try {
@@ -220,6 +238,7 @@ export class TextGenerationTask extends StreamingAiTask<
     // don't re-emit a stale minted id or re-supersede an already-gone parent.
     this.resetResolvedCheckpoint();
     await this.getJobInput(input);
+    this.registerCheckpointDispose(input, context);
     const emitId = this._resolvedCheckpoint?.emitCheckpointId;
     if (!emitId) {
       yield* super.executeStream(input, context);

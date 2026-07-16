@@ -13,6 +13,7 @@ import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
+import { deleteCheckpoint } from "../provider/CheckpointRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
 import type { ResolvedCheckpoint } from "./base/CheckpointPorts";
 import {
@@ -381,16 +382,27 @@ export class ToolCallingTask extends StreamingAiTask<
   }
 
   private registerSessionDispose(input: ToolCallingTaskInput, context: IExecuteContext): void {
-    const sessionId = this._computedSessionId;
-    if (!sessionId || !context.resourceScope) return;
+    if (!context.resourceScope) return;
 
     const model = input.model as ModelConfig;
     if (!model || typeof model !== "object") return;
 
     const providerName = model.provider;
-    context.resourceScope.register(`ai:session:${sessionId}`, async () => {
-      await getAiProviderRegistry().disposeSession(providerName, sessionId);
-    });
+
+    const sessionId = this._computedSessionId;
+    if (sessionId) {
+      context.resourceScope.register(`ai:session:${sessionId}`, async () => {
+        await getAiProviderRegistry().disposeSession(providerName, sessionId);
+      });
+    }
+
+    const emitId = this._resolvedCheckpoint?.emitCheckpointId;
+    if (emitId) {
+      context.resourceScope.register(`ai:session:${emitId}`, async () => {
+        await getAiProviderRegistry().disposeSession(providerName, emitId);
+        deleteCheckpoint(emitId);
+      });
+    }
   }
 
   private async finalizeCheckpoint(
