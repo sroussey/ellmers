@@ -74,7 +74,10 @@ async function getOrCreateChatSession(
 
     if (sessionId) {
       setLlamaCppSession(sessionId, {
-        mode: isCheckpoint ? "prefix-rewind" : "progressive",
+        // An ownedSession id is the caller's mutable chat session even when it
+        // was seeded from a checkpoint prefix — only a bare checkpoint id gets
+        // the immutable prefix-rewind label.
+        mode: isCheckpoint && !sessionContext?.ownedSession ? "prefix-rewind" : "progressive",
         session,
         sequence,
         modelKey: getConfigKey(model),
