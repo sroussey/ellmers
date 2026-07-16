@@ -24,9 +24,11 @@ import {
   filterValidToolCalls,
   toTextFlatMessages,
 } from "@workglow/ai/worker";
+import { renderHftPrefixPrompt } from "./HFT_CacheCheckpoint";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import type { HftPrefixRewindSession } from "./HFT_Pipeline";
 import {
+  deleteHftSession,
   getHftSession,
   getPipeline,
   getPipelineCacheKey,
@@ -339,10 +341,11 @@ export const HFT_ToolCalling: AiProviderRunFn<
     // Session cache: prefix-rewind for tool calling (streaming)
     const modelPath = model!.provider_config.model_path;
     const cacheKey = getPipelineCacheKey(model!);
-    let session = sessionId ? getHftSession(sessionId) : undefined;
+    const isCheckpoint = sessionContext?.prefix !== undefined;
+    let hftSession = sessionId ? getHftSession(sessionId) : undefined;
     let past_key_values: any = undefined;
 
-    if (sessionId && !session) {
+    if (sessionId && !hftSession && !isCheckpoint) {
       const { DynamicCache } = await loadTransformersSDK();
       const hfModel = generateText.model;
       const hfTokenizer = generateText.tokenizer;
@@ -366,13 +369,40 @@ export const HFT_ToolCalling: AiProviderRunFn<
         cacheKey,
       };
       setHftSession(sessionId, newSession);
-      session = newSession;
+      hftSession = newSession;
     }
 
-    if (session?.mode === "prefix-rewind") {
+    if (sessionId && !hftSession && isCheckpoint) {
+      // Worker restarted or state evicted: re-encode the serialized prefix
+      // and re-store the snapshot under the checkpoint id.
+      const { DynamicCache } = await loadTransformersSDK();
+      const cache = new DynamicCache();
+      const prefixPrompt = renderHftPrefixPrompt(generateText.tokenizer, sessionContext!.prefix!);
+      const tokenized = generateText.tokenizer(prefixPrompt);
+      await generateText.model.generate({
+        ...tokenized,
+        max_new_tokens: 0,
+        past_key_values: cache,
+      });
+      const baseEntries: Record<string, any> = {};
+      for (const key of Object.keys(cache)) {
+        baseEntries[key] = cache[key];
+      }
+      const restored: HftPrefixRewindSession = {
+        mode: "prefix-rewind",
+        baseEntries,
+        baseSeqLength: cache.get_seq_length(),
+        modelPath,
+        cacheKey,
+      };
+      setHftSession(sessionId, restored);
+      hftSession = restored;
+    }
+
+    if (hftSession?.mode === "prefix-rewind") {
       // Create a fresh DynamicCache from the prefix snapshot for this call
       const { DynamicCache } = await loadTransformersSDK();
-      past_key_values = new DynamicCache(session.baseEntries);
+      past_key_values = new DynamicCache(hftSession.baseEntries);
     }
 
     try {
@@ -402,6 +432,20 @@ export const HFT_ToolCalling: AiProviderRunFn<
 
     if (validToolCalls.length > 0) {
       emit({ type: "object-delta", port: "toolCalls", objectDelta: [...validToolCalls] });
+    }
+
+    if (sessionContext?.emitCheckpointId && past_key_values) {
+      const baseEntries: Record<string, any> = {};
+      for (const key of Object.keys(past_key_values)) baseEntries[key] = past_key_values[key];
+      setHftSession(sessionContext.emitCheckpointId, {
+        mode: "prefix-rewind",
+        baseEntries,
+        baseSeqLength: past_key_values.get_seq_length ? past_key_values.get_seq_length() : 0,
+        modelPath,
+      });
+      if (sessionContext.supersedeParent && sessionId) {
+        deleteHftSession(sessionId);
+      }
     }
 
     emit({
