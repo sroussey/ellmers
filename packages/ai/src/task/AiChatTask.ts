@@ -274,7 +274,15 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
         "AiChatTask"
       );
       if (resolved) {
-        jobInput.session = { sessionId: this._sessionId, prefix: resolved.session.prefix };
+        // The chat's own mutable session seeded from the checkpoint's content.
+        // ownedSession keeps local providers' progressive per-turn KV
+        // snapshotting alive — a checkpoint-seeded chat must never re-encode
+        // the growing conversation each turn.
+        jobInput.session = {
+          sessionId: this._sessionId,
+          prefix: resolved.session.prefix,
+          ownedSession: true,
+        };
       }
     }
     return jobInput;

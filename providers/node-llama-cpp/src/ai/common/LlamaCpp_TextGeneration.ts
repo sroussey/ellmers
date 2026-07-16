@@ -91,8 +91,10 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderRunFn<
     // pristine prefix (registry fallback) instead of seeing this turn's tokens,
     // and so an emitted checkpoint never aliases the parent id. The stolen
     // session is disposed at turn end unless re-keyed under emitCheckpointId.
+    // An ownedSession id is the caller's mutable session, not a checkpoint —
+    // never steal it.
     let ownedByMap = Boolean(cached);
-    if (isCheckpoint && sessionId && cached) {
+    if (isCheckpoint && !sessionContext?.ownedSession && sessionId && cached) {
       llamaCppSessions.delete(sessionId);
       ownedByMap = false;
     }

@@ -190,10 +190,14 @@ async function generateTurn(
     accumulated = hfTokenizer.decode(newTokens, { skip_special_tokens: true });
   }
 
-  // Snapshot the output KV cache for the next turn. Checkpoint sessions are
+  // Snapshot the output KV cache for the next turn. Checkpoint ids are
   // immutable: snapshot under emitCheckpointId (if any), never overwrite the
-  // checkpoint id itself.
-  const snapshotTargetId = isCheckpoint ? sessionContext?.emitCheckpointId : sessionId;
+  // checkpoint id itself. An ownedSession id is the CALLER's mutable session
+  // (a chat seeded from a checkpoint prefix) — keep snapshotting under it so
+  // later turns rewind to the previous turn instead of re-encoding the whole
+  // growing conversation; a checkpoint must never make a chat slower.
+  const immutableCheckpoint = isCheckpoint && !sessionContext?.ownedSession;
+  const snapshotTargetId = immutableCheckpoint ? sessionContext?.emitCheckpointId : sessionId;
   if (snapshotTargetId) {
     let outputCache: any;
     if (past_key_values) {
@@ -220,7 +224,7 @@ async function generateTurn(
   }
 
   if (
-    isCheckpoint &&
+    immutableCheckpoint &&
     sessionContext?.supersedeParent &&
     sessionId &&
     sessionContext?.emitCheckpointId

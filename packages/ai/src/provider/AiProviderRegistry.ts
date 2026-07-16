@@ -27,14 +27,21 @@ import type { CheckpointPrefix } from "./CheckpointRegistry";
  * - `supersedeParent`: dispose `sessionId`'s worker-side state after a
  *   successful `emitCheckpointId` snapshot.
  * - `prefix`: resolved prefix content — cloud replay payload and local
- *   re-encode fallback. When present, run-fns must treat `sessionId` as an
- *   immutable checkpoint (never write back under it).
+ *   re-encode fallback. When present (and `ownedSession` is not set), run-fns
+ *   must treat `sessionId` as an immutable checkpoint (never write back under
+ *   it).
+ * - `ownedSession`: `sessionId` is the caller's own mutable session (e.g. a
+ *   chat's per-conversation id) that merely STARTS from `prefix` content.
+ *   Local providers keep their normal progressive per-turn KV snapshotting
+ *   under it — a checkpoint-seeded chat must never be slower than a plain
+ *   one — instead of applying checkpoint immutability semantics.
  */
 export interface AiSessionContext {
   readonly sessionId?: string | undefined;
   readonly emitCheckpointId?: string | undefined;
   readonly supersedeParent?: boolean | undefined;
   readonly prefix?: CheckpointPrefix | undefined;
+  readonly ownedSession?: boolean | undefined;
 }
 
 /**
