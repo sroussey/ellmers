@@ -48,6 +48,8 @@ export const CAPABILITIES = {
   "model.download-remove": "Uncache a model's weights from cache and disk",
   "model.download": "Fetch / cache a model's weights locally (lifecycle)",
   "model.dispose": "Dispose model-resident resources in memory",
+  // Prompt-prefix caching
+  "cache.checkpoint": "Warm and snapshot a prompt prefix for reuse (prompt caching / KV state)",
 } as const;
 
 export type Capability = keyof typeof CAPABILITIES;
