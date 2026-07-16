@@ -121,6 +121,7 @@ describe("OpenAiQueuedProvider.inferCapabilities", () => {
     // Sort both sides to make the assertion order-independent.
     const sorted = [...caps].sort();
     expect(sorted).toEqual([
+      "cache.checkpoint",
       "json-mode",
       "model.count-tokens",
       "model.info",
