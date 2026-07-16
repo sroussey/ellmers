@@ -15,6 +15,7 @@ export * from "./base/AiImageOutputTask";
 export * from "./base/AiTask";
 export * from "./base/AiTaskSchemas";
 export * from "./base/chatTurn";
+export * from "./base/CheckpointPorts";
 export * from "./base/responseFormat";
 export * from "./base/runWithIterable";
 export * from "./base/StreamingAiTask";
