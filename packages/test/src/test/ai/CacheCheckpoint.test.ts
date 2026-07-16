@@ -13,6 +13,7 @@ import type {
   ModelConfig,
 } from "@workglow/ai";
 import {
+  AiChatTask,
   AiProvider,
   AiProviderRegistry,
   CAPABILITIES,
@@ -28,8 +29,8 @@ import {
   registerCheckpoint,
   setAiProviderRegistry,
 } from "@workglow/ai";
-import type { StreamEvent, TaskOutput } from "@workglow/task-graph";
-import { ResourceScope } from "@workglow/util";
+import type { IExecuteContext, StreamEvent, TaskOutput } from "@workglow/task-graph";
+import { Container, HUMAN_CONNECTOR, ResourceScope, ServiceRegistry } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("cache.checkpoint capability", () => {
@@ -549,5 +550,80 @@ describe("checkpoint chaining across tasks", () => {
     expect(ca).not.toBe(cb);
     expect(getCheckpoint(ca)?.parentId).toBe(ckpt0);
     expect(getCheckpoint(cb)?.parentId).toBe(ckpt0);
+  });
+});
+
+describe("AiChatTask checkpoint consumption", () => {
+  let chatCalls: { session: AiSessionContext | undefined }[];
+
+  const chatFn: AiProviderRunFn = async (_input, _model, _signal, emit, _schema, session) => {
+    chatCalls.push({ session });
+    emit({ type: "text-delta", port: "text", textDelta: "reply" } as any);
+    emit({ type: "finish", data: {} } as any);
+  };
+
+  const ckptWarmFn: AiProviderRunFn = async (_input, _model, _signal, emit, _schema, session) => {
+    emit({ type: "finish", data: { checkpoint: session?.sessionId ?? "" } } as any);
+  };
+
+  function chatContext(): IExecuteContext {
+    const controller = new AbortController();
+    const registry = new ServiceRegistry(new Container());
+    // Scripted connector: decline the follow-up turn so the loop ends after one iteration.
+    registry.registerInstance(HUMAN_CONNECTOR, {
+      async send(request: { requestId: string }) {
+        return { action: "decline", content: undefined, done: true, requestId: request.requestId };
+      },
+    } as never);
+    return {
+      signal: controller.signal,
+      updateProgress: async () => {},
+      own: <T>(i: T) => i,
+      registry,
+      resourceScope: {
+        register: (_key: string, _fn: () => Promise<void>) => {},
+        dispose: async () => {},
+      },
+    } as unknown as IExecuteContext;
+  }
+
+  beforeEach(async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    clearCheckpointsForTesting();
+    chatCalls = [];
+    const provider = new CheckpointTestProvider([
+      { serves: ["text.generation"] as Capability[], runFn: chatFn },
+      { serves: ["cache.checkpoint"] as Capability[], runFn: ckptWarmFn },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+  });
+
+  it("sends its own mutable session id with the prefix and ownedSession", async () => {
+    registerCheckpoint("ckpt-parent", {
+      provider: CKPT_PROVIDER,
+      modelKey: "test:ckpt-model:v1",
+      prefix: { systemPrompt: "sys", messages: [] },
+    });
+    const input = {
+      model: checkpointModel(),
+      prompt: "hi",
+      checkpoint: "ckpt-parent",
+      maxIterations: 2,
+    };
+    const task = new AiChatTask({ defaults: input } as never);
+    for await (const _event of task.executeStream(input as never, chatContext())) {
+      // drain the stream; assertions are on the captured session context
+    }
+    expect(chatCalls.length).toBeGreaterThan(0);
+    const session = chatCalls[0].session;
+    // The chat keeps its own session identity (never the immutable checkpoint
+    // id) and flags it as caller-owned so local providers keep progressive
+    // per-turn KV snapshotting — a checkpoint-seeded chat must never be slower
+    // than a plain one.
+    expect(session?.sessionId).toBeDefined();
+    expect(session?.sessionId).not.toBe("ckpt-parent");
+    expect(session?.ownedSession).toBe(true);
+    expect(session?.prefix?.systemPrompt).toBe("sys");
+    expect(session?.emitCheckpointId).toBeUndefined();
   });
 });

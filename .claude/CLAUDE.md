@@ -194,7 +194,11 @@ that prefix (send only the tail); `ToolCallingTask` / `TextGenerationTask` can
 also set `emitCheckpoint` to output a new chained checkpoint including their
 turn (superseding the parent unless `keepParentCheckpoint`). Run-fns receive an
 `AiSessionContext` (`sessionId` = rewind source, `emitCheckpointId` = snapshot
-target, `prefix` = replay/fallback content) instead of the old scalar sessionId.
+target, `prefix` = replay/fallback content, `ownedSession` = sessionId is the
+caller's own mutable session merely seeded from the prefix — set by
+`AiChatTask` so local providers keep progressive per-turn KV snapshotting; a
+checkpoint-seeded chat must never re-encode the growing conversation each
+turn) instead of the old scalar sessionId.
 Cloud providers map checkpoints to their caching primitive: Anthropic writes
 `cache_control` breakpoints at the checkpoint boundary; OpenAI replays the
 prefix content verbatim (its prompt cache is automatic — the derived
