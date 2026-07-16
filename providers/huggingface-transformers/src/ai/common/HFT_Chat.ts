@@ -9,6 +9,7 @@ import type {
   AiChatProviderOutput,
   AiProviderRunFn,
   AiSessionContext,
+  ChatMessage,
 } from "@workglow/ai";
 import type { StreamPhase } from "@workglow/task-graph";
 import { renderHftPrefixPrompt } from "./HFT_CacheCheckpoint";
@@ -24,7 +25,7 @@ import {
   withHftPipelineInUse,
 } from "./HFT_Pipeline";
 import { createStreamingTextStreamer, createTextStreamer } from "./HFT_Streaming";
-import { buildHFTMessages } from "./HFT_ToolCalling";
+import { buildHFTMessages, mapHFTTools } from "./HFT_ToolCalling";
 
 /**
  * Execute one chat turn using the HuggingFace Transformers pipeline.
@@ -64,12 +65,48 @@ async function generateTurn(
   // Build message list from the conversation history.
   // `input.messages` already contains the full history including the latest
   // user message when this function is called from AiChatTask.
-  const messages = buildHFTMessages(input.messages, input.systemPrompt, input.prompt, undefined);
+  //
+  // When starting from a cache checkpoint, the prefix's content must be part
+  // of the rendered prompt (the chat's own history never contains it), and it
+  // must come FIRST so the render can start byte-for-byte with the warm-up
+  // rendering — the invariant prefix-rewind KV reuse relies on.
+  const prefix = sessionContext?.prefix;
+  const prefixPrompt = isCheckpoint ? renderHftPrefixPrompt(hfTokenizer, prefix!) : undefined;
+  let messages: Array<Record<string, unknown>>;
+  if (isCheckpoint) {
+    // buildHFTMessages only falls back to `prompt` when the message list is
+    // empty, so append a prompt-only turn explicitly — the combined list is
+    // non-empty whenever the prefix carries messages.
+    const chatTail: ChatMessage[] =
+      input.messages && input.messages.length > 0
+        ? [...input.messages]
+        : input.prompt !== undefined && input.prompt !== ""
+          ? [{ role: "user", content: [{ type: "text", text: String(input.prompt) }] }]
+          : [];
+    messages = buildHFTMessages(
+      [...(prefix!.messages ?? []), ...chatTail],
+      prefix!.systemPrompt,
+      undefined,
+      undefined
+    );
+  } else {
+    messages = buildHFTMessages(input.messages, input.systemPrompt, input.prompt, undefined);
+  }
 
   const prompt = hfTokenizer.apply_chat_template(messages as any, {
+    ...(isCheckpoint && prefix!.tools && prefix!.tools.length > 0
+      ? { tools: mapHFTTools(prefix!.tools) as any }
+      : {}),
     tokenize: false,
     add_generation_prompt: true,
   }) as string;
+
+  // prefix-rewind trusts cached KV tokens positionally: only re-encode /
+  // attach the prefix snapshot when the rendered prompt provably starts with
+  // the warm-up rendering; otherwise fall back to a full re-encode of the
+  // prompt (correct — it carries the entire prefix).
+  const prefixParityOk =
+    !isCheckpoint || (prefixPrompt !== undefined && prompt.startsWith(prefixPrompt));
 
   const inputs = hfTokenizer(prompt);
   const promptLen = inputs.input_ids.dims[1];
@@ -79,13 +116,12 @@ async function generateTurn(
   let hftSession = sessionId ? getHftSession(sessionId) : undefined;
   let past_key_values: any = undefined;
 
-  if (sessionId && !hftSession && isCheckpoint) {
+  if (sessionId && !hftSession && isCheckpoint && prefixParityOk) {
     // Worker restarted or state evicted: re-encode the serialized prefix
     // and re-store the snapshot under the checkpoint id.
     const { DynamicCache } = await loadTransformersSDK();
     const cache = new DynamicCache();
-    const prefixPrompt = renderHftPrefixPrompt(hfTokenizer, sessionContext!.prefix!);
-    const prefixInputs = hfTokenizer(prefixPrompt);
+    const prefixInputs = hfTokenizer(prefixPrompt!);
     await hfModel.generate({ ...prefixInputs, max_new_tokens: 0, past_key_values: cache });
     const baseEntries: Record<string, any> = {};
     for (const key of Object.keys(cache)) {
@@ -101,7 +137,11 @@ async function generateTurn(
     hftSession = restored;
   }
 
-  if (hftSession?.mode === "prefix-rewind" && hftSession.modelPath === modelPath) {
+  if (
+    hftSession?.mode === "prefix-rewind" &&
+    hftSession.modelPath === modelPath &&
+    prefixParityOk
+  ) {
     // Reconstruct a fresh DynamicCache from the previous turn's snapshot.
     const { DynamicCache } = await loadTransformersSDK();
     past_key_values = new DynamicCache(hftSession.baseEntries);

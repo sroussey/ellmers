@@ -259,12 +259,19 @@ describe("ToolCallingTask checkpoint ports", () => {
 
   const aTool = { name: "a", description: "A", inputSchema: { type: "object" as const } };
 
+  // Checkpoint ports require the provider to serve cache.checkpoint
+  // (resolveCheckpointSession gates on it before dispatch).
+  const ckptWarmFn: AiProviderRunFn = async (_input, _model, _signal, emit, _schema, session) => {
+    emit({ type: "finish", data: { checkpoint: session?.sessionId ?? "" } } as any);
+  };
+
   beforeEach(async () => {
     setAiProviderRegistry(new AiProviderRegistry());
     clearCheckpointsForTesting();
     toolCalls = [];
     const provider = new CheckpointTestProvider([
       { serves: ["text.generation", "tool-use"] as Capability[], runFn: toolUseFn },
+      { serves: ["cache.checkpoint"] as Capability[], runFn: ckptWarmFn },
     ]);
     await provider.register({ queue: { autoCreate: false } });
   });
@@ -361,14 +368,33 @@ describe("TextGenerationTask checkpoint ports", () => {
     emit({ type: "finish", data: {} } as any);
   };
 
+  // Checkpoint ports require the provider to serve cache.checkpoint
+  // (resolveCheckpointSession gates on it before dispatch).
+  const ckptWarmFn: AiProviderRunFn = async (_input, _model, _signal, emit, _schema, session) => {
+    emit({ type: "finish", data: { checkpoint: session?.sessionId ?? "" } } as any);
+  };
+
   beforeEach(async () => {
     setAiProviderRegistry(new AiProviderRegistry());
     clearCheckpointsForTesting();
     genCalls = [];
     const provider = new CheckpointTestProvider([
       { serves: ["text.generation"] as Capability[], runFn: genFn },
+      { serves: ["cache.checkpoint"] as Capability[], runFn: ckptWarmFn },
     ]);
     await provider.register({ queue: { autoCreate: false } });
+  });
+
+  it("rejects checkpoint ports on a provider without cache.checkpoint support", async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    const provider = new CheckpointTestProvider([
+      { serves: ["text.generation"] as Capability[], runFn: genFn },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+    const task = new TextGenerationTask();
+    await expect(
+      task.run({ model: checkpointModel(), prompt: "hi", emitCheckpoint: true })
+    ).rejects.toThrow(/does not support cache checkpoints/i);
   });
 
   it("consumes a checkpoint and emits a chained one", async () => {

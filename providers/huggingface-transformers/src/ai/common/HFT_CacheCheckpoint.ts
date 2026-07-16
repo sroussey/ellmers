@@ -30,12 +30,24 @@ import { buildHFTMessages, mapHFTTools } from "./HFT_ToolCalling";
  * trusts the cached KV tokens for positions [0:L] without re-checking them, so any
  * divergence corrupts generation. Tools therefore go through the same {@link mapHFTTools}
  * mapping used by HFT_ToolCalling so warm-up and consumption produce the same tokens.
+ *
+ * No empty user turn is appended for a message-less prefix (the common
+ * system-prompt + tools warm-up): consumers append a REAL user turn, so an
+ * empty one here would make their continuation diverge right after the system
+ * block and defeat the `startsWith` KV-reuse check. Only a prefix with neither
+ * system prompt nor messages keeps the placeholder turn, since some templates
+ * reject an empty message list.
  */
 export function renderHftPrefixPrompt(
   tokenizer: TextGenerationPipeline["tokenizer"],
   prefix: CheckpointPrefix
 ): string {
-  const messages = buildHFTMessages(prefix.messages, prefix.systemPrompt, undefined, undefined);
+  const messages =
+    prefix.messages && prefix.messages.length > 0
+      ? buildHFTMessages(prefix.messages, prefix.systemPrompt, undefined, undefined)
+      : prefix.systemPrompt
+        ? [{ role: "system", content: prefix.systemPrompt }]
+        : buildHFTMessages(undefined, undefined, undefined, undefined);
   return tokenizer.apply_chat_template(messages as any, {
     ...(prefix.tools && prefix.tools.length > 0 ? { tools: mapHFTTools(prefix.tools) as any } : {}),
     tokenize: false,
