@@ -14,9 +14,9 @@ import type { ToolDefinition } from "../task/ToolCallingUtils";
  * when worker-side KV state is gone.
  */
 export interface CheckpointPrefix {
-  readonly systemPrompt?: string;
-  readonly tools?: readonly ToolDefinition[];
-  readonly messages?: readonly ChatMessage[];
+  readonly systemPrompt?: string | undefined;
+  readonly tools?: readonly ToolDefinition[] | undefined;
+  readonly messages?: readonly ChatMessage[] | undefined;
 }
 
 /** Main-thread record for one checkpoint id (a provider session id). */
@@ -25,7 +25,7 @@ export interface CheckpointEntry {
   /** Model identity for mismatch checks; empty string when the model has no id. */
   readonly modelKey: string;
   readonly prefix: CheckpointPrefix;
-  readonly parentId?: string;
+  readonly parentId?: string | undefined;
 }
 
 const checkpoints = new Map<string, CheckpointEntry>();

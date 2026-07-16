@@ -31,10 +31,10 @@ import type { CheckpointPrefix } from "./CheckpointRegistry";
  *   immutable checkpoint (never write back under it).
  */
 export interface AiSessionContext {
-  readonly sessionId?: string;
-  readonly emitCheckpointId?: string;
-  readonly supersedeParent?: boolean;
-  readonly prefix?: CheckpointPrefix;
+  readonly sessionId?: string | undefined;
+  readonly emitCheckpointId?: string | undefined;
+  readonly supersedeParent?: boolean | undefined;
+  readonly prefix?: CheckpointPrefix | undefined;
 }
 
 /**

@@ -337,13 +337,17 @@ export class ToolCallingTask extends StreamingAiTask<
   private _resolvedCheckpoint: ResolvedCheckpoint | undefined;
 
   /**
-   * Clear the checkpoint resolved by a prior run of a reused task instance.
-   * Done via a method (not an inline assignment) so control-flow analysis does
-   * not narrow {@link _resolvedCheckpoint} to `undefined` for the rest of the
-   * caller — {@link getJobInput} repopulates it before it is read.
+   * Clear per-run session state left by a prior run of a reused task instance:
+   * the resolved checkpoint and the auto-computed fingerprint session id (a
+   * checkpoint run skips the fingerprint path, so a stale id from an earlier
+   * run must not be re-registered on this run's scope). Done via a method (not
+   * inline assignments) so control-flow analysis does not narrow
+   * {@link _resolvedCheckpoint} to `undefined` for the rest of the caller —
+   * {@link getJobInput} repopulates it before it is read.
    */
   private resetResolvedCheckpoint(): void {
     this._resolvedCheckpoint = undefined;
+    this._computedSessionId = undefined;
   }
 
   /**
@@ -510,7 +514,21 @@ export class ToolCallingTask extends StreamingAiTask<
         if (event.type === "text-delta" && (event.port ?? "text") === "text") {
           text += event.textDelta;
         } else if (event.type === "object-delta" && event.port === "toolCalls") {
-          toolCalls = event.objectDelta as ToolCallingTaskOutput["toolCalls"];
+          // Mirror StreamProcessor's canonical accumulation: array deltas are
+          // upserts by id (OpenAI-shaped providers emit one single-element
+          // array per tool call), non-array deltas replace.
+          const delta = event.objectDelta;
+          if (Array.isArray(delta)) {
+            const merged = [...toolCalls];
+            for (const item of delta as ToolCallingTaskOutput["toolCalls"]) {
+              const idx = item.id !== undefined ? merged.findIndex((e) => e.id === item.id) : -1;
+              if (idx >= 0) merged[idx] = item;
+              else merged.push(item);
+            }
+            toolCalls = merged;
+          } else {
+            toolCalls = delta as unknown as ToolCallingTaskOutput["toolCalls"];
+          }
         }
         if (event.type === "finish") {
           await this.finalizeCheckpoint(input, { text, toolCalls });

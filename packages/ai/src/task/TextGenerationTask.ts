@@ -213,8 +213,12 @@ export class TextGenerationTask extends StreamingAiTask<
     // Reset any checkpoint resolved by a prior run of this reused instance so we
     // don't re-emit a stale minted id or re-supersede an already-gone parent.
     this.resetResolvedCheckpoint();
-    await this.getJobInput(input);
-    this.registerCheckpointDispose(input, executeContext);
+    // Only checkpoint runs need the job input up front (to mint/register the
+    // emit session); plain runs let super.execute build it once.
+    if (input.checkpoint || input.emitCheckpoint) {
+      await this.getJobInput(input);
+      this.registerCheckpointDispose(input, executeContext);
+    }
     const emitId = this._resolvedCheckpoint?.emitCheckpointId;
     let output: TextGenerationTaskOutput | undefined;
     try {
@@ -237,8 +241,12 @@ export class TextGenerationTask extends StreamingAiTask<
     // Reset any checkpoint resolved by a prior run of this reused instance so we
     // don't re-emit a stale minted id or re-supersede an already-gone parent.
     this.resetResolvedCheckpoint();
-    await this.getJobInput(input);
-    this.registerCheckpointDispose(input, context);
+    // Only checkpoint runs need the job input up front (to mint/register the
+    // emit session); plain runs let super.executeStream build it once.
+    if (input.checkpoint || input.emitCheckpoint) {
+      await this.getJobInput(input);
+      this.registerCheckpointDispose(input, context);
+    }
     const emitId = this._resolvedCheckpoint?.emitCheckpointId;
     if (!emitId) {
       yield* super.executeStream(input, context);

@@ -61,8 +61,13 @@ export function buildAnthropicCheckpointParams(
     params.tools = tools;
     params.tool_choice = { type: "auto" };
   }
-  if (prefix.messages && prefix.messages.length > 0) {
-    const messages = buildAnthropicMessages(prefix.messages, "");
+  // Guard on the CONVERTED array: buildAnthropicMessages skips system-role
+  // entries, so a non-empty prefix.messages can still convert to [].
+  const messages =
+    prefix.messages && prefix.messages.length > 0
+      ? buildAnthropicMessages(prefix.messages, "")
+      : [];
+  if (messages.length > 0) {
     annotateLastBlock(messages[messages.length - 1] as { content: unknown });
     params.messages = messages;
   } else {
@@ -91,8 +96,13 @@ export function applyAnthropicPrefixReplay(
     ];
   }
 
-  if (prefix.messages && prefix.messages.length > 0) {
-    const prefixMessages = buildAnthropicMessages(prefix.messages, "");
+  // Guard on the CONVERTED array: buildAnthropicMessages skips system-role
+  // entries, so a non-empty prefix.messages can still convert to [].
+  const prefixMessages =
+    prefix.messages && prefix.messages.length > 0
+      ? buildAnthropicMessages(prefix.messages, "")
+      : [];
+  if (prefixMessages.length > 0) {
     annotateLastBlock(prefixMessages[prefixMessages.length - 1] as { content: unknown });
     const tail = Array.isArray(params.messages) ? (params.messages as unknown[]) : [];
     params.messages = [...prefixMessages, ...tail];
