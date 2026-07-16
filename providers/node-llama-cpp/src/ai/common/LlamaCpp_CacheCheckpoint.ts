@@ -60,8 +60,9 @@ export const LlamaCpp_CacheCheckpoint_Stream: AiProviderRunFn<
     const { LlamaChatSession } = await loadSdk();
     const context = await getOrCreateTextContext(model);
     const sequence = await acquireContextSequence(context, signal);
-    // Sequence ownership only transfers to the session once its constructor
-    // returns; free it in the failure path so a throw does not strand the slot.
+    // Sequence ownership only transfers once the state is recorded in the
+    // session map; free the session/sequence on any throw before that (e.g. an
+    // aborted preload) so a failed warm-up does not strand the slot.
     let chatSession: any;
     try {
       chatSession = new LlamaChatSession({
@@ -69,25 +70,30 @@ export const LlamaCpp_CacheCheckpoint_Stream: AiProviderRunFn<
         ...(prefix.systemPrompt !== undefined && { systemPrompt: prefix.systemPrompt }),
         ...llamaCppChatSessionConstructorSpread(model),
       });
+
+      const prefixText = renderLlamaCppPrefixText(prefix);
+      if (prefixText) {
+        // Evaluate the prefix into the sequence's KV state without generating.
+        await chatSession.preloadPrompt(prefixText, { signal });
+      }
+
+      setLlamaCppSession(checkpointId, {
+        mode: "prefix-rewind",
+        sequence,
+        session: chatSession,
+        modelKey: getConfigKey(model),
+      });
     } catch (err) {
+      if (chatSession) {
+        try {
+          await chatSession.dispose({ disposeSequence: false });
+        } catch {}
+      }
       try {
         await sequence.dispose();
       } catch {}
       throw err;
     }
-
-    const prefixText = renderLlamaCppPrefixText(prefix);
-    if (prefixText) {
-      // Evaluate the prefix into the sequence's KV state without generating.
-      await chatSession.preloadPrompt(prefixText, { signal });
-    }
-
-    setLlamaCppSession(checkpointId, {
-      mode: "prefix-rewind",
-      sequence,
-      session: chatSession,
-      modelKey: getConfigKey(model),
-    });
     emit({ type: "finish", data: { checkpoint: checkpointId } });
   });
 };
