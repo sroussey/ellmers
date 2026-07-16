@@ -29,6 +29,7 @@ import {
   setAiProviderRegistry,
 } from "@workglow/ai";
 import type { StreamEvent, TaskOutput } from "@workglow/task-graph";
+import { ResourceScope } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("cache.checkpoint capability", () => {
@@ -131,11 +132,16 @@ describe("CacheCheckpointTask", () => {
   });
 
   it("warms once and outputs the minted checkpoint id", async () => {
-    const out = await cacheCheckpoint({
-      model: checkpointModel(),
-      systemPrompt: "You are helpful.",
-      tools: [{ name: "a", description: "A", inputSchema: { type: "object" } }],
-    });
+    const scope = new ResourceScope();
+    const out = await cacheCheckpoint(
+      {
+        model: checkpointModel(),
+        systemPrompt: "You are helpful.",
+        tools: [{ name: "a", description: "A", inputSchema: { type: "object" } }],
+      },
+      undefined,
+      { resourceScope: scope }
+    );
     expect(warmupCalls).toHaveLength(1);
     expect(out?.checkpoint).toBe(warmupCalls[0].session?.sessionId);
     const entry = getCheckpoint(out!.checkpoint);
@@ -144,18 +150,50 @@ describe("CacheCheckpointTask", () => {
     expect(warmupCalls[0].session?.prefix?.tools).toHaveLength(1);
   });
 
-  it("extends a parent checkpoint and supersedes it by default", async () => {
-    const first = await cacheCheckpoint({
-      model: checkpointModel(),
-      systemPrompt: "sys",
-      messages: [{ role: "user", content: [{ type: "text", text: "one" }] }],
-    });
+  it("disposes the checkpoint when the run's ResourceScope completes", async () => {
+    const scope = new ResourceScope();
+    const out = await cacheCheckpoint(
+      { model: checkpointModel(), systemPrompt: "You are helpful." },
+      undefined,
+      { resourceScope: scope }
+    );
+    expect(getCheckpoint(out!.checkpoint)).toBeDefined();
     const disposeSpy = vi.spyOn(getAiProviderRegistry(), "disposeSession");
-    const second = await cacheCheckpoint({
+    await scope.runComplete();
+    expect(getCheckpoint(out!.checkpoint)).toBeUndefined();
+    expect(disposeSpy).toHaveBeenCalledWith(CKPT_PROVIDER, out!.checkpoint);
+  });
+
+  it("without a shared scope the handle is gone once the run resolves", async () => {
+    const out = await cacheCheckpoint({
       model: checkpointModel(),
-      checkpoint: first!.checkpoint,
-      messages: [{ role: "user", content: [{ type: "text", text: "two" }] }],
+      systemPrompt: "You are helpful.",
     });
+    expect(out?.checkpoint).toBeTruthy();
+    expect(getCheckpoint(out!.checkpoint)).toBeUndefined();
+  });
+
+  it("extends a parent checkpoint and supersedes it by default", async () => {
+    const scope = new ResourceScope();
+    const first = await cacheCheckpoint(
+      {
+        model: checkpointModel(),
+        systemPrompt: "sys",
+        messages: [{ role: "user", content: [{ type: "text", text: "one" }] }],
+      },
+      undefined,
+      { resourceScope: scope }
+    );
+    const disposeSpy = vi.spyOn(getAiProviderRegistry(), "disposeSession");
+    const second = await cacheCheckpoint(
+      {
+        model: checkpointModel(),
+        checkpoint: first!.checkpoint,
+        messages: [{ role: "user", content: [{ type: "text", text: "two" }] }],
+      },
+      undefined,
+      { resourceScope: scope }
+    );
     const entry = getCheckpoint(second!.checkpoint);
     expect(entry?.parentId).toBe(first!.checkpoint);
     expect(entry?.prefix.systemPrompt).toBe("sys");
@@ -165,13 +203,22 @@ describe("CacheCheckpointTask", () => {
   });
 
   it("keepParent preserves the parent entry", async () => {
-    const first = await cacheCheckpoint({ model: checkpointModel(), systemPrompt: "sys" });
-    const second = await cacheCheckpoint({
-      model: checkpointModel(),
-      checkpoint: first!.checkpoint,
-      keepParent: true,
-      messages: [{ role: "user", content: [{ type: "text", text: "tail" }] }],
-    });
+    const scope = new ResourceScope();
+    const first = await cacheCheckpoint(
+      { model: checkpointModel(), systemPrompt: "sys" },
+      undefined,
+      { resourceScope: scope }
+    );
+    const second = await cacheCheckpoint(
+      {
+        model: checkpointModel(),
+        checkpoint: first!.checkpoint,
+        keepParent: true,
+        messages: [{ role: "user", content: [{ type: "text", text: "tail" }] }],
+      },
+      undefined,
+      { resourceScope: scope }
+    );
     expect(getCheckpoint(first!.checkpoint)).toBeDefined();
     expect(getCheckpoint(second!.checkpoint)?.parentId).toBe(first!.checkpoint);
   });
@@ -241,14 +288,18 @@ describe("ToolCallingTask checkpoint ports", () => {
       modelKey: "test:ckpt-model:v1",
       prefix: { systemPrompt: "sys", tools: [aTool], messages: [] },
     });
+    const scope = new ResourceScope();
     const task = new ToolCallingTask();
-    const out = await task.run({
-      model: toolModel(),
-      prompt: "hi",
-      tools: [aTool],
-      checkpoint: "ckpt-parent",
-      emitCheckpoint: true,
-    });
+    const out = await task.run(
+      {
+        model: toolModel(),
+        prompt: "hi",
+        tools: [aTool],
+        checkpoint: "ckpt-parent",
+        emitCheckpoint: true,
+      },
+      { resourceScope: scope }
+    );
     const emitted = (out as { checkpoint?: string }).checkpoint;
     expect(emitted).toBeTruthy();
     expect(toolCalls[0].session?.emitCheckpointId).toBe(emitted);
@@ -268,15 +319,19 @@ describe("ToolCallingTask checkpoint ports", () => {
       modelKey: "test:ckpt-model:v1",
       prefix: { systemPrompt: "sys", tools: [aTool], messages: [] },
     });
+    const scope = new ResourceScope();
     const task = new ToolCallingTask();
-    await task.run({
-      model: toolModel(),
-      prompt: "hi",
-      tools: [aTool],
-      checkpoint: "ckpt-parent",
-      emitCheckpoint: true,
-      keepParentCheckpoint: true,
-    });
+    await task.run(
+      {
+        model: toolModel(),
+        prompt: "hi",
+        tools: [aTool],
+        checkpoint: "ckpt-parent",
+        emitCheckpoint: true,
+        keepParentCheckpoint: true,
+      },
+      { resourceScope: scope }
+    );
     expect(getCheckpoint("ckpt-parent")).toBeDefined();
     expect(toolCalls[0].session?.supersedeParent).toBeUndefined();
   });
@@ -322,13 +377,17 @@ describe("TextGenerationTask checkpoint ports", () => {
       modelKey: "test:ckpt-model:v1",
       prefix: { systemPrompt: "sys", messages: [] },
     });
+    const scope = new ResourceScope();
     const task = new TextGenerationTask();
-    const out = await task.run({
-      model: checkpointModel(),
-      prompt: "continue",
-      checkpoint: "gen-parent",
-      emitCheckpoint: true,
-    });
+    const out = await task.run(
+      {
+        model: checkpointModel(),
+        prompt: "continue",
+        checkpoint: "gen-parent",
+        emitCheckpoint: true,
+      },
+      { resourceScope: scope }
+    );
     expect(genCalls[0].session?.sessionId).toBe("gen-parent");
     expect(genCalls[0].session?.prefix?.systemPrompt).toBe("sys");
     const emitted = (out as { checkpoint?: string }).checkpoint;
@@ -363,26 +422,38 @@ describe("checkpoint chaining across tasks", () => {
   });
 
   it("warm-up → consume → emit → consume chains prefixes and supersedes", async () => {
-    const ckpt0 = (await cacheCheckpoint({ model: checkpointModel(), systemPrompt: "sys" }))!
-      .checkpoint;
+    const scope = new ResourceScope();
+    const ckpt0 = (await cacheCheckpoint(
+      { model: checkpointModel(), systemPrompt: "sys" },
+      undefined,
+      {
+        resourceScope: scope,
+      }
+    ))!.checkpoint;
 
-    const turn1 = await new TextGenerationTask().run({
-      model: checkpointModel(),
-      prompt: "turn one",
-      checkpoint: ckpt0,
-      emitCheckpoint: true,
-    });
+    const turn1 = await new TextGenerationTask().run(
+      {
+        model: checkpointModel(),
+        prompt: "turn one",
+        checkpoint: ckpt0,
+        emitCheckpoint: true,
+      },
+      { resourceScope: scope }
+    );
     const ckpt1 = (turn1 as { checkpoint?: string }).checkpoint!;
     expect(getCheckpoint(ckpt0)).toBeUndefined();
     const entry1 = getCheckpoint(ckpt1)!;
     expect(entry1.parentId).toBe(ckpt0);
     expect(entry1.prefix.messages).toHaveLength(2);
 
-    await new TextGenerationTask().run({
-      model: checkpointModel(),
-      prompt: "turn two",
-      checkpoint: ckpt1,
-    });
+    await new TextGenerationTask().run(
+      {
+        model: checkpointModel(),
+        prompt: "turn two",
+        checkpoint: ckpt1,
+      },
+      { resourceScope: scope }
+    );
     const consumed = sessions[sessions.length - 1];
     expect(consumed?.sessionId).toBe(ckpt1);
     expect(consumed?.prefix?.messages).toHaveLength(2);
@@ -402,31 +473,49 @@ describe("checkpoint chaining across tasks", () => {
     ]);
     await provider.register({ queue: { autoCreate: false } });
 
-    const ckpt0 = (await cacheCheckpoint({ model: checkpointModel(), systemPrompt: "sys" }))!
-      .checkpoint;
+    const scope = new ResourceScope();
+    const ckpt0 = (await cacheCheckpoint(
+      { model: checkpointModel(), systemPrompt: "sys" },
+      undefined,
+      {
+        resourceScope: scope,
+      }
+    ))!.checkpoint;
     await expect(
-      new TextGenerationTask().run({
-        model: checkpointModel(),
-        prompt: "boom",
-        checkpoint: ckpt0,
-        emitCheckpoint: true,
-      })
+      new TextGenerationTask().run(
+        {
+          model: checkpointModel(),
+          prompt: "boom",
+          checkpoint: ckpt0,
+          emitCheckpoint: true,
+        },
+        { resourceScope: scope }
+      )
     ).rejects.toThrow();
     // finalize never ran: parent survives, no orphan child entry beyond the parent
     expect(getCheckpoint(ckpt0)).toBeDefined();
   });
 
   it("branching: two consumers of one kept parent see the same prefix", async () => {
-    const ckpt0 = (await cacheCheckpoint({ model: checkpointModel(), systemPrompt: "sys" }))!
-      .checkpoint;
+    const scope = new ResourceScope();
+    const ckpt0 = (await cacheCheckpoint(
+      { model: checkpointModel(), systemPrompt: "sys" },
+      undefined,
+      {
+        resourceScope: scope,
+      }
+    ))!.checkpoint;
     const runBranch = (prompt: string) =>
-      new TextGenerationTask().run({
-        model: checkpointModel(),
-        prompt,
-        checkpoint: ckpt0,
-        emitCheckpoint: true,
-        keepParentCheckpoint: true,
-      });
+      new TextGenerationTask().run(
+        {
+          model: checkpointModel(),
+          prompt,
+          checkpoint: ckpt0,
+          emitCheckpoint: true,
+          keepParentCheckpoint: true,
+        },
+        { resourceScope: scope }
+      );
     const [a, b] = await Promise.all([runBranch("branch a"), runBranch("branch b")]);
     expect(getCheckpoint(ckpt0)).toBeDefined();
     const ca = (a as { checkpoint?: string }).checkpoint!;
