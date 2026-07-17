@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiSessionContext } from "@workglow/ai";
+import type { AiSessionContext, ToolDefinition } from "@workglow/ai";
 import {
   buildGeminiPrefixedContents,
   deleteGeminiCachedContent,
+  geminiCachedToolsMatch,
   getGeminiCachedContent,
   setGeminiCachedContent,
 } from "@workglow/google-gemini/ai-runtime";
@@ -73,6 +74,108 @@ describe("buildGeminiPrefixedContents", () => {
     const contents = buildGeminiPrefixedContents(prefix, tail, "ignored");
     expect(contents).toHaveLength(3);
     expect(contents[2].parts[0].text).toBe("m");
+  });
+});
+
+const cachedTools: ToolDefinition[] = [
+  {
+    name: "weather",
+    description: "Get weather",
+    inputSchema: {
+      type: "object",
+      properties: {
+        location: { type: "string", description: "City" },
+        units: { type: "string", enum: ["c", "f"] },
+      },
+      required: ["location"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "time",
+    description: "Get time",
+    inputSchema: {
+      type: "object",
+      properties: { timezone: { type: "string" } },
+    },
+  },
+];
+
+describe("geminiCachedToolsMatch", () => {
+  it("matches reordered tools and nested schema keys", () => {
+    const reordered: ToolDefinition[] = [
+      {
+        ...cachedTools[1],
+        inputSchema: {
+          properties: { timezone: { type: "string" } },
+          type: "object",
+        },
+      },
+      {
+        ...cachedTools[0],
+        inputSchema: {
+          additionalProperties: true,
+          required: ["location"],
+          properties: {
+            units: { enum: ["c", "f"], type: "string" },
+            location: { description: "City", type: "string" },
+          },
+          type: "object",
+        },
+      },
+    ];
+
+    expect(geminiCachedToolsMatch(cachedTools, reordered)).toBe(true);
+  });
+
+  it("rejects added and removed declarations", () => {
+    expect(geminiCachedToolsMatch(cachedTools, cachedTools.slice(0, 1))).toBe(false);
+    expect(
+      geminiCachedToolsMatch(cachedTools.slice(0, 1), [...cachedTools.slice(0, 1), cachedTools[1]])
+    ).toBe(false);
+  });
+
+  it("rejects a changed input schema", () => {
+    const changed: ToolDefinition[] = [
+      {
+        ...cachedTools[0],
+        inputSchema: {
+          type: "object",
+          required: ["location"],
+          properties: {
+            location: { type: "number" },
+            units: { type: "string", enum: ["c", "f"] },
+          },
+        },
+      },
+      cachedTools[1],
+    ];
+
+    expect(geminiCachedToolsMatch(cachedTools, changed)).toBe(false);
+  });
+
+  it("compares wire descriptions while ignoring non-wire tool fields", () => {
+    const nonWireChanged: ToolDefinition[] = cachedTools.map((tool) => ({
+      ...tool,
+      type: "function",
+      config: { localOnly: true },
+      configSchema: { type: "object", properties: { localOnly: { type: "boolean" } } },
+      execute: async () => ({ localOnly: true }),
+    }));
+    const descriptionChanged: ToolDefinition[] = [
+      { ...cachedTools[0], description: "Get forecast" },
+      cachedTools[1],
+    ];
+    const nameChanged: ToolDefinition[] = [{ ...cachedTools[0], name: "forecast" }, cachedTools[1]];
+    const outputSchemaChanged: ToolDefinition[] = [
+      { ...cachedTools[0], outputSchema: { type: "object" } },
+      cachedTools[1],
+    ];
+
+    expect(geminiCachedToolsMatch(cachedTools, nonWireChanged)).toBe(true);
+    expect(geminiCachedToolsMatch(cachedTools, descriptionChanged)).toBe(false);
+    expect(geminiCachedToolsMatch(cachedTools, nameChanged)).toBe(false);
+    expect(geminiCachedToolsMatch(cachedTools, outputSchemaChanged)).toBe(false);
   });
 });
 

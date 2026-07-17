@@ -36,6 +36,40 @@ export function buildGeminiFunctionDeclarations(
 }
 
 /**
+ * Compares the function declarations Gemini receives, ignoring declaration
+ * order and JSON object-key order.
+ */
+export function geminiCachedToolsMatch(
+  prefixTools: readonly ToolDefinition[],
+  inputTools: readonly ToolDefinition[]
+): boolean {
+  const normalizedPrefix = buildGeminiFunctionDeclarations(prefixTools)
+    .map(normalizeGeminiWireDeclaration)
+    .sort();
+  const normalizedInput = buildGeminiFunctionDeclarations(inputTools)
+    .map(normalizeGeminiWireDeclaration)
+    .sort();
+
+  return JSON.stringify(normalizedPrefix) === JSON.stringify(normalizedInput);
+}
+
+function normalizeGeminiWireDeclaration(declaration: Record<string, unknown>): string {
+  return JSON.stringify(sortObjectKeys(declaration));
+}
+
+function sortObjectKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortObjectKeys);
+  if (value === null || typeof value !== "object") return value;
+
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+    const nested = (value as Record<string, unknown>)[key];
+    if (nested !== undefined) sorted[key] = sortObjectKeys(nested);
+  }
+  return sorted;
+}
+
+/**
  * Builds the `contents` for a checkpoint consumer replaying the prefix inline:
  * prefix messages first, then the caller's tail (its `messages`, or its
  * `prompt` lifted into a user turn — {@link buildGeminiContents} only falls
