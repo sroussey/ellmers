@@ -13,6 +13,7 @@ export * from "./common/Gemini_ModelSearch";
 export * from "./registerGemini";
 
 import { GEMINI_RUN_FN_SPECS } from "./common/Gemini_Capabilities";
+import { _testOnly as clientTestOnly } from "./common/Gemini_Client";
 import { GEMINI_RUN_FNS } from "./common/Gemini_JobRunFns";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./common/Gemini_Refusal";
 import { buildGeminiContents } from "./common/Gemini_ToolCalling";
@@ -28,4 +29,5 @@ export const _testOnly = {
   buildGeminiContents,
   geminiRefusalCategory,
   emitGeminiRefusal,
+  setGeminiClientForTests: clientTestOnly.setGeminiClientForTests,
 } as const;
