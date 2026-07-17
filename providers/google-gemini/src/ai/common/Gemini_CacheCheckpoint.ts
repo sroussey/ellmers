@@ -54,17 +54,38 @@ export function geminiCachedToolsMatch(
 }
 
 function normalizeGeminiWireDeclaration(declaration: Record<string, unknown>): string {
-  return JSON.stringify(sortObjectKeys(declaration));
+  return JSON.stringify(normalizeGeminiWireValue(declaration));
 }
 
-function sortObjectKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortObjectKeys);
+const UNORDERED_SCHEMA_ARRAY_KEYWORDS = new Set([
+  "allOf",
+  "anyOf",
+  "enum",
+  "oneOf",
+  "required",
+  "type",
+]);
+
+function normalizeGeminiWireValue(
+  value: unknown,
+  schemaKeyword: string | undefined = undefined
+): unknown {
+  if (Array.isArray(value)) {
+    const normalized = value.map((item) => normalizeGeminiWireValue(item));
+    if (schemaKeyword && UNORDERED_SCHEMA_ARRAY_KEYWORDS.has(schemaKeyword)) {
+      normalized.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+    }
+    return normalized;
+  }
   if (value === null || typeof value !== "object") return value;
 
   const sorted: Record<string, unknown> = {};
   for (const key of Object.keys(value as Record<string, unknown>).sort()) {
     const nested = (value as Record<string, unknown>)[key];
-    if (nested !== undefined) sorted[key] = sortObjectKeys(nested);
+    const nestedKeyword = schemaKeyword === "dependentRequired" ? "required" : key;
+    if (nested !== undefined) {
+      sorted[key] = normalizeGeminiWireValue(nested, nestedKeyword);
+    }
   }
   return sorted;
 }
