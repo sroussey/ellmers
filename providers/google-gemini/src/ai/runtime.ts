@@ -16,5 +16,6 @@
 export * from "./common/Gemini_CacheCheckpoint";
 export * from "./common/Gemini_CacheStore";
 export * from "./common/Gemini_Client";
+export * from "./common/Gemini_SessionDispose";
 export * from "./registerGeminiInline";
 export * from "./registerGeminiWorker";
