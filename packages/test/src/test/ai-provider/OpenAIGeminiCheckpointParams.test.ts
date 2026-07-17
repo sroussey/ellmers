@@ -21,7 +21,12 @@ import {
 import { mergeOpenAICheckpointPrefix } from "@workglow/openai/ai-runtime";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../../../providers/google-gemini/src/ai/common/Gemini_Client", () => ({
+vi.mock("@google/genai", () => ({
+  FunctionCallingConfigMode: {
+    ANY: "ANY",
+    AUTO: "AUTO",
+    NONE: "NONE",
+  },
   createGeminiClient: async () => ({
     models: {
       generateContentStream: async (request: Record<string, unknown>) => {
