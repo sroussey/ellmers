@@ -19,6 +19,13 @@ const originalRegistry = getAiProviderRegistry();
 const originalWorkerManager = globalServiceRegistry.get(WORKER_MANAGER);
 let activeWorkerManager: WorkerManager | undefined;
 
+// The worker-boundary case spins up a real worker from `Gemini_SessionDispose.
+// worker.ts`, which relies on the global `Worker` constructor and `bun:test`'s
+// `mock.module`. Both only exist under the Bun runner, so skip it under
+// vitest/node; the runtime-local case below covers the same disposal path
+// without a worker.
+const isBun = typeof (globalThis as { Bun?: unknown }).Bun !== "undefined";
+
 afterEach(async () => {
   await activeWorkerManager?.dispose();
   activeWorkerManager = undefined;
@@ -27,31 +34,34 @@ afterEach(async () => {
 });
 
 describe("Gemini session disposal", () => {
-  it("deletes the worker-local cache through the registered session.dispose proxy", async () => {
-    const registry = new AiProviderRegistry();
-    setAiProviderRegistry(registry);
-    activeWorkerManager = new WorkerManager();
-    globalServiceRegistry.registerInstance(WORKER_MANAGER, activeWorkerManager);
+  it.skipIf(!isBun)(
+    "deletes the worker-local cache through the registered session.dispose proxy",
+    async () => {
+      const registry = new AiProviderRegistry();
+      setAiProviderRegistry(registry);
+      activeWorkerManager = new WorkerManager();
+      globalServiceRegistry.registerInstance(WORKER_MANAGER, activeWorkerManager);
 
-    const provider = new GoogleGeminiQueuedProvider();
-    await provider.register({
-      worker: new Worker(new URL("./Gemini_SessionDispose.worker.ts", import.meta.url)),
-    });
-    await activeWorkerManager.callWorkerFunction("GOOGLE_GEMINI", "test.gemini.seed-cache", [
-      { sessionId: "checkpoint-1", name: "cachedContents/checkpoint-1" },
-    ]);
+      const provider = new GoogleGeminiQueuedProvider();
+      await provider.register({
+        worker: new Worker(new URL("./Gemini_SessionDispose.worker.ts", import.meta.url)),
+      });
+      await activeWorkerManager.callWorkerFunction("GOOGLE_GEMINI", "test.gemini.seed-cache", [
+        { sessionId: "checkpoint-1", name: "cachedContents/checkpoint-1" },
+      ]);
 
-    await provider.disposeSession("checkpoint-1");
+      await provider.disposeSession("checkpoint-1");
 
-    const workerState = await activeWorkerManager.callWorkerFunction<{
-      readonly present: boolean;
-      readonly deletedNames: string[];
-    }>("GOOGLE_GEMINI", "test.gemini.inspect-cache", ["checkpoint-1"]);
-    expect(workerState).toEqual({
-      present: false,
-      deletedNames: ["cachedContents/checkpoint-1"],
-    });
-  });
+      const workerState = await activeWorkerManager.callWorkerFunction<{
+        readonly present: boolean;
+        readonly deletedNames: string[];
+      }>("GOOGLE_GEMINI", "test.gemini.inspect-cache", ["checkpoint-1"]);
+      expect(workerState).toEqual({
+        present: false,
+        deletedNames: ["cachedContents/checkpoint-1"],
+      });
+    }
+  );
 
   it("removes a runtime-local cache entry through the session.dispose run function", async () => {
     const registration = GEMINI_RUN_FNS.find(({ serves }) => serves.includes("session.dispose"));
