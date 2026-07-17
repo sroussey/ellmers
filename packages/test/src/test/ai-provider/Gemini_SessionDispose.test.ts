@@ -8,8 +8,8 @@ import type { AiProviderRunFn } from "@workglow/ai";
 import { AiProviderRegistry, getAiProviderRegistry, setAiProviderRegistry } from "@workglow/ai";
 import { _testOnly } from "@workglow/google-gemini/ai";
 import * as GeminiRuntime from "@workglow/google-gemini/ai-runtime";
-import { globalServiceRegistry, WORKER_MANAGER } from "@workglow/util/worker";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { globalServiceRegistry, WORKER_MANAGER, WorkerManager } from "@workglow/util/worker";
+import { afterEach, describe, expect, it } from "vitest";
 
 const { GEMINI_RUN_FNS, GoogleGeminiQueuedProvider } = _testOnly;
 const runtime = GeminiRuntime as typeof GeminiRuntime & {
@@ -17,33 +17,40 @@ const runtime = GeminiRuntime as typeof GeminiRuntime & {
 };
 const originalRegistry = getAiProviderRegistry();
 const originalWorkerManager = globalServiceRegistry.get(WORKER_MANAGER);
+let activeWorkerManager: WorkerManager | undefined;
 
-afterEach(() => {
+afterEach(async () => {
+  await activeWorkerManager?.dispose();
+  activeWorkerManager = undefined;
   setAiProviderRegistry(originalRegistry);
   globalServiceRegistry.registerInstance(WORKER_MANAGER, originalWorkerManager);
 });
 
 describe("Gemini session disposal", () => {
-  it("routes queued-provider disposal through the session.dispose worker proxy", async () => {
+  it("deletes the worker-local cache through the registered session.dispose proxy", async () => {
     const registry = new AiProviderRegistry();
     setAiProviderRegistry(registry);
-    registry.registerAsWorkerRunFn("GOOGLE_GEMINI", ["session.dispose"]);
-
-    const callWorkerRunFunction = vi.fn(async () => undefined);
-    globalServiceRegistry.registerInstance(WORKER_MANAGER, {
-      callWorkerRunFunction,
-    } as never);
+    activeWorkerManager = new WorkerManager();
+    globalServiceRegistry.registerInstance(WORKER_MANAGER, activeWorkerManager);
 
     const provider = new GoogleGeminiQueuedProvider();
+    await provider.register({
+      worker: new Worker(new URL("./Gemini_SessionDispose.worker.ts", import.meta.url)),
+    });
+    await activeWorkerManager.callWorkerFunction("GOOGLE_GEMINI", "test.gemini.seed-cache", [
+      { sessionId: "checkpoint-1", name: "cachedContents/checkpoint-1" },
+    ]);
+
     await provider.disposeSession("checkpoint-1");
 
-    expect(callWorkerRunFunction).toHaveBeenCalledTimes(1);
-    expect(callWorkerRunFunction).toHaveBeenCalledWith(
-      "GOOGLE_GEMINI",
-      "session.dispose",
-      [{}, undefined, undefined, { sessionId: "checkpoint-1" }],
-      expect.objectContaining({ signal: expect.any(AbortSignal), emit: expect.any(Function) })
-    );
+    const workerState = await activeWorkerManager.callWorkerFunction<{
+      readonly present: boolean;
+      readonly deletedNames: string[];
+    }>("GOOGLE_GEMINI", "test.gemini.inspect-cache", ["checkpoint-1"]);
+    expect(workerState).toEqual({
+      present: false,
+      deletedNames: ["cachedContents/checkpoint-1"],
+    });
   });
 
   it("removes a runtime-local cache entry through the session.dispose run function", async () => {
