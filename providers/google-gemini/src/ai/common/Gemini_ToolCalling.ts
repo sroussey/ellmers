@@ -10,15 +10,17 @@ import type {
   ChatMessage,
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
-  ToolDefinition,
 } from "@workglow/ai";
-import { buildToolDescription, filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
-import { buildGeminiPrefixedContents } from "./Gemini_CacheCheckpoint";
+import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
+import {
+  buildGeminiFunctionDeclarations,
+  buildGeminiPrefixedContents,
+  geminiCachedToolsMatch,
+} from "./Gemini_CacheCheckpoint";
 import { getGeminiCachedContent } from "./Gemini_CacheStore";
 import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
-import { sanitizeSchemaForGemini } from "./Gemini_Schema";
 
 export function buildGeminiContents(
   messages: ReadonlyArray<ChatMessage> | undefined,
@@ -122,11 +124,7 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
 > = async (input, model, signal, emit, _outputSchema, sessionContext) => {
   const ai = await createGeminiClient(model);
 
-  const functionDeclarations = input.tools.map((t: ToolDefinition) => ({
-    name: t.name,
-    description: buildToolDescription(t),
-    parameters: sanitizeSchemaForGemini(t.inputSchema as Record<string, unknown>) as any,
-  }));
+  const functionDeclarations = buildGeminiFunctionDeclarations(input.tools);
 
   const toolConfig = mapGeminiToolConfig(input.toolChoice);
 
@@ -149,6 +147,7 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
     defaultToolChoice &&
     prefix.tools !== undefined &&
     prefix.tools.length > 0 &&
+    geminiCachedToolsMatch(prefix.tools, input.tools) &&
     (input.systemPrompt === undefined ||
       input.systemPrompt === "" ||
       input.systemPrompt === cachedEntry.systemPrompt);
