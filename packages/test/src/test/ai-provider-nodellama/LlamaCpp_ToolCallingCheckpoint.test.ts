@@ -202,6 +202,7 @@ async function callToolWithPrompt(
   signal: AbortSignal = new AbortController().signal
 ): Promise<void> {
   const input: ToolCallingTaskInput = {
+    model,
     prompt,
     tools: [tool],
     toolChoice: "required",
