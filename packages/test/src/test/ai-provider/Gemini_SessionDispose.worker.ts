@@ -4,10 +4,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { GeminiModelConfig } from "@workglow/google-gemini/ai";
 import { globalServiceRegistry, WORKER_SERVER } from "@workglow/util";
 import { mock } from "bun:test";
 
 const deletedNames: string[] = [];
+const testModel = {
+  model_id: "gemini-2.5-flash",
+  provider: "GOOGLE_GEMINI",
+  provider_config: {
+    model_name: "gemini-2.5-flash",
+  },
+} as const satisfies GeminiModelConfig;
+
+process.env.GEMINI_API_KEY = "worker-test-key";
 
 mock.module("@google/genai", () => ({
   FunctionCallingConfigMode: {
@@ -33,14 +43,7 @@ workerServer.registerFunction(
   async (input: { readonly sessionId: string; readonly name: string }): Promise<void> => {
     setGeminiCachedContent(input.sessionId, {
       name: input.name,
-      model: {
-        model_id: "gemini-2.5-flash",
-        provider: "GOOGLE_GEMINI",
-        provider_config: {
-          api_key: "worker-test-key",
-          model_name: "gemini-2.5-flash",
-        },
-      },
+      model: testModel,
       systemPrompt: undefined,
     });
   }
