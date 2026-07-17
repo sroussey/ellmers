@@ -57,37 +57,139 @@ function normalizeGeminiWireDeclaration(declaration: Record<string, unknown>): s
   return JSON.stringify(normalizeGeminiWireValue(declaration));
 }
 
-const UNORDERED_SCHEMA_ARRAY_KEYWORDS = new Set([
-  "allOf",
-  "anyOf",
-  "enum",
-  "oneOf",
-  "required",
-  "type",
-]);
-
-function normalizeGeminiWireValue(
-  value: unknown,
-  schemaKeyword: string | undefined = undefined
-): unknown {
-  if (Array.isArray(value)) {
-    const normalized = value.map((item) => normalizeGeminiWireValue(item));
-    if (schemaKeyword && UNORDERED_SCHEMA_ARRAY_KEYWORDS.has(schemaKeyword)) {
-      normalized.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
-    }
-    return normalized;
+function normalizeGeminiWireValue(value: Record<string, unknown>): Record<string, unknown> {
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(value).sort()) {
+    const nested = value[key];
+    if (nested === undefined) continue;
+    sorted[key] =
+      key === "parameters" ? normalizeSchemaValue(nested) : normalizeLiteralValue(nested);
   }
+  return sorted;
+}
+
+function normalizeSchemaValue(value: unknown): unknown {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return normalizeLiteralValue(value);
+  }
+
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+    const nested = (value as Record<string, unknown>)[key];
+    if (nested === undefined) continue;
+    sorted[key] = normalizeSchemaKeyword(key, nested);
+  }
+  return sorted;
+}
+
+function normalizeSchemaKeyword(key: string, value: unknown): unknown {
+  switch (key) {
+    case "allOf":
+    case "anyOf":
+    case "oneOf":
+      return normalizeSchemaArray(value, true);
+    case "enum":
+      return normalizeLiteralArray(value, true);
+    case "required":
+    case "type":
+      return normalizeLiteralArray(value, true);
+    case "prefixItems":
+      return normalizeSchemaArray(value, false);
+    case "items":
+      return Array.isArray(value)
+        ? normalizeSchemaArray(value, false)
+        : normalizeSchemaValue(value);
+    case "$defs":
+    case "definitions":
+    case "dependentSchemas":
+    case "patternProperties":
+    case "properties":
+      return normalizeSchemaMap(value);
+    case "dependencies":
+      return normalizeDependencies(value);
+    case "dependentRequired":
+      return normalizeRequiredMap(value);
+    case "additionalProperties":
+    case "contains":
+    case "contentSchema":
+    case "else":
+    case "if":
+    case "not":
+    case "propertyNames":
+    case "then":
+    case "unevaluatedItems":
+    case "unevaluatedProperties":
+      return normalizeSchemaValue(value);
+    default:
+      return normalizeLiteralValue(value);
+  }
+}
+
+function normalizeSchemaArray(value: unknown, unordered: boolean): unknown {
+  if (!Array.isArray(value)) return normalizeLiteralValue(value);
+  const normalized = value.map(normalizeSchemaValue);
+  return unordered ? sortCanonicalValues(normalized) : normalized;
+}
+
+function normalizeLiteralArray(value: unknown, unordered: boolean): unknown {
+  if (!Array.isArray(value)) return normalizeLiteralValue(value);
+  const normalized = value.map(normalizeLiteralValue);
+  return unordered ? sortCanonicalValues(normalized) : normalized;
+}
+
+function normalizeSchemaMap(value: unknown): unknown {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return normalizeLiteralValue(value);
+  }
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+    const nested = (value as Record<string, unknown>)[key];
+    if (nested !== undefined) sorted[key] = normalizeSchemaValue(nested);
+  }
+  return sorted;
+}
+
+function normalizeRequiredMap(value: unknown): unknown {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return normalizeLiteralValue(value);
+  }
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+    const nested = (value as Record<string, unknown>)[key];
+    if (nested !== undefined) sorted[key] = normalizeLiteralArray(nested, true);
+  }
+  return sorted;
+}
+
+function normalizeDependencies(value: unknown): unknown {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return normalizeLiteralValue(value);
+  }
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+    const nested = (value as Record<string, unknown>)[key];
+    if (nested === undefined) continue;
+    sorted[key] = Array.isArray(nested)
+      ? normalizeLiteralArray(nested, true)
+      : normalizeSchemaValue(nested);
+  }
+  return sorted;
+}
+
+function normalizeLiteralValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeLiteralValue);
   if (value === null || typeof value !== "object") return value;
 
   const sorted: Record<string, unknown> = {};
   for (const key of Object.keys(value as Record<string, unknown>).sort()) {
     const nested = (value as Record<string, unknown>)[key];
-    const nestedKeyword = schemaKeyword === "dependentRequired" ? "required" : key;
-    if (nested !== undefined) {
-      sorted[key] = normalizeGeminiWireValue(nested, nestedKeyword);
-    }
+    if (nested !== undefined) sorted[key] = normalizeLiteralValue(nested);
   }
   return sorted;
+}
+
+function sortCanonicalValues(values: unknown[]): unknown[] {
+  return values.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
 }
 
 /**
