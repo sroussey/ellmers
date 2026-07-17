@@ -109,6 +109,7 @@ function normalizeSchemaKeyword(key: string, value: unknown): unknown {
       return normalizeDependencies(value);
     case "dependentRequired":
       return normalizeRequiredMap(value);
+    case "additionalItems":
     case "additionalProperties":
     case "contains":
     case "contentSchema":
@@ -189,7 +190,16 @@ function normalizeLiteralValue(value: unknown): unknown {
 }
 
 function sortCanonicalValues(values: unknown[]): unknown[] {
-  return values.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+  return values.sort((left, right) => {
+    const leftKey = canonicalSortKey(left);
+    const rightKey = canonicalSortKey(right);
+    if (leftKey === rightKey) return 0;
+    return leftKey < rightKey ? -1 : 1;
+  });
+}
+
+function canonicalSortKey(value: unknown): string {
+  return JSON.stringify(value) ?? `${typeof value}:${String(value)}`;
 }
 
 /**
