@@ -26,6 +26,13 @@ import {
   withModelInUse,
 } from "./LlamaCpp_Runtime";
 
+export function resolveLlamaCppCheckpointSystemPrompt(
+  inputSystemPrompt: string | undefined,
+  prefixSystemPrompt: string | undefined
+): string | undefined {
+  return inputSystemPrompt ?? prefixSystemPrompt;
+}
+
 async function getOrCreateChatSession(
   sessionContext: AiSessionContext | undefined,
   model: LlamaCppModelConfig,
@@ -51,7 +58,9 @@ async function getOrCreateChatSession(
   // When rebuilding a missing checkpoint, reconstruct it the way the warm-up
   // run-fn did: bake the prefix's system prompt into the constructor and
   // preload the rendered prefix text below.
-  const effectiveSystemPrompt = isCheckpoint ? sessionContext!.prefix!.systemPrompt : systemPrompt;
+  const effectiveSystemPrompt = isCheckpoint
+    ? resolveLlamaCppCheckpointSystemPrompt(systemPrompt, sessionContext!.prefix!.systemPrompt)
+    : systemPrompt;
   // Sequence ownership only transfers once the session is stored in the map (or
   // returned to the caller, which disposes it); free the session/sequence on any
   // throw before that (e.g. an aborted preload) so it does not strand the slot.
