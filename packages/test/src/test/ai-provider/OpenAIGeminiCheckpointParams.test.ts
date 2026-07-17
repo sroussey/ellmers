@@ -16,65 +16,49 @@ import {
   deleteGeminiCachedContent,
   geminiCachedToolsMatch,
   getGeminiCachedContent,
+  _testOnly as runtimeTestOnly,
   setGeminiCachedContent,
 } from "@workglow/google-gemini/ai-runtime";
 import { mergeOpenAICheckpointPrefix } from "@workglow/openai/ai-runtime";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-vi.mock("@google/genai", () => ({
-  FunctionCallingConfigMode: {
-    ANY: "ANY",
-    AUTO: "AUTO",
-    NONE: "NONE",
-  },
-  createGeminiClient: async () => ({
-    models: {
-      generateContentStream: async (request: Record<string, unknown>) => {
-        const state = globalThis as typeof globalThis & {
-          __workglowGeminiRequests: Array<Record<string, unknown>> | undefined;
-        };
-        (state.__workglowGeminiRequests ??= []).push(request);
-        return {
-          async *[Symbol.asyncIterator]() {},
-        };
-      },
+const geminiRequests: Array<Record<string, unknown>> = [];
+
+// Inject a fake Gemini client through the runtime's own test seam rather than
+// `vi.mock("@google/genai")`. Module-level SDK mocks are unreliable here: the
+// workspace ships several `@google/genai` copies and the provider resolves it
+// to a bundled `dist` file the test's mock never intercepts. The seam records
+// every request the run-fns build so we can assert on it without a live call.
+// The `dist` build splits `ai.js` and `ai-runtime.js` into separate bundles
+// with independent module state, so inject into both entrypoints.
+const fakeGeminiClient = {
+  models: {
+    generateContentStream: async (request: Record<string, unknown>) => {
+      geminiRequests.push(request);
+      return {
+        async *[Symbol.asyncIterator]() {},
+      };
     },
-    caches: {
-      create: async () => ({}),
-      delete: async () => {},
-    },
-  }),
-  getApiKey: (model: { provider_config?: { api_key?: string } } | undefined) =>
-    model?.provider_config?.api_key ?? "",
-  getModelName: (model: { provider_config?: { model_name?: string } } | undefined) => {
-    const name = model?.provider_config?.model_name;
-    if (!name) throw new Error("Missing model name in provider_config.model_name.");
-    return name;
   },
-  getThinkingBudget: (model: { provider_config?: { thinking_budget?: number } } | undefined) =>
-    model?.provider_config?.thinking_budget,
-  loadGeminiSDK: async () => class {},
-  resolveThinkingConfig: (
-    model: { provider_config?: { thinking_budget?: number } } | undefined,
-    maxTokens: number | undefined,
-    defaultBudget?: number
-  ) => {
-    const budget = model?.provider_config?.thinking_budget ?? defaultBudget;
-    return {
-      thinkingConfig: budget === undefined ? undefined : { thinkingBudget: budget },
-      maxOutputTokens:
-        maxTokens !== undefined && budget !== undefined && budget > 0
-          ? maxTokens + budget
-          : maxTokens,
-    };
+  caches: {
+    create: async () => ({}),
+    delete: async () => {},
   },
-}));
+} as never;
+
+beforeEach(() => {
+  geminiRequests.length = 0;
+  _testOnly.setGeminiClientForTests(fakeGeminiClient);
+  runtimeTestOnly.setGeminiClientForTests(fakeGeminiClient);
+});
+
+afterEach(() => {
+  _testOnly.setGeminiClientForTests(undefined);
+  runtimeTestOnly.setGeminiClientForTests(undefined);
+});
 
 function getGeminiRequests(): Array<Record<string, unknown>> {
-  const state = globalThis as typeof globalThis & {
-    __workglowGeminiRequests: Array<Record<string, unknown>> | undefined;
-  };
-  return (state.__workglowGeminiRequests ??= []);
+  return geminiRequests;
 }
 
 const prefix = {
