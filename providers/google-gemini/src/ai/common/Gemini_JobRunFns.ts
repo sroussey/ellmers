@@ -13,6 +13,7 @@ import {
   GEMINI_JSON_MODE,
   GEMINI_MODEL_INFO,
   GEMINI_MODEL_SEARCH,
+  GEMINI_SESSION_DISPOSE,
   GEMINI_TEXT_EMBEDDING,
   GEMINI_TEXT_GENERATION,
   GEMINI_TEXT_REWRITER,
@@ -30,6 +31,7 @@ import { Gemini_ImageEdit_Stream } from "./Gemini_ImageEdit";
 import { Gemini_ImageGenerate_Stream } from "./Gemini_ImageGenerate";
 import { Gemini_ModelInfo_Stream } from "./Gemini_ModelInfo";
 import { Gemini_ModelSearch_Stream } from "./Gemini_ModelSearch";
+import { Gemini_SessionDispose } from "./Gemini_SessionDispose";
 import { Gemini_StructuredGeneration_Stream } from "./Gemini_StructuredGeneration";
 import { Gemini_TextEmbedding_Stream } from "./Gemini_TextEmbedding";
 import { Gemini_TextGeneration_Stream } from "./Gemini_TextGeneration";
@@ -58,6 +60,7 @@ export const GEMINI_RUN_FNS: readonly AiProviderRunFnRegistration<any, any, Gemi
   { serves: GEMINI_MODEL_SEARCH, runFn: Gemini_ModelSearch_Stream },
   { serves: GEMINI_MODEL_INFO, runFn: Gemini_ModelInfo_Stream },
   { serves: GEMINI_CACHE_CHECKPOINT, runFn: Gemini_CacheCheckpoint_Stream },
+  { serves: GEMINI_SESSION_DISPOSE, runFn: Gemini_SessionDispose },
 ];
 
 export const GEMINI_PREVIEW_TASKS: Record<
