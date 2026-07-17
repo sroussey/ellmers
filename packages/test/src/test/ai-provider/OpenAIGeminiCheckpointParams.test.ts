@@ -218,6 +218,66 @@ describe("geminiCachedToolsMatch", () => {
     expect(geminiCachedToolsMatch(original, reorderedRequired)).toBe(true);
   });
 
+  it("matches reordered Unicode enum values with locale-equivalent spellings", () => {
+    const composed = "é";
+    const decomposed = "e\u0301";
+    const original: ToolDefinition[] = [
+      {
+        name: "unicode",
+        description: "Accept Unicode",
+        inputSchema: { enum: [composed, decomposed] },
+      },
+    ];
+    const reordered: ToolDefinition[] = [
+      {
+        ...original[0],
+        inputSchema: { enum: [decomposed, composed] },
+      },
+    ];
+
+    expect(geminiCachedToolsMatch(original, reordered)).toBe(true);
+  });
+
+  it("normalizes schemas under legacy additionalItems", () => {
+    const first: ToolDefinition[] = [
+      {
+        name: "legacyTuple",
+        description: "Accept a legacy tuple",
+        inputSchema: {
+          type: "array",
+          items: [{ type: "string" }],
+          additionalItems: {
+            type: "object",
+            properties: {
+              left: { type: "string" },
+              right: { type: "string" },
+            },
+            required: ["left", "right"],
+          },
+        } as unknown as ToolDefinition["inputSchema"],
+      },
+    ];
+    const reordered: ToolDefinition[] = [
+      {
+        ...first[0],
+        inputSchema: {
+          type: "array",
+          items: [{ type: "string" }],
+          additionalItems: {
+            required: ["right", "left"],
+            properties: {
+              right: { type: "string" },
+              left: { type: "string" },
+            },
+            type: "object",
+          },
+        } as unknown as ToolDefinition["inputSchema"],
+      },
+    ];
+
+    expect(geminiCachedToolsMatch(first, reordered)).toBe(true);
+  });
+
   it("preserves semantically ordered prefix-item arrays", () => {
     const stringThenNumber: ToolDefinition[] = [
       {
