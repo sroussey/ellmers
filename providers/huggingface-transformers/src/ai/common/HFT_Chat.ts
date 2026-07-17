@@ -27,6 +27,13 @@ import {
 import { createStreamingTextStreamer, createTextStreamer } from "./HFT_Streaming";
 import { buildHFTMessages, mapHFTTools } from "./HFT_ToolCalling";
 
+export function resolveHftCheckpointSystemPrompt(
+  inputSystemPrompt: string | undefined,
+  prefixSystemPrompt: string | undefined
+): string | undefined {
+  return inputSystemPrompt ?? prefixSystemPrompt;
+}
+
 /**
  * Execute one chat turn using the HuggingFace Transformers pipeline.
  *
@@ -85,7 +92,7 @@ async function generateTurn(
           : [];
     messages = buildHFTMessages(
       [...(prefix!.messages ?? []), ...chatTail],
-      prefix!.systemPrompt,
+      resolveHftCheckpointSystemPrompt(input.systemPrompt, prefix!.systemPrompt),
       undefined,
       undefined
     );
