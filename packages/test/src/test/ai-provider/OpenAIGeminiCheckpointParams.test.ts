@@ -242,6 +242,42 @@ describe("geminiCachedToolsMatch", () => {
     expect(geminiCachedToolsMatch(stringThenNumber, numberThenString)).toBe(false);
   });
 
+  it("preserves arrays nested in const instance values", () => {
+    const original: ToolDefinition[] = [
+      {
+        name: "literal",
+        description: "Accept a literal",
+        inputSchema: { const: { enum: ["a", "b"] } },
+      },
+    ];
+    const reversed: ToolDefinition[] = [
+      {
+        ...original[0],
+        inputSchema: { const: { enum: ["b", "a"] } },
+      },
+    ];
+
+    expect(geminiCachedToolsMatch(original, reversed)).toBe(false);
+  });
+
+  it("preserves arrays inside unordered enum instance entries", () => {
+    const original: ToolDefinition[] = [
+      {
+        name: "enumLiteral",
+        description: "Accept an enum literal",
+        inputSchema: { enum: [{ required: ["a", "b"] }] },
+      },
+    ];
+    const reversed: ToolDefinition[] = [
+      {
+        ...original[0],
+        inputSchema: { enum: [{ required: ["b", "a"] }] },
+      },
+    ];
+
+    expect(geminiCachedToolsMatch(original, reversed)).toBe(false);
+  });
+
   it("rejects added and removed declarations", () => {
     expect(geminiCachedToolsMatch(cachedTools, cachedTools.slice(0, 1))).toBe(false);
     expect(
