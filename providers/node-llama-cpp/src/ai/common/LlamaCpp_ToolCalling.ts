@@ -31,9 +31,9 @@ import {
   getOrCreateTextContext,
   llamaCppChatSessionConstructorSpread,
   llamaCppSeedPromptSpread,
-  llamaCppSessions,
   loadSdk,
   setLlamaCppSession,
+  stealLlamaCppSession,
   withModelInUse,
   withSequence,
 } from "./LlamaCpp_Runtime";
@@ -425,7 +425,23 @@ export const LlamaCpp_ToolCalling_Stream: AiProviderRunFn<
 
     const sessionId = sessionContext.sessionId;
     const isCheckpoint = sessionContext.prefix !== undefined;
-    let cached = sessionId ? getLlamaCppSession(sessionId) : undefined;
+    // Consuming an immutable checkpoint steals ownership atomically — two
+    // concurrent consumers of the same id would otherwise both call `.generate()`
+    // on the shared LlamaContextSequence, which advances in place. The loser of
+    // the steal observes `undefined` and re-encodes via the missing-state
+    // fallback below. AiChatTask's `ownedSession` mode is the caller's mutable
+    // session (not a checkpoint) so it uses the non-consuming getter.
+    const isCheckpointConsumption =
+      isCheckpoint && sessionId !== undefined && !sessionContext.ownedSession;
+    let cached = sessionId
+      ? isCheckpointConsumption
+        ? stealLlamaCppSession(sessionId)
+        : getLlamaCppSession(sessionId)
+      : undefined;
+    // A stolen checkpoint session's map entry is already gone — track owned=false
+    // so the dispose path frees it unless we re-key it under an emitCheckpointId.
+    // A non-consumption cache hit keeps the map entry, so it stays map-owned.
+    let ownedByMap = Boolean(cached) && !isCheckpointConsumption;
 
     if (sessionId && !cached && isCheckpoint) {
       const prefix = sessionContext.prefix!;
@@ -471,12 +487,10 @@ export const LlamaCpp_ToolCalling_Stream: AiProviderRunFn<
       cached = state;
     }
 
-    let ownedByMap = Boolean(cached);
-    if (isCheckpoint && !sessionContext.ownedSession && sessionId && cached) {
-      llamaCppSessions.delete(sessionId);
-      ownedByMap = false;
-    }
-
+    // Ownership tracking (`ownedByMap`) was decided above alongside the
+    // steal-vs-get split: a stolen or freshly-encoded checkpoint session is
+    // caller-owned until we re-key it under an emitCheckpointId; a plain
+    // cache hit (progressive / ownedSession) stays map-owned.
     const context = cached ? undefined : await getOrCreateTextContext(model);
     const sequence = cached ? cached.sequence : await acquireContextSequence(context!, signal);
     let session = cached?.session;
