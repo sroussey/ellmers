@@ -16,7 +16,10 @@ import type {
 import { extractMessageText, toolChoiceForcesToolCall } from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
 import type { StreamEvent } from "@workglow/task-graph";
-import { renderLlamaCppPrefixText } from "./LlamaCpp_CacheCheckpoint";
+import {
+  renderLlamaCppPrefixChatHistory,
+  renderLlamaCppPrefixFunctions,
+} from "./LlamaCpp_CacheCheckpoint";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import type { LlamaCppSessionState } from "./LlamaCpp_Runtime";
 import {
@@ -72,27 +75,20 @@ function buildToolChatHistory(
 }
 
 /**
- * Convert workglow messages to node-llama-cpp's `ChatHistoryItem[]`.
- *
- * Key difference from OpenAI/Anthropic format: tool results are NOT separate
- * history items. They get merged into the preceding `model` response's
- * `ChatModelFunctionCall.result` fields, matched by `tool_use_id`.
+ * Pure message-array → `ChatHistoryItem[]` conversion — no trailing empty-user
+ * placeholder when `messages` is empty. Emits only `system` when a system
+ * prompt is provided and messages is empty; that shape is what a cache
+ * checkpoint prefix needs before running any turn. Unknown block types are
+ * skipped rather than throwing (mirrors HFT's posture).
  */
-export function convertMessagesToChatHistory(
-  messages: ReadonlyArray<ChatMessage> | undefined,
-  prompt: string | undefined,
+function messagesToPureChatHistory(
+  messages: ReadonlyArray<ChatMessage>,
   systemPrompt: string | undefined
 ): any[] {
   const history: any[] = [];
 
   if (systemPrompt) {
     history.push({ type: "system", text: systemPrompt });
-  }
-
-  if (!messages || messages.length === 0) {
-    const promptText = typeof prompt === "string" ? prompt : String(prompt ?? "");
-    history.push({ type: "user", text: promptText });
-    return history;
   }
 
   for (const msg of messages) {
@@ -177,7 +173,39 @@ export function convertMessagesToChatHistory(
   return history;
 }
 
-function buildChatModelFunctions(
+/**
+ * Convert workglow messages to node-llama-cpp's `ChatHistoryItem[]` for a
+ * one-shot generation call. When `messages` is empty, `prompt` is appended as
+ * the trailing user turn so the model has something to respond to.
+ *
+ * Key difference from OpenAI/Anthropic format: tool results are NOT separate
+ * history items. They get merged into the preceding `model` response's
+ * `ChatModelFunctionCall.result` fields, matched by `tool_use_id`.
+ */
+export function convertMessagesToChatHistory(
+  messages: ReadonlyArray<ChatMessage> | undefined,
+  prompt: string | undefined,
+  systemPrompt: string | undefined
+): any[] {
+  if (!messages || messages.length === 0) {
+    const history: any[] = [];
+    if (systemPrompt) history.push({ type: "system", text: systemPrompt });
+    const promptText = typeof prompt === "string" ? prompt : String(prompt ?? "");
+    history.push({ type: "user", text: promptText });
+    return history;
+  }
+  return messagesToPureChatHistory(messages, systemPrompt);
+}
+
+/** Pure history renderer for a checkpoint prefix — reused by the checkpoint module. */
+export function messagesToPureChatHistoryForPrefix(
+  messages: ReadonlyArray<ChatMessage>,
+  systemPrompt: string | undefined
+): any[] {
+  return messagesToPureChatHistory(messages, systemPrompt);
+}
+
+export function buildChatModelFunctions(
   tools: ReadonlyArray<ToolDefinition>
 ): Record<string, { description?: string; params?: any }> {
   const functions: Record<string, { description?: string; params?: any }> = {};
@@ -412,10 +440,17 @@ export const LlamaCpp_ToolCalling_Stream: AiProviderRunFn<
           ...(prefix.systemPrompt !== undefined && { systemPrompt: prefix.systemPrompt }),
           ...llamaCppChatSessionConstructorSpread(model),
         });
-        const prefixText = renderLlamaCppPrefixText(prefix);
-        if (prefixText) {
-          await chatSession.preloadPrompt(prefixText, { signal });
-        }
+        // Route the prefix through the model's chat template — feeding role/text
+        // strings via preloadPrompt would bypass the wrapper and drop
+        // tool_use / tool_result blocks. setChatHistory + preloadPrompt("", { functions })
+        // populates KV state via the same wrapper the consumer's generation uses.
+        const history = renderLlamaCppPrefixChatHistory(prefix);
+        chatSession.setChatHistory(history);
+        const functions = renderLlamaCppPrefixFunctions(prefix);
+        await chatSession.preloadPrompt("", {
+          signal,
+          ...(functions ? { functions } : {}),
+        });
         state = {
           mode: "prefix-rewind",
           sequence,
