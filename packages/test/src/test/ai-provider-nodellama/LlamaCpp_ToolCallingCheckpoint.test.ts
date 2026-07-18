@@ -282,6 +282,7 @@ describe("LlamaCpp tool-calling checkpoint lifecycle", () => {
     await warmCheckpoint("checkpoint-missing");
     await deleteLlamaCppSession("checkpoint-missing");
     sdkState.preloadPrompts.length = 0;
+    sdkState.sessionHistories.length = 0;
 
     await callTool({
       sessionId: "checkpoint-missing",
@@ -289,8 +290,15 @@ describe("LlamaCpp tool-calling checkpoint lifecycle", () => {
       prefix,
     });
 
-    expect(sdkState.preloadPrompts).toEqual([
-      "Available tools:\n- lookup: Look up a query\n\nuser: Remember this checkpoint prefix.",
+    // Fallback preloads an EMPTY prompt after setChatHistory + functions —
+    // the raw "role: text" text renderer was removed by the checkpoint-prefix
+    // fix so tool_use / tool_result blocks survive re-encoding.
+    expect(sdkState.preloadPrompts).toEqual([""]);
+    // The fallback's setChatHistory carries the prefix rendered through the
+    // pure chat-history helper (no trailing empty-user placeholder).
+    expect(sdkState.sessionHistories[0]).toEqual([
+      { type: "system", text: "Use the lookup tool." },
+      { type: "user", text: "Remember this checkpoint prefix." },
     ]);
     expect(sdkState.generatedHistories).toEqual([
       [
@@ -306,6 +314,75 @@ describe("LlamaCpp tool-calling checkpoint lifecycle", () => {
     ]);
     expect(llamaCppSessions.has("checkpoint-missing")).toBe(false);
     expect(llamaCppSessions.get("checkpoint-rebuilt")?.sequence).toBe(sdkState.chatSequences[0]);
+  });
+
+  it("preserves prior tool_use / tool_result blocks in the reconstructed checkpoint prefix", async () => {
+    // Emulate a checkpoint whose prefix already carries a prior tool exchange
+    // (assistant tool_use + tool result). Before the fix, the raw text
+    // renderer flattened messages to `role: text` and dropped these blocks
+    // entirely, so a fallback re-encode would silently lose the exchange.
+    const priorToolPrefix: CheckpointPrefix = {
+      systemPrompt: "You are a helpful assistant.",
+      tools: [tool],
+      messages: [
+        { role: "user", content: [{ type: "text", text: "What's the weather?" }] },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "Let me check." },
+            { type: "tool_use", id: "call_prior", name: "lookup", input: { query: "weather" } },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "call_prior",
+              content: [{ type: "text", text: "sunny" }],
+            },
+          ],
+        },
+      ],
+    };
+    await run(
+      getRunFn(["cache.checkpoint"]),
+      {},
+      {
+        sessionId: "ckpt-with-tools",
+        prefix: priorToolPrefix,
+      }
+    );
+    await deleteLlamaCppSession("ckpt-with-tools");
+    sdkState.preloadPrompts.length = 0;
+    sdkState.sessionHistories.length = 0;
+
+    await callToolWithPrompt("Any updates?", {
+      sessionId: "ckpt-with-tools",
+      prefix: priorToolPrefix,
+    });
+
+    expect(sdkState.preloadPrompts).toEqual([""]);
+    // The reconstructed fallback history must include the prior tool_use as a
+    // `functionCall` inside the model turn, with the tool's result merged in.
+    const fallbackHistory = sdkState.sessionHistories[0];
+    expect(fallbackHistory).toEqual([
+      { type: "system", text: "You are a helpful assistant." },
+      { type: "user", text: "What's the weather?" },
+      {
+        type: "model",
+        response: [
+          "Let me check.",
+          {
+            type: "functionCall",
+            name: "lookup",
+            description: undefined,
+            params: { query: "weather" },
+            result: "sunny",
+          },
+        ],
+      },
+    ]);
   });
 
   it("retains the emitted tool turn in session history and replays it on consumption", async () => {

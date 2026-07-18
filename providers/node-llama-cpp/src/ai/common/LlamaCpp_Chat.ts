@@ -11,7 +11,10 @@ import type {
   AiSessionContext,
   ChatMessage,
 } from "@workglow/ai";
-import { renderLlamaCppPrefixText } from "./LlamaCpp_CacheCheckpoint";
+import {
+  renderLlamaCppPrefixChatHistory,
+  renderLlamaCppPrefixFunctions,
+} from "./LlamaCpp_CacheCheckpoint";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
   acquireContextSequence,
@@ -73,12 +76,19 @@ async function getOrCreateChatSession(
     });
 
     // Missing-state fallback: a checkpoint id was supplied but its worker-side
-    // sequence is gone. Re-encode the prefix so the turn continues from it.
+    // sequence is gone. Re-encode the prefix through the model's chat wrapper
+    // (setChatHistory + preloadPrompt with the tool set) so the KV tokens
+    // match the consumer's generateResponse — a raw-text preload would bypass
+    // the template and drop tool_use / tool_result blocks.
     if (isCheckpoint) {
-      const prefixText = renderLlamaCppPrefixText(sessionContext!.prefix!);
-      if (prefixText) {
-        await session.preloadPrompt(prefixText, { signal });
-      }
+      const prefix = sessionContext!.prefix!;
+      const history = renderLlamaCppPrefixChatHistory(prefix);
+      session.setChatHistory(history);
+      const functions = renderLlamaCppPrefixFunctions(prefix);
+      await session.preloadPrompt("", {
+        signal,
+        ...(functions ? { functions } : {}),
+      });
     }
 
     if (sessionId) {
