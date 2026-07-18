@@ -14,6 +14,7 @@ import {
   deleteCheckpoint,
   getCheckpoint,
   registerCheckpoint,
+  requireCheckpointModelKey,
 } from "../../provider/CheckpointRegistry";
 import type { ChatMessage, ContentBlock } from "../ChatMessage";
 import type { ToolDefinition } from "../ToolCallingUtils";
@@ -84,8 +85,10 @@ export function validateParentCheckpoint(
         `"${parentEntry.provider}" but the model uses "${model.provider}".`
     );
   }
-  const key = checkpointModelKey(model);
-  if (parentEntry.modelKey && key && parentEntry.modelKey !== key) {
+  // Route the current model's key through the strict helper so an unnameable
+  // model fails loudly instead of silently sharing a fungible checkpoint slot.
+  const key = requireCheckpointModelKey(model, taskType);
+  if (parentEntry.modelKey !== key) {
     throw new TaskConfigurationError(
       `${taskType}: checkpoint "${checkpointId}" was created for model ` +
         `"${parentEntry.modelKey}" but the task model is "${key}".`
@@ -136,6 +139,11 @@ export function resolveCheckpointSession(
         `(no run function serving ["cache.checkpoint"]).`
     );
   }
+
+  // A keyless model can never be safely tied to a checkpoint id — validate the
+  // current model up-front so an emit path (which never runs validateParent)
+  // also fails before createSession mints a slot that would later collide.
+  requireCheckpointModelKey(model, taskType);
 
   const parentEntry: CheckpointEntry | undefined = input.checkpoint
     ? validateParentCheckpoint(input.checkpoint, model, taskType)
