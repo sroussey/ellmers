@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { TaskConfigurationError } from "@workglow/task-graph";
 import type { ModelConfig } from "../model/ModelSchema";
 import type { ChatMessage } from "../task/ChatMessage";
 import type { ToolDefinition } from "../task/ToolCallingUtils";
@@ -50,4 +51,22 @@ export function clearCheckpointsForTesting(): void {
 /** Model identity string used for checkpoint/model mismatch checks. */
 export function checkpointModelKey(model: ModelConfig): string {
   return typeof model.model_id === "string" ? model.model_id : "";
+}
+
+/**
+ * Strict sibling of {@link checkpointModelKey} — throws when the model has no
+ * usable identity string. Empty model keys used to silently pass through the
+ * short-circuited mismatch check, letting two keyless models on the same
+ * provider share a fungible checkpoint slot (cross-model contamination).
+ * Every mint / validate site must route through this helper.
+ */
+export function requireCheckpointModelKey(model: ModelConfig, taskType: string): string {
+  const key = checkpointModelKey(model);
+  if (!key) {
+    throw new TaskConfigurationError(
+      `${taskType}: model has no model_id — a cache checkpoint requires a stable ` +
+        `model identity to guard against cross-model contamination.`
+    );
+  }
+  return key;
 }
