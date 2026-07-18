@@ -15,6 +15,7 @@ import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
+import { resolveCheckpointSession } from "./base/CheckpointPorts";
 import { buildResponseFormatAddendum } from "./base/responseFormat";
 import { runWithIterable } from "./base/runWithIterable";
 import { StreamingAiTask } from "./base/StreamingAiTask";
@@ -110,6 +111,12 @@ export const AiChatInputSchema = {
         "'markdown' = GitHub-flavored Markdown.",
       "x-ui-group": "Configuration",
     },
+    checkpoint: {
+      type: "string",
+      format: "cache-checkpoint",
+      title: "Checkpoint",
+      description: "Cache checkpoint the conversation starts from",
+    },
   },
   required: ["model", "prompt"],
   additionalProperties: false,
@@ -162,6 +169,7 @@ export type AiChatTaskInput = Omit<
     temperature?: number | undefined;
     maxIterations?: number | undefined;
     responseFormat?: "text" | "markdown" | undefined;
+    checkpoint?: string | undefined;
     model: string | ModelConfig;
     prompt:
       | string
@@ -246,10 +254,32 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
     }
     // Delegate to base so timeoutMs, outputSchema, and any future base fields
     // are always populated. The base reads (input as any).sessionId and
-    // forwards it into jobInput.sessionId.
-    return super.getJobInput({ ...input, sessionId: this._sessionId } as AiChatTaskInput & {
+    // forwards it as jobInput.session.sessionId.
+    const jobInput = await super.getJobInput({
+      ...input,
+      sessionId: this._sessionId,
+    } as AiChatTaskInput & {
       sessionId: string;
     });
+    if (input.checkpoint) {
+      const resolved = resolveCheckpointSession(
+        { checkpoint: input.checkpoint },
+        model,
+        "AiChatTask"
+      );
+      if (resolved) {
+        // The chat's own mutable session seeded from the checkpoint's content.
+        // ownedSession keeps local providers' progressive per-turn KV
+        // snapshotting alive — a checkpoint-seeded chat must never re-encode
+        // the growing conversation each turn.
+        jobInput.session = {
+          sessionId: this._sessionId,
+          prefix: resolved.session.prefix,
+          ownedSession: true,
+        };
+      }
+    }
+    return jobInput;
   }
 
   override async *executeStream(

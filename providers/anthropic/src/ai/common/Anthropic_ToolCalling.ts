@@ -14,6 +14,7 @@ import type {
 } from "@workglow/ai";
 import { buildToolDescription, filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
 import { parsePartialJson } from "@workglow/util/worker";
+import { applyAnthropicPrefixReplay } from "./Anthropic_CacheCheckpoint";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
@@ -94,7 +95,8 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   AnthropicModelConfig
-> = async (input, model, signal, emit, _outputSchema, sessionId) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
+  const sessionId = sessionContext?.sessionId;
   const client = await getClient(model);
   const modelName = getModelName(model);
 
@@ -129,8 +131,21 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
     params.tool_choice = toolChoice;
   }
 
-  if (sessionId) {
-    // Add cache_control breakpoints for Anthropic prompt caching
+  if (sessionContext?.prefix && typeof params.system === "string") {
+    params.system = [{ type: "text", text: params.system, cache_control: { type: "ephemeral" } }];
+  }
+
+  if (sessionContext?.prefix) {
+    applyAnthropicPrefixReplay(params, sessionContext);
+    if (params.tools && params.tools.length > 0) {
+      const lastIdx = params.tools.length - 1;
+      params.tools[lastIdx] = {
+        ...params.tools[lastIdx],
+        cache_control: { type: "ephemeral" },
+      };
+    }
+  } else if (sessionId) {
+    // Plain session (no checkpoint): legacy breakpoints on system + last tool.
     if (params.system) {
       params.system = [
         {

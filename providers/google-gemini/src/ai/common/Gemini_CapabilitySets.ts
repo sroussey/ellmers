@@ -28,6 +28,8 @@ export const GEMINI_IMAGE_EDITING = ["image.editing"] as const satisfies Capabil
 export const GEMINI_COUNT_TOKENS = ["model.count-tokens"] as const satisfies Capability[];
 export const GEMINI_MODEL_SEARCH = ["model.search"] as const satisfies Capability[];
 export const GEMINI_MODEL_INFO = ["model.info"] as const satisfies Capability[];
+export const GEMINI_CACHE_CHECKPOINT = ["cache.checkpoint"] as const satisfies Capability[];
+export const GEMINI_SESSION_DISPOSE = ["session.dispose"] as const satisfies Capability[];
 
 /** Aggregated list — for `workerRunFnSpecs()` derivation. Order MUST match `GEMINI_RUN_FNS`. */
 export const GEMINI_CAPABILITY_SETS = [
@@ -42,4 +44,6 @@ export const GEMINI_CAPABILITY_SETS = [
   GEMINI_COUNT_TOKENS,
   GEMINI_MODEL_SEARCH,
   GEMINI_MODEL_INFO,
+  GEMINI_CACHE_CHECKPOINT,
+  GEMINI_SESSION_DISPOSE,
 ] as const;

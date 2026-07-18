@@ -10,6 +10,7 @@ import type {
   AiProviderRunFnRegistration,
 } from "@workglow/ai";
 import {
+  HFT_CACHE_CHECKPOINT,
   HFT_COUNT_TOKENS,
   HFT_IMAGE_BACKGROUND_REMOVAL,
   HFT_IMAGE_CLASSIFICATION,
@@ -38,6 +39,7 @@ import {
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 
 import { HFT_BackgroundRemoval } from "./HFT_BackgroundRemoval";
+import { HFT_CacheCheckpoint } from "./HFT_CacheCheckpoint";
 import { HFT_Chat } from "./HFT_Chat";
 import { HFT_CountTokens, HFT_CountTokens_Preview } from "./HFT_CountTokens";
 import { HFT_Download } from "./HFT_Download";
@@ -76,13 +78,13 @@ const HFT_TextGeneration_Unified: AiProviderRunFn<any, any, HfTransformersOnnxMo
   signal,
   emit,
   outputSchema,
-  sessionId
+  sessionContext
 ) => {
   const maybeMessages = (input as { messages?: unknown }).messages;
   if (Array.isArray(maybeMessages) && maybeMessages.length > 0) {
-    await HFT_Chat(input, model, signal, emit, outputSchema, sessionId);
+    await HFT_Chat(input, model, signal, emit, outputSchema, sessionContext);
   } else {
-    await HFT_TextGeneration(input, model, signal, emit, outputSchema, sessionId);
+    await HFT_TextGeneration(input, model, signal, emit, outputSchema, sessionContext);
   }
 };
 
@@ -124,6 +126,7 @@ export const HFT_RUN_FNS: readonly AiProviderRunFnRegistration<
   { serves: HFT_MODEL_DOWNLOAD, runFn: HFT_Download },
   { serves: HFT_MODEL_SEARCH, runFn: HFT_ModelSearch },
   { serves: HFT_MODEL_INFO, runFn: HFT_ModelInfo },
+  { serves: HFT_CACHE_CHECKPOINT, runFn: HFT_CacheCheckpoint },
 ];
 
 export const HFT_PREVIEW_TASKS: Record<

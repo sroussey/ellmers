@@ -122,6 +122,7 @@ describe("AnthropicQueuedProvider.inferCapabilities", () => {
     const caps = provider.inferCapabilities(model("claude-3-5-sonnet-20241022"));
     const sorted = [...caps].sort();
     expect(sorted).toEqual([
+      "cache.checkpoint",
       "json-mode",
       "model.count-tokens",
       "model.info",
@@ -138,6 +139,7 @@ describe("AnthropicQueuedProvider.inferCapabilities", () => {
     const caps = provider.inferCapabilities(model("claude-sonnet-4-20250514"));
     const sorted = [...caps].sort();
     expect(sorted).toEqual([
+      "cache.checkpoint",
       "json-mode",
       "model.count-tokens",
       "model.info",

@@ -8,8 +8,10 @@ import type {
   AiChatProviderInput,
   AiChatProviderOutput,
   AiProviderRunFn,
+  AiSessionContext,
   ChatMessage,
 } from "@workglow/ai";
+import { renderLlamaCppPrefixText } from "./LlamaCpp_CacheCheckpoint";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
   acquireContextSequence,
@@ -24,17 +26,28 @@ import {
   withModelInUse,
 } from "./LlamaCpp_Runtime";
 
+export function resolveLlamaCppCheckpointSystemPrompt(
+  inputSystemPrompt: string | undefined,
+  prefixSystemPrompt: string | undefined
+): string | undefined {
+  return inputSystemPrompt ?? prefixSystemPrompt;
+}
+
 async function getOrCreateChatSession(
-  sessionId: string | undefined,
+  sessionContext: AiSessionContext | undefined,
   model: LlamaCppModelConfig,
   systemPrompt: string | undefined,
   signal: AbortSignal
 ): Promise<{ session: any; sequence: any }> {
+  const sessionId = sessionContext?.sessionId;
+  const isCheckpoint = sessionContext?.prefix !== undefined;
+
   if (sessionId) {
     const existing = getLlamaCppSession(sessionId);
-    if (existing?.mode === "progressive") {
-      // Session already created with its system prompt baked in — ignore the
-      // systemPrompt argument on subsequent turns.
+    if (existing !== undefined) {
+      // Session already created with its prompt state baked in (progressive
+      // turn history or a prefix-rewind checkpoint) — ignore the systemPrompt
+      // argument on subsequent turns.
       return { session: existing.session, sequence: existing.sequence };
     }
   }
@@ -42,30 +55,53 @@ async function getOrCreateChatSession(
   const { LlamaChatSession } = await loadSdk();
   const context = await getOrCreateTextContext(model);
   const sequence = await acquireContextSequence(context, signal);
-  // Sequence ownership only transfers to the session once its constructor
-  // returns; a throw before that would strand the sequence and eventually
-  // exhaust the per-context sequence pool, so free it in the failure path.
+  // When rebuilding a missing checkpoint, reconstruct it the way the warm-up
+  // run-fn did: bake the prefix's system prompt into the constructor and
+  // preload the rendered prefix text below.
+  const effectiveSystemPrompt = isCheckpoint
+    ? resolveLlamaCppCheckpointSystemPrompt(systemPrompt, sessionContext!.prefix!.systemPrompt)
+    : systemPrompt;
+  // Sequence ownership only transfers once the session is stored in the map (or
+  // returned to the caller, which disposes it); free the session/sequence on any
+  // throw before that (e.g. an aborted preload) so it does not strand the slot.
   let session: any;
   try {
     session = new LlamaChatSession({
       contextSequence: sequence,
-      ...(systemPrompt !== undefined && { systemPrompt }),
+      ...(effectiveSystemPrompt !== undefined && { systemPrompt: effectiveSystemPrompt }),
       ...llamaCppChatSessionConstructorSpread(model),
     });
+
+    // Missing-state fallback: a checkpoint id was supplied but its worker-side
+    // sequence is gone. Re-encode the prefix so the turn continues from it.
+    if (isCheckpoint) {
+      const prefixText = renderLlamaCppPrefixText(sessionContext!.prefix!);
+      if (prefixText) {
+        await session.preloadPrompt(prefixText, { signal });
+      }
+    }
+
+    if (sessionId) {
+      setLlamaCppSession(sessionId, {
+        // An ownedSession id is the caller's mutable chat session even when it
+        // was seeded from a checkpoint prefix — only a bare checkpoint id gets
+        // the immutable prefix-rewind label.
+        mode: isCheckpoint && !sessionContext?.ownedSession ? "prefix-rewind" : "progressive",
+        session,
+        sequence,
+        modelKey: getConfigKey(model),
+      });
+    }
   } catch (err) {
+    if (session) {
+      try {
+        await session.dispose({ disposeSequence: false });
+      } catch {}
+    }
     try {
       await sequence.dispose();
     } catch {}
     throw err;
-  }
-
-  if (sessionId) {
-    setLlamaCppSession(sessionId, {
-      mode: "progressive",
-      session,
-      sequence,
-      modelKey: getConfigKey(model),
-    });
   }
 
   return { session, sequence };
@@ -87,14 +123,15 @@ export const LlamaCpp_Chat_Stream: AiProviderRunFn<
   AiChatProviderInput,
   AiChatProviderOutput,
   LlamaCppModelConfig
-> = async (input, model, signal, emit, _outputSchema, sessionId) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
+  const sessionId = sessionContext?.sessionId;
   if (!model) throw new Error("Model config is required for AiChatTask.");
 
   const modelPath = getActualModelPath(model);
 
   await withModelInUse(modelPath, async () => {
     const { session, sequence } = await getOrCreateChatSession(
-      sessionId,
+      sessionContext,
       model,
       input.systemPrompt,
       signal

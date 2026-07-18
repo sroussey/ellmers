@@ -19,6 +19,7 @@ export * from "./errors/ImageGenerationErrors";
 
 export * from "./provider/AiProvider";
 export * from "./provider/AiProviderRegistry";
+export * from "./provider/CheckpointRegistry";
 export * from "./provider/QueuedAiProvider";
 
 export * from "./capability";

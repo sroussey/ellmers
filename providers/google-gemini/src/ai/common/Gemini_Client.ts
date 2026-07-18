@@ -28,6 +28,34 @@ export async function loadGeminiSDK(): Promise<GoogleGenAIConstructor> {
 
 const _clientByKey = new Map<string, Promise<GoogleGenAI>>();
 
+let _testClient: GoogleGenAI | undefined;
+
+/**
+ * Override the client returned by {@link createGeminiClient} so runtime tests
+ * can capture the requests the Gemini run-fns build without a live SDK or
+ * network call. Pass `undefined` to restore normal SDK-backed creation. Also
+ * clears the per-key client cache so a previously memoized real client is not
+ * reused across the override boundary.
+ *
+ * This lives in the runtime module (not a `vi.mock` of `@google/genai`) so it
+ * works identically whether the provider resolves to `src` or the bundled
+ * `dist`, and is immune to duplicate `@google/genai` copies across the
+ * workspace defeating module-level mocks.
+ */
+function setGeminiClientForTests(client: GoogleGenAI | undefined): void {
+  _testClient = client;
+  _clientByKey.clear();
+}
+
+/**
+ * @internal Symbols exported only for use by `@workglow/test`. Not part of the
+ * stable public API. Surfaced on the `ai-runtime` barrel (via `export *`) and
+ * merged into the `/ai` barrel's `_testOnly`.
+ */
+export const _testOnly = {
+  setGeminiClientForTests,
+} as const;
+
 /**
  * Load the SDK and return a client bound to the resolved API key. The
  * `@google/genai` `GoogleGenAI` facade stands up auth wiring and several
@@ -38,6 +66,7 @@ const _clientByKey = new Map<string, Promise<GoogleGenAI>>();
  * the next call can retry.
  */
 export function createGeminiClient(model: GeminiModelConfig | undefined): Promise<GoogleGenAI> {
+  if (_testClient) return Promise.resolve(_testClient);
   const apiKey = getApiKey(model);
   let clientPromise = _clientByKey.get(apiKey);
   if (!clientPromise) {

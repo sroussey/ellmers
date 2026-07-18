@@ -147,7 +147,7 @@ export class WorkerServerBase {
       signal: AbortSignal,
       emit: (event: unknown) => void,
       outputSchema?: unknown,
-      sessionId?: string
+      session?: unknown
     ) => Promise<void>
   > = {};
   private previewFunctions: Record<string, (input: any, model: any) => Promise<any>> = {};
@@ -315,7 +315,7 @@ export class WorkerServerBase {
       signal: AbortSignal,
       emit: (event: unknown) => void,
       outputSchema?: unknown,
-      sessionId?: string
+      session?: unknown
     ) => Promise<void>
   ): void {
     this.runFunctions[name] = fn;
@@ -573,7 +573,7 @@ export class WorkerServerBase {
   async handleRunCall(
     id: string,
     functionName: string,
-    [input, model, outputSchema, sessionId]: [any, any, any, any]
+    [input, model, outputSchema, session]: [any, any, any, any]
   ) {
     if (!(functionName in this.runFunctions)) {
       this.postError(id, `Run function ${functionName} not found`);
@@ -590,7 +590,7 @@ export class WorkerServerBase {
     };
 
     try {
-      await fn(input, model, abortController.signal, emit, outputSchema, sessionId);
+      await fn(input, model, abortController.signal, emit, outputSchema, session);
       this.postResult(id, undefined); // signals completion; no payload
     } catch (error) {
       this.postError(id, error);

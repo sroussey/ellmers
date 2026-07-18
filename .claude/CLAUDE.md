@@ -186,6 +186,34 @@ Task categories: text generation/embedding/summary/translation/rewriting/classif
 
 RAG tasks: `ChunkVectorUpsertTask` (input: `knowledgeBase` + `chunks` + `vector`, optional `doc_title`), `ChunkRetrievalTask` (input: `knowledgeBase` + `query` + `model`, with `method: "similarity" | "hybrid"`), `HierarchyJoinTask`, `RerankerTask`, `QueryExpanderTask`, `TextChunkerTask`, `HierarchicalChunkerTask`.
 
+Cache checkpoints: `CacheCheckpointTask` (requires `["cache.checkpoint"]`) eagerly
+warms a prompt prefix (system prompt + tools + messages) and outputs a
+`checkpoint` handle (`format: "cache-checkpoint"`). `ToolCallingTask`,
+`TextGenerationTask`, and `AiChatTask` accept a `checkpoint` input to start from
+that prefix (send only the tail); `ToolCallingTask` / `TextGenerationTask` can
+also set `emitCheckpoint` to output a new chained checkpoint including their
+turn (superseding the parent unless `keepParentCheckpoint`). Run-fns receive an
+`AiSessionContext` (`sessionId` = rewind source, `emitCheckpointId` = snapshot
+target, `prefix` = replay/fallback content, `ownedSession` = sessionId is the
+caller's own mutable session merely seeded from the prefix — set by
+`AiChatTask` so local providers keep progressive per-turn KV snapshotting; a
+checkpoint-seeded chat must never re-encode the growing conversation each
+turn) instead of the old scalar sessionId.
+Cloud providers map checkpoints to their caching primitive: Anthropic writes
+`cache_control` breakpoints at the checkpoint boundary; OpenAI replays the
+prefix content verbatim (its prompt cache is automatic — the derived
+`prompt_cache_key` aligns warm-up and consumers); Gemini creates an explicit
+server-side CachedContent (TTL-bound, deleted on dispose) that consumers
+reference with tail-only requests, degrading to inline prefix replay when the
+cache is too small, expired, or the call adds its own system prompt/tool
+choice. Local providers (HFT, llama-cpp) map checkpoints to KV-state sessions
+with re-encode fallback after worker restarts.
+An emitted checkpoint supersedes its parent (disposing the parent's session and
+registry entry) unless `keepParentCheckpoint` is set; all checkpoints are
+additionally run-scoped — disposed with the run's ResourceScope at run end;
+inject a shared `resourceScope` in the run config to share checkpoints across
+separate runs.
+
 ### `providers/*` — provider implementations
 
 Each provider is a standalone package with optional third-party peer dependencies. They each expose `./ai` (main-thread shell) and `./ai-runtime` (worker / inline runtime):

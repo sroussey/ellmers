@@ -10,13 +10,17 @@ import type {
   ChatMessage,
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
-  ToolDefinition,
 } from "@workglow/ai";
-import { buildToolDescription, filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
+import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
+import {
+  buildGeminiFunctionDeclarations,
+  buildGeminiPrefixedContents,
+  geminiCachedToolsMatch,
+} from "./Gemini_CacheCheckpoint";
+import { getGeminiCachedContent } from "./Gemini_CacheStore";
 import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
-import { sanitizeSchemaForGemini } from "./Gemini_Schema";
 
 export function buildGeminiContents(
   messages: ReadonlyArray<ChatMessage> | undefined,
@@ -117,18 +121,44 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   GeminiModelConfig
-> = async (input, model, signal, emit) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
   const ai = await createGeminiClient(model);
 
-  const functionDeclarations = input.tools.map((t: ToolDefinition) => ({
-    name: t.name,
-    description: buildToolDescription(t),
-    parameters: sanitizeSchemaForGemini(t.inputSchema as Record<string, unknown>) as any,
-  }));
+  const functionDeclarations = buildGeminiFunctionDeclarations(input.tools);
 
   const toolConfig = mapGeminiToolConfig(input.toolChoice);
 
-  const contents = buildGeminiContents(input.messages, input.prompt);
+  // Checkpoint consumption. Preferred path: reference the warm-up's explicit
+  // CachedContent (which carries the warmed systemInstruction + tool
+  // declarations) and send only the tail. The API rejects requests that set
+  // systemInstruction / tools / toolConfig alongside cachedContent, so the
+  // handle is only usable when this call adds none of those beyond what the
+  // cache holds: no own system prompt (or the cache's own), and a default
+  // ("auto") tool choice. Anything else — including after the cache's TTL
+  // expiry — replays the prefix content inline; implicit caching still applies.
+  const prefix = sessionContext?.prefix;
+  const cachedEntry = sessionContext?.sessionId
+    ? getGeminiCachedContent(sessionContext.sessionId)
+    : undefined;
+  const defaultToolChoice = input.toolChoice === undefined || input.toolChoice === "auto";
+  const useCachedContent =
+    prefix !== undefined &&
+    cachedEntry !== undefined &&
+    defaultToolChoice &&
+    prefix.tools !== undefined &&
+    prefix.tools.length > 0 &&
+    geminiCachedToolsMatch(prefix.tools, input.tools) &&
+    (input.systemPrompt === undefined ||
+      input.systemPrompt === "" ||
+      input.systemPrompt === cachedEntry.systemPrompt);
+
+  const contents =
+    prefix && !useCachedContent
+      ? buildGeminiPrefixedContents(prefix, input.messages, input.prompt)
+      : buildGeminiContents(input.messages, input.prompt);
+  const systemInstruction = useCachedContent
+    ? undefined
+    : input.systemPrompt || (prefix ? prefix.systemPrompt : undefined);
 
   // Thinking is opt-in here (no default budget): the model uses its own default
   // reasoning unless `provider_config.thinking_budget` is set, in which case the
@@ -140,11 +170,12 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
     contents,
     config: {
       abortSignal: signal ?? undefined,
-      systemInstruction: input.systemPrompt || undefined,
+      systemInstruction,
       maxOutputTokens,
       temperature: input.temperature,
-      tools: [{ functionDeclarations }],
-      toolConfig: toolConfig as any,
+      ...(useCachedContent
+        ? { cachedContent: cachedEntry!.name }
+        : { tools: [{ functionDeclarations }], toolConfig: toolConfig as any }),
       thinkingConfig,
     },
   });

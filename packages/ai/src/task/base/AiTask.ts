@@ -314,7 +314,7 @@ export class AiTask<
 
     const sessionId = (input as any).sessionId as string | undefined;
     if (sessionId) {
-      jobInput.sessionId = sessionId;
+      jobInput.session = { sessionId };
     }
 
     return jobInput;

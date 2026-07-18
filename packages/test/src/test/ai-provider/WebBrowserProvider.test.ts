@@ -657,7 +657,7 @@ describe("WebBrowser_StructuredGeneration behavior", () => {
         new AbortController().signal,
         emit,
         schema,
-        sid
+        { sessionId: sid }
       );
       await WebBrowser_StructuredGeneration(
         asSGI({ prompt: "p2", outputSchema: schema }),
@@ -665,7 +665,7 @@ describe("WebBrowser_StructuredGeneration behavior", () => {
         new AbortController().signal,
         emit,
         schema,
-        sid
+        { sessionId: sid }
       );
       expect(factory.create).toHaveBeenCalledTimes(2);
       expect(sessions.getChromeSession(sid)).toBeUndefined();
@@ -822,7 +822,7 @@ describe("WebBrowser_Chat session cache", () => {
         new AbortController().signal,
         emit,
         undefined,
-        sid
+        { sessionId: sid }
       );
       // After turn 1 cache should be at messages.length + 1 == 2.
       expect(_testOnly.sessions.getChromeSession(sid)?.messageCount).toBe(2);
@@ -837,7 +837,7 @@ describe("WebBrowser_Chat session cache", () => {
         new AbortController().signal,
         emit,
         undefined,
-        sid
+        { sessionId: sid }
       );
       // Same session reused: only one factory.create call total.
       expect(factory.create).toHaveBeenCalledTimes(1);
@@ -862,7 +862,7 @@ describe("WebBrowser_Chat session cache", () => {
         new AbortController().signal,
         emit,
         undefined,
-        sid
+        { sessionId: sid }
       );
       // Cache is at messageCount=2 after turn 1.
       expect(_testOnly.sessions.getChromeSession(sid)?.messageCount).toBe(2);
@@ -877,7 +877,7 @@ describe("WebBrowser_Chat session cache", () => {
         new AbortController().signal,
         emit,
         undefined,
-        sid
+        { sessionId: sid }
       );
       expect(factory.create).toHaveBeenCalledTimes(2);
       // First session was destroyed during the divergence rebuild.
@@ -937,7 +937,7 @@ describe("WebBrowser_Chat session cache", () => {
         new AbortController().signal,
         vi.fn(),
         undefined,
-        sid
+        { sessionId: sid }
       );
       expect(_testOnly.sessions.getChromeSession(sid)?.messageCount).toBe(2);
 
@@ -953,7 +953,7 @@ describe("WebBrowser_Chat session cache", () => {
           if (e.type === "text-delta") deltas.push(e.textDelta ?? "");
         },
         undefined,
-        sid
+        { sessionId: sid }
       );
 
       // Two factory.create calls: turn 1's seed + turn 2's retry rebuild.
@@ -997,7 +997,7 @@ describe("WebBrowser_Chat session cache", () => {
           new AbortController().signal,
           emit,
           undefined,
-          sid
+          { sessionId: sid }
         )
       ).rejects.toThrow(/destroyed/);
       // Single create + destroy; no retry rebuild.
@@ -1081,7 +1081,7 @@ describe("WebBrowser_ToolCalling session lifecycle", () => {
         new AbortController().signal,
         emit,
         undefined,
-        sid
+        { sessionId: sid }
       );
       const messages2: ChatMessage[] = [
         ...messages,
@@ -1094,7 +1094,7 @@ describe("WebBrowser_ToolCalling session lifecycle", () => {
         new AbortController().signal,
         emit,
         undefined,
-        sid
+        { sessionId: sid }
       );
       // Tool-calling intentionally rebuilds per turn — two creates expected.
       expect(factory.create).toHaveBeenCalledTimes(2);

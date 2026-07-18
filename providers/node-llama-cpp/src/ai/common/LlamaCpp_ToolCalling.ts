@@ -7,6 +7,7 @@
 import type {
   AiProviderRunFn,
   ChatMessage,
+  CheckpointPrefix,
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   ToolCalls,
@@ -15,27 +16,59 @@ import type {
 import { extractMessageText, toolChoiceForcesToolCall } from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
 import type { StreamEvent } from "@workglow/task-graph";
+import { renderLlamaCppPrefixText } from "./LlamaCpp_CacheCheckpoint";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
+import type { LlamaCppSessionState } from "./LlamaCpp_Runtime";
 import {
+  acquireContextSequence,
   getActualModelPath,
+  getConfigKey,
   getLlamaCppSdk,
+  getLlamaCppSession,
   getOrCreateTextContext,
   llamaCppChatSessionConstructorSpread,
   llamaCppSeedPromptSpread,
+  llamaCppSessions,
   loadSdk,
+  setLlamaCppSession,
   withModelInUse,
   withSequence,
 } from "./LlamaCpp_Runtime";
 import { extractToolCallsFromText } from "./LlamaCpp_ToolParser";
 
-function buildSystemPrompt(input: ToolCallingTaskInput): string | undefined {
-  const base = input.systemPrompt;
+function buildSystemPrompt(
+  input: ToolCallingTaskInput,
+  prefixSystemPrompt: string | undefined = undefined
+): string | undefined {
+  const base = input.systemPrompt ?? prefixSystemPrompt;
   if (input.toolChoice === "required") {
     const instruction =
       "You must call at least one tool from the provided tool list when answering.";
     return base ? `${base}\n\n${instruction}` : instruction;
   }
   return base || undefined;
+}
+
+function buildToolChatHistory(
+  input: ToolCallingTaskInput,
+  prefix: CheckpointPrefix | undefined
+): any[] {
+  const messages: ChatMessage[] = [...(prefix?.messages ?? [])];
+  if (input.messages && input.messages.length > 0) {
+    messages.push(...input.messages);
+  } else {
+    const promptText =
+      typeof input.prompt === "string" ? input.prompt : extractMessageText(input.prompt);
+    messages.push({
+      role: "user",
+      content: [{ type: "text", text: promptText }],
+    });
+  }
+  return convertMessagesToChatHistory(
+    messages,
+    undefined,
+    buildSystemPrompt(input, prefix?.systemPrompt)
+  );
 }
 
 /**
@@ -200,8 +233,7 @@ function extractNativeFunctionCalls(
  */
 async function* streamTextChunks<T>(
   startGeneration: (onTextChunk: (chunk: string) => void) => Promise<T>,
-  signal: AbortSignal,
-  cleanup: () => void | Promise<void>
+  signal: AbortSignal
 ): AsyncGenerator<StreamEvent<ToolCallingTaskOutput>, { text: string; result: T | undefined }> {
   const queue: string[] = [];
   let isComplete = false;
@@ -249,7 +281,6 @@ async function* streamTextChunks<T>(
     }
   } finally {
     await generationPromise.catch(() => {});
-    await cleanup();
   }
 
   if (completionError) {
@@ -262,11 +293,81 @@ async function* streamTextChunks<T>(
   return { text: accumulatedText, result };
 }
 
+async function generateToolResponse(
+  input: ToolCallingTaskInput,
+  model: LlamaCppModelConfig,
+  signal: AbortSignal,
+  emit: (event: StreamEvent<ToolCallingTaskOutput>) => void,
+  sequence: any,
+  prefix: CheckpointPrefix | undefined
+): Promise<{ output: ToolCallingTaskOutput; cleanHistory: any[] }> {
+  const { LlamaChat } = getLlamaCppSdk();
+  let llamaChat: any;
+  let gen:
+    | AsyncGenerator<StreamEvent<ToolCallingTaskOutput>, { text: string; result: any | undefined }>
+    | undefined;
+  try {
+    llamaChat = new LlamaChat({
+      contextSequence: sequence,
+      ...llamaCppChatSessionConstructorSpread(model),
+    });
+
+    const chatHistory = buildToolChatHistory(input, prefix);
+    const functions = buildChatModelFunctions(input.tools);
+
+    gen = streamTextChunks(
+      (onTextChunk) =>
+        llamaChat.generateResponse(chatHistory, {
+          signal,
+          ...llamaCppChatGenerateOptions(input, model),
+          functions,
+          ...(toolChoiceForcesToolCall(input.toolChoice) && { documentFunctionParams: true }),
+          onTextChunk,
+        }),
+      signal
+    );
+    let step = await gen.next();
+    while (!step.done) {
+      emit(step.value);
+      step = await gen.next();
+    }
+    const { text: accumulatedText, result: chatResponse } = step.value;
+
+    const toolCalls = extractNativeFunctionCalls(chatResponse?.functionCalls);
+
+    // Fallback: parse tool calls from text if native parsing found nothing
+    if (toolCalls.length === 0 && input.tools.length > 0 && input.toolChoice !== "none") {
+      toolCalls.push(...extractToolCallsFromText(accumulatedText, input));
+    }
+    const validToolCalls = filterValidToolCalls(toolCalls, input.tools);
+
+    if (validToolCalls.length > 0) {
+      emit({ type: "object-delta", port: "toolCalls", objectDelta: [...validToolCalls] });
+    }
+
+    return {
+      output: { text: accumulatedText, toolCalls: validToolCalls },
+      cleanHistory: chatResponse?.lastEvaluation.cleanHistory ?? chatHistory,
+    };
+  } finally {
+    if (gen) {
+      try {
+        await gen.return({ text: "", result: undefined });
+      } catch {}
+    }
+    if (llamaChat) {
+      try {
+        await llamaChat.dispose({ disposeSequence: false });
+      } catch {}
+    }
+  }
+}
+
 export const LlamaCpp_ToolCalling_Stream: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   LlamaCppModelConfig
-> = async (input, model, signal, emit) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
   if (!model) throw new Error("Model config is required for ToolCallingTask.");
 
   await loadSdk();
@@ -274,65 +375,130 @@ export const LlamaCpp_ToolCalling_Stream: AiProviderRunFn<
   const modelPath = getActualModelPath(model);
 
   await withModelInUse(modelPath, async () => {
-    const context = await getOrCreateTextContext(model);
+    if (!sessionContext) {
+      const context = await getOrCreateTextContext(model);
+      await withSequence(
+        context,
+        async (sequence) => {
+          const { output } = await generateToolResponse(
+            input,
+            model,
+            signal,
+            emit,
+            sequence,
+            undefined
+          );
+          emit({ type: "finish", data: output });
+        },
+        { signal }
+      );
+      return;
+    }
 
-    await withSequence(
-      context,
-      async (sequence) => {
-        const { LlamaChat } = getLlamaCppSdk();
-        const systemPrompt = buildSystemPrompt(input);
+    const sessionId = sessionContext.sessionId;
+    const isCheckpoint = sessionContext.prefix !== undefined;
+    let cached = sessionId ? getLlamaCppSession(sessionId) : undefined;
 
-        const llamaChat = new LlamaChat({
+    if (sessionId && !cached && isCheckpoint) {
+      const prefix = sessionContext.prefix!;
+      const { LlamaChatSession } = getLlamaCppSdk();
+      const context = await getOrCreateTextContext(model);
+      const sequence = await acquireContextSequence(context, signal);
+      let chatSession: any;
+      let state: LlamaCppSessionState | undefined;
+      try {
+        chatSession = new LlamaChatSession({
+          contextSequence: sequence,
+          ...(prefix.systemPrompt !== undefined && { systemPrompt: prefix.systemPrompt }),
+          ...llamaCppChatSessionConstructorSpread(model),
+        });
+        const prefixText = renderLlamaCppPrefixText(prefix);
+        if (prefixText) {
+          await chatSession.preloadPrompt(prefixText, { signal });
+        }
+        state = {
+          mode: "prefix-rewind",
+          sequence,
+          session: chatSession,
+          modelKey: getConfigKey(model),
+        };
+      } catch (err) {
+        if (chatSession) {
+          try {
+            await chatSession.dispose({ disposeSequence: false });
+          } catch {}
+        }
+        try {
+          await sequence.dispose();
+        } catch {}
+        throw err;
+      }
+      cached = state;
+    }
+
+    let ownedByMap = Boolean(cached);
+    if (isCheckpoint && !sessionContext.ownedSession && sessionId && cached) {
+      llamaCppSessions.delete(sessionId);
+      ownedByMap = false;
+    }
+
+    const context = cached ? undefined : await getOrCreateTextContext(model);
+    const sequence = cached ? cached.sequence : await acquireContextSequence(context!, signal);
+    let session = cached?.session;
+    if (!session) {
+      const { LlamaChatSession } = getLlamaCppSdk();
+      try {
+        session = new LlamaChatSession({
           contextSequence: sequence,
           ...llamaCppChatSessionConstructorSpread(model),
         });
+      } catch (err) {
+        try {
+          await sequence.dispose();
+        } catch {}
+        throw err;
+      }
+    }
 
-        const promptText =
-          typeof input.prompt === "string" ? input.prompt : extractMessageText(input.prompt);
-        const chatHistory = convertMessagesToChatHistory(input.messages, promptText, systemPrompt);
-        const functions = buildChatModelFunctions(input.tools);
+    if (sessionId && !cached) {
+      setLlamaCppSession(sessionId, {
+        mode: "progressive",
+        sequence,
+        session,
+        modelKey: getConfigKey(model),
+      });
+      ownedByMap = true;
+    }
 
-        const gen = streamTextChunks(
-          (onTextChunk) =>
-            llamaChat.generateResponse(chatHistory, {
-              signal,
-              ...llamaCppChatGenerateOptions(input, model),
-              functions,
-              ...(toolChoiceForcesToolCall(input.toolChoice) && { documentFunctionParams: true }),
-              onTextChunk,
-            }),
-          signal,
-          async () => {
-            try {
-              await llamaChat.dispose({ disposeSequence: false });
-            } catch {}
-          }
-        );
-        let step = await gen.next();
-        while (!step.done) {
-          emit(step.value);
-          step = await gen.next();
-        }
-        const { text: accumulatedText, result: chatResponse } = step.value;
-
-        const toolCalls = extractNativeFunctionCalls(chatResponse?.functionCalls);
-
-        // Fallback: parse tool calls from text if native parsing found nothing
-        if (toolCalls.length === 0 && input.tools.length > 0 && input.toolChoice !== "none") {
-          toolCalls.push(...extractToolCallsFromText(accumulatedText, input));
-        }
-        const validToolCalls = filterValidToolCalls(toolCalls, input.tools);
-
-        if (validToolCalls.length > 0) {
-          emit({ type: "object-delta", port: "toolCalls", objectDelta: [...validToolCalls] });
-        }
-
-        emit({
-          type: "finish",
-          data: { text: accumulatedText, toolCalls: validToolCalls } as ToolCallingTaskOutput,
+    try {
+      const { output, cleanHistory } = await generateToolResponse(
+        input,
+        model,
+        signal,
+        emit,
+        sequence,
+        sessionContext.prefix
+      );
+      session.setChatHistory(cleanHistory);
+      emit({ type: "finish", data: output });
+      if (sessionContext.emitCheckpointId) {
+        setLlamaCppSession(sessionContext.emitCheckpointId, {
+          mode: "prefix-rewind",
+          sequence,
+          session,
+          modelKey: getConfigKey(model),
         });
-      },
-      { signal }
-    );
+        ownedByMap = true;
+      }
+    } finally {
+      if (!ownedByMap) {
+        try {
+          await session.dispose({ disposeSequence: false });
+        } catch {}
+        try {
+          await sequence.dispose();
+        } catch {}
+      }
+    }
   });
 };
