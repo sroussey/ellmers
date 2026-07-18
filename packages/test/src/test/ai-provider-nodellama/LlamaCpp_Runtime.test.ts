@@ -8,6 +8,7 @@ import {
   acquireContextSequence,
   acquireModelInUse,
   disposeLlamaCppSessionsForModel,
+  getLlamaCppSession,
   getOrCreateEmbeddingContext,
   isVramError,
   llamaCppEmbeddingContexts,
@@ -18,6 +19,7 @@ import {
   releaseModelInUse,
   resolvedPaths,
   setLlamaCppSession,
+  stealLlamaCppSession,
   withSequence,
   withSessionLock,
   withVramEviction,
@@ -481,5 +483,49 @@ describe("withSessionLock", () => {
     // A subsequent call must be able to proceed immediately.
     const result = await withSessionLock(sessionId, async () => "ok");
     expect(result).toEqual("ok");
+  });
+});
+
+describe("stealLlamaCppSession", () => {
+  afterEach(() => {
+    llamaCppSessions.clear();
+  });
+
+  it("atomically returns and removes the state for a known session id", () => {
+    const state = {
+      mode: "prefix-rewind" as const,
+      sequence: { id: "seq-A" } as unknown,
+      session: { id: "session-A" } as unknown,
+      modelKey: "modelA",
+    };
+    setLlamaCppSession("ckpt-A", state);
+    // Sanity: present before the steal.
+    expect(getLlamaCppSession("ckpt-A")).toBe(state);
+
+    const stolen = stealLlamaCppSession("ckpt-A");
+
+    // Exactly one caller receives the state.
+    expect(stolen).toBe(state);
+    // Post-steal the entry is gone — the loser of a concurrent steal
+    // observes `undefined` and re-encodes via the missing-state fallback.
+    expect(getLlamaCppSession("ckpt-A")).toBeUndefined();
+    expect(llamaCppSessions.has("ckpt-A")).toBe(false);
+    // A second steal of the same id must not re-return the stale state.
+    expect(stealLlamaCppSession("ckpt-A")).toBeUndefined();
+  });
+
+  it("returns undefined for an unknown session id without mutating the map", () => {
+    const other = {
+      mode: "progressive" as const,
+      sequence: { id: "seq-B" } as unknown,
+      session: { id: "session-B" } as unknown,
+      modelKey: "modelB",
+    };
+    setLlamaCppSession("ckpt-B", other);
+
+    expect(stealLlamaCppSession("nonexistent")).toBeUndefined();
+    // Other entries are untouched.
+    expect(getLlamaCppSession("ckpt-B")).toBe(other);
+    expect(llamaCppSessions.size).toBe(1);
   });
 });

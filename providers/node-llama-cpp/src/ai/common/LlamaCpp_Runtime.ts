@@ -103,6 +103,23 @@ export function setLlamaCppSession(sessionId: string, state: LlamaCppSessionStat
   llamaCppSessions.set(sessionId, state);
 }
 
+/**
+ * Atomic get-and-remove for a checkpoint session id. Two concurrent consumers
+ * of the same immutable checkpoint would otherwise both observe the cached
+ * state and both call `.generate()` on the shared `LlamaContextSequence` — a
+ * live sequence advances in place and cannot be safely shared. The
+ * synchronous `Map.get` + `Map.delete` here is race-free on JS's single
+ * thread: exactly one caller sees the state, every subsequent caller
+ * observes `undefined` and re-encodes via the existing missing-state fallback
+ * (which acquires its own sequence). Intentionally NOT used by AiChatTask,
+ * whose `ownedSession` mode is the caller's mutable session, not a checkpoint.
+ */
+export function stealLlamaCppSession(sessionId: string): LlamaCppSessionState | undefined {
+  const state = llamaCppSessions.get(sessionId);
+  if (state) llamaCppSessions.delete(sessionId);
+  return state;
+}
+
 export async function deleteLlamaCppSession(sessionId: string): Promise<boolean> {
   const session = llamaCppSessions.get(sessionId);
   if (session) {

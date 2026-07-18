@@ -46,6 +46,11 @@ async function getOrCreateChatSession(
   const isCheckpoint = sessionContext?.prefix !== undefined;
 
   if (sessionId) {
+    // AiChatTask uses `ownedSession` — the session id is the caller's mutable
+    // chat session, not an immutable checkpoint. That's why we use
+    // `getLlamaCppSession` (a non-consuming lookup) here rather than
+    // `stealLlamaCppSession`, which TextGen / ToolCalling use to serialize
+    // concurrent consumers of a shared checkpoint sequence.
     const existing = getLlamaCppSession(sessionId);
     if (existing !== undefined) {
       // Session already created with its prompt state baked in (progressive

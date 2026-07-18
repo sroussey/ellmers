@@ -339,6 +339,7 @@ describe("LlamaCpp tool-calling checkpoint lifecycle", () => {
             {
               type: "tool_result",
               tool_use_id: "call_prior",
+              is_error: false,
               content: [{ type: "text", text: "sunny" }],
             },
           ],
@@ -566,5 +567,80 @@ describe("LlamaCpp tool-calling checkpoint lifecycle", () => {
     expect(sdkState.sessionDisposeCount).toBe(1);
     expect(sequences[0].dispose).toHaveBeenCalledTimes(1);
     expect(llamaCppSessions.has("checkpoint-failed")).toBe(false);
+  });
+
+  it("serializes concurrent consumers of the same checkpoint — winner reuses the warmed sequence, loser re-encodes on its own", async () => {
+    await warmCheckpoint("checkpoint-shared");
+    const warmed = llamaCppSessions.get("checkpoint-shared");
+    expect(warmed).toBeDefined();
+    // Isolate the assertions below to the consumer path — the warm-up's
+    // own preload / setChatHistory would otherwise be counted twice.
+    sdkState.preloadPrompts.length = 0;
+    sdkState.sessionHistories.length = 0;
+
+    // Two concurrent consumers of the same immutable checkpoint id.
+    // Before the fix, both took the same reference to `warmed` and both
+    // called generateResponse on the shared LlamaContextSequence — a live
+    // sequence advances in place, so the second consumer's turn was
+    // corrupted. With stealLlamaCppSession, exactly one wins; the other
+    // observes `undefined` and re-encodes via the missing-state fallback.
+    const [a, b] = await Promise.all([
+      callToolWithPrompt("Consumer A prompt.", { sessionId: "checkpoint-shared", prefix }),
+      callToolWithPrompt("Consumer B prompt.", { sessionId: "checkpoint-shared", prefix }),
+    ]);
+    void a;
+    void b;
+
+    // Exactly two LlamaChat generations happened — one on the warmed
+    // sequence (winner) and one on a re-encoded sequence (loser).
+    expect(sdkState.chatSequences).toHaveLength(2);
+    expect(sdkState.chatSequences).toContain(warmed!.sequence);
+    // The loser's sequence is a fresh one, not the warmed shared one.
+    const distinctSequences = new Set(sdkState.chatSequences);
+    expect(distinctSequences.size).toBe(2);
+    // The checkpoint id was stolen atomically so no map entry survives.
+    expect(llamaCppSessions.has("checkpoint-shared")).toBe(false);
+    // Exactly one loser preloaded via the fallback (empty preload after
+    // setChatHistory + functions); the winner did not preload.
+    expect(sdkState.preloadPrompts).toEqual([""]);
+  });
+
+  it("keeps ownedSession entries when two concurrent runs race for the same id", async () => {
+    // Regression: the ownedSession path (AiChatTask's per-turn mutable
+    // session) must NOT be stolen — only immutable checkpoints. Two racing
+    // ownedSession consumers still see the same cached session.
+    const state = {
+      mode: "progressive" as const,
+      sequence: { dispose: vi.fn(async () => {}) } as unknown,
+      session: {
+        setChatHistory: () => {},
+        getChatHistory: () => [],
+        preloadPrompt: async () => {},
+        dispose: async () => {
+          sdkState.sessionDisposeCount += 1;
+        },
+      } as unknown,
+      modelKey: "test",
+    };
+    llamaCppSessions.set("owned-session", state);
+
+    // Two racers with `ownedSession: true` (a checkpoint-seeded AiChat) —
+    // both observe the same cached state, and the entry survives.
+    await Promise.all([
+      callToolWithPrompt("Owned A.", {
+        sessionId: "owned-session",
+        prefix,
+        ownedSession: true,
+      }),
+      callToolWithPrompt("Owned B.", {
+        sessionId: "owned-session",
+        prefix,
+        ownedSession: true,
+      }),
+    ]);
+
+    // The map entry is preserved for the owning caller.
+    expect(llamaCppSessions.has("owned-session")).toBe(true);
+    expect(llamaCppSessions.get("owned-session")).toBe(state);
   });
 });
