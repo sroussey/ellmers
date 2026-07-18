@@ -13,9 +13,9 @@ import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import type { CheckpointEntry, CheckpointPrefix } from "../provider/CheckpointRegistry";
 import {
-  checkpointModelKey,
   deleteCheckpoint,
   registerCheckpoint,
+  requireCheckpointModelKey,
 } from "../provider/CheckpointRegistry";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
@@ -138,6 +138,12 @@ export class CacheCheckpointTask extends AiTask<
       );
     }
 
+    // Fail loudly if the model has no stable identity — a keyless mint is what
+    // let cross-model contamination slip through the mismatch guard before.
+    // Runs before validateParentCheckpoint / createSession so no session slot
+    // gets minted when we would only reject on the way out.
+    const modelKey = requireCheckpointModelKey(model, "CacheCheckpointTask");
+
     const parent: CheckpointEntry | undefined = input.checkpoint
       ? validateParentCheckpoint(input.checkpoint, model, "CacheCheckpointTask")
       : undefined;
@@ -153,7 +159,7 @@ export class CacheCheckpointTask extends AiTask<
     const id = registry.createSession(providerName, model);
     registerCheckpoint(id, {
       provider: providerName,
-      modelKey: checkpointModelKey(model),
+      modelKey,
       prefix,
       ...(input.checkpoint ? { parentId: input.checkpoint } : {}),
     });

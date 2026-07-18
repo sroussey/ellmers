@@ -27,6 +27,7 @@ import {
   getAiProviderRegistry,
   getCheckpoint,
   registerCheckpoint,
+  requireCheckpointModelKey,
   setAiProviderRegistry,
 } from "@workglow/ai";
 import type { IExecuteContext, StreamEvent, TaskOutput } from "@workglow/task-graph";
@@ -73,6 +74,35 @@ describe("CheckpointRegistry", () => {
   it("checkpointModelKey uses model_id and falls back to empty string", () => {
     expect(checkpointModelKey({ model_id: "m1" } as unknown as ModelConfig)).toBe("m1");
     expect(checkpointModelKey({} as ModelConfig)).toBe("");
+  });
+});
+
+describe("requireCheckpointModelKey", () => {
+  it("returns model_id for a valid model", () => {
+    expect(
+      requireCheckpointModelKey({ model_id: "m1" } as unknown as ModelConfig, "TestTask")
+    ).toBe("m1");
+  });
+
+  it("throws TaskConfigurationError when model has no model_id", () => {
+    expect(() => requireCheckpointModelKey({} as ModelConfig, "TestTask")).toThrow(/no model_id/i);
+  });
+
+  it("throws when model_id is a non-string value", () => {
+    expect(() =>
+      requireCheckpointModelKey({ model_id: 42 } as unknown as ModelConfig, "TestTask")
+    ).toThrow(/no model_id/i);
+  });
+
+  it("carries the taskType in the error message", () => {
+    let caught: unknown;
+    try {
+      requireCheckpointModelKey({} as ModelConfig, "SpecificTaskName");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("SpecificTaskName");
   });
 });
 
@@ -625,5 +655,117 @@ describe("AiChatTask checkpoint consumption", () => {
     expect(session?.ownedSession).toBe(true);
     expect(session?.prefix?.systemPrompt).toBe("sys");
     expect(session?.emitCheckpointId).toBeUndefined();
+  });
+});
+
+/**
+ * Fail-closed model-key guards (L2). Before the fix, `checkpointModelKey`
+ * returned "" for a missing `model_id` and `validateParentCheckpoint`
+ * short-circuited its mismatch check on either side being empty, so two
+ * keyless models on the same provider could silently share a fungible
+ * checkpoint slot. Every mint / validate site now routes through
+ * `requireCheckpointModelKey`.
+ */
+describe("model-key fail-closed (L2)", () => {
+  function keylessModel(): ModelConfig {
+    // No `model_id` — the failure mode that used to slip through.
+    return {
+      title: "keyless",
+      description: "keyless",
+      capabilities: ["cache.checkpoint", "text.generation"],
+      provider: CKPT_PROVIDER,
+      provider_config: {},
+      metadata: {},
+    } as unknown as ModelConfig;
+  }
+
+  let warmupInvocations: number;
+
+  beforeEach(async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    clearCheckpointsForTesting();
+    warmupInvocations = 0;
+    const warm: AiProviderRunFn = async (_i, _m, _s, emit, _o, session) => {
+      warmupInvocations += 1;
+      emit({ type: "finish", data: { checkpoint: session?.sessionId ?? "" } } as any);
+    };
+    const gen: AiProviderRunFn = async (_i, _m, _s, emit) => {
+      emit({ type: "text-delta", port: "text", textDelta: "x" } as any);
+      emit({ type: "finish", data: {} } as any);
+    };
+    const provider = new CheckpointTestProvider([
+      { serves: ["cache.checkpoint"] as Capability[], runFn: warm },
+      { serves: ["text.generation"] as Capability[], runFn: gen },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+  });
+
+  it("cacheCheckpoint rejects a keyless model before invoking the warmup run-fn", async () => {
+    await expect(cacheCheckpoint({ model: keylessModel(), systemPrompt: "sys" })).rejects.toThrow(
+      /no model_id/i
+    );
+    expect(warmupInvocations).toBe(0);
+  });
+
+  it("parent-checkpoint lookup rejects a keyless task model before dispatch", async () => {
+    // A parent that WAS minted with a valid key — the failure mode is a
+    // keyless task model trying to consume it.
+    registerCheckpoint("ckpt-legit-parent", {
+      provider: CKPT_PROVIDER,
+      modelKey: "test:model:v1",
+      prefix: { systemPrompt: "sys" },
+    });
+    const task = new TextGenerationTask();
+    await expect(
+      task.run({ model: keylessModel(), prompt: "hi", checkpoint: "ckpt-legit-parent" })
+    ).rejects.toThrow(/no model_id/i);
+  });
+
+  it("cross-model contamination: a keyless-parent slot no longer matches a keyless task model", async () => {
+    // Simulate the state a pre-fix mint would have left behind: a parent with
+    // an empty modelKey. Under the old short-circuited guard, a keyless task
+    // model would silently consume it. Under the fix, the task model itself
+    // must have a key — the empty-vs-empty match is rejected before the
+    // mismatch check runs.
+    registerCheckpoint("ckpt-keyless-parent", {
+      provider: CKPT_PROVIDER,
+      modelKey: "",
+      prefix: { systemPrompt: "sys" },
+    });
+    const task = new TextGenerationTask();
+    await expect(
+      task.run({
+        model: keylessModel(),
+        prompt: "hi",
+        checkpoint: "ckpt-keyless-parent",
+      })
+    ).rejects.toThrow(/no model_id/i);
+  });
+
+  it("emit path rejects a keyless model before createSession mints a slot", async () => {
+    const createSpy = vi.spyOn(getAiProviderRegistry(), "createSession");
+    const task = new TextGenerationTask();
+    await expect(
+      task.run({ model: keylessModel(), prompt: "hi", emitCheckpoint: true })
+    ).rejects.toThrow(/no model_id/i);
+    expect(createSpy).not.toHaveBeenCalled();
+  });
+
+  it("validateParentCheckpoint still rejects a mismatched keyed parent vs a keyed task model", async () => {
+    // Sanity-check the regular mismatch path — the fix must not break the
+    // existing keyed-vs-keyed rejection path.
+    registerCheckpoint("ckpt-parent-A", {
+      provider: CKPT_PROVIDER,
+      modelKey: "modelA",
+      prefix: {},
+    });
+    const modelB: ModelConfig = {
+      ...checkpointModel(),
+      model_id: "modelB",
+    } as ModelConfig;
+    const task = new TextGenerationTask();
+    await expect(
+      task.run({ model: modelB, prompt: "hi", checkpoint: "ckpt-parent-A" })
+    ).rejects.toThrow(/was created for model/i);
   });
 });
