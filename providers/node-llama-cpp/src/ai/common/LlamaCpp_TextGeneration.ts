@@ -23,9 +23,9 @@ import {
   getOrCreateTextContext,
   llamaCppChatSessionConstructorSpread,
   llamaCppSeedPromptSpread,
-  llamaCppSessions,
   loadSdk,
   setLlamaCppSession,
+  stealLlamaCppSession,
   streamFromSession,
   withModelInUse,
 } from "./LlamaCpp_Runtime";
@@ -43,12 +43,28 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderRunFn<
   const modelPath = getActualModelPath(model);
 
   await withModelInUse(modelPath, async () => {
-    let cached = sessionId ? getLlamaCppSession(sessionId) : undefined;
+    // Consuming an immutable checkpoint steals ownership atomically — two
+    // concurrent consumers of the same id would otherwise both call `.generate()`
+    // on the shared LlamaContextSequence, which advances in place. The loser of
+    // the steal observes `undefined` and re-encodes via the missing-state
+    // fallback below. AiChatTask's `ownedSession` mode is the caller's mutable
+    // session (not a checkpoint) so it uses the non-consuming getter.
+    const isCheckpointConsumption =
+      isCheckpoint && sessionId !== undefined && !sessionContext?.ownedSession;
+    let cached = sessionId
+      ? isCheckpointConsumption
+        ? stealLlamaCppSession(sessionId)
+        : getLlamaCppSession(sessionId)
+      : undefined;
+    // A stolen checkpoint session's map entry is already gone — track owned=false
+    // so the dispose path frees it unless we re-key it under an emitCheckpointId.
+    // A non-consumption cache hit keeps the map entry, so it stays map-owned.
+    let ownedByMap = Boolean(cached) && !isCheckpointConsumption;
 
     // Missing-state fallback: a checkpoint id was supplied but its worker-side
-    // sequence is gone (e.g. evicted). Re-encode the prefix into a fresh
-    // sequence for this turn (ownership is taken below, so it is not stored
-    // back under the checkpoint id).
+    // sequence is gone (e.g. evicted, or stolen by a concurrent consumer that
+    // won the race). Re-encode the prefix into a fresh sequence for this turn
+    // (ownership is taken below, so it is not stored back under the checkpoint id).
     if (sessionId && !cached && isCheckpoint) {
       const prefix = sessionContext!.prefix!;
       const context = await getOrCreateTextContext(model);
@@ -95,21 +111,10 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderRunFn<
       cached = state;
     }
 
-    // A live llama.cpp sequence advances in place during generation — there is
-    // no cheap KV clone like HFT's DynamicCache copy. Consuming a checkpoint
-    // therefore takes SOLE ownership of its live session: the map entry is
-    // removed so a later consumer of the same checkpoint id re-encodes a
-    // pristine prefix (registry fallback) instead of seeing this turn's tokens,
-    // and so an emitted checkpoint never aliases the parent id. The stolen
-    // session is disposed at turn end unless re-keyed under emitCheckpointId.
-    // An ownedSession id is the caller's mutable session, not a checkpoint —
-    // never steal it.
-    let ownedByMap = Boolean(cached);
-    if (isCheckpoint && !sessionContext?.ownedSession && sessionId && cached) {
-      llamaCppSessions.delete(sessionId);
-      ownedByMap = false;
-    }
-
+    // Ownership tracking (`ownedByMap`) was decided above alongside the
+    // steal-vs-get split: a stolen or freshly-encoded checkpoint session is
+    // caller-owned until we re-key it under an emitCheckpointId; a plain
+    // cache hit (progressive / ownedSession) stays map-owned.
     const context = cached ? undefined : await getOrCreateTextContext(model);
     const sequence = cached ? cached.sequence : await acquireContextSequence(context!, signal);
     // Sequence ownership only transfers to the session once its constructor

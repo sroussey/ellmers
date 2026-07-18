@@ -79,11 +79,13 @@ describe("renderLlamaCppPrefixChatHistory", () => {
             {
               type: "tool_result",
               tool_use_id: "call_b",
+              is_error: false,
               content: [{ type: "text", text: "second-result" }],
             },
             {
               type: "tool_result",
               tool_use_id: "call_a",
+              is_error: false,
               content: [{ type: "text", text: "first-result" }],
             },
           ],
@@ -121,7 +123,7 @@ describe("renderLlamaCppPrefixFunctions", () => {
   });
 
   it("renders each tool as a ChatModelFunction with description and params", () => {
-    const prefix: CheckpointPrefix = {
+    const prefix = {
       tools: [
         {
           name: "lookup",
@@ -132,12 +134,13 @@ describe("renderLlamaCppPrefixFunctions", () => {
             required: ["q"],
           },
         },
-        {
-          name: "noop",
-          description: "",
-        },
+        // Empty description + missing inputSchema — buildChatModelFunctions
+        // omits both from the emitted ChatModelFunction. The cast bypasses the
+        // ToolDefinition type's required-inputSchema field to exercise the
+        // defensive falsy check in the renderer.
+        { name: "noop", description: "" } as unknown as never,
       ],
-    };
+    } as unknown as CheckpointPrefix;
     expect(renderLlamaCppPrefixFunctions(prefix)).toEqual({
       lookup: {
         description: "Look up a query",
