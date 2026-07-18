@@ -9,7 +9,10 @@ import type {
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
 } from "@workglow/ai";
-import { renderLlamaCppPrefixText } from "./LlamaCpp_CacheCheckpoint";
+import {
+  renderLlamaCppPrefixChatHistory,
+  renderLlamaCppPrefixFunctions,
+} from "./LlamaCpp_CacheCheckpoint";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import type { LlamaCppSessionState } from "./LlamaCpp_Runtime";
 import {
@@ -60,10 +63,18 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderRunFn<
           ...(prefix.systemPrompt !== undefined && { systemPrompt: prefix.systemPrompt }),
           ...llamaCppChatSessionConstructorSpread(model),
         });
-        const prefixText = renderLlamaCppPrefixText(prefix);
-        if (prefixText) {
-          await chatSession.preloadPrompt(prefixText, { signal });
-        }
+        // Route the prefix through the model's chat wrapper (setChatHistory +
+        // preloadPrompt with the tool set) so the re-encoded KV tokens match
+        // what the consumer's generation will produce. TextGen itself has no
+        // tool-calling, but an upstream-emitted checkpoint prefix can carry
+        // tool blocks that a raw-text preload would silently drop.
+        const history = renderLlamaCppPrefixChatHistory(prefix);
+        chatSession.setChatHistory(history);
+        const functions = renderLlamaCppPrefixFunctions(prefix);
+        await chatSession.preloadPrompt("", {
+          signal,
+          ...(functions ? { functions } : {}),
+        });
         state = {
           mode: "prefix-rewind" as const,
           sequence,

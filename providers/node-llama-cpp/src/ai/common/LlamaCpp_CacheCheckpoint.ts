@@ -8,7 +8,6 @@ import type {
   AiProviderRunFn,
   CacheCheckpointTaskInput,
   CacheCheckpointTaskOutput,
-  ChatMessage,
   CheckpointPrefix,
 } from "@workglow/ai";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
@@ -22,23 +21,34 @@ import {
   setLlamaCppSession,
   withModelInUse,
 } from "./LlamaCpp_Runtime";
+import {
+  buildChatModelFunctions,
+  messagesToPureChatHistoryForPrefix,
+} from "./LlamaCpp_ToolCalling";
 
-/** Flattens prefix messages (and tool descriptions) into a preloadable text prompt. */
-export function renderLlamaCppPrefixText(prefix: CheckpointPrefix): string {
-  const parts: string[] = [];
-  if (prefix.tools && prefix.tools.length > 0) {
-    parts.push(
-      "Available tools:\n" + prefix.tools.map((t) => `- ${t.name}: ${t.description}`).join("\n")
-    );
-  }
-  for (const msg of prefix.messages ?? []) {
-    const text = (msg as ChatMessage).content
-      .filter((b) => b.type === "text")
-      .map((b) => (b as { type: "text"; text: string }).text)
-      .join("");
-    if (text) parts.push(`${msg.role}: ${text}`);
-  }
-  return parts.join("\n\n");
+/**
+ * Renders a checkpoint prefix as node-llama-cpp `ChatHistoryItem[]` — routed
+ * through the model's chat wrapper via `session.setChatHistory(history)`.
+ * Preserves `tool_use` / `tool_result` blocks (dropped by any raw-text
+ * flattening) and matches the token stream the consumer's `generateResponse`
+ * will produce, so warmed KV state can actually be reused.
+ */
+export function renderLlamaCppPrefixChatHistory(prefix: CheckpointPrefix): any[] {
+  return messagesToPureChatHistoryForPrefix(prefix.messages ?? [], prefix.systemPrompt);
+}
+
+/**
+ * Renders a checkpoint prefix's tools as node-llama-cpp `ChatModelFunctions`,
+ * or `undefined` when the prefix has no tools. The consumer's `preloadPrompt`
+ * / `generateResponse` receives these so the chat wrapper embeds tool
+ * descriptions the same way — a required condition for KV reuse when the
+ * prefix carries tools.
+ */
+export function renderLlamaCppPrefixFunctions(
+  prefix: CheckpointPrefix
+): Record<string, { description?: string; params?: any }> | undefined {
+  if (!prefix.tools || prefix.tools.length === 0) return undefined;
+  return buildChatModelFunctions(prefix.tools);
 }
 
 export const LlamaCpp_CacheCheckpoint_Stream: AiProviderRunFn<
@@ -71,11 +81,18 @@ export const LlamaCpp_CacheCheckpoint_Stream: AiProviderRunFn<
         ...llamaCppChatSessionConstructorSpread(model),
       });
 
-      const prefixText = renderLlamaCppPrefixText(prefix);
-      if (prefixText) {
-        // Evaluate the prefix into the sequence's KV state without generating.
-        await chatSession.preloadPrompt(prefixText, { signal });
-      }
+      // Route the prefix through the model's chat wrapper. Rendering to raw
+      // "role: text" strings and preloading that would bypass the template
+      // and drop tool_use / tool_result blocks, so the warmed KV tokens would
+      // never match what the consumer's generateResponse produces.
+      const history = renderLlamaCppPrefixChatHistory(prefix);
+      chatSession.setChatHistory(history);
+      const functions = renderLlamaCppPrefixFunctions(prefix);
+      // Evaluate the prefix into the sequence's KV state without generating.
+      await chatSession.preloadPrompt("", {
+        signal,
+        ...(functions ? { functions } : {}),
+      });
 
       setLlamaCppSession(checkpointId, {
         mode: "prefix-rewind",
