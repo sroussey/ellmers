@@ -7,20 +7,39 @@
 import type {
   AiProviderRunFn,
   AiSessionContext,
+  CacheCheckpointTaskInput,
   ToolCallingTaskInput,
   ToolDefinition,
 } from "@workglow/ai";
 import { GOOGLE_GEMINI, _testOnly } from "@workglow/google-gemini/ai";
+import * as GeminiRuntime from "@workglow/google-gemini/ai-runtime";
 import {
   buildGeminiPrefixedContents,
   deleteGeminiCachedContent,
   geminiCachedToolsMatch,
-  getGeminiCachedContent,
   _testOnly as runtimeTestOnly,
-  setGeminiCachedContent,
 } from "@workglow/google-gemini/ai-runtime";
 import { mergeOpenAICheckpointPrefix } from "@workglow/openai/ai-runtime";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+/**
+ * The ai-runtime bundle carries its own copy of the cache-store map,
+ * independent of the ai bundle's. The pre-existing store-lifecycle test uses
+ * the ai-runtime copy because `deleteGeminiCachedContent` is imported off
+ * ai-runtime and clears its own map.
+ */
+const runtimeTestOnlyStore = {
+  setGeminiCachedContent: GeminiRuntime.setGeminiCachedContent,
+  getGeminiCachedContent: GeminiRuntime.getGeminiCachedContent,
+};
+
+// The ai bundle carries its own copy of the cache-store map (independent of
+// ai-runtime's). Route reads and writes through the ai bundle's `_testOnly`
+// helpers so the state the run-fns (also imported off the ai bundle) look at
+// is exactly what the test seeds and inspects.
+const setGeminiCachedContent = _testOnly.setGeminiCachedContent;
+const getGeminiCachedContent = _testOnly.getGeminiCachedContent;
+const _cacheStoreTestOnly = _testOnly.cacheStoreTestOnly;
 
 const geminiRequests: Array<Record<string, unknown>> = [];
 
@@ -50,11 +69,13 @@ beforeEach(() => {
   geminiRequests.length = 0;
   _testOnly.setGeminiClientForTests(fakeGeminiClient);
   runtimeTestOnly.setGeminiClientForTests(fakeGeminiClient);
+  _cacheStoreTestOnly.clearForTests();
 });
 
 afterEach(() => {
   _testOnly.setGeminiClientForTests(undefined);
   runtimeTestOnly.setGeminiClientForTests(undefined);
+  _cacheStoreTestOnly.clearForTests();
 });
 
 function getGeminiRequests(): Array<Record<string, unknown>> {
@@ -471,8 +492,13 @@ describe("Gemini tool-calling cached-content parity", () => {
 describe("Gemini cached-content store", () => {
   it("stores, retrieves, and idempotently deletes entries", async () => {
     const id = "test-ckpt-store";
-    expect(getGeminiCachedContent(id)).toBeUndefined();
-    setGeminiCachedContent(id, {
+    // Use the ai-runtime bundle's own set/get here — the ai-runtime delete path
+    // clears the ai-runtime map, so seeding via the same bundle keeps this
+    // test focused on store lifecycle without cross-bundle plumbing.
+    const set = runtimeTestOnlyStore.setGeminiCachedContent;
+    const get = runtimeTestOnlyStore.getGeminiCachedContent;
+    expect(get(id)).toBeUndefined();
+    set(id, {
       name: "cachedContents/abc",
       // Deletion lazily builds a client from this config; the entry is removed
       // from the map before the API call, and API failures are swallowed, so a
@@ -480,10 +506,175 @@ describe("Gemini cached-content store", () => {
       model: { provider_config: { api_key: "test", model_name: "gemini-x" } } as never,
       systemPrompt: "sys",
     });
-    expect(getGeminiCachedContent(id)?.name).toBe("cachedContents/abc");
+    expect(get(id)?.name).toBe("cachedContents/abc");
     await deleteGeminiCachedContent(id);
-    expect(getGeminiCachedContent(id)).toBeUndefined();
+    expect(get(id)).toBeUndefined();
     // second delete is a no-op
     await deleteGeminiCachedContent(id);
+  });
+});
+
+/**
+ * Overrides only the client methods the test cares about, keeping the shared
+ * `fakeGeminiClient` shape and the request-log seam intact so every override
+ * still exercises the same run-fn wiring.
+ */
+function installGeminiClient(overrides: {
+  cachesCreate?: (...args: unknown[]) => Promise<Record<string, unknown>>;
+  cachesDelete?: (arg: { name: string }) => Promise<void>;
+  generateContentStream?: (
+    request: Record<string, unknown>
+  ) => Promise<AsyncIterable<Record<string, unknown>>>;
+}): { deletedNames: string[]; createCalls: number } {
+  const deletedNames: string[] = [];
+  let createCalls = 0;
+  const client = {
+    models: {
+      generateContentStream:
+        overrides.generateContentStream ??
+        (async (request: Record<string, unknown>) => {
+          geminiRequests.push(request);
+          return { async *[Symbol.asyncIterator]() {} };
+        }),
+    },
+    caches: {
+      create: async (...args: unknown[]) => {
+        createCalls += 1;
+        if (overrides.cachesCreate) {
+          return await overrides.cachesCreate(...args);
+        }
+        return {};
+      },
+      delete: async (arg: { name: string }) => {
+        deletedNames.push(arg.name);
+        if (overrides.cachesDelete) await overrides.cachesDelete(arg);
+      },
+    },
+  } as never;
+  _testOnly.setGeminiClientForTests(client);
+  runtimeTestOnly.setGeminiClientForTests(client);
+  return {
+    deletedNames,
+    get createCalls() {
+      return createCalls;
+    },
+  } as { deletedNames: string[]; createCalls: number };
+}
+
+/** Registration lookup — the `serves` list of the run-fn we want to drive. */
+function findGeminiRunFn(capability: string): AiProviderRunFn {
+  const registration = _testOnly.GEMINI_RUN_FNS.find(({ serves }) =>
+    (serves as readonly string[]).includes(capability)
+  );
+  expect(registration).toBeDefined();
+  return registration!.runFn as AiProviderRunFn;
+}
+
+const testModel = {
+  provider: GOOGLE_GEMINI,
+  provider_config: { api_key: "test-key", model_name: "gemini-test" },
+} as never;
+
+describe("Gemini cache checkpoint warm-up error classification", () => {
+  const cacheCheckpointPrefix = {
+    systemPrompt: "sys",
+    messages: [{ role: "user" as const, content: [{ type: "text" as const, text: "hi" }] }],
+  };
+  const cacheCheckpointInput: CacheCheckpointTaskInput = {
+    model: "gemini-test",
+  };
+
+  it("rethrows an abort and best-effort deletes any resource created before the abort", async () => {
+    const checkpointId = "abort-before-create";
+    const controller = new AbortController();
+    const helper = installGeminiClient({
+      cachesCreate: async () => {
+        controller.abort();
+        const err = new Error("The user aborted the request.");
+        err.name = "AbortError";
+        throw err;
+      },
+    });
+    const runFn = findGeminiRunFn("cache.checkpoint");
+    const events: unknown[] = [];
+    await expect(
+      runFn(
+        cacheCheckpointInput,
+        testModel,
+        controller.signal,
+        (event) => events.push(event),
+        undefined,
+        { sessionId: checkpointId, prefix: cacheCheckpointPrefix }
+      )
+    ).rejects.toThrow(/abort/i);
+    expect(events).toEqual([]);
+    expect(getGeminiCachedContent(checkpointId)).toBeUndefined();
+    // No resource name was ever returned, so nothing to server-delete.
+    expect(helper.deletedNames).toEqual([]);
+  });
+
+  it("preserves the degrade-to-inline path on a prefix-too-small 400", async () => {
+    const checkpointId = "degrade-preserved";
+    installGeminiClient({
+      cachesCreate: async () => {
+        throw Object.assign(new Error("cached content prefix too small"), { status: 400 });
+      },
+    });
+    const runFn = findGeminiRunFn("cache.checkpoint");
+    const events: Array<Record<string, unknown>> = [];
+    await runFn(
+      cacheCheckpointInput,
+      testModel,
+      new AbortController().signal,
+      (event) => events.push(event as Record<string, unknown>),
+      undefined,
+      { sessionId: checkpointId, prefix: cacheCheckpointPrefix }
+    );
+    // finish emitted, store empty, no rethrow
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("finish");
+    expect(getGeminiCachedContent(checkpointId)).toBeUndefined();
+  });
+
+  it("rethrows a quota 429 without attempting to delete (no resource name)", async () => {
+    const checkpointId = "throws-429";
+    const helper = installGeminiClient({
+      cachesCreate: async () => {
+        throw Object.assign(new Error("quota"), { status: 429 });
+      },
+    });
+    const runFn = findGeminiRunFn("cache.checkpoint");
+    await expect(
+      runFn(cacheCheckpointInput, testModel, new AbortController().signal, () => {}, undefined, {
+        sessionId: checkpointId,
+        prefix: cacheCheckpointPrefix,
+      })
+    ).rejects.toMatchObject({ status: 429 });
+    expect(helper.deletedNames).toEqual([]);
+    expect(getGeminiCachedContent(checkpointId)).toBeUndefined();
+  });
+
+  it("cleans up the created resource when a post-create step throws", async () => {
+    const checkpointId = "partial-delete";
+    const helper = installGeminiClient({
+      cachesCreate: async () => ({ name: "cachedContents/abc" }),
+    });
+    // Inject a bookkeeping failure at the store-insert step so the classifier
+    // sees a non-abort, non-degrade throw *after* a resource has been minted.
+    _cacheStoreTestOnly.setPreSetHook(() => {
+      throw new Error("bookkeeping failed");
+    });
+    try {
+      const runFn = findGeminiRunFn("cache.checkpoint");
+      await expect(
+        runFn(cacheCheckpointInput, testModel, new AbortController().signal, () => {}, undefined, {
+          sessionId: checkpointId,
+          prefix: cacheCheckpointPrefix,
+        })
+      ).rejects.toThrow(/bookkeeping failed/);
+      expect(helper.deletedNames).toEqual(["cachedContents/abc"]);
+    } finally {
+      _cacheStoreTestOnly.setPreSetHook(undefined);
+    }
   });
 });
