@@ -8,6 +8,7 @@ import type {
   AiProviderRunFn,
   AiSessionContext,
   CacheCheckpointTaskInput,
+  TextGenerationTaskInput,
   ToolCallingTaskInput,
   ToolDefinition,
 } from "@workglow/ai";
@@ -676,5 +677,146 @@ describe("Gemini cache checkpoint warm-up error classification", () => {
     } finally {
       _cacheStoreTestOnly.setPreSetHook(undefined);
     }
+  });
+});
+describe("Gemini cachedContent NOT_FOUND fallback (text.generation)", () => {
+  it("evicts and retries inline once on a 404 NOT_FOUND", async () => {
+    const checkpointId = "not-found-text";
+    setGeminiCachedContent(checkpointId, {
+      name: "cachedContents/text",
+      model: testModel,
+      systemPrompt: "sys",
+    });
+    const requests: Record<string, unknown>[] = [];
+    let call = 0;
+    installGeminiClient({
+      generateContentStream: async (request) => {
+        requests.push(request);
+        call += 1;
+        if (call === 1) {
+          throw Object.assign(new Error("cachedContents/text NOT_FOUND"), {
+            status: 404,
+            code: "NOT_FOUND",
+          });
+        }
+        return { async *[Symbol.asyncIterator]() {} };
+      },
+    });
+    const runFn = findGeminiRunFn("text.generation");
+    const input: TextGenerationTaskInput = { model: "gemini-test", prompt: "tail" };
+    const session: AiSessionContext = {
+      sessionId: checkpointId,
+      prefix: {
+        systemPrompt: "sys",
+        messages: [{ role: "user", content: [{ type: "text", text: "prefix" }] }],
+      },
+    };
+    const events: Array<Record<string, unknown>> = [];
+    await runFn(
+      input,
+      testModel,
+      new AbortController().signal,
+      (event) => events.push(event as Record<string, unknown>),
+      undefined,
+      session
+    );
+    expect(requests).toHaveLength(2);
+    expect((requests[0].config as Record<string, unknown>).cachedContent).toBe(
+      "cachedContents/text"
+    );
+    expect((requests[1].config as Record<string, unknown>).cachedContent).toBeUndefined();
+    // Retry replays the prefix inline (prefix + tail messages).
+    const retryContents = requests[1].contents as Array<{ parts: Array<{ text?: string }> }>;
+    const retryTexts = retryContents.map((c) => c.parts[0]?.text);
+    expect(retryTexts).toContain("prefix");
+    expect(retryTexts).toContain("tail");
+    expect(getGeminiCachedContent(checkpointId)).toBeUndefined();
+    expect(events.some((e) => e.type === "finish")).toBe(true);
+  });
+});
+
+describe("Gemini cachedContent NOT_FOUND fallback (tool-use)", () => {
+  it("evicts and retries inline once on a NOT_FOUND", async () => {
+    const checkpointId = "not-found-tool";
+    setGeminiCachedContent(checkpointId, {
+      name: "cachedContents/tool",
+      model: testModel,
+      systemPrompt: undefined,
+    });
+    const requests: Record<string, unknown>[] = [];
+    let call = 0;
+    installGeminiClient({
+      generateContentStream: async (request) => {
+        requests.push(request);
+        call += 1;
+        if (call === 1) {
+          throw Object.assign(new Error("cache not found"), {
+            status: 404,
+            code: "NOT_FOUND",
+          });
+        }
+        return { async *[Symbol.asyncIterator]() {} };
+      },
+    });
+    const runFn = findGeminiRunFn("tool-use");
+    const tools = cachedTools;
+    const input: ToolCallingTaskInput = {
+      model: "gemini-test",
+      prompt: "run tool",
+      tools,
+      toolChoice: "auto",
+    };
+    const session: AiSessionContext = {
+      sessionId: checkpointId,
+      prefix: {
+        tools,
+        messages: [{ role: "user", content: [{ type: "text", text: "prefix" }] }],
+      },
+    };
+    await runFn(input, testModel, new AbortController().signal, () => {}, undefined, session);
+    expect(requests).toHaveLength(2);
+    expect((requests[0].config as Record<string, unknown>).cachedContent).toBe(
+      "cachedContents/tool"
+    );
+    const retryConfig = requests[1].config as {
+      cachedContent?: string;
+      tools?: Array<Record<string, unknown>>;
+    };
+    expect(retryConfig.cachedContent).toBeUndefined();
+    expect(retryConfig.tools).toBeDefined();
+    expect(getGeminiCachedContent(checkpointId)).toBeUndefined();
+  });
+});
+
+describe("Gemini cachedContent proactive stale fallback", () => {
+  it("skips the cached-content handle on a stale entry and does not re-issue", async () => {
+    const checkpointId = "proactive-stale";
+    // 3.6M ms > 3.5M default stale horizon
+    setGeminiCachedContent(checkpointId, {
+      name: "cachedContents/stale",
+      model: testModel,
+      systemPrompt: "sys",
+      createdAtMs: Date.now() - 3_600_000,
+    });
+    const requests: Record<string, unknown>[] = [];
+    installGeminiClient({
+      generateContentStream: async (request) => {
+        requests.push(request);
+        return { async *[Symbol.asyncIterator]() {} };
+      },
+    });
+    const runFn = findGeminiRunFn("text.generation");
+    const input: TextGenerationTaskInput = { model: "gemini-test", prompt: "tail" };
+    const session: AiSessionContext = {
+      sessionId: checkpointId,
+      prefix: {
+        systemPrompt: "sys",
+        messages: [{ role: "user", content: [{ type: "text", text: "prefix" }] }],
+      },
+    };
+    await runFn(input, testModel, new AbortController().signal, () => {}, undefined, session);
+    expect(requests).toHaveLength(1);
+    expect((requests[0].config as Record<string, unknown>).cachedContent).toBeUndefined();
+    expect(getGeminiCachedContent(checkpointId)).toBeUndefined();
   });
 });
