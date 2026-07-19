@@ -245,6 +245,43 @@ function promptTailMessages(prompt: unknown): ChatMessage[] {
  * applies. The consumed cache also expires by TTL, which the inline-replay
  * fallback covers as well.
  */
+/**
+ * Bucket a cache-creation (or subsequent) error into one of three fates:
+ *  - `"abort"` — the caller cancelled (via the AbortSignal or a bubbled-up
+ *    AbortError); the run-fn must rethrow so the abort surfaces to the run.
+ *  - `"degrade"` — the model rejected the prefix as too small / unsupported for
+ *    explicit caching (`400 INVALID_ARGUMENT` with a matching message); the
+ *    warm-up degrades to no entry and the consumer replays inline.
+ *  - `"throw"` — every other class (auth, quota, transport, server 5xx) is a
+ *    real failure; the run-fn rethrows so the caller sees it and can retry.
+ */
+function classifyGeminiCacheError(
+  err: unknown,
+  signal: AbortSignal | undefined
+): "abort" | "degrade" | "throw" {
+  const anyErr = err as { name?: unknown; message?: unknown; status?: unknown; code?: unknown };
+  const message = String(anyErr?.message ?? err ?? "");
+  const name = String(anyErr?.name ?? "");
+  if (
+    signal?.aborted ||
+    (typeof DOMException !== "undefined" &&
+      err instanceof DOMException &&
+      err.name === "AbortError") ||
+    name === "AbortError" ||
+    /aborted|AbortError/i.test(message)
+  ) {
+    return "abort";
+  }
+  const status = anyErr?.status;
+  const code = anyErr?.code;
+  const looksLikePrefixTooSmall =
+    /prefix.*too.*small|cached.*content.*not.*supported|minimum.*token/i.test(message);
+  if ((status === 400 || code === "INVALID_ARGUMENT") && looksLikePrefixTooSmall) {
+    return "degrade";
+  }
+  return "throw";
+}
+
 export const Gemini_CacheCheckpoint_Stream: AiProviderRunFn<
   CacheCheckpointTaskInput,
   CacheCheckpointTaskOutput,
@@ -264,6 +301,10 @@ export const Gemini_CacheCheckpoint_Stream: AiProviderRunFn<
       ? buildGeminiContents(prefix.messages, "")
       : [{ role: "user", parts: [{ text: "." }] }];
 
+  // Track the created resource name across the try / catch so a downstream
+  // failure (e.g. a bookkeeping throw from `setGeminiCachedContent`) can still
+  // cleanup the server-side entry it just minted.
+  let createdName: string | undefined;
   try {
     signal?.throwIfAborted?.();
     const cached = await ai.caches.create({
@@ -277,6 +318,7 @@ export const Gemini_CacheCheckpoint_Stream: AiProviderRunFn<
         ttl: GEMINI_CACHE_TTL,
       },
     } as Parameters<typeof ai.caches.create>[0]);
+    createdName = cached?.name ?? undefined;
     if (cached?.name) {
       setGeminiCachedContent(checkpointId, {
         name: cached.name,
@@ -285,6 +327,15 @@ export const Gemini_CacheCheckpoint_Stream: AiProviderRunFn<
       });
     }
   } catch (err) {
+    const fate = classifyGeminiCacheError(err, signal);
+    if (fate === "abort" || fate === "throw") {
+      if (createdName) {
+        await ai.caches
+          .delete({ name: createdName } as Parameters<typeof ai.caches.delete>[0])
+          .catch(() => {});
+      }
+      throw err;
+    }
     getLogger().warn(
       `Gemini cache checkpoint warm-up degraded to inline replay: ${
         err instanceof Error ? err.message : String(err)
