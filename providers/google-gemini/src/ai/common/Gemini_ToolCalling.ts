@@ -12,12 +12,18 @@ import type {
   ToolCallingTaskOutput,
 } from "@workglow/ai";
 import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
+import { getLogger } from "@workglow/util/worker";
 import {
   buildGeminiFunctionDeclarations,
   buildGeminiPrefixedContents,
   geminiCachedToolsMatch,
 } from "./Gemini_CacheCheckpoint";
-import { getGeminiCachedContent } from "./Gemini_CacheStore";
+import { generateGeminiStreamWithCacheFallback } from "./Gemini_CachedContentFallback";
+import {
+  deleteGeminiCachedContentLocal,
+  getGeminiCachedContent,
+  isGeminiCacheEntryStale,
+} from "./Gemini_CacheStore";
 import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
@@ -137,11 +143,10 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
   // ("auto") tool choice. Anything else — including after the cache's TTL
   // expiry — replays the prefix content inline; implicit caching still applies.
   const prefix = sessionContext?.prefix;
-  const cachedEntry = sessionContext?.sessionId
-    ? getGeminiCachedContent(sessionContext.sessionId)
-    : undefined;
+  const checkpointId = sessionContext?.sessionId;
+  const cachedEntry = checkpointId ? getGeminiCachedContent(checkpointId) : undefined;
   const defaultToolChoice = input.toolChoice === undefined || input.toolChoice === "auto";
-  const useCachedContent =
+  let useCachedContent =
     prefix !== undefined &&
     cachedEntry !== undefined &&
     defaultToolChoice &&
@@ -152,32 +157,64 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
       input.systemPrompt === "" ||
       input.systemPrompt === cachedEntry.systemPrompt);
 
-  const contents =
-    prefix && !useCachedContent
-      ? buildGeminiPrefixedContents(prefix, input.messages, input.prompt)
-      : buildGeminiContents(input.messages, input.prompt);
-  const systemInstruction = useCachedContent
-    ? undefined
-    : input.systemPrompt || (prefix ? prefix.systemPrompt : undefined);
+  // Proactive stale check. Explicit CachedContent is TTL-bound (~1h), and a
+  // consumer reaching a nearly-expired entry would eat a reactive NOT_FOUND
+  // that costs a round-trip. Evict the runtime-local entry (leave the server
+  // side to its own TTL) and fall back to inline replay up front.
+  if (useCachedContent && cachedEntry && isGeminiCacheEntryStale(cachedEntry) && checkpointId) {
+    getLogger().debug("Gemini cache entry stale; falling back to inline replay");
+    deleteGeminiCachedContentLocal(checkpointId);
+    useCachedContent = false;
+  }
 
   // Thinking is opt-in here (no default budget): the model uses its own default
   // reasoning unless `provider_config.thinking_budget` is set, in which case the
   // output cap is padded so reasoning can't starve the tool call / answer.
   const { thinkingConfig, maxOutputTokens } = resolveThinkingConfig(model, input.maxTokens);
 
-  const result = await ai.models.generateContentStream({
+  /** Build the tail-only request that references the CachedContent handle. */
+  const buildCachedRequest = (): Record<string, unknown> => ({
     model: getModelName(model),
-    contents,
+    contents: buildGeminiContents(input.messages, input.prompt),
     config: {
       abortSignal: signal ?? undefined,
-      systemInstruction,
+      systemInstruction: undefined,
       maxOutputTokens,
       temperature: input.temperature,
-      ...(useCachedContent
-        ? { cachedContent: cachedEntry!.name }
-        : { tools: [{ functionDeclarations }], toolConfig: toolConfig as any }),
+      cachedContent: cachedEntry!.name,
       thinkingConfig,
     },
+  });
+
+  /** Build the full inline-replay request (prefix messages + tail + tools). */
+  const buildInlineReplayRequest = (): Record<string, unknown> => {
+    const contents = prefix
+      ? buildGeminiPrefixedContents(prefix, input.messages, input.prompt)
+      : buildGeminiContents(input.messages, input.prompt);
+    const systemInstruction = input.systemPrompt || (prefix ? prefix.systemPrompt : undefined);
+    return {
+      model: getModelName(model),
+      contents,
+      config: {
+        abortSignal: signal ?? undefined,
+        systemInstruction,
+        maxOutputTokens,
+        temperature: input.temperature,
+        tools: [{ functionDeclarations }],
+        toolConfig: toolConfig as any,
+        thinkingConfig,
+      },
+    };
+  };
+
+  const result = await generateGeminiStreamWithCacheFallback({
+    useCachedContent,
+    checkpointId,
+    buildRequest: (useCached) => (useCached ? buildCachedRequest() : buildInlineReplayRequest()),
+    runStream: (request) =>
+      ai.models.generateContentStream(
+        request as unknown as Parameters<typeof ai.models.generateContentStream>[0]
+      ),
   });
 
   let callIndex = 0;
