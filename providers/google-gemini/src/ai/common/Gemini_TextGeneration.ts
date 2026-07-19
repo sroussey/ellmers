@@ -11,7 +11,12 @@ import type {
 } from "@workglow/ai";
 import { getLogger } from "@workglow/util/worker";
 import { buildGeminiPrefixedContents } from "./Gemini_CacheCheckpoint";
-import { getGeminiCachedContent } from "./Gemini_CacheStore";
+import { generateGeminiStreamWithCacheFallback } from "./Gemini_CachedContentFallback";
+import {
+  deleteGeminiCachedContentLocal,
+  getGeminiCachedContent,
+  isGeminiCacheEntryStale,
+} from "./Gemini_CacheStore";
 import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
@@ -86,50 +91,91 @@ export const Gemini_TextGeneration_Stream: AiProviderRunFn<
     // TTL expiry — replay the prefix content inline; implicit caching still
     // applies there.
     const prefix = sessionContext?.prefix;
-    const cachedEntry = sessionContext?.sessionId
-      ? getGeminiCachedContent(sessionContext.sessionId)
-      : undefined;
+    const checkpointId = sessionContext?.sessionId;
+    const cachedEntry = checkpointId ? getGeminiCachedContent(checkpointId) : undefined;
     const ownSystemPrompt = hasMessages ? unified.systemPrompt || undefined : undefined;
-    const useCachedContent =
+    let useCachedContent =
       prefix !== undefined &&
       cachedEntry !== undefined &&
       (ownSystemPrompt === undefined || ownSystemPrompt === cachedEntry.systemPrompt);
 
-    let contents: any[];
-    let systemInstruction: string | undefined;
-    if (prefix && !useCachedContent) {
-      contents = buildGeminiPrefixedContents(
-        prefix,
-        hasMessages ? (unified.messages as Parameters<typeof buildGeminiContents>[0]) : undefined,
-        unified.prompt
-      );
-      systemInstruction = ownSystemPrompt ?? prefix.systemPrompt;
-    } else {
-      contents = hasMessages
-        ? buildGeminiContents(
-            unified.messages as Parameters<typeof buildGeminiContents>[0],
-            unified.prompt ?? ""
-          )
-        : [{ role: "user", parts: [{ text: input.prompt }] }];
-      systemInstruction = useCachedContent ? undefined : ownSystemPrompt;
+    // Proactive stale check. Explicit CachedContent is TTL-bound (~1h), and a
+    // consumer reaching a nearly-expired entry would eat a reactive NOT_FOUND
+    // that costs a round-trip. Evict the runtime-local entry (leave the server
+    // side to its own TTL) and fall back to inline replay up front.
+    if (useCachedContent && cachedEntry && isGeminiCacheEntryStale(cachedEntry) && checkpointId) {
+      logger.debug("Gemini cache entry stale; falling back to inline replay");
+      deleteGeminiCachedContentLocal(checkpointId);
+      useCachedContent = false;
     }
 
     // Thinking is opt-in here (no default budget); when a budget is configured,
     // the output cap is padded so reasoning can't starve the visible answer.
     const { thinkingConfig, maxOutputTokens } = resolveThinkingConfig(model, input.maxTokens);
 
-    const result = await ai.models.generateContentStream({
-      model: getModelName(model),
-      contents,
-      config: {
-        abortSignal: signal ?? undefined,
-        systemInstruction,
-        ...(useCachedContent ? { cachedContent: cachedEntry!.name } : {}),
-        ...buildGenerationConfig(input),
-        // Override maxOutputTokens from buildGenerationConfig with the thinking-aware value.
-        maxOutputTokens,
-        thinkingConfig,
-      },
+    /** Build the tail-only request that references the CachedContent handle. */
+    const buildCachedRequest = (): Record<string, unknown> => {
+      const contents = hasMessages
+        ? buildGeminiContents(
+            unified.messages as Parameters<typeof buildGeminiContents>[0],
+            unified.prompt ?? ""
+          )
+        : [{ role: "user", parts: [{ text: input.prompt }] }];
+      return {
+        model: getModelName(model),
+        contents,
+        config: {
+          abortSignal: signal ?? undefined,
+          systemInstruction: undefined,
+          cachedContent: cachedEntry!.name,
+          ...buildGenerationConfig(input),
+          maxOutputTokens,
+          thinkingConfig,
+        },
+      };
+    };
+
+    /** Build the full inline-replay request (prefix messages + tail). */
+    const buildInlineReplayRequest = (): Record<string, unknown> => {
+      let contents: any[];
+      let systemInstruction: string | undefined;
+      if (prefix) {
+        contents = buildGeminiPrefixedContents(
+          prefix,
+          hasMessages ? (unified.messages as Parameters<typeof buildGeminiContents>[0]) : undefined,
+          unified.prompt
+        );
+        systemInstruction = ownSystemPrompt ?? prefix.systemPrompt;
+      } else {
+        contents = hasMessages
+          ? buildGeminiContents(
+              unified.messages as Parameters<typeof buildGeminiContents>[0],
+              unified.prompt ?? ""
+            )
+          : [{ role: "user", parts: [{ text: input.prompt }] }];
+        systemInstruction = ownSystemPrompt;
+      }
+      return {
+        model: getModelName(model),
+        contents,
+        config: {
+          abortSignal: signal ?? undefined,
+          systemInstruction,
+          ...buildGenerationConfig(input),
+          maxOutputTokens,
+          thinkingConfig,
+        },
+      };
+    };
+
+    const result = await generateGeminiStreamWithCacheFallback({
+      useCachedContent,
+      checkpointId,
+      buildRequest: (useCached) => (useCached ? buildCachedRequest() : buildInlineReplayRequest()),
+      runStream: (request) =>
+        ai.models.generateContentStream(
+          request as unknown as Parameters<typeof ai.models.generateContentStream>[0]
+        ),
     });
 
     let refusalCategory: string | undefined;
