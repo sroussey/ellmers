@@ -53,8 +53,11 @@
     "publish-login": "npm login",
     "publish-workspaces": "bun ./scripts/publish-workspaces.ts",
     "prepare": "[ -n \"$CI\" ] || husky",
-    "use-source": "bun ./scripts/bunsrc.ts source",
-    "use-dist": "bun ./scripts/bunsrc.ts dist"
+    "use-source": "bun ./scripts/bunsrc-workspace.ts source",
+    "use-dist": "bun ./scripts/bunsrc-workspace.ts dist",
+    "link-all": "bun ./scripts/link-all.ts link",
+    "unlink-all": "bun ./scripts/link-all.ts unlink",
+    "dev-link": "bun ./scripts/dev-link-workglow.ts"
   },
   "dependencies": {
     "caniuse-lite": "^1.0.30001806"

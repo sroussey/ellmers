@@ -261,4 +261,6 @@ When making code changes, run the tests on that section only, and pass vitest on
 
 ### Developing without building
 
-`./scripts/bunsrc-workspace.ts source` will change the packages package.json exports to use the source files instead of the built files. This is useful for developing without having to build the packages. Never commit this change. It can be reverted with `./scripts/bunsrc-workspace.ts dist`.
+`bun run use-source` (or `./scripts/bunsrc-workspace.ts source`) will change the packages' package.json exports to use the source files instead of the built files. This is useful for developing without having to build the packages. Never commit this change. It can be reverted with `bun run use-dist`.
+
+`bun run link-all` registers every workspace package (and providers/examples) for `bun link` consumers such as builder, sec, and embarc-data. `bun run unlink-all` reverses that. For the full libs → sec → embarc-data chain (register + use-source + consumer links), run `bun run dev-link` from libs, or `bun ./dev-link.ts` from the parent `workglow/` folder.
