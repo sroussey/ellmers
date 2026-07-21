@@ -424,7 +424,7 @@ export class IndexedDbTabularStorage<
    * @emits put - Emitted for each record successfully stored
    */
   async putBulk(records: InsertType[]): Promise<Entity[]> {
-    return await Promise.all(records.map((record) => this.put(record)));
+    return await this.putBulkInTransaction(records);
   }
 
   /**
