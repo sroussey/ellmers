@@ -124,6 +124,8 @@ describe("checkpoint-seeded local chat system prompts", () => {
         constructorOptions(options);
       }
 
+      setChatHistory(): void {}
+
       async preloadPrompt(): Promise<void> {}
 
       prompt = prompt;
