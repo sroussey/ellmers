@@ -6,6 +6,7 @@
 
 import type { ITextIndex, TextFields, VectorSearchOptions } from "@workglow/storage";
 import type { IRunConfig } from "@workglow/task-graph";
+import { getLogger } from "@workglow/util";
 import type { TypedArray } from "@workglow/util/schema";
 import type { ChunkRecord } from "../chunk/ChunkSchema";
 import type {
@@ -337,7 +338,7 @@ export class KnowledgeBase {
     if (!index) return;
     const fields = chunkTextFields(stored.metadata);
     const warn = (err: unknown): void => {
-      console.warn(
+      getLogger().warn(
         `KnowledgeBase[${this.name}]: text index write failed for chunk ${stored.chunk_id}; ` +
           `index is now stale for this chunk. Call kb.reindexText() to recover. ` +
           `Error: ${err instanceof Error ? err.message : String(err)}`

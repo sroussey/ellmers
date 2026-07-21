@@ -22,7 +22,7 @@ import type {
   TabularSubscribeOptions,
 } from "@workglow/storage";
 import { decodeCursor, StorageValidationError } from "@workglow/storage";
-import { EventEmitter } from "@workglow/util";
+import { EventEmitter, getLogger } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 
 /**
@@ -59,7 +59,7 @@ export class ScopedTabularStorage<
     // field. We read it via a structural cast to fail loudly at
     // construction rather than leaking rows on a future `get` / `getBulk`.
     // Storages that don't expose `primaryKeyNames` (third-party impls)
-    // get a `console.warn` instead of a throw, so legitimate custom
+    // get a logged warning instead of a throw, so legitimate custom
     // backends keep working.
     const innerPkNames = (inner as { primaryKeyNames?: ReadonlyArray<unknown> }).primaryKeyNames;
     if (Array.isArray(innerPkNames)) {
@@ -72,7 +72,7 @@ export class ScopedTabularStorage<
         );
       }
     } else {
-      console.warn(
+      getLogger().warn(
         "ScopedTabularStorage: inner.primaryKeyNames is not exposed; cannot verify kb_id is in PK. " +
           "Scoping correctness requires `kb_id` to be part of the inner storage's primary key — " +
           "SQL backends drop fields not in PK from `get`/`getBulk` WHERE clauses."

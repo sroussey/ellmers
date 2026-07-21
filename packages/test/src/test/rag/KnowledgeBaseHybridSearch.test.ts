@@ -6,7 +6,8 @@
 
 import { createKnowledgeBase } from "@workglow/knowledge-base";
 import { BM25Index } from "@workglow/storage";
-import { uuid4 } from "@workglow/util";
+import type { ILogger } from "@workglow/util";
+import { getLogger, NullLogger, setLogger, uuid4 } from "@workglow/util";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { report, snap } from "../../binding/testTiming";
@@ -320,11 +321,22 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
     report("hybrid: reindex-rollback", s);
   });
 
-  it("upsertChunk surfaces a warning when textIndex.add throws but keeps the chunk", async () => {
+  it("upsertChunk routes its index-write warning through the logger, not console", async () => {
     const s = snap();
-    const errors: string[] = [];
-    const originalWarn = console.warn;
-    console.warn = (msg: string) => errors.push(msg);
+    const warnings: string[] = [];
+    const capturing: ILogger = Object.assign(new NullLogger(), {
+      warn(message: string): void {
+        warnings.push(message);
+      },
+    });
+    const previousLogger = getLogger();
+    const originalConsoleWarn = console.warn;
+    let consoleWarnCalls = 0;
+    console.warn = ((...args: unknown[]) => {
+      consoleWarnCalls += 1;
+      return originalConsoleWarn.apply(console, args as []);
+    }) as typeof console.warn;
+    setLogger(capturing);
     try {
       const stub = {
         add() {
@@ -354,10 +366,13 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
       // Chunk is in the vector store even though the index write failed.
       expect(stored.chunk_id).toBe("c1");
       expect(await kb.getChunk("c1")).toBeDefined();
-      // And a warning was emitted naming the chunk.
-      expect(errors.some((m) => m.includes("c1"))).toBe(true);
+      // The warning was emitted through the structured logger, naming the chunk.
+      expect(warnings.some((m) => m.includes("c1"))).toBe(true);
+      // And it did NOT reach console.warn directly.
+      expect(consoleWarnCalls).toBe(0);
     } finally {
-      console.warn = originalWarn;
+      console.warn = originalConsoleWarn;
+      setLogger(previousLogger);
     }
     report("hybrid: index-warn", s);
   });

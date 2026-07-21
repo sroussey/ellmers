@@ -5,6 +5,7 @@
  */
 
 import type { AnyVectorStorage, IVectorStorage, VectorSearchOptions } from "@workglow/storage";
+import { getLogger } from "@workglow/util";
 import type { DataPortSchemaObject, TypedArray } from "@workglow/util/schema";
 import { ScopedTabularStorage } from "./ScopedTabularStorage";
 
@@ -48,7 +49,7 @@ export class ScopedVectorStorage<
     // returned exactly as many results as we requested (overfetch limit) and
     // filtering still left us short of topK.
     if (topK && overfetchLimit && results.length >= overfetchLimit && filtered.length < topK) {
-      console.warn(
+      getLogger().warn(
         `ScopedVectorStorage: search returned ${filtered.length}/${topK} results after ` +
           `kb_id filtering. Consider increasing overFetchMultiplier (currently ${this.overFetchMultiplier}).`
       );
