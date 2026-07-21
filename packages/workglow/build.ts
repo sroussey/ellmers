@@ -17,10 +17,17 @@
  */
 
 import { Glob } from "bun";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { assertNoExportCollisions } from "./detect-export-collisions";
 
 const srcDir = join(import.meta.dir, "src");
 const distDir = join(import.meta.dir, "dist");
+
+const barrelPaths = ["common.ts", "browser.ts", "node.ts", "bun.ts"]
+  .map((name) => join(srcDir, name))
+  .filter((path) => existsSync(path));
+assertNoExportCollisions(barrelPaths);
 
 const transpiler = new Bun.Transpiler({ loader: "ts" });
 
