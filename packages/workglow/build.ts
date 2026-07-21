@@ -27,7 +27,7 @@ const distDir = join(import.meta.dir, "dist");
 const barrelPaths = ["common.ts", "browser.ts", "node.ts", "bun.ts"]
   .map((name) => join(srcDir, name))
   .filter((path) => existsSync(path));
-assertNoExportCollisions(barrelPaths);
+await assertNoExportCollisions(barrelPaths);
 
 const transpiler = new Bun.Transpiler({ loader: "ts" });
 
