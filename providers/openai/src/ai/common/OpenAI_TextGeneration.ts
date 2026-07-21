@@ -14,6 +14,7 @@ import { toOpenAIMessages } from "@workglow/ai/worker";
 import { getLogger } from "@workglow/util/worker";
 import { finalizeResponsesRequest, getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
+import { warnPenaltyDroppedOnce } from "./OpenAI_ResponsesWarnings";
 
 /**
  * Inputs that the unified `["text.generation"]` runFn handles. Both
@@ -25,6 +26,8 @@ import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 interface UnifiedTextGenerationInput extends TextGenerationTaskInput {
   readonly messages?: readonly unknown[];
   readonly systemPrompt?: string;
+  readonly frequencyPenalty?: number;
+  readonly presencePenalty?: number;
 }
 
 /**
@@ -62,6 +65,18 @@ function buildResponsesParams(
   if (input.temperature !== undefined) params.temperature = input.temperature;
   if ((input as { topP?: number }).topP !== undefined)
     params.top_p = (input as { topP?: number }).topP;
+
+  // frequency_penalty / presence_penalty are silently dropped by the Responses
+  // API. Warn once per (model, param) so callers who set them notice the
+  // regression from the pre-Responses pipeline (which passed them through).
+  const modelName = getModelName(model);
+  if (input.frequencyPenalty !== undefined) {
+    warnPenaltyDroppedOnce(modelName, "frequencyPenalty");
+  }
+  if (input.presencePenalty !== undefined) {
+    warnPenaltyDroppedOnce(modelName, "presencePenalty");
+  }
+
   return params;
 }
 

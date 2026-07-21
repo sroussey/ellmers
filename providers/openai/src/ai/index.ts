@@ -16,6 +16,11 @@ export * from "./registerOpenAi";
 import { OPENAI_RUN_FN_SPECS } from "./common/OpenAI_Capabilities";
 import { getReasoningConfig, resolvePromptCacheKey } from "./common/OpenAI_Client";
 import { OPENAI_RUN_FNS } from "./common/OpenAI_JobRunFns";
+import {
+  _resetOpenAIResponsesWarnings,
+  warnPenaltyDroppedOnce,
+  warnStrictDowngradedOnce,
+} from "./common/OpenAI_ResponsesWarnings";
 import { isStrictCompatibleSchema } from "./common/OpenAI_StructuredGeneration";
 import { OpenAiQueuedProvider } from "./OpenAiQueuedProvider";
 
@@ -29,4 +34,7 @@ export const _testOnly = {
   getReasoningConfig,
   resolvePromptCacheKey,
   isStrictCompatibleSchema,
+  warnPenaltyDroppedOnce,
+  warnStrictDowngradedOnce,
+  _resetOpenAIResponsesWarnings,
 } as const;

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.27
+
+### Bug Fixes
+
+Surface two silent Responses-API regressions from 0.3.26:
+
+- `frequencyPenalty` and `presencePenalty` are dropped: the OpenAI Responses
+  API does not accept them. `OpenAI_TextGeneration_Stream` now emits a
+  `warn`-level log once per `(model, param)` per process when either is set.
+- Structured generation `strict:true` downshifts to
+  `isStrictCompatibleSchema(schema)`. Schemas that used to error out on the
+  strict incompatibilities the Responses API rejects (`anyOf`, `$ref`, missing
+  `additionalProperties:false`, unlisted required keys, etc.) now silently
+  return non-conforming JSON — the `StructuredGenerationTask` consumer
+  re-validates and may retry, but the provider-side strict guarantee is off.
+  `OpenAI_StructuredGeneration_Stream` now emits a `warn`-level log once per
+  model per process when the downshift fires, with the first non-strict reason.
+
+Behavior is unchanged; only visibility. Callers that need the pre-0.3.26
+behavior should pin `@workglow/openai@0.3.25` or route to a non-OpenAI
+provider.
+
 ## 0.3.26
 
 ### Bug Fixes
