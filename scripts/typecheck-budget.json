@@ -14,7 +14,7 @@
     "packages/tasks": 207022,
     "packages/test": 1077658,
     "packages/util": 27100,
-    "packages/workglow": 157,
+    "packages/workglow": 242,
     "providers/anthropic": 12793,
     "providers/aws": 2510,
     "providers/bun-webview": 225,

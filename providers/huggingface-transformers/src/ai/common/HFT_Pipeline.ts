@@ -316,6 +316,15 @@ export async function withHftPipelineInUse<T>(cacheKey: string, fn: () => Promis
 
 interface HftSessionBase {
   readonly modelPath: string;
+  /**
+   * The pipeline cache key ({@link getPipelineCacheKey}) whose ONNX session
+   * backs this KV-cache snapshot. When that pipeline is evicted the cached
+   * tensors here are freed underneath us; the session must be swept in the
+   * same step. Distinct dtype/device variants of the same `model_path`
+   * (`q4:webgpu` vs `fp32:wasm`) produce different cache keys, so sweeping
+   * by cache key never touches a live sibling variant's sessions.
+   */
+  readonly cacheKey: string;
 }
 
 export interface HftPrefixRewindSession extends HftSessionBase {
@@ -377,6 +386,27 @@ export function disposeHftSessionsForModel(modelPath: string): void {
   }
 }
 
+/**
+ * Sweep every session whose {@link HftSessionBase.cacheKey} matches
+ * `cacheKey`, disposing resources and deleting the entry. Called from
+ * {@link removeCachedPipeline} after the pipeline's ONNX session has been
+ * disposed: the session's cached `baseEntries`/`cache` are tensors backed
+ * by that ONNX session, so leaving them in `hftSessions` would let a later
+ * `generateTurn` rebuild a `DynamicCache` from freed GPU buffers (WebGPU
+ * UAF) or a corrupted WASM heap.
+ *
+ * Per-cacheKey (not per-modelPath) so a distinct dtype/device variant of
+ * the same model that is still cached and in-use is not affected.
+ */
+export function disposeHftSessionsForCacheKey(cacheKey: string): void {
+  for (const [id, state] of hftSessions) {
+    if (state.cacheKey === cacheKey) {
+      disposeSessionResources(state);
+      hftSessions.delete(id);
+    }
+  }
+}
+
 /** In-flight pipeline loads by cache key. Ensures only one load per model at a time to avoid corrupt ONNX files (Protobuf parsing failed). */
 const pipelineLoadPromises = new Map<string, Promise<any>>();
 
@@ -415,6 +445,12 @@ export const HFT_NULL_PROCESSOR_PREFIX = "HFT_NULL_PROCESSOR:";
 export async function clearPipelineCache(): Promise<void> {
   const snapshot = Array.from(pipelines.values());
   pipelines.clear();
+  // Sessions cache tensors backed by these ONNX sessions; leaving them behind
+  // would surface stale entries whose underlying buffers are freed.
+  for (const session of hftSessions.values()) {
+    disposeSessionResources(session);
+  }
+  hftSessions.clear();
   await Promise.allSettled(
     snapshot.map(async (pipeline) => {
       try {
@@ -461,6 +497,12 @@ export async function removeCachedPipeline(cacheKey: string): Promise<boolean> {
     } catch {
       // Best-effort: dispose failure must not propagate.
     }
+  }
+  if (deleted) {
+    // Any KV-cache session stamped with this cacheKey now points at freed
+    // ONNX-session tensors; sweep it before a later turn tries to rebuild
+    // a DynamicCache from those tensors.
+    disposeHftSessionsForCacheKey(cacheKey);
   }
   return deleted;
 }

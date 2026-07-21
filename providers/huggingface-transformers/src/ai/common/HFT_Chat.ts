@@ -67,6 +67,7 @@ async function generateTurn(
 
   // Session cache: prefix-rewind growing with the conversation.
   const modelPath = model.provider_config.model_path;
+  const cacheKey = getPipelineCacheKey(model);
   let session = sessionId ? getHftSession(sessionId) : undefined;
   let past_key_values: any = undefined;
 
@@ -137,6 +138,7 @@ async function generateTurn(
         baseEntries,
         baseSeqLength: outputCache.get_seq_length ? outputCache.get_seq_length() : 0,
         modelPath,
+        cacheKey,
       };
       setHftSession(sessionId, newSession);
     }

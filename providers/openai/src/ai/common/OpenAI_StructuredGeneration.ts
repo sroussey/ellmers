@@ -9,10 +9,11 @@ import type {
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
-import { isStrictCompatibleSchema } from "@workglow/ai/provider-utils";
+import { firstNonStrictReason, isStrictCompatibleSchema } from "@workglow/ai/provider-utils";
 import { parsePartialJson } from "@workglow/util/worker";
 import { finalizeResponsesRequest, getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
+import { warnStrictDowngradedOnce } from "./OpenAI_ResponsesWarnings";
 
 export { isStrictCompatibleSchema };
 
@@ -32,6 +33,14 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
 
   const schema = input.outputSchema ?? outputSchema;
 
+  const strict = isStrictCompatibleSchema(schema);
+  if (!strict) {
+    // Downshifted to strict:false; the request still succeeds but the
+    // provider-side strict guarantee is off. Consumer re-validates.
+    const reason = firstNonStrictReason(schema) ?? "unknown reason";
+    warnStrictDowngradedOnce(modelName, reason);
+  }
+
   const params: Record<string, unknown> = {
     model: modelName,
     input: input.prompt,
@@ -40,7 +49,7 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
         type: "json_schema",
         name: "structured_output",
         schema: schema,
-        strict: isStrictCompatibleSchema(schema),
+        strict,
       },
     },
   };

@@ -42,3 +42,47 @@ export function isStrictCompatibleSchema(schema: unknown): boolean {
   }
   return true;
 }
+
+/**
+ * When {@link isStrictCompatibleSchema} would return `false`, describe the first
+ * reason it found — the concrete keyword or shape that made the schema
+ * non-strict. Returns `undefined` when the schema is strict-compatible.
+ *
+ * Used to make a strict → non-strict downshift observable in warn logs (the
+ * request still succeeds; only the strict guarantee is dropped).
+ */
+export function firstNonStrictReason(schema: unknown): string | undefined {
+  if (schema === null || typeof schema !== "object") return undefined;
+  const s = schema as Record<string, unknown>;
+  if (s.$ref !== undefined) return "$ref";
+  if (Array.isArray(s.anyOf)) return "anyOf";
+  if (Array.isArray(s.oneOf)) return "oneOf";
+  if (Array.isArray(s.allOf)) return "allOf";
+
+  const isObject = s.type === "object" || (s.type === undefined && s.properties !== undefined);
+  if (isObject) {
+    if (s.additionalProperties !== false) return "missing additionalProperties:false";
+    const props = (s.properties as Record<string, unknown> | undefined) ?? {};
+    const required = Array.isArray(s.required) ? (s.required as string[]) : [];
+    for (const key of Object.keys(props)) {
+      if (!required.includes(key)) return `unlisted required key: ${key}`;
+      const nested = firstNonStrictReason(props[key]);
+      if (nested !== undefined) return `${key}.${nested}`;
+    }
+    return undefined;
+  }
+
+  const isArray = s.type === "array" || s.items !== undefined;
+  if (isArray) {
+    if (Array.isArray(s.items)) {
+      for (let i = 0; i < s.items.length; i++) {
+        const nested = firstNonStrictReason(s.items[i]);
+        if (nested !== undefined) return `items[${i}].${nested}`;
+      }
+      return undefined;
+    }
+    const nested = firstNonStrictReason(s.items);
+    return nested === undefined ? undefined : `items.${nested}`;
+  }
+  return undefined;
+}
