@@ -337,6 +337,7 @@ export const HFT_ToolCalling: AiProviderRunFn<
 
     // Session cache: prefix-rewind for tool calling (streaming)
     const modelPath = model!.provider_config.model_path;
+    const cacheKey = getPipelineCacheKey(model!);
     let session = sessionId ? getHftSession(sessionId) : undefined;
     let past_key_values: any = undefined;
 
@@ -361,6 +362,7 @@ export const HFT_ToolCalling: AiProviderRunFn<
         baseEntries,
         baseSeqLength: cache.get_seq_length(),
         modelPath,
+        cacheKey,
       };
       setHftSession(sessionId, newSession);
       session = newSession;

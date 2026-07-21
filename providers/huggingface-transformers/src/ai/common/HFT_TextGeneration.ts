@@ -42,6 +42,7 @@ export const HFT_TextGeneration: AiProviderRunFn<
 
     // Session cache: progressive caching for text generation (streaming)
     const modelPath = model!.provider_config.model_path;
+    const cacheKey = getPipelineCacheKey(model!);
     let session = sessionId ? getHftSession(sessionId) : undefined;
     let past_key_values: any = undefined;
 
@@ -52,6 +53,7 @@ export const HFT_TextGeneration: AiProviderRunFn<
         mode: "progressive",
         cache,
         modelPath,
+        cacheKey,
       };
       setHftSession(sessionId, newSession);
       session = newSession;

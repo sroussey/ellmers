@@ -5,11 +5,15 @@
  */
 
 import {
+  clearPipelineCache,
+  getHftSession,
   hasCachedPipeline,
+  type HftPrefixRewindSession,
   isHftPipelineInUse,
   MAX_CACHED_PIPELINES,
   pipelines,
   removeCachedPipeline,
+  setHftSession,
   withHftPipelineInUse,
 } from "@workglow/huggingface-transformers/ai-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -143,5 +147,91 @@ describe("H1: refcount before pipeline lookup", () => {
     for (const inUse of inUseKeys) {
       expect(disposeFns.get(inUse)!).not.toHaveBeenCalled();
     }
+  });
+});
+
+/**
+ * Fake session tensor: `disposeSessionResources` only calls `dispose()` on
+ * `HftPrefixRewindSession.baseEntries` values whose `location === "gpu-buffer"`.
+ * A vi.fn() dispose lets the assertion check the sweep actually ran.
+ */
+function makeFakeSessionTensor(): {
+  tensor: { location: "gpu-buffer"; dispose: ReturnType<typeof vi.fn> };
+  dispose: ReturnType<typeof vi.fn>;
+} {
+  const dispose = vi.fn();
+  const tensor = { location: "gpu-buffer" as const, dispose };
+  return { tensor, dispose };
+}
+
+function seedPrefixRewindSession(
+  sessionId: string,
+  modelPath: string,
+  cacheKey: string
+): ReturnType<typeof vi.fn> {
+  const { tensor, dispose } = makeFakeSessionTensor();
+  const session: HftPrefixRewindSession = {
+    mode: "prefix-rewind",
+    baseEntries: { "layer.0": tensor },
+    baseSeqLength: 0,
+    modelPath,
+    cacheKey,
+  };
+  setHftSession(sessionId, session);
+  return dispose;
+}
+
+describe("H1: LRU pipeline eviction sweeps hftSessions", () => {
+  afterEach(async () => {
+    await clearPipelineCache();
+  });
+
+  it("evicting a pipeline sweeps sessions tied to its cacheKey but not sibling variants", async () => {
+    const evictedKey = "A:pipeline:q4:webgpu:main";
+    const survivorKey = "A:pipeline:fp32:wasm:main";
+
+    const evictedPipelineDispose = seedPipeline(evictedKey);
+    seedPipeline(survivorKey);
+    // Filler entries so the cache mirrors real conditions when eviction
+    // fires — the sweep must not depend on any particular cache size.
+    for (let i = 0; i < 2; i++) seedPipeline(`filler:${i}`);
+
+    const evictedSessionId = "convo:1";
+    const survivorSessionId = "convo:2";
+    const evictedSessionDispose = seedPrefixRewindSession(evictedSessionId, "A/model", evictedKey);
+    const survivorSessionDispose = seedPrefixRewindSession(
+      survivorSessionId,
+      "A/model",
+      survivorKey
+    );
+
+    const removed = await removeCachedPipeline(evictedKey);
+
+    expect(removed).toBe(true);
+    expect(evictedPipelineDispose).toHaveBeenCalledTimes(1);
+
+    // Evicted session gone with its tensors disposed.
+    expect(getHftSession(evictedSessionId)).toBeUndefined();
+    expect(evictedSessionDispose).toHaveBeenCalledTimes(1);
+
+    // Sibling variant untouched: same model_path, different cacheKey.
+    expect(getHftSession(survivorSessionId)).toBeDefined();
+    expect(survivorSessionDispose).not.toHaveBeenCalled();
+    expect(hasCachedPipeline(survivorKey)).toBe(true);
+  });
+
+  it("clearPipelineCache disposes every session", async () => {
+    seedPipeline("K1");
+    seedPipeline("K2");
+    const sess1 = seedPrefixRewindSession("s1", "A/model", "K1");
+    const sess2 = seedPrefixRewindSession("s2", "B/model", "K2");
+
+    await clearPipelineCache();
+
+    expect(sess1).toHaveBeenCalledTimes(1);
+    expect(sess2).toHaveBeenCalledTimes(1);
+    expect(getHftSession("s1")).toBeUndefined();
+    expect(getHftSession("s2")).toBeUndefined();
+    expect(pipelines.size).toBe(0);
   });
 });
