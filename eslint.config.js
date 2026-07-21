@@ -50,5 +50,38 @@ export default defineConfig(
       "@typescript-eslint/no-explicit-any": "off",
       "react/react-in-jsx-scope": "off",
     },
+  },
+  {
+    // `*_JobRunFns.ts` files execute inside workers, which have an isolated
+    // runtime with their own `globalServiceRegistry`. Importing main-thread-only
+    // state (the global service registry or credential stores) resolves against a
+    // different, empty registry at runtime. Resolve such state in the task class on
+    // the main thread and pass it through the serialized job input instead.
+    files: ["**/*_JobRunFns.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@workglow/util",
+              importNames: [
+                "globalServiceRegistry",
+                "getGlobalCredentialStore",
+                "setGlobalCredentialStore",
+              ],
+              message:
+                "Main-thread-only state is unavailable in workers. Resolve it in the task class (e.g. AiTask.getJobInput()) and pass it through the serialized job input.",
+            },
+            {
+              name: "@workglow/util/worker",
+              importNames: ["globalServiceRegistry"],
+              message:
+                "Main-thread-only state is unavailable in workers. Resolve it in the task class (e.g. AiTask.getJobInput()) and pass it through the serialized job input.",
+            },
+          ],
+        },
+      ],
+    },
   }
 );
