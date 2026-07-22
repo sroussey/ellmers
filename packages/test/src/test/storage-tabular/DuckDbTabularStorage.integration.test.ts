@@ -17,6 +17,7 @@ import {
   VectorItemPrimaryKeyNames,
   VectorItemSchema,
 } from "../../contract/tabular-storage/runTabularStorageContract";
+import { runSqlBulkPutTests } from "./genericSqlBulkPutTests";
 import {
   AllTypesPrimaryKeyNames,
   AllTypesSchema,
@@ -80,6 +81,17 @@ describe("DuckDbTabularStorage", () => {
         UuidPrimaryKeyNames
       )
   );
+
+  runSqlBulkPutTests(async () => {
+    const repo = new DuckDbTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      ":memory:",
+      `bulk_sql_test_${uuid4().replace(/-/g, "_")}`,
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+    await repo.setupDatabase();
+    return repo;
+  });
 
   runTabularStorageContract({
     name: "DuckDbTabularStorage",

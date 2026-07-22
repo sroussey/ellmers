@@ -14,6 +14,7 @@ import {
   VectorItemPrimaryKeyNames,
   VectorItemSchema,
 } from "../../contract/tabular-storage/runTabularStorageContract";
+import { runSqlBulkPutTests } from "./genericSqlBulkPutTests";
 import {
   AllTypesPrimaryKeyNames,
   AllTypesSchema,
@@ -78,6 +79,17 @@ describe("SqliteTabularStorage", async () => {
         UuidPrimaryKeyNames
       )
   );
+
+  runSqlBulkPutTests(async () => {
+    const repo = new SqliteTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      ":memory:",
+      `bulk_sql_test_${uuid4().replace(/-/g, "_")}`,
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+    await repo.setupDatabase();
+    return repo;
+  });
 
   runTabularStorageContract({
     name: "SqliteTabularStorage",

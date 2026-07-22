@@ -16,6 +16,7 @@ import {
   VectorItemPrimaryKeyNames,
   VectorItemSchema,
 } from "../../contract/tabular-storage/runTabularStorageContract";
+import { runSqlBulkPutTests } from "./genericSqlBulkPutTests";
 import {
   AllTypesPrimaryKeyNames,
   AllTypesSchema,
@@ -89,6 +90,17 @@ describe("PostgresTabularStorage", () => {
         UuidPrimaryKeyNames
       )
   );
+
+  runSqlBulkPutTests(async () => {
+    const repo = new PostgresTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      db,
+      `bulk_sql_test_${uuid4().replace(/-/g, "_")}`,
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+    await repo.setupDatabase();
+    return repo;
+  });
 
   it("rejects adversarial page orderBy before executing SQL", async () => {
     const storage = new PostgresTabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>(
