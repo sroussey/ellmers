@@ -433,6 +433,7 @@ export class AiTask<
       }
       return input;
     }
+    const narrowed = { ...input };
     const modelTaskProperties = Object.entries<JsonSchema>(
       (inputSchema.properties || {}) as Record<string, JsonSchema>
     ).filter(([, schema]) => modelSemanticFromPropertySchema(schema)?.startsWith("model:"));
@@ -447,15 +448,15 @@ export class AiTask<
         if (typeof requestedModel === "string") {
           const found = await modelRepo.findByName(requestedModel);
           if (!found || !modelMeetsRequires(found, requires)) {
-            (input as any)[key] = undefined;
+            (narrowed as any)[key] = undefined;
           }
         } else if (typeof requestedModel === "object" && requestedModel !== null) {
           if (!modelMeetsRequires(requestedModel as ModelConfig, requires)) {
-            (input as any)[key] = undefined;
+            (narrowed as any)[key] = undefined;
           }
         }
       }
     }
-    return input;
+    return narrowed;
   }
 }
