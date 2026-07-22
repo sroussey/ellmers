@@ -4,45 +4,157 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, it } from "vitest";
+import { _testOnly } from "@workglow/google-gemini/ai";
+import { describe, expect, it, vi } from "vitest";
 
-// Plan C — Gemini NOT_FOUND matcher two-tier — needs
-// `providers/google-gemini/src/ai/common/Gemini_CachedContentFallback.ts`, which
-// only exists on the `ai-provider-cache-checkpoints` feature branch. Once the
-// checkpoint plumbing lands on `main` this suite must:
-//
-//   1. Assert the structured NOT_FOUND matcher consults `err.details` /
-//      `err.error.details` for a `ResourceInfo`-shaped entry, treating a
-//      `cachedContents/…` prefix as a positive and any other prefix (models/,
-//      files/, tunedModels/, …) as a negative.
-//   2. Confirm the fallback path when the response has no structured details
-//      (caller has gated on `useCachedContent && checkpointId`).
-//   3. Extend the message-only fallback to accept the reversed clause order and
-//      the widened wording (`expired|stale|removed|deleted|no longer exists`)
-//      within the `{0,120}` distance.
-//   4. Cover the negative cases: model 404 with `ResourceInfo.resourceName =
-//      "models/…"`, cache 404 gated at the caller level, and the existing nine
-//      message-only negatives that the current matcher already rejects.
-//
-// Landing this before the fallback file exists on `main` would fail resolution.
-describe.skip("TODO — Plan C: Gemini NOT_FOUND matcher two-tier", () => {
-  it("cachedContents ResourceInfo → cache-not-found (positive)", () => {
-    // See TODO block above.
+const { isGeminiCachedContentNotFoundError, generateGeminiStreamWithCacheFallback } = _testOnly;
+
+describe("isGeminiCachedContentNotFoundError", () => {
+  describe("true — scoped CachedContent NOT_FOUND", () => {
+    it.each([
+      [
+        "status 404 with cachedContents/… mention",
+        { status: 404, message: "CachedContent 'cachedContents/abc' not found" },
+      ],
+      [
+        "code NOT_FOUND with cachedContent mention",
+        { code: "NOT_FOUND", message: "cachedContent handle expired" },
+      ],
+      [
+        "nested error.status NOT_FOUND with resource path",
+        { error: { status: "NOT_FOUND" }, message: "cachedContents/xyz does not exist" },
+      ],
+      [
+        "status 404 with resource wording",
+        { status: 404, message: "The requested cachedContent resource was not found." },
+      ],
+      [
+        "nested error.code 404 with cachedContents/ path",
+        { error: { code: 404 }, message: "resource cachedContents/abc-123 not found" },
+      ],
+      [
+        "status NOT_FOUND string with cachedContent",
+        { status: "NOT_FOUND", message: "cachedContent NOT_FOUND" },
+      ],
+    ])("returns true for %s", (_label, err) => {
+      expect(isGeminiCachedContentNotFoundError(err)).toBe(true);
+    });
   });
 
-  it("models/... ResourceInfo → not cache-not-found (negative)", () => {
-    // See TODO block above.
+  describe("false — regression cases the old matcher over-triggered on", () => {
+    it.each([
+      [
+        "model-not-found (status 400)",
+        {
+          status: 400,
+          message: "The requested model 'gemini-x-nope' was not found or is not available.",
+        },
+      ],
+      ["file-not-found part", { status: 400, message: "File 'files/abc' was not found." }],
+      [
+        "tokenizer / function-declaration not-found",
+        { message: "Function name 'foo' not found in declarations." },
+      ],
+      [
+        "404 on unrelated URL (no cache mention)",
+        {
+          status: 404,
+          message: "The requested URL /v1beta/models/gemini-2.5-pro:generateContent was not found.",
+        },
+      ],
+      ["bare NOT_FOUND with no scope", new Error("NOT_FOUND")],
+      ["null", null],
+      ["undefined", undefined],
+      ["plain string", "not found"],
+      ["message-only 'not found' with no cache mention", { message: "resource not found" }],
+    ])("returns false for %s", (_label, err) => {
+      expect(isGeminiCachedContentNotFoundError(err)).toBe(false);
+    });
+  });
+});
+
+describe("generateGeminiStreamWithCacheFallback", () => {
+  it("evicts + retries once on a scoped CachedContent NOT_FOUND", async () => {
+    // deleteGeminiCachedContent is a no-op when the store has no entry (we
+    // never seed one), so no need to mock the cache-store seam here — the
+    // test's contract is on the buildRequest / runStream call pattern.
+    const runStream = vi
+      .fn<[Record<string, unknown>], Promise<string>>()
+      .mockImplementationOnce(async () => {
+        throw { status: 404, message: "cachedContents/chk-A not found" };
+      })
+      .mockImplementationOnce(async () => "retry-ok");
+    const buildRequest = vi
+      .fn<[boolean], Record<string, unknown>>()
+      .mockImplementation((useCache) => ({ useCache }));
+
+    const result = await generateGeminiStreamWithCacheFallback({
+      useCachedContent: true,
+      checkpointId: "chk-A",
+      buildRequest,
+      runStream,
+    });
+
+    expect(result).toBe("retry-ok");
+    expect(buildRequest).toHaveBeenCalledTimes(2);
+    expect(buildRequest).toHaveBeenNthCalledWith(1, true);
+    expect(buildRequest).toHaveBeenNthCalledWith(2, false);
+    expect(runStream).toHaveBeenCalledTimes(2);
   });
 
-  it("structured NOT_FOUND without details, caller-gated → cache-not-found", () => {
-    // See TODO block above.
+  it("does NOT evict or retry on a non-CachedContent NOT_FOUND (model-not-found)", async () => {
+    const runStream = vi.fn(async () => {
+      throw { status: 400, message: "The requested model 'gemini-x-nope' was not found." };
+    });
+    const buildRequest = vi.fn((useCache: boolean) => ({ useCache }));
+
+    await expect(
+      generateGeminiStreamWithCacheFallback({
+        useCachedContent: true,
+        checkpointId: "chk-A",
+        buildRequest,
+        runStream,
+      })
+    ).rejects.toMatchObject({ status: 400 });
+
+    expect(buildRequest).toHaveBeenCalledTimes(1);
+    expect(runStream).toHaveBeenCalledTimes(1);
   });
 
-  it("widened message wording within {0,120} distance → cache-not-found", () => {
-    // See TODO block above.
+  it("does NOT evict or retry when useCachedContent is false, even on a cache-scoped NOT_FOUND", async () => {
+    const runStream = vi.fn(async () => {
+      throw { status: 404, message: "cachedContents/chk-A not found" };
+    });
+    const buildRequest = vi.fn((useCache: boolean) => ({ useCache }));
+
+    await expect(
+      generateGeminiStreamWithCacheFallback({
+        useCachedContent: false,
+        checkpointId: "chk-A",
+        buildRequest,
+        runStream,
+      })
+    ).rejects.toMatchObject({ status: 404 });
+
+    expect(buildRequest).toHaveBeenCalledTimes(1);
+    expect(runStream).toHaveBeenCalledTimes(1);
   });
 
-  it("existing negative wording set still rejected", () => {
-    // See TODO block above.
+  it("does NOT evict or retry when no checkpointId is supplied", async () => {
+    const runStream = vi.fn(async () => {
+      throw { status: 404, message: "cachedContents/mystery not found" };
+    });
+    const buildRequest = vi.fn((useCache: boolean) => ({ useCache }));
+
+    await expect(
+      generateGeminiStreamWithCacheFallback({
+        useCachedContent: true,
+        checkpointId: undefined,
+        buildRequest,
+        runStream,
+      })
+    ).rejects.toMatchObject({ status: 404 });
+
+    expect(runStream).toHaveBeenCalledTimes(1);
   });
 });

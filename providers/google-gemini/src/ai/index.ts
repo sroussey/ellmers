@@ -13,6 +13,10 @@ export * from "./common/Gemini_ModelSearch";
 export * from "./registerGemini";
 
 import { GEMINI_RUN_FN_SPECS } from "./common/Gemini_Capabilities";
+import {
+  generateGeminiStreamWithCacheFallback,
+  isGeminiCachedContentNotFoundError,
+} from "./common/Gemini_CachedContentFallback";
 import { _testOnly as clientTestOnly } from "./common/Gemini_Client";
 import {
   _cacheStoreTestOnly,
@@ -41,4 +45,6 @@ export const _testOnly = {
   setGeminiCachedContent,
   getGeminiCachedContent,
   cacheStoreTestOnly: _cacheStoreTestOnly,
+  isGeminiCachedContentNotFoundError,
+  generateGeminiStreamWithCacheFallback,
 } as const;
