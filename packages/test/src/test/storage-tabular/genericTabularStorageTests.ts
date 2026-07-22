@@ -260,6 +260,43 @@ export function runGenericTabularStorageTests(
       }
     });
 
+    it("should store and return a batch larger than the SQL parameter limit in order", async () => {
+      const count = 2000;
+      const entities = Array.from({ length: count }, (_, i) => ({
+        name: `bulk${i}`,
+        type: `t${i % 7}`,
+        option: `v${i}`,
+        success: i % 2 === 0,
+      }));
+
+      const returned = await repository.putBulk(entities);
+
+      expect(returned).toHaveLength(count);
+      for (let i = 0; i < count; i++) {
+        expect(returned[i].name).toEqual(entities[i].name);
+        expect(returned[i].type).toEqual(entities[i].type);
+        expect(returned[i].option).toEqual(entities[i].option);
+      }
+      const stored = await repository.get({ name: "bulk1999", type: "t4" });
+      expect(stored?.option).toEqual("v1999");
+    });
+
+    it("should apply last-write-wins for duplicate primary keys within one putBulk batch", async () => {
+      const entities = [
+        { name: "dup", type: "k", option: "first", success: true },
+        { name: "other", type: "k", option: "kept", success: true },
+        { name: "dup", type: "k", option: "last", success: false },
+      ];
+
+      await repository.putBulk(entities);
+
+      const stored = await repository.get({ name: "dup", type: "k" });
+      expect(stored?.option).toEqual("last");
+      expect(!!stored?.success).toEqual(false);
+      const other = await repository.get({ name: "other", type: "k" });
+      expect(other?.option).toEqual("kept");
+    });
+
     describe("withTransaction", () => {
       it("should commit writes performed inside a successful transaction", async () => {
         await repository.withTransaction(async (tx) => {
