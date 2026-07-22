@@ -283,12 +283,14 @@ export interface ITabularStorage<
    * **Caveat for integer auto-generated keys on remote backends.** Supplying
    * inputs that omit a backend-assigned integer-autoincrement primary key
    * leaves the wrapper with no key to match a returned row to a request row
-   * (UUIDs are filled in client-side, so they don't have this problem). Such
-   * inputs fall back to the server's response order, which Postgres does not
-   * formally contract for `INSERT ... RETURNING`. The fallback is reliable in
-   * practice but if `result[i] === values[i]` matters for correctness, supply
-   * the primary key on every input — for example by minting it client-side
-   * — or split the call into per-row `put`s.
+   * (SQLite and DuckDB mint UUIDs client-side, so those don't have this
+   * problem; Postgres server-fills UUID keys, so a UUID key omitted from the
+   * input also falls back to response order). Such inputs fall back to the
+   * server's response order, which Postgres does not formally contract for
+   * `INSERT ... RETURNING`. The fallback is reliable in practice but if
+   * `result[i] === values[i]` matters for correctness, supply the primary key
+   * on every input — for example by minting it client-side — or split the
+   * call into per-row `put`s.
    *
    * **Duplicate keys within one batch.** When the same primary key appears more
    * than once in `values`, the last occurrence wins and every position sharing

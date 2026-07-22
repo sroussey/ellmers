@@ -157,6 +157,20 @@ describe("DuckDbTabularStorage regressions", () => {
     expect(await storage.size()).toBe(1);
   });
 
+  it("putBulk re-put of an existing row on an all-primary-key table is an upsert, not an error", async () => {
+    const storage = new DuckDbTabularStorage<typeof JunctionSchema, readonly ["a", "b"]>(
+      ":memory:",
+      "junction_bulk",
+      JunctionSchema,
+      ["a", "b"] as const
+    );
+    await storage.setupDatabase();
+    await storage.putBulk([{ a: "x", b: "y" }]);
+    const again = await storage.putBulk([{ a: "x", b: "y" }]);
+    expect(again).toEqual([{ a: "x", b: "y" }]);
+    expect(await storage.size()).toBe(1);
+  });
+
   it("two storages opened with the same file path share one database", async () => {
     const path = join(tempDir, "shared.duckdb");
     const s1 = new DuckDbTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(

@@ -615,8 +615,8 @@ export class DuckDbTabularStorage<
       insertInto: (cols) => `INSERT INTO "${table}" (${cols})`,
       conflictClause: (insertColumns) => {
         const nonPk = insertColumns.filter((c) => !pkColumns.includes(c));
-        if (nonPk.length === 0) return "";
-        const assignments = nonPk.map((c) => `"${c}" = excluded."${c}"`).join(", ");
+        const cols = nonPk.length > 0 ? nonPk : pkColumns;
+        const assignments = cols.map((c) => `"${c}" = excluded."${c}"`).join(", ");
         return `ON CONFLICT (${pkList}) DO UPDATE SET ${assignments}`;
       },
       mintUuidClientSide: true,

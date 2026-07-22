@@ -7,6 +7,7 @@
 import { Sqlite, SqliteTabularStorage } from "@workglow/sqlite/storage";
 import { StorageValidationError } from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
+import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 import {
@@ -323,5 +324,28 @@ describe("SqliteTabularStorage.withTransaction", () => {
     expect(await storage.get({ name: "tx-row", type: "x" })).toBeUndefined();
     const ext = await storage.get({ name: "external-row", type: "x" });
     expect(ext?.option).toEqual("external");
+  });
+});
+
+describe("SqliteTabularStorage regressions", () => {
+  const JunctionSchema = {
+    type: "object",
+    properties: { a: { type: "string" }, b: { type: "string" } },
+    required: ["a", "b"],
+    additionalProperties: false,
+  } as const satisfies DataPortSchemaObject;
+
+  it("putBulk re-put of an existing row on an all-primary-key table is an upsert, not an error", async () => {
+    const storage = new SqliteTabularStorage<typeof JunctionSchema, readonly ["a", "b"]>(
+      ":memory:",
+      `junction_bulk_${uuid4().replace(/-/g, "_")}`,
+      JunctionSchema,
+      ["a", "b"] as const
+    );
+    await storage.setupDatabase();
+    await storage.putBulk([{ a: "x", b: "y" }]);
+    const again = await storage.putBulk([{ a: "x", b: "y" }]);
+    expect(again).toEqual([{ a: "x", b: "y" }]);
+    expect(await storage.size()).toBe(1);
   });
 });
