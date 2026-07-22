@@ -377,3 +377,135 @@ describe("SqliteTabularStorage regressions", () => {
     expect(await storage.size()).toBe(1);
   });
 });
+
+describe("SqliteTabularStorage putBulk across shared connection", () => {
+  const SharedSchema = {
+    type: "object",
+    properties: {
+      id: { type: "integer" },
+      val: { type: "string" },
+    },
+    required: ["id", "val"],
+    additionalProperties: false,
+  } as const satisfies DataPortSchemaObject;
+
+  async function makeTwoOnSharedConnection() {
+    await Sqlite.init();
+    const db = new Sqlite.Database(":memory:");
+    const tableA = `A_${uuid4().replace(/-/g, "_")}`;
+    const tableB = `B_${uuid4().replace(/-/g, "_")}`;
+    const repoA = new SqliteTabularStorage<typeof SharedSchema, readonly ["id"]>(
+      db,
+      tableA,
+      SharedSchema,
+      ["id"] as const
+    );
+    const repoB = new SqliteTabularStorage<typeof SharedSchema, readonly ["id"]>(
+      db,
+      tableB,
+      SharedSchema,
+      ["id"] as const
+    );
+    await repoA.setupDatabase();
+    await repoB.setupDatabase();
+    return { db, repoA, repoB };
+  }
+
+  it("sibling putBulk survives when the other rolls back on the shared connection", async () => {
+    const { repoA, repoB } = await makeTwoOnSharedConnection();
+
+    // Multi-chunk batch (SQLite bulk dialect chunks by 900 params ÷ per-row
+    // params — with 2 columns per row, 2000 rows crosses at least 4 chunks
+    // and drops microtask yields between each chunk).
+    const largeBatch = Array.from({ length: 2000 }, (_, i) => ({ id: i, val: `a${i}` }));
+    const smallBatch = [
+      { id: 10001, val: "b1" },
+      { id: 10002, val: "b2" },
+      { id: 10003, val: "b3" },
+    ];
+
+    // Force A to throw AFTER its BEGIN but BEFORE its own writes commit — the
+    // spy replaces the shared runBulkPut engine, so `_putBulkInternal`'s BEGIN
+    // has already executed on the connection when it rejects.
+    const runBulkPutSpy = vi
+      .spyOn(
+        repoA as unknown as { runBulkPut: (...a: unknown[]) => Promise<unknown> },
+        "runBulkPut"
+      )
+      .mockImplementation(async () => {
+        // Yield a microtask so a sibling storage on the same connection has a
+        // chance to slip in between A's BEGIN and A's throw (which is the very
+        // window the connection-mutex fix has to close).
+        await Promise.resolve();
+        await Promise.resolve();
+        throw new Error("boom-A");
+      });
+
+    try {
+      const [aResult, bResult] = await Promise.allSettled([
+        repoA.putBulk(largeBatch),
+        repoB.putBulk(smallBatch),
+      ]);
+
+      expect(aResult.status).toBe("rejected");
+      if (aResult.status === "rejected") {
+        expect((aResult.reason as Error).message).toContain("boom-A");
+      }
+      expect(bResult.status).toBe("fulfilled");
+
+      // The invariant: without the connection-scoped lock, B's writes would
+      // execute inside A's open transaction and vanish when A rolls back. The
+      // fix serializes A's BEGIN..ROLLBACK bracket against B, so B's own
+      // transaction commits independently and its rows survive.
+      expect(await repoB.size()).toBe(smallBatch.length);
+      expect(await repoA.size()).toBe(0);
+    } finally {
+      runBulkPutSpy.mockRestore();
+    }
+  });
+
+  it("does not emit put events for rows that were rolled back on the shared connection", async () => {
+    const { repoA, repoB } = await makeTwoOnSharedConnection();
+
+    const aPuts: Array<{ id: number; val: string }> = [];
+    const bPuts: Array<{ id: number; val: string }> = [];
+    repoA.on("put", (entity) => aPuts.push(entity));
+    repoB.on("put", (entity) => bPuts.push(entity));
+
+    const largeBatch = Array.from({ length: 2000 }, (_, i) => ({ id: i, val: `a${i}` }));
+    const smallBatch = [
+      { id: 20001, val: "b1" },
+      { id: 20002, val: "b2" },
+    ];
+
+    const runBulkPutSpy = vi
+      .spyOn(
+        repoA as unknown as { runBulkPut: (...a: unknown[]) => Promise<unknown> },
+        "runBulkPut"
+      )
+      .mockImplementation(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        throw new Error("boom-A");
+      });
+
+    try {
+      await Promise.allSettled([repoA.putBulk(largeBatch), repoB.putBulk(smallBatch)]);
+    } finally {
+      runBulkPutSpy.mockRestore();
+    }
+
+    // A rolled back — no put events on A. (putBulk's catch path emits
+    // `rollback`, not `put`.)
+    expect(aPuts).toHaveLength(0);
+
+    // B's put events must match the rows actually persisted. Without the
+    // connection lock, B would emit put events for rows that were then
+    // silently rolled back with A, breaking this invariant.
+    const surviving = new Set((await repoB.getAll())?.map((r) => (r as { id: number }).id) ?? []);
+    for (const emitted of bPuts) {
+      expect(surviving.has(emitted.id)).toBe(true);
+    }
+    expect(bPuts.length).toBe(surviving.size);
+  });
+});

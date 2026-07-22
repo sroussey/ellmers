@@ -485,27 +485,37 @@ export class SqliteAiVectorStorage<
       return super._putBulkInternal(entities);
     }
 
-    const updatedEntities: Entity[] = [];
-    // better-sqlite3 / bun:sqlite expose `inTransaction` as a runtime getter
-    // on the underlying handle; the canonical API doesn't surface it. When it's
-    // present and true (e.g. an outer `withTransaction` BEGIN is open and the
-    // proxy routed `tx.putBulk` here), iterate rows directly so we don't open a
-    // nested SQLite transaction. Browser-WASM has no such flag and never wraps
-    // mutating calls in `withTransaction` via the Proxy, so falling through to
-    // the inner `db.transaction(...)` is safe there.
-    const dbWithFlag = this.database as unknown as { readonly inTransaction?: boolean };
-    if (dbWithFlag.inTransaction) {
-      for (const item of entities) {
-        updatedEntities.push(this.executeVectorPutSync(item, false));
-      }
-    } else {
-      const transaction = this.database.transaction((items: any[]) => {
-        for (const item of items) {
-          updatedEntities.push(this.executeVectorPutSync(item, false));
+    // Route on the parent's per-instance `inTransaction` flag, not the
+    // connection-global `db.inTransaction`: the driver flag would report true
+    // for a sibling storage's transaction on the same handle and let this
+    // batch land inside that foreign transaction. `this.inTransaction` (or
+    // the `createTxView` proxy's override of it) only reports true when the
+    // outer `withTransaction` for THIS instance is in flight.
+    const alreadyInTx = this.inTransaction;
+    const runBatch = (): Entity[] => {
+      const updated: Entity[] = [];
+      if (alreadyInTx) {
+        for (const item of entities) {
+          updated.push(this.executeVectorPutSync(item, false));
         }
-      });
-      transaction(entities);
-    }
+      } else {
+        const transaction = this.database.transaction((items: any[]) => {
+          for (const item of items) {
+            updated.push(this.executeVectorPutSync(item, false));
+          }
+        });
+        transaction(entities);
+      }
+      return updated;
+    };
+
+    // When we own the BEGIN/COMMIT (via `db.transaction`), serialize on the
+    // connection-scoped mutex so another storage sharing this handle cannot
+    // interleave writes into our transaction. When already inside an outer
+    // `withTransaction`, that transaction already holds the connection lock.
+    const updatedEntities = alreadyInTx
+      ? runBatch()
+      : await this.connectionMutex(async () => runBatch());
 
     for (const entity of updatedEntities) this.emitPut(entity);
     return updatedEntities;

@@ -46,6 +46,20 @@ export const SQLITE_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
 );
 
 /**
+ * Promise-chain mutex shared by every {@link SqliteTabularStorage} that opens
+ * on the same underlying `Sqlite.Database`. When two storage instances (e.g.
+ * on different tables) share one connection, the per-instance mutex only
+ * serializes calls within a single instance; without this connection-scoped
+ * lock, one instance's `putBulk` could interleave chunks between another
+ * instance's `BEGIN` and `COMMIT` on the same handle, executing rows inside
+ * a foreign transaction that later rolls back and silently losing them.
+ *
+ * Keyed by the `Sqlite.Database` handle so entries drop when every storage
+ * holding a reference is collected.
+ */
+const CONNECTION_MUTEX_CHAINS = new WeakMap<Sqlite.Database, Promise<void>>();
+
+/**
  * A SQLite-based key-value repository implementation.
  * @template Schema - The schema definition for the entity
  * @template PrimaryKeyNames - Array of property names that form the primary key
@@ -761,28 +775,48 @@ export class SqliteTabularStorage<
     };
 
     // Manual BEGIN/COMMIT (not db.transaction, whose body must be sync) keeps
-    // every chunk in one atomic unit. All statement execution is synchronous
-    // sqlite work, so no other writer interleaves between BEGIN and COMMIT.
-    const alreadyInTx = (this.db as unknown as { inTransaction?: boolean }).inTransaction === true;
-    if (!alreadyInTx) this.db.exec("BEGIN");
-    let result: { aligned: Entity[]; distinct: Entity[] };
-    try {
-      result = await this.runBulkPut(entities, dialect, 900, runChunk);
-      if (!alreadyInTx) this.db.exec("COMMIT");
-    } catch (error) {
-      if (!alreadyInTx) {
+    // every chunk in one atomic unit. `runBulkPut` awaits between chunks, and
+    // better-sqlite3's driver-level `inTransaction` flag is CONNECTION-global,
+    // so a second storage on the same handle would see `true` during our
+    // inter-chunk gap and skip its own BEGIN/COMMIT — its rows would land
+    // inside our transaction and vanish if we rolled back. `this.inTransaction`
+    // is per-instance (only true when THIS instance is between BEGIN and
+    // COMMIT/ROLLBACK, either via `withTransaction` or a proxy hop through
+    // `createTxView`), and the connection-scoped mutex serializes the whole
+    // BEGIN..COMMIT bracket against every other storage on the same handle.
+    // The proxy tx path skips both: `withTransaction` already holds the
+    // connection lock, and its own BEGIN is what we are re-entering.
+    const alreadyInTx = this.inTransaction;
+    if (alreadyInTx) {
+      let result: { aligned: Entity[]; distinct: Entity[] };
+      try {
+        result = await this.runBulkPut(entities, dialect, 900, runChunk);
+      } catch (error) {
+        safeEmit(this.events, "rollback", { op: "putBulk", error, ids: [] });
+        throw error;
+      }
+      for (const entity of result.distinct) this.emitPut(entity);
+      return result.aligned;
+    }
+
+    return this.connectionMutex(async () => {
+      this.db.exec("BEGIN");
+      let result: { aligned: Entity[]; distinct: Entity[] };
+      try {
+        result = await this.runBulkPut(entities, dialect, 900, runChunk);
+        this.db.exec("COMMIT");
+      } catch (error) {
         try {
           this.db.exec("ROLLBACK");
         } catch {
           // prefer the original error if rollback fails
         }
+        safeEmit(this.events, "rollback", { op: "putBulk", error, ids: [] });
+        throw error;
       }
-      safeEmit(this.events, "rollback", { op: "putBulk", error, ids: [] });
-      throw error;
-    }
-
-    for (const entity of result.distinct) this.emitPut(entity);
-    return result.aligned;
+      for (const entity of result.distinct) this.emitPut(entity);
+      return result.aligned;
+    });
   }
 
   /**
@@ -808,6 +842,41 @@ export class SqliteTabularStorage<
     this.mutexChain = new Promise<void>((resolve) => {
       release = resolve;
     });
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+
+  /**
+   * Connection-scoped promise-chain mutex. Wraps a section of work that must
+   * not interleave with anything else running on the same underlying
+   * `Sqlite.Database` handle — specifically, the `BEGIN`/`COMMIT` bracket in
+   * {@link _putBulkInternal} and {@link withTransaction}. Two
+   * {@link SqliteTabularStorage} instances sharing one connection each have
+   * their own per-instance {@link mutex}, so without this lock a second
+   * instance's `putBulk` could execute its rows inside the first instance's
+   * open transaction (better-sqlite3's driver-level `db.inTransaction`
+   * reports true across ALL instances on that handle), then lose those rows
+   * silently when the first transaction rolls back.
+   *
+   * The chain lives in a module-level {@link WeakMap} keyed by `this.db`, so
+   * the entry is eligible for GC as soon as the last storage referencing
+   * that database handle is collected.
+   *
+   * Always take the instance mutex first and the connection mutex second so
+   * two instances on one connection cannot deadlock — every caller acquires
+   * the two locks in the same order.
+   */
+  protected async connectionMutex<T>(fn: () => Promise<T>): Promise<T> {
+    const prev = CONNECTION_MUTEX_CHAINS.get(this.db) ?? Promise.resolve();
+    let release!: () => void;
+    const next = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    CONNECTION_MUTEX_CHAINS.set(this.db, next);
     await prev;
     try {
       return await fn();
@@ -843,6 +912,13 @@ export class SqliteTabularStorage<
             );
           };
         }
+        // `_putBulkInternal` keys off `this.inTransaction` to skip its own
+        // BEGIN/COMMIT and connection lock — the outer `withTransaction`
+        // already owns both. The parent's `inTransaction` field is set on
+        // the real instance during `withTransaction`, but routing through
+        // the proxy (which is what `tx.putBulk(...)` does) reads THIS
+        // property; return true so the tx path takes the nested branch.
+        if (prop === "inTransaction") return true;
         if (prop === "emitPut") {
           return (entity: Entity) => deferredPutEvents.push(entity);
         }
@@ -871,25 +947,42 @@ export class SqliteTabularStorage<
    * because `fn` is async — better-sqlite3's transaction wrapper requires a
    * synchronous body.
    *
-   * Concurrent ops on the same storage instance from *outside* `fn` queue
-   * on this storage's mutex until the transaction commits or rolls back, so
-   * unrelated work cannot accidentally run inside the open transaction.
+   * Two levels of serialization:
+   *   - The per-instance mutex holds off concurrent ops on *this* storage
+   *     from *outside* `fn` until the transaction commits or rolls back, so
+   *     unrelated work cannot accidentally run inside the open transaction.
+   *   - The connection-scoped {@link connectionMutex} holds off writes from
+   *     *other* {@link SqliteTabularStorage} instances that share the same
+   *     `Sqlite.Database` handle for the same duration — without it a
+   *     sibling's `putBulk` on a different table would execute rows inside
+   *     our transaction and roll back silently when `fn` throws.
+   *
    * The `tx` handle passed to `fn` is a Proxy that routes back to internal
    * (unlocked) implementations, so calls *through* `tx` inside `fn` do not
-   * deadlock against the mutex.
+   * deadlock against either mutex.
    *
    * Nested `withTransaction` calls on `tx` throw rather than reusing the
    * outer transaction implicitly. Use {@link Sqlite.Database} `SAVEPOINT`s
    * directly if you need nested rollback boundaries.
    */
   /**
-   * True while the parent instance is between `BEGIN` and `COMMIT`/`ROLLBACK`.
-   * Used only to fail fast when `fn` captures the *original* storage instead
-   * of the `tx` handle and tries to recursively call `withTransaction` —
-   * that would deadlock against its own mutex. Calls routed through `tx`
-   * hit the proxy's `withTransaction` override before reaching here.
+   * True while THIS instance is between `BEGIN` and `COMMIT`/`ROLLBACK`
+   * (via `withTransaction`). Used by:
+   *   - `withTransaction` itself, to fail fast on recursive calls that
+   *     captured the *original* storage instead of the `tx` handle — those
+   *     would deadlock against the mutex the outer call is already holding.
+   *   - {@link _putBulkInternal}, to skip its own BEGIN/COMMIT and
+   *     connection lock when called via the `tx` proxy (which overrides the
+   *     property to report `true`), because the outer `withTransaction`
+   *     already owns both.
+   *
+   * `protected` so subclass overrides of `_putBulkInternal` (e.g.
+   * {@link SqliteAiVectorStorage}) can key on the same per-instance flag
+   * instead of falling back to better-sqlite3's connection-global
+   * `db.inTransaction`, which would report true for a sibling storage's
+   * open transaction on the same handle.
    */
-  private inTransaction: boolean = false;
+  protected inTransaction: boolean = false;
 
   override async withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
     if (this.inTransaction) {
@@ -900,27 +993,36 @@ export class SqliteTabularStorage<
     }
     return this.mutex(async () => {
       const deferredPutEvents: Entity[] = [];
-      this.inTransaction = true;
-      try {
-        this.db.exec("BEGIN");
-        let result: T;
+      // Instance-mutex-first / connection-mutex-second so two instances
+      // sharing one `Sqlite.Database` cannot deadlock — every caller acquires
+      // the two locks in the same order. Holding the connection mutex across
+      // the whole BEGIN/`fn`/COMMIT|ROLLBACK bracket keeps other storages on
+      // the same handle from writing between our BEGIN and COMMIT (their
+      // writes would otherwise land inside our transaction and roll back
+      // silently if `fn` throws).
+      return this.connectionMutex(async () => {
+        this.inTransaction = true;
         try {
-          result = await fn(this.createTxView(deferredPutEvents));
-          this.db.exec("COMMIT");
-        } catch (err) {
+          this.db.exec("BEGIN");
+          let result: T;
           try {
-            this.db.exec("ROLLBACK");
-          } catch {
-            // prefer the original error if rollback fails
+            result = await fn(this.createTxView(deferredPutEvents));
+            this.db.exec("COMMIT");
+          } catch (err) {
+            try {
+              this.db.exec("ROLLBACK");
+            } catch {
+              // prefer the original error if rollback fails
+            }
+            throw err;
           }
-          throw err;
+          // Flush deferred events only on commit success.
+          for (const entity of deferredPutEvents) safeEmit(this.events, "put", entity);
+          return result;
+        } finally {
+          this.inTransaction = false;
         }
-        // Flush deferred events only on commit success.
-        for (const entity of deferredPutEvents) safeEmit(this.events, "put", entity);
-        return result;
-      } finally {
-        this.inTransaction = false;
-      }
+      });
     });
   }
 
