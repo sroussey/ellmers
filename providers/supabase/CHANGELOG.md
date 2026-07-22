@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Bug Fixes
+
+#### supabase
+
+- `putBulk` now deduplicates duplicate primary keys within a batch
+  (last-write-wins) before its single upsert, returns the final committed row
+  for every duplicate position, and emits one `put` event per distinct
+  committed row.
+
 ## 0.3.26
 
 ## 0.3.25

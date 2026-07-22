@@ -289,6 +289,12 @@ export interface ITabularStorage<
    * practice but if `result[i] === values[i]` matters for correctness, supply
    * the primary key on every input — for example by minting it client-side
    * — or split the call into per-row `put`s.
+   *
+   * **Duplicate keys within one batch.** When the same primary key appears more
+   * than once in `values`, the last occurrence wins and every position sharing
+   * that key resolves to the single final committed row. SQL backends persist
+   * the batch in one statement per chunk; a `put` event fires once per distinct
+   * committed row.
    */
   putBulk(values: InsertType[]): Promise<Entity[]>;
   get(key: PrimaryKey): Promise<Entity | undefined>;

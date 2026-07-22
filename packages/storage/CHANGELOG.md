@@ -1,5 +1,18 @@
 # @workglow/storage
 
+## Unreleased
+
+### Refactors
+
+#### storage
+
+- `BaseSqlTabularStorage` now provides a shared multi-row bulk-insert engine
+  (`runBulkPut` / `buildBulkPutValues` / `BulkPutDialect`) used by the SQL
+  tabular backends. `putBulk` issues one `INSERT … VALUES (…),(…),… RETURNING *`
+  per chunk instead of one statement per row. Duplicate primary keys within a
+  batch are deduplicated last-wins; every duplicate position returns the final
+  committed row, and one `put` event fires per distinct committed row.
+
 ## 0.3.26
 
 ### Features
