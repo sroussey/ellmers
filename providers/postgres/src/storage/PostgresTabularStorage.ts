@@ -802,10 +802,10 @@ export class PostgresTabularStorage<
    * Postgres group the writes into a single commit with one fsync rather than
    * one per row.
    *
-   * Per-row UPSERT — instead of a multi-VALUES insert — keeps the
-   * auto-generated key policy and `RETURNING *` shape identical to {@link put}
-   * and stays correct when a batch mixes rows that include the auto-gen key
-   * with rows that omit it.
+   * Each chunk is written as one multi-row `INSERT … VALUES (…),(…),… ON
+   * CONFLICT … RETURNING *` built by the shared {@link runBulkPut} engine,
+   * which applies the auto-generated-key policy, deduplicates duplicate primary
+   * keys last-wins, and re-aligns the returned rows to input order.
    *
    * `put` events are deferred until after `COMMIT` so listeners do not see
    * rows that are about to roll back. When this call is nested inside a

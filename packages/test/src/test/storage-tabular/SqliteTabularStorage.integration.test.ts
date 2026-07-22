@@ -92,6 +92,34 @@ describe("SqliteTabularStorage", async () => {
     return repo;
   });
 
+  it("putBulk ignores client-supplied auto-generated keys under clientProvidedKeys 'never'", async () => {
+    const storage = new SqliteTabularStorage<
+      typeof AutoIncrementSchema,
+      typeof AutoIncrementPrimaryKeyNames
+    >(
+      ":memory:",
+      `never_bulk_${uuid4().replace(/-/g, "_")}`,
+      AutoIncrementSchema,
+      AutoIncrementPrimaryKeyNames,
+      [],
+      "never"
+    );
+    await storage.setupDatabase();
+
+    const returned = await storage.putBulk([
+      { id: 999, name: "a", email: "a@x" } as never,
+      { id: 999, name: "b", email: "b@x" } as never,
+    ]);
+
+    // Both client ids (999) are ignored; the database assigns distinct keys.
+    expect(returned).toHaveLength(2);
+    expect((returned[0] as { id: number }).id).not.toEqual(999);
+    expect((returned[1] as { id: number }).id).not.toEqual(999);
+    expect((returned[0] as { id: number }).id).not.toEqual((returned[1] as { id: number }).id);
+    expect(await storage.get({ id: 999 } as never)).toBeUndefined();
+    expect(await storage.size()).toEqual(2);
+  });
+
   runTabularStorageContract({
     name: "SqliteTabularStorage",
     createStorage: async () => {

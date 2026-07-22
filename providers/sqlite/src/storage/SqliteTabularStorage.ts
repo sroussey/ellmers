@@ -731,10 +731,10 @@ export class SqliteTabularStorage<
   /**
    * Stores multiple entities in a single SQL transaction.
    *
-   * Wrapping the per-row `INSERT OR REPLACE … RETURNING *` calls in
-   * {@link Sqlite.Database.transaction} collapses N fsyncs into one
-   * `COMMIT`, which is the dominant cost of SQLite writes — typically a
-   * 100×–1000× speedup over Promise-fanned individual inserts.
+   * Each chunk is written as one multi-row `INSERT … VALUES (…),(…),…
+   * RETURNING *` (built by the shared {@link runBulkPut} engine) inside a
+   * single `BEGIN`/`COMMIT`, collapsing N fsyncs into one `COMMIT` — the
+   * dominant cost of SQLite writes.
    *
    * `put` events are deferred until after the transaction commits so listeners
    * never observe rows that are about to roll back. When this call is nested

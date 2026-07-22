@@ -584,6 +584,14 @@ export abstract class BaseSqlTabularStorage<
       return { entity: { ...record, [keyName]: minted }, keyed: true };
     }
     // Server assigns (integer autoincrement, or Postgres UUID DEFAULT): unkeyed.
+    // Under "never" a client may still have supplied a value; drop it so the
+    // row binds DEFAULT and the server generates the key — matching single-row
+    // `put`, which ignores client values in this mode.
+    if (hasProvided) {
+      const stripped = { ...record };
+      delete stripped[keyName];
+      return { entity: stripped, keyed: false };
+    }
     return { entity: record, keyed: false };
   }
 
@@ -676,6 +684,8 @@ export abstract class BaseSqlTabularStorage<
     maxBulkParams: number,
     exec: (sql: string, params: ValueOptionType[]) => Promise<Entity[]>
   ): Promise<{ aligned: Entity[]; distinct: Entity[] }> {
+    if (entities.length === 0) return { aligned: [], distinct: [] };
+
     // 1. Resolve auto keys; a batch is keyed only if every row is keyed.
     const resolved = entities.map((e) => this.resolveBulkAutoKey(e, dialect));
     const keyed = resolved.every((r) => r.keyed);
