@@ -1,5 +1,15 @@
 # @workglow/tasks
 
+## 0.3.27
+
+### Chores
+
+- update package.json scripts to include use-source and use-dist commands
+
+### Updated Dependencies
+
+- `undici`: ^8.8.0
+
 ## 0.3.26
 
 ## 0.3.25

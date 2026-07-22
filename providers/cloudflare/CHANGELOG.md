@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.27
+
+### Chores
+
+- update package.json scripts to include use-source and use-dist commands
+
+### Updated Dependencies
+
+- `@cloudflare/workers-types`: ^5.20260721.1
+
 ## 0.3.26
 
 ### Chores

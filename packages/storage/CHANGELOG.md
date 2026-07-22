@@ -1,5 +1,29 @@
 # @workglow/storage
 
+## 0.3.27
+
+### Bug Fixes
+
+#### storage
+
+- honor clientProvidedKeys 'never' in bulk putBulk; refresh docs
+
+#### duckdb
+
+- keep putBulk idempotent on all-primary-key tables
+
+### Performance
+
+#### storage
+
+- single-statement putBulk engine + SQLite backend
+
+### Documentation
+
+#### storage
+
+- document single-statement putBulk and duplicate-key semantics
+
 ## Unreleased
 
 ### Refactors

@@ -1,5 +1,19 @@
 # @workglow/web
 
+## 0.3.27
+
+### Chores
+
+- update package.json scripts to include use-source and use-dist commands
+
+### Updated Dependencies
+
+- `react`: ^19.2.8
+- `react-dom`: ^19.2.8
+- `@tailwindcss/vite`: ^4.3.3
+- `tailwindcss`: ^4.3.3
+- `vite`: ^8.1.5
+
 ## 0.3.26
 
 ### Chores

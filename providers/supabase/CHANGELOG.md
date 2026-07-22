@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.27
+
+### Bug Fixes
+
+#### storage
+
+- ensure correct typing for primary key fingerprint in SupabaseTabularStorage
+
+#### supabase
+
+- collision-safe composite-key fingerprint in putBulk dedup
+- dedup duplicate primary keys in putBulk batches
+
+### Documentation
+
+#### storage
+
+- document single-statement putBulk and duplicate-key semantics
+
 ## Unreleased
 
 ### Bug Fixes

@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.27
+
+### Bug Fixes
+
+#### storage
+
+- honor clientProvidedKeys 'never' in bulk putBulk; refresh docs
+
+### Performance
+
+#### postgres
+
+- single-statement putBulk via shared bulk engine
+
+### Documentation
+
+#### storage
+
+- document single-statement putBulk and duplicate-key semantics
+
 ## Unreleased
 
 ### Refactors

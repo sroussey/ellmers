@@ -1,5 +1,13 @@
 # @workglow/knowledge-base
 
+## 0.3.27
+
+### Bug Fixes
+
+#### knowledge-base
+
+- route console.warn through structured logger
+
 ## 0.3.26
 
 ## 0.3.25

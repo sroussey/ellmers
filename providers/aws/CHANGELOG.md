@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.27
+
+### Chores
+
+- update package.json scripts to include use-source and use-dist commands
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1092.0
+
 ## 0.3.26
 
 ### Chores

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.27
+
+### Bug Fixes
+
+#### indexeddb
+
+- make tabular putBulk atomic via single transaction
+
 ## 0.3.26
 
 ## 0.3.25

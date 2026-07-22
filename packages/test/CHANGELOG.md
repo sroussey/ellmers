@@ -1,5 +1,63 @@
 # @workglow/test
 
+## 0.3.27
+
+### Bug Fixes
+
+#### storage
+
+- honor clientProvidedKeys 'never' in bulk putBulk; refresh docs
+
+#### duckdb
+
+- keep putBulk idempotent on all-primary-key tables
+
+#### supabase
+
+- collision-safe composite-key fingerprint in putBulk dedup
+
+#### ai
+
+- stop AiTask.narrowInput from mutating its input argument
+
+#### knowledge-base
+
+- route console.warn through structured logger
+
+#### indexeddb
+
+- make tabular putBulk atomic via single transaction
+
+#### openai
+
+- surface silent Responses-API regressions from 0.3.26 (H2)
+
+#### huggingface-transformers
+
+- sweep hftSessions on LRU pipeline eviction (H1)
+
+### Performance
+
+#### storage
+
+- single-statement putBulk engine + SQLite backend
+
+### Tests
+
+#### storage
+
+- SQL bulk putBulk refinements + atomicity
+
+### Chores
+
+- update package.json scripts to include use-source and use-dist commands
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1092.0
+- `@cloudflare/workers-types`: ^5.20260721.1
+- `miniflare`: ^4.20260721.0
+
 ## 0.3.26
 
 ### Features

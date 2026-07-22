@@ -4,6 +4,14 @@
 
 ### Bug Fixes
 
+#### openai
+
+- surface silent Responses-API regressions from 0.3.26 (H2)
+
+## 0.3.27
+
+### Bug Fixes
+
 Surface two silent Responses-API regressions from 0.3.26:
 
 - `frequencyPenalty` and `presencePenalty` are dropped: the OpenAI Responses

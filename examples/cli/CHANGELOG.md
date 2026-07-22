@@ -1,5 +1,16 @@
 # @workglow/cli
 
+## 0.3.27
+
+### Chores
+
+- update package.json scripts to include use-source and use-dist commands
+
+### Updated Dependencies
+
+- `ink`: ^7.1.1
+- `react`: ^19.2.8
+
 ## 0.3.26
 
 ### Features

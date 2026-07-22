@@ -1,7 +1,7 @@
 {
   "name": "@workglow/duckdb",
   "type": "module",
-  "version": "0.3.26",
+  "version": "0.3.27",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",

@@ -1,5 +1,17 @@
 # @workglow/ai
 
+## 0.3.27
+
+### Bug Fixes
+
+#### ai
+
+- stop AiTask.narrowInput from mutating its input argument
+
+#### openai
+
+- surface silent Responses-API regressions from 0.3.26 (H2)
+
 ## 0.3.26
 
 ### Bug Fixes

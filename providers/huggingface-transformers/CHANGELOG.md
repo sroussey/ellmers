@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.27
+
+### Bug Fixes
+
+#### huggingface-transformers
+
+- sweep hftSessions on LRU pipeline eviction (H1)
+
 ## 0.3.26
 
 ### Bug Fixes
