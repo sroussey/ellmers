@@ -443,24 +443,42 @@ export class SupabaseTabularStorage<
    * round trip — far cheaper than `Promise.all` fanning out one HTTPS request
    * per row.
    *
-   * **Ordering:** {@link normalizeForUpsert} fills UUID auto-gen keys
-   * client-side, so for the common UUID case every input row carries a PK
-   * and the response is re-aligned to input order by primary-key match. The
-   * only remaining case where ordering relies on Postgres's `INSERT ...
-   * RETURNING` row order (stable in practice but not formally contracted) is
-   * autoincrement-integer auto-gen keys, where the database has to assign
-   * the key.
+   * **Duplicate keys:** Postgres rejects an `INSERT ... ON CONFLICT DO UPDATE`
+   * that touches the same primary key twice in one statement ("command
+   * cannot affect row a second time"). When every input row carries its full
+   * PK ({@link normalizeForUpsert} fills UUID auto-gen keys client-side, so
+   * this is the common case), duplicate keys within the batch are collapsed
+   * to their last occurrence before the request is sent, matching the
+   * last-write-wins contract every other backend already applies. With an
+   * auto-generated integer key omitted from the input, each row is a
+   * distinct new row, so no dedup is applied.
+   *
+   * **Ordering:** the returned array always aligns to `entities` — every
+   * position that shared a duplicate primary key resolves to the single
+   * committed row. In the auto-increment case there is no key to match on,
+   * so ordering relies on Postgres's `INSERT ... RETURNING` row order
+   * (stable in practice but not formally contracted).
    *
    * `put` events are deferred until after the upsert resolves so listeners do
-   * not see rows from a request that ultimately failed.
+   * not see rows from a request that ultimately failed, and fire once per
+   * distinct committed row rather than once per input row.
    */
   async putBulk(entities: InsertType[]): Promise<Entity[]> {
     if (entities.length === 0) return [];
 
     const normalizedEntities = entities.map((entity) => this.normalizeForUpsert(entity));
+    const pkColumns = this.primaryKeyColumns().map(String);
+    const isFullyKeyed = normalizedEntities.every((entity) =>
+      pkColumns.every((col) => entity[col] !== undefined && entity[col] !== null)
+    );
+
+    const upsertPayload = isFullyKeyed
+      ? this.dedupByPrimaryKeyLastWins(normalizedEntities, pkColumns)
+      : normalizedEntities;
+
     const { data, error } = await this.client
       .from(this.table)
-      .upsert(normalizedEntities, { onConflict: this.primaryKeyColumnList() })
+      .upsert(upsertPayload, { onConflict: this.primaryKeyColumnList() })
       .select();
 
     if (error) {
@@ -474,16 +492,55 @@ export class SupabaseTabularStorage<
 
     const returnedRows = (data as unknown[]).map((row) => this.hydrateRow(row));
 
-    // Reorder by primary key when every input row carries its full PK. With an
-    // auto-generated key omitted from the input, we have no key to match on,
-    // so trust the response order (Postgres's INSERT ... RETURNING preserves
-    // VALUES order in practice).
-    const orderedEntities = this.alignBulkResponseToInputOrder(normalizedEntities, returnedRows);
+    if (isFullyKeyed) {
+      const responseByPk = new Map<string, Entity>();
+      for (const row of returnedRows) {
+        responseByPk.set(this.primaryKeyFingerprint(row, pkColumns), row);
+      }
+      const orderedEntities = normalizedEntities.map((entity) => {
+        const match = responseByPk.get(this.primaryKeyFingerprint(entity, pkColumns));
+        if (!match) {
+          throw new Error("putBulk: upserted row missing from response for its primary key");
+        }
+        return match;
+      });
+      for (const row of returnedRows) {
+        safeEmit(this.events, "put", row);
+      }
+      return orderedEntities;
+    }
 
+    // No key to match on when an auto-generated integer key is omitted from
+    // the input, so trust the response order (Postgres's INSERT ... RETURNING
+    // preserves VALUES order in practice).
+    const orderedEntities = this.alignBulkResponseToInputOrder(normalizedEntities, returnedRows);
     for (const entity of orderedEntities) {
       safeEmit(this.events, "put", entity);
     }
     return orderedEntities;
+  }
+
+  /** Stable key for a row's primary-key columns, used to match rows across requests. */
+  private primaryKeyFingerprint(
+    row: Record<string, unknown>,
+    pkColumns: ReadonlyArray<string>
+  ): string {
+    return pkColumns.map((c) => String(row[c])).join(" ");
+  }
+
+  /**
+   * Collapses rows sharing a primary key to the last occurrence. Only called
+   * when every row already carries its full primary key.
+   */
+  private dedupByPrimaryKeyLastWins(
+    rows: ReadonlyArray<Record<string, unknown>>,
+    pkColumns: ReadonlyArray<string>
+  ): Record<string, unknown>[] {
+    const byPk = new Map<string, Record<string, unknown>>();
+    for (const row of rows) {
+      byPk.set(this.primaryKeyFingerprint(row, pkColumns), row);
+    }
+    return Array.from(byPk.values());
   }
 
   /**
@@ -508,17 +565,17 @@ export class SupabaseTabularStorage<
       }
     }
 
-    const fingerprint = (row: Record<string, unknown>): string =>
-      pkColumns.map((c) => String(row[c])).join(" ");
-
     const responseByPk = new Map<string, Entity>();
     for (const row of responseRows) {
-      responseByPk.set(fingerprint(row as unknown as Record<string, unknown>), row);
+      responseByPk.set(
+        this.primaryKeyFingerprint(row as unknown as Record<string, unknown>, pkColumns),
+        row
+      );
     }
 
     const ordered: Entity[] = [];
     for (const input of inputs) {
-      const match = responseByPk.get(fingerprint(input));
+      const match = responseByPk.get(this.primaryKeyFingerprint(input, pkColumns));
       if (!match) return responseRows; // unexpected; fall back
       ordered.push(match);
     }
