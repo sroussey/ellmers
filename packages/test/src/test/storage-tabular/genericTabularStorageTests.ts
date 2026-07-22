@@ -297,6 +297,18 @@ export function runGenericTabularStorageTests(
       expect(other?.option).toEqual("kept");
     });
 
+    it("should not collide distinct composite keys whose values contain the separator", async () => {
+      const entities = [
+        { name: "a b", type: "c", option: "first", success: true },
+        { name: "a", type: "b c", option: "second", success: true },
+      ];
+      const returned = await repository.putBulk(entities);
+      expect(returned).toHaveLength(2);
+      // Distinct rows — neither collapsed into the other.
+      expect((await repository.get({ name: "a b", type: "c" }))?.option).toEqual("first");
+      expect((await repository.get({ name: "a", type: "b c" }))?.option).toEqual("second");
+    });
+
     describe("withTransaction", () => {
       it("should commit writes performed inside a successful transaction", async () => {
         await repository.withTransaction(async (tx) => {

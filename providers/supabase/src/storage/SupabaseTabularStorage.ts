@@ -513,11 +513,10 @@ export class SupabaseTabularStorage<
     // No key to match on when an auto-generated integer key is omitted from
     // the input, so trust the response order (Postgres's INSERT ... RETURNING
     // preserves VALUES order in practice).
-    const orderedEntities = this.alignBulkResponseToInputOrder(normalizedEntities, returnedRows);
-    for (const entity of orderedEntities) {
-      safeEmit(this.events, "put", entity);
+    for (const row of returnedRows) {
+      safeEmit(this.events, "put", row);
     }
-    return orderedEntities;
+    return returnedRows;
   }
 
   /** Stable key for a row's primary-key columns, used to match rows across requests. */
@@ -525,7 +524,9 @@ export class SupabaseTabularStorage<
     row: Record<string, unknown>,
     pkColumns: ReadonlyArray<string>
   ): string {
-    return pkColumns.map((c) => String(row[c])).join(" ");
+    return JSON.stringify(
+      pkColumns.map((c) => this.jsToSqlValue(c, row[c] as Entity[keyof Entity]))
+    );
   }
 
   /**
@@ -541,45 +542,6 @@ export class SupabaseTabularStorage<
       byPk.set(this.primaryKeyFingerprint(row, pkColumns), row);
     }
     return Array.from(byPk.values());
-  }
-
-  /**
-   * If every input row supplies its full primary key, build a PK index over
-   * the response and emit rows in input order. Otherwise return the response
-   * as-is — there is no key to match on, so we have to trust the backend.
-   */
-  private alignBulkResponseToInputOrder(
-    inputs: ReadonlyArray<Record<string, unknown>>,
-    responseRows: Entity[]
-  ): Entity[] {
-    if (inputs.length !== responseRows.length) {
-      // Server returned a different cardinality (e.g. dedup); fall back to as-is.
-      return responseRows;
-    }
-    const pkColumns = this.primaryKeyColumns().map(String);
-    for (const input of inputs) {
-      for (const col of pkColumns) {
-        if (input[col] === undefined || input[col] === null) {
-          return responseRows;
-        }
-      }
-    }
-
-    const responseByPk = new Map<string, Entity>();
-    for (const row of responseRows) {
-      responseByPk.set(
-        this.primaryKeyFingerprint(row as unknown as Record<string, unknown>, pkColumns),
-        row
-      );
-    }
-
-    const ordered: Entity[] = [];
-    for (const input of inputs) {
-      const match = responseByPk.get(this.primaryKeyFingerprint(input, pkColumns));
-      if (!match) return responseRows; // unexpected; fall back
-      ordered.push(match);
-    }
-    return ordered;
   }
 
   /**
