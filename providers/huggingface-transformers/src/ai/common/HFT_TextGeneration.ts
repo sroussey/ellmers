@@ -183,6 +183,7 @@ export const HFT_TextGeneration: AiProviderRunFn<
         baseEntries,
         baseSeqLength: past_key_values.get_seq_length ? past_key_values.get_seq_length() : 0,
         modelPath,
+        cacheKey,
       });
     }
 
