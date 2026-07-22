@@ -495,7 +495,10 @@ export class SupabaseTabularStorage<
     if (isFullyKeyed) {
       const responseByPk = new Map<string, Entity>();
       for (const row of returnedRows) {
-        responseByPk.set(this.primaryKeyFingerprint(row, pkColumns), row);
+        responseByPk.set(
+          this.primaryKeyFingerprint(row as Record<string, unknown>, pkColumns),
+          row
+        );
       }
       const orderedEntities = normalizedEntities.map((entity) => {
         const match = responseByPk.get(this.primaryKeyFingerprint(entity, pkColumns));
