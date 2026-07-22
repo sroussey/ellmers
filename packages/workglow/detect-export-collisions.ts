@@ -38,7 +38,7 @@ import { readFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 const STAR_RE = /export\s+\*\s+from\s+["']([^"']+)["']/g;
-const NAMED_FROM_RE = /export\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["']([^"']+)["']/g;
+const NAMED_FROM_RE = /export\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["'][^"']+["']/g;
 
 function findStarSpecs(source: string): string[] {
   const specs: string[] = [];
