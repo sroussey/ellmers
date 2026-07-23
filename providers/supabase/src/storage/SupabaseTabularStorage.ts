@@ -20,6 +20,7 @@ import {
   Page,
   PageRequest,
   pickCoveringIndex,
+  pkFingerprint,
   QueryOptions,
   safeEmit,
   SearchCriteria,
@@ -527,7 +528,7 @@ export class SupabaseTabularStorage<
     row: Record<string, unknown>,
     pkColumns: ReadonlyArray<string>
   ): string {
-    return JSON.stringify(
+    return pkFingerprint(
       pkColumns.map((c) => this.jsToSqlValue(c, row[c] as Entity[keyof Entity]))
     );
   }

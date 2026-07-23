@@ -22,6 +22,7 @@ import {
   SimplifyPrimaryKey,
   ValueOptionType,
 } from "./ITabularStorage";
+import { pkFingerprint } from "./pkFingerprint";
 
 /**
  * Per-dialect hooks for the shared multi-row bulk-insert engine. Mirrors the
@@ -559,7 +560,7 @@ export abstract class BaseSqlTabularStorage<
    */
   protected bulkKeyOf(row: Record<string, unknown>): string {
     const pkCols = this.primaryKeyColumns() as unknown as string[];
-    return JSON.stringify(pkCols.map((c) => this.jsToSqlValue(c, row[c] as Entity[keyof Entity])));
+    return pkFingerprint(pkCols.map((c) => this.jsToSqlValue(c, row[c] as Entity[keyof Entity])));
   }
 
   /**
