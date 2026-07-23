@@ -16,6 +16,7 @@ import {
   getMetadataProperty,
   getVectorProperty,
   matchesFilter,
+  runOnConnection,
   validateVectorEntities,
 } from "@workglow/storage";
 import type {
@@ -485,6 +486,21 @@ export class SqliteAiVectorStorage<
       return super._putBulkInternal(entities);
     }
 
+    // Route the vector-encoding write through the shared connection chain so
+    // two SqliteAiVectorStorage instances that wrap the same underlying handle
+    // (or one vector storage and one plain SqliteTabularStorage) queue on the
+    // same lock instead of racing on the shared connection. Skip when we are
+    // already inside an outer `withTransaction` — the chain lock is held there.
+    const dbWithFlag = this.database as unknown as { readonly inTransaction?: boolean };
+    const alreadyInTx = this.inTransaction || dbWithFlag.inTransaction === true;
+    const handle = this.connectionHandle();
+    if (handle !== null && !alreadyInTx) {
+      return runOnConnection(handle, this, () => this.runVectorPutBulkOnHandle(entities));
+    }
+    return this.runVectorPutBulkOnHandle(entities);
+  }
+
+  private async runVectorPutBulkOnHandle(entities: any[]): Promise<Entity[]> {
     const updatedEntities: Entity[] = [];
     // better-sqlite3 / bun:sqlite expose `inTransaction` as a runtime getter
     // on the underlying handle; the canonical API doesn't surface it. When it's

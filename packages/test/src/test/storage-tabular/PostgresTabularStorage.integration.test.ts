@@ -6,7 +6,7 @@
 
 import { PGlite } from "@electric-sql/pglite";
 import { PostgresTabularStorage } from "@workglow/postgres/storage";
-import { StorageValidationError } from "@workglow/storage";
+import { ConnectionReentryError, StorageValidationError } from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { Pool } from "pg";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -323,6 +323,86 @@ describe("PostgresTabularStorage", () => {
         releaseInner();
         await txP;
         await externalP;
+      } finally {
+        await pglite.close();
+      }
+    });
+  });
+
+  describe("shared-connection safety (PGlite path)", () => {
+    async function makeSharedPair(): Promise<
+      readonly [
+        PostgresTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>,
+        PostgresTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>,
+        PGlite,
+      ]
+    > {
+      const pglite = new PGlite();
+      const shared = pglite as unknown as Pool;
+      const a = new PostgresTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+        shared,
+        `shared_a_${uuid4().replace(/-/g, "_")}`,
+        CompoundSchema,
+        CompoundPrimaryKeyNames
+      );
+      const b = new PostgresTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+        shared,
+        `shared_b_${uuid4().replace(/-/g, "_")}`,
+        CompoundSchema,
+        CompoundPrimaryKeyNames
+      );
+      await a.setupDatabase();
+      await b.setupDatabase();
+      return [a, b, pglite] as const;
+    }
+
+    it("sibling single-op blocks across a transaction on the same handle", async () => {
+      const [a, b, pglite] = await makeSharedPair();
+      try {
+        let releaseInner: () => void = () => {};
+        const innerCanFinish = new Promise<void>((resolve) => {
+          releaseInner = resolve;
+        });
+
+        const txPromise = a.withTransaction(async (tx) => {
+          await tx.put({ name: "tx-row", type: "x", option: "tx", success: true });
+          await innerCanFinish;
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        let bDidWrite = false;
+        const siblingPut = b
+          .put({ name: "sibling-row", type: "x", option: "sib", success: true })
+          .then(() => {
+            bDidWrite = true;
+          });
+
+        await new Promise((r) => setTimeout(r, 50));
+        expect(bDidWrite).toBe(false);
+
+        releaseInner();
+        await txPromise;
+        await siblingPut;
+
+        expect(await a.get({ name: "tx-row", type: "x" })).toBeDefined();
+        expect(await b.get({ name: "sibling-row", type: "x" })).toBeDefined();
+      } finally {
+        await pglite.close();
+      }
+    });
+
+    it("rejects cross-instance nested withTransaction within 500ms (no hang)", async () => {
+      const [a, b, pglite] = await makeSharedPair();
+      try {
+        const start = Date.now();
+        const attempt = a.withTransaction(async () => {
+          await b.withTransaction(async () => {
+            // unreachable
+          });
+        });
+        await expect(attempt).rejects.toBeInstanceOf(ConnectionReentryError);
+        expect(Date.now() - start).toBeLessThan(500);
       } finally {
         await pglite.close();
       }

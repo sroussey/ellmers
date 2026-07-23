@@ -9,6 +9,8 @@
 export * from "./tabular/BaseTabularStorage";
 export * from "./tabular/BaseSqlTabularStorage";
 export * from "./tabular/CachedTabularStorage";
+export * from "./tabular/ConnectionMutex";
+export * from "./tabular/pkFingerprint";
 export * from "./tabular/CoveringIndexMissingError";
 export { pickCoveringIndex } from "./tabular/coveringIndexPicker";
 export type {
