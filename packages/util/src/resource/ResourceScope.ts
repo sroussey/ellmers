@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { uuid4 } from "../crypto/Crypto";
 import { getLogger } from "../logging";
 import { DisposeStrategy, type IDisposeStrategy } from "./DisposeStrategy";
 
@@ -23,10 +24,22 @@ export interface ResourceScopeOptions {
  *
  * First-registration-wins: if a key is already present, subsequent
  * registrations for that key are silently ignored.
+ *
+ * Runs sharing the same `ResourceScope` share checkpoints; two runs with
+ * different scopes cannot consume each other's checkpoints even with matching
+ * provider/model. The scope's `id` is the tenant token downstream checkpoint
+ * plumbing keys on so cross-scope re-use is a first-class error.
  */
 export class ResourceScope {
   private readonly disposers = new Map<string, () => Promise<void>>();
   private readonly strategy: IDisposeStrategy;
+  /**
+   * Stable tenant identity for this scope. Downstream tenant-scoped resource
+   * caches (provider-side checkpoint entries, per-scope KV pools) key on this
+   * value so a consumer under a different scope cannot pick up a resource
+   * minted here.
+   */
+  readonly id: string = uuid4();
 
   constructor(options: ResourceScopeOptions = {}) {
     this.strategy = options.strategy ?? DisposeStrategy.runCompletion();

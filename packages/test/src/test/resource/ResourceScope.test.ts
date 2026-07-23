@@ -8,6 +8,22 @@ import { ResourceScope } from "@workglow/util";
 import { describe, expect, it, vi } from "vitest";
 
 describe("ResourceScope", () => {
+  it("mints a distinct id per instance", () => {
+    const a = new ResourceScope();
+    const b = new ResourceScope();
+    expect(typeof a.id).toEqual("string");
+    expect(a.id.length).toBeGreaterThan(0);
+    expect(a.id).not.toEqual(b.id);
+  });
+
+  it("keeps its id stable across dispose and reuse", async () => {
+    const scope = new ResourceScope();
+    const before = scope.id;
+    scope.register("k", async () => {});
+    await scope.disposeAll();
+    expect(scope.id).toEqual(before);
+  });
+
   it("should register and dispose a single resource", async () => {
     const scope = new ResourceScope();
     const disposer = vi.fn(async () => {});

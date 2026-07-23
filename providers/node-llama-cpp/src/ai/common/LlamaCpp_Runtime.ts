@@ -63,6 +63,38 @@ export interface LlamaCppSessionState {
 
 export const llamaCppSessions = new Map<string, LlamaCppSessionState>();
 
+/**
+ * Per-`sessionId` promise-chain mutex. Two concurrent generation callers that
+ * consume the same immutable checkpoint (keep-parent flow) share one cached
+ * `LlamaChatSession`, so their `session.prompt` / `LlamaChat.generateResponse`
+ * calls must not overlap on the sequence. `withSessionLock` chains them so the
+ * second waits until the first has fully returned (and the wrapper has had a
+ * chance to rewind the KV cache back to the immutable prefix) before running.
+ * The lock is intentionally session-scoped, not global, so unrelated sessions
+ * still run in parallel.
+ */
+const sessionLocks = new Map<string, Promise<void>>();
+
+export async function withSessionLock<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = sessionLocks.get(sessionId) ?? Promise.resolve();
+  let release!: () => void;
+  const next = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  sessionLocks.set(sessionId, next);
+  await prev;
+  try {
+    return await fn();
+  } finally {
+    // Drop the map entry when we're the trailing waiter, so a session that
+    // never runs again does not stay pinned in the map indefinitely.
+    if (sessionLocks.get(sessionId) === next) {
+      sessionLocks.delete(sessionId);
+    }
+    release();
+  }
+}
+
 export function getLlamaCppSession(sessionId: string): LlamaCppSessionState | undefined {
   return llamaCppSessions.get(sessionId);
 }

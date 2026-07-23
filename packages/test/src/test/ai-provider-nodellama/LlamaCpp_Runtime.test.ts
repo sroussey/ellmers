@@ -19,6 +19,7 @@ import {
   resolvedPaths,
   setLlamaCppSession,
   withSequence,
+  withSessionLock,
   withVramEviction,
 } from "@workglow/node-llama-cpp/ai-runtime";
 import type {
@@ -409,5 +410,76 @@ describe("getOrCreateEmbeddingContext under VRAM pressure", () => {
     expect(llamaCppModels.has("/tmp/lru.gguf")).toBe(false);
     expect(llamaCppTextContexts.has("/tmp/lru.gguf")).toBe(false);
     expect(llamaCppEmbeddingContexts.get("/tmp/target.gguf")).toBe(stubEmbeddingContext);
+  });
+});
+
+describe("withSessionLock", () => {
+  it("serializes two concurrent callers on the same sessionId", async () => {
+    const sessionId = "shared-session-a";
+    let release1: () => void = () => {};
+    const finish1 = new Promise<void>((resolve) => {
+      release1 = resolve;
+    });
+    const events: string[] = [];
+
+    const first = withSessionLock(sessionId, async () => {
+      events.push("first:start");
+      await finish1;
+      events.push("first:end");
+      return "one";
+    });
+    const second = withSessionLock(sessionId, async () => {
+      events.push("second:start");
+      return "two";
+    });
+
+    // Give the microtask queue a couple of ticks — if the lock is missing, the
+    // second body would race in and log its start before the first is released.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(events).toEqual(["first:start"]);
+
+    release1();
+    expect(await first).toEqual("one");
+    expect(await second).toEqual("two");
+    expect(events).toEqual(["first:start", "first:end", "second:start"]);
+  });
+
+  it("allows unrelated sessionIds to run in parallel", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    let bStarted = false;
+    const a = withSessionLock("session-a", async () => {
+      await gate;
+      return "a";
+    });
+    const b = withSessionLock("session-b", async () => {
+      bStarted = true;
+      return "b";
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    // If sessionLocks were global, `b` would still be waiting on `a`.
+    expect(bStarted).toBe(true);
+    expect(await b).toEqual("b");
+
+    release();
+    expect(await a).toEqual("a");
+  });
+
+  it("releases the lock even when the body throws", async () => {
+    const sessionId = "throwing-session";
+    await expect(
+      withSessionLock(sessionId, async () => {
+        throw new Error("boom");
+      })
+    ).rejects.toThrow("boom");
+    // A subsequent call must be able to proceed immediately.
+    const result = await withSessionLock(sessionId, async () => "ok");
+    expect(result).toEqual("ok");
   });
 });
