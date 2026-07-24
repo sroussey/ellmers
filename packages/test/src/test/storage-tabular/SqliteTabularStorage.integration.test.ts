@@ -5,7 +5,7 @@
  */
 
 import { Sqlite, SqliteTabularStorage } from "@workglow/sqlite/storage";
-import { StorageValidationError } from "@workglow/storage";
+import { ConnectionReentryError, StorageValidationError } from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { describe, expect, it, vi } from "vitest";
@@ -375,5 +375,175 @@ describe("SqliteTabularStorage regressions", () => {
     const again = await storage.putBulk([{ a: "x", b: "y" }]);
     expect(again).toEqual([{ a: "x", b: "y" }]);
     expect(await storage.size()).toBe(1);
+  });
+});
+
+describe("SqliteTabularStorage BigInt primary keys", () => {
+  const BigIntSchema = {
+    type: "object",
+    properties: {
+      id: { type: "integer", minimum: 0 },
+      label: { type: "string" },
+    },
+    required: ["id", "label"],
+    additionalProperties: false,
+  } as const satisfies DataPortSchemaObject;
+  const BigIntPrimaryKeyNames = ["id"] as const;
+
+  it("aligns putBulk rows keyed by BigInt values above Number.MAX_SAFE_INTEGER", async () => {
+    const storage = new SqliteTabularStorage<typeof BigIntSchema, typeof BigIntPrimaryKeyNames>(
+      ":memory:",
+      `bigint_pk_${uuid4().replace(/-/g, "_")}`,
+      BigIntSchema,
+      BigIntPrimaryKeyNames
+    );
+    await storage.setupDatabase();
+
+    // 9007199254740993n is Number.MAX_SAFE_INTEGER + 2; it survives BigInt but
+    // would collide with 9007199254740992 (MAX_SAFE_INTEGER + 1 rounded) once
+    // coerced to a JS number.
+    const rows = await storage.putBulk([
+      { id: 9007199254740993n as unknown as number, label: "big-1" },
+      { id: 9007199254740995n as unknown as number, label: "big-2" },
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.label)).toEqual(["big-1", "big-2"]);
+  });
+
+  it("collapses duplicate BigInt PKs last-wins in putBulk", async () => {
+    const storage = new SqliteTabularStorage<typeof BigIntSchema, typeof BigIntPrimaryKeyNames>(
+      ":memory:",
+      `bigint_pk_dup_${uuid4().replace(/-/g, "_")}`,
+      BigIntSchema,
+      BigIntPrimaryKeyNames
+    );
+    await storage.setupDatabase();
+
+    const returned = await storage.putBulk([
+      { id: 9007199254740993n as unknown as number, label: "first" },
+      { id: 9007199254740993n as unknown as number, label: "second" },
+    ]);
+    // Both input rows point at the same row after last-wins dedupe.
+    expect(returned).toHaveLength(2);
+    expect(returned[0].label).toEqual("second");
+    expect(returned[1].label).toEqual("second");
+    expect(await storage.size()).toEqual(1);
+  });
+});
+
+describe("SqliteTabularStorage shared-connection safety", () => {
+  async function makeSharedPair(): Promise<
+    readonly [
+      SqliteTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>,
+      SqliteTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>,
+      Sqlite.Database,
+    ]
+  > {
+    const db = new Sqlite.Database(":memory:");
+    const tableA = `shared_a_${uuid4().replace(/-/g, "_")}`;
+    const tableB = `shared_b_${uuid4().replace(/-/g, "_")}`;
+    const a = new SqliteTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      db,
+      tableA,
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+    const b = new SqliteTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      db,
+      tableB,
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+    await a.setupDatabase();
+    await b.setupDatabase();
+    return [a, b, db] as const;
+  }
+
+  it("sibling single-op throws ConnectionReentryError during a transaction on the same handle", async () => {
+    const [a, b] = await makeSharedPair();
+    let releaseInner: () => void = () => {};
+    const innerCanFinish = new Promise<void>((resolve) => {
+      releaseInner = resolve;
+    });
+    let signalTxStarted: () => void = () => {};
+    const txStarted = new Promise<void>((resolve) => {
+      signalTxStarted = resolve;
+    });
+
+    const txPromise = a.withTransaction(async (tx) => {
+      // After this awaited put returns, we are provably inside the tx body,
+      // which means the shared ConnectionMutex has already set
+      // `state.txOwner = a`.
+      await tx.put({ name: "tx-row", type: "x", option: "tx", success: true });
+      signalTxStarted();
+      await innerCanFinish;
+    });
+
+    await txStarted;
+
+    // A sibling put from a *different* storage instance on the same handle
+    // must fail fast, not sneak into the tx BEGIN/COMMIT window and not
+    // block silently. The connection mutex throws ConnectionReentryError
+    // synchronously with mode="sibling-op".
+    let siblingErr: unknown;
+    await b.put({ name: "sibling-row", type: "x", option: "sib", success: true }).catch((err) => {
+      siblingErr = err;
+    });
+
+    expect(siblingErr).toBeInstanceOf(ConnectionReentryError);
+    const reentry = siblingErr as ConnectionReentryError;
+    expect(reentry.mode).toBe("sibling-op");
+    expect(reentry.message).toContain("sibling operation");
+    expect(reentry.message).toContain("'tx' proxy");
+    expect(reentry.message).toContain("SAVEPOINT");
+    expect(reentry.message).toContain("single storage instance");
+
+    releaseInner();
+    await txPromise;
+
+    // The outer tx still commits cleanly, and the shared connection is
+    // released so a normal sibling put now succeeds.
+    expect(await a.get({ name: "tx-row", type: "x" })).toBeDefined();
+    await b.put({ name: "post-tx-row", type: "x", option: "sib", success: true });
+    expect(await b.get({ name: "post-tx-row", type: "x" })).toBeDefined();
+  });
+
+  it("rejects cross-instance nested withTransaction within 500ms (no hang)", async () => {
+    const [a, b] = await makeSharedPair();
+    const start = Date.now();
+    let caught: unknown;
+    try {
+      await a.withTransaction(async () => {
+        // From inside a's transaction, another instance (b) tries to open its own
+        // withTransaction on the shared handle. This must fail, not deadlock.
+        await b.withTransaction(async () => {
+          // unreachable
+        });
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ConnectionReentryError);
+    const reentry = caught as ConnectionReentryError;
+    expect(reentry.mode).toBe("nested-transaction");
+    expect(reentry.message).toContain("open its own transaction");
+    expect(reentry.message).toContain("'tx' proxy");
+    expect(reentry.message).toContain("SAVEPOINT");
+    expect(reentry.message).toContain("single storage instance");
+    expect(Date.now() - start).toBeLessThan(500);
+  });
+
+  it("same-instance nested writes via tx proxy still work", async () => {
+    const [a] = await makeSharedPair();
+    await a.withTransaction(async (tx) => {
+      await tx.put({ name: "n1", type: "x", option: "v1", success: true });
+      await tx.putBulk([
+        { name: "n2", type: "x", option: "v2", success: true },
+        { name: "n3", type: "x", option: "v3", success: true },
+      ]);
+    });
+    expect(await a.get({ name: "n1", type: "x" })).toBeDefined();
+    expect(await a.get({ name: "n2", type: "x" })).toBeDefined();
+    expect(await a.get({ name: "n3", type: "x" })).toBeDefined();
   });
 });

@@ -24,6 +24,8 @@ import {
   pickCoveringIndex,
   PostgresDialect,
   QueryOptions,
+  runInTransactionOnConnection,
+  runOnConnection,
   safeEmit,
   SearchCriteria,
   SimplifyPrimaryKey,
@@ -771,6 +773,17 @@ export class PostgresTabularStorage<
   private get serializeOps(): boolean {
     return typeof (this.db as unknown as { connect?: unknown }).connect !== "function";
   }
+
+  /**
+   * On the PGlite / PGLitePool single-session path, expose the shared handle so
+   * two `PostgresTabularStorage` instances that bind the same session queue on
+   * a shared `ConnectionMutex` chain. A real `pg.Pool` isolates via `connect()`
+   * per query and returns `null` here so pool concurrency stays intact.
+   */
+  protected override connectionHandle(): object | null {
+    if (!this.serializeOps) return null;
+    return this.db as unknown as object;
+  }
   private async mutex<T>(fn: () => Promise<T>): Promise<T> {
     if (!this.serializeOps) return fn();
     const prev = this.mutexChain;
@@ -819,6 +832,14 @@ export class PostgresTabularStorage<
   }
 
   private async _putInternal(entity: InsertType): Promise<Entity> {
+    const handle = this.connectionHandle();
+    if (handle !== null && !this.inTransaction) {
+      return runOnConnection(handle, this, () => this.runPutOnHandle(entity));
+    }
+    return this.runPutOnHandle(entity);
+  }
+
+  private async runPutOnHandle(entity: InsertType): Promise<Entity> {
     const { sql, params } = this.buildPutSql(entity);
     const result = await this.db.query(sql, params);
     const updatedEntity = this.hydrateRow(result.rows[0]);
@@ -849,6 +870,14 @@ export class PostgresTabularStorage<
   private async _putBulkInternal(entities: InsertType[]): Promise<Entity[]> {
     if (entities.length === 0) return [];
 
+    const handle = this.connectionHandle();
+    if (handle !== null && !this.inTransaction) {
+      return runOnConnection(handle, this, () => this.runPutBulkOnHandle(entities));
+    }
+    return this.runPutBulkOnHandle(entities);
+  }
+
+  private async runPutBulkOnHandle(entities: InsertType[]): Promise<Entity[]> {
     const dialect = this.postgresBulkDialect();
     const execOn =
       (db: { query: Pool["query"] }) =>
@@ -1004,13 +1033,23 @@ export class PostgresTabularStorage<
           "Use SAVEPOINT directly or refactor to a single transaction."
       );
     }
+    // Instance-first / connection-second: the per-instance mutex bounds work
+    // reaching THIS storage; the shared ConnectionMutex chain bounds work
+    // reaching the same PGlite session from any OTHER storage instance.
     return this.mutex(async () => {
-      this.inTransaction = true;
-      try {
-        return await this.runInTransaction(fn, { query: this.db.query.bind(this.db) });
-      } finally {
-        this.inTransaction = false;
+      const handle = this.connectionHandle();
+      const body = async (): Promise<T> => {
+        this.inTransaction = true;
+        try {
+          return await this.runInTransaction(fn, { query: this.db.query.bind(this.db) });
+        } finally {
+          this.inTransaction = false;
+        }
+      };
+      if (handle !== null) {
+        return runInTransactionOnConnection(handle, this, body);
       }
+      return body();
     });
   }
 
@@ -1150,6 +1189,14 @@ export class PostgresTabularStorage<
   }
 
   private async _deleteInternal(value: PrimaryKey | Entity): Promise<void> {
+    const handle = this.connectionHandle();
+    if (handle !== null && !this.inTransaction) {
+      return runOnConnection(handle, this, () => this.runDeleteOnHandle(value));
+    }
+    return this.runDeleteOnHandle(value);
+  }
+
+  private async runDeleteOnHandle(value: PrimaryKey | Entity): Promise<void> {
     const db = this.db;
     const { key } = this.separateKeyValueFromCombined(value as Entity);
     const whereClauses = (this.primaryKeyColumns() as string[])
@@ -1215,6 +1262,14 @@ export class PostgresTabularStorage<
   }
 
   private async _deleteAllInternal(): Promise<void> {
+    const handle = this.connectionHandle();
+    if (handle !== null && !this.inTransaction) {
+      return runOnConnection(handle, this, () => this.runDeleteAllOnHandle());
+    }
+    return this.runDeleteAllOnHandle();
+  }
+
+  private async runDeleteAllOnHandle(): Promise<void> {
     const db = this.db;
     await db.query(`DELETE FROM "${this.table}"`);
     safeEmit(this.events, "clearall");
@@ -1431,6 +1486,14 @@ export class PostgresTabularStorage<
       return;
     }
 
+    const handle = this.connectionHandle();
+    if (handle !== null && !this.inTransaction) {
+      return runOnConnection(handle, this, () => this.runDeleteSearchOnHandle(criteria));
+    }
+    return this.runDeleteSearchOnHandle(criteria);
+  }
+
+  private async runDeleteSearchOnHandle(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
     const db = this.db;
     const { whereClause, params } = this.buildDeleteSearchWhere(criteria);
     await db.query(`DELETE FROM "${this.table}" WHERE ${whereClause}`, params);
@@ -1458,6 +1521,20 @@ export class PostgresTabularStorage<
     const patchKeys = Object.keys(patch) as Array<keyof Entity>;
     if (patchKeys.length === 0) return undefined;
 
+    const handle = this.connectionHandle();
+    if (handle !== null && !this.inTransaction) {
+      return runOnConnection(handle, this, () =>
+        this.runUpdateWhereOnHandle(match, patch, patchKeys)
+      );
+    }
+    return this.runUpdateWhereOnHandle(match, patch, patchKeys);
+  }
+
+  private async runUpdateWhereOnHandle(
+    match: SearchCriteria<Entity>,
+    patch: Partial<Entity>,
+    patchKeys: Array<keyof Entity>
+  ): Promise<Entity | undefined> {
     const setClause = patchKeys.map((col, i) => `"${String(col)}" = $${i + 1}`).join(", ");
     const setParams = patchKeys.map((col) => this.jsToSqlValue(String(col), patch[col] as never));
 

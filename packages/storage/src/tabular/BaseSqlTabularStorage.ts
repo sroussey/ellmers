@@ -22,6 +22,7 @@ import {
   SimplifyPrimaryKey,
   ValueOptionType,
 } from "./ITabularStorage";
+import { pkFingerprint } from "./pkFingerprint";
 
 /**
  * Per-dialect hooks for the shared multi-row bulk-insert engine. Mirrors the
@@ -102,6 +103,19 @@ export abstract class BaseSqlTabularStorage<
 
   /** Maps a JSON Schema type to its dialect-specific SQL type. */
   protected abstract mapTypeToSQL(typeDef: JsonSchema): string;
+
+  /**
+   * Returns the underlying connection handle when this storage may share it
+   * with other in-process storage instances (SQLite `Database`, PGlite
+   * session). A backend whose isolation is per-connection (a real `pg.Pool`
+   * that hands out a fresh client per query) returns `null` so writes stay
+   * un-serialized. When non-null the value keys the shared
+   * `ConnectionMutex` chain, so every instance that binds the same handle
+   * queues through one lock and can detect cross-instance re-entry.
+   */
+  protected connectionHandle(): object | null {
+    return null;
+  }
 
   protected constructPrimaryKeyColumns($delimiter: string = ""): string {
     let cached = this._pkColsCache.get($delimiter);
@@ -546,7 +560,7 @@ export abstract class BaseSqlTabularStorage<
    */
   protected bulkKeyOf(row: Record<string, unknown>): string {
     const pkCols = this.primaryKeyColumns() as unknown as string[];
-    return JSON.stringify(pkCols.map((c) => this.jsToSqlValue(c, row[c] as Entity[keyof Entity])));
+    return pkFingerprint(pkCols.map((c) => this.jsToSqlValue(c, row[c] as Entity[keyof Entity])));
   }
 
   /**
