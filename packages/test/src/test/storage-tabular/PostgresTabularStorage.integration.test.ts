@@ -133,6 +133,86 @@ describe("PostgresTabularStorage", () => {
     }
   });
 
+  // Arrays whose element type has no native Postgres array support (e.g.
+  // VARCHAR(n) items) map to a JSONB column. node-postgres encodes a raw JS
+  // array parameter as a Postgres array literal ('{"a","b"}'), which jsonb
+  // rejects with 22P02 "invalid input syntax for type json" — so the storage
+  // must bind such values as JSON text. PGlite happens to serialize JS arrays
+  // as JSON on its own, so a plain roundtrip can't catch the regression;
+  // assert on the bound parameter instead.
+  describe("JSONB column binding", () => {
+    const JsonbSchema = {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        // maxLength on items -> VARCHAR(256) element type -> JSONB column
+        titles: { type: "array", items: { type: "string", maxLength: 256 } },
+        meta: { type: "object", default: {} },
+      },
+      required: ["id", "titles", "meta"],
+      additionalProperties: false,
+    } as const;
+    const JsonbPrimaryKeyNames = ["id"] as const;
+
+    async function makeJsonbStorage() {
+      const storage = new PostgresTabularStorage<typeof JsonbSchema, typeof JsonbPrimaryKeyNames>(
+        db,
+        `jsonb_test_${uuid4().replace(/-/g, "_")}`,
+        JsonbSchema,
+        JsonbPrimaryKeyNames
+      );
+      await storage.setupDatabase();
+      return storage;
+    }
+
+    it("binds array and object values for JSONB columns as JSON text", async () => {
+      const storage = await makeJsonbStorage();
+      const querySpy = vi.spyOn(db, "query");
+      try {
+        await storage.put({
+          id: "row1",
+          titles: ["Chief Executive Officer", "Director"],
+          meta: { source: "test" },
+        });
+
+        // The query spy's param type is untyped positionally, so gather every
+        // bound parameter across all calls as `unknown[]` and inspect at runtime.
+        const boundParams: unknown[] = querySpy.mock.calls.flatMap((call) => {
+          const params = call[1] as unknown;
+          return Array.isArray(params) ? (params as unknown[]) : [];
+        });
+        const arrayParam = boundParams.find(
+          (p) => typeof p === "string" && p.includes("Chief Executive Officer")
+        );
+        expect(arrayParam).toEqual(JSON.stringify(["Chief Executive Officer", "Director"]));
+        const objectParam = boundParams.find((p) => typeof p === "string" && p.includes("source"));
+        expect(objectParam).toEqual(JSON.stringify({ source: "test" }));
+        // No raw JS array/object may reach the driver for JSONB columns.
+        expect(boundParams.some((p) => Array.isArray(p))).toBe(false);
+        expect(
+          boundParams.some((p) => p !== null && typeof p === "object" && !Array.isArray(p))
+        ).toBe(false);
+      } finally {
+        querySpy.mockRestore();
+        await storage.deleteAll();
+        storage.destroy();
+      }
+    });
+
+    it("roundtrips JSONB array and object values", async () => {
+      const storage = await makeJsonbStorage();
+      try {
+        await storage.put({ id: "row2", titles: ["Officer"], meta: { a: 1 } });
+        const row = await storage.get({ id: "row2" });
+        expect(row?.titles).toEqual(["Officer"]);
+        expect(row?.meta).toEqual({ a: 1 });
+      } finally {
+        await storage.deleteAll();
+        storage.destroy();
+      }
+    });
+  });
+
   describe("withTransaction", () => {
     async function makeTxStorage() {
       const storage = new PostgresTabularStorage<

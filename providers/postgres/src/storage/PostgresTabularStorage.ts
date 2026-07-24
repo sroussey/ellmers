@@ -346,6 +346,25 @@ export class PostgresTabularStorage<
   }
 
   /**
+   * Lazily-computed set of columns whose mapped SQL type is JSONB (objects,
+   * and arrays whose element type has no native Postgres array support).
+   * Used by {@link jsToSqlValue} to decide which values need JSON text
+   * serialization before binding.
+   */
+  private jsonbColumns: Set<string> | undefined;
+
+  private isJsonbColumn(column: string): boolean {
+    if (!this.jsonbColumns) {
+      this.jsonbColumns = new Set(
+        Object.entries<JsonSchema>(this.schema.properties)
+          .filter(([, typeDef]) => this.mapTypeToSQL(typeDef).startsWith("JSONB"))
+          .map(([key]) => key)
+      );
+    }
+    return this.jsonbColumns.has(column);
+  }
+
+  /**
    * Convert JavaScript values to PostgreSQL values, including TypedArray to vector string
    */
   protected override jsToSqlValue(column: string, value: Entity[keyof Entity]): ValueOptionType {
@@ -364,6 +383,18 @@ export class PostgresTabularStorage<
         if (typeof value === "string") {
           return value;
         }
+      }
+
+      // JSONB columns must be bound as JSON text: node-postgres encodes a JS
+      // array parameter as a Postgres array literal ('{"a","b"}'), which
+      // json/jsonb rejects with 22P02 "invalid input syntax for type json".
+      // Strings pass through untouched — callers that pre-serialize keep
+      // working, and Postgres casts the text parameter to jsonb itself.
+      if (value !== null && value !== undefined && this.isJsonbColumn(column)) {
+        if (typeof value === "string") {
+          return value;
+        }
+        return JSON.stringify(value);
       }
     }
     return super.jsToSqlValue(column, value);
