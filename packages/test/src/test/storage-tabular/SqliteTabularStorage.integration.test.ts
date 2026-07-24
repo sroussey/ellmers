@@ -459,54 +459,77 @@ describe("SqliteTabularStorage shared-connection safety", () => {
     return [a, b, db] as const;
   }
 
-  it("sibling single-op blocks across a transaction on the same handle", async () => {
+  it("sibling single-op throws ConnectionReentryError during a transaction on the same handle", async () => {
     const [a, b] = await makeSharedPair();
     let releaseInner: () => void = () => {};
     const innerCanFinish = new Promise<void>((resolve) => {
       releaseInner = resolve;
     });
+    let signalTxStarted: () => void = () => {};
+    const txStarted = new Promise<void>((resolve) => {
+      signalTxStarted = resolve;
+    });
 
     const txPromise = a.withTransaction(async (tx) => {
+      // After this awaited put returns, we are provably inside the tx body,
+      // which means the shared ConnectionMutex has already set
+      // `state.txOwner = a`.
       await tx.put({ name: "tx-row", type: "x", option: "tx", success: true });
+      signalTxStarted();
       await innerCanFinish;
     });
 
-    // Yield microtasks so the tx BEGIN runs before the sibling put queues.
-    await Promise.resolve();
-    await Promise.resolve();
+    await txStarted;
 
-    let bDidWrite = false;
-    const siblingPut = b
-      .put({ name: "sibling-row", type: "x", option: "sib", success: true })
-      .then(() => {
-        bDidWrite = true;
-      });
+    // A sibling put from a *different* storage instance on the same handle
+    // must fail fast, not sneak into the tx BEGIN/COMMIT window and not
+    // block silently. The connection mutex throws ConnectionReentryError
+    // synchronously with mode="sibling-op".
+    let siblingErr: unknown;
+    await b.put({ name: "sibling-row", type: "x", option: "sib", success: true }).catch((err) => {
+      siblingErr = err;
+    });
 
-    // Give the microtask queue an extra tick — if the connection lock leaks,
-    // b's put would sneak into the tx BEGIN/COMMIT window.
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(bDidWrite).toBe(false);
+    expect(siblingErr).toBeInstanceOf(ConnectionReentryError);
+    const reentry = siblingErr as ConnectionReentryError;
+    expect(reentry.mode).toBe("sibling-op");
+    expect(reentry.message).toContain("sibling operation");
+    expect(reentry.message).toContain("'tx' proxy");
+    expect(reentry.message).toContain("SAVEPOINT");
+    expect(reentry.message).toContain("single storage instance");
 
     releaseInner();
     await txPromise;
-    await siblingPut;
 
+    // The outer tx still commits cleanly, and the shared connection is
+    // released so a normal sibling put now succeeds.
     expect(await a.get({ name: "tx-row", type: "x" })).toBeDefined();
-    expect(await b.get({ name: "sibling-row", type: "x" })).toBeDefined();
+    await b.put({ name: "post-tx-row", type: "x", option: "sib", success: true });
+    expect(await b.get({ name: "post-tx-row", type: "x" })).toBeDefined();
   });
 
   it("rejects cross-instance nested withTransaction within 500ms (no hang)", async () => {
     const [a, b] = await makeSharedPair();
     const start = Date.now();
-    const attempt = a.withTransaction(async () => {
-      // From inside a's transaction, another instance (b) tries to open its own
-      // withTransaction on the shared handle. This must fail, not deadlock.
-      await b.withTransaction(async () => {
-        // unreachable
+    let caught: unknown;
+    try {
+      await a.withTransaction(async () => {
+        // From inside a's transaction, another instance (b) tries to open its own
+        // withTransaction on the shared handle. This must fail, not deadlock.
+        await b.withTransaction(async () => {
+          // unreachable
+        });
       });
-    });
-    await expect(attempt).rejects.toBeInstanceOf(ConnectionReentryError);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ConnectionReentryError);
+    const reentry = caught as ConnectionReentryError;
+    expect(reentry.mode).toBe("nested-transaction");
+    expect(reentry.message).toContain("open its own transaction");
+    expect(reentry.message).toContain("'tx' proxy");
+    expect(reentry.message).toContain("SAVEPOINT");
+    expect(reentry.message).toContain("single storage instance");
     expect(Date.now() - start).toBeLessThan(500);
   });
 
