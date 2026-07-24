@@ -1,5 +1,7 @@
 # @workglow/cli
 
+## 0.3.28
+
 ## 0.3.27
 
 ### Chores

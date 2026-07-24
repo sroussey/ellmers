@@ -1,5 +1,13 @@
 # @workglow/test
 
+## 0.3.28
+
+### Features
+
+#### storage
+
+- add support for JSONB column binding in PostgresTabularStorage
+
 ## 0.3.27
 
 ### Bug Fixes
