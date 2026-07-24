@@ -19,12 +19,15 @@
  *
  * This module keeps a module-level {@link WeakMap} keyed on the connection
  * handle so every instance that binds the same handle chains through the same
- * promise. A `node:async_hooks` {@link AsyncLocalStorage} carries owner
- * identity across `await` boundaries so calls made through a `tx` proxy
- * routed to the same instance (same-instance re-entry) can run inline instead
- * of deadlocking against the transaction's own lock, while a call from a
- * different instance while the transaction is open (cross-instance re-entry)
- * fails fast with a {@link ConnectionReentryError} — not by hanging.
+ * promise. Cross-instance re-entry detection lives on the handle state
+ * itself (`txOwner`), so it is **ALS-independent**: the module works
+ * identically on Node (real `AsyncLocalStorage`) and in the browser (the
+ * synchronous shim), even when the caller `await`s between the outer
+ * transaction opening and the sibling call. `AsyncLocalStorage` is only an
+ * **inline optimization on Node**: when the store exists and matches, a
+ * same-instance re-entry can run inline without re-taking the chain.
+ * Without it (browser shim), same-instance re-entry falls back to the chain
+ * — slower, but safe.
  */
 
 interface AlsContext {
@@ -42,9 +45,9 @@ let alsPromise: Promise<Als> | undefined;
 
 function createShimAls(): Als {
   // The browser bundle has no `node:async_hooks`. This shim carries the store
-  // synchronously across the same tick, which is enough for the same-instance
-  // re-entry detection here: the storage helpers acquire the ALS store and
-  // dispatch the wrapped body synchronously before any `await`.
+  // synchronously across the same tick. It cannot cross `await` boundaries,
+  // so cross-instance re-entry MUST NOT rely on the ALS store here — it
+  // relies on `state.txOwner` instead.
   let current: AlsContext | undefined;
   return {
     getStore(): AlsContext | undefined {
@@ -77,6 +80,18 @@ async function ensureAls(): Promise<Als> {
   return alsPromise;
 }
 
+/**
+ * Test-only: clears the cached `alsPromise` so the next `ensureAls()` call
+ * re-runs the factory. When `useShim` is true, immediately installs a fresh
+ * browser-shim ALS so subsequent calls exercise the ALS-less path (the same
+ * path a browser bundle takes when `node:async_hooks` is unavailable). Not
+ * part of the public runtime API — only exported for the ConnectionMutex
+ * test suite.
+ */
+export function __resetAlsForTesting(useShim: boolean = false): void {
+  alsPromise = useShim ? Promise.resolve(createShimAls()) : undefined;
+}
+
 interface HandleState {
   chain: Promise<void>;
   txOwner: object | null;
@@ -106,16 +121,72 @@ function ownerTable(owner: object): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+type ReentryDecision = "throw" | "inline" | "chain";
+
+/**
+ * Classify the current call against the state of the shared handle. Order
+ * matters: an active `txOwner` that is **not** our owner is always a
+ * cross-instance re-entry — regardless of whether the ALS store is present.
+ * Only if the caller is provably the same owner (matching ALS store) do we
+ * inline; anything else queues through the chain.
+ */
+function classifyReentry(
+  state: HandleState,
+  owner: object,
+  alsStore: AlsContext | undefined,
+  handle: object
+): ReentryDecision {
+  if (state.txOwner !== null && state.txOwner !== owner) {
+    return "throw";
+  }
+  if (alsStore !== undefined && alsStore.handle === handle && alsStore.owner === owner) {
+    return "inline";
+  }
+  return "chain";
+}
+
+/**
+ * Thrown when a storage instance tries to reach a shared connection while a
+ * *different* instance holds it — either a sibling single-op that hit an
+ * open transaction on the same handle, or a call that tried to open its own
+ * `withTransaction` while another instance's transaction is still running.
+ *
+ * The three supported refactors, in order of preference:
+ *
+ *   1. **Route the sibling call through the `tx` proxy on the same
+ *      instance.** The `tx` handle passed to `withTransaction(async (tx) =>
+ *      ...)` bypasses the mutex and joins the outer transaction directly.
+ *   2. **Open a SAVEPOINT on `tx` for a nested rollback boundary.** SQLite
+ *      and PostgreSQL have no autonomous `BEGIN`; a nested rollback
+ *      boundary is expressed as a `SAVEPOINT` inside the outer transaction,
+ *      not a nested `withTransaction`.
+ *   3. **Collapse to a single storage instance, or give each instance its
+ *      own connection.** Two instances that must run truly independent
+ *      transactions cannot share one connection; give each one a separate
+ *      handle (or a pooled client per query).
+ */
 export class ConnectionReentryError extends Error {
   constructor(
     readonly activeTable: string | undefined,
-    readonly blockedTable: string | undefined
+    readonly blockedTable: string | undefined,
+    readonly mode: "sibling-op" | "nested-transaction"
   ) {
     const active = activeTable ?? "another storage instance";
     const blocked = blockedTable ?? "an unlabeled storage instance";
-    super(
-      `Cross-instance re-entry on shared connection: ${blocked} attempted an operation while ${active} holds the connection.`
-    );
+    const modeLine =
+      mode === "nested-transaction"
+        ? `${blocked} attempted to open its own transaction while ${active} holds the connection.`
+        : `${blocked} attempted a sibling operation while ${active} holds the connection.`;
+    const message = [
+      "Cross-instance re-entry on a shared database connection.",
+      modeLine,
+      "",
+      "Supported refactors:",
+      `  (a) Route the ${blocked} call through the 'tx' proxy on the ${active} instance — tx bypasses the mutex and joins the outer transaction.`,
+      `  (b) Open a SAVEPOINT on 'tx' for a nested rollback boundary — SQLite/Postgres have no autonomous BEGIN, so a nested boundary is a SAVEPOINT, not a nested withTransaction.`,
+      `  (c) Collapse to a single storage instance, or give each instance its own connection — two instances that must run independent transactions cannot share one connection.`,
+    ].join("\n");
+    super(message);
     this.name = "ConnectionReentryError";
   }
 }
@@ -123,30 +194,42 @@ export class ConnectionReentryError extends Error {
 /**
  * Runs `fn` in a chain shared across every caller bound to `handle`.
  *
- * Same-instance re-entry (an active `AsyncLocalStorage` store on this handle
- * reports our `owner`) runs `fn` inline — the caller is already inside its
- * own `runInTransactionOnConnection` and re-taking the chain would deadlock.
+ * The handle state (`txOwner`) is checked first: if another instance holds
+ * the transaction, this throws {@link ConnectionReentryError} synchronously
+ * — no `await ensureAls()` needed on the throw path, so browser shim and
+ * Node behave identically.
  *
- * Cross-instance re-entry (the store reports a different owner) throws
- * {@link ConnectionReentryError} synchronously — hanging forever on a shared
- * connection is worse than failing loudly.
- *
- * No ALS context → normal chain wait.
+ * Same-instance re-entry that presents a matching `AsyncLocalStorage` store
+ * runs `fn` inline — the caller is already inside its own
+ * `runInTransactionOnConnection` and re-taking the chain would deadlock.
+ * On the browser shim, same-instance re-entry across an `await` falls back
+ * to the chain wait (safe; the outer transaction's chain slot has already
+ * been released by the time descendants queue).
  */
 export async function runOnConnection<T>(
   handle: object,
   owner: object,
   fn: () => Promise<T>
 ): Promise<T> {
-  const als = await ensureAls();
-  const store = als.getStore();
-  if (store !== undefined && store.handle === handle) {
-    if (store.owner === owner) {
-      return fn();
-    }
-    throw new ConnectionReentryError(ownerTable(store.owner), ownerTable(owner));
-  }
   const state = getState(handle);
+  // Fast, synchronous throw on cross-instance sibling ops — do NOT await
+  // ensureAls first, so the shim path (browser) still fails fast.
+  if (state.txOwner !== null && state.txOwner !== owner) {
+    throw new ConnectionReentryError(ownerTable(state.txOwner), ownerTable(owner), "sibling-op");
+  }
+  const als = await ensureAls();
+  const alsStore = als.getStore();
+  const decision = classifyReentry(state, owner, alsStore, handle);
+  if (decision === "throw") {
+    throw new ConnectionReentryError(
+      ownerTable(state.txOwner ?? owner),
+      ownerTable(owner),
+      "sibling-op"
+    );
+  }
+  if (decision === "inline") {
+    return fn();
+  }
   const prev = state.chain;
   let release!: () => void;
   state.chain = new Promise<void>((resolve) => {
@@ -167,26 +250,41 @@ export async function runOnConnection<T>(
  * enclosing owner and re-enter inline.
  *
  * Cross-instance re-entry from `fn`'s descendants throws
- * {@link ConnectionReentryError} the same way {@link runOnConnection} does.
+ * {@link ConnectionReentryError} the same way {@link runOnConnection} does,
+ * with `mode === "nested-transaction"` at the transaction-opening call
+ * site. The synchronous throw path here is symmetric with `runOnConnection`
+ * — the handle state is checked before awaiting ALS.
  */
 export async function runInTransactionOnConnection<T>(
   handle: object,
   owner: object,
   fn: () => Promise<T>
 ): Promise<T> {
-  const als = await ensureAls();
-  const store = als.getStore();
-  if (store !== undefined && store.handle === handle) {
-    if (store.owner === owner) {
-      // Nested-tx from the same owner: the caller is expected to have already
-      // guarded against this at its own call site (SQLite / PGlite have no
-      // autonomous BEGIN). Run inline so we surface a clearer downstream error
-      // instead of deadlocking here.
-      return fn();
-    }
-    throw new ConnectionReentryError(ownerTable(store.owner), ownerTable(owner));
-  }
   const state = getState(handle);
+  if (state.txOwner !== null && state.txOwner !== owner) {
+    throw new ConnectionReentryError(
+      ownerTable(state.txOwner),
+      ownerTable(owner),
+      "nested-transaction"
+    );
+  }
+  const als = await ensureAls();
+  const alsStore = als.getStore();
+  const decision = classifyReentry(state, owner, alsStore, handle);
+  if (decision === "throw") {
+    throw new ConnectionReentryError(
+      ownerTable(state.txOwner ?? owner),
+      ownerTable(owner),
+      "nested-transaction"
+    );
+  }
+  if (decision === "inline") {
+    // Nested-tx from the same owner: the caller is expected to have already
+    // guarded against this at its own call site (SQLite / PGlite have no
+    // autonomous BEGIN). Run inline so we surface a clearer downstream error
+    // instead of deadlocking here.
+    return fn();
+  }
   const prev = state.chain;
   let release!: () => void;
   state.chain = new Promise<void>((resolve) => {

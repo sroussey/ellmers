@@ -356,37 +356,51 @@ describe("PostgresTabularStorage", () => {
       return [a, b, pglite] as const;
     }
 
-    it("sibling single-op blocks across a transaction on the same handle", async () => {
+    it("sibling single-op throws ConnectionReentryError during a transaction on the same handle", async () => {
       const [a, b, pglite] = await makeSharedPair();
       try {
         let releaseInner: () => void = () => {};
         const innerCanFinish = new Promise<void>((resolve) => {
           releaseInner = resolve;
         });
+        let signalTxStarted: () => void = () => {};
+        const txStarted = new Promise<void>((resolve) => {
+          signalTxStarted = resolve;
+        });
 
         const txPromise = a.withTransaction(async (tx) => {
           await tx.put({ name: "tx-row", type: "x", option: "tx", success: true });
+          signalTxStarted();
           await innerCanFinish;
         });
-        await Promise.resolve();
-        await Promise.resolve();
 
-        let bDidWrite = false;
-        const siblingPut = b
+        await txStarted;
+
+        // Sibling put from a different instance on the same handle: must
+        // fail fast with ConnectionReentryError(mode="sibling-op"), not
+        // silently block until the tx releases.
+        let siblingErr: unknown;
+        await b
           .put({ name: "sibling-row", type: "x", option: "sib", success: true })
-          .then(() => {
-            bDidWrite = true;
+          .catch((err) => {
+            siblingErr = err;
           });
 
-        await new Promise((r) => setTimeout(r, 50));
-        expect(bDidWrite).toBe(false);
+        expect(siblingErr).toBeInstanceOf(ConnectionReentryError);
+        const reentry = siblingErr as ConnectionReentryError;
+        expect(reentry.mode).toBe("sibling-op");
+        expect(reentry.message).toContain("sibling operation");
+        expect(reentry.message).toContain("'tx' proxy");
+        expect(reentry.message).toContain("SAVEPOINT");
+        expect(reentry.message).toContain("single storage instance");
 
         releaseInner();
         await txPromise;
-        await siblingPut;
 
         expect(await a.get({ name: "tx-row", type: "x" })).toBeDefined();
-        expect(await b.get({ name: "sibling-row", type: "x" })).toBeDefined();
+        // After the tx releases the connection, a sibling put succeeds.
+        await b.put({ name: "post-tx-row", type: "x", option: "sib", success: true });
+        expect(await b.get({ name: "post-tx-row", type: "x" })).toBeDefined();
       } finally {
         await pglite.close();
       }
@@ -396,13 +410,42 @@ describe("PostgresTabularStorage", () => {
       const [a, b, pglite] = await makeSharedPair();
       try {
         const start = Date.now();
-        const attempt = a.withTransaction(async () => {
-          await b.withTransaction(async () => {
-            // unreachable
+        let caught: unknown;
+        try {
+          await a.withTransaction(async () => {
+            await b.withTransaction(async () => {
+              // unreachable
+            });
           });
-        });
-        await expect(attempt).rejects.toBeInstanceOf(ConnectionReentryError);
+        } catch (err) {
+          caught = err;
+        }
+        expect(caught).toBeInstanceOf(ConnectionReentryError);
+        const reentry = caught as ConnectionReentryError;
+        expect(reentry.mode).toBe("nested-transaction");
+        expect(reentry.message).toContain("open its own transaction");
+        expect(reentry.message).toContain("'tx' proxy");
+        expect(reentry.message).toContain("SAVEPOINT");
+        expect(reentry.message).toContain("single storage instance");
         expect(Date.now() - start).toBeLessThan(500);
+      } finally {
+        await pglite.close();
+      }
+    });
+
+    it("same-instance nested writes via tx proxy still work", async () => {
+      const [a, , pglite] = await makeSharedPair();
+      try {
+        await a.withTransaction(async (tx) => {
+          await tx.put({ name: "n1", type: "x", option: "v1", success: true });
+          await tx.putBulk([
+            { name: "n2", type: "x", option: "v2", success: true },
+            { name: "n3", type: "x", option: "v3", success: true },
+          ]);
+        });
+        expect(await a.get({ name: "n1", type: "x" })).toBeDefined();
+        expect(await a.get({ name: "n2", type: "x" })).toBeDefined();
+        expect(await a.get({ name: "n3", type: "x" })).toBeDefined();
       } finally {
         await pglite.close();
       }
