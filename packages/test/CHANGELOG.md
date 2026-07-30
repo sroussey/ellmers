@@ -1,5 +1,35 @@
 # @workglow/test
 
+## 0.3.29
+
+### Bug Fixes
+
+#### storage
+
+- browser-safe cross-instance re-entry + actionable ConnectionReentryError
+- BigInt-safe primary-key fingerprint in bulk paths
+- share a connection mutex across storages bound to one handle
+
+#### util,llamacpp
+
+- tenant-scope id and per-session mutex prep
+
+### Tests
+
+#### gemini
+
+- stub structured NOT_FOUND matcher suite pending fallback file
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1098.0
+- `@cloudflare/workers-types`: ^5.20260730.1
+- `miniflare`: ^4.20260722.1
+
 ## 0.3.28
 
 ### Features

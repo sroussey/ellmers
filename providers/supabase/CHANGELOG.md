@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.29
+
+### Bug Fixes
+
+#### storage
+
+- BigInt-safe primary-key fingerprint in bulk paths
+
 ## 0.3.28
 
 ## 0.3.27

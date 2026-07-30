@@ -1,5 +1,16 @@
 # @workglow/cli
 
+## 0.3.29
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `chalk`: ^6.0.0
+- `smol-toml`: ^1.7.1
+
 ## 0.3.28
 
 ## 0.3.27

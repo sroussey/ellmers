@@ -1,5 +1,21 @@
 # @workglow/storage
 
+## 0.3.29
+
+### Features
+
+#### storage
+
+- implement ConnectionMutex for browser and server environments
+
+### Bug Fixes
+
+#### storage
+
+- browser-safe cross-instance re-entry + actionable ConnectionReentryError
+- BigInt-safe primary-key fingerprint in bulk paths
+- share a connection mutex across storages bound to one handle
+
 ## 0.3.28
 
 ## 0.3.27

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.29
+
+### Bug Fixes
+
+#### storage
+
+- share a connection mutex across storages bound to one handle
+
 ## 0.3.28
 
 ## 0.3.27

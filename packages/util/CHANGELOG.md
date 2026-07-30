@@ -1,5 +1,13 @@
 # @workglow/util
 
+## 0.3.29
+
+### Bug Fixes
+
+#### util,llamacpp
+
+- tenant-scope id and per-session mutex prep
+
 ## 0.3.28
 
 ## 0.3.27
