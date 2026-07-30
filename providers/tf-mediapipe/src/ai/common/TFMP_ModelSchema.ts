@@ -65,9 +65,9 @@ export const TFMPModelSchema = {
         },
         chat_template: {
           type: "string",
-          enum: ["gemma", "none"],
+          enum: ["gemma", "chatml", "none"],
           description:
-            "GenAI only: how prompts and chat messages are rendered into the LLM's turn format. MediaPipe web LLM bundles are Gemma-family, so 'gemma' is the default; 'none' passes text through verbatim.",
+            "GenAI only: how prompts and chat messages are rendered into the LLM's turn format. Use 'gemma' for Gemma-family bundles (default), 'chatml' for Qwen-family bundles, 'none' to pass text through verbatim.",
           default: "gemma",
         },
       },

@@ -29,26 +29,34 @@ import { Workflow } from "@workglow/task-graph";
 // 1. Register the provider (inline; see registerTensorFlowMediaPipe for worker-backed)
 await registerTensorFlowMediaPipeInline();
 
-// 2. Register an LLM model (Gemma 3 1B, int4 web bundle — requires WebGPU)
+// 2. Register an LLM model (Qwen2.5 1.5B, int8 bundle — requires WebGPU)
 await getGlobalModelRepository().addModel({
-  model_id: "gemma3-1b-it",
-  title: "Gemma 3 1B IT",
+  model_id: "qwen2.5-1.5b-instruct",
+  title: "Qwen2.5 1.5B Instruct",
   description: "On-device LLM via MediaPipe",
-  capabilities: ["text.generation", "json-mode", "model.count-tokens"],
+  capabilities: [
+    "text.generation",
+    "json-mode",
+    "model.count-tokens",
+    "model.download-remove",
+    "model.info",
+    "model.search",
+  ],
   provider: "TENSORFLOW_MEDIAPIPE",
   provider_config: {
     task_engine: "genai",
     pipeline: "genai-text",
     model_path:
-      "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4-web.task",
-    max_tokens: 1000,
+      "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
+    max_tokens: 1280,
+    chat_template: "chatml",
   },
   metadata: {},
 });
 
 // 3. Use it in a workflow (streams tokens as they generate)
 const workflow = new Workflow();
-workflow.pipe(new TextGenerationTask({ model: "gemma3-1b-it", prompt: "Hello!" }));
+workflow.pipe(new TextGenerationTask({ model: "qwen2.5-1.5b-instruct", prompt: "Hello!" }));
 const result = await workflow.run();
 ```
 
@@ -62,10 +70,14 @@ unavailable). Text and audio tasks are CPU-only on web and ignore the flag.
 ### GenAI notes
 
 - Chat and prompt inputs are rendered with the Gemma turn format by default
-  (`provider_config.chat_template: "gemma" | "none"`).
+  (`provider_config.chat_template: "gemma" | "chatml" | "none"`).
 - `max_tokens` (combined input+output budget), `top_k`, `temperature`, and
-  `random_seed` are set at model load from `provider_config`; a per-run
-  `temperature` input is applied via `setOptions` without reloading.
+  `random_seed` are fixed at model load from `provider_config` — the web SDK
+  cannot change sampler options after load, so per-run temperature inputs are
+  ignored.
+- Gemma bundles on Hugging Face are license-gated (anonymous downloads fail);
+  accept the Gemma license and host the file yourself, or use an ungated bundle
+  such as Qwen2.5 (`chat_template: "chatml"`).
 - Structured generation (`json-mode`) is prompt-engineered; the task layer
   validates against the output schema and retries.
 

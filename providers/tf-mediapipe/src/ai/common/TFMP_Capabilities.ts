@@ -36,8 +36,8 @@ export function inferTfmpCapabilities(model: CapabilityHints): readonly Capabili
   );
   const baseName = (id.split("/").pop() ?? id).toLowerCase();
 
-  // LLM bundles for the genai engine (Gemma-family .task / .litertlm files).
-  if (/gemma|\.litertlm$|(?:^|[-_])llm(?:[-_.]|$)/.test(baseName)) {
+  // LLM bundles for the genai engine (e.g. Gemma/Qwen .task / .litertlm files).
+  if (/gemma|qwen|\.litertlm$|(?:^|[-_])llm(?:[-_.]|$)/.test(baseName)) {
     return [
       "text.generation",
       "json-mode",

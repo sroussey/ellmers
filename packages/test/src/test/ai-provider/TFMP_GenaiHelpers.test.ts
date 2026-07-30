@@ -5,6 +5,9 @@
  */
 
 import { _testOnly } from "@workglow/tf-mediapipe/ai";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const {
@@ -14,6 +17,7 @@ const {
   optionsMatch,
   resolveTfmpChatTemplate,
   resolveTfmpDelegate,
+  TFMP_GENAI_WASM_VERSION,
   withGenaiLock,
 } = _testOnly;
 
@@ -99,6 +103,40 @@ describe("buildGenaiPrompt", () => {
   });
 });
 
+describe("buildGenaiPrompt chatml", () => {
+  it("renders system natively and opens an assistant turn", () => {
+    const prompt = buildGenaiPrompt(
+      [
+        { role: "system", content: "Be terse." },
+        { role: "user", content: "Hi" },
+      ],
+      "chatml"
+    );
+    expect(prompt).toBe(
+      "<|im_start|>system\nBe terse.<|im_end|>\n" +
+        "<|im_start|>user\nHi<|im_end|>\n" +
+        "<|im_start|>assistant\n"
+    );
+  });
+
+  it("renders multi-turn history", () => {
+    const prompt = buildGenaiPrompt(
+      [
+        { role: "user", content: "One" },
+        { role: "assistant", content: "Two" },
+        { role: "user", content: "Three" },
+      ],
+      "chatml"
+    );
+    expect(prompt).toBe(
+      "<|im_start|>user\nOne<|im_end|>\n" +
+        "<|im_start|>assistant\nTwo<|im_end|>\n" +
+        "<|im_start|>user\nThree<|im_end|>\n" +
+        "<|im_start|>assistant\n"
+    );
+  });
+});
+
 describe("resolveTfmpChatTemplate", () => {
   it("defaults to gemma", () => {
     expect(resolveTfmpChatTemplate(undefined)).toBe("gemma");
@@ -107,6 +145,24 @@ describe("resolveTfmpChatTemplate", () => {
   });
   it("honors none", () => {
     expect(resolveTfmpChatTemplate("none")).toBe("none");
+  });
+  it("honors chatml", () => {
+    expect(resolveTfmpChatTemplate("chatml")).toBe("chatml");
+  });
+});
+
+describe("TFMP_GENAI_WASM_VERSION", () => {
+  it("matches the installed @mediapipe/tasks-genai version", () => {
+    const requireFromTfmp = createRequire(
+      join(process.cwd(), "providers/tf-mediapipe/package.json")
+    );
+    // The SDK's "exports" map does not expose ./package.json, so resolve its
+    // entry point and read the manifest sitting next to it.
+    const entry = requireFromTfmp.resolve("@mediapipe/tasks-genai");
+    const pkg = JSON.parse(readFileSync(join(dirname(entry), "package.json"), "utf8")) as {
+      version: string;
+    };
+    expect(TFMP_GENAI_WASM_VERSION).toBe(pkg.version);
   });
 });
 

@@ -106,6 +106,12 @@ describe("TensorFlowMediaPipeQueuedProvider.inferCapabilities", () => {
     expect(caps).toContain("model.count-tokens");
   });
 
+  it("infers text.generation for qwen bundles", () => {
+    expect(
+      provider.inferCapabilities(model("Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv1280.task"))
+    ).toContain("text.generation");
+  });
+
   it("infers text.generation for .litertlm files", () => {
     expect(provider.inferCapabilities(model("some_model.litertlm"))).toContain("text.generation");
   });

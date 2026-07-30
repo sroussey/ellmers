@@ -16,7 +16,7 @@ import { buildGenaiPrompt, resolveTfmpChatTemplate } from "./common/TFMP_ChatTem
 import { resolveTfmpDelegate } from "./common/TFMP_Delegate";
 import { isGenaiBusy, withGenaiLock } from "./common/TFMP_GenaiRuntime";
 import { TFMP_PREVIEW_TASKS, TFMP_RUN_FNS } from "./common/TFMP_JobRunFns";
-import { optionsMatch } from "./common/TFMP_Runtime";
+import { optionsMatch, TFMP_GENAI_WASM_VERSION } from "./common/TFMP_Runtime";
 import { extractJsonFromText } from "./common/TFMP_StructuredGeneration";
 import { TensorFlowMediaPipeQueuedProvider } from "./TensorFlowMediaPipeQueuedProvider";
 
@@ -28,6 +28,7 @@ export const _testOnly = {
   TFMP_RUN_FN_SPECS,
   TFMP_RUN_FNS,
   TFMP_PREVIEW_TASKS,
+  TFMP_GENAI_WASM_VERSION,
   buildGenaiPrompt,
   resolveTfmpChatTemplate,
   resolveTfmpDelegate,
