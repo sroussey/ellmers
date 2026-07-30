@@ -6,7 +6,12 @@
 
 import { PermanentJobError } from "@workglow/job-queue";
 import type { StreamPhase } from "@workglow/task-graph";
-import { loadTfmpTasksTextSDK, loadTfmpTasksVisionSDK } from "./TFMP_Client";
+import {
+  loadTfmpTasksAudioSDK,
+  loadTfmpTasksGenaiSDK,
+  loadTfmpTasksTextSDK,
+  loadTfmpTasksVisionSDK,
+} from "./TFMP_Client";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 
 export interface TFMPWasmFileset {
@@ -92,14 +97,14 @@ const getWasmTask = async (
       break;
     }
     case "audio": {
-      const { FilesetResolver } = await loadTfmpTasksTextSDK();
+      const { FilesetResolver } = await loadTfmpTasksAudioSDK();
       wasmFileset = await FilesetResolver.forAudioTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-audio@latest/wasm"
       );
       break;
     }
     case "genai": {
-      const { FilesetResolver } = await loadTfmpTasksTextSDK();
+      const { FilesetResolver } = await loadTfmpTasksGenaiSDK();
       wasmFileset = await FilesetResolver.forGenAiTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@latest/wasm"
       );
