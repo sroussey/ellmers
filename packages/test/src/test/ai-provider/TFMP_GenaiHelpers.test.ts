@@ -7,7 +7,7 @@
 import { _testOnly } from "@workglow/tf-mediapipe/ai";
 import { describe, expect, it } from "vitest";
 
-const { buildGenaiPrompt, resolveTfmpChatTemplate, resolveTfmpDelegate } = _testOnly;
+const { buildGenaiPrompt, optionsMatch, resolveTfmpChatTemplate, resolveTfmpDelegate } = _testOnly;
 
 describe("resolveTfmpDelegate", () => {
   it("defaults vision to GPU", () => {
@@ -99,5 +99,34 @@ describe("resolveTfmpChatTemplate", () => {
   });
   it("honors none", () => {
     expect(resolveTfmpChatTemplate("none")).toBe("none");
+  });
+});
+
+describe("optionsMatch", () => {
+  it("deep-compares nested baseOptions", () => {
+    expect(
+      optionsMatch(
+        { baseOptions: { delegate: "GPU", modelAssetPath: "m" } },
+        { baseOptions: { delegate: "GPU", modelAssetPath: "m" } }
+      )
+    ).toBe(true);
+    expect(
+      optionsMatch(
+        { baseOptions: { delegate: "GPU", modelAssetPath: "m" } },
+        { baseOptions: { delegate: "CPU", modelAssetPath: "m" } }
+      )
+    ).toBe(false);
+  });
+
+  it("still compares scalars and arrays", () => {
+    expect(optionsMatch({ numHands: 2 }, { numHands: 2 })).toBe(true);
+    expect(optionsMatch({ numHands: 2 }, { numHands: 1 })).toBe(false);
+    expect(optionsMatch({ a: [1, 2] }, { a: [1, 2] })).toBe(true);
+    expect(optionsMatch({ a: [1, 2] }, { a: [2, 1] })).toBe(false);
+  });
+
+  it("rejects differing key sets", () => {
+    expect(optionsMatch({ a: 1 }, { a: 1, b: 2 })).toBe(false);
+    expect(optionsMatch({ a: 1 }, { b: 1 })).toBe(false);
   });
 });
