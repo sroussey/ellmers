@@ -10,7 +10,7 @@ import type { StreamPhase } from "@workglow/task-graph";
 import { loadTfmpTasksGenaiSDK } from "./TFMP_Client";
 import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 import type { TaskInstance } from "./TFMP_Runtime";
-import { getWasmTask, modelTaskCache, wasm_reference_counts } from "./TFMP_Runtime";
+import { getWasmTask, modelTaskCache, wasm_reference_counts, wasm_tasks } from "./TFMP_Runtime";
 
 interface GenaiProviderConfig {
   readonly model_path: string;
@@ -20,11 +20,11 @@ interface GenaiProviderConfig {
   readonly random_seed?: number;
 }
 
-/** Sampler values applied to a live instance (per-run overrides via setOptions). */
-const appliedTemperature = new WeakMap<object, number | undefined>();
-
 /** Per-model promise chain: the SDK allows one generateResponse at a time per instance. */
 const genaiLocks = new Map<string, Promise<unknown>>();
+
+/** In-flight creations: single-flight per model path (cleared when settled). */
+const genaiCreations = new Map<string, Promise<LlmInference>>();
 
 let _webGpuDevicePromise: Promise<unknown> | undefined;
 
@@ -74,6 +74,11 @@ export async function withGenaiLock<T>(model_path: string, fn: () => Promise<T>)
   }
 }
 
+/** True when a run currently holds (or is queued on) the model's lock. */
+export function isGenaiBusy(model_path: string): boolean {
+  return genaiLocks.has(model_path);
+}
+
 function findCachedGenai(model_path: string): LlmInference | undefined {
   const entries = modelTaskCache.get(model_path);
   const entry = entries?.find((cached) => cached.task_engine === "genai");
@@ -87,11 +92,11 @@ export function peekGenaiLlm(model: TFMPModelConfig): LlmInference | undefined {
 
 /**
  * Get (or create) the single LlmInference instance for a model. Creation
- * options come from `provider_config` only; per-run sampler overrides go
- * through {@link applyGenaiSamplerOverrides} so the multi-GB instance is
- * never re-created for a sampler change. The instance registers into the
- * shared modelTaskCache, so `model.download-remove` (TFMP_Unload) and
- * `model.info` (is_loaded) work unchanged.
+ * options come from `provider_config` only — the web SDK cannot change sampler
+ * options after load, so there are no per-run overrides. The instance registers
+ * into the shared modelTaskCache, so `model.download-remove` (TFMP_Unload) and
+ * `model.info` (is_loaded) work unchanged. Concurrent cold starts share one
+ * creation instead of loading the multi-GB model twice.
  */
 export async function getGenaiLlm(
   model: TFMPModelConfig,
@@ -102,6 +107,25 @@ export async function getGenaiLlm(
 
   const cached = findCachedGenai(model_path);
   if (cached) return cached;
+
+  const inFlight = genaiCreations.get(model_path);
+  if (inFlight) return inFlight;
+
+  const creation = createGenaiLlm(model, emit, signal);
+  genaiCreations.set(model_path, creation);
+  try {
+    return await creation;
+  } finally {
+    genaiCreations.delete(model_path);
+  }
+}
+
+async function createGenaiLlm(
+  model: TFMPModelConfig,
+  emit: (event: StreamPhase) => void,
+  signal: AbortSignal
+): Promise<LlmInference> {
+  const model_path = model.provider_config.model_path;
 
   if (signal.aborted) {
     throw new PermanentJobError("Aborted job");
@@ -132,8 +156,6 @@ export async function getGenaiLlm(
     throw new PermanentJobError(`Failed to load MediaPipe LLM model: ${message}`);
   }
 
-  appliedTemperature.set(llm, pc.temperature);
-
   if (!modelTaskCache.has(model_path)) {
     modelTaskCache.set(model_path, []);
   }
@@ -146,26 +168,43 @@ export async function getGenaiLlm(
 }
 
 /**
- * Apply a per-run temperature override via setOptions when it differs from
- * the value applied to the live instance. Never touches baseOptions (that
- * would reload the model). Call under {@link withGenaiLock}.
+ * Close and uncache every genai instance for a model under the per-model
+ * lock, so an in-flight generateResponse/sizeInTokens finishes first. Must
+ * NOT be called from inside a withGenaiLock closure (it takes the lock).
  */
-export async function applyGenaiSamplerOverrides(
-  llm: LlmInference,
-  input: { readonly temperature?: number }
-): Promise<void> {
-  const desired = input.temperature;
-  if (desired === undefined) return;
-  if (appliedTemperature.get(llm) === desired) return;
-  await llm.setOptions({ temperature: desired });
-  appliedTemperature.set(llm, desired);
+export async function closeGenaiLlm(model_path: string): Promise<void> {
+  await withGenaiLock(model_path, async () => {
+    const entries = modelTaskCache.get(model_path);
+    if (!entries) return;
+    const remaining = entries.filter((cached) => {
+      if (cached.task_engine !== "genai") return true;
+      try {
+        cached.task.close();
+      } catch {
+        // already closed
+      }
+      const newCount = (wasm_reference_counts.get("genai") ?? 1) - 1;
+      if (newCount <= 0) {
+        wasm_tasks.delete("genai");
+        wasm_reference_counts.delete("genai");
+      } else {
+        wasm_reference_counts.set("genai", newCount);
+      }
+      return false;
+    });
+    if (remaining.length > 0) {
+      modelTaskCache.set(model_path, remaining);
+    } else {
+      modelTaskCache.delete(model_path);
+    }
+  });
 }
 
 /**
  * Run one streaming generation. The SDK's progressListener receives newly
- * generated partial text (a delta); abort maps to cancelProcessing(), and
- * cancel signals are cleared afterwards so the next run is not
- * insta-cancelled. Call under {@link withGenaiLock}.
+ * generated partial text (a delta); abort maps to cancelProcessing(), and any
+ * cancel signal is cleared afterwards where the SDK supports it. Call under
+ * {@link withGenaiLock}.
  */
 export async function generateGenaiResponse(
   llm: LlmInference,
@@ -190,10 +229,16 @@ export async function generateGenaiResponse(
     });
   } finally {
     signal.removeEventListener("abort", onAbort);
-    try {
-      llm.clearCancelSignals();
-    } catch {
-      // instance may already be closed
+    // 0.10.29 ships without clearCancelSignals (declared in the d.ts but not
+    // exported from the bundle); the SDK also self-resets its cancel flag at
+    // the start of each generation, so this is a best-effort call for newer SDKs.
+    const clear = (llm as { clearCancelSignals?: () => void }).clearCancelSignals;
+    if (typeof clear === "function") {
+      try {
+        clear.call(llm);
+      } catch {
+        // instance may already be closed
+      }
     }
   }
 }

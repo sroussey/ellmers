@@ -7,12 +7,7 @@
 import type { AiProviderRunFn, ToolCallingTaskInput } from "@workglow/ai";
 import { toTextFlatMessages } from "@workglow/ai/worker";
 import { buildGenaiPrompt, resolveTfmpChatTemplate } from "./TFMP_ChatTemplate";
-import {
-  applyGenaiSamplerOverrides,
-  generateGenaiResponse,
-  getGenaiLlm,
-  withGenaiLock,
-} from "./TFMP_GenaiRuntime";
+import { generateGenaiResponse, getGenaiLlm, withGenaiLock } from "./TFMP_GenaiRuntime";
 import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 
 /**
@@ -32,9 +27,8 @@ export const TFMP_TextGeneration: AiProviderRunFn<any, any, TFMPModelConfig> = a
   const messages = toTextFlatMessages(input as ToolCallingTaskInput);
   const prompt = buildGenaiPrompt(messages, template);
 
-  const llm = await getGenaiLlm(model!, emit, signal);
   await withGenaiLock(model!.provider_config.model_path, async () => {
-    await applyGenaiSamplerOverrides(llm, input as { temperature?: number });
+    const llm = await getGenaiLlm(model!, emit, signal);
     await generateGenaiResponse(llm, prompt, signal, (piece) =>
       emit({ type: "text-delta", port: "text", textDelta: piece })
     );

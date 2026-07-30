@@ -14,6 +14,7 @@ export * from "./registerTensorFlowMediaPipe";
 import { TFMP_RUN_FN_SPECS } from "./common/TFMP_Capabilities";
 import { buildGenaiPrompt, resolveTfmpChatTemplate } from "./common/TFMP_ChatTemplate";
 import { resolveTfmpDelegate } from "./common/TFMP_Delegate";
+import { isGenaiBusy, withGenaiLock } from "./common/TFMP_GenaiRuntime";
 import { TFMP_PREVIEW_TASKS, TFMP_RUN_FNS } from "./common/TFMP_JobRunFns";
 import { optionsMatch } from "./common/TFMP_Runtime";
 import { extractJsonFromText } from "./common/TFMP_StructuredGeneration";
@@ -32,4 +33,6 @@ export const _testOnly = {
   resolveTfmpDelegate,
   optionsMatch,
   extractJsonFromText,
+  withGenaiLock,
+  isGenaiBusy,
 } as const;

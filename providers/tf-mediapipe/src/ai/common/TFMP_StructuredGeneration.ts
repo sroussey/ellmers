@@ -11,12 +11,7 @@ import type {
 } from "@workglow/ai";
 import { parsePartialJson } from "@workglow/util/worker";
 import { buildGenaiPrompt, resolveTfmpChatTemplate } from "./TFMP_ChatTemplate";
-import {
-  applyGenaiSamplerOverrides,
-  generateGenaiResponse,
-  getGenaiLlm,
-  withGenaiLock,
-} from "./TFMP_GenaiRuntime";
+import { generateGenaiResponse, getGenaiLlm, withGenaiLock } from "./TFMP_GenaiRuntime";
 import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 
 function buildStructuredGenerationPrompt(input: StructuredGenerationTaskInput): string {
@@ -81,13 +76,11 @@ export const TFMP_StructuredGeneration: AiProviderRunFn<
     template
   );
 
-  const llm = await getGenaiLlm(model!, emit, signal);
-
   let fullText = "";
   let jsonStart = -1;
 
   await withGenaiLock(model!.provider_config.model_path, async () => {
-    await applyGenaiSamplerOverrides(llm, input);
+    const llm = await getGenaiLlm(model!, emit, signal);
     await generateGenaiResponse(llm, prompt, signal, (piece) => {
       fullText += piece;
       if (jsonStart === -1) {

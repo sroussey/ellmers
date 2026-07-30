@@ -10,9 +10,11 @@ import { describe, expect, it } from "vitest";
 const {
   buildGenaiPrompt,
   extractJsonFromText,
+  isGenaiBusy,
   optionsMatch,
   resolveTfmpChatTemplate,
   resolveTfmpDelegate,
+  withGenaiLock,
 } = _testOnly;
 
 describe("resolveTfmpDelegate", () => {
@@ -105,6 +107,34 @@ describe("resolveTfmpChatTemplate", () => {
   });
   it("honors none", () => {
     expect(resolveTfmpChatTemplate("none")).toBe("none");
+  });
+});
+
+describe("withGenaiLock", () => {
+  it("serializes calls FIFO per model path", async () => {
+    const order: number[] = [];
+    const gate = Promise.withResolvers<void>();
+    const first = withGenaiLock("m", async () => {
+      await gate.promise;
+      order.push(1);
+    });
+    const second = withGenaiLock("m", async () => {
+      order.push(2);
+    });
+    expect(isGenaiBusy("m")).toBe(true);
+    gate.resolve();
+    await Promise.all([first, second]);
+    expect(order).toEqual([1, 2]);
+    expect(isGenaiBusy("m")).toBe(false);
+  });
+
+  it("keeps chaining after a rejection", async () => {
+    await expect(
+      withGenaiLock("m2", async () => {
+        throw new Error("boom");
+      })
+    ).rejects.toThrow("boom");
+    await expect(withGenaiLock("m2", async () => "ok")).resolves.toBe("ok");
   });
 });
 

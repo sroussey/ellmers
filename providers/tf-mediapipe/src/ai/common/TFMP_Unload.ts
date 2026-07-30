@@ -9,6 +9,7 @@ import type {
   ModelDownloadRemoveTaskRunInput,
   ModelDownloadRemoveTaskRunOutput,
 } from "@workglow/ai";
+import { closeGenaiLlm } from "./TFMP_GenaiRuntime";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { modelTaskCache, wasm_reference_counts, wasm_tasks } from "./TFMP_Runtime";
 
@@ -18,6 +19,13 @@ export const TFMP_Unload: AiProviderRunFn<
   TFMPModelConfig
 > = async (input, model, _signal, emit) => {
   const model_path = model!.provider_config.model_path;
+
+  // Genai instances close under the per-model lock so an in-flight generation
+  // finishes first; the loop below then handles any remaining engines.
+  if (modelTaskCache.get(model_path)?.some((cached) => cached.task_engine === "genai")) {
+    await closeGenaiLlm(model_path);
+  }
+
   if (modelTaskCache.has(model_path)) {
     const cachedTasks = modelTaskCache.get(model_path)!;
 

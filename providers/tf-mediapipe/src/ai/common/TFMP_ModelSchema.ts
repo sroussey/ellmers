@@ -56,7 +56,7 @@ export const TFMPModelSchema = {
           type: "number",
           minimum: 0,
           description:
-            "GenAI only: default sampling temperature; a per-run temperature input overrides it.",
+            "GenAI only: sampling temperature, fixed at model load (the web SDK cannot change sampler options after load).",
           default: 0.8,
         },
         random_seed: {

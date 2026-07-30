@@ -8,7 +8,8 @@ import type { ModelRecord } from "@workglow/ai";
 import { _testOnly } from "@workglow/tf-mediapipe/ai";
 import { describe, expect, it } from "vitest";
 
-const { TensorFlowMediaPipeQueuedProvider, TFMP_RUN_FN_SPECS, TFMP_RUN_FNS } = _testOnly;
+const { TensorFlowMediaPipeQueuedProvider, TFMP_PREVIEW_TASKS, TFMP_RUN_FN_SPECS, TFMP_RUN_FNS } =
+  _testOnly;
 
 function model(model_id: string, capabilities: readonly string[] = []): ModelRecord {
   return {
@@ -149,5 +150,9 @@ describe("TFMP_RUN_FNS shape", () => {
     expect(sets).toContain("text.generation");
     expect(sets).toContain("json-mode,text.generation");
     expect(sets).toContain("model.count-tokens");
+  });
+
+  it("previews only count-tokens (generation previews would load the model)", () => {
+    expect(Object.keys(TFMP_PREVIEW_TASKS)).toEqual(["CountTokensTask"]);
   });
 });

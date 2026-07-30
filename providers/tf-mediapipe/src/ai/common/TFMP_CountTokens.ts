@@ -11,7 +11,7 @@ import type {
   CountTokensTaskOutput,
 } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
-import { getGenaiLlm, peekGenaiLlm, withGenaiLock } from "./TFMP_GenaiRuntime";
+import { getGenaiLlm, isGenaiBusy, peekGenaiLlm, withGenaiLock } from "./TFMP_GenaiRuntime";
 import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 
 export const TFMP_CountTokens: AiProviderRunFn<
@@ -19,10 +19,10 @@ export const TFMP_CountTokens: AiProviderRunFn<
   CountTokensTaskOutput,
   TFMPModelConfig
 > = async (input, model, signal, emit) => {
-  const llm = await getGenaiLlm(model!, emit, signal);
-  const count = await withGenaiLock(model!.provider_config.model_path, async () =>
-    llm.sizeInTokens(input.text)
-  );
+  const count = await withGenaiLock(model!.provider_config.model_path, async () => {
+    const llm = await getGenaiLlm(model!, emit, signal);
+    return llm.sizeInTokens(input.text);
+  });
   if (typeof count !== "number") {
     throw new PermanentJobError("Failed to tokenize input for count-tokens");
   }
@@ -30,18 +30,19 @@ export const TFMP_CountTokens: AiProviderRunFn<
 };
 
 /**
- * Preview must never trigger a multi-hundred-MB model load; it answers only
- * when the instance is already resident.
+ * Preview must never trigger a multi-hundred-MB model load, nor queue behind a
+ * running generation: it answers only when the instance is already resident and
+ * the model is idle.
  */
 export const TFMP_CountTokens_Preview: AiProviderPreviewRunFn<
   CountTokensTaskInput,
   CountTokensTaskOutput,
   TFMPModelConfig
 > = async (input, model) => {
+  const model_path = model!.provider_config.model_path;
+  if (isGenaiBusy(model_path)) return undefined;
   const llm = peekGenaiLlm(model!);
   if (!llm) return undefined;
-  const count = await withGenaiLock(model!.provider_config.model_path, async () =>
-    llm.sizeInTokens(input.text)
-  );
+  const count = await withGenaiLock(model_path, async () => llm.sizeInTokens(input.text));
   return typeof count === "number" ? { count } : undefined;
 };

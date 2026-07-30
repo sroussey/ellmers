@@ -11,7 +11,7 @@ import type {
 } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
 import { loadTfmpTasksTextSDK, loadTfmpTasksVisionSDK } from "./TFMP_Client";
-import { getGenaiLlm } from "./TFMP_GenaiRuntime";
+import { closeGenaiLlm, getGenaiLlm, withGenaiLock } from "./TFMP_GenaiRuntime";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import type { TaskInstance } from "./TFMP_Runtime";
 import { getModelTask, modelTaskCache, wasm_reference_counts, wasm_tasks } from "./TFMP_Runtime";
@@ -97,9 +97,13 @@ export const TFMP_Download: AiProviderRunFn<
       break;
     }
     case "genai-text": {
-      const llm = await getGenaiLlm(model!, emit, signal);
-      task = llm as unknown as TaskInstance;
-      break;
+      await withGenaiLock(model!.provider_config.model_path, async () => {
+        await getGenaiLlm(model!, emit, signal);
+      });
+      emit({ type: "phase", message: "Pipeline loaded", progress: 0.9 });
+      await closeGenaiLlm(model!.provider_config.model_path);
+      emit({ type: "finish", data: { model: input.model } });
+      return;
     }
     default:
       throw new PermanentJobError(
