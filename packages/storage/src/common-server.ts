@@ -8,6 +8,13 @@
 
 export * from "./common";
 
+export {
+  __resetAlsForTesting,
+  ConnectionReentryError,
+  runInTransactionOnConnection,
+  runOnConnection,
+} from "./tabular/ConnectionMutex.server";
+
 export * from "./tabular/FsFolderTabularStorage";
 
 export * from "./kv/FsFolderJsonKvStorage";

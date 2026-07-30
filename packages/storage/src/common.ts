@@ -6,27 +6,26 @@
 
 // organize-imports-ignore
 
-export * from "./tabular/BaseTabularStorage";
 export * from "./tabular/BaseSqlTabularStorage";
+export * from "./tabular/BaseTabularStorage";
 export * from "./tabular/CachedTabularStorage";
-export * from "./tabular/ConnectionMutex";
-export * from "./tabular/pkFingerprint";
 export * from "./tabular/CoveringIndexMissingError";
 export { pickCoveringIndex } from "./tabular/coveringIndexPicker";
 export type {
-  RegisteredIndex,
   PickCoveringIndexInput,
   PickedIndex,
+  RegisteredIndex,
 } from "./tabular/coveringIndexPicker";
+export * from "./tabular/pkFingerprint";
 // Cursor codec: the public surface is the opaque type, the codec
 // functions, the length cap, and the cross-arity assertion. The
 // payload shape and version constant are implementation details —
 // keep them out of `@workglow/storage`'s public API so callers can't
 // depend on the encoding format and we stay free to evolve it.
 export {
-  encodeCursor,
-  decodeCursor,
   assertCursorMatches,
+  decodeCursor,
+  encodeCursor,
   MAX_CURSOR_LENGTH,
 } from "./tabular/Cursor";
 export type { PageCursor } from "./tabular/Cursor";
@@ -35,10 +34,10 @@ export * from "./tabular/HuggingFaceTabularStorage";
 export * from "./tabular/InMemoryTabularMigrationApplier";
 export * from "./tabular/InMemoryTabularStorage";
 export * from "./tabular/ITabularStorage";
-export * from "./tabular/StorageError";
-export * from "./tabular/TabularStorageRegistry";
 export * from "./tabular/sqlMigrationDdl";
 export * from "./tabular/SqlTabularMigrationApplier";
+export * from "./tabular/StorageError";
+export * from "./tabular/TabularStorageRegistry";
 export * from "./tabular/TelemetryTabularStorage";
 
 export * from "./kv/IKvStorage";
@@ -52,12 +51,12 @@ export * from "./util/PollingSubscriptionManager";
 
 export { safeEmit } from "./events/safeEmit";
 
-export * from "./sql";
 export * from "./migrations";
+export * from "./sql";
 
+export * from "./vector/assertVectorShape";
 export * from "./vector/InMemoryVectorStorage";
 export * from "./vector/IVectorStorage";
-export * from "./vector/assertVectorShape";
 export * from "./vector/TelemetryVectorStorage";
 
 export * from "./text/index";

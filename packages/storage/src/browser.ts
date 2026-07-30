@@ -8,4 +8,11 @@
 
 export * from "./common";
 
+export {
+  __resetAlsForTesting,
+  ConnectionReentryError,
+  runInTransactionOnConnection,
+  runOnConnection,
+} from "./tabular/ConnectionMutex.browser";
+
 export * from "./tabular/SharedInMemoryTabularStorage";
