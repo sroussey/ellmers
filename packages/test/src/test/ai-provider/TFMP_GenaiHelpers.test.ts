@@ -7,7 +7,13 @@
 import { _testOnly } from "@workglow/tf-mediapipe/ai";
 import { describe, expect, it } from "vitest";
 
-const { buildGenaiPrompt, optionsMatch, resolveTfmpChatTemplate, resolveTfmpDelegate } = _testOnly;
+const {
+  buildGenaiPrompt,
+  extractJsonFromText,
+  optionsMatch,
+  resolveTfmpChatTemplate,
+  resolveTfmpDelegate,
+} = _testOnly;
 
 describe("resolveTfmpDelegate", () => {
   it("defaults vision to GPU", () => {
@@ -128,5 +134,33 @@ describe("optionsMatch", () => {
   it("rejects differing key sets", () => {
     expect(optionsMatch({ a: 1 }, { a: 1, b: 2 })).toBe(false);
     expect(optionsMatch({ a: 1 }, { b: 1 })).toBe(false);
+  });
+});
+
+describe("extractJsonFromText", () => {
+  it("parses a bare JSON object", () => {
+    expect(extractJsonFromText('{"a": 1}')).toEqual({ a: 1 });
+  });
+
+  it("unwraps a ```json fence", () => {
+    expect(extractJsonFromText('```json\n{"a": 1}\n```')).toEqual({ a: 1 });
+  });
+
+  it("unwraps an anonymous fence", () => {
+    expect(extractJsonFromText('```\n{"a": 1}\n```')).toEqual({ a: 1 });
+  });
+
+  it("extracts an object embedded in prose", () => {
+    expect(extractJsonFromText('Sure! Here you go: {"a": 1} Hope that helps.')).toEqual({
+      a: 1,
+    });
+  });
+
+  it("recovers a truncated object via partial parsing", () => {
+    expect(extractJsonFromText('{"a": 1, "b": {"c": 2')).toEqual({ a: 1, b: { c: 2 } });
+  });
+
+  it("returns an empty object when no JSON is present", () => {
+    expect(extractJsonFromText("no json here")).toEqual({});
   });
 });
