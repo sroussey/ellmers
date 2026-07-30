@@ -7,7 +7,7 @@
 import { _testOnly } from "@workglow/tf-mediapipe/ai";
 import { describe, expect, it } from "vitest";
 
-const { resolveTfmpDelegate } = _testOnly;
+const { buildGenaiPrompt, resolveTfmpChatTemplate, resolveTfmpDelegate } = _testOnly;
 
 describe("resolveTfmpDelegate", () => {
   it("defaults vision to GPU", () => {
@@ -30,5 +30,74 @@ describe("resolveTfmpDelegate", () => {
   it("leaves genai to the genai runtime", () => {
     expect(resolveTfmpDelegate("genai", true)).toBeUndefined();
     expect(resolveTfmpDelegate("genai", false)).toBeUndefined();
+  });
+});
+
+describe("buildGenaiPrompt", () => {
+  it("wraps a single user message and opens a model turn", () => {
+    const prompt = buildGenaiPrompt([{ role: "user", content: "Hello" }], "gemma");
+    expect(prompt).toBe("<start_of_turn>user\nHello<end_of_turn>\n<start_of_turn>model\n");
+  });
+
+  it("folds the system prompt into the first user turn", () => {
+    const prompt = buildGenaiPrompt(
+      [
+        { role: "system", content: "Be terse." },
+        { role: "user", content: "Hi" },
+      ],
+      "gemma"
+    );
+    expect(prompt).toBe(
+      "<start_of_turn>user\nBe terse.\n\nHi<end_of_turn>\n<start_of_turn>model\n"
+    );
+  });
+
+  it("renders multi-turn history with model turns", () => {
+    const prompt = buildGenaiPrompt(
+      [
+        { role: "user", content: "One" },
+        { role: "assistant", content: "Two" },
+        { role: "user", content: "Three" },
+      ],
+      "gemma"
+    );
+    expect(prompt).toBe(
+      "<start_of_turn>user\nOne<end_of_turn>\n" +
+        "<start_of_turn>model\nTwo<end_of_turn>\n" +
+        "<start_of_turn>user\nThree<end_of_turn>\n" +
+        "<start_of_turn>model\n"
+    );
+  });
+
+  it("emits a lone system prompt as a user turn", () => {
+    const prompt = buildGenaiPrompt([{ role: "system", content: "Rules." }], "gemma");
+    expect(prompt).toBe("<start_of_turn>user\nRules.<end_of_turn>\n<start_of_turn>model\n");
+  });
+
+  it("none template passes a single message through verbatim", () => {
+    expect(buildGenaiPrompt([{ role: "user", content: "raw prompt" }], "none")).toBe("raw prompt");
+  });
+
+  it("none template joins messages with blank lines", () => {
+    expect(
+      buildGenaiPrompt(
+        [
+          { role: "system", content: "S" },
+          { role: "user", content: "U" },
+        ],
+        "none"
+      )
+    ).toBe("S\n\nU");
+  });
+});
+
+describe("resolveTfmpChatTemplate", () => {
+  it("defaults to gemma", () => {
+    expect(resolveTfmpChatTemplate(undefined)).toBe("gemma");
+    expect(resolveTfmpChatTemplate("gemma")).toBe("gemma");
+    expect(resolveTfmpChatTemplate("bogus")).toBe("gemma");
+  });
+  it("honors none", () => {
+    expect(resolveTfmpChatTemplate("none")).toBe("none");
   });
 });
