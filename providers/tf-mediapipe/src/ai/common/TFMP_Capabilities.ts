@@ -36,6 +36,18 @@ export function inferTfmpCapabilities(model: CapabilityHints): readonly Capabili
   );
   const baseName = (id.split("/").pop() ?? id).toLowerCase();
 
+  // LLM bundles for the genai engine (Gemma-family .task / .litertlm files).
+  if (/gemma|\.litertlm$|(?:^|[-_])llm(?:[-_.]|$)/.test(baseName)) {
+    return [
+      "text.generation",
+      "json-mode",
+      "model.count-tokens",
+      "model.download-remove",
+      "model.info",
+      "model.search",
+    ];
+  }
+
   // Hand landmarker / gesture recognizer share `hand_*` filenames.
   if (/gesture_recognizer/.test(baseName)) {
     return [

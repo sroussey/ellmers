@@ -5,12 +5,13 @@
  */
 
 import { registerProviderWorker } from "@workglow/ai/provider-utils";
-import { TFMP_RUN_FNS } from "./common/TFMP_JobRunFns";
+import { TFMP_PREVIEW_TASKS, TFMP_RUN_FNS } from "./common/TFMP_JobRunFns";
 import { TensorFlowMediaPipeProvider } from "./TensorFlowMediaPipeProvider";
 
 export async function registerTensorFlowMediaPipeWorker(): Promise<void> {
   await registerProviderWorker(
-    (ws) => new TensorFlowMediaPipeProvider(TFMP_RUN_FNS).registerOnWorkerServer(ws),
+    (ws) =>
+      new TensorFlowMediaPipeProvider(TFMP_RUN_FNS, TFMP_PREVIEW_TASKS).registerOnWorkerServer(ws),
     "TensorFlow MediaPipe"
   );
 }

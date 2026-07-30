@@ -97,6 +97,23 @@ describe("TensorFlowMediaPipeQueuedProvider.inferCapabilities", () => {
     const caps = provider.inferCapabilities(model("some-unrecognized-model.tflite"));
     expect(caps).toEqual(["model.search", "model.info"]);
   });
+
+  it("infers text.generation for gemma bundles", () => {
+    const caps = provider.inferCapabilities(model("gemma3-1b-it-int4-web.task"));
+    expect(caps).toContain("text.generation");
+    expect(caps).toContain("json-mode");
+    expect(caps).toContain("model.count-tokens");
+  });
+
+  it("infers text.generation for .litertlm files", () => {
+    expect(provider.inferCapabilities(model("some_model.litertlm"))).toContain("text.generation");
+  });
+
+  it("does not misclassify llm-substring words as genai", () => {
+    expect(provider.inferCapabilities(model("hand_landmarker.task"))).not.toContain(
+      "text.generation"
+    );
+  });
 });
 
 describe("capability-set parity", () => {
@@ -127,8 +144,10 @@ describe("TFMP_RUN_FNS shape", () => {
     expect(sets).toContain("model.info");
   });
 
-  it("does NOT register text.generation (TFMP has no text-gen capability)", () => {
+  it("registers genai text-generation capability sets", () => {
     const sets = TFMP_RUN_FNS.map((r) => [...r.serves].sort().join(","));
-    expect(sets).not.toContain("text.generation");
+    expect(sets).toContain("text.generation");
+    expect(sets).toContain("json-mode,text.generation");
+    expect(sets).toContain("model.count-tokens");
   });
 });

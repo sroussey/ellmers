@@ -15,6 +15,27 @@ import { TENSORFLOW_MEDIAPIPE } from "./TFMP_Constants";
 
 const TFMP_MODEL_RESULTS: ModelSearchResultItem[] = [
   {
+    id: "gemma3-1b-it",
+    label: "Gemma 3 1B IT",
+    description: "On-device LLM (int4, ~0.5 GB); streaming text generation; requires WebGPU",
+    record: {
+      provider: TENSORFLOW_MEDIAPIPE,
+      title: "Gemma 3 1B IT",
+      description:
+        "Gemma 3 1B instruction-tuned (int4 web bundle) running locally via MediaPipe LLM inference; requires WebGPU",
+      capabilities: ["text.generation", "json-mode", "model.count-tokens"],
+      provider_config: {
+        model_path:
+          "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4-web.task",
+        task_engine: "genai",
+        pipeline: "genai-text",
+        max_tokens: 1000,
+      },
+      metadata: {},
+    },
+    raw: { source: "mediapipe" },
+  },
+  {
     id: "universal-sentence-encoder",
     label: "Universal Sentence Encoder",
     description: "Text embedding model",

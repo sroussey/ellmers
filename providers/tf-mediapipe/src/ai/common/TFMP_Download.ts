@@ -11,6 +11,7 @@ import type {
 } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
 import { loadTfmpTasksTextSDK, loadTfmpTasksVisionSDK } from "./TFMP_Client";
+import { getGenaiLlm } from "./TFMP_GenaiRuntime";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import type { TaskInstance } from "./TFMP_Runtime";
 import { getModelTask, modelTaskCache, wasm_reference_counts, wasm_tasks } from "./TFMP_Runtime";
@@ -95,9 +96,14 @@ export const TFMP_Download: AiProviderRunFn<
       task = await getModelTask(model!, {}, emit, signal, PoseLandmarker);
       break;
     }
+    case "genai-text": {
+      const llm = await getGenaiLlm(model!, emit, signal);
+      task = llm as unknown as TaskInstance;
+      break;
+    }
     default:
       throw new PermanentJobError(
-        `Invalid pipeline: ${pipeline}. Supported pipelines: text-embedder, text-classifier, text-language-detector, vision-image-classifier, vision-image-embedder, vision-image-segmenter, vision-object-detector, vision-face-detector, vision-face-landmarker, vision-gesture-recognizer, vision-hand-landmarker, vision-pose-landmarker`
+        `Invalid pipeline: ${pipeline}. Supported pipelines: text-embedder, text-classifier, text-language-detector, genai-text, vision-image-classifier, vision-image-embedder, vision-image-segmenter, vision-object-detector, vision-face-detector, vision-face-landmarker, vision-gesture-recognizer, vision-hand-landmarker, vision-pose-landmarker`
       );
   }
 

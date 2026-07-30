@@ -22,6 +22,9 @@ export const TFMP_VISION_FACE_LANDMARKS = ["vision.face-landmarks"] as const sat
 export const TFMP_VISION_HAND_LANDMARKS = ["vision.hand-landmarks"] as const satisfies Capability[];
 export const TFMP_VISION_POSE_LANDMARKS = ["vision.pose-landmarks"] as const satisfies Capability[];
 export const TFMP_VISION_GESTURE = ["vision.gesture"] as const satisfies Capability[];
+export const TFMP_TEXT_GENERATION = ["text.generation"] as const satisfies Capability[];
+export const TFMP_JSON_MODE = ["text.generation", "json-mode"] as const satisfies Capability[];
+export const TFMP_COUNT_TOKENS = ["model.count-tokens"] as const satisfies Capability[];
 export const TFMP_MODEL_DOWNLOAD = ["model.download"] as const satisfies Capability[];
 export const TFMP_MODEL_UNLOAD = ["model.download-remove"] as const satisfies Capability[];
 export const TFMP_MODEL_SEARCH = ["model.search"] as const satisfies Capability[];
@@ -40,6 +43,9 @@ export const TFMP_CAPABILITY_SETS = [
   TFMP_VISION_HAND_LANDMARKS,
   TFMP_VISION_POSE_LANDMARKS,
   TFMP_VISION_GESTURE,
+  TFMP_TEXT_GENERATION,
+  TFMP_JSON_MODE,
+  TFMP_COUNT_TOKENS,
   TFMP_MODEL_DOWNLOAD,
   TFMP_MODEL_UNLOAD,
   TFMP_MODEL_SEARCH,
