@@ -11,6 +11,7 @@ import type {
 } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
 import { loadTfmpTasksTextSDK, loadTfmpTasksVisionSDK } from "./TFMP_Client";
+import { closeGenaiLlm, getGenaiLlm, withGenaiLock } from "./TFMP_GenaiRuntime";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import type { TaskInstance } from "./TFMP_Runtime";
 import { getModelTask, modelTaskCache, wasm_reference_counts, wasm_tasks } from "./TFMP_Runtime";
@@ -95,9 +96,18 @@ export const TFMP_Download: AiProviderRunFn<
       task = await getModelTask(model!, {}, emit, signal, PoseLandmarker);
       break;
     }
+    case "genai-text": {
+      await withGenaiLock(model!.provider_config.model_path, async () => {
+        await getGenaiLlm(model!, emit, signal);
+      });
+      emit({ type: "phase", message: "Pipeline loaded", progress: 0.9 });
+      await closeGenaiLlm(model!.provider_config.model_path);
+      emit({ type: "finish", data: { model: input.model } });
+      return;
+    }
     default:
       throw new PermanentJobError(
-        `Invalid pipeline: ${pipeline}. Supported pipelines: text-embedder, text-classifier, text-language-detector, vision-image-classifier, vision-image-embedder, vision-image-segmenter, vision-object-detector, vision-face-detector, vision-face-landmarker, vision-gesture-recognizer, vision-hand-landmarker, vision-pose-landmarker`
+        `Invalid pipeline: ${pipeline}. Supported pipelines: text-embedder, text-classifier, text-language-detector, genai-text, vision-image-classifier, vision-image-embedder, vision-image-segmenter, vision-object-detector, vision-face-detector, vision-face-landmarker, vision-gesture-recognizer, vision-hand-landmarker, vision-pose-landmarker`
       );
   }
 

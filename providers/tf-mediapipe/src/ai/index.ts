@@ -12,7 +12,12 @@ export * from "./common/TFMP_ModelSearch";
 export * from "./registerTensorFlowMediaPipe";
 
 import { TFMP_RUN_FN_SPECS } from "./common/TFMP_Capabilities";
-import { TFMP_RUN_FNS } from "./common/TFMP_JobRunFns";
+import { buildGenaiPrompt, resolveTfmpChatTemplate } from "./common/TFMP_ChatTemplate";
+import { resolveTfmpDelegate } from "./common/TFMP_Delegate";
+import { isGenaiBusy, withGenaiLock } from "./common/TFMP_GenaiRuntime";
+import { TFMP_PREVIEW_TASKS, TFMP_RUN_FNS } from "./common/TFMP_JobRunFns";
+import { optionsMatch, TFMP_GENAI_WASM_VERSION } from "./common/TFMP_Runtime";
+import { extractJsonFromText } from "./common/TFMP_StructuredGeneration";
 import { TensorFlowMediaPipeQueuedProvider } from "./TensorFlowMediaPipeQueuedProvider";
 
 /**
@@ -22,4 +27,13 @@ export const _testOnly = {
   TensorFlowMediaPipeQueuedProvider,
   TFMP_RUN_FN_SPECS,
   TFMP_RUN_FNS,
+  TFMP_PREVIEW_TASKS,
+  TFMP_GENAI_WASM_VERSION,
+  buildGenaiPrompt,
+  resolveTfmpChatTemplate,
+  resolveTfmpDelegate,
+  optionsMatch,
+  extractJsonFromText,
+  withGenaiLock,
+  isGenaiBusy,
 } as const;

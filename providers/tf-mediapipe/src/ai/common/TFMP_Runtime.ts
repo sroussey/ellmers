@@ -12,6 +12,8 @@ import {
   loadTfmpTasksTextSDK,
   loadTfmpTasksVisionSDK,
 } from "./TFMP_Client";
+import type { TfmpDelegate } from "./TFMP_Delegate";
+import { resolveTfmpDelegate } from "./TFMP_Delegate";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 
 export interface TFMPWasmFileset {
@@ -23,6 +25,15 @@ export interface TFMPWasmFileset {
 
 export const wasm_tasks = new Map<string, TFMPWasmFileset>();
 export const wasm_reference_counts = new Map<string, number>();
+
+/**
+ * Pinned WASM version for the genai engine. The genai JS↔WASM ABI moves
+ * quickly and the npm dependency (^0.10.29) trails the other task packages
+ * (^0.10.35), so the genai CDN assets are pinned to the bundled SDK version
+ * rather than `@latest`. Keep in sync with the `@mediapipe/tasks-genai`
+ * catalog entry in the root package.json.
+ */
+export const TFMP_GENAI_WASM_VERSION = "0.10.29";
 
 type TaskConstructor = {
   createFromOptions(
@@ -44,25 +55,28 @@ export interface CachedModelTask {
 
 export const modelTaskCache = new Map<string, CachedModelTask[]>();
 
-const optionsMatch = (opts1: Record<string, unknown>, opts2: Record<string, unknown>): boolean => {
+const valuesMatch = (val1: unknown, val2: unknown): boolean => {
+  if (val1 === val2) return true;
+  if (val1 && val2 && typeof val1 === "object" && typeof val2 === "object") {
+    return JSON.stringify(val1) === JSON.stringify(val2);
+  }
+  return false;
+};
+
+export const optionsMatch = (
+  opts1: Record<string, unknown>,
+  opts2: Record<string, unknown>
+): boolean => {
   const keys1 = Object.keys(opts1).sort();
   const keys2 = Object.keys(opts2).sort();
 
   if (keys1.length !== keys2.length) return false;
+  if (!keys1.every((key, i) => key === keys2[i])) return false;
 
-  return keys1.every((key) => {
-    const val1 = opts1[key];
-    const val2 = opts2[key];
-
-    if (Array.isArray(val1) && Array.isArray(val2)) {
-      return JSON.stringify(val1) === JSON.stringify(val2);
-    }
-
-    return val1 === val2;
-  });
+  return keys1.every((key) => valuesMatch(opts1[key], opts2[key]));
 };
 
-const getWasmTask = async (
+export const getWasmTask = async (
   model: TFMPModelConfig,
   emit: (event: StreamPhase) => void,
   signal: AbortSignal
@@ -106,7 +120,7 @@ const getWasmTask = async (
     case "genai": {
       const { FilesetResolver } = await loadTfmpTasksGenaiSDK();
       wasmFileset = await FilesetResolver.forGenAiTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@latest/wasm"
+        `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@${TFMP_GENAI_WASM_VERSION}/wasm`
       );
       break;
     }
@@ -127,10 +141,29 @@ export const getModelTask = async (
 ): Promise<any> => {
   const model_path = model.provider_config.model_path;
   const task_engine = model.provider_config.task_engine;
+  const gpu = (model.provider_config as { gpu?: boolean }).gpu;
+
+  const { baseOptions: rawCallerBase, ...rest } = options;
+  const callerBase = (rawCallerBase as Record<string, unknown> | undefined) ?? {};
+
+  // An explicit caller delegate wins over the model-level gpu flag.
+  const delegate =
+    (callerBase.delegate as TfmpDelegate | undefined) ?? resolveTfmpDelegate(task_engine, gpu);
+
+  const buildOptions = (del: TfmpDelegate | undefined): Record<string, unknown> => ({
+    ...rest,
+    baseOptions: {
+      ...callerBase,
+      ...(del ? { delegate: del } : {}),
+      modelAssetPath: model_path,
+    },
+  });
+
+  const lookupOptions = buildOptions(delegate);
 
   const cachedTasks = modelTaskCache.get(model_path);
   if (cachedTasks) {
-    const matchedTask = cachedTasks.find((cached) => optionsMatch(cached.options, options));
+    const matchedTask = cachedTasks.find((cached) => optionsMatch(cached.options, lookupOptions));
     if (matchedTask) {
       return matchedTask.task;
     }
@@ -140,14 +173,24 @@ export const getModelTask = async (
 
   emit({ type: "phase", message: "Creating model task", progress: 0.2 });
 
-  const task = await TaskType.createFromOptions(wasmFileset, {
-    baseOptions: {
-      modelAssetPath: model_path,
-    },
-    ...options,
-  });
+  let task: TaskInstance;
+  try {
+    task = await TaskType.createFromOptions(wasmFileset, lookupOptions);
+  } catch (error) {
+    if (delegate !== "GPU") throw error;
+    // Some contexts (headless, missing WebGL2) cannot create GPU-delegate
+    // tasks; retry once on CPU rather than failing the model outright.
+    emit({
+      type: "phase",
+      message: "GPU delegate unavailable, falling back to CPU",
+      progress: 0.2,
+    });
+    task = await TaskType.createFromOptions(wasmFileset, buildOptions("CPU"));
+  }
 
-  const cachedTask: CachedModelTask = { task, options, task_engine };
+  // Cache under the *requested* options so the next identical request hits
+  // even when creation fell back to CPU.
+  const cachedTask: CachedModelTask = { task, options: lookupOptions, task_engine };
   if (!modelTaskCache.has(model_path)) {
     modelTaskCache.set(model_path, []);
   }

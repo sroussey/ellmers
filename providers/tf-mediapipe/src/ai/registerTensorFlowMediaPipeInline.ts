@@ -6,14 +6,14 @@
 
 import type { AiProviderRegisterOptions } from "@workglow/ai";
 import { registerProviderInline } from "@workglow/ai/provider-utils";
-import { TFMP_RUN_FNS } from "./common/TFMP_JobRunFns";
+import { TFMP_PREVIEW_TASKS, TFMP_RUN_FNS } from "./common/TFMP_JobRunFns";
 import { TensorFlowMediaPipeQueuedProvider } from "./TensorFlowMediaPipeQueuedProvider";
 
 export async function registerTensorFlowMediaPipeInline(
   options?: AiProviderRegisterOptions
 ): Promise<void> {
   await registerProviderInline(
-    new TensorFlowMediaPipeQueuedProvider(TFMP_RUN_FNS),
+    new TensorFlowMediaPipeQueuedProvider(TFMP_RUN_FNS, TFMP_PREVIEW_TASKS),
     "TensorFlow MediaPipe",
     options
   );

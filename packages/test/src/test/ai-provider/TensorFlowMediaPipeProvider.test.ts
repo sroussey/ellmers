@@ -8,7 +8,8 @@ import type { ModelRecord } from "@workglow/ai";
 import { _testOnly } from "@workglow/tf-mediapipe/ai";
 import { describe, expect, it } from "vitest";
 
-const { TensorFlowMediaPipeQueuedProvider, TFMP_RUN_FN_SPECS, TFMP_RUN_FNS } = _testOnly;
+const { TensorFlowMediaPipeQueuedProvider, TFMP_PREVIEW_TASKS, TFMP_RUN_FN_SPECS, TFMP_RUN_FNS } =
+  _testOnly;
 
 function model(model_id: string, capabilities: readonly string[] = []): ModelRecord {
   return {
@@ -97,6 +98,29 @@ describe("TensorFlowMediaPipeQueuedProvider.inferCapabilities", () => {
     const caps = provider.inferCapabilities(model("some-unrecognized-model.tflite"));
     expect(caps).toEqual(["model.search", "model.info"]);
   });
+
+  it("infers text.generation for gemma bundles", () => {
+    const caps = provider.inferCapabilities(model("gemma3-1b-it-int4-web.task"));
+    expect(caps).toContain("text.generation");
+    expect(caps).toContain("json-mode");
+    expect(caps).toContain("model.count-tokens");
+  });
+
+  it("infers text.generation for qwen bundles", () => {
+    expect(
+      provider.inferCapabilities(model("Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv1280.task"))
+    ).toContain("text.generation");
+  });
+
+  it("infers text.generation for .litertlm files", () => {
+    expect(provider.inferCapabilities(model("some_model.litertlm"))).toContain("text.generation");
+  });
+
+  it("does not misclassify llm-substring words as genai", () => {
+    expect(provider.inferCapabilities(model("hand_landmarker.task"))).not.toContain(
+      "text.generation"
+    );
+  });
 });
 
 describe("capability-set parity", () => {
@@ -127,8 +151,14 @@ describe("TFMP_RUN_FNS shape", () => {
     expect(sets).toContain("model.info");
   });
 
-  it("does NOT register text.generation (TFMP has no text-gen capability)", () => {
+  it("registers genai text-generation capability sets", () => {
     const sets = TFMP_RUN_FNS.map((r) => [...r.serves].sort().join(","));
-    expect(sets).not.toContain("text.generation");
+    expect(sets).toContain("text.generation");
+    expect(sets).toContain("json-mode,text.generation");
+    expect(sets).toContain("model.count-tokens");
+  });
+
+  it("previews only count-tokens (generation previews would load the model)", () => {
+    expect(Object.keys(TFMP_PREVIEW_TASKS)).toEqual(["CountTokensTask"]);
   });
 });

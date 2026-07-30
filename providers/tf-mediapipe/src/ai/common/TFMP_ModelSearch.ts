@@ -15,6 +15,65 @@ import { TENSORFLOW_MEDIAPIPE } from "./TFMP_Constants";
 
 const TFMP_MODEL_RESULTS: ModelSearchResultItem[] = [
   {
+    id: "qwen2.5-1.5b-instruct",
+    label: "Qwen2.5 1.5B Instruct",
+    description:
+      "On-device LLM (int8, ~1.6 GB, Apache-2.0); streaming text generation; requires WebGPU",
+    record: {
+      provider: TENSORFLOW_MEDIAPIPE,
+      title: "Qwen2.5 1.5B Instruct",
+      description:
+        "Qwen2.5 1.5B instruction-tuned (int8 bundle, Apache-2.0) running locally via MediaPipe LLM inference; requires WebGPU",
+      capabilities: [
+        "text.generation",
+        "json-mode",
+        "model.count-tokens",
+        "model.download-remove",
+        "model.info",
+        "model.search",
+      ],
+      provider_config: {
+        model_path:
+          "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
+        task_engine: "genai",
+        pipeline: "genai-text",
+        max_tokens: 1280,
+        chat_template: "chatml",
+      },
+      metadata: {},
+    },
+    raw: { source: "mediapipe" },
+  },
+  {
+    id: "gemma3-1b-it",
+    label: "Gemma 3 1B IT",
+    description:
+      "On-device LLM (int4, ~0.5 GB); requires WebGPU. Gated: accept the Gemma license on Hugging Face and host the file yourself — anonymous downloads fail",
+    record: {
+      provider: TENSORFLOW_MEDIAPIPE,
+      title: "Gemma 3 1B IT",
+      description:
+        "Gemma 3 1B instruction-tuned (int4 web bundle) via MediaPipe LLM inference; requires WebGPU. The Hugging Face file is license-gated: accept the Gemma license and replace model_path with a copy you host",
+      capabilities: [
+        "text.generation",
+        "json-mode",
+        "model.count-tokens",
+        "model.download-remove",
+        "model.info",
+        "model.search",
+      ],
+      provider_config: {
+        model_path:
+          "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4-web.task",
+        task_engine: "genai",
+        pipeline: "genai-text",
+        max_tokens: 1000,
+      },
+      metadata: {},
+    },
+    raw: { source: "mediapipe" },
+  },
+  {
     id: "universal-sentence-encoder",
     label: "Universal Sentence Encoder",
     description: "Text embedding model",
