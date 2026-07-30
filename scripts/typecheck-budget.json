@@ -36,7 +36,7 @@
     "providers/sqlite": 24926,
     "providers/stable-diffusion-server": 10552,
     "providers/supabase": 29221,
-    "providers/tf-mediapipe": 22598,
+    "providers/tf-mediapipe": 26188,
     "providers/xai": 10645
   }
 }
