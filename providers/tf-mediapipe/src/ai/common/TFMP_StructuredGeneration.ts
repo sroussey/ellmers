@@ -51,6 +51,12 @@ export function extractJsonFromText(text: string): Record<string, unknown> {
         return (parsePartialJson(match[0]) as Record<string, unknown>) ?? {};
       }
     }
+    // Output truncated mid-object never closes its brace, so the balanced-object
+    // match above finds nothing; recover whatever was emitted after the first `{`.
+    const start = cleaned.indexOf("{");
+    if (start !== -1) {
+      return (parsePartialJson(cleaned.slice(start)) as Record<string, unknown>) ?? {};
+    }
     return {};
   }
 }
