@@ -24,6 +24,9 @@
       "path": "../../providers/anthropic"
     },
     {
+      "path": "../../providers/deepseek"
+    },
+    {
       "path": "../../providers/google-gemini"
     },
     {

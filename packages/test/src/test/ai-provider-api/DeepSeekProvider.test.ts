@@ -1,0 +1,111 @@
+/**
+ * @license
+ * Copyright 2026 Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import type { ModelRecord } from "@workglow/ai";
+import {
+  _testOnly,
+  DEEPSEEK_ALLOWED_HOSTS,
+  DEEPSEEK_DEFAULT_BASE_URL,
+} from "@workglow/deepseek/ai";
+import { describe, expect, it } from "vitest";
+
+const { DeepSeekQueuedProvider, DEEPSEEK_RUN_FN_SPECS, DEEPSEEK_RUN_FNS } = _testOnly;
+
+function model(model_id: string, capabilities: readonly string[] = []): ModelRecord {
+  return {
+    model_id,
+    title: model_id,
+    description: "",
+    provider: "DEEPSEEK",
+    provider_config: { model_name: model_id },
+    capabilities: [...capabilities],
+    metadata: {},
+  } as ModelRecord;
+}
+
+describe("DeepSeekQueuedProvider.inferCapabilities", () => {
+  const provider = new DeepSeekQueuedProvider(DEEPSEEK_RUN_FNS);
+
+  it("infers chat + tool-use + json-mode for the deepseek-v4 family", () => {
+    for (const id of ["deepseek-v4-flash", "deepseek-v4-pro"]) {
+      const caps = provider.inferCapabilities(model(id));
+      expect(caps).toContain("text.generation");
+      expect(caps).toContain("tool-use");
+      expect(caps).toContain("json-mode");
+      expect(caps).toContain("model.count-tokens");
+    }
+  });
+
+  it("never infers vision-input or image.generation (the chat models are text-only)", () => {
+    const caps = provider.inferCapabilities(model("deepseek-v4-pro"));
+    expect(caps).not.toContain("vision-input");
+    expect(caps).not.toContain("image.generation");
+  });
+
+  it("falls back to declared capabilities when the model id is unknown", () => {
+    const caps = provider.inferCapabilities(
+      model("totally-unknown-model", ["text.classification"])
+    );
+    expect(caps).toEqual(["text.classification"]);
+  });
+
+  it("falls back to a baseline of meta-ops when nothing matches and nothing is declared", () => {
+    const caps = provider.inferCapabilities(model("totally-unknown-model"));
+    expect(caps).toContain("model.search");
+    expect(caps).toContain("model.info");
+    expect(caps).not.toContain("text.generation");
+  });
+
+  it("infers the full capability set for deepseek-v4-flash", () => {
+    const caps = provider.inferCapabilities(model("deepseek-v4-flash"));
+    const sorted = [...caps].sort();
+    expect(sorted).toEqual([
+      "json-mode",
+      "model.count-tokens",
+      "model.info",
+      "model.search",
+      "text.generation",
+      "text.rewriter",
+      "text.summary",
+      "tool-use",
+    ]);
+  });
+});
+
+describe("capability-set parity", () => {
+  it("DEEPSEEK_RUN_FN_SPECS matches DEEPSEEK_RUN_FNS serves shapes", () => {
+    const fnsServes = DEEPSEEK_RUN_FNS.map((r) => [...r.serves].sort().join(","));
+    const specsServes = DEEPSEEK_RUN_FN_SPECS.map((s) => [...s.serves].sort().join(","));
+    expect(specsServes).toEqual(fnsServes);
+  });
+});
+
+describe("DEEPSEEK_RUN_FNS shape", () => {
+  it("registers a runFn for every capability set the provider claims to serve", () => {
+    const sets = DEEPSEEK_RUN_FNS.map((r) => [...r.serves].sort().join(","));
+    expect(sets).toContain("text.generation");
+    expect(sets).toContain("text.generation,tool-use");
+    expect(sets).toContain("json-mode,text.generation");
+    expect(sets).toContain("text.rewriter");
+    expect(sets).toContain("text.summary");
+    expect(sets).toContain("model.count-tokens");
+    expect(sets).toContain("model.search");
+    expect(sets).toContain("model.info");
+  });
+
+  it("tiebreaks `text.generation` to the smallest serves entry (plain text-gen)", () => {
+    const candidates = DEEPSEEK_RUN_FNS.filter((r) => r.serves.includes("text.generation"));
+    expect(candidates.some((r) => r.serves.length === 1)).toBe(true);
+  });
+});
+
+describe("base URL", () => {
+  it("defaults to the documented DeepSeek host, which is also the only allow-listed one", () => {
+    expect(DEEPSEEK_DEFAULT_BASE_URL).toBe("https://api.deepseek.com");
+    expect(DEEPSEEK_ALLOWED_HOSTS).toEqual(["api.deepseek.com"]);
+    expect(DEEPSEEK_ALLOWED_HOSTS).toContain(new URL(DEEPSEEK_DEFAULT_BASE_URL).hostname);
+  });
+});

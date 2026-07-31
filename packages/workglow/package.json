@@ -56,6 +56,22 @@
       "types": "./dist/anthropic-runtime.d.ts",
       "import": "./dist/anthropic-runtime.js"
     },
+    "./deepseek": {
+      "browser": {
+        "types": "./dist/deepseek.d.ts",
+        "import": "./dist/deepseek.browser.js"
+      },
+      "bun": {
+        "types": "./dist/deepseek.d.ts",
+        "import": "./dist/deepseek.bun.js"
+      },
+      "types": "./dist/deepseek.d.ts",
+      "import": "./dist/deepseek.js"
+    },
+    "./deepseek/runtime": {
+      "types": "./dist/deepseek-runtime.d.ts",
+      "import": "./dist/deepseek-runtime.js"
+    },
     "./gemini": {
       "browser": {
         "types": "./dist/google-gemini.d.ts",
@@ -233,6 +249,7 @@
     "@workglow/openai": "workspace:*",
     "@workglow/openrouter": "workspace:*",
     "@workglow/xai": "workspace:*",
+    "@workglow/deepseek": "workspace:*",
     "@workglow/google-gemini": "workspace:*",
     "@workglow/ollama": "workspace:*",
     "@workglow/huggingface-transformers": "workspace:*",

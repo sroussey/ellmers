@@ -21,6 +21,7 @@
     "providers/cactus": 15571,
     "providers/chrome-ai": 14588,
     "providers/cloudflare": 1138,
+    "providers/deepseek": 10543,
     "providers/electron": 203,
     "providers/google-gemini": 20464,
     "providers/huggingface-inference": 16988,

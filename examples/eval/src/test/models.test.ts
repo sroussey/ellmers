@@ -15,6 +15,8 @@ describe("resolveModelConfig", () => {
     expect(resolveModelConfig("text-embedding-3-small", "similarity").provider).toBe("OPENAI");
     expect(resolveModelConfig("gemini-3-flash-preview", "classify").provider).toBe("GOOGLE_GEMINI");
     expect(resolveModelConfig("grok-4.5", "classify").provider).toBe("XAI");
+    expect(resolveModelConfig("deepseek-v4-flash", "classify").provider).toBe("DEEPSEEK");
+    expect(resolveModelConfig("deepseek-v4-pro", "classify").provider).toBe("DEEPSEEK");
   });
 
   it("passes the id through as the provider model name", () => {

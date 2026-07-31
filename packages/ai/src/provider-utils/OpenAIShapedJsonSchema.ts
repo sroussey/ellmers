@@ -15,7 +15,7 @@
  *
  * Shared across every provider that speaks the OpenAI `json_schema`
  * `response_format` (chat completions) or `text.format` (Responses) — OpenAI,
- * xAI, OpenRouter, and any future OpenAI-compatible provider.
+ * xAI, OpenRouter, DeepSeek, and any future OpenAI-compatible provider.
  */
 export function isStrictCompatibleSchema(schema: unknown): boolean {
   if (schema === null || typeof schema !== "object") return true;

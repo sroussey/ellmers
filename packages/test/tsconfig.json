@@ -23,6 +23,7 @@
     { "path": "../browser-control" },
     { "path": "../../providers/anthropic" },
     { "path": "../../providers/bun-webview" },
+    { "path": "../../providers/deepseek" },
     { "path": "../../providers/electron" },
     { "path": "../../providers/google-gemini" },
     { "path": "../../providers/huggingface-inference" },

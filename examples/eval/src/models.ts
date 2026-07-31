@@ -30,6 +30,7 @@ const GGUF_PREFIX = "gguf:";
  * - `gpt-*`, `o<n>*`, `chatgpt-*`, `text-embedding-*` → OpenAI
  * - `gemini-*` → Google Gemini
  * - `grok-*` → xAI
+ * - `deepseek-*` → DeepSeek
  *
  * The slash check runs after the `gguf:` prefix but before the cloud
  * prefixes: hub paths are unambiguous, and org names can legitimately start
@@ -77,9 +78,12 @@ export function resolveModelConfig(id: string, kind: EvalKind): ModelConfig {
   if (/^grok-/.test(id)) {
     return { provider: "XAI", provider_config: { model_name: id } };
   }
+  if (/^deepseek-/.test(id)) {
+    return { provider: "DEEPSEEK", provider_config: { model_name: id } };
+  }
   throw new Error(
-    `cannot infer a provider for model "${id}" — use a claude-*/gpt-*/gemini-*/grok-* cloud id ` +
-      `or an org/name HuggingFace ONNX model path`
+    `cannot infer a provider for model "${id}" — use a claude-*/gpt-*/gemini-*/grok-*/deepseek-* ` +
+      `cloud id or an org/name HuggingFace ONNX model path`
   );
 }
 

@@ -6,6 +6,7 @@
 
 import { registerAiTasks } from "@workglow/ai";
 import { registerAnthropicInline } from "@workglow/anthropic/ai-runtime";
+import { registerDeepSeekInline } from "@workglow/deepseek/ai-runtime";
 import { registerGeminiInline } from "@workglow/google-gemini/ai-runtime";
 import { registerHuggingFaceTransformers } from "@workglow/huggingface-transformers/ai";
 import { registerLlamaCpp } from "@workglow/node-llama-cpp/ai";
@@ -18,7 +19,7 @@ import type { EvalConfig } from "./config";
 /**
  * Register task types and every AI provider the eval can route to. Cloud
  * providers read their API keys from the environment (ANTHROPIC_API_KEY,
- * OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY) at call time; the local
+ * OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY, DEEPSEEK_API_KEY) at call time; the local
  * HuggingFace Transformers (ONNX) and node-llama-cpp (GGUF) providers run in
  * workers with their caches under the eval home. Each registration is
  * defensive: a provider that fails to load only fails runs that target it,
@@ -55,6 +56,7 @@ export async function registerEvalProviders(config: EvalConfig): Promise<void> {
     ["OPENAI", () => registerOpenAiInline()],
     ["GOOGLE_GEMINI", () => registerGeminiInline()],
     ["XAI", () => registerXaiInline()],
+    ["DEEPSEEK", () => registerDeepSeekInline()],
   ];
 
   for (const [name, register] of registrations) {

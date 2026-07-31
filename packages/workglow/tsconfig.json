@@ -22,6 +22,7 @@
     { "path": "../browser-control" },
     { "path": "../../providers/anthropic" },
     { "path": "../../providers/chrome-ai" },
+    { "path": "../../providers/deepseek" },
     { "path": "../../providers/google-gemini" },
     { "path": "../../providers/huggingface-inference" },
     { "path": "../../providers/huggingface-transformers" },

@@ -45,6 +45,7 @@
     "@workglow/cactus": "workspace:*",
     "@workglow/chrome-ai": "workspace:*",
     "@workglow/cloudflare": "workspace:*",
+    "@workglow/deepseek": "workspace:*",
     "@workglow/duckdb": "workspace:*",
     "@workglow/electron": "workspace:*",
     "@workglow/google-gemini": "workspace:*",
