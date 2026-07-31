@@ -1,5 +1,15 @@
 # @workglow/cli
 
+## 0.3.31
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@types/react`: ^19.2.18
+
 ## 0.3.30
 
 ## 0.3.29

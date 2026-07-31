@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.31
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `hyparquet`: ^1.27.1
+
 ## 0.3.30
 
 ### Chores

@@ -1,5 +1,17 @@
 # @workglow/test
 
+## 0.3.31
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1100.0
+- `@cloudflare/workers-types`: ^5.20260731.1
+- `miniflare`: ^4.20260730.0
+
 ## 0.3.30
 
 ### Features
