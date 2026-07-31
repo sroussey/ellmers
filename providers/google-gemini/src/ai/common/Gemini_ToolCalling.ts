@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { FunctionCallingConfigMode } from "@google/genai";
+import type { FunctionCallingConfigMode } from "@google/genai";
 import type {
   AiProviderRunFn,
   ChatMessage,
@@ -97,17 +97,17 @@ function mapGeminiToolConfig(
   | { functionCallingConfig: { mode: FunctionCallingConfigMode; allowedFunctionNames?: string[] } }
   | undefined {
   if (!toolChoice || toolChoice === "auto") {
-    return { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } };
+    return { functionCallingConfig: { mode: "AUTO" as FunctionCallingConfigMode } };
   }
   if (toolChoice === "none") {
-    return { functionCallingConfig: { mode: FunctionCallingConfigMode.NONE } };
+    return { functionCallingConfig: { mode: "NONE" as FunctionCallingConfigMode } };
   }
   if (toolChoice === "required") {
-    return { functionCallingConfig: { mode: FunctionCallingConfigMode.ANY } };
+    return { functionCallingConfig: { mode: "ANY" as FunctionCallingConfigMode } };
   }
   return {
     functionCallingConfig: {
-      mode: FunctionCallingConfigMode.ANY,
+      mode: "ANY" as FunctionCallingConfigMode,
       allowedFunctionNames: [toolChoice],
     },
   };
