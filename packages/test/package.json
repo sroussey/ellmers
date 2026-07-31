@@ -27,7 +27,7 @@
     "test-concurrently": "bash -c 'cmds=(); for d in ./src/test/*/; do cmds+=(\"cd $d && bun test\"); done; concurrently \"${cmds[@]}\"'"
   },
   "devDependencies": {
-    "@aws-sdk/client-sqs": "^3.1100.0",
+    "@aws-sdk/client-sqs": "^3.1101.0",
     "@cloudflare/workers-types": "^5.20260731.1",
     "@duckdb/node-api": "catalog:",
     "@electric-sql/pglite": "catalog:",
@@ -36,7 +36,7 @@
     "@sqliteai/sqlite-vector": "catalog:",
     "@supabase/supabase-js": "catalog:",
     "@types/dom-chromium-ai": "^0.0.17",
-    "@types/pg": "^8.18.0",
+    "@types/pg": "^8.20.1",
     "@workglow/ai": "workspace:*",
     "@workglow/anthropic": "workspace:*",
     "@workglow/aws": "workspace:*",

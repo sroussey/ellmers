@@ -64,9 +64,9 @@
   },
   "catalog": {
     "@huggingface/transformers": "^4.2.0",
-    "@mediapipe/tasks-text": "^1.0.0",
-    "@mediapipe/tasks-vision": "^1.0.0",
-    "@mediapipe/tasks-audio": "^1.0.0",
+    "@mediapipe/tasks-text": "^1.0.1",
+    "@mediapipe/tasks-vision": "^1.0.1",
+    "@mediapipe/tasks-audio": "^1.0.1",
     "@mediapipe/tasks-genai": "^0.10.29",
     "@anthropic-ai/sdk": "^0.115.0",
     "electron": "^43.2.0",
@@ -84,7 +84,7 @@
     "@electric-sql/pglite": "^0.5.4",
     "@electric-sql/pglite-pgvector": "^0.0.5",
     "@supabase/supabase-js": "^2.111.0",
-    "@duckdb/node-api": "^1.5.5-r.2",
+    "@duckdb/node-api": "^1.5.5-r.3",
     "@sqlite.org/sqlite-wasm": "^3.53.0-build1",
     "@sqliteai/sqlite-vector": "^1.0.0",
     "better-sqlite3": "^13.0.2"
