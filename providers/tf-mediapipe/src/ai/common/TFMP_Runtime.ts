@@ -27,13 +27,54 @@ export const wasm_tasks = new Map<string, TFMPWasmFileset>();
 export const wasm_reference_counts = new Map<string, number>();
 
 /**
- * Pinned WASM version for the genai engine. The genai JS↔WASM ABI moves
- * quickly and the npm dependency (^0.10.29) trails the other task packages
- * (^0.10.35), so the genai CDN assets are pinned to the bundled SDK version
- * rather than `@latest`. Keep in sync with the `@mediapipe/tasks-genai`
- * catalog entry in the root package.json.
+ * Pinned WASM versions per engine. CSP `script-src` is origin-scoped and cannot
+ * pin a version, so an `@latest` URL would execute whatever npm's dist-tag
+ * currently points at — a compromised `@mediapipe/tasks-*` publish would run
+ * in every host app's renderer on next MediaPipe use. Keep these values in
+ * lockstep with the `@mediapipe/tasks-*` entries in the root package.json.
  */
+export const TFMP_VISION_WASM_VERSION = "0.10.35";
+export const TFMP_TEXT_WASM_VERSION = "0.10.35";
+export const TFMP_AUDIO_WASM_VERSION = "0.10.35";
 export const TFMP_GENAI_WASM_VERSION = "0.10.29";
+
+export interface ITFMPWasmBaseUrls {
+  readonly vision: string;
+  readonly text: string;
+  readonly audio: string;
+  readonly genai: string;
+}
+
+const DEFAULT_WASM_BASE_URLS: ITFMPWasmBaseUrls = {
+  vision: `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${TFMP_VISION_WASM_VERSION}/wasm`,
+  text: `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-text@${TFMP_TEXT_WASM_VERSION}/wasm`,
+  audio: `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-audio@${TFMP_AUDIO_WASM_VERSION}/wasm`,
+  genai: `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@${TFMP_GENAI_WASM_VERSION}/wasm`,
+};
+
+let currentWasmBaseUrls: ITFMPWasmBaseUrls = DEFAULT_WASM_BASE_URLS;
+
+/**
+ * Point the FilesetResolver at caller-supplied base URLs — typically same-origin
+ * paths (`/wasm/{engine}`) after the host app has vendored MediaPipe's `wasm/`
+ * directories into its static assets. Overrides are per-engine; unspecified
+ * engines keep the current value (initially the pinned jsDelivr URLs).
+ *
+ * Host apps that vendor MediaPipe's WASM should then drop `cdn.jsdelivr.net`
+ * from their CSP; the pinned defaults exist only so the module remains usable
+ * without any host-side wiring.
+ */
+export function setTfmpWasmBaseUrls(bases: Partial<ITFMPWasmBaseUrls>): void {
+  currentWasmBaseUrls = { ...currentWasmBaseUrls, ...bases };
+}
+
+export function getTfmpWasmBaseUrls(): ITFMPWasmBaseUrls {
+  return currentWasmBaseUrls;
+}
+
+export function resetTfmpWasmBaseUrls(): void {
+  currentWasmBaseUrls = DEFAULT_WASM_BASE_URLS;
+}
 
 type TaskConstructor = {
   createFromOptions(
@@ -98,30 +139,22 @@ export const getWasmTask = async (
   switch (task_engine) {
     case "vision": {
       const { FilesetResolver } = await loadTfmpTasksVisionSDK();
-      wasmFileset = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-      );
+      wasmFileset = await FilesetResolver.forVisionTasks(currentWasmBaseUrls.vision);
       break;
     }
     case "text": {
       const { FilesetResolver } = await loadTfmpTasksTextSDK();
-      wasmFileset = await FilesetResolver.forTextTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-text@latest/wasm"
-      );
+      wasmFileset = await FilesetResolver.forTextTasks(currentWasmBaseUrls.text);
       break;
     }
     case "audio": {
       const { FilesetResolver } = await loadTfmpTasksAudioSDK();
-      wasmFileset = await FilesetResolver.forAudioTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-audio@latest/wasm"
-      );
+      wasmFileset = await FilesetResolver.forAudioTasks(currentWasmBaseUrls.audio);
       break;
     }
     case "genai": {
       const { FilesetResolver } = await loadTfmpTasksGenaiSDK();
-      wasmFileset = await FilesetResolver.forGenAiTasks(
-        `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@${TFMP_GENAI_WASM_VERSION}/wasm`
-      );
+      wasmFileset = await FilesetResolver.forGenAiTasks(currentWasmBaseUrls.genai);
       break;
     }
     default:
