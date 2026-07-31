@@ -35,7 +35,9 @@ function runJavaScript(
         .join("\n");
       const myInterpreter = new Interpreter(`${inputVariablesString} ${code}`);
       myInterpreter.run();
-      output.output = myInterpreter.value;
+      // The interpreter's value is a sandboxed pseudo-object for arrays/objects; callers
+      // expect plain JS, so unwrap it. Primitives pass through untouched.
+      output.output = myInterpreter.pseudoToNative(myInterpreter.value);
     } catch (e) {
       throw new TaskInvalidInputError(
         `JavaScript execution failed: ${e instanceof Error ? e.message : String(e)}`

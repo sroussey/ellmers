@@ -60,6 +60,20 @@ describe("JavaScriptTask", () => {
     expect(result.output).toBe(15);
   });
 
+  test("returns arrays as plain JavaScript arrays", async () => {
+    const result = await javaScript({
+      javascript_code: '["a", "b", "c"]',
+    });
+    expect(result.output).toEqual(["a", "b", "c"]);
+  });
+
+  test("returns objects as plain JavaScript objects", async () => {
+    const result = await javaScript({
+      javascript_code: '({ name: "Alice", tags: ["x", "y"] })',
+    });
+    expect(result.output).toEqual({ name: "Alice", tags: ["x", "y"] });
+  });
+
   test("executes code with objects", async () => {
     const result = await javaScript({
       javascript_code: `
