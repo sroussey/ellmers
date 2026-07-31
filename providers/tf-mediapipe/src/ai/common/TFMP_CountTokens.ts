@@ -41,8 +41,17 @@ export const TFMP_CountTokens_Preview: AiProviderPreviewRunFn<
 > = async (input, model) => {
   const model_path = model!.provider_config.model_path;
   if (isGenaiBusy(model_path)) return undefined;
-  const llm = peekGenaiLlm(model!);
-  if (!llm) return undefined;
-  const count = await withGenaiLock(model_path, async () => llm.sizeInTokens(input.text));
-  return typeof count === "number" ? { count } : undefined;
+  try {
+    const count = await withGenaiLock(model_path, async () => {
+      // Re-check under the lock: a concurrent closeGenaiLlm may have run
+      // between the busy check above and lock acquisition, closing and
+      // de-caching the instance we would otherwise have captured pre-lock.
+      const llm = peekGenaiLlm(model!);
+      if (!llm) return undefined;
+      return llm.sizeInTokens(input.text);
+    });
+    return typeof count === "number" ? { count } : undefined;
+  } catch {
+    return undefined;
+  }
 };
