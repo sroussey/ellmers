@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.32
+
+### Bug Fixes
+
+- don't pull in lib statically when we plan to use on demand only
+
 ## 0.3.31
 
 ## 0.3.30

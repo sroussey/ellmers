@@ -1,5 +1,11 @@
 # @workglow/test
 
+## 0.3.32
+
+### Bug Fixes
+
+- unwrap interpreter values to return plain JavaScript arrays and objects
+
 ## 0.3.31
 
 ### Chores
