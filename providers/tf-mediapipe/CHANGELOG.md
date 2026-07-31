@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.3.30
+
+### Features
+
+#### tf-mediapipe
+
+- chatml template; Qwen2.5 default genai model, gated-Gemma note
+- wire genai run-fns, capability inference, model search, previews; document gpu + genai
+- genai text-generation, structured-generation, count-tokens run-fns
+- LlmInference lifecycle runtime (WebGPU device, mutex, sampler overrides, abort)
+- delegate injection, GPU fallback, deep options cache, pinned genai wasm
+- gemma chat template renderer
+- pure delegate resolution for gpu option
+- add gpu + genai generation options to model schema
+
+### Bug Fixes
+
+#### tf-mediapipe
+
+- single-flight genai creation, lock-guarded teardown, drop unusable setOptions overrides
+
+### Tests
+
+#### tf-mediapipe
+
+- genai helpers coverage + build fixups
+
 ## 0.3.29
 
 ## 0.3.28

@@ -44,7 +44,7 @@ const result = await workflow.run();
 | `@workglow/task-graph`     | DAG task graph construction and execution; browser build also exports DevTools formatters (`installDevToolsFormatters`, etc.) |
 | `@workglow/knowledge-base` | Knowledge base, document management, and RAG infrastructure                                                                   |
 | `@workglow/ai`             | Core AI functionality, tasks, model management, and provider helpers (`/provider-utils`)                                      |
-| `@workglow/<vendor>`       | Standalone provider packages (Anthropic, OpenAI, Gemini, Ollama, HuggingFace, llama.cpp, MediaPipe, Chrome AI)                 |
+| `@workglow/<vendor>`       | Standalone provider packages (Anthropic, OpenAI, Gemini, Ollama, HuggingFace, llama.cpp, MediaPipe, Chrome AI)                |
 | `@workglow/tasks`          | Pre-built utility tasks (arrays, scalars, vectors, etc.)                                                                      |
 
 ## Provider Subpath Exports
@@ -55,7 +55,7 @@ SDK-dependent code is isolated behind separate vendor packages, each exposing `/
 // Anthropic (requires: @anthropic-ai/sdk)
 import { ANTHROPIC_TASKS } from "workglow/anthropic";
 
-// Google Gemini (requires: @google/generative-ai)
+// Google Gemini (requires: @google/genai)
 import { GEMINI_TASKS } from "workglow/google-gemini";
 
 // HuggingFace Transformers (requires: @huggingface/transformers)
@@ -78,7 +78,7 @@ Install only the providers and backends you need:
 ```bash
 # AI Provider SDKs
 bun add @anthropic-ai/sdk        # For Anthropic
-bun add @google/generative-ai    # For Google Gemini
+bun add @google/genai    # For Google Gemini
 bun add @huggingface/transformers   # For HuggingFace Transformers ONNX
 bun add ollama                   # For Ollama
 bun add openai                   # For OpenAI

@@ -390,15 +390,15 @@ underlying vendor SDK. Providers import shared base classes and helpers from
 `@workglow/ai/provider-utils`.
 
 ```typescript
-import "@workglow/anthropic/ai";              // Claude (requires @anthropic-ai/sdk)
-import "@workglow/openai/ai";                 // OpenAI (requires openai)
-import "@workglow/google-gemini/ai";          // Google Gemini (requires @google/generative-ai)
-import "@workglow/ollama/ai";                 // Ollama (requires ollama)
+import "@workglow/anthropic/ai"; // Claude (requires @anthropic-ai/sdk)
+import "@workglow/openai/ai"; // OpenAI (requires openai)
+import "@workglow/google-gemini/ai"; // Google Gemini (requires @google/genai)
+import "@workglow/ollama/ai"; // Ollama (requires ollama)
 import "@workglow/huggingface-transformers/ai"; // HuggingFace Transformers.js
-import "@workglow/huggingface-inference/ai";  // HuggingFace Inference API
-import "@workglow/node-llama-cpp/ai";         // node-llama-cpp
-import "@workglow/tf-mediapipe/ai";           // TensorFlow MediaPipe (browser)
-import "@workglow/chrome-ai/ai";              // Chrome Built-in AI
+import "@workglow/huggingface-inference/ai"; // HuggingFace Inference API
+import "@workglow/node-llama-cpp/ai"; // node-llama-cpp
+import "@workglow/tf-mediapipe/ai"; // TensorFlow MediaPipe (browser)
+import "@workglow/chrome-ai/ai"; // Chrome Built-in AI
 ```
 
 Each vendor package also exposes an `/ai-runtime` entry (e.g.
@@ -505,19 +505,19 @@ Add the provider to `package.json` `exports` and the build scripts.
 
 ### AiProvider (abstract)
 
-| Member                           | Type                                   | Description                    |
-| -------------------------------- | -------------------------------------- | ------------------------------ |
-| `name`                           | `string` (abstract)                    | Unique provider identifier     |
-| `displayName`                    | `string` (abstract)                    | Human-readable label           |
-| `isLocal`                        | `boolean` (abstract)                   | Whether models run locally     |
-| `supportsBrowser`                | `boolean` (abstract)                   | Whether usable in browsers     |
-| `taskTypes`                      | `readonly string[]` (abstract)         | Supported task type names      |
-| `register(options?)`             | `Promise<void>`                        | Register on the main thread    |
-| `registerOnWorkerServer(server)` | `void`                                 | Register on a Web Worker       |
-| `dispose()`                      | `Promise<void>`                        | Cleanup resources              |
-| `getRunFn(taskType)`             | `AiProviderRunFn \| undefined`         | Get run function for task type |
-| `getStreamFn(taskType)`          | `AiProviderStreamFn \| undefined`      | Get stream function            |
-| `getPreviewRunFn(taskType)`      | `AiProviderPreviewRunFn \| undefined`  | Get preview run function       |
+| Member                           | Type                                  | Description                    |
+| -------------------------------- | ------------------------------------- | ------------------------------ |
+| `name`                           | `string` (abstract)                   | Unique provider identifier     |
+| `displayName`                    | `string` (abstract)                   | Human-readable label           |
+| `isLocal`                        | `boolean` (abstract)                  | Whether models run locally     |
+| `supportsBrowser`                | `boolean` (abstract)                  | Whether usable in browsers     |
+| `taskTypes`                      | `readonly string[]` (abstract)        | Supported task type names      |
+| `register(options?)`             | `Promise<void>`                       | Register on the main thread    |
+| `registerOnWorkerServer(server)` | `void`                                | Register on a Web Worker       |
+| `dispose()`                      | `Promise<void>`                       | Cleanup resources              |
+| `getRunFn(taskType)`             | `AiProviderRunFn \| undefined`        | Get run function for task type |
+| `getStreamFn(taskType)`          | `AiProviderStreamFn \| undefined`     | Get stream function            |
+| `getPreviewRunFn(taskType)`      | `AiProviderPreviewRunFn \| undefined` | Get preview run function       |
 
 ### QueuedAiProvider (abstract)
 
@@ -529,25 +529,25 @@ Add the provider to `package.json` `exports` and the build scripts.
 
 ### AiProviderRegistry
 
-| Method                                              | Description                                 |
-| --------------------------------------------------- | ------------------------------------------- |
-| `registerProvider(provider)`                        | Register a provider instance                |
-| `unregisterProvider(name)`                          | Remove a provider and all its functions     |
-| `getProvider(name)`                                 | Get a provider by name                      |
-| `getProviders()`                                    | Get all providers as a Map                  |
-| `getInstalledProviderIds()`                         | Sorted list of provider names               |
-| `getProviderIdsForTask(taskType)`                   | Providers supporting a task type            |
-| `registerRunFn(provider, taskType, fn)`             | Register a direct run function              |
-| `registerStreamFn(provider, taskType, fn)`          | Register a stream function                  |
-| `registerPreviewRunFn(provider, taskType, fn)`      | Register a preview run function             |
-| `registerAsWorkerRunFn(provider, taskType)`         | Register a worker-proxied run function      |
-| `registerAsWorkerStreamFn(provider, taskType)`      | Register a worker-proxied stream function   |
-| `registerAsWorkerPreviewRunFn(provider, taskType)`  | Register a worker-proxied preview function  |
-| `getDirectRunFn(provider, taskType)`                | Get run function (throws if missing)        |
-| `getStreamFn(provider, taskType)`                   | Get stream function (returns undefined)     |
-| `getPreviewRunFn(provider, taskType)`               | Get preview function (returns undefined)    |
-| `registerStrategyResolver(provider, resolver)`      | Register a strategy resolver                |
-| `getStrategy(model)`                                | Resolve execution strategy for a model      |
+| Method                                             | Description                                |
+| -------------------------------------------------- | ------------------------------------------ |
+| `registerProvider(provider)`                       | Register a provider instance               |
+| `unregisterProvider(name)`                         | Remove a provider and all its functions    |
+| `getProvider(name)`                                | Get a provider by name                     |
+| `getProviders()`                                   | Get all providers as a Map                 |
+| `getInstalledProviderIds()`                        | Sorted list of provider names              |
+| `getProviderIdsForTask(taskType)`                  | Providers supporting a task type           |
+| `registerRunFn(provider, taskType, fn)`            | Register a direct run function             |
+| `registerStreamFn(provider, taskType, fn)`         | Register a stream function                 |
+| `registerPreviewRunFn(provider, taskType, fn)`     | Register a preview run function            |
+| `registerAsWorkerRunFn(provider, taskType)`        | Register a worker-proxied run function     |
+| `registerAsWorkerStreamFn(provider, taskType)`     | Register a worker-proxied stream function  |
+| `registerAsWorkerPreviewRunFn(provider, taskType)` | Register a worker-proxied preview function |
+| `getDirectRunFn(provider, taskType)`               | Get run function (throws if missing)       |
+| `getStreamFn(provider, taskType)`                  | Get stream function (returns undefined)    |
+| `getPreviewRunFn(provider, taskType)`              | Get preview function (returns undefined)   |
+| `registerStrategyResolver(provider, resolver)`     | Register a strategy resolver               |
+| `getStrategy(model)`                               | Resolve execution strategy for a model     |
 
 ### AiProviderRegisterOptions
 
