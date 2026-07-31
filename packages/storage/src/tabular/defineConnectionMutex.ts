@@ -25,11 +25,19 @@ import type { Als, AlsContext } from "./connectionAls.shared";
  * itself (`txOwner`), so it is **ALS-independent**: the module works
  * identically on Node (real `AsyncLocalStorage`) and in the browser (the
  * synchronous shim), even when the caller `await`s between the outer
- * transaction opening and the sibling call. `AsyncLocalStorage` is only an
- * **inline optimization on Node**: when the store exists and matches, a
- * same-instance re-entry can run inline without re-taking the chain.
- * Without it (browser shim), same-instance re-entry falls back to the chain
- * — slower, but safe.
+ * transaction opening and the sibling call.
+ *
+ * Same-instance re-entry into `runOnConnection` /
+ * `runInTransactionOnConnection` while the owner still holds an active
+ * transaction is **also** ALS-independent: it inlines on both runtimes via
+ * `state.txOwner === owner && state.txId !== null`. Chain-waiting in that
+ * case would deadlock — the chain slot is only released in the outer
+ * transaction's `finally`, which is itself awaiting the inner call.
+ *
+ * `AsyncLocalStorage` is a Node-only refinement: it lets same-owner
+ * re-entry inline even after `state.txOwner` has been cleared (e.g. sibling
+ * helpers spawned in the tx body that resolve after `finally` starts
+ * running).
  *
  * Platform ALS is injected by {@link defineConnectionMutex} so the browser
  * entry can wire the shim via a relative import (never `node:async_hooks`)
@@ -145,6 +153,13 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     if (state.txOwner !== null && state.txOwner !== owner) {
       return "throw";
     }
+    // Same-owner re-entry while our own tx still holds the chain slot: chain-
+    // waiting here would deadlock (the chain slot is only released by the
+    // outer transaction's `finally`, which is itself awaiting this call). This
+    // check is ALS-independent so the browser shim behaves identically to Node.
+    if (state.txOwner === owner && state.txId !== null) {
+      return "inline";
+    }
     if (alsStore !== undefined && alsStore.handle === handle && alsStore.owner === owner) {
       return "inline";
     }
@@ -159,12 +174,11 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
    * — no `await ensureAls()` needed on the throw path, so browser shim and
    * Node behave identically.
    *
-   * Same-instance re-entry that presents a matching `AsyncLocalStorage` store
-   * runs `fn` inline — the caller is already inside its own
-   * `runInTransactionOnConnection` and re-taking the chain would deadlock.
-   * On the browser shim, same-instance re-entry across an `await` falls back
-   * to the chain wait (safe; the outer transaction's chain slot has already
-   * been released by the time descendants queue).
+   * Same-instance re-entry while the owner still holds an active transaction
+   * inlines on both Node and the browser shim (chain-waiting would deadlock).
+   * Under Node's `AsyncLocalStorage`, the inline path additionally covers
+   * same-owner descendants whose enclosing transaction has already released
+   * its chain slot.
    */
   async function runOnConnection<T>(
     handle: object,

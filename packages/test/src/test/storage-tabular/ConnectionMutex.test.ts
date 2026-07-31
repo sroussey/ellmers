@@ -133,30 +133,69 @@ describe("ConnectionMutex F1: cross-instance re-entry is ALS-independent", () =>
       const secondOp = await runOnConnection(handle, ownerA, async () => "ok");
       expect(secondOp).toBe("ok");
     });
-  });
 
-  it("same-instance nested via captured `this` inlines under real ALS", async () => {
-    // With real AsyncLocalStorage (Node) the store survives across `await`,
-    // so a call reaching back to runOnConnection with the same owner inlines
-    // rather than chain-waiting (which would deadlock — the outer tx still
-    // holds the chain slot). This is the "captured this" pattern that the
-    // ALS optimization exists for.
-    __resetAlsForTesting();
-    const handle = {};
-    const ownerA = { table: "table_a" };
+    it("same-instance nested runOnConnection inlines (no deadlock)", async () => {
+      // Same-owner re-entry while the owner still holds the tx must inline —
+      // chain-waiting would deadlock because the chain slot is only released
+      // by the outer tx's `finally`, which is awaiting this inner call. Must
+      // hold under both real ALS (Node) and the browser shim; the `state.txOwner
+      // === owner && state.txId !== null` guard makes it ALS-independent.
+      const handle = {};
+      const ownerA = { table: "table_a" };
 
-    let innerRan = false;
-    await runInTransactionOnConnection(handle, ownerA, async () => {
-      // Nested call with the same owner — must inline (no chain wait) or
-      // else this deadlocks.
-      const value = await runOnConnection(handle, ownerA, async () => {
-        innerRan = true;
-        return "inlined";
+      let innerRan = false;
+      const body = runInTransactionOnConnection(handle, ownerA, async () => {
+        const value = await runOnConnection(handle, ownerA, async () => {
+          innerRan = true;
+          return "inlined";
+        });
+        expect(value).toBe("inlined");
       });
-      expect(value).toBe("inlined");
+
+      const result = await Promise.race([
+        body.then(() => "done"),
+        new Promise<string>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("shim deadlock: inner runOnConnection never resolved")),
+            500
+          )
+        ),
+      ]);
+
+      expect(result).toBe("done");
+      expect(innerRan).toBe(true);
     });
 
-    expect(innerRan).toBe(true);
+    it("same-instance nested runInTransactionOnConnection inlines (no deadlock)", async () => {
+      // Symmetric case for nested transactions: same-owner nested tx-open
+      // must inline for the same reason (existing nested-tx branch delegates
+      // to the same classifyReentry).
+      const handle = {};
+      const ownerA = { table: "table_a" };
+
+      let innerRan = false;
+      const body = runInTransactionOnConnection(handle, ownerA, async () => {
+        const value = await runInTransactionOnConnection(handle, ownerA, async () => {
+          innerRan = true;
+          return "nested-inlined";
+        });
+        expect(value).toBe("nested-inlined");
+      });
+
+      const result = await Promise.race([
+        body.then(() => "done"),
+        new Promise<string>((_, reject) =>
+          setTimeout(
+            () =>
+              reject(new Error("shim deadlock: inner runInTransactionOnConnection never resolved")),
+            500
+          )
+        ),
+      ]);
+
+      expect(result).toBe("done");
+      expect(innerRan).toBe(true);
+    });
   });
 });
 
