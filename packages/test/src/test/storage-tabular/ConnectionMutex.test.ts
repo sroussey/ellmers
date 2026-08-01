@@ -133,32 +133,123 @@ describe("ConnectionMutex F1: cross-instance re-entry is ALS-independent", () =>
       const secondOp = await runOnConnection(handle, ownerA, async () => "ok");
       expect(secondOp).toBe("ok");
     });
-  });
 
-  it("same-instance nested via captured `this` inlines under real ALS", async () => {
-    // With real AsyncLocalStorage (Node) the store survives across `await`,
-    // so a call reaching back to runOnConnection with the same owner inlines
-    // rather than chain-waiting (which would deadlock — the outer tx still
-    // holds the chain slot). This is the "captured this" pattern that the
-    // ALS optimization exists for.
-    __resetAlsForTesting();
-    const handle = {};
-    const ownerA = { table: "table_a" };
+    it("same-instance nested runOnConnection inlines (no deadlock)", async () => {
+      // Same-owner re-entry while the owner still holds the tx must inline —
+      // chain-waiting would deadlock because the chain slot is only released
+      // by the outer tx's `finally`, which is awaiting this inner call.
+      //
+      // The inner call is issued AFTER an `await` in the body: that is the case
+      // that discriminates the two runtimes. Before the await, even the shim
+      // still carries the store (the body's synchronous prefix runs inside
+      // `als.run`), so an inner call there inlines on both runtimes whether or
+      // not the shim fallback exists — i.e. it proves nothing.
+      const handle = {};
+      const ownerA = { table: "table_a" };
 
-    let innerRan = false;
-    await runInTransactionOnConnection(handle, ownerA, async () => {
-      // Nested call with the same owner — must inline (no chain wait) or
-      // else this deadlocks.
-      const value = await runOnConnection(handle, ownerA, async () => {
-        innerRan = true;
-        return "inlined";
+      let innerRan = false;
+      const body = runInTransactionOnConnection(handle, ownerA, async () => {
+        await Promise.resolve();
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        const value = await runOnConnection(handle, ownerA, async () => {
+          innerRan = true;
+          return "inlined";
+        });
+        expect(value).toBe("inlined");
       });
-      expect(value).toBe("inlined");
+
+      await expectNoDeadlock(body, "inner runOnConnection never resolved");
+      expect(innerRan).toBe(true);
     });
 
-    expect(innerRan).toBe(true);
+    it("same-instance nested runInTransactionOnConnection inlines (no deadlock)", async () => {
+      // Symmetric case for nested transactions: same-owner nested tx-open
+      // must inline for the same reason (existing nested-tx branch delegates
+      // to the same classifyReentry). Issued after an `await`, as above.
+      const handle = {};
+      const ownerA = { table: "table_a" };
+
+      let innerRan = false;
+      const body = runInTransactionOnConnection(handle, ownerA, async () => {
+        await Promise.resolve();
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        const value = await runInTransactionOnConnection(handle, ownerA, async () => {
+          innerRan = true;
+          return "nested-inlined";
+        });
+        expect(value).toBe("nested-inlined");
+      });
+
+      await expectNoDeadlock(body, "inner runInTransactionOnConnection never resolved");
+      expect(innerRan).toBe(true);
+    });
+
+    it.skipIf(useShim)(
+      "same-instance op that is NOT a tx descendant still waits for the transaction",
+      async () => {
+        // The store is what distinguishes a descendant from unrelated concurrent
+        // work on the same instance, so under a real ALS this call must queue on
+        // the chain rather than run between BEGIN and COMMIT. The shim has no
+        // store and cannot make this distinction, hence the skip there.
+        const handle = {};
+        const ownerA = { table: "table_a" };
+        const order: string[] = [];
+
+        let releaseTx: () => void = () => {};
+        const txCanFinish = new Promise<void>((resolve) => {
+          releaseTx = resolve;
+        });
+        let signalTxStarted: () => void = () => {};
+        const txStarted = new Promise<void>((resolve) => {
+          signalTxStarted = resolve;
+        });
+
+        const txPromise = runInTransactionOnConnection(handle, ownerA, async () => {
+          order.push("BEGIN");
+          signalTxStarted();
+          await txCanFinish;
+          order.push("COMMIT");
+        });
+        await txStarted;
+
+        const sibling = runOnConnection(handle, ownerA, async () => {
+          order.push("SIBLING-OP");
+          return "ok";
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        releaseTx();
+        await txPromise;
+        expect(await sibling).toBe("ok");
+
+        expect(order).toEqual(["BEGIN", "COMMIT", "SIBLING-OP"]);
+      }
+    );
   });
 });
+
+/**
+ * Fails fast with `label` instead of hanging the suite when `body` never
+ * settles. The timer is cleared on the happy path so a passing test leaves no
+ * pending handle behind.
+ */
+async function expectNoDeadlock(body: Promise<unknown>, label: string): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  // On the timeout branch `body` stays pending; without a handler a later
+  // rejection surfaces as an unhandled rejection that masks the real failure.
+  body.catch(() => {});
+  try {
+    const result = await Promise.race([
+      body.then(() => "done"),
+      new Promise<string>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`deadlock: ${label}`)), 500);
+      }),
+    ]);
+    expect(result).toBe("done");
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
 
 describe("ConnectionMutex F2: ConnectionReentryError message and mode", () => {
   afterEach(() => {

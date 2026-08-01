@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Als, AlsContext } from "./connectionAls.shared";
+import type { Als } from "./connectionAls.shared";
 
 /**
  * Cross-instance connection safety for storage backends that share a single
@@ -25,11 +25,31 @@ import type { Als, AlsContext } from "./connectionAls.shared";
  * itself (`txOwner`), so it is **ALS-independent**: the module works
  * identically on Node (real `AsyncLocalStorage`) and in the browser (the
  * synchronous shim), even when the caller `await`s between the outer
- * transaction opening and the sibling call. `AsyncLocalStorage` is only an
- * **inline optimization on Node**: when the store exists and matches, a
- * same-instance re-entry can run inline without re-taking the chain.
- * Without it (browser shim), same-instance re-entry falls back to the chain
- * — slower, but safe.
+ * transaction opening and the sibling call.
+ *
+ * Same-instance re-entry is classified from the `AsyncLocalStorage` store,
+ * which is precise: only a genuine async descendant of the transaction body
+ * carries it, so an unrelated concurrent call on the same instance still
+ * queues on the chain instead of slipping inside the open transaction.
+ *
+ * The browser shim has no async context — its store is gone at the first
+ * `await` inside the transaction body — so on that runtime only, a descendant
+ * is recognized from handle state (`state.txOwner === owner`). Chain-waiting
+ * there would deadlock: the chain slot is released by the outer transaction's
+ * `finally`, which is itself awaiting the inner call. That fallback cannot
+ * tell a descendant from an unrelated concurrent call, which is why it is
+ * gated to the runtime that has no better option.
+ *
+ * KNOWN LIMIT of the store-based classification: carrying the store proves a
+ * descendant, but *lacking* it does not prove the opposite. A descendant whose
+ * continuation is resumed by a scheduler created outside the transaction (a
+ * job queue, worker pool, or batching loop that was already running when the
+ * transaction opened) arrives with no store, is classified "chain", and blocks
+ * on a slot only its own transaction can release — a permanent deadlock that
+ * also poisons the handle, since the waiter has already installed itself as
+ * `state.chain`. Transaction bodies must therefore reach this connection
+ * directly (or via the `tx` proxy), never by handing work to an outside
+ * scheduler and awaiting it.
  *
  * Platform ALS is injected by {@link defineConnectionMutex} so the browser
  * entry can wire the shim via a relative import (never `node:async_hooks`)
@@ -139,13 +159,25 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
   function classifyReentry(
     state: HandleState,
     owner: object,
-    alsStore: AlsContext | undefined,
-    handle: object
+    handle: object,
+    store: Als
   ): ReentryDecision {
     if (state.txOwner !== null && state.txOwner !== owner) {
       return "throw";
     }
+    const alsStore = store.getStore();
     if (alsStore !== undefined && alsStore.handle === handle && alsStore.owner === owner) {
+      return "inline";
+    }
+    // Synchronous shim only: a descendant of our own transaction body loses the
+    // store at the body's first `await` and lands here with none. Chain-waiting
+    // would deadlock — the chain slot is released by the outer transaction's
+    // `finally`, which is awaiting this call — so fall back to handle state.
+    // This cannot distinguish a descendant from an unrelated concurrent call on
+    // the same instance, so it stays off wherever a real ALS store exists.
+    // (`txOwner === owner` here implies an open transaction: `txOwner` and
+    // `txId` are always written and cleared together.)
+    if (store.synchronousOnly === true && state.txOwner === owner) {
       return "inline";
     }
     return "chain";
@@ -159,12 +191,11 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
    * — no `await ensureAls()` needed on the throw path, so browser shim and
    * Node behave identically.
    *
-   * Same-instance re-entry that presents a matching `AsyncLocalStorage` store
-   * runs `fn` inline — the caller is already inside its own
-   * `runInTransactionOnConnection` and re-taking the chain would deadlock.
-   * On the browser shim, same-instance re-entry across an `await` falls back
-   * to the chain wait (safe; the outer transaction's chain slot has already
-   * been released by the time descendants queue).
+   * A same-instance descendant of an open transaction body runs `fn` inline —
+   * re-taking the chain would deadlock. It is recognized from the
+   * `AsyncLocalStorage` store on Node and from handle state on the browser
+   * shim (which has no async context). An unrelated concurrent call on the
+   * same instance still queues on the chain under a real ALS.
    */
   async function runOnConnection<T>(
     handle: object,
@@ -178,8 +209,7 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
       throw new ConnectionReentryError(ownerTable(state.txOwner), ownerTable(owner), "sibling-op");
     }
     const store = als.ensureAls();
-    const alsStore = store.getStore();
-    const decision = classifyReentry(state, owner, alsStore, handle);
+    const decision = classifyReentry(state, owner, handle, store);
     if (decision === "throw") {
       throw new ConnectionReentryError(
         ownerTable(state.txOwner ?? owner),
@@ -229,8 +259,7 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
       );
     }
     const store = als.ensureAls();
-    const alsStore = store.getStore();
-    const decision = classifyReentry(state, owner, alsStore, handle);
+    const decision = classifyReentry(state, owner, handle, store);
     if (decision === "throw") {
       throw new ConnectionReentryError(
         ownerTable(state.txOwner ?? owner),

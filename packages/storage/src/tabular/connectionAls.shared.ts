@@ -23,6 +23,13 @@ export interface AlsContext {
 export interface Als {
   getStore(): AlsContext | undefined;
   run<T>(store: AlsContext, callback: () => T): T;
+  /**
+   * `true` for the synchronous shim, whose store is lost at the first `await`.
+   * Consumers that must recognize same-owner re-entry across an `await` fall
+   * back to handle state on this runtime; a real `AsyncLocalStorage` leaves it
+   * `undefined` because its store already survives the await.
+   */
+  readonly synchronousOnly: boolean | undefined;
 }
 
 /**
@@ -52,6 +59,7 @@ export function makeCachedAls(create: () => Als): ConnectionAlsApi {
 export function createShimAls(): Als {
   let current: AlsContext | undefined;
   return {
+    synchronousOnly: true,
     getStore(): AlsContext | undefined {
       return current;
     },
