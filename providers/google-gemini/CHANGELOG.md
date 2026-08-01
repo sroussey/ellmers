@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.33
+
+### Documentation
+
+- fix workflow.add( -> workflow.addTask( in provider READMEs
+
 ## 0.3.32
 
 ### Bug Fixes

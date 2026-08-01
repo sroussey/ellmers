@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.33
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@types/pg`: ^8.20.2
+
 ## 0.3.32
 
 ## 0.3.31

@@ -1,5 +1,19 @@
 # @workglow/cli
 
+## 0.3.33
+
+### Features
+
+- add subtask rows rendering and management for task execution
+
+#### deepseek
+
+- add DeepSeek AI provider
+
+### Tests
+
+- add unit tests for registerIterationListeners functionality
+
 ## 0.3.32
 
 ## 0.3.31

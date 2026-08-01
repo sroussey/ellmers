@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.33
+
+### Updated Dependencies
+
+- `@cloudflare/workers-types`: ^5.20260801.1
+
 ## 0.3.32
 
 ## 0.3.31

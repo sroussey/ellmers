@@ -2,7 +2,7 @@
   "name": "@workglow/playwright",
   "type": "module",
   "sideEffects": false,
-  "version": "0.3.32",
+  "version": "0.3.33",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",

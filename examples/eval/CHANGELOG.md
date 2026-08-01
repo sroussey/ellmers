@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.33
+
+### Features
+
+#### deepseek
+
+- add DeepSeek AI provider
+
 ## 0.3.32
 
 ## 0.3.31

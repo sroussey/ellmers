@@ -1,7 +1,7 @@
 {
   "name": "@workglow/postgres",
   "type": "module",
-  "version": "0.3.32",
+  "version": "0.3.33",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
@@ -98,7 +98,7 @@
     }
   },
   "devDependencies": {
-    "@types/pg": "^8.20.1",
+    "@types/pg": "^8.20.2",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/util": "workspace:*"

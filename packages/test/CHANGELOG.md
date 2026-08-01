@@ -1,5 +1,29 @@
 # @workglow/test
 
+## 0.3.33
+
+### Features
+
+#### deepseek
+
+- add DeepSeek AI provider
+
+### Bug Fixes
+
+#### deepseek
+
+- correct json-mode and tool_choice for the real API
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1101.0
+- `@cloudflare/workers-types`: ^5.20260801.1
+- `@types/pg`: ^8.20.2
+
 ## 0.3.32
 
 ### Bug Fixes

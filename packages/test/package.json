@@ -2,7 +2,7 @@
   "name": "@workglow/test",
   "type": "module",
   "private": true,
-  "version": "0.3.32",
+  "version": "0.3.33",
   "bugs": {
     "url": "https://github.com/workglow-dev/libs/issues"
   },
@@ -28,7 +28,7 @@
   },
   "devDependencies": {
     "@aws-sdk/client-sqs": "^3.1101.0",
-    "@cloudflare/workers-types": "^5.20260731.1",
+    "@cloudflare/workers-types": "^5.20260801.1",
     "@duckdb/node-api": "catalog:",
     "@electric-sql/pglite": "catalog:",
     "@electric-sql/pglite-pgvector": "catalog:",
@@ -36,7 +36,7 @@
     "@sqliteai/sqlite-vector": "catalog:",
     "@supabase/supabase-js": "catalog:",
     "@types/dom-chromium-ai": "^0.0.17",
-    "@types/pg": "^8.20.1",
+    "@types/pg": "^8.20.2",
     "@workglow/ai": "workspace:*",
     "@workglow/anthropic": "workspace:*",
     "@workglow/aws": "workspace:*",
