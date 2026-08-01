@@ -92,7 +92,7 @@
   "devDependencies": {
     "@sqlite.org/sqlite-wasm": "catalog:",
     "@sqliteai/sqlite-vector": "catalog:",
-    "@types/better-sqlite3": "^7.6.13",
+    "@types/better-sqlite3": "^9.6.0",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/util": "workspace:*",

@@ -36,7 +36,7 @@
     "@sqliteai/sqlite-vector": "catalog:",
     "@supabase/supabase-js": "catalog:",
     "@types/dom-chromium-ai": "^0.0.17",
-    "@types/pg": "^8.20.2",
+    "@types/pg": "^8.20.3",
     "@workglow/ai": "workspace:*",
     "@workglow/anthropic": "workspace:*",
     "@workglow/aws": "workspace:*",
