@@ -10,14 +10,28 @@ import type {
   ToolCallingTaskOutput,
   ToolCalls,
 } from "@workglow/ai";
-import {
-  accumulateOpenAIChatStream,
-  buildOpenAITools,
-  mapOpenAIToolChoice,
-} from "@workglow/ai/provider-utils";
+import { accumulateOpenAIChatStream, buildOpenAITools } from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, toOpenAIMessages } from "@workglow/ai/worker";
 import { getClient, getModelName } from "./DeepSeek_Client";
 import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
+
+/**
+ * Map a workglow `toolChoice` to what DeepSeek actually accepts.
+ *
+ * The v4 models are thinking models, and thinking mode rejects any tool_choice
+ * beyond `auto` / `none` — `"required"` and the named-function object both come
+ * back as `400 Thinking mode does not support this tool_choice`. So we cannot
+ * use the shared {@link mapOpenAIToolChoice}, which emits both.
+ *
+ * A forcing choice is therefore downgraded to `auto` rather than rejected: the
+ * request succeeds and the model still calls the tool when the prompt calls for
+ * one. The caveat is that `auto` is a hint, not a guarantee — a caller that
+ * passes `"required"` is not getting a hard guarantee of a tool call from this
+ * provider. `none` is passed through, since suppressing calls is honored.
+ */
+function mapDeepSeekToolChoice(toolChoice: string | undefined): "auto" | "none" {
+  return toolChoice === "none" ? "none" : "auto";
+}
 
 /**
  * Streaming run-fn for `["text.generation", "tool-use"]`. Calls the DeepSeek
@@ -39,7 +53,7 @@ export const DeepSeek_ToolCalling_Stream: AiProviderRunFn<
 
   const tools = buildOpenAITools(input.tools);
   const messages = toOpenAIMessages(input);
-  const toolChoice = mapOpenAIToolChoice(input.toolChoice, true);
+  const toolChoice = mapDeepSeekToolChoice(input.toolChoice);
 
   const stream = await client.chat.completions.create(
     {

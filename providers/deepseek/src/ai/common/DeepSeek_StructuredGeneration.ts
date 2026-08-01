@@ -9,10 +9,34 @@ import type {
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
-import { isStrictCompatibleSchema } from "@workglow/ai/provider-utils";
 import { parsePartialJson } from "@workglow/util/worker";
 import { getClient, getModelName } from "./DeepSeek_Client";
 import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
+
+/**
+ * Build the user message for DeepSeek's JSON mode.
+ *
+ * DeepSeek supports only `response_format: { type: "json_object" }` — passing
+ * OpenAI's `json_schema` form returns `400 This response_format type is
+ * unavailable now`. That type does no schema enforcement, and the vendor
+ * additionally requires the word "json" to appear in the prompt (otherwise the
+ * request can come back with empty content). So the schema has to travel in the
+ * prompt instead of in `response_format`, and the wording below deliberately
+ * contains a lowercase "json" to satisfy that requirement.
+ *
+ * `StructuredGenerationTask` re-validates the parsed object against the output
+ * schema, so a model that ignores the shape still fails loudly downstream
+ * rather than silently returning the wrong thing.
+ */
+function buildJsonPrompt(prompt: string, schema: unknown): string {
+  if (schema === undefined || schema === null) {
+    return `${prompt}\n\nRespond with valid json only: a single JSON object, no prose and no code fences.`;
+  }
+  return (
+    `${prompt}\n\nRespond with valid json only: a single JSON object conforming to this ` +
+    `JSON Schema, with no prose and no code fences.\n\nJSON Schema:\n${JSON.stringify(schema)}`
+  );
+}
 
 /**
  * Streaming run-fn for `["text.generation", "json-mode"]`. Emits
@@ -33,15 +57,8 @@ export const DeepSeek_StructuredGeneration_Stream: AiProviderRunFn<
   const stream = await client.chat.completions.create(
     {
       model: modelName,
-      messages: [{ role: "user", content: input.prompt }],
-      response_format: {
-        type: "json_schema" as never,
-        json_schema: {
-          name: "structured_output",
-          schema: schema,
-          strict: isStrictCompatibleSchema(schema),
-        },
-      } as never,
+      messages: [{ role: "user", content: buildJsonPrompt(input.prompt, schema) }],
+      response_format: { type: "json_object" } as never,
       max_tokens: input.maxTokens,
       temperature: input.temperature,
       stream: true,
