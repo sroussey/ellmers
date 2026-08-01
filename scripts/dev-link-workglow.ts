@@ -34,9 +34,9 @@ async function main(): Promise<void> {
   await run(sec, ["run", "link-workglow"]);
   await run(sec, ["run", "use-source"]);
 
-  await run(embarcData, ["run", "link-sec"]);
   await run(embarcData, ["run", "link-workglow"]);
-
+  await run(embarcData, ["run", "link-sec"]);
+  
   console.log("\n✅ dev-link complete (libs → sec → embarc-data)");
   console.log("Remember: bun run use-dist in libs/sec before committing export changes.");
 }
