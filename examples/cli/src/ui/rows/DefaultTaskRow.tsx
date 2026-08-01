@@ -31,7 +31,7 @@ export function DefaultTaskRow({ task, line, iterationSlots }: TaskRowProps): Re
       {sortedSlots.map((slot: IterationSlotRow) => (
         <Box key={`${line.id}-iter-${slot.index}`} flexDirection="column" paddingLeft={2}>
           <TaskStatusProgressRow
-            type={`#${slot.index + 1}`}
+            label={`#${slot.index + 1}`}
             status={iterationSlotToTaskStatus(slot.status)}
             message={slot.status === "completed" ? undefined : slot.message}
             barProgress={slot.progress ?? 0}
