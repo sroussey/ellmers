@@ -16,6 +16,11 @@ export {
 export * from "./common/DeepSeek_Constants";
 export * from "./common/DeepSeek_ModelSchema";
 export * from "./common/DeepSeek_ModelSearch";
+export {
+  DeepSeekToolChoiceNotHonoredError,
+  assertToolChoiceHonored,
+  isForcingToolChoice,
+} from "./common/DeepSeek_ToolCalling";
 export * from "./registerDeepSeek";
 
 import { DEEPSEEK_RUN_FN_SPECS } from "./common/DeepSeek_Capabilities";
