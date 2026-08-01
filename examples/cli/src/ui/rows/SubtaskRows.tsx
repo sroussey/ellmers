@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ITask } from "@workglow/task-graph";
 import { Box, Text } from "ink";
 import React from "react";
 import { useCliTheme } from "../CliThemeContext";
@@ -14,6 +15,7 @@ import {
   iterationSlotToTaskStatus,
   sortIterationSlotsForDisplay,
 } from "../taskGraphCliSubscriptions";
+import { useSubtaskRows } from "./useSubtaskRows";
 
 /**
  * A long-running task can own hundreds of subtasks (one generation per eval
@@ -23,9 +25,22 @@ import {
  */
 const MAX_VISIBLE_SUBTASKS = 6;
 
+/**
+ * How many levels of owned subgraph to render beneath a task row. A task that
+ * owns a workflow produces a wrapper row whose own children are the real work,
+ * so one level is never enough — stopping at the wrapper shows "Workflow" and
+ * hides the pipeline inside it. Deeper than this and the breadth cap multiplies
+ * into more rows (and more attach pollers) than a terminal can use.
+ */
+const MAX_SUBTASK_DEPTH = 2;
+
 interface SubtaskRowsProps {
   readonly rows: readonly CliTaskLine[];
   readonly iterationSlots: ReadonlyMap<string, IterationSlotRow[]>;
+  /** Live task per row id; enables recursion into rows that own subgraphs. */
+  readonly tasks?: ReadonlyMap<string, ITask> | undefined;
+  /** Nesting level of this list; recursion stops at {@link MAX_SUBTASK_DEPTH}. */
+  readonly depth?: number;
   /** Aggregate subgraph progress; only rendered in `chrome` mode. */
   readonly overallProgress?: number | undefined;
   /**
@@ -42,9 +57,77 @@ interface SubtaskRowsProps {
  * Shared by {@link DefaultTaskRow} (workflow/graph runs) and `TaskRunApp`
  * (single-task runs) so both views show ownership the same way.
  */
+/**
+ * One subtask row plus, when that subtask owns tasks of its own, its children
+ * indented beneath it. Split out as a component because the subgraph is tracked
+ * with a hook, which cannot be called from inside a `map` over a changing list.
+ */
+function SubtaskRow({
+  line,
+  task,
+  iterationSlots,
+  depth,
+}: {
+  readonly line: CliTaskLine;
+  readonly task: ITask | undefined;
+  readonly iterationSlots: ReadonlyMap<string, IterationSlotRow[]>;
+  readonly depth: number;
+}): React.ReactElement {
+  const slots = iterationSlots.get(line.id);
+  const sortedSlots = slots ? sortIterationSlotsForDisplay(slots) : [];
+  return (
+    <Box flexDirection="column">
+      <TaskStatusProgressRow
+        label={line.label}
+        status={line.status}
+        message={line.message}
+        barProgress={line.progress ?? 0}
+      />
+      {sortedSlots.map((slot) => (
+        <Box key={`${line.id}-iter-${slot.index}`} flexDirection="column" paddingLeft={2}>
+          <TaskStatusProgressRow
+            label={`#${slot.index + 1}`}
+            status={iterationSlotToTaskStatus(slot.status)}
+            message={slot.status === "completed" ? undefined : slot.message}
+            barProgress={slot.progress ?? 0}
+            suppressProgressBar={slot.status !== "running" || slot.progress === undefined}
+          />
+        </Box>
+      ))}
+      {task !== undefined && depth < MAX_SUBTASK_DEPTH && (
+        <NestedSubtaskRows task={task} parentType={line.type} depth={depth} />
+      )}
+    </Box>
+  );
+}
+
+/** Subscribes to one subtask's own subgraph and renders it a level deeper. */
+function NestedSubtaskRows({
+  task,
+  parentType,
+  depth,
+}: {
+  readonly task: ITask;
+  readonly parentType: string;
+  readonly depth: number;
+}): React.ReactElement | null {
+  const nested = useSubtaskRows(task);
+  if (nested.rows.length === 0 || isRedundantSubgraph(nested.rows, parentType)) return null;
+  return (
+    <SubtaskRows
+      rows={nested.rows}
+      tasks={nested.tasks}
+      iterationSlots={nested.iterationSlots}
+      depth={depth + 1}
+    />
+  );
+}
+
 export function SubtaskRows({
   rows,
   iterationSlots,
+  tasks,
+  depth = 0,
   overallProgress,
   variant = "compact",
 }: SubtaskRowsProps): React.ReactElement | null {
@@ -68,31 +151,15 @@ export function SubtaskRows({
         </Box>
       )}
       {hiddenCount > 0 && <Text dimColor>… {hiddenCount} completed</Text>}
-      {visible.map((t) => {
-        const slots = iterationSlots.get(t.id);
-        const sortedSlots = slots ? sortIterationSlotsForDisplay(slots) : [];
-        return (
-          <Box key={t.id} flexDirection="column">
-            <TaskStatusProgressRow
-              label={t.label}
-              status={t.status}
-              message={t.message}
-              barProgress={t.progress ?? 0}
-            />
-            {sortedSlots.map((slot) => (
-              <Box key={`${t.id}-iter-${slot.index}`} flexDirection="column" paddingLeft={2}>
-                <TaskStatusProgressRow
-                  label={`#${slot.index + 1}`}
-                  status={iterationSlotToTaskStatus(slot.status)}
-                  message={slot.status === "completed" ? undefined : slot.message}
-                  barProgress={slot.progress ?? 0}
-                  suppressProgressBar={slot.status !== "running" || slot.progress === undefined}
-                />
-              </Box>
-            ))}
-          </Box>
-        );
-      })}
+      {visible.map((t) => (
+        <SubtaskRow
+          key={t.id}
+          line={t}
+          task={tasks?.get(t.id)}
+          iterationSlots={iterationSlots}
+          depth={depth}
+        />
+      ))}
     </Box>
   );
 

@@ -13,9 +13,21 @@ import { subscribeTaskGraphForCli } from "../taskGraphCliSubscriptions";
 export interface SubtaskRowsState {
   /** Owned subtasks in display order (completed → running → pending, then graph order). */
   readonly rows: readonly CliTaskLine[];
+  /**
+   * The live task behind each row, keyed by row id. A row that owns tasks of its
+   * own — an owned workflow wrapping a whole pipeline, say — needs its instance
+   * so the renderer can recurse into that subgraph instead of stopping at the
+   * wrapper row.
+   */
+  readonly tasks: ReadonlyMap<string, ITask>;
   /** Aggregate progress of the subgraph, once it reports any. */
   readonly overallProgress: number | undefined;
   readonly iterationSlots: ReadonlyMap<string, IterationSlotRow[]>;
+}
+
+/** A task in one of these states will never gain children, so stop waiting for them. */
+function isSettled(status: string): boolean {
+  return status === "COMPLETED" || status === "FAILED" || status === "ABORTED";
 }
 
 /**
@@ -40,7 +52,12 @@ export function useSubtaskRows(task: ITask): SubtaskRowsState {
 
     const tryAttach = (): void => {
       if (unsub) return;
-      if (!task.hasChildren() || !task.subGraph) return;
+      if (!task.hasChildren() || !task.subGraph) {
+        // Recursion multiplies these pollers across the tree, and a leaf that
+        // finished childless would otherwise keep waking up for the whole run.
+        if (isSettled(task.status) && attachInterval !== undefined) clearInterval(attachInterval);
+        return;
+      }
       unsub = subscribeTaskGraphForCli(
         task.subGraph,
         setTaskInfos,
@@ -65,13 +82,13 @@ export function useSubtaskRows(task: ITask): SubtaskRowsState {
     };
   }, [task]);
 
-  const order =
-    task.hasChildren() && task.subGraph
-      ? new Map(task.subGraph.getTasks().map((t, i) => [String(t.id), i]))
-      : new Map<string, number>();
+  const children = task.hasChildren() && task.subGraph ? task.subGraph.getTasks() : [];
+  const order = new Map(children.map((t, i) => [String(t.id), i]));
+  const tasks = new Map(children.map((t) => [String(t.id), t]));
 
   return {
     rows: sortCliTaskLinesForDisplay(Array.from(taskInfos.values()), order),
+    tasks,
     overallProgress,
     iterationSlots,
   };

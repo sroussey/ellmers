@@ -31,6 +31,25 @@ class OwnedChildTask extends Task<Record<string, never>, Record<string, never>> 
   }
 }
 
+/** The shape sec uses everywhere: own a Workflow, run a pipeline inside it. */
+class OwningWorkflowParentTask extends Task<Record<string, never>, Record<string, never>> {
+  static override readonly type = "OwningWorkflowParentTask";
+  static override readonly category = "Test";
+  static override readonly cacheable = false;
+  static override inputSchema(): never {
+    return SCHEMA;
+  }
+  static override outputSchema(): never {
+    return SCHEMA;
+  }
+  override async execute(_input: Record<string, never>, context: IExecuteContext) {
+    const wf = context.own(new Workflow(), { title: "Inner pipeline" });
+    wf.pipe(new OwnedChildTask() as never);
+    await wf.run({});
+    return {};
+  }
+}
+
 class OwningParentTask extends Task<Record<string, never>, Record<string, never>> {
   static override readonly type = "OwningParentTask";
   static override readonly category = "Test";
@@ -95,6 +114,42 @@ describe("WorkflowRunApp subtask rows", () => {
 
     const output = stripAnsi(stdout.frames.join("\n"));
     expect(output).toContain("OwningParentTask");
+    expect(output).toContain("OwnedChildTask");
+  });
+
+  it("renders the children inside an owned workflow, not just the wrapper row", async () => {
+    const workflow = new Workflow();
+    workflow.pipe(new OwningWorkflowParentTask() as never);
+
+    const stdout = new CapturingStdout();
+    let finished = false;
+    const instance = render(
+      React.createElement(WorkflowRunApp, {
+        graph: workflow.graph,
+        input: {},
+        runExecutor: () => workflow.run({}),
+        onComplete: () => {
+          finished = true;
+        },
+        onError: () => {
+          finished = true;
+        },
+      }),
+      { stdout: stdout as never, patchConsole: false, exitOnCtrlC: false }
+    );
+
+    const deadline = Date.now() + 5000;
+    while (!finished && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    instance.unmount();
+
+    const output = stripAnsi(stdout.frames.join("\n"));
+    expect(output).toContain("OwningWorkflowParentTask");
+    // The owned workflow's own title, from `own(wf, { title })`.
+    expect(output).toContain("Inner pipeline");
+    // The point of the recursion: the work inside the wrapper is visible.
     expect(output).toContain("OwnedChildTask");
   });
 });

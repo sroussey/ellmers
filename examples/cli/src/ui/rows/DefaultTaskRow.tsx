@@ -40,7 +40,11 @@ export function DefaultTaskRow({ task, line, iterationSlots }: TaskRowProps): Re
         </Box>
       ))}
       {!isRedundantSubgraph(subtasks.rows, line.type) && (
-        <SubtaskRows rows={subtasks.rows} iterationSlots={subtasks.iterationSlots} />
+        <SubtaskRows
+          rows={subtasks.rows}
+          tasks={subtasks.tasks}
+          iterationSlots={subtasks.iterationSlots}
+        />
       )}
     </Box>
   );

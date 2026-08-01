@@ -516,20 +516,27 @@ class ListeningGraphAsTask extends GraphAsTask<any, any> {
   }
 }
 
+// `type` is the wrapper's identity; `title` is what a progress UI shows when the
+// caller passed no title of its own. Without these the base "Group" would label
+// every unnamed subgraph, which says less than the kind of subgraph it is.
 class OwnGraphTask extends ListeningGraphAsTask {
   public static override readonly type = "Own[Graph]";
+  public static override readonly title = "Graph";
 }
 
 class OwnWorkflowTask extends ListeningGraphAsTask {
   public static override readonly type = "Own[Workflow]";
+  public static override readonly title = "Workflow";
 }
 
 class GraphTask extends GraphAsTask {
   public static override readonly type = "Graph";
+  public static override readonly title = "Graph";
 }
 
 class ConvWorkflowTask extends GraphAsTask {
   public static override readonly type = "Workflow";
+  public static override readonly title = "Workflow";
 }
 
 registerGraphWrapperFactory(({ subGraph, isOwned, isWorkflow, config }) => {

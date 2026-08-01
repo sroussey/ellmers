@@ -204,6 +204,7 @@ export function TaskRunApp({
           {showSubtasksSection && (
             <SubtaskRows
               rows={subtasks.rows}
+              tasks={subtasks.tasks}
               iterationSlots={subtasks.iterationSlots}
               overallProgress={subtasks.overallProgress}
               variant="chrome"
