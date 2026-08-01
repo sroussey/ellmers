@@ -31,10 +31,10 @@ await registerOllama();
 
 // 2. Use it in a workflow
 const workflow = new Workflow();
-workflow.add(new TextGenerationTask({
+workflow.addTask(TextGenerationTask, {
   model: "default-model",
-  prompt: "Hello world!"
-}));
+  prompt: "Hello world!",
+});
 
 const result = await workflow.run();
 ```
