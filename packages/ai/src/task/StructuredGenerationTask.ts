@@ -34,9 +34,9 @@ export const StructuredGenerationInputSchema = {
     maxTokens: {
       type: "number",
       title: "Max Tokens",
-      description: "The maximum number of tokens to generate",
+      description:
+        "Maximum tokens for the generated answer; providers add their own reasoning allowance on top",
       minimum: 1,
-      maximum: 4096,
       "x-ui-group": "Configuration",
     },
     temperature: {

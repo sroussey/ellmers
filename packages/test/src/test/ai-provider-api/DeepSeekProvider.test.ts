@@ -7,8 +7,11 @@
 import type { ModelRecord } from "@workglow/ai";
 import {
   _testOnly,
+  assertNotTruncatedByReasoning,
   DEEPSEEK_ALLOWED_HOSTS,
   DEEPSEEK_DEFAULT_BASE_URL,
+  DEEPSEEK_DEFAULT_REASONING_ALLOWANCE,
+  resolveMaxTokens,
 } from "@workglow/deepseek/ai";
 import { describe, expect, it } from "vitest";
 
@@ -107,5 +110,66 @@ describe("base URL", () => {
     expect(DEEPSEEK_DEFAULT_BASE_URL).toBe("https://api.deepseek.com");
     expect(DEEPSEEK_ALLOWED_HOSTS).toEqual(["api.deepseek.com"]);
     expect(DEEPSEEK_ALLOWED_HOSTS).toContain(new URL(DEEPSEEK_DEFAULT_BASE_URL).hostname);
+  });
+});
+
+describe("resolveMaxTokens", () => {
+  const thinkingModel = model("deepseek-v4-flash");
+
+  it("adds the default reasoning allowance to the caller's answer budget", () => {
+    expect(resolveMaxTokens(thinkingModel as never, 4096)).toBe(
+      4096 + DEEPSEEK_DEFAULT_REASONING_ALLOWANCE
+    );
+  });
+
+  it("returns undefined when the caller set no budget, leaving DeepSeek's own default", () => {
+    expect(resolveMaxTokens(thinkingModel as never, undefined)).toBeUndefined();
+  });
+
+  it("honours a per-model reasoning_allowance override", () => {
+    const configured = {
+      ...thinkingModel,
+      provider_config: { model_name: "deepseek-v4-flash", reasoning_allowance: 1000 },
+    };
+    expect(resolveMaxTokens(configured as never, 500)).toBe(1500);
+  });
+
+  it("allows a non-thinking model to opt out with an allowance of 0", () => {
+    const nonThinking = {
+      ...thinkingModel,
+      provider_config: { model_name: "deepseek-chat", reasoning_allowance: 0 },
+    };
+    expect(resolveMaxTokens(nonThinking as never, 2048)).toBe(2048);
+  });
+
+  it("clamps a negative allowance rather than shrinking the answer budget", () => {
+    const bogus = {
+      ...thinkingModel,
+      provider_config: { model_name: "deepseek-v4-flash", reasoning_allowance: -5000 },
+    };
+    expect(resolveMaxTokens(bogus as never, 2048)).toBe(2048);
+  });
+});
+
+describe("assertNotTruncatedByReasoning", () => {
+  it("throws when the budget was exhausted before any content was emitted", () => {
+    expect(() => assertNotTruncatedByReasoning("length", "", 4096)).toThrow(
+      /exhausted its token budget on reasoning/
+    );
+  });
+
+  it("names the knobs to turn", () => {
+    expect(() => assertNotTruncatedByReasoning("length", "", 4096)).toThrow(
+      /maxTokens.*reasoning_allowance/s
+    );
+  });
+
+  it("stays silent on a truncated-but-non-empty response (partial beats an exception)", () => {
+    expect(() => assertNotTruncatedByReasoning("length", '{"a":1', 4096)).not.toThrow();
+  });
+
+  it("stays silent on a normal completion", () => {
+    expect(() => assertNotTruncatedByReasoning("stop", "", 4096)).not.toThrow();
+    expect(() => assertNotTruncatedByReasoning(null, "", 4096)).not.toThrow();
   });
 });

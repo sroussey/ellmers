@@ -88,3 +88,47 @@ export function getModelName(model: DeepSeekModelConfig | undefined): string {
   }
   return name;
 }
+
+/**
+ * Reasoning headroom added when the model sets no `reasoning_allowance`. Sized
+ * above the ~4k reasoning tokens the thinking models typically spend.
+ */
+export const DEEPSEEK_DEFAULT_REASONING_ALLOWANCE = 16_384;
+
+/**
+ * Turns the caller's answer-token budget into DeepSeek's `max_tokens`. Thinking
+ * models bill `reasoning_tokens` against the same budget, so the wire value has
+ * to cover both. Undefined budget stays undefined, leaving DeepSeek's default.
+ */
+export function resolveMaxTokens(
+  model: DeepSeekModelConfig | undefined,
+  maxTokens: number | undefined
+): number | undefined {
+  if (maxTokens === undefined) return undefined;
+  const configured = model?.provider_config?.reasoning_allowance;
+  const allowance =
+    typeof configured === "number" ? configured : DEEPSEEK_DEFAULT_REASONING_ALLOWANCE;
+  return maxTokens + Math.max(0, allowance);
+}
+
+/**
+ * Throws when the budget ran out before any content was emitted — otherwise the
+ * empty string parses to `{}` and surfaces as a confusing schema error. A
+ * truncated-but-non-empty response is left alone; the partial is worth keeping.
+ */
+export function assertNotTruncatedByReasoning(
+  finishReason: string | null | undefined,
+  content: string,
+  requestedMaxTokens: number | undefined
+): void {
+  if (finishReason !== "length" || content.length > 0) return;
+  const budget =
+    requestedMaxTokens === undefined
+      ? "the model's default max_tokens"
+      : `max_tokens=${requestedMaxTokens} (+ reasoning allowance)`;
+  throw new Error(
+    `DeepSeek exhausted its token budget on reasoning and returned no content ` +
+      `(finish_reason="length", 0 content tokens, ${budget}). Raise the task's ` +
+      `maxTokens, or raise provider_config.reasoning_allowance for this model.`
+  );
+}

@@ -10,7 +10,12 @@ import type {
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
 import { parsePartialJson } from "@workglow/util/worker";
-import { getClient, getModelName } from "./DeepSeek_Client";
+import {
+  assertNotTruncatedByReasoning,
+  getClient,
+  getModelName,
+  resolveMaxTokens,
+} from "./DeepSeek_Client";
 import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
 
 /**
@@ -59,7 +64,7 @@ export const DeepSeek_StructuredGeneration_Stream: AiProviderRunFn<
       model: modelName,
       messages: [{ role: "user", content: buildJsonPrompt(input.prompt, schema) }],
       response_format: { type: "json_object" } as never,
-      max_tokens: input.maxTokens,
+      max_tokens: resolveMaxTokens(model, input.maxTokens),
       temperature: input.temperature,
       stream: true,
     },
@@ -68,6 +73,7 @@ export const DeepSeek_StructuredGeneration_Stream: AiProviderRunFn<
 
   let accumulatedJson = "";
   let refusal = "";
+  let finishReason: string | null | undefined;
   for await (const chunk of stream) {
     const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
@@ -78,11 +84,14 @@ export const DeepSeek_StructuredGeneration_Stream: AiProviderRunFn<
       }
     }
     refusal += chunk.choices?.[0]?.delta?.refusal ?? "";
+    finishReason = chunk.choices?.[0]?.finish_reason ?? finishReason;
   }
 
   if (refusal) {
     emit({ type: "refusal", refusal });
   }
+
+  assertNotTruncatedByReasoning(finishReason, accumulatedJson, input.maxTokens);
 
   let finalObject: Record<string, unknown>;
   try {

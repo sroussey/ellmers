@@ -12,7 +12,7 @@ import type {
 } from "@workglow/ai";
 import { accumulateOpenAIChatStream, buildOpenAITools } from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, toOpenAIMessages } from "@workglow/ai/worker";
-import { getClient, getModelName } from "./DeepSeek_Client";
+import { getClient, getModelName, resolveMaxTokens } from "./DeepSeek_Client";
 import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
 
 /**
@@ -124,7 +124,7 @@ export const DeepSeek_ToolCalling_Stream: AiProviderRunFn<
     {
       model: modelName,
       messages,
-      max_tokens: input.maxTokens,
+      max_tokens: resolveMaxTokens(model, input.maxTokens),
       temperature: input.temperature,
       stream: true,
       tools,

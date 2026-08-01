@@ -11,7 +11,12 @@ import type {
 } from "@workglow/ai";
 import { toOpenAIMessages } from "@workglow/ai/worker";
 import { getLogger } from "@workglow/util/worker";
-import { getClient, getModelName } from "./DeepSeek_Client";
+import {
+  assertNotTruncatedByReasoning,
+  getClient,
+  getModelName,
+  resolveMaxTokens,
+} from "./DeepSeek_Client";
 import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
 
 /**
@@ -49,7 +54,8 @@ function buildChatParams(
     model: getModelName(model),
     messages,
   };
-  if (input.maxTokens !== undefined) params.max_tokens = input.maxTokens;
+  const resolvedMaxTokens = resolveMaxTokens(model, input.maxTokens);
+  if (resolvedMaxTokens !== undefined) params.max_tokens = resolvedMaxTokens;
   if (input.temperature !== undefined) params.temperature = input.temperature;
   if ((input as { topP?: number }).topP !== undefined)
     params.top_p = (input as { topP?: number }).topP;
@@ -84,18 +90,26 @@ export const DeepSeek_TextGeneration_Stream: AiProviderRunFn<
       { signal }
     );
 
+    let emittedText = "";
+    let finishReason: string | null | undefined;
     for await (const chunk of stream as AsyncIterable<{
-      choices?: Array<{ delta?: { content?: string | null; refusal?: string | null } }>;
+      choices?: Array<{
+        delta?: { content?: string | null; refusal?: string | null };
+        finish_reason?: string | null;
+      }>;
     }>) {
       const delta = chunk.choices?.[0]?.delta?.content ?? "";
       if (delta) {
+        emittedText += delta;
         emit({ type: "text-delta", port: "text", textDelta: delta });
       }
       const refusalDelta = chunk.choices?.[0]?.delta?.refusal ?? "";
       if (refusalDelta) {
         emit({ type: "refusal", refusal: refusalDelta });
       }
+      finishReason = chunk.choices?.[0]?.finish_reason ?? finishReason;
     }
+    assertNotTruncatedByReasoning(finishReason, emittedText, input.maxTokens);
     emit({ type: "finish", data: {} as TextGenerationTaskOutput });
   } finally {
     logger.timeEnd(timerLabel, { model: getModelName(model) });

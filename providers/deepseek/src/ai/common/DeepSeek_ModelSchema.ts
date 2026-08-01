@@ -42,6 +42,12 @@ export const DeepSeekModelSchema = {
           default: false,
           "x-ui-hidden": true,
         },
+        reasoning_allowance: {
+          type: "number",
+          minimum: 0,
+          description:
+            "Tokens added to the answer budget to leave room for reasoning. Set 0 for a non-thinking model; omit for the default.",
+        },
       },
       required: ["model_name"],
       additionalProperties: false,

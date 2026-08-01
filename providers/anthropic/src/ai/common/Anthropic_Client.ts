@@ -82,9 +82,16 @@ export function getModelName(model: AnthropicModelConfig | undefined): string {
   return name;
 }
 
+/**
+ * Anthropic requires `max_tokens`, and it bounds thinking and response text
+ * together, so this fallback is always in play. 16k matches the vendor's
+ * guidance for non-streaming requests; stream and pass `maxTokens` for more.
+ */
+export const ANTHROPIC_DEFAULT_MAX_TOKENS = 16_384;
+
 export function getMaxTokens(
   input: { maxTokens?: number },
   model: AnthropicModelConfig | undefined
 ): number {
-  return input.maxTokens ?? model?.provider_config?.max_tokens ?? 1024;
+  return input.maxTokens ?? model?.provider_config?.max_tokens ?? ANTHROPIC_DEFAULT_MAX_TOKENS;
 }

@@ -6,7 +6,13 @@
 
 // organize-imports-ignore
 
-export { DEEPSEEK_ALLOWED_HOSTS, DEEPSEEK_DEFAULT_BASE_URL } from "./common/DeepSeek_Client";
+export {
+  assertNotTruncatedByReasoning,
+  DEEPSEEK_ALLOWED_HOSTS,
+  DEEPSEEK_DEFAULT_BASE_URL,
+  DEEPSEEK_DEFAULT_REASONING_ALLOWANCE,
+  resolveMaxTokens,
+} from "./common/DeepSeek_Client";
 export * from "./common/DeepSeek_Constants";
 export * from "./common/DeepSeek_ModelSchema";
 export * from "./common/DeepSeek_ModelSearch";
