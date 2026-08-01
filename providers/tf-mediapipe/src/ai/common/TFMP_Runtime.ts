@@ -30,12 +30,16 @@ export const wasm_reference_counts = new Map<string, number>();
  * Pinned WASM versions per engine. CSP `script-src` is origin-scoped and cannot
  * pin a version, so an `@latest` URL would execute whatever npm's dist-tag
  * currently points at — a compromised `@mediapipe/tasks-*` publish would run
- * in every host app's renderer on next MediaPipe use. Keep these values in
- * lockstep with the `@mediapipe/tasks-*` entries in the root package.json.
+ * in every host app's renderer on next MediaPipe use.
+ *
+ * The WASM must match the bundled JS SDK — the JS↔WASM ABI is not stable
+ * across versions — so each value is the resolved version of its
+ * `@mediapipe/tasks-*` dependency, not merely a "recent" release. Drift is
+ * caught by the version tests in `TFMP_GenaiHelpers.test.ts`.
  */
-export const TFMP_VISION_WASM_VERSION = "0.10.35";
-export const TFMP_TEXT_WASM_VERSION = "0.10.35";
-export const TFMP_AUDIO_WASM_VERSION = "0.10.35";
+export const TFMP_VISION_WASM_VERSION = "1.0.0";
+export const TFMP_TEXT_WASM_VERSION = "1.0.0";
+export const TFMP_AUDIO_WASM_VERSION = "1.0.0";
 export const TFMP_GENAI_WASM_VERSION = "0.10.29";
 
 export interface ITFMPWasmBaseUrls {
@@ -55,17 +59,54 @@ const DEFAULT_WASM_BASE_URLS: ITFMPWasmBaseUrls = {
 let currentWasmBaseUrls: ITFMPWasmBaseUrls = DEFAULT_WASM_BASE_URLS;
 
 /**
+ * Applies `next`, dropping any {@link wasm_tasks} fileset that was resolved
+ * from a base URL the change replaces. `getWasmTask` memoizes per engine and
+ * never consults the URL again, so without this an override applied after the
+ * first MediaPipe use would be silently ignored.
+ *
+ * Only the fileset descriptor is dropped; already-created task instances (and
+ * their `wasm_reference_counts` entries) keep the fileset they were built with
+ * and are unaffected.
+ */
+function applyWasmBaseUrls(next: ITFMPWasmBaseUrls): void {
+  for (const engine of Object.keys(next) as (keyof ITFMPWasmBaseUrls)[]) {
+    if (next[engine] !== currentWasmBaseUrls[engine]) {
+      wasm_tasks.delete(engine);
+    }
+  }
+  currentWasmBaseUrls = next;
+}
+
+/**
  * Point the FilesetResolver at caller-supplied base URLs — typically same-origin
  * paths (`/wasm/{engine}`) after the host app has vendored MediaPipe's `wasm/`
- * directories into its static assets. Overrides are per-engine; unspecified
- * engines keep the current value (initially the pinned jsDelivr URLs).
+ * directories into its static assets. Overrides are per-engine; engines that
+ * are absent (or explicitly `undefined`) keep the current value (initially the
+ * pinned jsDelivr URLs).
  *
  * Host apps that vendor MediaPipe's WASM should then drop `cdn.jsdelivr.net`
  * from their CSP; the pinned defaults exist only so the module remains usable
  * without any host-side wiring.
+ *
+ * The override is module-level state, so it must be applied in **every** realm
+ * *and every bundle* that resolves filesets. Always import it from
+ * `@workglow/tf-mediapipe/ai-runtime` — the `./ai` and `./ai-runtime` entry
+ * points are bundled separately with no shared chunk, so each holds its own
+ * copy of this state and only the `./ai-runtime` copy is the one
+ * `getWasmTask` reads. Apply it on the main thread before
+ * `registerTensorFlowMediaPipeInline`, and again in the worker's own bootstrap
+ * before `registerTensorFlowMediaPipeWorker` — a main-thread call does not
+ * reach the worker.
  */
 export function setTfmpWasmBaseUrls(bases: Partial<ITFMPWasmBaseUrls>): void {
-  currentWasmBaseUrls = { ...currentWasmBaseUrls, ...bases };
+  const next = { ...currentWasmBaseUrls };
+  for (const [engine, override] of Object.entries(bases) as [
+    keyof ITFMPWasmBaseUrls,
+    string | undefined,
+  ][]) {
+    if (override !== undefined) next[engine] = override;
+  }
+  applyWasmBaseUrls(next);
 }
 
 export function getTfmpWasmBaseUrls(): ITFMPWasmBaseUrls {
@@ -73,7 +114,7 @@ export function getTfmpWasmBaseUrls(): ITFMPWasmBaseUrls {
 }
 
 export function resetTfmpWasmBaseUrls(): void {
-  currentWasmBaseUrls = DEFAULT_WASM_BASE_URLS;
+  applyWasmBaseUrls(DEFAULT_WASM_BASE_URLS);
 }
 
 type TaskConstructor = {

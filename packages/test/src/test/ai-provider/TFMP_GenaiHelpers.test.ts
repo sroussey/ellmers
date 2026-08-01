@@ -4,11 +4,27 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { _testOnly } from "@workglow/tf-mediapipe/ai";
+import {
+  _testOnly,
+  TFMP_AUDIO_WASM_VERSION,
+  TFMP_GENAI_WASM_VERSION,
+  TFMP_TEXT_WASM_VERSION,
+  TFMP_VISION_WASM_VERSION,
+} from "@workglow/tf-mediapipe/ai";
+// The base-URL accessors must come from `./ai-runtime`: it is bundled separately
+// from `./ai`, so each entry point holds its own copy of the module state, and
+// `./ai-runtime` is the copy `getWasmTask` actually reads.
+import {
+  getTfmpWasmBaseUrls,
+  resetTfmpWasmBaseUrls,
+  setTfmpWasmBaseUrls,
+} from "@workglow/tf-mediapipe/ai-runtime";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+
+const requireFromTfmp = createRequire(join(process.cwd(), "providers/tf-mediapipe/package.json"));
 
 const {
   buildGenaiPrompt,
@@ -17,7 +33,6 @@ const {
   optionsMatch,
   resolveTfmpChatTemplate,
   resolveTfmpDelegate,
-  TFMP_GENAI_WASM_VERSION,
   withGenaiLock,
 } = _testOnly;
 
@@ -151,18 +166,26 @@ describe("resolveTfmpChatTemplate", () => {
   });
 });
 
-describe("TFMP_GENAI_WASM_VERSION", () => {
-  it("matches the installed @mediapipe/tasks-genai version", () => {
-    const requireFromTfmp = createRequire(
-      join(process.cwd(), "providers/tf-mediapipe/package.json")
-    );
-    // The SDK's "exports" map does not expose ./package.json, so resolve its
+describe("pinned WASM versions", () => {
+  // The CDN fileset must match the bundled JS SDK — the JS↔WASM ABI is not
+  // stable across versions, so a stale pin breaks the engine at load time.
+  const installedVersion = (sdk: string): string => {
+    // The SDKs' "exports" maps do not expose ./package.json, so resolve the
     // entry point and read the manifest sitting next to it.
-    const entry = requireFromTfmp.resolve("@mediapipe/tasks-genai");
+    const entry = requireFromTfmp.resolve(sdk);
     const pkg = JSON.parse(readFileSync(join(dirname(entry), "package.json"), "utf8")) as {
       version: string;
     };
-    expect(TFMP_GENAI_WASM_VERSION).toBe(pkg.version);
+    return pkg.version;
+  };
+
+  it.each([
+    ["@mediapipe/tasks-genai", TFMP_GENAI_WASM_VERSION],
+    ["@mediapipe/tasks-vision", TFMP_VISION_WASM_VERSION],
+    ["@mediapipe/tasks-text", TFMP_TEXT_WASM_VERSION],
+    ["@mediapipe/tasks-audio", TFMP_AUDIO_WASM_VERSION],
+  ])("%s pin matches the installed version", (sdk, pinned) => {
+    expect(pinned).toBe(installedVersion(sdk));
   });
 });
 
@@ -248,5 +271,51 @@ describe("extractJsonFromText", () => {
 
   it("returns an empty object when no JSON is present", () => {
     expect(extractJsonFromText("no json here")).toEqual({});
+  });
+});
+
+describe("TFMP wasm base URLs", () => {
+  afterEach(() => {
+    resetTfmpWasmBaseUrls();
+  });
+
+  it("defaults every engine to the pinned jsDelivr fileset", () => {
+    const bases = getTfmpWasmBaseUrls();
+    expect(bases.vision).toBe(
+      `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${TFMP_VISION_WASM_VERSION}/wasm`
+    );
+    expect(bases.text).toBe(
+      `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-text@${TFMP_TEXT_WASM_VERSION}/wasm`
+    );
+    expect(bases.audio).toBe(
+      `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-audio@${TFMP_AUDIO_WASM_VERSION}/wasm`
+    );
+    expect(bases.genai).toBe(
+      `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@${TFMP_GENAI_WASM_VERSION}/wasm`
+    );
+  });
+
+  it("overrides only the engines it is given", () => {
+    setTfmpWasmBaseUrls({ vision: "/wasm/vision" });
+    expect(getTfmpWasmBaseUrls().vision).toBe("/wasm/vision");
+    expect(getTfmpWasmBaseUrls().text).toContain("cdn.jsdelivr.net");
+
+    setTfmpWasmBaseUrls({ text: "/wasm/text" });
+    expect(getTfmpWasmBaseUrls().vision).toBe("/wasm/vision");
+    expect(getTfmpWasmBaseUrls().text).toBe("/wasm/text");
+  });
+
+  it("treats an explicit undefined as 'leave unchanged', not 'clear'", () => {
+    setTfmpWasmBaseUrls({ vision: "/wasm/vision" });
+    setTfmpWasmBaseUrls({ vision: undefined, audio: "/wasm/audio" });
+    expect(getTfmpWasmBaseUrls().vision).toBe("/wasm/vision");
+    expect(getTfmpWasmBaseUrls().audio).toBe("/wasm/audio");
+  });
+
+  it("restores the pinned defaults on reset", () => {
+    setTfmpWasmBaseUrls({ vision: "/wasm/vision", genai: "/wasm/genai" });
+    resetTfmpWasmBaseUrls();
+    expect(getTfmpWasmBaseUrls().vision).toContain("cdn.jsdelivr.net");
+    expect(getTfmpWasmBaseUrls().genai).toContain("cdn.jsdelivr.net");
   });
 });
