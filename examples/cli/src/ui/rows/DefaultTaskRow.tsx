@@ -14,9 +14,12 @@ import {
   type IterationSlotRow,
 } from "../taskGraphCliSubscriptions";
 import type { TaskRowProps } from "./pickRenderer";
+import { isRedundantSubgraph, SubtaskRows } from "./SubtaskRows";
+import { useSubtaskRows } from "./useSubtaskRows";
 
-export function DefaultTaskRow({ line, iterationSlots }: TaskRowProps): React.ReactElement {
+export function DefaultTaskRow({ task, line, iterationSlots }: TaskRowProps): React.ReactElement {
   const sortedSlots = iterationSlots ? sortIterationSlotsForDisplay(iterationSlots) : [];
+  const subtasks = useSubtaskRows(task);
   return (
     <Box key={line.id} flexDirection="column">
       <TaskStatusProgressRow
@@ -36,6 +39,9 @@ export function DefaultTaskRow({ line, iterationSlots }: TaskRowProps): React.Re
           />
         </Box>
       ))}
+      {!isRedundantSubgraph(subtasks.rows, line.type) && (
+        <SubtaskRows rows={subtasks.rows} iterationSlots={subtasks.iterationSlots} />
+      )}
     </Box>
   );
 }

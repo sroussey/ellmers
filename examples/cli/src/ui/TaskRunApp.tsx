@@ -8,24 +8,15 @@ import type { IRunConfig, ITask } from "@workglow/task-graph";
 import { Box, Static, Text } from "ink";
 import path from "node:path";
 import React, { useEffect, useRef, useState } from "react";
-import {
-  sortCliTaskLinesForDisplay,
-  startGraphTaskPoll,
-  startTaskInstancePoll,
-  type TaskFileProgressRow,
-} from "./cliTaskUi";
+import { startTaskInstancePoll, type TaskFileProgressRow } from "./cliTaskUi";
 import { useCliTheme } from "./CliThemeContext";
 import { CLI_SPINNER_FRAMES } from "./components/CliSpinner";
 import { ProgressBar } from "./components/ProgressBar";
 import { StreamOutput } from "./components/StreamOutput";
 import { TaskStatusProgressRow } from "./components/TaskStatusProgressRow";
 import { HumanInteractionHost } from "./HumanInteractionHost";
-import type { CliTaskLine, IterationSlotRow } from "./taskGraphCliSubscriptions";
-import {
-  iterationSlotToTaskStatus,
-  sortIterationSlotsForDisplay,
-  subscribeTaskGraphForCli,
-} from "./taskGraphCliSubscriptions";
+import { isRedundantSubgraph, SubtaskRows } from "./rows/SubtaskRows";
+import { useSubtaskRows } from "./rows/useSubtaskRows";
 
 interface TaskRunAppProps {
   readonly task: ITask;
@@ -89,11 +80,7 @@ export function TaskRunApp({
   const [downloadFiles, setDownloadFiles] = useState<TaskFileProgressRow[]>([]);
   const [streamText, setStreamText] = useState("");
   const [logs, setLogs] = useState<LogLine[]>([]);
-  const [subTaskInfos, setSubTaskInfos] = useState<Map<string, CliTaskLine>>(new Map());
-  const [subOverallProgress, setSubOverallProgress] = useState<number | undefined>(undefined);
-  const [subIterationSlots, setSubIterationSlots] = useState<Map<string, IterationSlotRow[]>>(
-    new Map()
-  );
+  const subtasks = useSubtaskRows(task);
 
   const showFileDownloadList = downloadFiles.length > 0;
   /** One header row + optional file list — avoids a pre-files row (default bar width) then a second row after `files` appears. */
@@ -149,26 +136,6 @@ export function TaskRunApp({
 
     const stopPollTask = startTaskInstancePoll(() => task, setStatus);
 
-    let unsubSubgraph: (() => void) | undefined;
-    let stopSubPoll: (() => void) | undefined;
-
-    /** Attach once when `hasChildren()` becomes true (may happen after `run()` starts). */
-    const tryAttachSubgraph = (): void => {
-      if (unsubSubgraph) return;
-      if (!task.hasChildren() || !task.subGraph) return;
-      unsubSubgraph = subscribeTaskGraphForCli(
-        task.subGraph,
-        setSubTaskInfos,
-        undefined,
-        setSubOverallProgress,
-        setSubIterationSlots
-      );
-      stopSubPoll = startGraphTaskPoll(task.subGraph, setSubTaskInfos);
-    };
-
-    tryAttachSubgraph();
-    const attachInterval = setInterval(tryAttachSubgraph, 150);
-
     flushTaskDisplay();
     /** 200ms batches high-frequency download updates so Ink stays responsive. */
     const displayInterval = setInterval(flushTaskDisplay, 200);
@@ -179,34 +146,22 @@ export function TaskRunApp({
       .catch((err) => onError(err));
 
     return () => {
-      clearInterval(attachInterval);
       clearInterval(displayInterval);
       stopPollTask();
-      unsubSubgraph?.();
-      stopSubPoll?.();
     };
   }, [onComplete, onError, task, taskType, overrides, runConfig]);
 
-  const subOrder =
-    task.hasChildren() && task.subGraph
-      ? new Map(task.subGraph.getTasks().map((t, i) => [String(t.id), i]))
-      : new Map<string, number>();
-  const orderedSubTasks = sortCliTaskLinesForDisplay(Array.from(subTaskInfos.values()), subOrder);
-  /** One child with the same type as the parent is usually the same logical work (e.g. job mirror); hide to avoid duplicate rows. */
-  const subgraphIsRedundantDuplicate =
-    orderedSubTasks.length === 1 && orderedSubTasks[0]?.type === taskType;
   /** Job queue may register multiple subgraph tasks of the same type (mirrors); hide when all match the parent. */
   const subgraphIsAllSameTypeMirror =
     isModelDownloadTask &&
-    orderedSubTasks.length > 1 &&
-    orderedSubTasks.every((t) => t.type === taskType);
+    subtasks.rows.length > 1 &&
+    subtasks.rows.every((t) => t.type === taskType);
   /** Per-file download UI already reflects progress; subgraph rows duplicate the parent row (often another ModelDownloadTask). */
   const hideSubtasksWhileDownloadFileUi = isModelDownloadTask && showFileDownloadList;
   const showSubtasksSection =
     !hideSubtasksWhileDownloadFileUi &&
-    !subgraphIsRedundantDuplicate &&
-    !subgraphIsAllSameTypeMirror &&
-    (subTaskInfos.size > 0 || subOverallProgress !== undefined);
+    !isRedundantSubgraph(subtasks.rows, taskType) &&
+    !subgraphIsAllSameTypeMirror;
 
   return (
     <HumanInteractionHost>
@@ -246,50 +201,12 @@ export function TaskRunApp({
           )}
           {streamText && <StreamOutput text={streamText} />}
           {showSubtasksSection && (
-            <Box flexDirection="column" marginTop={1}>
-              <Text dimColor>Subtasks</Text>
-              <Box paddingLeft={2} flexDirection="column">
-                {subOverallProgress !== undefined && (
-                  <Box flexDirection="row" justifyContent="space-between" width="100%">
-                    <Text color={bodyColor}>Subgraph: </Text>
-                    <Box flexShrink={0} marginLeft={1}>
-                      <ProgressBar progress={subOverallProgress} />
-                    </Box>
-                  </Box>
-                )}
-                {orderedSubTasks.map((t) => {
-                  const slots = subIterationSlots.get(t.id);
-                  const sortedSlots = slots ? sortIterationSlotsForDisplay(slots) : [];
-                  return (
-                    <Box key={t.id} flexDirection="column">
-                      <TaskStatusProgressRow
-                        type={t.type}
-                        status={t.status}
-                        message={t.message}
-                        barProgress={t.progress ?? 0}
-                      />
-                      {sortedSlots.map((slot) => (
-                        <Box
-                          key={`${t.id}-iter-${slot.index}`}
-                          flexDirection="column"
-                          paddingLeft={2}
-                        >
-                          <TaskStatusProgressRow
-                            type={`#${slot.index + 1}`}
-                            status={iterationSlotToTaskStatus(slot.status)}
-                            message={slot.status === "completed" ? undefined : slot.message}
-                            barProgress={slot.progress ?? 0}
-                            suppressProgressBar={
-                              slot.status !== "running" || slot.progress === undefined
-                            }
-                          />
-                        </Box>
-                      ))}
-                    </Box>
-                  );
-                })}
-              </Box>
-            </Box>
+            <SubtaskRows
+              rows={subtasks.rows}
+              iterationSlots={subtasks.iterationSlots}
+              overallProgress={subtasks.overallProgress}
+              variant="chrome"
+            />
           )}
         </Box>
       </Box>
