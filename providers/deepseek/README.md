@@ -49,7 +49,7 @@ await getGlobalModelRepository().addModel({
 
 // 3. Use it in a workflow
 const workflow = new Workflow();
-workflow.add(
+workflow.addTask(
   new TextGenerationTask({
     model: "deepseek:deepseek-v4-flash",
     prompt: "Hello world!",

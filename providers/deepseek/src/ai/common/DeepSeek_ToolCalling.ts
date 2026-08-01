@@ -16,21 +16,86 @@ import { getClient, getModelName } from "./DeepSeek_Client";
 import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
 
 /**
- * Map a workglow `toolChoice` to what DeepSeek actually accepts.
+ * Thrown when the caller demanded a tool call that the model did not make.
+ *
+ * Retryable: the model was *asked* for the call and simply didn't produce one,
+ * which is nondeterministic rather than structurally impossible — a re-roll is
+ * a legitimate remedy, so the job-queue retry policy applies.
+ */
+export class DeepSeekToolChoiceNotHonoredError extends Error {
+  public readonly retryable = true;
+  constructor(
+    public readonly modelId: string,
+    public readonly requestedToolChoice: string,
+    detail: string
+  ) {
+    super(
+      `DeepSeek model "${modelId}" did not honor tool_choice "${requestedToolChoice}": ${detail}`
+    );
+    this.name = "DeepSeekToolChoiceNotHonoredError";
+  }
+}
+
+/**
+ * Whether `toolChoice` demands a call — i.e. `"required"` (any tool) or a
+ * specific function name. `undefined` / `"auto"` / `"none"` demand nothing.
+ */
+function isForcingToolChoice(toolChoice: string | undefined): toolChoice is string {
+  return toolChoice !== undefined && toolChoice !== "auto" && toolChoice !== "none";
+}
+
+/**
+ * Map a workglow `toolChoice` to what DeepSeek actually accepts on the wire.
  *
  * The v4 models are thinking models, and thinking mode rejects any tool_choice
  * beyond `auto` / `none` — `"required"` and the named-function object both come
- * back as `400 Thinking mode does not support this tool_choice`. So we cannot
- * use the shared {@link mapOpenAIToolChoice}, which emits both.
+ * back as `400 Thinking mode does not support this tool_choice`. So the shared
+ * {@link mapOpenAIToolChoice}, which emits both, cannot be used here.
  *
- * A forcing choice is therefore downgraded to `auto` rather than rejected: the
- * request succeeds and the model still calls the tool when the prompt calls for
- * one. The caveat is that `auto` is a hint, not a guarantee — a caller that
- * passes `"required"` is not getting a hard guarantee of a tool call from this
- * provider. `none` is passed through, since suppressing calls is honored.
+ * A forcing choice is sent as `auto` so the request is accepted, and the
+ * constraint is then enforced on our side once the stream completes — see
+ * {@link assertToolChoiceHonored}. `none` is passed through, since suppressing
+ * calls is honored natively.
  */
 function mapDeepSeekToolChoice(toolChoice: string | undefined): "auto" | "none" {
   return toolChoice === "none" ? "none" : "auto";
+}
+
+/**
+ * Enforce a forcing `toolChoice` after the fact, since DeepSeek cannot enforce
+ * it server-side.
+ *
+ * This mirrors how json-mode is handled here: the vendor gives no guarantee, so
+ * the guarantee is re-established by checking the response rather than by
+ * silently dropping the caller's constraint. `"required"` needs at least one
+ * call; a named function needs that specific function to have been called.
+ *
+ * Only calls that survived {@link filterValidToolCalls} count — a hallucinated
+ * function name does not satisfy the request.
+ */
+function assertToolChoiceHonored(
+  toolChoice: string,
+  calledNames: readonly string[],
+  modelId: string
+): void {
+  if (toolChoice === "required") {
+    if (calledNames.length === 0) {
+      throw new DeepSeekToolChoiceNotHonoredError(
+        modelId,
+        toolChoice,
+        "the response contained no valid tool call"
+      );
+    }
+    return;
+  }
+  if (!calledNames.includes(toolChoice)) {
+    const seen = calledNames.length > 0 ? calledNames.join(", ") : "none";
+    throw new DeepSeekToolChoiceNotHonoredError(
+      modelId,
+      toolChoice,
+      `expected a call to "${toolChoice}" but the response called: ${seen}`
+    );
+  }
 }
 
 /**
@@ -68,15 +133,25 @@ export const DeepSeek_ToolCalling_Stream: AiProviderRunFn<
     { signal }
   );
 
+  // Deltas arrive per call and are upserted by id downstream, so track the
+  // latest name per id rather than counting events.
+  const calledByCallId = new Map<string, string>();
+
   await accumulateOpenAIChatStream(stream, (event) => {
     if (event.type === "object-delta" && event.port === "toolCalls") {
       const validated = filterValidToolCalls(event.objectDelta as ToolCalls, input.tools);
       if (validated.length > 0) {
+        for (const call of validated) calledByCallId.set(call.id, call.name);
         emit({ type: "object-delta", port: "toolCalls", objectDelta: validated });
       }
       return;
     }
     emit(event);
   });
+
+  if (isForcingToolChoice(input.toolChoice)) {
+    assertToolChoiceHonored(input.toolChoice, [...calledByCallId.values()], modelName);
+  }
+
   emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
 };
