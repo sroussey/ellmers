@@ -16,7 +16,7 @@ import {
 } from "./StreamTypes";
 import { TaskAbortedError, TaskError } from "./TaskError";
 import type { TaskRunContext } from "./TaskRunContext";
-import type { TaskInput, TaskOutput } from "./TaskTypes";
+import type { TaskConfig, TaskInput, TaskOutput } from "./TaskTypes";
 import { TaskStatus } from "./TaskTypes";
 
 /**
@@ -35,7 +35,7 @@ export interface StreamProcessorDeps {
     message?: string,
     ...args: any[]
   ) => Promise<void>;
-  readonly own: <T extends Taskish<any, any>>(i: T) => T;
+  readonly own: <T extends Taskish<any, any>>(i: T, config?: TaskConfig) => T;
 }
 
 /**

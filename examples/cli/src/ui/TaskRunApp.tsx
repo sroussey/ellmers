@@ -17,6 +17,7 @@ import { TaskStatusProgressRow } from "./components/TaskStatusProgressRow";
 import { HumanInteractionHost } from "./HumanInteractionHost";
 import { isRedundantSubgraph, SubtaskRows } from "./rows/SubtaskRows";
 import { useSubtaskRows } from "./rows/useSubtaskRows";
+import { cliTaskLabel } from "./taskGraphCliSubscriptions";
 
 interface TaskRunAppProps {
   readonly task: ITask;
@@ -176,7 +177,7 @@ export function TaskRunApp({
 
         <Box flexDirection="column">
           <TaskStatusProgressRow
-            type={taskType}
+            label={cliTaskLabel(task)}
             status={status}
             message={isModelDownloadTask ? undefined : batch.message}
             barProgress={batch.progress}
@@ -203,6 +204,7 @@ export function TaskRunApp({
           {showSubtasksSection && (
             <SubtaskRows
               rows={subtasks.rows}
+              tasks={subtasks.tasks}
               iterationSlots={subtasks.iterationSlots}
               overallProgress={subtasks.overallProgress}
               variant="chrome"

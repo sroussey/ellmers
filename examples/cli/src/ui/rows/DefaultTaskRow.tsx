@@ -23,7 +23,7 @@ export function DefaultTaskRow({ task, line, iterationSlots }: TaskRowProps): Re
   return (
     <Box key={line.id} flexDirection="column">
       <TaskStatusProgressRow
-        type={line.type}
+        label={line.label}
         status={line.status}
         message={line.message}
         barProgress={line.progress ?? 0}
@@ -31,7 +31,7 @@ export function DefaultTaskRow({ task, line, iterationSlots }: TaskRowProps): Re
       {sortedSlots.map((slot: IterationSlotRow) => (
         <Box key={`${line.id}-iter-${slot.index}`} flexDirection="column" paddingLeft={2}>
           <TaskStatusProgressRow
-            type={`#${slot.index + 1}`}
+            label={`#${slot.index + 1}`}
             status={iterationSlotToTaskStatus(slot.status)}
             message={slot.status === "completed" ? undefined : slot.message}
             barProgress={slot.progress ?? 0}
@@ -40,7 +40,11 @@ export function DefaultTaskRow({ task, line, iterationSlots }: TaskRowProps): Re
         </Box>
       ))}
       {!isRedundantSubgraph(subtasks.rows, line.type) && (
-        <SubtaskRows rows={subtasks.rows} iterationSlots={subtasks.iterationSlots} />
+        <SubtaskRows
+          rows={subtasks.rows}
+          tasks={subtasks.tasks}
+          iterationSlots={subtasks.iterationSlots}
+        />
       )}
     </Box>
   );

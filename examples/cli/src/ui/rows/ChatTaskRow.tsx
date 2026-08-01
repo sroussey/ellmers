@@ -100,7 +100,7 @@ export function ChatTaskRow({ task, line }: TaskRowProps): React.ReactElement {
   if (status === "PENDING") {
     return (
       <TaskStatusProgressRow
-        type={line.type}
+        label={line.label}
         status={status}
         message={line.message}
         barProgress={0}
@@ -111,7 +111,7 @@ export function ChatTaskRow({ task, line }: TaskRowProps): React.ReactElement {
   if (status === "COMPLETED") {
     return (
       <TaskStatusProgressRow
-        type={line.type}
+        label={line.label}
         status={status}
         message={`${messages.length} messages`}
         barProgress={100}
@@ -122,7 +122,7 @@ export function ChatTaskRow({ task, line }: TaskRowProps): React.ReactElement {
   if (status === "FAILED") {
     return (
       <TaskStatusProgressRow
-        type={line.type}
+        label={line.label}
         status={status}
         message={line.message ?? "failed"}
         barProgress={line.progress ?? 0}
@@ -137,7 +137,7 @@ export function ChatTaskRow({ task, line }: TaskRowProps): React.ReactElement {
   return (
     <Box flexDirection="column">
       <TaskStatusProgressRow
-        type={line.type}
+        label={line.label}
         status={status}
         message={line.message}
         barProgress={line.progress ?? 0}

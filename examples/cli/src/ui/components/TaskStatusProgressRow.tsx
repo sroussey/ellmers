@@ -11,7 +11,8 @@ import { ProgressBar } from "./ProgressBar";
 import { TaskStatusLine } from "./TaskStatusLine";
 
 export interface TaskStatusProgressRowProps {
-  readonly type: string;
+  /** Display name for the row — a task title, class type name, or an iteration marker. */
+  readonly label: string;
   readonly status: string;
   readonly message?: string;
   readonly barProgress: number;
@@ -30,7 +31,7 @@ export interface TaskStatusProgressRowProps {
  * Task status on the left, optional Unicode progress bar on the right (same row).
  */
 export function TaskStatusProgressRow({
-  type,
+  label,
   status,
   message,
   barProgress,
@@ -45,7 +46,7 @@ export function TaskStatusProgressRow({
     <Box flexDirection="row" justifyContent="space-between" width="100%" marginLeft={marginLeft}>
       <Box flexGrow={1} minWidth={0} overflow="hidden">
         <TaskStatusLine
-          type={type}
+          label={label}
           status={status}
           message={message}
           animateStatus={animateStatus}
