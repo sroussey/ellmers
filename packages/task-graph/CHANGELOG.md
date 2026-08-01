@@ -1,5 +1,14 @@
 # @workglow/task-graph
 
+## 0.3.34
+
+### Features
+
+#### cli
+
+- show the work inside an owned workflow, not just its wrapper row
+- label task rows by instance title, not class type
+
 ## 0.3.33
 
 ## 0.3.32

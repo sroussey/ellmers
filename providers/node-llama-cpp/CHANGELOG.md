@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.3.34
+
 ## 0.3.33
 
 ### Documentation

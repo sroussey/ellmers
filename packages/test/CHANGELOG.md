@@ -1,5 +1,37 @@
 # @workglow/test
 
+## 0.3.34
+
+### Features
+
+#### cli
+
+- show the work inside an owned workflow, not just its wrapper row
+
+### Bug Fixes
+
+- address code-review findings across the three hardening fixes
+
+#### deepseek
+
+- make tool_choice violations actually retryable
+
+#### storage
+
+- eliminate latent shim deadlock on same-owner tx re-entry
+
+### Refactors
+
+- update maxTokens description and implement reasoning allowances
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@types/pg`: ^8.20.3
+
 ## 0.3.33
 
 ### Features

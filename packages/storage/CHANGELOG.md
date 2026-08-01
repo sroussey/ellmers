@@ -1,5 +1,15 @@
 # @workglow/storage
 
+## 0.3.34
+
+### Bug Fixes
+
+- address code-review findings across the three hardening fixes
+
+#### storage
+
+- eliminate latent shim deadlock on same-owner tx re-entry
+
 ## 0.3.33
 
 ## 0.3.32

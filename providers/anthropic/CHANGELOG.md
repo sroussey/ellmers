@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.34
+
+### Refactors
+
+- update maxTokens description and implement reasoning allowances
+
 ## 0.3.33
 
 ### Documentation

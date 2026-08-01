@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.34
+
+### Bug Fixes
+
+#### deepseek
+
+- make tool_choice violations actually retryable
+
+### Refactors
+
+- update maxTokens description and implement reasoning allowances
+
 ## 0.3.33
 
 ### Features

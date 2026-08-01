@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.34
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@types/better-sqlite3`: ^9.6.0
+
 ## 0.3.33
 
 ## 0.3.32

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.34
+
+### Bug Fixes
+
+- address code-review findings across the three hardening fixes
+
+#### tf-mediapipe
+
+- follow the vision/text/audio SDK bump to 1.0.1
+- close TOCTOU race in CountTokens preview
+- pin CDN wasm versions, add setTfmpWasmBaseUrls seam
+
 ## 0.3.33
 
 ## 0.3.32

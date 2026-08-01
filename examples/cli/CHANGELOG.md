@@ -1,5 +1,20 @@
 # @workglow/cli
 
+## 0.3.34
+
+### Features
+
+#### cli
+
+- show the work inside an owned workflow, not just its wrapper row
+- label task rows by instance title, not class type
+
+### Bug Fixes
+
+#### cli
+
+- pass label, not type, on the iteration row
+
 ## 0.3.33
 
 ### Features
