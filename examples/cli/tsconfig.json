@@ -18,6 +18,7 @@
     { "path": "../../packages/browser-control" },
     { "path": "../../providers/anthropic" },
     { "path": "../../providers/bun-webview" },
+    { "path": "../../providers/deepseek" },
     { "path": "../../providers/google-gemini" },
     { "path": "../../providers/huggingface-inference" },
     { "path": "../../providers/huggingface-transformers" },

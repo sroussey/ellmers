@@ -7,6 +7,7 @@
 import type { ModelRecord, ModelSearchResultItem } from "@workglow/ai";
 import { ModelRecordSchema, modelSearch } from "@workglow/ai";
 import { AnthropicModelRecordSchema } from "@workglow/anthropic/ai";
+import { DeepSeekModelRecordSchema } from "@workglow/deepseek/ai";
 import { GeminiModelRecordSchema } from "@workglow/google-gemini/ai";
 import { HfInferenceModelRecordSchema } from "@workglow/huggingface-inference/ai";
 import {
@@ -38,6 +39,7 @@ const PROVIDER_SCHEMAS: Record<string, DataPortSchemaObject> = {
   ANTHROPIC: AnthropicModelRecordSchema,
   OPENAI: OpenAiModelRecordSchema,
   XAI: XaiModelRecordSchema,
+  DEEPSEEK: DeepSeekModelRecordSchema,
   GOOGLE_GEMINI: GeminiModelRecordSchema,
   OLLAMA: OllamaModelRecordSchema,
   HF_INFERENCE: HfInferenceModelRecordSchema,

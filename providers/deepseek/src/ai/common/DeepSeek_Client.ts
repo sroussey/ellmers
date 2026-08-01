@@ -1,0 +1,90 @@
+/**
+ * @license
+ * Copyright 2026 Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { isBrowserLike, resolveApiKey, validateProviderBaseUrl } from "@workglow/ai/provider-utils";
+import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
+
+/**
+ * Default base URL for the DeepSeek OpenAI-compatible API. DeepSeek serves the
+ * same routes with and without a `/v1` prefix; the un-prefixed form is what the
+ * vendor documents, and it is what makes `client.models.list()` hit the
+ * documented `GET /models` endpoint.
+ */
+export const DEEPSEEK_DEFAULT_BASE_URL = "https://api.deepseek.com";
+
+/**
+ * Hostnames (or hostname suffixes) accepted for DeepSeek `base_url` without the
+ * explicit `trustedBaseUrl` opt-out.
+ */
+export const DEEPSEEK_ALLOWED_HOSTS: readonly string[] = ["api.deepseek.com"];
+
+type OpenAIClientClass = new (config: any) => any;
+
+let _loadPromise: Promise<OpenAIClientClass> | undefined;
+
+// DeepSeek is OpenAI wire-compatible, so we reuse the `openai` SDK. Keep the
+// direct string-literal import so bundlers (vite) can resolve it statically.
+export async function loadOpenAISDK(): Promise<OpenAIClientClass> {
+  _loadPromise ??= import(/* @vite-ignore */ "openai")
+
+    .then((mod) => mod.default as OpenAIClientClass)
+    .catch(() => {
+      _loadPromise = undefined;
+      throw new Error("openai is required for DeepSeek tasks. Install it with: bun add openai");
+    });
+  return _loadPromise;
+}
+
+interface ResolvedProviderConfig {
+  readonly credential_key?: string;
+  readonly api_key?: string;
+  readonly model_name?: string;
+  readonly base_url?: string;
+  /**
+   * When `true`, accept the `base_url` even if its hostname is not in
+   * {@link DEEPSEEK_ALLOWED_HOSTS}. Use only for known-good custom gateways.
+   * The URL still has to parse and use a safe scheme.
+   */
+  readonly trustedBaseUrl?: boolean;
+}
+
+export async function getClient(model: DeepSeekModelConfig | undefined) {
+  const OpenAI = await loadOpenAISDK();
+  const config = model?.provider_config as ResolvedProviderConfig | undefined;
+  const apiKey = resolveApiKey({
+    config,
+    envVar: "DEEPSEEK_API_KEY",
+    providerLabel: "DeepSeek",
+  });
+  // Throw before SDK construction on a rejected base_url so the API key is
+  // never sent to an unvalidated host.
+  const baseURL =
+    validateProviderBaseUrl(config?.base_url, {
+      vendor: "deepseek",
+      allowHosts: DEEPSEEK_ALLOWED_HOSTS,
+      trustedBaseUrl: config?.trustedBaseUrl,
+      providerLabel: "DeepSeek",
+    }) ?? DEEPSEEK_DEFAULT_BASE_URL;
+  try {
+    return new OpenAI({
+      apiKey,
+      baseURL,
+      dangerouslyAllowBrowser: isBrowserLike(),
+    });
+  } catch (err) {
+    throw new Error(
+      `Failed to create DeepSeek client: ${err instanceof Error ? err.message : "unknown error"}`
+    );
+  }
+}
+
+export function getModelName(model: DeepSeekModelConfig | undefined): string {
+  const name = model?.provider_config?.model_name;
+  if (!name) {
+    throw new Error("Missing model name in provider_config.model_name.");
+  }
+  return name;
+}

@@ -27,6 +27,9 @@
  *   google-api-key     → GOOGLE_API_KEY
  *   gemini-api-key     → GEMINI_API_KEY
  *   hf-token           → HF_TOKEN
+ *   xai-api-key        → XAI_API_KEY
+ *   openrouter-api-key → OPENROUTER_API_KEY
+ *   deepseek-api-key   → DEEPSEEK_API_KEY
  */
 
 import {

@@ -117,6 +117,7 @@ setup needed:
 | `gpt-*`, `o<n>*`, `text-embedding-*`     | OpenAI (`OPENAI_API_KEY`)           |
 | `gemini-*`                               | Google Gemini (`GEMINI_API_KEY`)    |
 | `grok-*`                                 | xAI (`XAI_API_KEY`)                 |
+| `deepseek-*`                             | DeepSeek (`DEEPSEEK_API_KEY`)       |
 | `org/name` (optionally `org/name:dtype`) | Local HuggingFace Transformers ONNX |
 | `gguf:org/repo:Quant` or `gguf:*.gguf`   | Local node-llama-cpp (GGUF)         |
 

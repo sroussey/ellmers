@@ -49,12 +49,10 @@ await getGlobalModelRepository().addModel({
 
 // 3. Use it in a workflow
 const workflow = new Workflow();
-workflow.add(
-  new TextGenerationTask({
-    model: "xai:grok-4",
-    prompt: "Hello world!",
-  })
-);
+workflow.addTask(TextGenerationTask, {
+  model: "xai:grok-4",
+  prompt: "Hello world!",
+});
 
 const result = await workflow.run();
 ```

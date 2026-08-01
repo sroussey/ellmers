@@ -1,0 +1,26 @@
+/**
+ * @license
+ * Copyright 2026 Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+// organize-imports-ignore
+
+export { DEEPSEEK_ALLOWED_HOSTS, DEEPSEEK_DEFAULT_BASE_URL } from "./common/DeepSeek_Client";
+export * from "./common/DeepSeek_Constants";
+export * from "./common/DeepSeek_ModelSchema";
+export * from "./common/DeepSeek_ModelSearch";
+export * from "./registerDeepSeek";
+
+import { DEEPSEEK_RUN_FN_SPECS } from "./common/DeepSeek_Capabilities";
+import { DEEPSEEK_RUN_FNS } from "./common/DeepSeek_JobRunFns";
+import { DeepSeekQueuedProvider } from "./DeepSeekQueuedProvider";
+
+/**
+ * @internal Symbols exported only for use by `@workglow/test`. Not part of the stable public API.
+ */
+export const _testOnly = {
+  DeepSeekQueuedProvider,
+  DEEPSEEK_RUN_FN_SPECS,
+  DEEPSEEK_RUN_FNS,
+} as const;

@@ -41,6 +41,7 @@
   "dependencies": {
     "@workglow/ai": "workspace:*",
     "@workglow/anthropic": "workspace:*",
+    "@workglow/deepseek": "workspace:*",
     "@workglow/google-gemini": "workspace:*",
     "@workglow/huggingface-transformers": "workspace:*",
     "@workglow/huggingface-inference": "workspace:*",

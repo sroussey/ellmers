@@ -25,11 +25,11 @@ import { McpCallToolTask } from "@workglow/mcp/tasks";
 import { Workflow } from "@workglow/task-graph";
 
 const workflow = new Workflow();
-workflow.add(new McpCallToolTask({
+workflow.addTask(McpCallToolTask, {
   server: "my-server",
   toolName: "my-tool",
-  arguments: { arg1: "value" }
-}));
+  arguments: { arg1: "value" },
+});
 
 await workflow.run();
 ```
