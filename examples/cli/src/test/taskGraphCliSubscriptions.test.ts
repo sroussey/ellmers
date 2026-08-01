@@ -1,0 +1,90 @@
+/**
+ * @license
+ * Copyright 2026 Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import type { ITask } from "@workglow/task-graph";
+import { EventEmitter } from "@workglow/util";
+import { describe, expect, it } from "vitest";
+import {
+  FULL_SLOT_TRACKING_MAX,
+  MAX_RUNNING_ROWS,
+  registerIterationListeners,
+  type IterationSlotRow,
+} from "../ui/taskGraphCliSubscriptions";
+
+// Minimal task stub: registerIterationListeners only touches `task.events`.
+function makeTask(): { events: EventEmitter<Record<string, (...args: never[]) => void>> } {
+  return { events: new EventEmitter() };
+}
+
+// Drives the React-style setState updater against a local Map so we can assert
+// the retained slot state after emitting iterator events.
+function makeSink() {
+  let state = new Map<string, IterationSlotRow[]>();
+  const setter = (
+    updater: (prev: Map<string, IterationSlotRow[]>) => Map<string, IterationSlotRow[]>
+  ) => {
+    state = updater(state);
+  };
+  return { setter, get: () => state };
+}
+
+describe("registerIterationListeners", () => {
+  it("keeps full completed/running/pending slots for small loops", () => {
+    const task = makeTask();
+    const sink = makeSink();
+    registerIterationListeners(task as unknown as ITask, "t1", sink.setter as never);
+
+    const N = 5;
+    task.events.emit("iteration_start", 2 as never, N as never);
+    task.events.emit("iteration_progress", 2 as never, N as never, 40 as never);
+
+    let slots = sink.get().get("t1")!;
+    expect(slots).toHaveLength(N); // full per-index array
+    expect(slots[2]).toMatchObject({ index: 2, status: "running", progress: 40 });
+    expect(slots[0].status).toBe("pending");
+
+    task.events.emit("iteration_complete", 2 as never, N as never);
+    slots = sink.get().get("t1")!;
+    expect(slots[2]).toMatchObject({ index: 2, status: "completed" });
+  });
+
+  it("tracks only running iterations (bounded) for huge loops", () => {
+    const task = makeTask();
+    const sink = makeSink();
+    registerIterationListeners(task as unknown as ITask, "big", sink.setter as never);
+
+    const N = FULL_SLOT_TRACKING_MAX * 5000; // way past the full-tracking threshold
+    // Start more concurrent iterations than the render cap allows.
+    for (let i = 0; i < MAX_RUNNING_ROWS + 20; i++) {
+      task.events.emit("iteration_start", i as never, N as never);
+    }
+    let slots = sink.get().get("big")!;
+    // Never allocates an N-length array; bounded to the running-row cap.
+    expect(slots.length).toBe(MAX_RUNNING_ROWS);
+    expect(slots.every((s) => s.status === "running")).toBe(true);
+
+    // Completing a running iteration frees its slot (does not accumulate).
+    task.events.emit("iteration_complete", 0 as never, N as never);
+    task.events.emit("iteration_complete", 1 as never, N as never);
+    slots = sink.get().get("big")!;
+    expect(slots.length).toBe(MAX_RUNNING_ROWS - 2);
+    expect(slots.some((s) => s.index === 0)).toBe(false);
+  });
+
+  it("updates progress in place for a running huge-loop iteration", () => {
+    const task = makeTask();
+    const sink = makeSink();
+    registerIterationListeners(task as unknown as ITask, "big", sink.setter as never);
+
+    const N = 1_000_000;
+    task.events.emit("iteration_start", 42 as never, N as never);
+    task.events.emit("iteration_progress", 42 as never, N as never, 70 as never, "half" as never);
+
+    const slots = sink.get().get("big")!;
+    expect(slots).toHaveLength(1);
+    expect(slots[0]).toMatchObject({ index: 42, status: "running", progress: 70, message: "half" });
+  });
+});

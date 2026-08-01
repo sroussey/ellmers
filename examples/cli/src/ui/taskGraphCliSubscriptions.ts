@@ -95,12 +95,28 @@ function registerTaskListeners(
   });
 }
 
-function registerIterationListeners(
+/**
+ * Above this iteration count we stop retaining a per-index slot array and track
+ * only the currently-running iterations. A `.forEach()` over a worklist that can
+ * be hundreds of thousands (or millions) of items long would otherwise (a)
+ * allocate an N-length array and (b) copy it on every iteration event — O(N) per
+ * event, O(N²) over the run — freezing the render thread. The parent task row
+ * already shows overall progress and a "Map X/N" message (emitted by the
+ * iterator's aggregate progress), so retaining completed/pending rows for huge
+ * loops buys nothing. Small loops keep the full completed→running→pending view.
+ */
+export const FULL_SLOT_TRACKING_MAX = 200;
+
+/** Hard cap on running rows rendered/retained, independent of concurrency. */
+export const MAX_RUNNING_ROWS = 64;
+
+export function registerIterationListeners(
   task: ITask,
   taskId: string,
   setIterationSlots: Dispatch<SetStateAction<Map<string, IterationSlotRow[]>>>
 ): () => void {
-  const onStart = (index: number, iterationCount: number): void => {
+  // --- Full per-index tracking (small loops, ≤ FULL_SLOT_TRACKING_MAX). ---
+  const onStartFull = (index: number, iterationCount: number): void => {
     setIterationSlots((prev) => {
       const next = new Map(prev);
       let slots = next.get(taskId);
@@ -118,10 +134,10 @@ function registerIterationListeners(
     });
   };
 
-  const onComplete = (index: number, iterationCount: number): void => {
+  const onCompleteFull = (index: number, iterationCount: number): void => {
     setIterationSlots((prev) => {
       const next = new Map(prev);
-      let slots = [...(next.get(taskId) ?? [])];
+      const slots = [...(next.get(taskId) ?? [])];
       while (slots.length < iterationCount) {
         slots.push({ index: slots.length, status: "pending" });
       }
@@ -131,7 +147,7 @@ function registerIterationListeners(
     });
   };
 
-  const onIterProgress = (
+  const onProgressFull = (
     index: number,
     iterationCount: number,
     prog: number | undefined,
@@ -139,21 +155,72 @@ function registerIterationListeners(
   ): void => {
     setIterationSlots((prev) => {
       const next = new Map(prev);
-      let slots = [...(next.get(taskId) ?? [])];
+      const slots = [...(next.get(taskId) ?? [])];
       while (slots.length < iterationCount) {
         slots.push({ index: slots.length, status: "pending" });
       }
       const cur = slots[index];
       if (cur?.status === "completed") return prev;
-      slots[index] = {
-        index,
-        status: "running",
-        progress: prog,
-        message,
-      };
+      slots[index] = { index, status: "running", progress: prog, message };
       next.set(taskId, slots);
       return next;
     });
+  };
+
+  // --- Bounded running-only tracking (huge loops). O(running) per event. ---
+  const upsertRunning = (index: number, patch: Partial<IterationSlotRow>): void => {
+    setIterationSlots((prev) => {
+      const next = new Map(prev);
+      const cur = next.get(taskId) ?? [];
+      const at = cur.findIndex((s) => s.index === index);
+      const row: IterationSlotRow = { index, status: "running", ...patch };
+      let arr: IterationSlotRow[];
+      if (at >= 0) {
+        arr = cur.slice();
+        arr[at] = row;
+      } else if (cur.length >= MAX_RUNNING_ROWS) {
+        // Saturated display window: keep the existing rows rather than growing
+        // unbounded if concurrency somehow exceeds the cap.
+        return prev;
+      } else {
+        arr = [...cur, row];
+      }
+      next.set(taskId, arr);
+      return next;
+    });
+  };
+
+  const removeRunning = (index: number): void => {
+    setIterationSlots((prev) => {
+      const cur = prev.get(taskId);
+      if (!cur) return prev;
+      const at = cur.findIndex((s) => s.index === index);
+      if (at < 0) return prev;
+      const next = new Map(prev);
+      const arr = cur.slice();
+      arr.splice(at, 1);
+      next.set(taskId, arr);
+      return next;
+    });
+  };
+
+  const onStart = (index: number, iterationCount: number): void => {
+    if (iterationCount <= FULL_SLOT_TRACKING_MAX) onStartFull(index, iterationCount);
+    else upsertRunning(index, {});
+  };
+  const onComplete = (index: number, iterationCount: number): void => {
+    if (iterationCount <= FULL_SLOT_TRACKING_MAX) onCompleteFull(index, iterationCount);
+    else removeRunning(index);
+  };
+  const onIterProgress = (
+    index: number,
+    iterationCount: number,
+    prog: number | undefined,
+    message?: string
+  ): void => {
+    if (iterationCount <= FULL_SLOT_TRACKING_MAX)
+      onProgressFull(index, iterationCount, prog, message);
+    else upsertRunning(index, { progress: prog, message });
   };
 
   task.events.on("iteration_start", onStart);
