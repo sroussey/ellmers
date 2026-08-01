@@ -10,6 +10,7 @@ import {
   ImageGenerationProviderError,
   ProviderUnsupportedFeatureError,
 } from "@workglow/ai";
+import { DeepSeekToolChoiceNotHonoredError } from "@workglow/deepseek/ai";
 import { PermanentJobError, RetryableJobError } from "@workglow/job-queue";
 import { describe, expect, it } from "vitest";
 
@@ -30,5 +31,14 @@ describe("classifyProviderError mapping for image-generation errors", () => {
     const err = new ImageGenerationProviderError("m", "rate limited");
     const classified = classifyProviderError(err, "ImageGenerateTask", "TEST_PROVIDER");
     expect(classified).toBeInstanceOf(RetryableJobError);
+  });
+});
+
+describe("classifyProviderError mapping for tool-choice errors", () => {
+  it("passes DeepSeekToolChoiceNotHonoredError through as RetryableJobError", () => {
+    const err = new DeepSeekToolChoiceNotHonoredError("deepseek-v4-pro", "required", "no calls");
+    const classified = classifyProviderError(err, "ToolCallingTask", "DEEPSEEK");
+    expect(classified).toBeInstanceOf(RetryableJobError);
+    expect(classified).toBe(err);
   });
 });

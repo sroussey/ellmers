@@ -12,6 +12,7 @@ import type {
 } from "@workglow/ai";
 import { accumulateOpenAIChatStream, buildOpenAITools } from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, toOpenAIMessages } from "@workglow/ai/worker";
+import { RetryableJobError } from "@workglow/job-queue";
 import { getClient, getModelName, resolveMaxTokens } from "./DeepSeek_Client";
 import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
 
@@ -20,10 +21,12 @@ import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
  *
  * Retryable: the model was *asked* for the call and simply didn't produce one,
  * which is nondeterministic rather than structurally impossible — a re-roll is
- * a legitimate remedy, so the job-queue retry policy applies.
+ * a legitimate remedy, so the job-queue retry policy applies. Extending
+ * {@link RetryableJobError} is what lets {@link classifyProviderError} pass the
+ * error through unchanged instead of wrapping it as a `PermanentJobError`.
  */
-export class DeepSeekToolChoiceNotHonoredError extends Error {
-  public readonly retryable = true;
+export class DeepSeekToolChoiceNotHonoredError extends RetryableJobError {
+  public static override type = "DeepSeekToolChoiceNotHonoredError";
   constructor(
     public readonly modelId: string,
     public readonly requestedToolChoice: string,
@@ -40,7 +43,7 @@ export class DeepSeekToolChoiceNotHonoredError extends Error {
  * Whether `toolChoice` demands a call — i.e. `"required"` (any tool) or a
  * specific function name. `undefined` / `"auto"` / `"none"` demand nothing.
  */
-function isForcingToolChoice(toolChoice: string | undefined): toolChoice is string {
+export function isForcingToolChoice(toolChoice: string | undefined): toolChoice is string {
   return toolChoice !== undefined && toolChoice !== "auto" && toolChoice !== "none";
 }
 
@@ -73,7 +76,7 @@ function mapDeepSeekToolChoice(toolChoice: string | undefined): "auto" | "none" 
  * Only calls that survived {@link filterValidToolCalls} count — a hallucinated
  * function name does not satisfy the request.
  */
-function assertToolChoiceHonored(
+export function assertToolChoiceHonored(
   toolChoice: string,
   calledNames: readonly string[],
   modelId: string
