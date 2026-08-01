@@ -74,7 +74,7 @@ export function SubtaskRows({
         return (
           <Box key={t.id} flexDirection="column">
             <TaskStatusProgressRow
-              type={t.type}
+              label={t.label}
               status={t.status}
               message={t.message}
               barProgress={t.progress ?? 0}
@@ -82,7 +82,7 @@ export function SubtaskRows({
             {sortedSlots.map((slot) => (
               <Box key={`${t.id}-iter-${slot.index}`} flexDirection="column" paddingLeft={2}>
                 <TaskStatusProgressRow
-                  type={`#${slot.index + 1}`}
+                  label={`#${slot.index + 1}`}
                   status={iterationSlotToTaskStatus(slot.status)}
                   message={slot.status === "completed" ? undefined : slot.message}
                   barProgress={slot.progress ?? 0}

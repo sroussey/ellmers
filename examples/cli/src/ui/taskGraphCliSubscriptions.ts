@@ -9,7 +9,10 @@ import type { Dispatch, SetStateAction } from "react";
 
 export interface CliTaskLine {
   readonly id: string;
+  /** Task class type name. Identity for renderer dispatch — never shown to the user. */
   readonly type: string;
+  /** What the row displays: the instance's `title` when set, else {@link CliTaskLine.type}. */
+  readonly label: string;
   status: string;
   progress?: number;
   message?: string;
@@ -18,6 +21,17 @@ export interface CliTaskLine {
 export interface CliLogLine {
   readonly id: number;
   readonly text: string;
+}
+
+/**
+ * Two instances of one task class are two different jobs (downloading different
+ * files, say), so rows are labelled by the instance's `title` — set per instance
+ * via task config — and fall back to the class type name when there is none.
+ */
+export function cliTaskLabel(task: ITask): string {
+  const title = (task as { title?: string }).title;
+  if (title !== undefined && title.length > 0) return title;
+  return (task as { type?: string }).type ?? "Unknown";
 }
 
 /** Per-index row for iterator tasks (MapTask, ReduceTask, …) shown under the parent task line. */
@@ -65,7 +79,7 @@ export function sortIterationSlotsForDisplay(
 function registerTaskListeners(
   task: ITask,
   taskId: string,
-  taskType: string,
+  taskLabel: string,
   setTaskInfos: Dispatch<SetStateAction<Map<string, CliTaskLine>>>,
   appendCompletedLog?: (text: string) => void
 ): void {
@@ -76,7 +90,7 @@ function registerTaskListeners(
       if (info) {
         next.set(taskId, { ...info, status });
         if (status === "COMPLETED" && appendCompletedLog) {
-          appendCompletedLog(`[COMPLETED] ${taskType}`);
+          appendCompletedLog(`[COMPLETED] ${taskLabel}`);
         }
       }
       return next;
@@ -259,7 +273,12 @@ export function subscribeTaskGraphForCli(
   for (const task of graph.getTasks()) {
     const taskId = String(task.id);
     const taskType = (task as { type?: string }).type ?? "Unknown";
-    initial.set(taskId, { id: taskId, type: taskType, status: "PENDING" });
+    initial.set(taskId, {
+      id: taskId,
+      type: taskType,
+      label: cliTaskLabel(task),
+      status: "PENDING",
+    });
   }
   setTaskInfos(initial);
 
@@ -271,15 +290,16 @@ export function subscribeTaskGraphForCli(
     if (wired.has(taskId)) return;
     wired.add(taskId);
     const taskType = (task as { type?: string }).type ?? "Unknown";
+    const taskLabel = cliTaskLabel(task);
 
     setTaskInfos((prev) => {
       if (prev.has(taskId)) return prev;
       const next = new Map(prev);
-      next.set(taskId, { id: taskId, type: taskType, status: "PENDING" });
+      next.set(taskId, { id: taskId, type: taskType, label: taskLabel, status: "PENDING" });
       return next;
     });
 
-    registerTaskListeners(task, taskId, taskType, setTaskInfos, appendCompletedLog);
+    registerTaskListeners(task, taskId, taskLabel, setTaskInfos, appendCompletedLog);
     if (setIterationSlots) {
       iterationUnsubs.push(registerIterationListeners(task, taskId, setIterationSlots));
     }

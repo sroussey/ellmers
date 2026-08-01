@@ -519,8 +519,8 @@ export class TaskRunner<
   // Protected methods
   // ========================================================================
 
-  protected own<T extends Taskish<any, any>>(i: T): T {
-    const task = ensureTask(i, { isOwned: true });
+  protected own<T extends Taskish<any, any>>(i: T, config: TaskConfig = {}): T {
+    const task = ensureTask(i, { ...config, isOwned: true });
     this.task.subGraph.addTask(task);
     // Propagate parent registry and abort signal to owned ITask instances so
     // that calling task.run() on the returned value inherits this execution context.

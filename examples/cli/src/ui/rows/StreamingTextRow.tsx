@@ -26,7 +26,7 @@ export function StreamingTextRow({ task, line }: TaskRowProps): React.ReactEleme
   return (
     <Box flexDirection="column">
       <TaskStatusProgressRow
-        type={line.type}
+        label={line.label}
         status={line.status}
         message={line.message}
         barProgress={line.progress ?? 0}

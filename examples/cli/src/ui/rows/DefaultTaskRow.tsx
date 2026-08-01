@@ -23,7 +23,7 @@ export function DefaultTaskRow({ task, line, iterationSlots }: TaskRowProps): Re
   return (
     <Box key={line.id} flexDirection="column">
       <TaskStatusProgressRow
-        type={line.type}
+        label={line.label}
         status={line.status}
         message={line.message}
         barProgress={line.progress ?? 0}

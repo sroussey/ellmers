@@ -45,7 +45,17 @@ export interface IExecuteContext {
    * @param message - Optional human-readable phase / status label.
    */
   updateProgress: (progress: number | undefined, message?: string, ...args: any[]) => Promise<void>;
-  own: <T extends ITask | ITaskGraph | IWorkflow>(i: T) => T;
+  /**
+   * Register a task, graph, or workflow as a child of the running task so it
+   * inherits the registry and abort signal, and shows up under the parent in
+   * progress UIs.
+   *
+   * A graph or workflow is adapted into a wrapper task the caller never sees,
+   * so `config` is the only way to name one — without it every owned workflow
+   * renders as the same anonymous `Own[Workflow]` row. An argument that is
+   * already an `ITask` keeps its own config; name those at construction.
+   */
+  own: <T extends ITask | ITaskGraph | IWorkflow>(i: T, config?: TaskConfig) => T;
   registry: ServiceRegistry;
   /**
    * Input streams for pass-through streaming tasks. Keyed by input port name.

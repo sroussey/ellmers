@@ -11,7 +11,8 @@ import { useCliTheme } from "../CliThemeContext";
 import { CliSpinner } from "./CliSpinner";
 
 interface TaskStatusLineProps {
-  readonly type: string;
+  /** Display name for the row — a task title, class type name, or an iteration marker. */
+  readonly label: string;
   readonly status: string;
   readonly message?: string;
   /**
@@ -24,7 +25,7 @@ interface TaskStatusLineProps {
 }
 
 export function TaskStatusLine({
-  type,
+  label,
   status,
   message,
   animateStatus = true,
@@ -46,7 +47,7 @@ export function TaskStatusLine({
       )}
       <Text color={bodyColor}>
         {" "}
-        {type}
+        {label}
         {msgText}
       </Text>
     </Text>
