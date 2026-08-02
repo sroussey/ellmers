@@ -134,6 +134,7 @@ describe("StreamProcessor", () => {
       inputStreams: undefined,
       onProgress: async () => {},
       own: (i) => i,
+      disown: () => {},
     });
 
     expect(finishData).toEqual({ text: "Hello, world!" });
@@ -151,6 +152,7 @@ describe("StreamProcessor", () => {
       inputStreams: undefined,
       onProgress: async () => {},
       own: (i) => i,
+      disown: () => {},
     });
 
     expect(result).toEqual({ result: "final" });

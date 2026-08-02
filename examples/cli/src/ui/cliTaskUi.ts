@@ -7,6 +7,7 @@
 import type { TaskGraph } from "@workglow/task-graph";
 import type { Dispatch, SetStateAction } from "react";
 import type { CliTaskLine } from "./taskGraphCliSubscriptions";
+import { cliTaskLabel } from "./taskGraphCliSubscriptions";
 
 /** Single-character status column: done → active (spinner in UI) → waiting → error. */
 export function cliTaskStatusGlyph(status: string): string {
@@ -118,9 +119,14 @@ export function startGraphTaskPoll(
         if (!info) continue;
         const st = task.status;
         const prog = task.progress;
-        if (info.status !== st || info.progress !== prog) {
+        // Label is re-read, not just carried over: a task instance reused for a
+        // sequence of jobs is relabelled per job (`setTitle`), and the row is
+        // wired once at `task_added`, so without this the row would keep naming
+        // the first job for the life of the run.
+        const label = cliTaskLabel(task);
+        if (info.status !== st || info.progress !== prog || info.label !== label) {
           if (!next) next = new Map(prev);
-          next.set(taskId, { ...info, status: st, progress: prog });
+          next.set(taskId, { ...info, status: st, progress: prog, label });
         }
       }
       return next ?? prev;

@@ -36,6 +36,7 @@ export interface StreamProcessorDeps {
     ...args: any[]
   ) => Promise<void>;
   readonly own: <T extends Taskish<any, any>>(i: T, config?: TaskConfig) => T;
+  readonly disown: <T extends Taskish<any, any>>(i: T) => void;
 }
 
 /**
@@ -86,6 +87,7 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
       signal: ctx.abortController.signal,
       updateProgress: deps.onProgress,
       own: deps.own,
+      disown: deps.disown,
       registry: deps.registry,
       resourceScope: deps.resourceScope,
       inputStreams: deps.inputStreams,

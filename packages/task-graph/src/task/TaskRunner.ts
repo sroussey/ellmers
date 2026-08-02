@@ -136,6 +136,7 @@ export class TaskRunner<
   constructor(task: ITask<Input, Output, Config>) {
     this.task = task;
     this.own = this.own.bind(this);
+    this.disown = this.disown.bind(this);
     this.handleProgress = this.handleProgress.bind(this);
     this.cacheCoordinator = new CacheCoordinator(task);
     this.streamProcessor = new StreamProcessor(task);
@@ -263,6 +264,7 @@ export class TaskRunner<
                 inputStreams: this.inputStreams,
                 onProgress: this.handleProgress.bind(this),
                 own: this.own,
+                disown: this.disown,
               })
             : await this.executeTask(inputs, ctx);
 
@@ -519,9 +521,21 @@ export class TaskRunner<
   // Protected methods
   // ========================================================================
 
+  /**
+   * What {@link own} actually added to the subgraph, keyed by the value the
+   * caller handed in. A graph or workflow is adapted into a wrapper task and
+   * `own` hands the caller back their original, so the wrapper's id — the only
+   * thing {@link disown} can remove — is otherwise unrecoverable. Weak so an
+   * owned task that is never disowned still dies with the subgraph.
+   */
+  private readonly ownedWrappers = new WeakMap<object, ITask>();
+
   protected own<T extends Taskish<any, any>>(i: T, config: TaskConfig = {}): T {
     const task = ensureTask(i, { ...config, isOwned: true });
     this.task.subGraph.addTask(task);
+    if (i !== null && typeof i === "object") {
+      this.ownedWrappers.set(i, task);
+    }
     // Propagate parent registry and abort signal to owned ITask instances so
     // that calling task.run() on the returned value inherits this execution context.
     if (hasRunConfig(i)) {
@@ -550,11 +564,35 @@ export class TaskRunner<
     return i;
   }
 
+  /**
+   * Releases a value previously registered by {@link own}. `own` is add-only and
+   * the subgraph is cleared only between graph runs, so a task owning one child
+   * per loop iteration retains them all — with whatever each child's own
+   * subgraph accumulated — until its `execute()` returns.
+   *
+   * Takes the value `own` returned (for a graph or workflow that is the original,
+   * not the wrapper task actually in the subgraph) and resolves it through
+   * {@link ownedWrappers}. A value this runner never owned is a no-op, so
+   * disowning after an `own` that was an identity no-op against a stub context
+   * is harmless.
+   */
+  protected disown<T extends Taskish<any, any>>(i: T): void {
+    if (i === null || typeof i !== "object") return;
+    const wrapper = this.ownedWrappers.get(i);
+    if (wrapper === undefined || !this.task.hasChildren()) return;
+    this.ownedWrappers.delete(i);
+    this.task.subGraph.removeTask(wrapper.id);
+    if ((this.task.constructor as typeof Task).hasDynamicEntitlements) {
+      this.task.emit("entitlementChange", this.task.entitlements());
+    }
+  }
+
   protected async executeTask(input: Input, ctx: TaskRunContext): Promise<Output | undefined> {
     const result = await this.task.execute(input, {
       signal: ctx.abortController.signal,
       updateProgress: this.handleProgress.bind(this),
       own: this.own,
+      disown: this.disown,
       registry: this.registry,
       resourceScope: this.resourceScope,
       runId: this.runId,
