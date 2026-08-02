@@ -23,6 +23,7 @@
 
 import type { ImageValue, NodeImageFormat } from "@workglow/util/media";
 import {
+  dataUriToBlob,
   encodeRawPixels,
   imageValueFromBitmap,
   imageValueFromBuffer,
@@ -88,7 +89,10 @@ export async function dataUriToImageValue(dataUri: string): Promise<ImageValue> 
   const base64 = match[2];
 
   if (PREFER_BROWSER) {
-    const blob = await (await fetch(dataUri)).blob();
+    const blob = dataUriToBlob(dataUri);
+    if (!blob) {
+      throw new Error("dataUriToImageValue: failed to decode data URI payload");
+    }
     const bitmap = await createImageBitmap(blob);
     return imageValueFromBitmap(bitmap, bitmap.width, bitmap.height);
   }

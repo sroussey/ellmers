@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { dataUriToBlob } from "./dataUri";
 import { getImageRasterCodec } from "./imageRasterCodecRegistry";
 
 export type NodeImageFormat = "png" | "jpeg" | "raw-rgba";
@@ -108,10 +109,13 @@ export async function normalizeToImageValue(value: unknown): Promise<ImageValue 
   }
 
   if (typeof value === "string" && value.startsWith("data:")) {
-    if (typeof createImageBitmap === "function" && typeof fetch === "function") {
-      const blob = await (await fetch(value)).blob();
-      const bitmap = await createImageBitmap(blob);
-      return imageValueFromBitmap(bitmap, bitmap.width, bitmap.height);
+    if (typeof createImageBitmap === "function" && typeof Blob !== "undefined") {
+      const blob = dataUriToBlob(value);
+      if (blob) {
+        const bitmap = await createImageBitmap(blob);
+        return imageValueFromBitmap(bitmap, bitmap.width, bitmap.height);
+      }
+      return undefined;
     }
     if (typeof Buffer !== "undefined") {
       return decodeDataUriToNodeImageValue(value);

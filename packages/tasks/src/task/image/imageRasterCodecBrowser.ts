@@ -7,6 +7,7 @@
 import type { RawPixelBuffer } from "@workglow/util/media";
 
 import type { ImageRasterCodec } from "@workglow/util/media";
+import { dataUriToBlob } from "@workglow/util/media";
 import {
   MAX_INPUT_BYTES_BROWSER,
   REJECTED_DECODE_MIME_TYPES,
@@ -85,9 +86,8 @@ function get2dContext(
 }
 
 async function decodeDataUri(dataUri: string): Promise<RawPixelBuffer> {
-  // Defense in depth: without this assertion, `fetch(dataUri)` below would
-  // happily reach the network for `http:`, `file:`, etc. — turning any future
-  // upstream-validation removal into SSRF.
+  // Defense in depth: reject non-`data:` schemes up front so a future decode
+  // path that does reach the network can't be handed `http:`, `file:`, etc.
   assertIsDataUri(dataUri);
 
   const declaredMime = extractDataUriMimeType(dataUri);
@@ -99,8 +99,10 @@ async function decodeDataUri(dataUri: string): Promise<RawPixelBuffer> {
     );
   }
 
-  const response = await fetch(dataUri);
-  const blob = await response.blob();
+  const blob = dataUriToBlob(dataUri);
+  if (!blob) {
+    throw new Error("Image raster codec: malformed data URI");
+  }
   // Compressed-size pre-check is the primary browser defense against decoder
   // bombs: `createImageBitmap` decompresses eagerly, so by the time we can
   // read `bmp.width`/`bmp.height` the expensive allocation has already

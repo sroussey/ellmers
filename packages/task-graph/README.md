@@ -717,9 +717,9 @@ Every task declares how its outputs may be cached through a `CachePolicy`:
 
 ```typescript
 type CachePolicy =
-  | { kind: "deterministic" }  // same inputs → same outputs; safe to share across runs
-  | { kind: "private" }        // non-deterministic but worth caching; scoped to one run
-  | { kind: "none" };          // do not cache (side-effecting tasks)
+  | { kind: "deterministic" } // same inputs → same outputs; safe to share across runs
+  | { kind: "private" } // non-deterministic but worth caching; scoped to one run
+  | { kind: "none" }; // do not cache (side-effecting tasks)
 ```
 
 The default is `{ kind: "deterministic" }`. Side-effecting tasks (writes to external systems, sends messages) declare `{ kind: "none" }`. Non-deterministic tasks worth caching for the lifetime of a single run (image generation without a seed, model calls without a temperature lock) declare `{ kind: "private" }` — their outputs are namespaced by `runId` and visible only to that run and its restarts.
@@ -733,9 +733,7 @@ class AiImageOutputTask extends Task<ImageInput, ImageOutput> {
   static readonly cachePolicy: CachePolicy = { kind: "private" };
 
   override getCachePolicy(inputs: ImageInput): CachePolicy {
-    return inputs.seed !== undefined
-      ? { kind: "deterministic" }
-      : { kind: "private" };
+    return inputs.seed !== undefined ? { kind: "deterministic" } : { kind: "private" };
   }
 }
 ```
@@ -934,10 +932,7 @@ const deterministic = new TaskOutputTabularRepository({
 });
 
 const registry = new ServiceRegistry();
-registry.registerInstance(
-  CACHE_REGISTRY,
-  new DefaultCacheRegistry({ deterministic })
-);
+registry.registerInstance(CACHE_REGISTRY, new DefaultCacheRegistry({ deterministic }));
 
 const graph = new TaskGraph();
 graph.addTask(new ExpensiveTask({ n: 42 }, { id: "exp" }));
@@ -1021,11 +1016,7 @@ const memoryGraph = new TaskGraphTabularRepository({
 // File system
 const fsOutput = new TaskOutputTabularRepository({
   storage: tabularTaskOutputStorage(
-    new FsFolderTabularStorage(
-      "./task-output-cache",
-      TaskOutputSchema,
-      TaskOutputPrimaryKeyNames
-    )
+    new FsFolderTabularStorage("./task-output-cache", TaskOutputSchema, TaskOutputPrimaryKeyNames)
   ),
 });
 const fsGraph = new TaskGraphTabularRepository({
@@ -1061,12 +1052,9 @@ const sqliteGraph = new TaskGraphTabularRepository({
 // IndexedDB (browser) — the `@workglow/web` example under `examples/web` includes small helpers
 const idbOutput = new TaskOutputTabularRepository({
   storage: tabularTaskOutputStorage(
-    new IndexedDbTabularStorage(
-      "task_outputs",
-      TaskOutputSchema,
-      TaskOutputPrimaryKeyNames,
-      ["createdAt"]
-    )
+    new IndexedDbTabularStorage("task_outputs", TaskOutputSchema, TaskOutputPrimaryKeyNames, [
+      "createdAt",
+    ])
   ),
 });
 const idbGraph = new TaskGraphTabularRepository({
@@ -1268,6 +1256,7 @@ Format is also used on array types, e.g., `format: 'Float64Array'` on arrays con
 `run()` and `runPreview()` are strictly orthogonal: `run()` never invokes `executePreview()`,
 and `runPreview()` never invokes `execute()` or `executeStream()`. There is no post-execute
 overlay; cache hits during `run()` return the cached value verbatim.
+
 - `setInput(input)`: Set input values
 - `validateInput(input)`: Validate input against schema
 

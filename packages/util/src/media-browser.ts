@@ -17,6 +17,7 @@ import { WebGpuImage as _WebGpuImage } from "./media/webGpuImage.browser";
 export { registerImageDefaults } from "./media/imageHydrationResolver";
 
 export * from "./media/color";
+export { dataUriToBlob } from "./media/dataUri";
 export { CpuImage } from "./media/cpuImage";
 export { rawPixelBufferToBlob, rawPixelBufferToDataUri } from "./media/encode";
 export { applyFilter, hasFilterOp, registerFilterOp } from "./media/filterRegistry";
