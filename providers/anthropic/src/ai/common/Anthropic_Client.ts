@@ -89,9 +89,12 @@ export function getModelName(model: AnthropicModelConfig | undefined): string {
  */
 export const ANTHROPIC_DEFAULT_MAX_TOKENS = 16_384;
 
-export function getMaxTokens(
-  input: { maxTokens?: number },
-  model: AnthropicModelConfig | undefined
-): number {
-  return input.maxTokens ?? model?.provider_config?.max_tokens ?? ANTHROPIC_DEFAULT_MAX_TOKENS;
+/**
+ * `input` is widened to `object` so every run-fn can hand its own task input
+ * through, including the ones whose schema declares no `maxTokens` port. Those
+ * simply fall through to the configured default.
+ */
+export function getMaxTokens(input: object, model: AnthropicModelConfig | undefined): number {
+  const requested = (input as { maxTokens?: number }).maxTokens;
+  return requested ?? model?.provider_config?.max_tokens ?? ANTHROPIC_DEFAULT_MAX_TOKENS;
 }

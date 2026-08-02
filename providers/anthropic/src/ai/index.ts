@@ -16,6 +16,10 @@ import { AnthropicQueuedProvider } from "./AnthropicQueuedProvider";
 import { ANTHROPIC_RUN_FN_SPECS } from "./common/Anthropic_Capabilities";
 import { ANTHROPIC_RUN_FNS } from "./common/Anthropic_JobRunFns";
 import { maybeEmitAnthropicRefusal } from "./common/Anthropic_Refusal";
+import {
+  anthropicAcceptsSamplingParams,
+  applyAnthropicSamplingParams,
+} from "./common/Anthropic_RequestParams";
 
 /**
  * @internal Symbols exported only for use by `@workglow/test`. Not part of the stable public API.
@@ -25,4 +29,6 @@ export const _testOnly = {
   ANTHROPIC_RUN_FN_SPECS,
   ANTHROPIC_RUN_FNS,
   maybeEmitAnthropicRefusal,
+  anthropicAcceptsSamplingParams,
+  applyAnthropicSamplingParams,
 } as const;

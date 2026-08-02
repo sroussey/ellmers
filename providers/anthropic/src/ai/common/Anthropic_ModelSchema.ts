@@ -22,7 +22,7 @@ export const AnthropicModelSchema = {
         model_name: {
           type: "string",
           description:
-            "The Anthropic model identifier (e.g., 'claude-sonnet-4-20250514', 'claude-3-5-haiku-20241022').",
+            "The Anthropic model identifier (e.g., 'claude-opus-5', 'claude-haiku-4-5').",
         },
         credential_key: {
           type: "string",
@@ -44,8 +44,15 @@ export const AnthropicModelSchema = {
         max_tokens: {
           type: "integer",
           description: "Default max tokens for responses. Anthropic requires this parameter.",
-          default: 1024,
+          default: 16384,
           minimum: 1,
+        },
+        sampling_params: {
+          type: "string",
+          enum: ["send", "omit"],
+          description:
+            "Override whether temperature/top_p are sent. Recent Claude models reject them with HTTP 400, so they are omitted unless the model id matches a generation known to accept them. Set explicitly only to correct that decision. Absent means 'decide from the model id'.",
+          "x-ui-hidden": true,
         },
       },
       required: ["model_name"],
