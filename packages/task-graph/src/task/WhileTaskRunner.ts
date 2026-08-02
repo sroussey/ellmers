@@ -36,6 +36,7 @@ export class WhileTaskRunner<
       signal: ctx.abortController.signal,
       updateProgress: this.handleProgress.bind(this),
       own: this.own,
+      disown: this.disown,
       registry: this.registry,
     });
 

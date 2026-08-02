@@ -314,6 +314,21 @@ export function subscribeTaskGraphForCli(
     if (t) wire(t);
   };
 
+  // A task released with `context.disown` is gone from the graph, so its row is
+  // stale — drop it, and un-wire the id so the same task owned again later
+  // (a reused node re-registered per batch) gets a fresh row rather than being
+  // silently skipped by the `wired` guard.
+  const onTaskRemoved = (taskId: TaskIdType): void => {
+    const id = String(taskId);
+    wired.delete(id);
+    setTaskInfos((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
   const onGraphProgress = (progress: number | undefined): void => {
     setOverallProgress(progress);
   };
@@ -323,6 +338,7 @@ export function subscribeTaskGraphForCli(
   };
 
   graph.on("task_added", onTaskAdded);
+  graph.on("task_removed", onTaskRemoved);
   graph.on("graph_progress", onGraphProgress);
   graph.on("start", onGraphStart);
 
@@ -331,6 +347,7 @@ export function subscribeTaskGraphForCli(
       u();
     }
     graph.off("task_added", onTaskAdded);
+    graph.off("task_removed", onTaskRemoved);
     graph.off("graph_progress", onGraphProgress);
     graph.off("start", onGraphStart);
   };

@@ -284,6 +284,15 @@ export class Task<
     return this.config?.title ?? (this.constructor as typeof Task).title;
   }
 
+  /**
+   * Relabels this instance. Needed when one task instance is reused for a
+   * sequence of distinct jobs (so a progress UI names the current one) — the
+   * usual case is set-once via `config.title` at construction.
+   */
+  public setTitle(title: string): void {
+    this.config.title = title;
+  }
+
   public get description(): string {
     return this.config?.description ?? (this.constructor as typeof Task).description;
   }

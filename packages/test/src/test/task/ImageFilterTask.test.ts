@@ -39,6 +39,7 @@ function makeContext(): IExecuteContext {
     signal: new AbortController().signal,
     updateProgress: async () => {},
     own: <T>(t: T) => t,
+    disown: () => {},
     registry: undefined as unknown as IExecuteContext["registry"],
     resourceScope: undefined,
   };

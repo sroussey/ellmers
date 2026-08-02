@@ -33,6 +33,7 @@ function mkContext(): IExecuteContext {
     signal: controller.signal,
     updateProgress: async () => {},
     own: <T>(i: T) => i,
+    disown: () => {},
     registry: {
       has: () => false,
       get: () => {

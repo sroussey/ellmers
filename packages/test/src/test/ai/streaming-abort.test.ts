@@ -54,6 +54,7 @@ function makeContext(parentSignal?: AbortSignal): IExecuteContext {
     signal: parentSignal ?? new AbortController().signal,
     updateProgress: async () => {},
     own: ((t: unknown) => t) as IExecuteContext["own"],
+    disown: () => {},
     registry: undefined as unknown as IExecuteContext["registry"],
   };
 }

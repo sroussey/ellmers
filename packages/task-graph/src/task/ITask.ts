@@ -56,6 +56,25 @@ export interface IExecuteContext {
    * already an `ITask` keeps its own config; name those at construction.
    */
   own: <T extends ITask | ITaskGraph | IWorkflow>(i: T, config?: TaskConfig) => T;
+  /**
+   * Release a task previously registered with {@link IExecuteContext.own}, so
+   * the running task stops holding it once its work is done.
+   *
+   * `own` is add-only and the subgraph is cleared only between graph runs, so a
+   * task that owns one child per item in a loop retains every child — and
+   * everything each child's own subgraph accumulated — for the whole of its
+   * `execute()`. Where that retention is unbounded (a per-filing wrapper in a
+   * backfill sweep, a per-section AI call holding its prompt), disown the child
+   * once it settles.
+   *
+   * Pass the value `own` returned — for a graph or workflow that is the original,
+   * not the wrapper task the subgraph actually holds, and only `disown` can map
+   * between them. Releasing something this context never owned is a no-op.
+   *
+   * Progress UIs drop the row when the task leaves the subgraph, so keep owning
+   * children whose completed rows are the point (a short, fixed pipeline).
+   */
+  disown: <T extends ITask | ITaskGraph | IWorkflow>(i: T) => void;
   registry: ServiceRegistry;
   /**
    * Input streams for pass-through streaming tasks. Keyed by input port name.
@@ -252,6 +271,12 @@ export interface ITaskIO<Input extends TaskInput> {
   get type(): string; // gets local access for static type property
   get category(): string; // gets local access for static category property
   get title(): string; // gets local access for static title property
+  /**
+   * Relabels this instance. Needed when one task instance is reused for a
+   * sequence of distinct jobs (so a progress UI names the current one) — the
+   * usual case is set-once via `config.title` at construction.
+   */
+  setTitle(title: string): void;
   get description(): string; // gets local access for static description property
 
   setDefaults(defaults: Partial<Input>): void;
