@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### Bug Fixes
+
+- stop sending `temperature` / `top_p` to Claude models that reject them. Recent
+  models (`claude-opus-5`, `claude-fable-5`, `claude-sonnet-5`, `claude-opus-4-8`,
+  `claude-opus-4-7`, …) return HTTP 400 for sampling parameters, which maps to a
+  non-retryable `PermanentJobError` — so text generation and tool calling failed
+  outright on those models whenever a caller set either field. The parameters are
+  now forwarded only for model ids belonging to a generation known to accept them
+  (Claude 4.6 and older); anything else drops them with a single warning naming
+  what was dropped. `provider_config.sampling_params` (`"send"` / `"omit"`)
+  overrides the decision for a model whose id shape is misclassified.
+- infer the full capability set for the Claude 5 family (`claude-opus-5`,
+  `claude-sonnet-5`, `claude-haiku-5`) and the fable / mythos lines. Model search
+  emits an empty `capabilities` array, so without this those models resolved to
+  meta-ops only and could not run text generation at all.
+
+### Refactors
+
+- refresh the model-search fallback list: drop the retired
+  `claude-3-5-sonnet-20241022` / `claude-3-5-haiku-20241022` ids (both 404) and
+  offer the current Claude 5 and 4.x models, newest first.
+- raise the `provider_config.max_tokens` schema default from 1024 to 16384 to
+  match `ANTHROPIC_DEFAULT_MAX_TOKENS`. Existing records are unaffected; newly
+  created records will carry the higher ceiling.
+
 ## 0.3.34
 
 ### Refactors

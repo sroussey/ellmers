@@ -22,7 +22,7 @@ export const Anthropic_TextRewriter_Stream: AiProviderRunFn<
       model: modelName,
       system: input.prompt,
       messages: [{ role: "user", content: input.text }],
-      max_tokens: getMaxTokens({}, model),
+      max_tokens: getMaxTokens(input, model),
     },
     { signal }
   );

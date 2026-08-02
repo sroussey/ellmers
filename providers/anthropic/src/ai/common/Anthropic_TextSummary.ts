@@ -22,7 +22,7 @@ export const Anthropic_TextSummary_Stream: AiProviderRunFn<
       model: modelName,
       system: "Summarize the following text concisely.",
       messages: [{ role: "user", content: input.text }],
-      max_tokens: getMaxTokens({}, model),
+      max_tokens: getMaxTokens(input, model),
     },
     { signal }
   );

@@ -13,6 +13,7 @@ import { getLogger } from "@workglow/util/worker";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
+import { applyAnthropicSamplingParams } from "./Anthropic_RequestParams";
 import { buildAnthropicMessages } from "./Anthropic_ToolCalling";
 
 /**
@@ -64,9 +65,7 @@ export const Anthropic_TextGeneration_Stream: AiProviderRunFn<
       messages,
       max_tokens: getMaxTokens(input, model),
     };
-    if (input.temperature !== undefined) params.temperature = input.temperature;
-    if ((input as { topP?: number }).topP !== undefined)
-      params.top_p = (input as { topP?: number }).topP;
+    applyAnthropicSamplingParams(params, input, model);
 
     if (unified.systemPrompt) {
       params.system = sessionId

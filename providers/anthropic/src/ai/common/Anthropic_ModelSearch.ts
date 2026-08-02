@@ -20,15 +20,23 @@ interface AnthropicModelListItem {
   readonly description?: string;
 }
 
-const ANTHROPIC_FALLBACK: Array<{ label: string; value: string }> = [
-  { label: "claude-opus-4-7", value: "claude-opus-4-7" },
-  { label: "claude-sonnet-4-6", value: "claude-sonnet-4-6" },
-  { label: "claude-haiku-4-5-20251001", value: "claude-haiku-4-5-20251001" },
-  { label: "claude-opus-4-6", value: "claude-opus-4-6" },
-  { label: "claude-sonnet-4-5-20250929", value: "claude-sonnet-4-5-20250929" },
-  { label: "claude-3-5-sonnet-20241022", value: "claude-3-5-sonnet-20241022" },
-  { label: "claude-3-5-haiku-20241022", value: "claude-3-5-haiku-20241022" },
-];
+/**
+ * Offered when no credential is available to list models live. Newest first,
+ * and limited to ids that are generally available — a model restricted to an
+ * invite-only program would 404 for everyone else.
+ */
+export const ANTHROPIC_FALLBACK: ReadonlyArray<{ readonly label: string; readonly value: string }> =
+  [
+    { label: "claude-fable-5", value: "claude-fable-5" },
+    { label: "claude-opus-5", value: "claude-opus-5" },
+    { label: "claude-sonnet-5", value: "claude-sonnet-5" },
+    { label: "claude-opus-4-8", value: "claude-opus-4-8" },
+    { label: "claude-opus-4-7", value: "claude-opus-4-7" },
+    { label: "claude-haiku-4-5", value: "claude-haiku-4-5" },
+    { label: "claude-sonnet-4-6", value: "claude-sonnet-4-6" },
+    { label: "claude-opus-4-6", value: "claude-opus-4-6" },
+    { label: "claude-sonnet-4-5-20250929", value: "claude-sonnet-4-5-20250929" },
+  ];
 
 async function listAnthropicModels(credentialKey: string): Promise<AnthropicModelListItem[]> {
   const client = await getClient({
@@ -64,12 +72,9 @@ export const Anthropic_ModelSearch_Stream: AiProviderRunFn<
   ModelSearchTaskInput,
   ModelSearchTaskOutput
 > = async (input, _model, _signal, emit) => {
-  let models: AnthropicModelListItem[];
-  if (!input.credential_key) {
-    models = ANTHROPIC_FALLBACK;
-  } else {
-    models = await listAnthropicModels(input.credential_key);
-  }
-  models = filterLabeledModelsByQuery(models, input.query);
+  const available: ReadonlyArray<AnthropicModelListItem> = input.credential_key
+    ? await listAnthropicModels(input.credential_key)
+    : ANTHROPIC_FALLBACK;
+  const models = filterLabeledModelsByQuery(available, input.query);
   emit({ type: "finish", data: { results: mapModelList(models) } });
 };

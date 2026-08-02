@@ -5,7 +5,7 @@
  */
 
 import type { ModelRecord } from "@workglow/ai";
-import { _testOnly } from "@workglow/anthropic/ai";
+import { ANTHROPIC_FALLBACK, _testOnly } from "@workglow/anthropic/ai";
 import { describe, expect, it } from "vitest";
 
 const { AnthropicQueuedProvider, ANTHROPIC_RUN_FN_SPECS, ANTHROPIC_RUN_FNS } = _testOnly;
@@ -61,6 +61,26 @@ describe("AnthropicQueuedProvider.inferCapabilities", () => {
     expect(caps).toContain("json-mode");
     expect(caps).toContain("vision-input");
     expect(caps).toContain("model.count-tokens");
+  });
+
+  it.each(["claude-opus-5", "claude-sonnet-5", "claude-haiku-5", "claude-fable-5"])(
+    "infers full capabilities for %s (Claude 5 family)",
+    (id) => {
+      const caps = provider.inferCapabilities(model(id));
+      expect(caps).toContain("text.generation");
+      expect(caps).toContain("tool-use");
+      expect(caps).toContain("json-mode");
+      expect(caps).toContain("vision-input");
+      expect(caps).toContain("model.count-tokens");
+    }
+  );
+
+  it("keeps claude-opus-4-7 / 4-8 on the Claude 4-series branch", () => {
+    for (const id of ["claude-opus-4-7", "claude-opus-4-8"]) {
+      const caps = provider.inferCapabilities(model(id));
+      expect(caps).toContain("text.generation");
+      expect(caps).toContain("vision-input");
+    }
   });
 
   it("infers full capabilities for claude-3-haiku family", () => {
@@ -148,6 +168,27 @@ describe("AnthropicQueuedProvider.inferCapabilities", () => {
       "tool-use",
       "vision-input",
     ]);
+  });
+});
+
+describe("ANTHROPIC_FALLBACK", () => {
+  const provider = new AnthropicQueuedProvider(ANTHROPIC_RUN_FNS);
+
+  // mapModelList emits `capabilities: []`, so a fallback model is only usable
+  // if inference recognizes its id. An unrecognized id yields meta-ops only.
+  it("every fallback model infers text.generation", () => {
+    expect(ANTHROPIC_FALLBACK.length).toBeGreaterThan(0);
+    for (const entry of ANTHROPIC_FALLBACK) {
+      expect(provider.inferCapabilities(model(entry.value)), entry.value).toContain(
+        "text.generation"
+      );
+    }
+  });
+
+  it("does not offer retired model ids", () => {
+    const values = ANTHROPIC_FALLBACK.map((entry) => entry.value);
+    expect(values).not.toContain("claude-3-5-sonnet-20241022");
+    expect(values).not.toContain("claude-3-5-haiku-20241022");
   });
 });
 

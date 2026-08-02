@@ -17,6 +17,7 @@ import { parsePartialJson } from "@workglow/util/worker";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
+import { applyAnthropicSamplingParams } from "./Anthropic_RequestParams";
 
 export function buildAnthropicMessages(
   messages: ReadonlyArray<ChatMessage> | undefined,
@@ -114,11 +115,7 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
     max_tokens: getMaxTokens(input, model),
   };
 
-  // Only forward temperature when explicitly set — sending `undefined` would
-  // serialize a null/undefined field the Anthropic API may reject.
-  if (input.temperature !== undefined) {
-    params.temperature = input.temperature;
-  }
+  applyAnthropicSamplingParams(params, input, model);
 
   if (input.systemPrompt) {
     params.system = input.systemPrompt;

@@ -42,6 +42,22 @@ export function inferAnthropicCapabilities(model: CapabilityHints): readonly Cap
       ""
   );
 
+  // Claude 5 family (claude-sonnet-5*, claude-opus-5*, claude-haiku-5*) plus the
+  // fable / mythos lines — same full capability set as Claude 4.
+  if (/^claude-(?:(?:sonnet|opus|haiku)-5|fable-|mythos-)/i.test(id)) {
+    return [
+      "text.generation",
+      "text.rewriter",
+      "text.summary",
+      "tool-use",
+      "json-mode",
+      "vision-input",
+      "model.count-tokens",
+      "model.info",
+      "model.search",
+    ];
+  }
+
   // Claude 3.5 / 3.7 family (sonnet, haiku) — full capability set with vision.
   if (/^claude-3[.-][57]-/i.test(id)) {
     return [
