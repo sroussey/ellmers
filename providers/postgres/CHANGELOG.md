@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.36
+
+### Features
+
+#### PostgresTabularStorage
+
+- add regression tests for upsert behavior on all-primary-key tables
+
 ## 0.3.35
 
 ## 0.3.34
