@@ -1,5 +1,13 @@
 # @workglow/cli
 
+## 0.3.35
+
+### Features
+
+#### task-graph
+
+- add context.disown so owners can release finished subtasks
+
 ## 0.3.34
 
 ### Features

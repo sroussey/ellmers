@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.35
+
+### Bug Fixes
+
+#### anthropic
+
+- stop sending sampling params to models that reject them
+
+### Refactors
+
+#### anthropic
+
+- derive the max_tokens schema default from the constant
+
 ## Unreleased
 
 ### Bug Fixes

@@ -1,5 +1,19 @@
 # @workglow/test
 
+## 0.3.35
+
+### Features
+
+#### task-graph
+
+- add context.disown so owners can release finished subtasks
+
+### Bug Fixes
+
+#### anthropic
+
+- stop sending sampling params to models that reject them
+
 ## 0.3.34
 
 ### Features

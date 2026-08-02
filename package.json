@@ -1,7 +1,7 @@
 {
   "name": "@workglow-dev/libs",
   "type": "module",
-  "version": "0.3.34",
+  "version": "0.3.35",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git"
@@ -114,7 +114,7 @@
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-regexp": "^3.1.1",
-    "globals": "^17.8.0",
+    "globals": "^17.9.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.3.0",
     "nyc": "^18.0.0",
