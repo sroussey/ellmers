@@ -6,7 +6,7 @@
 
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
 import { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
-import { ANTHROPIC } from "./Anthropic_Constants";
+import { ANTHROPIC, ANTHROPIC_DEFAULT_MAX_TOKENS } from "./Anthropic_Constants";
 
 export const AnthropicModelSchema = {
   type: "object",
@@ -44,7 +44,7 @@ export const AnthropicModelSchema = {
         max_tokens: {
           type: "integer",
           description: "Default max tokens for responses. Anthropic requires this parameter.",
-          default: 16384,
+          default: ANTHROPIC_DEFAULT_MAX_TOKENS,
           minimum: 1,
         },
         sampling_params: {

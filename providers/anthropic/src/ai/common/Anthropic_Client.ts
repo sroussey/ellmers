@@ -5,6 +5,7 @@
  */
 
 import { isBrowserLike, resolveApiKey, validateProviderBaseUrl } from "@workglow/ai/provider-utils";
+import { ANTHROPIC_DEFAULT_MAX_TOKENS } from "./Anthropic_Constants";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 
 /**
@@ -81,13 +82,6 @@ export function getModelName(model: AnthropicModelConfig | undefined): string {
   }
   return name;
 }
-
-/**
- * Anthropic requires `max_tokens`, and it bounds thinking and response text
- * together, so this fallback is always in play. 16k matches the vendor's
- * guidance for non-streaming requests; stream and pass `maxTokens` for more.
- */
-export const ANTHROPIC_DEFAULT_MAX_TOKENS = 16_384;
 
 /**
  * `input` is widened to `object` so every run-fn can hand its own task input
