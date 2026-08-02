@@ -8,6 +8,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { PostgresTabularStorage } from "@workglow/postgres/storage";
 import { ConnectionReentryError, StorageValidationError } from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
+import type { DataPortSchemaObject } from "@workglow/util/schema";
 import type { Pool } from "pg";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
@@ -561,5 +562,49 @@ describe("PostgresTabularStorage", () => {
       await storage.setupDatabase();
       return storage;
     },
+  });
+});
+
+describe("PostgresTabularStorage regressions", () => {
+  const JunctionSchema = {
+    type: "object",
+    properties: { a: { type: "string" }, b: { type: "string" } },
+    required: ["a", "b"],
+    additionalProperties: false,
+  } as const satisfies DataPortSchemaObject;
+
+  // Own instance: the suite above closes its `db` in an afterAll that runs
+  // before this describe's tests.
+  const junctionDb = new PGlite() as unknown as Pool;
+  afterAll(async () => {
+    await (junctionDb as unknown as PGlite).close();
+  });
+
+  it("re-put of an existing row on an all-primary-key table is an upsert, not an error", async () => {
+    const storage = new PostgresTabularStorage<typeof JunctionSchema, readonly ["a", "b"]>(
+      junctionDb,
+      `junction_${uuid4().replace(/-/g, "_")}`,
+      JunctionSchema,
+      ["a", "b"] as const
+    );
+    await storage.setupDatabase();
+    await storage.put({ a: "x", b: "y" });
+    const again = await storage.put({ a: "x", b: "y" });
+    expect(again).toEqual({ a: "x", b: "y" });
+    expect(await storage.size()).toBe(1);
+  });
+
+  it("putBulk re-put of an existing row on an all-primary-key table is an upsert, not an error", async () => {
+    const storage = new PostgresTabularStorage<typeof JunctionSchema, readonly ["a", "b"]>(
+      junctionDb,
+      `junction_bulk_${uuid4().replace(/-/g, "_")}`,
+      JunctionSchema,
+      ["a", "b"] as const
+    );
+    await storage.setupDatabase();
+    await storage.putBulk([{ a: "x", b: "y" }]);
+    const again = await storage.putBulk([{ a: "x", b: "y" }]);
+    expect(again).toEqual([{ a: "x", b: "y" }]);
+    expect(await storage.size()).toBe(1);
   });
 });

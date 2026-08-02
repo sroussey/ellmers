@@ -658,18 +658,30 @@ export class PostgresTabularStorage<
     const columnList = columnsToInsert.map((c) => `"${c}"`).join(", ");
     const placeholders = columnsToInsert.map((_, i) => `$${i + 1}`).join(", ");
 
-    // Build ON CONFLICT clause if there are value columns
+    const updateAssignments = (valueColumns as string[])
+      .map((col) => `"${col}" = $${columnsToInsert.indexOf(String(col)) + 1}`)
+      .join(", ");
+    // When every column is part of the PK there is nothing to update, but
+    // omitting ON CONFLICT turns a re-put into a duplicate-key error, and
+    // `DO NOTHING` would make `RETURNING *` yield no row (Postgres only returns
+    // rows it actually inserts/updates) so the caller would dereference
+    // `undefined`. Self-assign the PK columns instead: `DO UPDATE` always
+    // produces a RETURNING row, so re-saving an existing all-PK row (junction
+    // tables) echoes it back as the contract expects. Mirrors the SQLite and
+    // DuckDB storages.
+    const pkSelfAssign = (pkColumns as unknown as string[])
+      .map((col) => String(col))
+      .filter((col) => columnsToInsert.includes(col))
+      .map((col) => `"${col}" = $${columnsToInsert.indexOf(col) + 1}`)
+      .join(", ");
+    const assignments = updateAssignments.length > 0 ? updateAssignments : pkSelfAssign;
+    // No assignable column at all (db-generated key and no value columns):
+    // a conflict cannot occur on a fresh key, so plain INSERT is safe.
     const conflictClause =
-      valueColumns.length > 0
+      assignments.length > 0
         ? `
       ON CONFLICT (${this.primaryKeyColumnList('"')}) DO UPDATE
-      SET
-      ${(valueColumns as string[])
-        .map((col) => {
-          const colIdx = columnsToInsert.indexOf(String(col));
-          return `"${col}" = $${colIdx + 1}`;
-        })
-        .join(", ")}
+      SET ${assignments}
       `
         : "";
 
@@ -1419,8 +1431,13 @@ export class PostgresTabularStorage<
       insertInto: (cols) => `INSERT INTO "${table}" (${cols})`,
       conflictClause: (insertColumns) => {
         const nonPk = insertColumns.filter((c) => !pkColumns.includes(c));
-        if (nonPk.length === 0) return "";
-        const assignments = nonPk.map((c) => `"${c}" = excluded."${c}"`).join(", ");
+        // All-PK table (a junction row): nothing to update, but a bare INSERT
+        // makes a re-put a duplicate-key error and `DO NOTHING` drops the row
+        // from `RETURNING *`, which the bulk engine needs to re-align results
+        // to input order. Self-assign the PK columns — see buildPutSql.
+        const cols = nonPk.length > 0 ? nonPk : insertColumns.filter((c) => pkColumns.includes(c));
+        if (cols.length === 0) return "";
+        const assignments = cols.map((c) => `"${c}" = excluded."${c}"`).join(", ");
         return `ON CONFLICT (${pkList}) DO UPDATE SET ${assignments}`;
       },
       mintUuidClientSide: false,
