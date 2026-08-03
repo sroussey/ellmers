@@ -530,10 +530,38 @@ export class TaskRunner<
    */
   private readonly ownedWrappers = new WeakMap<object, ITask>();
 
+  /**
+   * Whether the wrapper {@link own} recorded for a value is still in the
+   * subgraph. A `regenerateGraph()` between runs empties the subgraph without
+   * touching {@link ownedWrappers}, so a recorded wrapper is not proof of
+   * current ownership — re-owning the same long-lived workflow on a re-run is
+   * legitimate, and only a wrapper still present is a genuine double-`own`.
+   */
+  private isStillOwned(wrapper: ITask): boolean {
+    return this.task.hasChildren() && this.task.subGraph.getTask(wrapper.id) !== undefined;
+  }
+
   protected own<T extends Taskish<any, any>>(i: T, config: TaskConfig = {}): T {
+    const trackable = i !== null && typeof i === "object";
+    if (trackable) {
+      // `ensureTask` returns a plain ITask as-is, so owning one twice throws on
+      // the duplicate subgraph id. A graph or workflow is adapted into a *fresh*
+      // wrapper each call, so the second `own` would silently succeed and
+      // overwrite the recorded wrapper — stranding the first in the subgraph
+      // with nothing left that can name it for `disown`. Fail the same way.
+      const previous = this.ownedWrappers.get(i);
+      if (previous !== undefined) {
+        if (this.isStillOwned(previous)) {
+          throw new TaskConfigurationError(
+            `own(): value is already owned by task ${String(this.task.config?.id)} as subgraph task ${String(previous.id)}. Call disown() before owning it again.`
+          );
+        }
+        this.ownedWrappers.delete(i);
+      }
+    }
     const task = ensureTask(i, { ...config, isOwned: true });
     this.task.subGraph.addTask(task);
-    if (i !== null && typeof i === "object") {
+    if (trackable) {
       this.ownedWrappers.set(i, task);
     }
     // Propagate parent registry and abort signal to owned ITask instances so
@@ -579,8 +607,11 @@ export class TaskRunner<
   protected disown<T extends Taskish<any, any>>(i: T): void {
     if (i === null || typeof i !== "object") return;
     const wrapper = this.ownedWrappers.get(i);
-    if (wrapper === undefined || !this.task.hasChildren()) return;
+    if (wrapper === undefined) return;
+    // Drop the record even when the wrapper is already gone (a subgraph reset
+    // between runs), so the value can be owned again.
     this.ownedWrappers.delete(i);
+    if (!this.isStillOwned(wrapper)) return;
     this.task.subGraph.removeTask(wrapper.id);
     if ((this.task.constructor as typeof Task).hasDynamicEntitlements) {
       this.task.emit("entitlementChange", this.task.entitlements());

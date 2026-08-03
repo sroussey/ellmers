@@ -4,13 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ITask } from "@workglow/task-graph";
+import type { ITask, TaskOutput } from "@workglow/task-graph";
+import { Task, TaskGraph } from "@workglow/task-graph";
 import { EventEmitter } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 import {
   FULL_SLOT_TRACKING_MAX,
   MAX_RUNNING_ROWS,
   registerIterationListeners,
+  subscribeTaskGraphForCli,
+  type CliTaskLine,
   type IterationSlotRow,
 } from "../ui/taskGraphCliSubscriptions";
 
@@ -86,5 +89,118 @@ describe("registerIterationListeners", () => {
     const slots = sink.get().get("big")!;
     expect(slots).toHaveLength(1);
     expect(slots[0]).toMatchObject({ index: 42, status: "running", progress: 70, message: "half" });
+  });
+});
+
+describe("subscribeTaskGraphForCli", () => {
+  class Noop extends Task {
+    public static override readonly type = "CliSubNoopTask";
+    public static override readonly title = "Noop";
+    override async execute(): Promise<TaskOutput> {
+      return {};
+    }
+  }
+
+  function makeInfoSink() {
+    let state = new Map<string, CliTaskLine>();
+    const setter = (
+      updater:
+        Map<string, CliTaskLine> | ((prev: Map<string, CliTaskLine>) => Map<string, CliTaskLine>)
+    ) => {
+      state = typeof updater === "function" ? updater(state) : updater;
+    };
+    return { setter, get: () => state };
+  }
+
+  // The point of `disown` is bounding retention, so the UI that follows it must
+  // not itself accumulate: an own/run/disown/own cycle over N jobs on one reused
+  // task instance would otherwise stack a status+progress pair per cycle.
+  it("drops a removed task's listeners so re-owning does not stack them", () => {
+    const graph = new TaskGraph();
+    const infos = makeInfoSink();
+    const slots = makeSink();
+
+    const unsubscribe = subscribeTaskGraphForCli(
+      graph,
+      infos.setter as never,
+      undefined,
+      () => {},
+      slots.setter as never
+    );
+
+    const task = new Noop();
+    const id = String(task.id);
+
+    for (let i = 0; i < 5; i++) {
+      graph.addTask(task);
+      expect(infos.get().has(id)).toBe(true);
+      // Exactly one subscription per event, however many cycles have run.
+      expect(task.events.listenerCount("status")).toBe(1);
+      expect(task.events.listenerCount("progress")).toBe(1);
+      expect(task.events.listenerCount("iteration_start")).toBe(1);
+
+      graph.removeTask(task.id);
+      expect(infos.get().has(id)).toBe(false);
+      expect(task.events.listenerCount("status")).toBe(0);
+      expect(task.events.listenerCount("progress")).toBe(0);
+      expect(task.events.listenerCount("iteration_start")).toBe(0);
+    }
+
+    unsubscribe();
+  });
+
+  it("clears a removed task's retained iteration slots", () => {
+    const graph = new TaskGraph();
+    const infos = makeInfoSink();
+    const slots = makeSink();
+
+    const unsubscribe = subscribeTaskGraphForCli(
+      graph,
+      infos.setter as never,
+      undefined,
+      () => {},
+      slots.setter as never
+    );
+
+    const task = new Noop();
+    const id = String(task.id);
+    graph.addTask(task);
+    task.events.emit("iteration_start", 0 as never, 3 as never);
+    expect(slots.get().has(id)).toBe(true);
+
+    graph.removeTask(task.id);
+    expect(slots.get().has(id)).toBe(false);
+
+    unsubscribe();
+  });
+
+  it("detaches every task's listeners on unsubscribe", () => {
+    const graph = new TaskGraph();
+    const infos = makeInfoSink();
+    const slots = makeSink();
+
+    const first = new Noop();
+    const second = new Noop();
+    graph.addTask(first);
+
+    const unsubscribe = subscribeTaskGraphForCli(
+      graph,
+      infos.setter as never,
+      undefined,
+      () => {},
+      slots.setter as never
+    );
+    // Wired at subscribe time and mid-run alike.
+    graph.addTask(second);
+    expect(first.events.listenerCount("status")).toBe(1);
+    expect(second.events.listenerCount("status")).toBe(1);
+
+    unsubscribe();
+
+    for (const t of [first, second]) {
+      expect(t.events.listenerCount("status")).toBe(0);
+      expect(t.events.listenerCount("progress")).toBe(0);
+      expect(t.events.listenerCount("iteration_start")).toBe(0);
+    }
   });
 });

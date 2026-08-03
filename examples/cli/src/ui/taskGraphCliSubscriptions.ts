@@ -76,14 +76,15 @@ export function sortIterationSlotsForDisplay(
   });
 }
 
+/** Returns an unsubscribe: a task released with `disown` must not keep its listeners. */
 function registerTaskListeners(
   task: ITask,
   taskId: string,
   taskLabel: string,
   setTaskInfos: Dispatch<SetStateAction<Map<string, CliTaskLine>>>,
   appendCompletedLog?: (text: string) => void
-): void {
-  task.events.on("status", (status: string) => {
+): () => void {
+  const onStatus = (status: string): void => {
     setTaskInfos((prev) => {
       const next = new Map(prev);
       const info = next.get(taskId);
@@ -95,9 +96,9 @@ function registerTaskListeners(
       }
       return next;
     });
-  });
+  };
 
-  task.events.on("progress", (progress: number | undefined, message?: string) => {
+  const onProgress = (progress: number | undefined, message?: string): void => {
     setTaskInfos((prev) => {
       const next = new Map(prev);
       const info = next.get(taskId);
@@ -106,7 +107,15 @@ function registerTaskListeners(
       }
       return next;
     });
-  });
+  };
+
+  task.events.on("status", onStatus);
+  task.events.on("progress", onProgress);
+
+  return () => {
+    task.events.off("status", onStatus);
+    task.events.off("progress", onProgress);
+  };
 }
 
 /**
@@ -282,13 +291,17 @@ export function subscribeTaskGraphForCli(
   }
   setTaskInfos(initial);
 
-  const wired = new Set<string>();
-  const iterationUnsubs: Array<() => void> = [];
+  // Keyed by task id, holding that task's unsubscribes. The `disown` support
+  // means the same instance can be owned, released, and owned again once per
+  // job; without dropping its listeners on release, re-wiring would stack a new
+  // pair on every cycle and the loop would retain listeners without bound.
+  const wired = new Map<string, Array<() => void>>();
 
   const wire = (task: ITask): void => {
     const taskId = String(task.id);
     if (wired.has(taskId)) return;
-    wired.add(taskId);
+    const unsubs: Array<() => void> = [];
+    wired.set(taskId, unsubs);
     const taskType = (task as { type?: string }).type ?? "Unknown";
     const taskLabel = cliTaskLabel(task);
 
@@ -299,9 +312,9 @@ export function subscribeTaskGraphForCli(
       return next;
     });
 
-    registerTaskListeners(task, taskId, taskLabel, setTaskInfos, appendCompletedLog);
+    unsubs.push(registerTaskListeners(task, taskId, taskLabel, setTaskInfos, appendCompletedLog));
     if (setIterationSlots) {
-      iterationUnsubs.push(registerIterationListeners(task, taskId, setIterationSlots));
+      unsubs.push(registerIterationListeners(task, taskId, setIterationSlots));
     }
   };
 
@@ -315,13 +328,26 @@ export function subscribeTaskGraphForCli(
   };
 
   // A task released with `context.disown` is gone from the graph, so its row is
-  // stale — drop it, and un-wire the id so the same task owned again later
-  // (a reused node re-registered per batch) gets a fresh row rather than being
-  // silently skipped by the `wired` guard.
+  // stale — drop it, detach its listeners, and un-wire the id so the same task
+  // owned again later (a reused node re-registered per batch) gets a fresh row
+  // and a fresh single subscription rather than being silently skipped by the
+  // `wired` guard.
   const onTaskRemoved = (taskId: TaskIdType): void => {
     const id = String(taskId);
-    wired.delete(id);
+    const unsubs = wired.get(id);
+    if (unsubs) {
+      for (const u of unsubs) {
+        u();
+      }
+      wired.delete(id);
+    }
     setTaskInfos((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+    setIterationSlots?.((prev) => {
       if (!prev.has(id)) return prev;
       const next = new Map(prev);
       next.delete(id);
@@ -343,9 +369,12 @@ export function subscribeTaskGraphForCli(
   graph.on("start", onGraphStart);
 
   return () => {
-    for (const u of iterationUnsubs) {
-      u();
+    for (const unsubs of wired.values()) {
+      for (const u of unsubs) {
+        u();
+      }
     }
+    wired.clear();
     graph.off("task_added", onTaskAdded);
     graph.off("task_removed", onTaskRemoved);
     graph.off("graph_progress", onGraphProgress);

@@ -149,6 +149,87 @@ describe("Task own functionality", () => {
       expect(task.subGraph.getTasks().map((t) => t.title)).toEqual(["Kept"]);
     });
 
+    // A workflow is adapted into a fresh wrapper on every `own`, so a second
+    // `own` used to overwrite the recorded wrapper and strand the first in the
+    // subgraph with nothing able to name it for `disown`. Owning a plain ITask
+    // twice has always thrown on the duplicate subgraph id; both now do.
+    it("rejects owning the same workflow twice without disowning", async () => {
+      class DoubleOwnTask extends Task {
+        public static override readonly type = "DoubleOwnTask";
+        public static override readonly title = "Double own";
+
+        public ownError: unknown;
+
+        override async execute(_input: TaskOutput, context: IExecuteContext): Promise<TaskOutput> {
+          const wf = new Workflow();
+          context.own(wf, { title: "First" });
+          try {
+            context.own(wf, { title: "Second" });
+          } catch (err) {
+            this.ownError = err;
+          }
+          return {};
+        }
+      }
+
+      const task = new DoubleOwnTask();
+      await task.run();
+
+      expect(task.ownError).toBeInstanceOf(Error);
+      expect(String((task.ownError as Error).message)).toContain("already owned");
+      // The first registration is intact — not replaced by an unreachable second.
+      expect(task.subGraph.getTasks().map((t) => t.title)).toEqual(["First"]);
+    });
+
+    it("allows re-owning the same workflow after disowning it", async () => {
+      class ReownTask extends Task {
+        public static override readonly type = "ReownTask";
+        public static override readonly title = "Reown";
+
+        override async execute(_input: TaskOutput, context: IExecuteContext): Promise<TaskOutput> {
+          const wf = new Workflow();
+          for (let i = 0; i < 3; i++) {
+            context.own(wf, { title: `Pass ${i}` });
+            expect(this.subGraph.getTasks()).toHaveLength(1);
+            context.disown(wf);
+          }
+          return {};
+        }
+      }
+
+      const task = new ReownTask();
+      await task.run();
+      expect(task.subGraph.getTasks()).toHaveLength(0);
+    });
+
+    // `regenerateGraph()` empties the subgraph between runs without touching the
+    // wrapper bookkeeping, so a task that owns a long-lived workflow must not be
+    // told on its second run that the workflow is still owned.
+    it("re-owns a long-lived workflow across runs after the subgraph is reset", async () => {
+      const shared = new Workflow();
+
+      class RerunOwnerTask extends Task {
+        public static override readonly type = "RerunOwnerTask";
+        public static override readonly title = "Rerun owner";
+        public static override cacheable = false;
+
+        override async execute(_input: TaskOutput, context: IExecuteContext): Promise<TaskOutput> {
+          context.own(shared, { title: "Shared" });
+          return {};
+        }
+      }
+
+      const task = new RerunOwnerTask();
+      await task.run();
+      expect(task.subGraph.getTasks().map((t) => t.title)).toEqual(["Shared"]);
+
+      task.regenerateGraph();
+      expect(task.subGraph.getTasks()).toHaveLength(0);
+
+      await task.run();
+      expect(task.subGraph.getTasks().map((t) => t.title)).toEqual(["Shared"]);
+    });
+
     it("is a no-op for a value this context never owned", async () => {
       class StrayDisownTask extends Task {
         public static override readonly type = "StrayDisownTask";
