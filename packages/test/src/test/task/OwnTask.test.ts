@@ -202,6 +202,44 @@ describe("Task own functionality", () => {
       expect(task.subGraph.getTasks()).toHaveLength(0);
     });
 
+    // A bare second `run()` does NOT reset the subgraph — only a graph run
+    // (`TaskGraphRunner.resetGraph`) or an explicit `regenerateGraph()` does —
+    // so the first wrapper is still there and the second `own` is a genuine
+    // double-`own`. This is the consistency the rejection buys: before it, a
+    // plain ITask threw `NodeAlreadyExistsError` here while a workflow silently
+    // reached a two-wrapper subgraph, the second of which nothing could name.
+    it("rejects owning across bare re-runs the same way for a task and a workflow", async () => {
+      const sharedTask = new SimpleTask();
+      const sharedWorkflow = new Workflow();
+
+      const makeOwner = (type: string, owned: () => Parameters<IExecuteContext["own"]>[0]) =>
+        class extends Task {
+          public static override readonly type = type;
+          public static override readonly title = "Bare rerun owner";
+          public static override cacheable = false;
+          override async execute(
+            _input: TaskOutput,
+            context: IExecuteContext
+          ): Promise<TaskOutput> {
+            context.own(owned());
+            return {};
+          }
+        };
+
+      for (const [label, Owner] of [
+        ["task", makeOwner("BareRerunOwnsTask", () => sharedTask)],
+        ["workflow", makeOwner("BareRerunOwnsWorkflow", () => sharedWorkflow)],
+      ] as const) {
+        const task = new Owner();
+        await task.run();
+        expect(task.subGraph.getTasks(), label).toHaveLength(1);
+
+        await expect(task.run(), label).rejects.toThrow();
+        // Crucially: still one wrapper, not a silently accumulated second.
+        expect(task.subGraph.getTasks(), label).toHaveLength(1);
+      }
+    });
+
     // `regenerateGraph()` empties the subgraph between runs without touching the
     // wrapper bookkeeping, so a task that owns a long-lived workflow must not be
     // told on its second run that the workflow is still owned.
@@ -281,6 +319,36 @@ describe("Task own functionality", () => {
       const task = new StrayDisownTask();
       await task.run();
       expect(task.subGraph.getTasks().map((t) => t.title)).toEqual(["Kept"]);
+    });
+
+    // `Taskish` admits a pipe function, and `ensureTask` wraps one in a task like
+    // any other — but the wrapper is nameable only if `own` records it, and a
+    // function is not `typeof "object"`.
+    it("owns and disowns a pipe function", async () => {
+      class FnOwnerTask extends Task {
+        public static override readonly type = "FnOwnerTask";
+        public static override readonly title = "Fn owner";
+
+        public counts: number[] = [];
+
+        override async execute(_input: TaskOutput, context: IExecuteContext): Promise<TaskOutput> {
+          const fn = async (input: TaskOutput): Promise<TaskOutput> => input;
+          for (let i = 0; i < 3; i++) {
+            context.own(fn as never, { title: `Pass ${i}` });
+            this.counts.push(this.subGraph.getTasks().length);
+            context.disown(fn as never);
+            this.counts.push(this.subGraph.getTasks().length);
+          }
+          return {};
+        }
+      }
+
+      const task = new FnOwnerTask();
+      await task.run();
+
+      // Never accumulates: one wrapper while owned, none once disowned.
+      expect(task.counts).toEqual([1, 0, 1, 0, 1, 0]);
+      expect(task.subGraph.getTasks()).toHaveLength(0);
     });
   });
 

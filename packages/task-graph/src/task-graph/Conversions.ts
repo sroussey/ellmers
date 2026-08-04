@@ -128,8 +128,11 @@ export function ensureTask<I extends DataPorts, O extends DataPorts>(
   if (arg instanceof Task) {
     return arg;
   }
+  // `isOwned` is a wrapper-construction flag, not task config: every branch
+  // below has to keep it out of the config it forwards, or `Task`'s config
+  // validation rejects the unknown property.
+  const { isOwned, ...cleanConfig } = config;
   if (arg instanceof TaskGraph) {
-    const { isOwned, ...cleanConfig } = config;
     return graphWrapperFactory()({
       subGraph: arg,
       isOwned: Boolean(isOwned),
@@ -138,7 +141,6 @@ export function ensureTask<I extends DataPorts, O extends DataPorts>(
     });
   }
   if (isWorkflowLike(arg)) {
-    const { isOwned, ...cleanConfig } = config;
     return graphWrapperFactory()({
       subGraph: arg.graph,
       isOwned: Boolean(isOwned),
@@ -146,5 +148,5 @@ export function ensureTask<I extends DataPorts, O extends DataPorts>(
       config: cleanConfig,
     });
   }
-  return convertPipeFunctionToTask(arg as PipeFunction<I, O>, config);
+  return convertPipeFunctionToTask(arg as PipeFunction<I, O>, cleanConfig);
 }

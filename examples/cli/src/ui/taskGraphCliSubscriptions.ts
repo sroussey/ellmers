@@ -84,15 +84,17 @@ function registerTaskListeners(
   setTaskInfos: Dispatch<SetStateAction<Map<string, CliTaskLine>>>,
   appendCompletedLog?: (text: string) => void
 ): () => void {
+  // Each returns `prev` untouched when the row is gone: a task released with
+  // `disown` can still emit as it settles, and a fresh Map for a write that
+  // lands nowhere is a re-render of the whole task list for nothing.
   const onStatus = (status: TaskStatus): void => {
     setTaskInfos((prev) => {
+      const info = prev.get(taskId);
+      if (!info) return prev;
       const next = new Map(prev);
-      const info = next.get(taskId);
-      if (info) {
-        next.set(taskId, { ...info, status });
-        if (status === "COMPLETED" && appendCompletedLog) {
-          appendCompletedLog(`[COMPLETED] ${taskLabel}`);
-        }
+      next.set(taskId, { ...info, status });
+      if (status === "COMPLETED" && appendCompletedLog) {
+        appendCompletedLog(`[COMPLETED] ${taskLabel}`);
       }
       return next;
     });
@@ -100,11 +102,10 @@ function registerTaskListeners(
 
   const onProgress = (progress: number | undefined, message?: string): void => {
     setTaskInfos((prev) => {
+      const info = prev.get(taskId);
+      if (!info) return prev;
       const next = new Map(prev);
-      const info = next.get(taskId);
-      if (info) {
-        next.set(taskId, { ...info, progress, message });
-      }
+      next.set(taskId, { ...info, progress, message });
       return next;
     });
   };

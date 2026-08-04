@@ -45,6 +45,15 @@ function hasRunConfig(i: unknown): i is { runConfig: Partial<IRunConfig> } {
 }
 
 /**
+ * Whether `own` can record a value's wrapper against it. Everything `Taskish`
+ * admits is WeakMap-keyable — a pipe function included, which `typeof === "object"`
+ * alone would exclude, leaving its wrapper unnameable and so undisownable.
+ */
+function isOwnTrackable(i: unknown): i is object {
+  return i !== null && (typeof i === "object" || typeof i === "function");
+}
+
+/**
  * Responsible for running tasks
  * Manages the execution lifecycle of individual tasks
  */
@@ -532,17 +541,25 @@ export class TaskRunner<
 
   /**
    * Whether the wrapper {@link own} recorded for a value is still in the
-   * subgraph. A `regenerateGraph()` between runs empties the subgraph without
-   * touching {@link ownedWrappers}, so a recorded wrapper is not proof of
-   * current ownership — re-owning the same long-lived workflow on a re-run is
-   * legitimate, and only a wrapper still present is a genuine double-`own`.
+   * subgraph. Clearing the subgraph — a graph run's `resetGraph`, or an explicit
+   * `regenerateGraph()` — does not touch {@link ownedWrappers}, so a recorded
+   * wrapper is not proof of current ownership, and only one still present is a
+   * genuine double-`own`.
+   *
+   * Note this makes a *reset* the thing that licenses re-owning, not a re-run:
+   * a bare second `task.run()` leaves the subgraph populated, so re-owning the
+   * same value there is rejected — exactly as owning a plain `ITask` twice
+   * already was, by the duplicate subgraph id.
    */
   private isStillOwned(wrapper: ITask): boolean {
-    return this.task.hasChildren() && this.task.subGraph.getTask(wrapper.id) !== undefined;
+    // A map lookup, where `hasChildren()` would materialize the whole child
+    // array on every own/disown. Reading the subgraph cannot create a stray one
+    // here: a recorded wrapper means `own` already built it.
+    return this.task.subGraph.getTask(wrapper.id) !== undefined;
   }
 
   protected own<T extends Taskish<any, any>>(i: T, config: TaskConfig = {}): T {
-    const trackable = i !== null && typeof i === "object";
+    const trackable = isOwnTrackable(i);
     if (trackable) {
       // `ensureTask` returns a plain ITask as-is, so owning one twice throws on
       // the duplicate subgraph id. A graph or workflow is adapted into a *fresh*
@@ -605,7 +622,7 @@ export class TaskRunner<
    * is harmless.
    */
   protected disown<T extends Taskish<any, any>>(i: T): void {
-    if (i === null || typeof i !== "object") return;
+    if (!isOwnTrackable(i)) return;
     const wrapper = this.ownedWrappers.get(i);
     if (wrapper === undefined) return;
     // Drop the record even when the wrapper is already gone (a subgraph reset

@@ -53,6 +53,28 @@ describe("dataUriToBlob", () => {
     expect(await dataUriToBlob("data:text/plain,50%zz off")!.text()).toBe("50%zz off");
   });
 
+  // The body is percent-decoded before it is base64-decoded, so a base64 URI
+  // that round-tripped through `encodeURIComponent` (or a URL query) still
+  // decodes — `atob` on the raw `%3D` would throw and lose the payload.
+  test("percent-decodes a base64 payload before decoding it", async () => {
+    expect(await dataUriToBlob("data:text/plain;base64,SGVsbG8%3D")!.text()).toBe("Hello");
+    expect(await dataUriToBlob("data:text/plain;base64,PDw%2FPz8%2BPg%3D%3D")!.text()).toBe(
+      "<<???>>"
+    );
+  });
+
+  // The data-URL processor allows spaces between the `;` and `base64`; missing
+  // that spelling would hand back the base64 *text* as the blob's bytes.
+  test("recognizes base64 with spaces before the token", async () => {
+    const blob = dataUriToBlob("data:image/png; base64,SGVsbG8=");
+    expect(blob!.type).toBe("image/png");
+    expect(await blob!.text()).toBe("Hello");
+  });
+
+  test("trims whitespace around the header", () => {
+    expect(dataUriToBlob("data: text/plain ,hi")!.type).toBe("text/plain");
+  });
+
   test("defaults the mime type when the header omits one", async () => {
     const blob = dataUriToBlob("data:,plain");
     expect(blob!.type).toBe("text/plain");

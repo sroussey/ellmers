@@ -8,13 +8,12 @@ import type { ITask, TaskOutput } from "@workglow/task-graph";
 import { Task, TaskGraph } from "@workglow/task-graph";
 import { EventEmitter } from "@workglow/util";
 import { describe, expect, it } from "vitest";
+import type { CliTaskLine, IterationSlotRow } from "../ui/taskGraphCliSubscriptions";
 import {
   FULL_SLOT_TRACKING_MAX,
   MAX_RUNNING_ROWS,
   registerIterationListeners,
   subscribeTaskGraphForCli,
-  type CliTaskLine,
-  type IterationSlotRow,
 } from "../ui/taskGraphCliSubscriptions";
 
 // Minimal task stub: registerIterationListeners only touches `task.events`.
@@ -22,14 +21,12 @@ function makeTask(): { events: EventEmitter<Record<string, (...args: never[]) =>
   return { events: new EventEmitter() };
 }
 
-// Drives the React-style setState updater against a local Map so we can assert
-// the retained slot state after emitting iterator events.
-function makeSink() {
-  let state = new Map<string, IterationSlotRow[]>();
-  const setter = (
-    updater: (prev: Map<string, IterationSlotRow[]>) => Map<string, IterationSlotRow[]>
-  ) => {
-    state = updater(state);
+// Drives a React-style setState — value or updater, as the real Dispatch accepts
+// — against a local Map so we can assert the retained state after emitting events.
+function makeSink<V>() {
+  let state = new Map<string, V>();
+  const setter = (updater: Map<string, V> | ((prev: Map<string, V>) => Map<string, V>)) => {
+    state = typeof updater === "function" ? updater(state) : updater;
   };
   return { setter, get: () => state };
 }
@@ -37,7 +34,7 @@ function makeSink() {
 describe("registerIterationListeners", () => {
   it("keeps full completed/running/pending slots for small loops", () => {
     const task = makeTask();
-    const sink = makeSink();
+    const sink = makeSink<IterationSlotRow[]>();
     registerIterationListeners(task as unknown as ITask, "t1", sink.setter as never);
 
     const N = 5;
@@ -56,7 +53,7 @@ describe("registerIterationListeners", () => {
 
   it("tracks only running iterations (bounded) for huge loops", () => {
     const task = makeTask();
-    const sink = makeSink();
+    const sink = makeSink<IterationSlotRow[]>();
     registerIterationListeners(task as unknown as ITask, "big", sink.setter as never);
 
     const N = FULL_SLOT_TRACKING_MAX * 5000; // way past the full-tracking threshold
@@ -79,7 +76,7 @@ describe("registerIterationListeners", () => {
 
   it("updates progress in place for a running huge-loop iteration", () => {
     const task = makeTask();
-    const sink = makeSink();
+    const sink = makeSink<IterationSlotRow[]>();
     registerIterationListeners(task as unknown as ITask, "big", sink.setter as never);
 
     const N = 1_000_000;
@@ -101,24 +98,13 @@ describe("subscribeTaskGraphForCli", () => {
     }
   }
 
-  function makeInfoSink() {
-    let state = new Map<string, CliTaskLine>();
-    const setter = (
-      updater:
-        Map<string, CliTaskLine> | ((prev: Map<string, CliTaskLine>) => Map<string, CliTaskLine>)
-    ) => {
-      state = typeof updater === "function" ? updater(state) : updater;
-    };
-    return { setter, get: () => state };
-  }
-
   // The point of `disown` is bounding retention, so the UI that follows it must
   // not itself accumulate: an own/run/disown/own cycle over N jobs on one reused
   // task instance would otherwise stack a status+progress pair per cycle.
   it("drops a removed task's listeners so re-owning does not stack them", () => {
     const graph = new TaskGraph();
-    const infos = makeInfoSink();
-    const slots = makeSink();
+    const infos = makeSink<CliTaskLine>();
+    const slots = makeSink<IterationSlotRow[]>();
 
     const unsubscribe = subscribeTaskGraphForCli(
       graph,
@@ -163,8 +149,8 @@ describe("subscribeTaskGraphForCli", () => {
 
   it("clears a removed task's retained iteration slots", () => {
     const graph = new TaskGraph();
-    const infos = makeInfoSink();
-    const slots = makeSink();
+    const infos = makeSink<CliTaskLine>();
+    const slots = makeSink<IterationSlotRow[]>();
 
     const unsubscribe = subscribeTaskGraphForCli(
       graph,
@@ -194,8 +180,8 @@ describe("subscribeTaskGraphForCli", () => {
     const children = [new Noop(), new Noop()];
     for (const c of children) owner.subGraph.addTask(c);
 
-    const infos = makeInfoSink();
-    const slots = makeSink();
+    const infos = makeSink<CliTaskLine>();
+    const slots = makeSink<IterationSlotRow[]>();
     const unsubscribe = subscribeTaskGraphForCli(
       owner.subGraph,
       infos.setter as never,
@@ -219,8 +205,8 @@ describe("subscribeTaskGraphForCli", () => {
 
   it("detaches every task's listeners on unsubscribe", () => {
     const graph = new TaskGraph();
-    const infos = makeInfoSink();
-    const slots = makeSink();
+    const infos = makeSink<CliTaskLine>();
+    const slots = makeSink<IterationSlotRow[]>();
 
     const first = new Noop();
     const second = new Noop();
