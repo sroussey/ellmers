@@ -4,13 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ITask } from "@workglow/task-graph";
+import { Task, TaskGraph, type ITask } from "@workglow/task-graph";
 import { EventEmitter } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 import {
   FULL_SLOT_TRACKING_MAX,
   MAX_RUNNING_ROWS,
   registerIterationListeners,
+  subscribeTaskGraphForCli,
+  type CliTaskLine,
   type IterationSlotRow,
 } from "../ui/taskGraphCliSubscriptions";
 
@@ -30,6 +32,104 @@ function makeSink() {
   };
   return { setter, get: () => state };
 }
+
+// Same idea for the task-row map, which `subscribeTaskGraphForCli` also seeds
+// with a plain value (not only updater functions).
+function makeInfoSink() {
+  let state = new Map<string, CliTaskLine>();
+  const setter = (
+    update:
+      Map<string, CliTaskLine> | ((prev: Map<string, CliTaskLine>) => Map<string, CliTaskLine>)
+  ) => {
+    state = typeof update === "function" ? update(state) : update;
+  };
+  return { setter, get: () => state };
+}
+
+const SCHEMA = { type: "object", properties: {} } as never;
+
+class DisownableTask extends Task<Record<string, never>, Record<string, never>> {
+  static override readonly type = "DisownableTask";
+  static override readonly category = "Test";
+  static override readonly cacheable = false;
+  static override inputSchema(): never {
+    return SCHEMA;
+  }
+  static override outputSchema(): never {
+    return SCHEMA;
+  }
+  override async execute() {
+    return {};
+  }
+}
+
+describe("subscribeTaskGraphForCli task lifecycle", () => {
+  it("disposes a removed task's listeners", () => {
+    const graph = new TaskGraph();
+    const task = new DisownableTask();
+    graph.addTask(task as never);
+
+    const infos = makeInfoSink();
+    const slots = makeSink();
+    const unsubscribe = subscribeTaskGraphForCli(
+      graph,
+      infos.setter as never,
+      undefined,
+      () => {},
+      slots.setter as never
+    );
+
+    const id = String(task.id);
+    expect(infos.get().has(id)).toBe(true);
+    expect(task.events.listenerCount("status")).toBe(1);
+    expect(task.events.listenerCount("iteration_start")).toBe(1);
+
+    task.events.emit("iteration_start", 0, 3);
+    expect(slots.get().get(id)).toHaveLength(3);
+
+    // What `context.disown` does to the graph.
+    graph.removeTask(task.id);
+
+    expect(infos.get().has(id)).toBe(false);
+    // Not just the row: the slot key must go too, or the Map grows unbounded.
+    expect(slots.get().has(id)).toBe(false);
+    // The listeners are the strong reference that survives `disown` — they must
+    // be off the task, not merely detached from the graph.
+    expect(task.events.listenerCount("status")).toBe(0);
+    expect(task.events.listenerCount("progress")).toBe(0);
+    expect(task.events.listenerCount("iteration_start")).toBe(0);
+    expect(task.events.listenerCount("iteration_complete")).toBe(0);
+    expect(task.events.listenerCount("iteration_progress")).toBe(0);
+
+    // Inert, not merely unreferenced: a late event writes nothing back.
+    task.events.emit("iteration_start", 1, 3);
+    task.events.emit("status", "COMPLETED");
+    expect(slots.get().has(id)).toBe(false);
+    expect(infos.get().has(id)).toBe(false);
+
+    unsubscribe();
+  });
+
+  it("re-wires a task owned again after being disowned", () => {
+    const graph = new TaskGraph();
+    const task = new DisownableTask();
+    graph.addTask(task as never);
+
+    const infos = makeInfoSink();
+    const unsubscribe = subscribeTaskGraphForCli(graph, infos.setter as never, undefined, () => {});
+
+    const id = String(task.id);
+    graph.removeTask(task.id);
+    expect(infos.get().has(id)).toBe(false);
+
+    graph.addTask(task as never);
+    expect(infos.get().has(id)).toBe(true);
+    expect(task.events.listenerCount("status")).toBe(1);
+
+    unsubscribe();
+    expect(task.events.listenerCount("status")).toBe(0);
+  });
+});
 
 describe("registerIterationListeners", () => {
   it("keeps full completed/running/pending slots for small loops", () => {

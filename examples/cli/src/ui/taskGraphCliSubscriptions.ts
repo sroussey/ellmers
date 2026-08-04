@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ITask, TaskGraph, TaskIdType } from "@workglow/task-graph";
+import type { ITask, TaskGraph, TaskIdType, TaskStatus } from "@workglow/task-graph";
 import type { Dispatch, SetStateAction } from "react";
 
 export interface CliTaskLine {
@@ -76,14 +76,15 @@ export function sortIterationSlotsForDisplay(
   });
 }
 
+/** Returns a disposer — a task released with `context.disown` must not stay subscribed. */
 function registerTaskListeners(
   task: ITask,
   taskId: string,
   taskLabel: string,
   setTaskInfos: Dispatch<SetStateAction<Map<string, CliTaskLine>>>,
   appendCompletedLog?: (text: string) => void
-): void {
-  task.events.on("status", (status: string) => {
+): () => void {
+  const onStatus = (status: TaskStatus): void => {
     setTaskInfos((prev) => {
       const next = new Map(prev);
       const info = next.get(taskId);
@@ -95,9 +96,9 @@ function registerTaskListeners(
       }
       return next;
     });
-  });
+  };
 
-  task.events.on("progress", (progress: number | undefined, message?: string) => {
+  const onProgress = (progress: number | undefined, message?: string): void => {
     setTaskInfos((prev) => {
       const next = new Map(prev);
       const info = next.get(taskId);
@@ -106,7 +107,15 @@ function registerTaskListeners(
       }
       return next;
     });
-  });
+  };
+
+  task.events.on("status", onStatus);
+  task.events.on("progress", onProgress);
+
+  return () => {
+    task.events.off("status", onStatus);
+    task.events.off("progress", onProgress);
+  };
 }
 
 /**
@@ -282,13 +291,15 @@ export function subscribeTaskGraphForCli(
   }
   setTaskInfos(initial);
 
-  const wired = new Set<string>();
-  const iterationUnsubs: Array<() => void> = [];
+  // Keyed by task id so a removed task's listeners can actually be dropped —
+  // an append-only unsub array would keep a strong reference to every task the
+  // graph ever held (and its whole subtree), defeating `context.disown`.
+  // Doubles as the already-wired guard.
+  const taskUnsubs = new Map<string, () => void>();
 
   const wire = (task: ITask): void => {
     const taskId = String(task.id);
-    if (wired.has(taskId)) return;
-    wired.add(taskId);
+    if (taskUnsubs.has(taskId)) return;
     const taskType = (task as { type?: string }).type ?? "Unknown";
     const taskLabel = cliTaskLabel(task);
 
@@ -299,10 +310,15 @@ export function subscribeTaskGraphForCli(
       return next;
     });
 
-    registerTaskListeners(task, taskId, taskLabel, setTaskInfos, appendCompletedLog);
+    const unsubs: Array<() => void> = [
+      registerTaskListeners(task, taskId, taskLabel, setTaskInfos, appendCompletedLog),
+    ];
     if (setIterationSlots) {
-      iterationUnsubs.push(registerIterationListeners(task, taskId, setIterationSlots));
+      unsubs.push(registerIterationListeners(task, taskId, setIterationSlots));
     }
+    taskUnsubs.set(taskId, () => {
+      for (const u of unsubs) u();
+    });
   };
 
   for (const task of graph.getTasks()) {
@@ -315,18 +331,31 @@ export function subscribeTaskGraphForCli(
   };
 
   // A task released with `context.disown` is gone from the graph, so its row is
-  // stale — drop it, and un-wire the id so the same task owned again later
+  // stale — unsubscribe (dropping our last reference to it), drop the row and
+  // any iteration slots, and un-wire the id so the same task owned again later
   // (a reused node re-registered per batch) gets a fresh row rather than being
-  // silently skipped by the `wired` guard.
+  // silently skipped by the already-wired guard.
   const onTaskRemoved = (taskId: TaskIdType): void => {
     const id = String(taskId);
-    wired.delete(id);
+    const unsub = taskUnsubs.get(id);
+    if (unsub) {
+      unsub();
+      taskUnsubs.delete(id);
+    }
     setTaskInfos((prev) => {
       if (!prev.has(id)) return prev;
       const next = new Map(prev);
       next.delete(id);
       return next;
     });
+    if (setIterationSlots) {
+      setIterationSlots((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
+    }
   };
 
   const onGraphProgress = (progress: number | undefined): void => {
@@ -343,9 +372,10 @@ export function subscribeTaskGraphForCli(
   graph.on("start", onGraphStart);
 
   return () => {
-    for (const u of iterationUnsubs) {
+    for (const u of taskUnsubs.values()) {
       u();
     }
+    taskUnsubs.clear();
     graph.off("task_added", onTaskAdded);
     graph.off("task_removed", onTaskRemoved);
     graph.off("graph_progress", onGraphProgress);
