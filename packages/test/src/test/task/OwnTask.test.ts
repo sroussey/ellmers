@@ -230,6 +230,40 @@ describe("Task own functionality", () => {
       expect(task.subGraph.getTasks().map((t) => t.title)).toEqual(["Shared"]);
     });
 
+    // A wrapper can leave the subgraph without going through `disown` — a
+    // direct `removeTask`, or the `regenerateGraph()` clear between runs. The
+    // record is then stale, and disowning it must not try to remove an id the
+    // graph no longer has.
+    it("is a no-op when the wrapper was already removed by other means", async () => {
+      class ExternalRemovalTask extends Task {
+        public static override readonly type = "ExternalRemovalTask";
+        public static override readonly title = "External removal";
+
+        public thrown: unknown;
+
+        override async execute(_input: TaskOutput, context: IExecuteContext): Promise<TaskOutput> {
+          const a = context.own(new Workflow(), { title: "A" });
+          context.own(new Workflow(), { title: "B" });
+          // Drop A's wrapper directly. B's remains, so the subgraph is still
+          // non-empty and a `hasChildren()`-only guard would wave this through.
+          const wrapperA = this.subGraph.getTasks().find((t) => t.title === "A")!;
+          this.subGraph.removeTask(wrapperA.id);
+          try {
+            context.disown(a);
+          } catch (err) {
+            this.thrown = err;
+          }
+          return {};
+        }
+      }
+
+      const task = new ExternalRemovalTask();
+      await task.run();
+
+      expect(task.thrown).toBeUndefined();
+      expect(task.subGraph.getTasks().map((t) => t.title)).toEqual(["B"]);
+    });
+
     it("is a no-op for a value this context never owned", async () => {
       class StrayDisownTask extends Task {
         public static override readonly type = "StrayDisownTask";

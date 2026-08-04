@@ -174,6 +174,37 @@ describe("subscribeTaskGraphForCli", () => {
     unsubscribe();
   });
 
+  // `useSubtaskRows` points this same subscription at a task's subGraph, and
+  // that graph is cleared task-by-task by `regenerateGraph()` between runs —
+  // a removal path that never goes through `disown`.
+  it("detaches listeners when a subgraph is cleared by regenerateGraph", () => {
+    const owner = new Noop();
+    const children = [new Noop(), new Noop()];
+    for (const c of children) owner.subGraph.addTask(c);
+
+    const infos = makeInfoSink();
+    const slots = makeSink();
+    const unsubscribe = subscribeTaskGraphForCli(
+      owner.subGraph,
+      infos.setter as never,
+      undefined,
+      () => {},
+      slots.setter as never
+    );
+    expect(infos.get().size).toBe(2);
+
+    owner.regenerateGraph();
+
+    expect(infos.get().size).toBe(0);
+    for (const c of children) {
+      expect(c.events.listenerCount("status")).toBe(0);
+      expect(c.events.listenerCount("progress")).toBe(0);
+      expect(c.events.listenerCount("iteration_start")).toBe(0);
+    }
+
+    unsubscribe();
+  });
+
   it("detaches every task's listeners on unsubscribe", () => {
     const graph = new TaskGraph();
     const infos = makeInfoSink();
