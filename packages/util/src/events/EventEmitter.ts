@@ -99,7 +99,14 @@ export class EventEmitter<EventListenerTypes extends Record<string, (...args: an
   }
 
   /**
-   * Adds a listener function for the event
+   * Adds a listener function for the event.
+   *
+   * Registering the same function reference twice is a no-op: `off` removes a
+   * single entry, so a double-`on` would otherwise leave a subscription behind
+   * that no caller can unhook. This deliberately diverges from Node's
+   * `EventEmitter`, which does duplicate. A `once` registration of the same
+   * function stays a separate subscription.
+   *
    * @param event - The event name to listen for
    * @param listener - The listener function to add
    * @returns this, so that calls can be chained
@@ -110,6 +117,7 @@ export class EventEmitter<EventListenerTypes extends Record<string, (...args: an
   ): this {
     const listeners: EventListeners<EventListenerTypes, Event> =
       this.listeners[event] || (this.listeners[event] = []);
+    if (listeners.some((l) => l.listener === listener && !l.once)) return this;
     listeners.push({ listener });
     this.checkMaxListeners(event, listeners.length);
     return this;

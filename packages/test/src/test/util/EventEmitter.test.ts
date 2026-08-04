@@ -61,6 +61,41 @@ describe("EventEmitter", () => {
       expect(listener).toHaveBeenCalledWith("test", 42, true);
     });
 
+    it("should ignore a duplicate registration of the same listener reference", () => {
+      const listener = mock((value: string) => {});
+
+      emitter.on("test", listener);
+      emitter.on("test", listener);
+
+      expect(emitter.listenerCount("test")).toBe(1);
+
+      emitter.emit("test", "hello");
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      // A single `off` therefore fully unsubscribes — no orphaned duplicate.
+      emitter.off("test", listener);
+      expect(emitter.listenerCount("test")).toBe(0);
+      emitter.emit("test", "again");
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it("should keep an `on` and a `once` of the same listener as separate subscriptions", () => {
+      const listener = mock((value: string) => {});
+
+      emitter.on("test", listener);
+      emitter.once("test", listener);
+
+      expect(emitter.listenerCount("test")).toBe(2);
+
+      emitter.emit("test", "hello");
+      expect(listener).toHaveBeenCalledTimes(2);
+
+      // The `once` entry is consumed; the `on` entry survives.
+      expect(emitter.listenerCount("test")).toBe(1);
+      emitter.emit("test", "again");
+      expect(listener).toHaveBeenCalledTimes(3);
+    });
+
     it("should handle events with no arguments", () => {
       const listener = mock(() => {});
 
