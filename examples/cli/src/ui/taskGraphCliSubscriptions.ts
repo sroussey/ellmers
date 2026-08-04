@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ITask, TaskGraph, TaskIdType } from "@workglow/task-graph";
+import type { ITask, TaskGraph, TaskIdType, TaskStatus } from "@workglow/task-graph";
 import type { Dispatch, SetStateAction } from "react";
 
 export interface CliTaskLine {
@@ -84,7 +84,7 @@ function registerTaskListeners(
   setTaskInfos: Dispatch<SetStateAction<Map<string, CliTaskLine>>>,
   appendCompletedLog?: (text: string) => void
 ): () => void {
-  const onStatus = (status: string): void => {
+  const onStatus = (status: TaskStatus): void => {
     setTaskInfos((prev) => {
       const next = new Map(prev);
       const info = next.get(taskId);

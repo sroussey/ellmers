@@ -141,10 +141,22 @@ describe("subscribeTaskGraphForCli", () => {
 
       graph.removeTask(task.id);
       expect(infos.get().has(id)).toBe(false);
-      expect(task.events.listenerCount("status")).toBe(0);
-      expect(task.events.listenerCount("progress")).toBe(0);
-      expect(task.events.listenerCount("iteration_start")).toBe(0);
+      for (const ev of [
+        "status",
+        "progress",
+        "iteration_start",
+        "iteration_complete",
+        "iteration_progress",
+      ] as const) {
+        expect(task.events.listenerCount(ev)).toBe(0);
+      }
     }
+
+    // Inert, not merely detached: a late event writes nothing back.
+    task.events.emit("status", "COMPLETED" as never);
+    task.events.emit("iteration_start", 0 as never, 3 as never);
+    expect(infos.get().has(id)).toBe(false);
+    expect(slots.get().has(id)).toBe(false);
 
     unsubscribe();
   });
