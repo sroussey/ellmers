@@ -207,6 +207,9 @@ export const LlamaCpp_Chat_Stream: AiProviderRunFn<
       }
     }
     await promptPromise;
+    // No `usage`: node-llama-cpp runs the model locally and surfaces no token
+    // accounting on its prompt API. Absent is the honest answer — a zero would
+    // read as "billed nothing" rather than "reported nothing".
     emit({ type: "finish", data: {} as AiChatProviderOutput });
   });
 };
