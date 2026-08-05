@@ -4,10 +4,50 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { GeminiModelConfig } from "@workglow/google-gemini/ai";
 import { _testOnly } from "@workglow/google-gemini/ai";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { isGeminiCachedContentNotFoundError, generateGeminiStreamWithCacheFallback } = _testOnly;
+const {
+  isGeminiCachedContentNotFoundError,
+  generateGeminiStreamWithCacheFallback,
+  setGeminiCachedContent,
+  getGeminiCachedContent,
+  cacheStoreTestOnly,
+  setGeminiClientForTests,
+} = _testOnly;
+
+const testModel = {
+  name: "gemini-test",
+  provider_config: { model_name: "gemini-2.5-flash", api_key: "test-key" },
+} as unknown as GeminiModelConfig;
+
+// Offline stand-in so the eviction path's best-effort server delete never
+// loads the SDK or reaches the network.
+const fakeGeminiClient = {
+  caches: {
+    delete: async () => {},
+  },
+} as never;
+
+/** Seeds a store entry so eviction (or its absence) is observable. */
+function seedCacheEntry(id: string): void {
+  setGeminiCachedContent(id, {
+    name: `cachedContents/${id}`,
+    model: testModel,
+    systemPrompt: undefined,
+  });
+}
+
+beforeEach(() => {
+  setGeminiClientForTests(fakeGeminiClient);
+  cacheStoreTestOnly.clearForTests();
+});
+
+afterEach(() => {
+  setGeminiClientForTests(undefined);
+  cacheStoreTestOnly.clearForTests();
+});
 
 describe("isGeminiCachedContentNotFoundError", () => {
   describe("true — scoped CachedContent NOT_FOUND", () => {
@@ -74,16 +114,20 @@ describe("isGeminiCachedContentNotFoundError", () => {
 });
 
 describe("generateGeminiStreamWithCacheFallback", () => {
-  it("evicts + retries once on a scoped CachedContent NOT_FOUND", async () => {
-    // deleteGeminiCachedContent is a no-op when the store has no entry (we
-    // never seed one), so no need to mock the cache-store seam here — the
-    // test's contract is on the buildRequest / runStream call pattern.
+  it("retries once WITHOUT the handle and evicts only after the retry succeeds", async () => {
+    seedCacheEntry("chk-A");
     const runStream = vi
       .fn<(request: Record<string, unknown>) => Promise<string>>()
       .mockImplementationOnce(async () => {
+        // The entry must still be present when the retry is issued: eviction
+        // is the consequence of the retry, never a precondition for it.
+        expect(getGeminiCachedContent("chk-A")).toBeDefined();
         throw { status: 404, message: "cachedContents/chk-A not found" };
       })
-      .mockImplementationOnce(async () => "retry-ok");
+      .mockImplementationOnce(async () => {
+        expect(getGeminiCachedContent("chk-A")).toBeDefined();
+        return "retry-ok";
+      });
     const buildRequest = vi
       .fn<(useCachedContent: boolean) => Record<string, unknown>>()
       .mockImplementation((useCache) => ({ useCache }));
@@ -100,9 +144,45 @@ describe("generateGeminiStreamWithCacheFallback", () => {
     expect(buildRequest).toHaveBeenNthCalledWith(1, true);
     expect(buildRequest).toHaveBeenNthCalledWith(2, false);
     expect(runStream).toHaveBeenCalledTimes(2);
+    // The retry proved the handle was the problem, so the entry is gone.
+    expect(getGeminiCachedContent("chk-A")).toBeUndefined();
   });
 
-  it("does NOT evict or retry on a non-CachedContent NOT_FOUND (model-not-found)", async () => {
+  it("keeps the entry and propagates the retry error when the cache-free retry ALSO fails", async () => {
+    seedCacheEntry("chk-B");
+    const runStream = vi
+      .fn<(request: Record<string, unknown>) => Promise<string>>()
+      .mockImplementationOnce(async () => {
+        throw { status: 404, message: "cachedContents/chk-B not found" };
+      })
+      .mockImplementationOnce(async () => {
+        throw { status: 500, message: "backend unavailable" };
+      });
+    const buildRequest = vi
+      .fn<(useCachedContent: boolean) => Record<string, unknown>>()
+      .mockImplementation((useCache) => ({ useCache }));
+
+    // The retry error propagates, not the original NOT_FOUND: the cache-free
+    // request is the terminal, cache-independent failure.
+    await expect(
+      generateGeminiStreamWithCacheFallback({
+        useCachedContent: true,
+        checkpointId: "chk-B",
+        buildRequest,
+        runStream,
+      })
+    ).rejects.toMatchObject({ status: 500, message: "backend unavailable" });
+
+    expect(buildRequest).toHaveBeenCalledTimes(2);
+    expect(buildRequest).toHaveBeenNthCalledWith(2, false);
+    expect(runStream).toHaveBeenCalledTimes(2);
+    // The handle was not what broke the call, so the shared entry survives for
+    // its other consumers instead of forcing them into a full re-encode.
+    expect(getGeminiCachedContent("chk-B")).toBeDefined();
+  });
+
+  it("does NOT retry or evict on a non-CachedContent NOT_FOUND (model-not-found)", async () => {
+    seedCacheEntry("chk-C");
     const runStream = vi.fn(async () => {
       throw { status: 400, message: "The requested model 'gemini-x-nope' was not found." };
     });
@@ -111,7 +191,7 @@ describe("generateGeminiStreamWithCacheFallback", () => {
     await expect(
       generateGeminiStreamWithCacheFallback({
         useCachedContent: true,
-        checkpointId: "chk-A",
+        checkpointId: "chk-C",
         buildRequest,
         runStream,
       })
@@ -119,18 +199,20 @@ describe("generateGeminiStreamWithCacheFallback", () => {
 
     expect(buildRequest).toHaveBeenCalledTimes(1);
     expect(runStream).toHaveBeenCalledTimes(1);
+    expect(getGeminiCachedContent("chk-C")).toBeDefined();
   });
 
-  it("does NOT evict or retry when useCachedContent is false, even on a cache-scoped NOT_FOUND", async () => {
+  it("does NOT retry or evict when useCachedContent is false, even on a cache-scoped NOT_FOUND", async () => {
+    seedCacheEntry("chk-D");
     const runStream = vi.fn(async () => {
-      throw { status: 404, message: "cachedContents/chk-A not found" };
+      throw { status: 404, message: "cachedContents/chk-D not found" };
     });
     const buildRequest = vi.fn((useCache: boolean) => ({ useCache }));
 
     await expect(
       generateGeminiStreamWithCacheFallback({
         useCachedContent: false,
-        checkpointId: "chk-A",
+        checkpointId: "chk-D",
         buildRequest,
         runStream,
       })
@@ -138,9 +220,10 @@ describe("generateGeminiStreamWithCacheFallback", () => {
 
     expect(buildRequest).toHaveBeenCalledTimes(1);
     expect(runStream).toHaveBeenCalledTimes(1);
+    expect(getGeminiCachedContent("chk-D")).toBeDefined();
   });
 
-  it("does NOT evict or retry when no checkpointId is supplied", async () => {
+  it("does NOT retry or evict when no checkpointId is supplied", async () => {
     const runStream = vi.fn(async () => {
       throw { status: 404, message: "cachedContents/mystery not found" };
     });

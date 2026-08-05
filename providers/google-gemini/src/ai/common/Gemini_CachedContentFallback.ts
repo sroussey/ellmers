@@ -12,14 +12,15 @@ import { deleteGeminiCachedContent } from "./Gemini_CacheStore";
  * signal. A cachedContent that TTL-expires or is disposed elsewhere between
  * the consumer's proactive check and the API call surfaces as a NOT_FOUND
  * from `generateContentStream`; when the pending request references that
- * entry, the fallback is to evict and retry inline (see
- * {@link generateGeminiStreamWithCacheFallback}). ANY other error — a model
- * misconfiguration ("model not found"), a missing File part, a tokenizer /
- * function-declaration message, a 404 on an unrelated URL — must NOT trigger
- * that fallback, or the caller's still-valid CachedContent entry will be
- * destroyed (and every OTHER consumer of the same checkpoint will silently
- * pay the full re-encode cost on their next call) while the request retries
- * doomed to fail the same way.
+ * entry, the fallback is to retry inline WITHOUT the handle (see
+ * {@link generateGeminiStreamWithCacheFallback}).
+ *
+ * A false positive here no longer destroys shared state — eviction is gated on
+ * the retry actually succeeding — but it still buys a second, doomed API call
+ * for an error the handle had nothing to do with, so the matcher stays tight.
+ * A model misconfiguration ("model not found"), a missing File part, a
+ * tokenizer / function-declaration message, or a 404 on an unrelated URL must
+ * NOT trigger the fallback: those cost one call instead of two.
  *
  * A hit therefore requires BOTH signals:
  *  1. a structured NOT_FOUND (`status === 404` OR `status === "NOT_FOUND"` OR
@@ -82,9 +83,21 @@ interface ExecuteWithFallbackParams<TStream> {
 /**
  * Runs `generateContentStream` with the reactive NOT_FOUND fallback: if the
  * initial request references a `cachedContent` handle and the API returns a
- * NOT_FOUND SCOPED TO CACHEDCONTENT, evict the store entry (locally + best-
- * effort server delete), rebuild the request inline, and retry **once**. All
- * other errors — including a NOT_FOUND for a model / file / tokenizer /
+ * NOT_FOUND SCOPED TO CACHEDCONTENT, rebuild the request without the handle
+ * and retry **once** inline.
+ *
+ * The retry's OUTCOME — not the error match — decides the fate of the shared
+ * cache entry, so nothing about the entry is guessed up front:
+ *
+ *  - retry succeeds → the handle really was the problem, so evict the entry
+ *    now (locally + best-effort server delete) and later requests stop paying
+ *    the doomed first call;
+ *  - retry fails too → the handle was NOT the problem, so the entry is left
+ *    intact. A matcher false positive therefore costs exactly one extra API
+ *    call and never destroys a still-valid checkpoint that other consumers
+ *    would have to re-encode from scratch.
+ *
+ * All other errors — including a NOT_FOUND for a model / file / tokenizer /
  * unrelated URL, or a NOT_FOUND on a request that was never using cached
  * content — propagate untouched; if a debug-level logger is installed a
  * one-liner records that the propagating error was NOT treated as a cache
@@ -111,11 +124,30 @@ export async function generateGeminiStreamWithCacheFallback<TStream>(
       );
       throw err;
     }
-    getLogger().debug("Gemini cachedContent NOT_FOUND; replaying inline");
-    // Best-effort: also releases the server-side handle if it happens to still
-    // exist; on a genuine NOT_FOUND this is a no-op the helper swallows.
-    await deleteGeminiCachedContent(checkpointId);
+    getLogger().debug("Gemini cachedContent NOT_FOUND; replaying inline before deciding to evict");
     const retryRequest = buildRequest(false);
-    return await runStream(retryRequest);
+    let result: TStream;
+    try {
+      result = await runStream(retryRequest);
+    } catch (retryErr) {
+      const anyErr = err as { status?: unknown; code?: unknown };
+      // The cache-free request failed too, so the handle was not what broke
+      // this call and the entry stays. Propagate the RETRY error rather than
+      // the original NOT_FOUND: the retry is the terminal, cache-independent
+      // failure and describes the request the caller actually wants to
+      // succeed, whereas the original would send them chasing a phantom cache
+      // problem. The original's classification is kept in the debug line so
+      // the discarded signal stays diagnosable.
+      getLogger().debug(
+        "Gemini inline replay failed too; keeping the CachedContent entry and propagating the retry error",
+        { originalStatus: anyErr?.status, originalCode: anyErr?.code }
+      );
+      throw retryErr;
+    }
+    // The retry proved the handle was the problem. Best-effort delete: it also
+    // releases the server-side handle if it happens to still exist, and on a
+    // genuine NOT_FOUND it is a no-op the helper swallows.
+    await deleteGeminiCachedContent(checkpointId);
+    return result;
   }
 }

@@ -680,7 +680,7 @@ describe("Gemini cache checkpoint warm-up error classification", () => {
   });
 });
 describe("Gemini cachedContent NOT_FOUND fallback (text.generation)", () => {
-  it("evicts and retries inline once on a 404 NOT_FOUND", async () => {
+  it("retries inline once on a cache-scoped 404 and evicts after the retry succeeds", async () => {
     const checkpointId = "not-found-text";
     setGeminiCachedContent(checkpointId, {
       name: "cachedContents/text",
@@ -736,7 +736,35 @@ describe("Gemini cachedContent NOT_FOUND fallback (text.generation)", () => {
 });
 
 describe("Gemini cachedContent NOT_FOUND fallback (tool-use)", () => {
-  it("evicts and retries inline once on a NOT_FOUND", async () => {
+  /**
+   * The thrown error must be scoped to the cache (a `cachedContents/<id>`
+   * mention) for the matcher to recognize it. A bare `{status: 404, code:
+   * "NOT_FOUND", message: "cache not found"}` is deliberately NOT a hit — that
+   * is a common non-cache failure shape, and treating it as one would buy a
+   * second doomed call on every unrelated 404.
+   */
+  const cacheNotFoundError = (): Error =>
+    Object.assign(new Error("cachedContents/tool NOT_FOUND"), {
+      status: 404,
+      code: "NOT_FOUND",
+    });
+
+  const toolSession = (checkpointId: string): AiSessionContext => ({
+    sessionId: checkpointId,
+    prefix: {
+      tools: cachedTools,
+      messages: [{ role: "user", content: [{ type: "text", text: "prefix" }] }],
+    },
+  });
+
+  const toolInput: ToolCallingTaskInput = {
+    model: "gemini-test",
+    prompt: "run tool",
+    tools: cachedTools,
+    toolChoice: "auto",
+  };
+
+  it("retries inline once on a cache-scoped NOT_FOUND and evicts after the retry succeeds", async () => {
     const checkpointId = "not-found-tool";
     setGeminiCachedContent(checkpointId, {
       name: "cachedContents/tool",
@@ -750,30 +778,23 @@ describe("Gemini cachedContent NOT_FOUND fallback (tool-use)", () => {
         requests.push(request);
         call += 1;
         if (call === 1) {
-          throw Object.assign(new Error("cache not found"), {
-            status: 404,
-            code: "NOT_FOUND",
-          });
+          // The entry is still present while the retry is being built —
+          // eviction follows the retry, it does not precede it.
+          expect(getGeminiCachedContent(checkpointId)).toBeDefined();
+          throw cacheNotFoundError();
         }
         return { async *[Symbol.asyncIterator]() {} };
       },
     });
     const runFn = findGeminiRunFn("tool-use");
-    const tools = cachedTools;
-    const input: ToolCallingTaskInput = {
-      model: "gemini-test",
-      prompt: "run tool",
-      tools,
-      toolChoice: "auto",
-    };
-    const session: AiSessionContext = {
-      sessionId: checkpointId,
-      prefix: {
-        tools,
-        messages: [{ role: "user", content: [{ type: "text", text: "prefix" }] }],
-      },
-    };
-    await runFn(input, testModel, new AbortController().signal, () => {}, undefined, session);
+    await runFn(
+      toolInput,
+      testModel,
+      new AbortController().signal,
+      () => {},
+      undefined,
+      toolSession(checkpointId)
+    );
     expect(requests).toHaveLength(2);
     expect((requests[0].config as Record<string, unknown>).cachedContent).toBe(
       "cachedContents/tool"
@@ -784,7 +805,72 @@ describe("Gemini cachedContent NOT_FOUND fallback (tool-use)", () => {
     };
     expect(retryConfig.cachedContent).toBeUndefined();
     expect(retryConfig.tools).toBeDefined();
+    // The cache-free retry succeeded, so the handle was the problem: evict it.
     expect(getGeminiCachedContent(checkpointId)).toBeUndefined();
+  });
+
+  it("keeps the entry when the cache-free retry also fails, and propagates the retry error", async () => {
+    const checkpointId = "not-found-tool-retry-fails";
+    setGeminiCachedContent(checkpointId, {
+      name: "cachedContents/tool",
+      model: testModel,
+      systemPrompt: undefined,
+    });
+    const requests: Record<string, unknown>[] = [];
+    let call = 0;
+    installGeminiClient({
+      generateContentStream: async (request) => {
+        requests.push(request);
+        call += 1;
+        if (call === 1) throw cacheNotFoundError();
+        throw Object.assign(new Error("backend unavailable"), { status: 500 });
+      },
+    });
+    const runFn = findGeminiRunFn("tool-use");
+    await expect(
+      runFn(
+        toolInput,
+        testModel,
+        new AbortController().signal,
+        () => {},
+        undefined,
+        toolSession(checkpointId)
+      )
+    ).rejects.toMatchObject({ status: 500, message: "backend unavailable" });
+    expect(requests).toHaveLength(2);
+    expect((requests[1].config as Record<string, unknown>).cachedContent).toBeUndefined();
+    // The handle was not what broke the call, so the still-valid entry stays
+    // put instead of forcing every other consumer into a full re-encode.
+    expect(getGeminiCachedContent(checkpointId)).toBeDefined();
+  });
+
+  it("does not retry or evict on a NOT_FOUND that is not scoped to the cache", async () => {
+    const checkpointId = "not-found-tool-unscoped";
+    setGeminiCachedContent(checkpointId, {
+      name: "cachedContents/tool",
+      model: testModel,
+      systemPrompt: undefined,
+    });
+    const requests: Record<string, unknown>[] = [];
+    installGeminiClient({
+      generateContentStream: async (request) => {
+        requests.push(request);
+        throw Object.assign(new Error("cache not found"), { status: 404, code: "NOT_FOUND" });
+      },
+    });
+    const runFn = findGeminiRunFn("tool-use");
+    await expect(
+      runFn(
+        toolInput,
+        testModel,
+        new AbortController().signal,
+        () => {},
+        undefined,
+        toolSession(checkpointId)
+      )
+    ).rejects.toMatchObject({ status: 404 });
+    expect(requests).toHaveLength(1);
+    expect(getGeminiCachedContent(checkpointId)).toBeDefined();
   });
 });
 
