@@ -8,10 +8,12 @@ import type {
   AiProviderRunFn,
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
+  Usage,
 } from "@workglow/ai";
 import { parsePartialJson } from "@workglow/util/worker";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getOllamaModelName } from "./Ollama_ModelUtil";
+import { mapOllamaUsage } from "./Ollama_Usage";
 
 type GetClient = (model: OllamaModelConfig | undefined) => Promise<any>;
 
@@ -54,10 +56,12 @@ export function createOllamaStructuredGenerationStream(
     const onAbort = (): void => stream.abort();
     signal?.addEventListener("abort", onAbort, { once: true });
     let accumulatedJson = "";
+    let usage: Usage | undefined;
     try {
       if (signal?.aborted) stream.abort();
       signal?.throwIfAborted?.();
       for await (const chunk of stream) {
+        usage = mapOllamaUsage(chunk) ?? usage;
         const delta = chunk.message.content;
         if (delta) {
           accumulatedJson += delta;
@@ -77,6 +81,10 @@ export function createOllamaStructuredGenerationStream(
     } catch {
       finalObject = parsePartialJson(accumulatedJson) ?? {};
     }
-    emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
+    emit({
+      type: "finish",
+      data: { object: finalObject } as StructuredGenerationTaskOutput,
+      usage,
+    });
   };
 }
