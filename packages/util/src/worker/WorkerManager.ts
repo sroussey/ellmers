@@ -6,7 +6,7 @@
 
 import { createServiceToken, globalServiceRegistry } from "../di";
 import { getLogger } from "../logging";
-import { scrubStack, stackScrubRoots } from "./scrubStack";
+import { rehydrateWorkerError } from "./scrubStack";
 
 export class WorkerManager {
   private workers: Map<string, Worker> = new Map();
@@ -272,22 +272,7 @@ export class WorkerManager {
           } else if (type === "error") {
             cleanup();
             getLogger().debug(`Worker ${workerName} function ${functionName} error.`, { data });
-            // Defense-in-depth — a third-party worker that didn't go
-            // through our scrubbing postError may still ship absolute paths
-            // in `data.stack`. Re-scrub with the manager process's cwd
-            // before handing the rehydrated Error to the caller.
-            const scrubbedStack =
-              typeof data === "object" && data !== null && typeof data.stack === "string"
-                ? scrubStack(data.stack, stackScrubRoots())
-                : undefined;
-            const err =
-              typeof data === "object" && data !== null
-                ? Object.assign(new Error(data.message ?? String(data)), {
-                    name: data.name ?? "Error",
-                    ...(scrubbedStack !== undefined ? { stack: scrubbedStack } : {}),
-                  })
-                : new Error(String(data));
-            reject(err);
+            reject(rehydrateWorkerError(data));
           }
         };
 
@@ -468,13 +453,7 @@ export class WorkerManager {
           queue.push({ kind: "done" });
           notify();
         } else if (type === "error") {
-          const err =
-            typeof data === "object" && data !== null
-              ? Object.assign(new Error(data.message ?? String(data)), {
-                  name: data.name ?? "Error",
-                })
-              : new Error(String(data));
-          queue.push({ kind: "error", error: err });
+          queue.push({ kind: "error", error: rehydrateWorkerError(data) });
           notify();
         }
       };
@@ -582,13 +561,7 @@ export class WorkerManager {
           // path's terminal message, with `data: undefined` indicating completion.
           resolveFn();
         } else if (type === "error") {
-          const err =
-            typeof data === "object" && data !== null
-              ? Object.assign(new Error(data.message ?? String(data)), {
-                  name: data.name ?? "Error",
-                })
-              : new Error(String(data));
-          rejectFn(err);
+          rejectFn(rehydrateWorkerError(data));
         }
       };
 
