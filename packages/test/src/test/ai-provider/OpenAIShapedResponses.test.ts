@@ -448,3 +448,79 @@ describe("parseResponsesToolCalls", () => {
     expect(calls).toEqual([{ id: "call_0", name: "fn", input: {} }]);
   });
 });
+
+/**
+ * `response.completed` used to fall into the `default:` arm and be discarded,
+ * which threw away the only usage report the Responses API sends.
+ */
+describe("accumulateOpenAIResponsesStream usage", () => {
+  async function usageOf(list: readonly unknown[]) {
+    return accumulateOpenAIResponsesStream(events(list), () => {});
+  }
+
+  it("returns the token accounting from the terminal response.completed event", async () => {
+    const usage = await usageOf([
+      { type: "response.output_text.delta", delta: "hi" },
+      {
+        type: "response.completed",
+        response: {
+          usage: {
+            input_tokens: 120,
+            output_tokens: 34,
+            total_tokens: 154,
+            input_tokens_details: { cached_tokens: 64, cache_write_tokens: 16 },
+            output_tokens_details: { reasoning_tokens: 20 },
+          },
+        },
+      },
+    ]);
+    expect(usage).toEqual({
+      input: 120,
+      output: 34,
+      cached: 64,
+      cacheWrite: 16,
+      reasoning: 20,
+      total: 154,
+      extra: undefined,
+    });
+  });
+
+  it("returns undefined when the stream never reports usage", async () => {
+    expect(
+      await usageOf([
+        { type: "response.output_text.delta", delta: "hi" },
+        { type: "response.completed" },
+      ])
+    ).toBeUndefined();
+  });
+
+  it("leaves counters the response omitted as undefined, never 0", async () => {
+    const usage = await usageOf([
+      { type: "response.completed", response: { usage: { input_tokens: 7, output_tokens: 3 } } },
+    ]);
+    expect(usage).toEqual({
+      input: 7,
+      output: 3,
+      cached: undefined,
+      cacheWrite: undefined,
+      reasoning: undefined,
+      total: undefined,
+      extra: undefined,
+    });
+  });
+
+  it("still records usage for an incomplete or failed response", async () => {
+    for (const type of ["response.incomplete", "response.failed"]) {
+      const usage = await usageOf([{ type, response: { usage: { input_tokens: 9 } } }]);
+      expect(usage?.input, `${type} consumed tokens and must report them`).toBe(9);
+    }
+  });
+
+  it("keeps a genuinely reported zero", async () => {
+    const usage = await usageOf([
+      { type: "response.completed", response: { usage: { input_tokens: 0, output_tokens: 0 } } },
+    ]);
+    expect(usage?.input).toBe(0);
+    expect(usage?.output).toBe(0);
+  });
+});

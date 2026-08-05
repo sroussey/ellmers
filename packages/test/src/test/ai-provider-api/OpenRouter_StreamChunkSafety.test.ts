@@ -145,4 +145,78 @@ describe("OpenRouter streaming run-fns tolerate SDK chunks without choices/delta
       });
     }
   });
+
+  // Turning on `include_usage` is what appends the terminal `choices: []` frame
+  // these suites guard against, so the usage assertions belong right here.
+  describe("usage from the terminal include_usage frame", () => {
+    const requestBody = (): Record<string, unknown> =>
+      JSON.parse(String((fetchSpy.mock.calls[0]?.[1] as RequestInit).body));
+
+    it("asks for usage and carries OpenRouter's cost through extra", async () => {
+      fetchSpy.mockResolvedValueOnce(
+        sseResponse([
+          { choices: [{ delta: { content: "hi" } }] },
+          {
+            choices: [],
+            usage: {
+              prompt_tokens: 44,
+              completion_tokens: 12,
+              total_tokens: 56,
+              cost: 0.00031,
+            },
+          },
+        ])
+      );
+
+      const events: any[] = [];
+      await textSummaryFn({ text: "input" } as any, model, new AbortController().signal, (e) =>
+        events.push(e)
+      );
+
+      expect(requestBody().stream_options).toEqual({ include_usage: true });
+      expect(events.at(-1).usage).toEqual({
+        input: 44,
+        output: 12,
+        cached: undefined,
+        cacheWrite: undefined,
+        reasoning: undefined,
+        total: 56,
+        extra: { cost: 0.00031 },
+      });
+    });
+
+    it("leaves usage absent when the stream never reports it", async () => {
+      fetchSpy.mockResolvedValueOnce(sseResponse([{ choices: [{ delta: { content: "hi" } }] }]));
+
+      const events: any[] = [];
+      await textSummaryFn({ text: "input" } as any, model, new AbortController().signal, (e) =>
+        events.push(e)
+      );
+
+      expect(events.at(-1).usage).toBeUndefined();
+    });
+
+    it("still assembles the object when a usage frame trails a structured stream", async () => {
+      fetchSpy.mockResolvedValueOnce(
+        sseResponse([
+          { choices: [{ delta: { content: '{"a":' } }] },
+          { choices: [{ delta: { content: "1}" } }] },
+          { choices: [], usage: { prompt_tokens: 3, completion_tokens: 4 } },
+        ])
+      );
+
+      const events: any[] = [];
+      await structuredGenFn(
+        { prompt: "hi", outputSchema: strictObjectSchema } as any,
+        model,
+        new AbortController().signal,
+        (e) => events.push(e)
+      );
+
+      const finish = events.at(-1);
+      expect(finish.data.object).toEqual({ a: 1 });
+      expect(finish.usage.input).toBe(3);
+      expect(finish.usage.cached).toBeUndefined();
+    });
+  });
 });

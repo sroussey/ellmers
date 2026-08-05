@@ -124,3 +124,93 @@ describe("applyAnthropicSamplingParams", () => {
     expect(meta.dropped).toEqual(["temperature", "top_p"]);
   });
 });
+
+/**
+ * Anthropic splits usage across two frames — `message_start` carries the prompt
+ * side, `message_delta` the running completion side — and both restate
+ * cumulative figures. The collector keeps the newest number per field; it never
+ * adds counts of its own.
+ */
+describe("createAnthropicUsageCollector", () => {
+  const { createAnthropicUsageCollector } = _testOnly;
+
+  it("combines the prompt side from message_start with the output from message_delta", () => {
+    const collector = createAnthropicUsageCollector();
+    collector.observe({
+      type: "message_start",
+      message: {
+        usage: {
+          input_tokens: 210,
+          output_tokens: 1,
+          cache_read_input_tokens: 180,
+          cache_creation_input_tokens: 24,
+        },
+      },
+    });
+    collector.observe({ type: "content_block_delta", delta: { type: "text_delta", text: "hi" } });
+    collector.observe({ type: "message_delta", usage: { output_tokens: 57 } });
+
+    expect(collector.result()).toEqual({
+      input: 210,
+      output: 57,
+      cached: 180,
+      cacheWrite: 24,
+      reasoning: undefined,
+      total: undefined,
+      extra: undefined,
+    });
+  });
+
+  it("takes the latest cumulative value rather than summing restatements", () => {
+    const collector = createAnthropicUsageCollector();
+    collector.observe({ type: "message_delta", usage: { output_tokens: 10 } });
+    collector.observe({ type: "message_delta", usage: { output_tokens: 25 } });
+    expect(collector.result()?.output).toBe(25);
+  });
+
+  it("treats a null prompt-side restatement as 'not restated', not as an erasure", () => {
+    const collector = createAnthropicUsageCollector();
+    collector.observe({
+      type: "message_start",
+      message: { usage: { input_tokens: 99, cache_read_input_tokens: 40 } },
+    });
+    collector.observe({
+      type: "message_delta",
+      usage: { output_tokens: 5, input_tokens: null, cache_read_input_tokens: null },
+    });
+
+    const usage = collector.result();
+    expect(usage?.input).toBe(99);
+    expect(usage?.cached).toBe(40);
+  });
+
+  it("reports thinking tokens as reasoning", () => {
+    const collector = createAnthropicUsageCollector();
+    collector.observe({
+      type: "message_delta",
+      usage: { output_tokens: 300, output_tokens_details: { thinking_tokens: 240 } },
+    });
+    expect(collector.result()?.reasoning).toBe(240);
+  });
+
+  it("returns undefined when the stream carried no usage frame at all", () => {
+    const collector = createAnthropicUsageCollector();
+    collector.observe({ type: "content_block_delta", delta: { type: "text_delta", text: "hi" } });
+    collector.observe({ type: "message_stop" });
+    expect(collector.result()).toBeUndefined();
+  });
+
+  it("leaves uncached requests' cache counters undefined, never 0", () => {
+    const collector = createAnthropicUsageCollector();
+    collector.observe({
+      type: "message_start",
+      message: { usage: { input_tokens: 12, output_tokens: 0 } },
+    });
+    collector.observe({ type: "message_delta", usage: { output_tokens: 4 } });
+
+    const usage = collector.result();
+    expect(usage?.cached).toBeUndefined();
+    expect(usage?.cacheWrite).toBeUndefined();
+    expect(usage?.total).toBeUndefined();
+  });
+});
