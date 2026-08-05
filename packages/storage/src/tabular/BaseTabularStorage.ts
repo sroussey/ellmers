@@ -282,8 +282,12 @@ export abstract class BaseTabularStorage<
     // `filterCompoundKeys` reflects that a dedicated narrow index can still be
     // a deliberate optimization vs a wider unique tuple's leftmost-prefix
     // scan.
-    const uniqueTupleKeys = new Set(this.uniqueIndexes.map((tuple) => tuple.map(String).join(" ")));
-    this.indexes = this.indexes.filter((tuple) => !uniqueTupleKeys.has(tuple.map(String).join(" ")));
+    const uniqueTupleKeys = new Set(
+      this.uniqueIndexes.map((tuple) => tuple.map(String).join("\u0000"))
+    );
+    this.indexes = this.indexes.filter(
+      (tuple) => !uniqueTupleKeys.has(tuple.map(String).join("\u0000"))
+    );
 
     // Detect and validate auto-generated keys (at most one PK column; any PK position is allowed).
     // Composite keys often put a scope column first (e.g. kb_id) and auto-generate a second id.

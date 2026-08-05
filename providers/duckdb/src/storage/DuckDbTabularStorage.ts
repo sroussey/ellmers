@@ -25,6 +25,8 @@ import {
   PageRequest,
   pickCoveringIndex,
   QueryOptions,
+  runInTransactionOnConnection,
+  runOnConnection,
   safeEmit,
   SearchCriteria,
   SimplifyPrimaryKey,
@@ -124,6 +126,34 @@ export class DuckDbTabularStorage<
       });
     }
     return (this.dbPromise ??= Promise.resolve(this.dbOrPath as DuckDbDatabase));
+  }
+
+  /**
+   * Two `DuckDbTabularStorage` instances handed the same open
+   * {@link DuckDbDatabase} share one connection, so they need the shared
+   * `ConnectionMutex` chain — the per-instance mutex cannot see a sibling
+   * instance's writes, letting a sibling `putBulk` interleave inside this
+   * instance's `BEGIN`/`COMMIT`. A path-constructed instance opens its own
+   * database, so there is no cross-instance handle to guard.
+   */
+  protected override connectionHandle(): object | null {
+    return typeof this.dbOrPath === "object" && this.dbOrPath !== null
+      ? (this.dbOrPath as object)
+      : null;
+  }
+
+  /**
+   * Runs a write through the cross-instance connection chain (when the
+   * handle is shared) and then this instance's own mutex. Calls arriving
+   * through the `tx` proxy go straight to the `_xInternal` methods and never
+   * re-enter here, so the transaction holder cannot deadlock against itself.
+   */
+  private guardedWrite<T>(fn: () => Promise<T>): Promise<T> {
+    const handle = this.connectionHandle();
+    if (handle !== null && !this.inTransaction) {
+      return runOnConnection(handle, this, () => this.mutex(fn));
+    }
+    return this.mutex(fn);
   }
 
   /**
@@ -677,7 +707,7 @@ export class DuckDbTabularStorage<
    *        commit if inside a {@link withTransaction})
    */
   async put(entity: InsertType): Promise<Entity> {
-    return this.mutex(() => this._putInternal(entity));
+    return this.guardedWrite(() => this._putInternal(entity));
   }
 
   private async _putInternal(entity: InsertType): Promise<Entity> {
@@ -699,7 +729,7 @@ export class DuckDbTabularStorage<
    * {@link withTransaction}, deferral extends to that outer commit.
    */
   async putBulk(entities: InsertType[]): Promise<Entity[]> {
-    return this.mutex(() => this._putBulkInternal(entities));
+    return this.guardedWrite(() => this._putBulkInternal(entities));
   }
 
   private async _putBulkInternal(entities: InsertType[]): Promise<Entity[]> {
@@ -803,6 +833,14 @@ export class DuckDbTabularStorage<
           "Refactor to a single transaction."
       );
     }
+    const handle = this.connectionHandle();
+    if (handle !== null) {
+      return runInTransactionOnConnection(handle, this, () => this.runTransactionBody(fn));
+    }
+    return this.runTransactionBody(fn);
+  }
+
+  private async runTransactionBody<T>(fn: (tx: this) => Promise<T>): Promise<T> {
     return this.mutex(async () => {
       const db = await this.getDb();
       const deferredPutEvents: Entity[] = [];
@@ -934,7 +972,7 @@ export class DuckDbTabularStorage<
    * @emits "delete" event with the key when successful
    */
   async delete(value: PrimaryKey | Entity): Promise<void> {
-    return this.mutex(() => this._deleteInternal(value));
+    return this.guardedWrite(() => this._deleteInternal(value));
   }
 
   private async _deleteInternal(value: PrimaryKey | Entity): Promise<void> {
@@ -1003,7 +1041,7 @@ export class DuckDbTabularStorage<
    * @emits "clearall" event when successful
    */
   async deleteAll(): Promise<void> {
-    return this.mutex(() => this._deleteAllInternal());
+    return this.guardedWrite(() => this._deleteAllInternal());
   }
 
   private async _deleteAllInternal(): Promise<void> {
@@ -1170,7 +1208,7 @@ export class DuckDbTabularStorage<
    * @param criteria - Object with column names as keys and values or SearchConditions
    */
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
-    return this.mutex(() => this._deleteSearchInternal(criteria));
+    return this.guardedWrite(() => this._deleteSearchInternal(criteria));
   }
 
   private async _deleteSearchInternal(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
@@ -1199,7 +1237,7 @@ export class DuckDbTabularStorage<
     match: SearchCriteria<Entity>,
     patch: Partial<Entity>
   ): Promise<Entity | undefined> {
-    return this.mutex(() => this._updateWhereInternal(match, patch));
+    return this.guardedWrite(() => this._updateWhereInternal(match, patch));
   }
 
   private async _updateWhereInternal(

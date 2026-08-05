@@ -17,8 +17,10 @@ import {
   getVectorProperty,
   matchesFilter,
   runOnConnection,
+  safeEmit,
   validateVectorEntities,
 } from "@workglow/storage";
+import type { EventEmitter } from "@workglow/util";
 import type {
   DataPortSchemaObject,
   FromSchema,
@@ -597,7 +599,7 @@ export class SqliteAiVectorStorage<
         }
 
         results.sort((a, b) => b.score - a.score);
-        return results.slice(0, topK);
+        return this.emitSimilaritySearch(query, results.slice(0, topK));
       }
 
       // No filter - use top-k mode for efficiency
@@ -630,7 +632,7 @@ export class SqliteAiVectorStorage<
         results.push({ ...entity, score } as Entity & { score: number });
       }
 
-      return results;
+      return this.emitSimilaritySearch(query, results);
     } catch (error) {
       // Fall back to in-memory similarity calculation if sqlite-vector fails
       console.warn("sqlite-vector query failed, falling back to in-memory search:", error);
@@ -664,6 +666,27 @@ export class SqliteAiVectorStorage<
     }
 
     results.sort((a, b) => b.score - a.score);
-    return results.slice(0, topK);
+    return this.emitSimilaritySearch(query, results.slice(0, topK));
+  }
+
+  /**
+   * Emits the `similaritySearch` event declared on the vector event surface.
+   * The inherited `events` emitter is typed for the tabular events; the
+   * instance is the same object, so widen the view to carry the vector event.
+   */
+  private emitSimilaritySearch(
+    query: TypedArray,
+    results: Array<Entity & { score: number }>
+  ): Array<Entity & { score: number }> {
+    type SimilaritySearchEvents = {
+      similaritySearch: (query: TypedArray, results: (Entity & { score: number })[]) => void;
+    };
+    safeEmit(
+      this.events as unknown as EventEmitter<SimilaritySearchEvents>,
+      "similaritySearch",
+      query,
+      results
+    );
+    return results;
   }
 }
