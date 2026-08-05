@@ -6,9 +6,8 @@
 
 import {
   type DeleteSearchCriteria,
-  isSearchCondition,
+  normalizeCriterion,
   SEARCH_OPERATOR_SET,
-  type SearchOperator,
   type ValueOptionType,
 } from "../tabular/ITabularStorage";
 import type { ISqlDialect } from "./Dialect";
@@ -16,6 +15,12 @@ import type { ISqlDialect } from "./Dialect";
 /**
  * Result of {@link buildSearchWhere} — a parameterized WHERE-clause body
  * (without the leading `WHERE` keyword) and its ordered parameters.
+ *
+ * `params.length` is the number of placeholders consumed, which is no longer
+ * the number of criteria columns: an `in` criterion binds one parameter per
+ * value on SQLite and exactly one (an array) on Postgres. Callers deriving a
+ * next-placeholder index must use `startIndex + params.length`, never the
+ * criteria key count.
  */
 export interface BuiltWhereClause {
   readonly whereClause: string;
@@ -26,11 +31,12 @@ export interface BuiltWhereClause {
  * Builds a parameterized AND-joined WHERE clause from a {@link DeleteSearchCriteria}.
  * Used by every SQL tabular backend so the operator handling stays consistent.
  *
- * @param dialect       Identifier-quoting + placeholder rules for the target DB.
- * @param criteria      Per-column equality value or {@link SearchOperator} condition.
+ * @param dialect       Identifier-quoting, placeholder, and IN-list rules for the target DB.
+ * @param criteria      Per-column equality value, comparison condition, or `in` list.
  * @param schemaProps   Schema property bag — unknown columns throw, preventing
  *                      callers from accidentally letting user input pick a column.
  * @param convertValue  Backend-specific JS-to-SQL coercion (e.g. boolean → 0/1).
+ *                      Applied per element for an `in` list.
  * @param startIndex    1-based starting parameter index (defaults to 1).
  *                      PostgreSQL callers use this when other params have already
  *                      been bound; SQLite ignores it because placeholders are positional.
@@ -51,29 +57,34 @@ export function buildSearchWhere<Entity>(
       throw new Error(`Schema must have a "${String(column)}" field to use it in search criteria`);
     }
 
-    const criterion = criteria[column];
-    let operator: SearchOperator = "=";
-    let value: Entity[keyof Entity];
+    const quotedColumn = dialect.quoteId(String(column));
+    const normalized = normalizeCriterion<Entity[keyof Entity]>(criteria[column]);
 
-    if (isSearchCondition(criterion)) {
-      operator = criterion.operator;
-      value = criterion.value as Entity[keyof Entity];
-    } else {
-      value = criterion as Entity[keyof Entity];
+    if (normalized.kind === "in") {
+      // Each element goes through the same coercion a scalar value would, so
+      // dates and booleans bind identically whether matched by `=` or `IN`.
+      const values = normalized.values.map((v) => convertValue(column as string, v));
+      const built = dialect.inPredicate(quotedColumn, values, paramIndex);
+      conditions.push(built.sql);
+      params.push(...built.params);
+      // Not `+= values.length`: Postgres binds the whole list as one array
+      // parameter, so only the dialect knows how many placeholders it used.
+      paramIndex += built.params.length;
+      continue;
     }
 
-    // Defense-in-depth: `isSearchCondition` already gates `operator` to the
+    const { operator, value } = normalized;
+
+    // Defense-in-depth: `normalizeCriterion` already gates `operator` to the
     // allow-list, but this is the spot where the operator is interpolated
     // raw into SQL, so re-verify here. Unreachable from typed callers; this
     // catches `as unknown as` bypasses and any future refactor that loosens
-    // `isSearchCondition` before the operator reaches the builder.
+    // the guards before the operator reaches the builder.
     if (!SEARCH_OPERATOR_SET.has(operator)) {
       throw new Error(`Unsupported SearchCondition operator: ${String(operator)}`);
     }
 
-    conditions.push(
-      `${dialect.quoteId(String(column))} ${operator} ${dialect.placeholder(paramIndex)}`
-    );
+    conditions.push(`${quotedColumn} ${operator} ${dialect.placeholder(paramIndex)}`);
     params.push(convertValue(column as string, value));
     paramIndex++;
   }

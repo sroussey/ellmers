@@ -15,8 +15,8 @@ import {
   decodeCursor,
   DeleteSearchCriteria,
   InsertEntity,
-  isSearchCondition,
   mapPostgresType,
+  normalizeCriterion,
   Page,
   PageRequest,
   pickCoveringIndex,
@@ -24,7 +24,6 @@ import {
   QueryOptions,
   safeEmit,
   SearchCriteria,
-  SearchOperator,
   SimplifyPrimaryKey,
   StorageValidationError,
   TabularChangePayload,
@@ -715,22 +714,39 @@ export class SupabaseTabularStorage<
   }
 
   /**
+   * Whether `criteria` can match no row at all — i.e. some column carries an
+   * `in` list with no values.
+   *
+   * PostgREST has no always-false filter, and an empty `in.()` is not worth
+   * relying on (least of all on a delete path), so every criteria-taking
+   * method short-circuits on this instead of issuing a request.
+   */
+  private matchesNoRow(criteria: SearchCriteria<Entity> | undefined): boolean {
+    if (!criteria) return false;
+    for (const column of Object.keys(criteria) as Array<keyof Entity>) {
+      const normalized = normalizeCriterion<Entity[keyof Entity]>(criteria[column]);
+      if (normalized.kind === "in" && normalized.values.length === 0) return true;
+    }
+    return false;
+  }
+
+  /**
    * Applies criteria to a Supabase filter builder. Typed as `any` because the
    * `PostgrestFilterBuilder` generics are deep enough to trip TS2589.
    */
   private applyCriteriaToFilter<Q>(query: Q, criteria: SearchCriteria<Entity>): Q {
     let q = query as any;
     for (const column of Object.keys(criteria) as Array<keyof Entity>) {
-      const criterion = criteria[column];
-      let operator: SearchOperator = "=";
-      let value: Entity[keyof Entity];
+      const normalized = normalizeCriterion<Entity[keyof Entity]>(criteria[column]);
 
-      if (isSearchCondition(criterion)) {
-        operator = criterion.operator;
-        value = criterion.value as Entity[keyof Entity];
-      } else {
-        value = criterion as Entity[keyof Entity];
+      if (normalized.kind === "in") {
+        // Callers guard an empty list with `matchesNoRow` before reaching
+        // here, so PostgREST never has to render `in.()`.
+        q = q.in(String(column), normalized.values as unknown[]);
+        continue;
       }
+
+      const { operator, value } = normalized;
 
       switch (operator) {
         case "=":
@@ -762,6 +778,7 @@ export class SupabaseTabularStorage<
     }
 
     this.validateQueryParams(criteria);
+    if (this.matchesNoRow(criteria)) return 0;
     const query = this.applyCriteriaToFilter(
       this.client.from(this.table).select("*", { count: "exact", head: true }),
       criteria
@@ -783,6 +800,7 @@ export class SupabaseTabularStorage<
     if (criteriaKeys.length === 0) {
       return;
     }
+    if (this.matchesNoRow(criteria)) return;
 
     let query = this.client.from(this.table).delete();
 
@@ -791,16 +809,14 @@ export class SupabaseTabularStorage<
         throw new Error(`Schema must have a ${String(column)} field to use deleteSearch`);
       }
 
-      const criterion = criteria[column];
-      let operator: SearchOperator = "=";
-      let value: Entity[keyof Entity];
+      const normalized = normalizeCriterion<Entity[keyof Entity]>(criteria[column]);
 
-      if (isSearchCondition(criterion)) {
-        operator = criterion.operator;
-        value = criterion.value as Entity[keyof Entity];
-      } else {
-        value = criterion as Entity[keyof Entity];
+      if (normalized.kind === "in") {
+        query = query.in(String(column), normalized.values as unknown[]);
+        continue;
       }
+
+      const { operator, value } = normalized;
 
       switch (operator) {
         case "=":
@@ -849,6 +865,7 @@ export class SupabaseTabularStorage<
   ): Promise<Entity | undefined> {
     if (Object.keys(patch).length === 0) return undefined;
     this.assertPatchKeepsPrimaryKey(patch);
+    if (this.matchesNoRow(match)) return undefined;
 
     const pkColumns = this.primaryKeyColumns() as unknown as Array<keyof Entity>;
 
@@ -898,6 +915,7 @@ export class SupabaseTabularStorage<
     options?: QueryOptions<Entity>
   ): Promise<Entity[] | undefined> {
     this.validateQueryParams(criteria, options);
+    if (this.matchesNoRow(criteria)) return undefined;
 
     let query = this.applyCriteriaToFilter(this.client.from(this.table).select("*"), criteria);
 
@@ -963,6 +981,7 @@ export class SupabaseTabularStorage<
     // Validate before we send column names through PostgREST filters or
     // ORDER BY — caller is the trust boundary for orderBy contents.
     this.validatePageRequest(request);
+    if (this.matchesNoRow(criteria)) return { items: [], nextCursor: undefined };
     const limit = request.limit ?? 100;
     const pkColumns = this.primaryKeyColumns() as unknown as Array<keyof Entity>;
     const orderBy = request.orderBy;
@@ -1087,6 +1106,7 @@ export class SupabaseTabularStorage<
   ): Promise<Pick<Entity, K>[]> {
     this.validateSelect(options);
     this.validateQueryParams(criteria, options);
+    if (this.matchesNoRow(criteria)) return [];
 
     const registered = this.indexes.map((cols, i) => {
       const cs = Array.isArray(cols) ? (cols as string[]) : [cols as string];

@@ -167,6 +167,30 @@ function translatePostgrestFilter(filter: string): string {
  * Creates a mock Supabase client for testing that uses PGlite as the backend.
  * This provides a real PostgreSQL database for testing without needing a Supabase instance.
  */
+/** SQL literal for one filter value, matching PostgREST's coercion. */
+function mockSqlLiteral(val: any): string {
+  if (val === null || val === undefined) return "NULL";
+  if (typeof val === "object") return `'${JSON.stringify(val).replace(/'/g, "''")}'`;
+  if (typeof val === "string") return `'${val.replace(/'/g, "''")}'`;
+  return String(val);
+}
+
+/**
+ * Renders one accumulated filter into a WHERE term. Shared by the update,
+ * delete, and select builders, which each used to inline the same coercion
+ * ladder — three places for a new operator to be missed.
+ */
+function mockRenderFilter(f: { column: string; operator: string; value: any }): string {
+  if (f.operator === "IS NOT" && f.value === "NULL") return `"${f.column}" IS NOT NULL`;
+  if (f.operator === "IN") {
+    const values = (f.value as any[]) ?? [];
+    // PostgREST renders an empty `in.()` as a never-matching term.
+    if (values.length === 0) return "1=0";
+    return `"${f.column}" IN (${values.map(mockSqlLiteral).join(", ")})`;
+  }
+  return `"${f.column}" ${f.operator} ${mockSqlLiteral(f.value)}`;
+}
+
 export function createSupabaseMockClient(): IClosableSupabaseClient {
   const pglite = new PGlite({ extensions: { vector } });
   const logger = getTestingLogger();
@@ -453,18 +477,7 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
 
           const buildWhereClause = (): string =>
             queryBuilder._filters.length > 0
-              ? queryBuilder._filters
-                  .map((f) => {
-                    const val = f.value;
-                    if (val === null || val === undefined)
-                      return `"${f.column}" ${f.operator} NULL`;
-                    if (typeof val === "object")
-                      return `"${f.column}" ${f.operator} '${JSON.stringify(val).replace(/'/g, "''")}'`;
-                    if (typeof val === "string")
-                      return `"${f.column}" ${f.operator} '${val.replace(/'/g, "''")}'`;
-                    return `"${f.column}" ${f.operator} ${String(val)}`;
-                  })
-                  .join(" AND ")
+              ? queryBuilder._filters.map(mockRenderFilter).join(" AND ")
               : "1=1";
 
           // Only rows matching every accumulated filter are updated, mirroring
@@ -483,6 +496,10 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
             eq: (column: string, value: any) => {
               queryBuilder._filters.push({ column, operator: "=", value });
               return updateBuilder; // Return self for chaining
+            },
+            in: (column: string, values: any[]) => {
+              queryBuilder._filters.push({ column, operator: "IN", value: values });
+              return updateBuilder;
             },
             lt: (column: string, value: any) => {
               queryBuilder._filters.push({ column, operator: "<", value });
@@ -538,6 +555,10 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
               queryBuilder._filters.push({ column, operator: "=", value });
               return deleteBuilder;
             },
+            in: (column: string, values: any[]) => {
+              queryBuilder._filters.push({ column, operator: "IN", value: values });
+              return deleteBuilder;
+            },
             neq: (column: string, value: any) => {
               queryBuilder._filters.push({ column, operator: "!=", value });
               return deleteBuilder;
@@ -577,6 +598,10 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
 
         eq: (column: string, value: any) => {
           queryBuilder._filters.push({ column, operator: "=", value });
+          return queryBuilder;
+        },
+        in: (column: string, values: any[]) => {
+          queryBuilder._filters.push({ column, operator: "IN", value: values });
           return queryBuilder;
         },
 
@@ -659,20 +684,7 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
           let query = `DELETE FROM "${queryBuilder._table}"`;
 
           if (queryBuilder._filters.length > 0) {
-            const whereClause = queryBuilder._filters
-              .map((f) => {
-                if (f.operator === "IS NOT" && f.value === "NULL") {
-                  return `"${f.column}" IS NOT NULL`;
-                }
-                const val = f.value;
-                if (val === null || val === undefined) return `"${f.column}" ${f.operator} NULL`;
-                if (typeof val === "object")
-                  return `"${f.column}" ${f.operator} '${JSON.stringify(val).replace(/'/g, "''")}'`;
-                if (typeof val === "string")
-                  return `"${f.column}" ${f.operator} '${val.replace(/'/g, "''")}'`;
-                return `"${f.column}" ${f.operator} ${String(val)}`;
-              })
-              .join(" AND ");
+            const whereClause = queryBuilder._filters.map(mockRenderFilter).join(" AND ");
             query += ` WHERE ${whereClause}`;
           }
 
@@ -686,6 +698,10 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
       const deleteBuilder = {
         eq: (column: string, value: any) => {
           queryBuilder._filters.push({ column, operator: "=", value });
+          return deleteBuilder;
+        },
+        in: (column: string, values: any[]) => {
+          queryBuilder._filters.push({ column, operator: "IN", value: values });
           return deleteBuilder;
         },
         neq: (column: string, value: any) => {
@@ -734,20 +750,7 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
 
           const whereParts: string[] = [];
           if (queryBuilder._filters.length > 0) {
-            const whereClause = queryBuilder._filters
-              .map((f) => {
-                if (f.operator === "IS NOT" && f.value === "NULL") {
-                  return `"${f.column}" IS NOT NULL`;
-                }
-                const val = f.value;
-                if (val === null || val === undefined) return `"${f.column}" ${f.operator} NULL`;
-                if (typeof val === "object")
-                  return `"${f.column}" ${f.operator} '${JSON.stringify(val).replace(/'/g, "''")}'`;
-                if (typeof val === "string")
-                  return `"${f.column}" ${f.operator} '${val.replace(/'/g, "''")}'`;
-                return `"${f.column}" ${f.operator} ${String(val)}`;
-              })
-              .join(" AND ");
+            const whereClause = queryBuilder._filters.map(mockRenderFilter).join(" AND ");
             whereParts.push(whereClause);
           }
           for (const orFilter of queryBuilder._orFilters) {

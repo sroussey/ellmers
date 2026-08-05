@@ -28,6 +28,7 @@ import {
   DeleteSearchCriteria,
   InsertEntity,
   isSearchCondition,
+  isSearchInCondition,
   ITabularStorage,
   OrderBy,
   Page,
@@ -815,6 +816,18 @@ export abstract class BaseTabularStorage<
             `Invalid operator "${criterion.operator}". Must be one of: ${validOperators.join(", ")}`
           );
         }
+      } else if (
+        typeof criterion === "object" &&
+        criterion !== null &&
+        (criterion as { operator?: unknown }).operator === "in" &&
+        !isSearchInCondition(criterion)
+      ) {
+        // An `in` criterion whose value is not an array passes neither guard,
+        // so it would fall through to `normalizeCriterion` as a literal value
+        // and match nothing. Nobody means that — fail loudly instead.
+        throw new StorageValidationError(
+          `Criterion for column "${String(column)}" uses operator "in" but its value is not an array`
+        );
       }
     }
 
@@ -942,7 +955,12 @@ export abstract class BaseTabularStorage<
   protected deleteIdentity(criteria: DeleteSearchCriteria<Entity>): Partial<Entity> {
     const identity: Record<string, unknown> = {};
     for (const [column, criterion] of Object.entries(criteria)) {
-      if (!isSearchCondition(criterion)) identity[column] = criterion;
+      // An `in` list identifies no single value, so it is dropped for the same
+      // reason a comparison condition is — otherwise the raw condition object
+      // would be emitted as if it were the column's value.
+      if (!isSearchCondition(criterion) && !isSearchInCondition(criterion)) {
+        identity[column] = criterion;
+      }
     }
     return identity as Partial<Entity>;
   }

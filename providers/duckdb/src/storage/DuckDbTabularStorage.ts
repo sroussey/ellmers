@@ -15,6 +15,7 @@ import {
   ClientProvidedKeysOption,
   CoveringIndexQueryOptions,
   DeleteSearchCriteria,
+  DuckDbDialect,
   InsertEntity,
   ITabularMigration,
   ITabularMigrationApplier,
@@ -23,7 +24,6 @@ import {
   Page,
   PageRequest,
   pickCoveringIndex,
-  PostgresDialect,
   QueryOptions,
   safeEmit,
   SearchCriteria,
@@ -1088,7 +1088,7 @@ export class DuckDbTabularStorage<
     params: ValueOptionType[];
   } {
     const built = buildSearchWhere<Entity>(
-      PostgresDialect,
+      DuckDbDialect,
       criteria,
       this.schema.properties as Record<string, unknown>,
       (column, value) => this.jsToSqlValue(column, value)
@@ -1106,7 +1106,7 @@ export class DuckDbTabularStorage<
     startIndex: number
   ): { whereClause: string; params: ValueOptionType[]; nextIndex: number } {
     const built = buildSearchWhere<Entity>(
-      PostgresDialect,
+      DuckDbDialect,
       criteria,
       this.schema.properties as Record<string, unknown>,
       (column, value) => this.jsToSqlValue(column, value),

@@ -14,7 +14,9 @@ import {
   HybridSubscriptionManager,
   InsertEntity,
   isSearchCondition,
+  isSearchInCondition,
   KeyGenerationStrategy,
+  normalizeCriterion,
   pickCoveringIndex,
   QueryOptions,
   safeEmit,
@@ -862,15 +864,13 @@ export class IndexedDbTabularStorage<
       const criterion = criteria[column];
       const recordValue = record[column];
 
-      let operator: SearchOperator = "=";
-      let value: Entity[keyof Entity];
-
-      if (isSearchCondition(criterion)) {
-        operator = criterion.operator;
-        value = criterion.value as Entity[keyof Entity];
-      } else {
-        value = criterion as Entity[keyof Entity];
+      const normalized = normalizeCriterion<Entity[keyof Entity]>(criterion);
+      if (normalized.kind === "in") {
+        // Strict membership, matching the `=` arm: no coercion.
+        if (!normalized.values.some((candidate) => recordValue === candidate)) return false;
+        continue;
       }
+      const { operator, value } = normalized;
 
       if (operator !== "=" && (recordValue === null || recordValue === undefined)) {
         return false;
@@ -1038,6 +1038,9 @@ export class IndexedDbTabularStorage<
   ): Entity[keyof Entity] | undefined {
     const criterion = criteria[column];
     if (criterion === undefined) return undefined;
+    // An `in` list is not a single key, so it can't drive an IDB index lookup;
+    // returning undefined sends it to the in-cursor filter instead.
+    if (isSearchInCondition(criterion)) return undefined;
     if (isSearchCondition(criterion)) {
       return criterion.operator === "=" ? (criterion.value as Entity[keyof Entity]) : undefined;
     }
@@ -1261,6 +1264,9 @@ export class IndexedDbTabularStorage<
       for (const col of picked.keyPath) {
         const c = (criteria as Record<string, unknown>)[col];
         if (c === undefined && !(col in (criteria as Record<string, unknown>))) break;
+        // An `in` list matches several keys, so it cannot extend a single
+        // equality prefix — stop here and let the in-cursor filter handle it.
+        if (isSearchInCondition(c)) break;
         if (isSearchCondition(c)) {
           if (c.operator !== "=") break;
           prefix.push(c.value);
@@ -1332,9 +1338,12 @@ export class IndexedDbTabularStorage<
           if (pos === undefined) continue;
           if (pos < prefix.length) continue; // covered by IDBKeyRange
           const valFromKey = Array.isArray(key) ? (key as unknown[])[pos] : key;
-          const op: SearchOperator = isSearchCondition(crit) ? crit.operator : "=";
-          const val = isSearchCondition(crit) ? crit.value : crit;
-          if (!compareWithOperator(valFromKey, op, val)) {
+          const normalized = normalizeCriterion<unknown>(crit);
+          const ok =
+            normalized.kind === "in"
+              ? normalized.values.some((candidate) => valFromKey === candidate)
+              : compareWithOperator(valFromKey, normalized.operator, normalized.value);
+          if (!ok) {
             matches = false;
             break;
           }
