@@ -6,6 +6,7 @@
 
 import type { TriggerOptions } from "./BaseTrigger";
 import { BaseTrigger } from "./BaseTrigger";
+import { assertValidIntervalMs, nextFixedIntervalFireTime } from "./fixedInterval";
 import { TRIGGER_KINDS } from "./ITrigger";
 import { TriggerConfigurationError } from "./TriggerError";
 
@@ -66,15 +67,10 @@ export class PollingTrigger<Result = unknown> extends BaseTrigger {
 
   constructor(options: PollingTriggerOptions<Result>) {
     super(options);
-    if (!Number.isInteger(options.intervalMs) || options.intervalMs <= 0) {
-      throw new TriggerConfigurationError(
-        `intervalMs must be a positive integer, received ${String(options.intervalMs)}.`
-      );
-    }
+    this.intervalMs = assertValidIntervalMs(options.intervalMs);
     if (typeof options.poll !== "function") {
       throw new TriggerConfigurationError("poll must be a function.");
     }
-    this.intervalMs = options.intervalMs;
     this._poll = options.poll;
     this._shouldFire = options.shouldFire ?? ((result) => isNonEmptyPollResult(result));
   }
@@ -85,18 +81,17 @@ export class PollingTrigger<Result = unknown> extends BaseTrigger {
   }
 
   protected computeNextFireTime(fromMs: number): number {
-    const next = fromMs + this.intervalMs;
-    const now = Date.now();
-    if (next > now) return next;
-    const missedPeriods = Math.floor((now - next) / this.intervalMs) + 1;
-    return next + missedPeriods * this.intervalMs;
+    return nextFixedIntervalFireTime(fromMs, this.intervalMs);
   }
 
   protected override async runTick(scheduledAt: number, signal: AbortSignal): Promise<void> {
     const result = await this._poll(signal);
+    // Bail before recording the result: an aborted tick never fires, so keeping
+    // its value as the baseline would make the NEXT `firesOnChange` comparison
+    // see no change and swallow the very update this tick observed.
+    if (signal.aborted) return;
     const previous = this._previous;
     this._previous = result;
-    if (signal.aborted) return;
     if (!this._shouldFire(result, previous)) return;
     await this.invokeHandler({
       triggerId: this.id,

@@ -6,8 +6,8 @@
 
 import type { TriggerOptions } from "./BaseTrigger";
 import { BaseTrigger } from "./BaseTrigger";
+import { assertValidIntervalMs, nextFixedIntervalFireTime } from "./fixedInterval";
 import { TRIGGER_KINDS } from "./ITrigger";
-import { TriggerConfigurationError } from "./TriggerError";
 
 export interface IntervalTriggerOptions extends TriggerOptions {
   /** Period between fires, in milliseconds. Must be a positive integer. */
@@ -31,19 +31,10 @@ export class IntervalTrigger extends BaseTrigger {
 
   constructor(options: IntervalTriggerOptions) {
     super(options);
-    if (!Number.isInteger(options.intervalMs) || options.intervalMs <= 0) {
-      throw new TriggerConfigurationError(
-        `intervalMs must be a positive integer, received ${String(options.intervalMs)}.`
-      );
-    }
-    this.intervalMs = options.intervalMs;
+    this.intervalMs = assertValidIntervalMs(options.intervalMs);
   }
 
   protected computeNextFireTime(fromMs: number): number {
-    const next = fromMs + this.intervalMs;
-    const now = Date.now();
-    if (next > now) return next;
-    const missedPeriods = Math.floor((now - next) / this.intervalMs) + 1;
-    return next + missedPeriods * this.intervalMs;
+    return nextFixedIntervalFireTime(fromMs, this.intervalMs);
   }
 }
