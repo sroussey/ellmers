@@ -22,6 +22,9 @@ export * from "./MapTask";
 export * from "./ReduceTask";
 export * from "./StreamTypes";
 export * from "./Task";
+// The clone/strip helpers are a standalone seam now, not private Task methods,
+// so they are exported rather than reached through `(task as any)`.
+export * from "./TaskCloneOps";
 export * from "./TaskEntitlements";
 export * from "./TaskError";
 export * from "./TaskEvents";

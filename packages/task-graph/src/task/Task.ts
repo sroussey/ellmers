@@ -438,7 +438,7 @@ export class Task<
     const inputDefaults = this.getDefaultInputsFromStaticInputDefinitions();
     const mergedDefaults = Object.assign(inputDefaults, callerDefaultInputs ?? {});
     // Strip symbol properties (like [$JSONSchema]) before storing defaults
-    this.defaults = this.stripSymbols(mergedDefaults) as Record<string, any>;
+    this.defaults = stripSymbols(mergedDefaults) as Record<string, any>;
     this.resetInputData();
 
     const title = (this.constructor as typeof Task).title || undefined;
@@ -518,33 +518,12 @@ export class Task<
   }
 
   public resetInputData(): void {
-    this.runInputData = this.smartClone(this.defaults) as Record<string, any>;
-  }
-
-  /**
-   * Smart clone that deep-clones plain objects and arrays while preserving
-   * class instances (objects with non-Object prototype) by reference.
-   * Detects and throws an error on circular references.
-   *
-   * This is necessary because:
-   * - structuredClone cannot clone class instances (methods are lost)
-   * - JSON.parse/stringify loses methods and fails on circular references
-   * - Class instances like repositories should be passed by reference
-   *
-   * This breaks the idea of everything being json serializable, but it allows
-   * more efficient use cases. Do be careful with this though! Use sparingly.
-   *
-   * @param obj The object to clone
-   * @param visited Set of objects in the current cloning path (for circular reference detection)
-   * @returns A cloned object with class instances preserved by reference
-   */
-  private smartClone(obj: any, visited: WeakSet<object> = new WeakSet()): any {
-    return smartClone(obj, visited);
+    this.runInputData = smartClone(this.defaults) as Record<string, any>;
   }
 
   public setDefaults(defaults: Partial<Input>): void {
     // Strip symbol properties (like [$JSONSchema]) before storing defaults
-    this.defaults = this.stripSymbols(defaults) as Partial<Input>;
+    this.defaults = stripSymbols(defaults) as Partial<Input>;
   }
 
   public setInput(input: Partial<Input>): void {
@@ -922,15 +901,6 @@ export class Task<
   // ========================================================================
   // Serialization methods
   // ========================================================================
-
-  /**
-   * Strips symbol properties from an object to make it serializable
-   * @param obj The object to strip symbols from
-   * @returns A new object without symbol properties
-   */
-  private stripSymbols(obj: any): any {
-    return stripSymbols(obj);
-  }
 
   /**
    * Returns whether the task's config can be serialized to JSON.
