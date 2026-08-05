@@ -4,8 +4,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IExecuteContext, IRunConfig, StreamEvent, TaskConfig } from "@workglow/task-graph";
-import { CreateWorkflow, TaskConfigurationError, TaskError, Workflow } from "@workglow/task-graph";
+import type {
+  IExecuteContext,
+  IRunConfig,
+  StreamEvent,
+  TaskConfig,
+  Usage,
+} from "@workglow/task-graph";
+import {
+  CreateWorkflow,
+  mergeUsage,
+  TaskConfigurationError,
+  TaskError,
+  USAGE_OUTPUT_KEY,
+  Workflow,
+} from "@workglow/task-graph";
 import { DEFAULT_LIMITS } from "@workglow/util";
 import type { DataPortSchema, SchemaNode } from "@workglow/util/schema";
 import { compileSchema } from "@workglow/util/schema";
@@ -190,6 +203,9 @@ export class StructuredGenerationTask extends StreamingAiTask<
     const maxAttempts = maxRetries + 1;
     const attempts: StructuredOutputValidationAttempt[] = [];
     let currentInput = input;
+    // A rejected attempt is still a billed request. Summing across attempts is
+    // what keeps a schema-flaky model from looking as cheap as a clean one.
+    let attemptsUsage: Usage | undefined;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       let lastObject: Record<string, unknown> | undefined;
@@ -212,8 +228,12 @@ export class StructuredGenerationTask extends StreamingAiTask<
           }
           yield event;
         } else if (event.type === "finish") {
+          attemptsUsage = mergeUsage(attemptsUsage, event.usage);
           if (refused) {
-            yield event as StreamEvent<StructuredGenerationTaskOutput>;
+            yield {
+              ...event,
+              ...(attemptsUsage ? { usage: attemptsUsage } : {}),
+            } as StreamEvent<StructuredGenerationTaskOutput>;
             return;
           }
           // Prefer the finish payload's object (some providers populate it);
@@ -225,6 +245,7 @@ export class StructuredGenerationTask extends StreamingAiTask<
             yield {
               type: "finish",
               data: { object: finalObject } as StructuredGenerationTaskOutput,
+              ...(attemptsUsage ? { usage: attemptsUsage } : {}),
             } as StreamEvent<StructuredGenerationTaskOutput>;
             return;
           }
@@ -270,10 +291,17 @@ export class StructuredGenerationTask extends StreamingAiTask<
     context: IExecuteContext
   ): Promise<StructuredGenerationTaskOutput | undefined> {
     let result: StructuredGenerationTaskOutput | undefined;
+    let usage: Usage | undefined;
     for await (const event of this.executeStream(input, context)) {
       if (event.type === "finish") {
         result = (event as { type: "finish"; data: StructuredGenerationTaskOutput }).data;
+        usage = mergeUsage(usage, event.usage);
       }
+    }
+    // Fold the finish's `usage` sibling onto the returned output so this
+    // direct-drain path reports the same tokens the streaming path does.
+    if (result && usage) {
+      return { ...result, [USAGE_OUTPUT_KEY]: usage } as StructuredGenerationTaskOutput;
     }
     return result;
   }

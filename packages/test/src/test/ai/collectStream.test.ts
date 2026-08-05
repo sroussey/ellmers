@@ -4,8 +4,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { type Capability, collectStream, type StreamEvent } from "@workglow/ai";
+import { type Capability, collectStream, type StreamEvent, type Usage } from "@workglow/ai";
 import { describe, expect, expectTypeOf, it } from "vitest";
+
+function usage(partial: Partial<Usage>): Usage {
+  return {
+    input: undefined,
+    output: undefined,
+    cached: undefined,
+    cacheWrite: undefined,
+    reasoning: undefined,
+    total: undefined,
+    extra: undefined,
+    ...partial,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -186,6 +199,60 @@ describe("collectStream", () => {
     );
     const result = await collectStream(stream);
     expect(result).toMatchObject({ result: { a: 1 }, meta: "done" });
+  });
+
+  // -------------------------------------------------------------------------
+  // Usage channel
+  // -------------------------------------------------------------------------
+
+  it("usage: finish usage surfaces as result.usage alongside accumulated deltas", async () => {
+    type Output = { text: string };
+    const stream = makeStream<Output>(
+      { type: "text-delta", port: "text", textDelta: "Hello" },
+      { type: "finish", data: {} as Output, usage: usage({ input: 12, output: 3 }) }
+    );
+    const result = (await collectStream(stream)) as Output & { usage?: Usage };
+    expect(result.text).toBe("Hello");
+    expect(result.usage).toEqual(usage({ input: 12, output: 3 }));
+  });
+
+  it("usage: a stream with no usage leaves no usage key at all", async () => {
+    type Output = { text: string };
+    const stream = makeStream<Output>(
+      { type: "text-delta", port: "text", textDelta: "Hello" },
+      { type: "finish", data: {} as Output }
+    );
+    const result = await collectStream(stream);
+    expect(result).toEqual({ text: "Hello" });
+    expect("usage" in (result as object)).toBe(false);
+  });
+
+  it("usage: one-shot finish keeps data as the payload (embedding-shaped run-fn)", async () => {
+    type Output = { embedding: number[] };
+    const stream = makeStream<Output>({
+      type: "finish",
+      data: { embedding: [0.1, 0.2] },
+      usage: usage({ input: 8, total: 8 }),
+    });
+    const result = (await collectStream(stream)) as Output & { usage?: Usage };
+    expect(result.embedding).toEqual([0.1, 0.2]);
+    expect(result.usage).toEqual(usage({ input: 8, total: 8 }));
+  });
+
+  it("usage: json-mode finish keeps data.object intact next to usage", async () => {
+    type Output = { object: Record<string, unknown> };
+    const stream = makeStream<Output>(
+      { type: "object-delta", port: "object", objectDelta: { name: "A" } },
+      {
+        type: "finish",
+        data: { object: { name: "Alice", age: 30 } },
+        usage: usage({ input: 40, output: 12 }),
+      }
+    );
+    const result = (await collectStream(stream)) as Output & { usage?: Usage };
+    // Deltas win on the `object` port; the usage sibling is untouched by that.
+    expect(result.object).toEqual({ name: "A" });
+    expect(result.usage).toEqual(usage({ input: 40, output: 12 }));
   });
 
   // -------------------------------------------------------------------------

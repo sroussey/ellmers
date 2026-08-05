@@ -24,7 +24,7 @@
  *  - Cache: auto-enables accumulation
  */
 
-import type { CachePolicy, StreamEvent } from "@workglow/task-graph";
+import type { CachePolicy, StreamEvent, Usage } from "@workglow/task-graph";
 import {
   Dataflow,
   IExecuteContext,
@@ -229,6 +229,90 @@ class CacheableAppendTask extends Task<SimpleInput, SimpleOutput> {
 
   override async execute(_input: SimpleInput): Promise<SimpleOutput | undefined> {
     return { text: "cached value" };
+  }
+}
+
+function mkUsage(partial: Partial<Usage>): Usage {
+  return {
+    input: undefined,
+    output: undefined,
+    cached: undefined,
+    cacheWrite: undefined,
+    reasoning: undefined,
+    total: undefined,
+    extra: undefined,
+    ...partial,
+  };
+}
+
+const TASK_USAGE = mkUsage({ input: 25, output: 7, cached: 20, total: 32 });
+
+/**
+ * Append-mode task whose finish carries a `usage` sibling, mirroring a provider
+ * that reports token counts.
+ */
+class UsageAppendTask extends Task<SimpleInput, SimpleOutput> {
+  public static override type = "AccumTest_UsageAppendTask";
+  public static override cachePolicy: CachePolicy = { kind: "none" };
+
+  public static override inputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { prompt: { type: "string", default: "test" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+
+  public static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { text: { type: "string", "x-stream": "append" } },
+      required: ["text"],
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+
+  async *executeStream(
+    _input: SimpleInput,
+    _context: IExecuteContext
+  ): AsyncIterable<StreamEvent<SimpleOutput>> {
+    yield { type: "text-delta", port: "text", textDelta: "hello" };
+    yield { type: "text-delta", port: "text", textDelta: " world" };
+    yield { type: "finish", data: {} as SimpleOutput, usage: TASK_USAGE };
+  }
+}
+
+/**
+ * Cacheable variant used to prove a cache hit does not replay token counts.
+ */
+class UsageCacheableTask extends Task<SimpleInput, SimpleOutput> {
+  public static override type = "AccumTest_UsageCacheableTask";
+  public static override cacheable = true;
+
+  public static override inputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { prompt: { type: "string" } },
+      required: ["prompt"],
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+
+  public static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { text: { type: "string", "x-stream": "append" } },
+      required: ["text"],
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+
+  async *executeStream(
+    _input: SimpleInput,
+    _context: IExecuteContext
+  ): AsyncIterable<StreamEvent<SimpleOutput>> {
+    yield { type: "text-delta", port: "text", textDelta: "billed" };
+    yield { type: "finish", data: {} as SimpleOutput, usage: TASK_USAGE };
   }
 }
 
@@ -486,6 +570,112 @@ describe("Source-task streaming accumulation", () => {
       expect(resultB).toBeDefined();
       expect(resultA!.data.text).toBe("sink:hello world");
       expect(resultB!.data.text).toBe("sink:hello world");
+    });
+  });
+
+  describe("Usage channel", () => {
+    it("folds finish usage onto the run output's reserved usage field", async () => {
+      const task = new UsageAppendTask({ defaults: { prompt: "test" } });
+      const result = (await task.run({ prompt: "test" })) as SimpleOutput & { usage?: Usage };
+
+      expect(result.text).toBe("hello world");
+      expect(result.usage).toEqual(TASK_USAGE);
+    });
+
+    it("re-emits usage on the enriched finish event downstream consumers see", async () => {
+      const task = new UsageAppendTask({ defaults: { prompt: "test" } });
+      const emitted: StreamEvent[] = [];
+      task.on("stream_chunk", (e) => emitted.push(e));
+
+      await task.run({ prompt: "test" });
+
+      const finishEvent = emitted.find((e) => e.type === "finish") as
+        (StreamFinish<{ text: string }> & { usage?: Usage }) | undefined;
+      expect(finishEvent).toBeDefined();
+      // The finish is enriched with accumulated text AND still carries usage.
+      expect(finishEvent!.data.text).toBe("hello world");
+      expect(finishEvent!.usage).toEqual(TASK_USAGE);
+    });
+
+    it("parity: run() and the streaming path report identical usage", async () => {
+      const task = new UsageAppendTask({ defaults: { prompt: "test" } });
+      let streamEndOutput: (SimpleOutput & { usage?: Usage }) | undefined;
+      task.on("stream_end", (out) => {
+        streamEndOutput = out as SimpleOutput & { usage?: Usage };
+      });
+
+      const runResult = (await task.run({ prompt: "test" })) as SimpleOutput & { usage?: Usage };
+
+      expect(streamEndOutput?.usage).toEqual(runResult.usage);
+      expect(runResult.usage).toEqual(TASK_USAGE);
+    });
+
+    it("leaves no usage key when the stream reported none", async () => {
+      const task = new AppendTask({ defaults: { prompt: "test" } });
+      const result = await task.run({ prompt: "test" });
+
+      expect(result).toEqual({ text: "hello world" });
+      expect("usage" in result).toBe(false);
+
+      const finishFromEvents: StreamEvent[] = [];
+      const task2 = new AppendTask({ defaults: { prompt: "test" } });
+      task2.on("stream_chunk", (e) => finishFromEvents.push(e));
+      await task2.run({ prompt: "test" });
+      const finishEvent = finishFromEvents.find((e) => e.type === "finish")!;
+      expect("usage" in finishEvent).toBe(false);
+    });
+
+    it("does not leak usage onto a downstream task's input", async () => {
+      // Usage is a reserved field, not a port: it must not ride a dataflow edge.
+      const { graph, runner } = makeGraph();
+      const source = new UsageAppendTask({ id: "source", defaults: { prompt: "test" } });
+      const sink = new SinkTask({ id: "sink" });
+
+      graph.addTasks([source, sink]);
+      graph.addDataflow(new Dataflow("source", "text", "sink", "text"));
+
+      const results = await runner.runGraph({ prompt: "test" });
+
+      const sinkResult = results.find((r) => r.id === "sink");
+      expect(sinkResult!.data.text).toBe("sink:hello world");
+      expect("usage" in sinkResult!.data).toBe(false);
+    });
+  });
+
+  describe("Usage is not resurrected from the output cache", () => {
+    let usageCache: InMemoryTaskOutputRepository;
+
+    beforeEach(async () => {
+      usageCache = new InMemoryTaskOutputRepository();
+      await usageCache.setupDatabase();
+    });
+
+    it("strips usage on save so a cache hit reports no phantom tokens", async () => {
+      const task1 = new UsageCacheableTask(
+        { defaults: { prompt: "hello" } },
+        { outputCache: usageCache }
+      );
+      const first = (await task1.run({ prompt: "hello" })) as SimpleOutput & { usage?: Usage };
+      // The executed run IS billed.
+      expect(first.usage).toEqual(TASK_USAGE);
+
+      // The stored entry carries the value but not the token counts.
+      const cached = await usageCache.getOutput("AccumTest_UsageCacheableTask", {
+        prompt: "hello",
+        __cv: "1",
+      });
+      expect(cached).toBeDefined();
+      expect(cached!.text).toBe("billed");
+      expect("usage" in cached!).toBe(false);
+
+      // The cache hit cost zero tokens, so it must report none.
+      const task2 = new UsageCacheableTask(
+        { defaults: { prompt: "hello" } },
+        { outputCache: usageCache }
+      );
+      const second = (await task2.run({ prompt: "hello" })) as SimpleOutput & { usage?: Usage };
+      expect(second.text).toBe("billed");
+      expect(second.usage).toBeUndefined();
     });
   });
 

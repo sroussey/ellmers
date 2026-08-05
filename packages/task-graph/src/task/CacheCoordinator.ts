@@ -11,7 +11,7 @@ import { RunPrivateCacheRepo } from "../cache/RunPrivateCacheRepo";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ITask } from "./ITask";
 import type { StreamEvent } from "./StreamTypes";
-import { REFUSAL_OUTPUT_KEY } from "./StreamTypes";
+import { REFUSAL_OUTPUT_KEY, USAGE_OUTPUT_KEY } from "./StreamTypes";
 import { Task } from "./Task";
 import type { TaskRunContext } from "./TaskRunContext";
 import type { TaskInput, TaskOutput } from "./TaskTypes";
@@ -155,9 +155,13 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     ) {
       return;
     }
+    // Token counts are a fact about ONE execution, not about the value. Serving
+    // this entry later costs zero tokens, so replaying the original counts would
+    // invent spend that never happened. Unlike a refusal (which blocks the save
+    // entirely), the value itself is still worth memoizing — strip the field.
     const outputSchema = (this.task.constructor as typeof Task).outputSchema();
     const wireOutputs = await CacheCoordinator.serializeOutputPorts(
-      output as Record<string, unknown>,
+      CacheCoordinator.withoutUsage(output as Record<string, unknown>),
       outputSchema as unknown as SchemaProperties
     );
     await outputCache.saveOutput(
@@ -216,6 +220,15 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
   // Private static helpers (lifted from current module-private functions in
   // TaskRunner.ts)
   // ========================================================================
+
+  private static withoutUsage(output: Record<string, unknown>): Record<string, unknown> {
+    if (output === null || typeof output !== "object" || !(USAGE_OUTPUT_KEY in output)) {
+      return output;
+    }
+    const stripped = { ...output };
+    delete stripped[USAGE_OUTPUT_KEY];
+    return stripped;
+  }
 
   private static async serializeOutputPorts(
     output: Record<string, unknown>,

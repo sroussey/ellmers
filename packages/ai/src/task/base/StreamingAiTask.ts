@@ -4,9 +4,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IExecuteContext, StreamEvent, TaskConfig, TaskOutput } from "@workglow/task-graph";
-import { getStreamingPorts, TaskConfigurationError } from "@workglow/task-graph";
+import type {
+  IExecuteContext,
+  StreamEvent,
+  TaskConfig,
+  TaskOutput,
+  Usage,
+} from "@workglow/task-graph";
+import {
+  getStreamingPorts,
+  mergeUsage,
+  TaskConfigurationError,
+  USAGE_OUTPUT_KEY,
+} from "@workglow/task-graph";
 
+import { recordUsageTelemetry } from "../../capability/UsageTelemetry";
 import type { ModelConfig } from "../../model/ModelSchema";
 import { getAiProviderRegistry } from "../../provider/AiProviderRegistry";
 import type { AiTaskInput } from "./AiTask";
@@ -121,25 +133,47 @@ export class StreamingAiTask<
     );
 
     let firstDataSeen = false;
-    for await (const event of iterable) {
-      if (
-        !firstDataSeen &&
-        (event.type === "text-delta" || event.type === "object-delta" || event.type === "snapshot")
-      ) {
-        firstDataSeen = true;
-        yield {
-          type: "phase",
-          message: streamingLabel,
-          progress: undefined,
-        } as StreamEvent<Output>;
-      }
+    // Streaming tasks never reach `AiTask.execute`, so the telemetry call sited
+    // there would never fire for them. Sum the provider's finish usage here and
+    // record it once the stream drains — a run that streamed its answer costs
+    // the same tokens as one that did not.
+    let usage: Usage | undefined;
+    // `finally`, not a trailing statement: a consumer that stops early closes
+    // this generator at its `yield` instead of running past the loop. The
+    // retry loop in `StructuredGenerationTask` does exactly that — it returns
+    // (or breaks) the moment it sees `finish` — so a trailing call would never
+    // record the tokens of the task that bills the most of them.
+    try {
+      for await (const event of iterable) {
+        if (
+          !firstDataSeen &&
+          (event.type === "text-delta" ||
+            event.type === "object-delta" ||
+            event.type === "snapshot")
+        ) {
+          firstDataSeen = true;
+          yield {
+            type: "phase",
+            message: streamingLabel,
+            progress: undefined,
+          } as StreamEvent<Output>;
+        }
 
-      if (event.type === "text-delta") {
-        yield { ...event, port: event.port ?? defaultPort } as StreamEvent<Output>;
-      } else if (event.type === "object-delta") {
-        yield { ...event, port: event.port ?? defaultPort } as StreamEvent<Output>;
-      } else {
-        yield event as StreamEvent<Output>;
+        if (event.type === "finish") {
+          usage = mergeUsage(usage, event.usage);
+        }
+
+        if (event.type === "text-delta") {
+          yield { ...event, port: event.port ?? defaultPort } as StreamEvent<Output>;
+        } else if (event.type === "object-delta") {
+          yield { ...event, port: event.port ?? defaultPort } as StreamEvent<Output>;
+        } else {
+          yield event as StreamEvent<Output>;
+        }
+      }
+    } finally {
+      if (usage) {
+        recordUsageTelemetry({ [USAGE_OUTPUT_KEY]: usage }, this.type, model.model_id);
       }
     }
   }
