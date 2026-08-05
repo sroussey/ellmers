@@ -20,6 +20,7 @@ import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
 import { applyAnthropicSamplingParams } from "./Anthropic_RequestParams";
 import { buildAnthropicMessages } from "./Anthropic_ToolCalling";
+import { createAnthropicUsageCollector } from "./Anthropic_Usage";
 
 /**
  * Inputs that the unified `["text.generation"]` runFn handles. Both
@@ -102,7 +103,9 @@ export const Anthropic_TextGeneration_Stream: AiProviderRunFn<
       { signal }
     );
 
+    const usageCollector = createAnthropicUsageCollector();
     for await (const event of stream) {
+      usageCollector.observe(event);
       const e = event as {
         type: string;
         delta?: { type?: string; text?: string };
@@ -112,7 +115,11 @@ export const Anthropic_TextGeneration_Stream: AiProviderRunFn<
       }
       maybeEmitAnthropicRefusal(event, emit);
     }
-    emit({ type: "finish", data: {} as TextGenerationTaskOutput });
+    emit({
+      type: "finish",
+      data: {} as TextGenerationTaskOutput,
+      usage: usageCollector.result(),
+    });
   } finally {
     logger.timeEnd(timerLabel, { model: getModelName(model) });
   }
