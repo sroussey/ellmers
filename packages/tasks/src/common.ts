@@ -21,6 +21,7 @@ export * from "./task/ArrayTask";
 export * from "./task/DateFormatTask";
 export * from "./task/DebugLogTask";
 export * from "./task/DelayTask";
+export * from "./task/DiscordNotifyTask";
 export * from "./task/FetchUrlJobError";
 export * from "./task/FetchUrlTask";
 export * from "./task/HumanApprovalTask";
@@ -66,6 +67,7 @@ export * from "./task/scalar/ScalarRoundTask";
 export * from "./task/scalar/ScalarSubtractTask";
 export * from "./task/scalar/ScalarSumTask";
 export * from "./task/scalar/ScalarTruncTask";
+export * from "./task/SlackNotifyTask";
 export * from "./task/SplitTask";
 export * from "./task/string/StringConcatTask";
 export * from "./task/string/StringIncludesTask";
@@ -86,6 +88,7 @@ export * from "./task/vector/VectorNormalizeTask";
 export * from "./task/vector/VectorScaleTask";
 export * from "./task/vector/VectorSubtractTask";
 export * from "./task/vector/VectorSumTask";
+export * from "./task/WebhookNotifyTask";
 export * from "./util/SafeFetch";
 export * from "./util/UrlClassifier";
 export { applyFilter, hasFilterOp, registerFilterOp } from "@workglow/util/media";
@@ -95,6 +98,7 @@ import { TaskRegistry } from "@workglow/task-graph";
 import { DateFormatTask } from "./task/DateFormatTask";
 import { DebugLogTask } from "./task/DebugLogTask";
 import { DelayTask } from "./task/DelayTask";
+import { DiscordNotifyTask } from "./task/DiscordNotifyTask";
 import { FetchUrlTask } from "./task/FetchUrlTask";
 import { HumanApprovalTask } from "./task/HumanApprovalTask";
 import { HumanInputTask } from "./task/HumanInputTask";
@@ -134,6 +138,7 @@ import { ScalarRoundTask } from "./task/scalar/ScalarRoundTask";
 import { ScalarSubtractTask } from "./task/scalar/ScalarSubtractTask";
 import { ScalarSumTask } from "./task/scalar/ScalarSumTask";
 import { ScalarTruncTask } from "./task/scalar/ScalarTruncTask";
+import { SlackNotifyTask } from "./task/SlackNotifyTask";
 import { SplitTask } from "./task/SplitTask";
 import { StringConcatTask } from "./task/string/StringConcatTask";
 import { StringIncludesTask } from "./task/string/StringIncludesTask";
@@ -154,6 +159,7 @@ import { VectorNormalizeTask } from "./task/vector/VectorNormalizeTask";
 import { VectorScaleTask } from "./task/vector/VectorScaleTask";
 import { VectorSubtractTask } from "./task/vector/VectorSubtractTask";
 import { VectorSumTask } from "./task/vector/VectorSumTask";
+import { WebhookNotifyTask } from "./task/WebhookNotifyTask";
 
 // Centralized registration ensures tasks are available for JSON deserialization
 // and prevents tree-shaking issues.
@@ -221,6 +227,9 @@ export let registerCommonTasks = () => {
     ImagePosterizeTask,
     ImageTintTask,
     ImageTextTask,
+    WebhookNotifyTask,
+    SlackNotifyTask,
+    DiscordNotifyTask,
   ];
   tasks.map(TaskRegistry.registerTask);
   return tasks;
