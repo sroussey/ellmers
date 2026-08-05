@@ -18,4 +18,12 @@ export type {
   StreamPhase,
   StreamSnapshot,
   StreamTextDelta,
+  Usage,
 } from "@workglow/task-graph";
+
+/**
+ * Usage helpers are re-exported as values so a provider package can normalize
+ * its own token counts (`import type { Usage } from "@workglow/ai"`) without
+ * depending on `@workglow/task-graph` directly.
+ */
+export { USAGE_OUTPUT_KEY, mergeUsage } from "@workglow/task-graph";

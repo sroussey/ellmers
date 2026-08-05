@@ -54,15 +54,53 @@ export type StreamSnapshot<Output = Record<string, any>> = {
 };
 
 /**
+ * Provider-agnostic token accounting for one model request.
+ *
+ * Every field is `number | undefined`, and `undefined` means **the provider did
+ * not report this figure** — it is NOT the same as `0`. Cost math depends on the
+ * distinction: a model that bills 0 cached tokens and a model that never tells
+ * you about caching are different facts, and collapsing them to `0` silently
+ * understates spend.
+ *
+ * - `input` / `output` — prompt and completion tokens.
+ * - `cached` — input tokens served from a provider-side prompt cache (read).
+ * - `cacheWrite` — input tokens written into that cache.
+ * - `reasoning` — output tokens spent on hidden reasoning, when reported separately.
+ * - `total` — the provider's own total, when it reports one. Never synthesized.
+ * - `extra` — provider-specific counters that have no normalized slot.
+ */
+export interface Usage {
+  readonly input: number | undefined;
+  readonly output: number | undefined;
+  readonly cached: number | undefined;
+  readonly cacheWrite: number | undefined;
+  readonly reasoning: number | undefined;
+  readonly total: number | undefined;
+  readonly extra: Readonly<Record<string, number | string>> | undefined;
+}
+
+/**
+ * Reserved output-port name that {@link Usage} is surfaced on. Not a declared
+ * task port — kept out of dataflow like {@link REFUSAL_OUTPUT_KEY} and `__cv`.
+ */
+export const USAGE_OUTPUT_KEY = "usage";
+
+/**
  * Signals that the stream has finished. In append mode, the runner
  * accumulates text-delta chunks into the append port (determined by
  * the output schema's `x-stream: "append"` annotation); `data` may
  * carry additional fields (merged into the final output).
  * In replace mode, `data` contains the final output.
+ *
+ * `usage` is a SIBLING of `data`, never a member of it: `data` is governed by
+ * the streaming conventions (`{}` for delta streams, the full payload for
+ * one-shot run-fns, the parsed object for json-mode), and folding token counts
+ * into it would corrupt all three.
  */
 export type StreamFinish<Output = Record<string, any>> = {
   type: "finish";
   data: Output;
+  usage?: Usage;
 };
 
 /**
@@ -93,6 +131,53 @@ export type StreamRefusal = {
  */
 export const REFUSAL_OUTPUT_KEY = "refusal";
 export const REFUSAL_CATEGORY_OUTPUT_KEY = "refusalCategory";
+
+/**
+ * Adds two optional counters while preserving "not reported". Two unreported
+ * counters stay unreported; one reported counter survives a missing partner
+ * unchanged (rather than being diluted by an implicit zero).
+ */
+function addUsageField(a: number | undefined, b: number | undefined): number | undefined {
+  if (a === undefined && b === undefined) return undefined;
+  return (a ?? 0) + (b ?? 0);
+}
+
+function mergeUsageExtra(
+  a: Readonly<Record<string, number | string>> | undefined,
+  b: Readonly<Record<string, number | string>> | undefined
+): Readonly<Record<string, number | string>> | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  const merged: Record<string, number | string> = { ...a };
+  for (const [key, value] of Object.entries(b)) {
+    const existing = merged[key];
+    // Only counters compose. A string is a label (model id, service tier, cache
+    // key), so the later turn's value replaces the earlier one.
+    merged[key] =
+      typeof existing === "number" && typeof value === "number" ? existing + value : value;
+  }
+  return merged;
+}
+
+/**
+ * Combines the token accounting of two requests — a tool-calling loop's turns,
+ * or a structured-generation task's validation retries — into one {@link Usage}.
+ * Field-wise addition that preserves `undefined` (see {@link Usage}), so a
+ * provider that reports nothing never fabricates zeros for the caller's cost math.
+ */
+export function mergeUsage(a: Usage | undefined, b: Usage | undefined): Usage | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return {
+    input: addUsageField(a.input, b.input),
+    output: addUsageField(a.output, b.output),
+    cached: addUsageField(a.cached, b.cached),
+    cacheWrite: addUsageField(a.cacheWrite, b.cacheWrite),
+    reasoning: addUsageField(a.reasoning, b.reasoning),
+    total: addUsageField(a.total, b.total),
+    extra: mergeUsageExtra(a.extra, b.extra),
+  };
+}
 
 /**
  * Phase / status event yielded by a streaming source to signal a named

@@ -6,8 +6,8 @@
 
 import type { ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base";
 import { getKnowledgeBase, slugifyHeading } from "@workglow/knowledge-base";
-import type { CachePolicy, IExecuteContext, StreamEvent } from "@workglow/task-graph";
-import { TaskConfigSchema } from "@workglow/task-graph";
+import type { CachePolicy, IExecuteContext, StreamEvent, Usage } from "@workglow/task-graph";
+import { mergeUsage, TaskConfigSchema } from "@workglow/task-graph";
 import type { IHumanRequest } from "@workglow/util";
 import { DEFAULT_LIMITS, resolveHumanConnector } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
@@ -433,6 +433,12 @@ export class AiChatWithKbTask extends StreamingAiTask<
     // shift naturally replaces the carry-forward set on the next match.
     let lastNonEmptyRefs: readonly ChatChunkReference[] = [];
 
+    // Token accounting for the whole conversation. Each turn is its own provider
+    // request, and only the outer finish reaches the caller, so the per-turn
+    // counts have to be summed here or the run under-reports its cost by every
+    // turn but the last.
+    let conversationUsage: Usage | undefined;
+
     for (let turn = 0; turn < maxIterations; turn++) {
       const lastUserText = extractLastUserText(history);
 
@@ -632,7 +638,9 @@ export class AiChatWithKbTask extends StreamingAiTask<
                 // Invariant: inner turn run-fns must be text.generation only;
                 // finish.data from inner turns is intentionally discarded. If
                 // json-mode capability is ever added to inner dispatch, this
-                // swallow must be revisited.
+                // swallow must be revisited. The `usage` sibling is NOT
+                // discarded — it is summed onto the outer finish below.
+                conversationUsage = mergeUsage(conversationUsage, event.usage);
               } else {
                 queue.push(event as StreamEvent<AiChatWithKbTaskOutput>);
               }
@@ -698,6 +706,7 @@ export class AiChatWithKbTask extends StreamingAiTask<
     yield {
       type: "finish",
       data: { iterations: completedTurns } as Partial<AiChatWithKbTaskOutput>,
+      ...(conversationUsage ? { usage: conversationUsage } : {}),
     } as StreamEvent<AiChatWithKbTaskOutput>;
   }
 }

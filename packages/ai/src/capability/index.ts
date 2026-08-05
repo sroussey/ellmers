@@ -13,3 +13,4 @@ export * from "./collectStream";
 export * from "./emitQueue";
 export * from "./StreamEventAccumulator";
 export * from "./StreamEvents";
+export * from "./UsageTelemetry";

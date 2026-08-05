@@ -91,6 +91,47 @@ describe("WorkerServerBase.handleRunCall protocol", () => {
     expect(receivedSessionId).toBe("sess-42");
   });
 
+  it("forwards a finish event's `usage` sibling across the worker boundary", async () => {
+    // The usage channel needs no protocol change: the whole event object is
+    // forwarded, so a sibling field survives structured clone untouched.
+    const server = new WorkerServerBase();
+    const usage = {
+      input: 120,
+      output: 45,
+      cached: 100,
+      cacheWrite: undefined,
+      reasoning: undefined,
+      total: 165,
+      extra: { tier: "standard" },
+    };
+    server.registerRunFunction("usage.fn", async (_input, _model, _signal, emit) => {
+      emit({ type: "finish", data: {}, usage } as any);
+    });
+
+    await (server as any).handleRunCall("req-usage", "usage.fn", [
+      "input",
+      undefined,
+      undefined,
+      undefined,
+    ]);
+
+    const chunks = captured.filter((m) => m.type === "stream_chunk");
+    expect(chunks).toHaveLength(1);
+    // Round-trip through structured clone the way postMessage would.
+    const roundTripped = structuredClone(chunks[0].data);
+    expect(roundTripped.type).toBe("finish");
+    expect(roundTripped.data).toEqual({});
+    expect(roundTripped.usage).toEqual({
+      input: 120,
+      output: 45,
+      cached: 100,
+      cacheWrite: undefined,
+      reasoning: undefined,
+      total: 165,
+      extra: { tier: "standard" },
+    });
+  });
+
   it("sends 'error' and no 'complete' when the run-fn throws", async () => {
     const server = new WorkerServerBase();
     server.registerRunFunction("fail.fn", async () => {

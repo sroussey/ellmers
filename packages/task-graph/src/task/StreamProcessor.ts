@@ -7,12 +7,14 @@
 import type { ResourceScope, ServiceRegistry } from "@workglow/util";
 import type { Taskish } from "../task-graph/Conversions";
 import type { ITask } from "./ITask";
-import type { StreamEvent, StreamMode } from "./StreamTypes";
+import type { StreamEvent, StreamMode, Usage } from "./StreamTypes";
 import {
   getOutputStreamMode,
   getStreamingPorts,
+  mergeUsage,
   REFUSAL_CATEGORY_OUTPUT_KEY,
   REFUSAL_OUTPUT_KEY,
+  USAGE_OUTPUT_KEY,
 } from "./StreamTypes";
 import { TaskAbortedError, TaskError } from "./TaskError";
 import type { TaskRunContext } from "./TaskRunContext";
@@ -80,6 +82,7 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
     let finalOutput: Output | undefined;
     let refusalText = "";
     let refusalCategory: string | undefined;
+    let usage: Usage | undefined;
 
     this.task.emit("stream_start");
 
@@ -168,6 +171,12 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
           break;
         }
         case "finish": {
+          usage = mergeUsage(usage, event.usage);
+          // Re-attached to every finish this processor constructs below, so a
+          // downstream StreamPump consumer sees the same token counts the
+          // provider reported. Spread conditionally: an unreported usage must
+          // leave no key at all rather than an explicit `usage: undefined`.
+          const usageOnEvent = event.usage ? { usage: event.usage } : {};
           if (accumulated || accumulatedObjects) {
             // Emit an enriched finish event: merge accumulated deltas into
             // the finish payload so downstream dataflows get complete port data
@@ -193,12 +202,17 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
                 this.task.emit("stream_chunk", {
                   type: "finish",
                   data: lastSnapshot,
+                  ...usageOnEvent,
                 } as StreamEvent);
                 break;
               }
             }
             finalOutput = merged as unknown as Output;
-            this.task.emit("stream_chunk", { type: "finish", data: merged } as StreamEvent);
+            this.task.emit("stream_chunk", {
+              type: "finish",
+              data: merged,
+              ...usageOnEvent,
+            } as StreamEvent);
           } else {
             // No accumulation. For replace-mode streams the provider's finish
             // event carries `data: {}` by convention — the snapshots already
@@ -214,6 +228,7 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
                 this.task.emit("stream_chunk", {
                   type: "finish",
                   data: lastSnapshot,
+                  ...usageOnEvent,
                 } as StreamEvent);
                 break;
               }
@@ -262,6 +277,16 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
         ...(this.task.runOutputData as Record<string, unknown> | undefined),
         [REFUSAL_OUTPUT_KEY]: refusalText,
         ...(refusalCategory ? { [REFUSAL_CATEGORY_OUTPUT_KEY]: refusalCategory } : {}),
+      } as unknown as Output;
+    }
+
+    // Same treatment for token accounting: a reserved output field, kept off
+    // dataflow edges, applied after any refusal so a refused turn still reports
+    // what it was billed. Absent when no provider reported usage.
+    if (usage) {
+      this.task.runOutputData = {
+        ...(this.task.runOutputData as Record<string, unknown> | undefined),
+        [USAGE_OUTPUT_KEY]: usage,
       } as unknown as Output;
     }
 

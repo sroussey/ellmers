@@ -29,6 +29,7 @@ import { accumulatingEmit } from "../../capability/accumulatingEmit";
 import type { AiEmit } from "../../capability/AiEmit";
 import { noopEmit } from "../../capability/AiEmit";
 import type { Capability } from "../../capability/Capabilities";
+import { recordUsageTelemetry } from "../../capability/UsageTelemetry";
 import { AiJob, AiJobInput } from "../../job/AiJob";
 import { MODEL_REPOSITORY } from "../../model/ModelRegistry";
 import type { ModelRepository } from "../../model/ModelRepository";
@@ -249,6 +250,8 @@ export class AiTask<
       // expectations are stable.
       throw providerError;
     }
+
+    recordUsageTelemetry(output, this.type, model.model_id);
 
     // Register a disposer so the caller can release the in-memory model when
     // done. The disposer is wired via the "model.dispose" capability —

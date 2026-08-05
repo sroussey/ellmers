@@ -15,7 +15,7 @@ import type {
 import { AiChatWithKbTask, AiProvider, getAiProviderRegistry, registerAiTasks } from "@workglow/ai";
 import type { ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base";
 import { getGlobalKnowledgeBases } from "@workglow/knowledge-base";
-import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
+import type { IExecuteContext, StreamEvent, Usage } from "@workglow/task-graph";
 import { TaskRegistry } from "@workglow/task-graph";
 import type { IHumanConnector, IHumanRequest, IHumanResponse } from "@workglow/util";
 import { Container, HUMAN_CONNECTOR, ResourceScope, ServiceRegistry } from "@workglow/util";
@@ -1072,6 +1072,172 @@ describe("AiChatWithKbTask — responseFormat", () => {
       expect(captured).toMatch(/\[1\] \[Help\] \(Doc 1\) A/);
       // No `<url>` brackets in text mode.
       expect(captured).not.toContain("</help/d1>");
+    } finally {
+      unregister();
+      fake.unregister();
+    }
+  });
+});
+
+describe("AiChatWithKbTask — usage aggregation across turns", () => {
+  function mkUsage(partial: Partial<Usage>): Usage {
+    return {
+      input: undefined,
+      output: undefined,
+      cached: undefined,
+      cacheWrite: undefined,
+      reasoning: undefined,
+      total: undefined,
+      extra: undefined,
+      ...partial,
+    };
+  }
+
+  function mkKb(id: string) {
+    return makeFakeKb({
+      id,
+      label: "Help",
+      results: [
+        {
+          chunk_id: "c1",
+          doc_id: "d1",
+          score: 0.9,
+          metadata: { doc_title: "Doc 1", text: "chunk" },
+        } as any,
+      ],
+    });
+  }
+
+  it("sums every turn's usage onto the outer finish, alongside iterations", async () => {
+    const fake = mkKb("kb-usage");
+
+    // Each turn is its own provider request reporting its own token counts.
+    const perTurnUsage = [
+      mkUsage({ input: 100, output: 10, cached: 80, extra: { audioTokens: 4, tier: "standard" } }),
+      mkUsage({ input: 150, output: 20, cached: 120, extra: { audioTokens: 6, tier: "priority" } }),
+    ];
+    let turn = 0;
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _taskInput,
+      _model,
+      _signal,
+      emit
+    ) => {
+      const usage = perTurnUsage[Math.min(turn, perTurnUsage.length - 1)];
+      turn++;
+      emit({ type: "text-delta", port: "text", textDelta: "answer" });
+      emit({ type: "finish", data: {} as any, usage } as any);
+    };
+    const unregister = registerFakeChatKbProvider(stream);
+
+    try {
+      const connector = new FakeConnector([
+        { action: "accept", content: { content: "follow up" }, done: false, requestId: "" },
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "q",
+        knowledgeBaseIds: ["kb-usage"],
+        maxIterations: 5,
+      };
+      const task = new AiChatWithKbTask({ defaults: input } as any);
+      const { events } = await accumulateKbChatStream(
+        task.executeStream(input as any, mkContext(connector))
+      );
+
+      // Exactly two provider turns ran, so exactly two usages compose.
+      expect(turn).toBe(2);
+      const finishes = events.filter((e) => e.type === "finish");
+      // Inner-turn finishes stay swallowed; only the outer one reaches the consumer.
+      expect(finishes).toHaveLength(1);
+      const outer = finishes[0] as { data: { iterations: number }; usage?: Usage };
+      expect(outer.data.iterations).toBe(2);
+      // Counters sum across turns; the string label takes the later turn's value.
+      expect(outer.usage).toEqual(
+        mkUsage({
+          input: 250,
+          output: 30,
+          cached: 200,
+          extra: { audioTokens: 10, tier: "priority" },
+        })
+      );
+    } finally {
+      unregister();
+      fake.unregister();
+    }
+  });
+
+  it("does not double-count: one turn reports exactly that turn's usage", async () => {
+    const fake = mkKb("kb-usage-1");
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _taskInput,
+      _model,
+      _signal,
+      emit
+    ) => {
+      emit({ type: "text-delta", port: "text", textDelta: "answer" });
+      emit({
+        type: "finish",
+        data: {} as any,
+        usage: mkUsage({ input: 100, output: 10 }),
+      } as any);
+    };
+    const unregister = registerFakeChatKbProvider(stream);
+
+    try {
+      const connector = new FakeConnector([
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "q",
+        knowledgeBaseIds: ["kb-usage-1"],
+        maxIterations: 5,
+      };
+      const task = new AiChatWithKbTask({ defaults: input } as any);
+      const { events } = await accumulateKbChatStream(
+        task.executeStream(input as any, mkContext(connector))
+      );
+
+      const outer = events.find((e) => e.type === "finish") as { usage?: Usage };
+      expect(outer.usage).toEqual(mkUsage({ input: 100, output: 10 }));
+    } finally {
+      unregister();
+      fake.unregister();
+    }
+  });
+
+  it("omits usage entirely when no turn reported any", async () => {
+    const fake = mkKb("kb-usage-none");
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _taskInput,
+      _model,
+      _signal,
+      emit
+    ) => {
+      emit({ type: "text-delta", port: "text", textDelta: "answer" });
+      emit({ type: "finish", data: {} as any });
+    };
+    const unregister = registerFakeChatKbProvider(stream);
+
+    try {
+      const connector = new FakeConnector([
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "q",
+        knowledgeBaseIds: ["kb-usage-none"],
+        maxIterations: 5,
+      };
+      const task = new AiChatWithKbTask({ defaults: input } as any);
+      const { events } = await accumulateKbChatStream(
+        task.executeStream(input as any, mkContext(connector))
+      );
+
+      const outer = events.find((e) => e.type === "finish")!;
+      expect("usage" in outer).toBe(false);
     } finally {
       unregister();
       fake.unregister();

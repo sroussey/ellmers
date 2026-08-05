@@ -17,7 +17,7 @@ import {
   StructuredGenerationTask,
   StructuredOutputValidationError,
 } from "@workglow/ai";
-import type { IExecuteContext } from "@workglow/task-graph";
+import type { IExecuteContext, Usage } from "@workglow/task-graph";
 import { TaskConfigurationError, TaskRegistry } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
@@ -349,5 +349,149 @@ describe("StructuredGenerationTask — schema compile errors", () => {
     expect((caught as TaskConfigurationError).message.toLowerCase()).toContain(
       "invalid outputschema"
     );
+  });
+});
+
+// ============================================================================
+// Usage aggregation across validation retries
+// ============================================================================
+
+describe("StructuredGenerationTask — usage aggregation", () => {
+  function mkUsage(partial: Partial<Usage>): Usage {
+    return {
+      input: undefined,
+      output: undefined,
+      cached: undefined,
+      cacheWrite: undefined,
+      reasoning: undefined,
+      total: undefined,
+      extra: undefined,
+      ...partial,
+    };
+  }
+
+  /**
+   * Like {@link registerFakeStructuredProvider}, but each scripted attempt also
+   * carries its own token counts on the finish event.
+   */
+  function registerUsageProvider(
+    attempts: ReadonlyArray<{ payload: Record<string, unknown>; usage: Usage | undefined }>
+  ): { unregister: () => void } {
+    let index = 0;
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _input,
+      _model,
+      _signal,
+      emit
+    ) => {
+      const attempt = attempts[Math.min(index, attempts.length - 1)];
+      index++;
+      emit({ type: "object-delta", port: "object", objectDelta: attempt.payload });
+      emit({
+        type: "finish",
+        data: { object: attempt.payload } as any,
+        ...(attempt.usage ? { usage: attempt.usage } : {}),
+      } as any);
+    };
+    const registry = getAiProviderRegistry();
+    registry.registerProvider(new FakeStructuredProvider([{ serves: JSON_MODE, runFn: stream }]));
+    registry.registerRunFn("fake-structured", { serves: JSON_MODE, runFn: stream });
+    return { unregister: () => registry.unregisterProvider("fake-structured") };
+  }
+
+  it("sums usage across a failed attempt and the retry that succeeds", async () => {
+    // A rejected attempt is still billed — the run costs both requests.
+    const { unregister } = registerUsageProvider([
+      { payload: { name: "Alice", age: "thirty" }, usage: mkUsage({ input: 50, output: 8 }) },
+      { payload: { name: "Alice", age: 30 }, usage: mkUsage({ input: 90, output: 12 }) },
+    ]);
+    try {
+      const input = {
+        model: mkModel(),
+        prompt: "Give me a person",
+        outputSchema: PERSON_SCHEMA,
+        maxRetries: 2,
+      };
+      const task = new StructuredGenerationTask({ defaults: input } as any);
+      const events = await drain(task.executeStream(input as any, mkContext()));
+
+      const finishes = events.filter((e) => e.type === "finish") as Array<{
+        data: { object: Record<string, unknown> };
+        usage?: Usage;
+      }>;
+      // Only the successful attempt yields a finish to the consumer.
+      expect(finishes).toHaveLength(1);
+      expect(finishes[0].data.object).toEqual({ name: "Alice", age: 30 });
+      expect(finishes[0].usage).toEqual(mkUsage({ input: 140, output: 20 }));
+    } finally {
+      unregister();
+    }
+  });
+
+  it("does not double-count a single successful attempt", async () => {
+    const { unregister } = registerUsageProvider([
+      { payload: { name: "Alice", age: 30 }, usage: mkUsage({ input: 90, output: 12 }) },
+    ]);
+    try {
+      const input = {
+        model: mkModel(),
+        prompt: "Give me a person",
+        outputSchema: PERSON_SCHEMA,
+        maxRetries: 2,
+      };
+      const task = new StructuredGenerationTask({ defaults: input } as any);
+      const events = await drain(task.executeStream(input as any, mkContext()));
+      const finish = events.find((e) => e.type === "finish") as { usage?: Usage };
+      expect(finish.usage).toEqual(mkUsage({ input: 90, output: 12 }));
+    } finally {
+      unregister();
+    }
+  });
+
+  it("folds retry-summed usage onto the execute() output next to the object", async () => {
+    // The output schema declares `additionalProperties: false` and requires
+    // `object`; `usage` is a reserved field, so it rides along without tripping
+    // validation and without displacing the structured payload.
+    const { unregister } = registerUsageProvider([
+      { payload: { name: "Alice", age: "thirty" }, usage: mkUsage({ input: 50, output: 8 }) },
+      { payload: { name: "Alice", age: 30 }, usage: mkUsage({ input: 90, output: 12 }) },
+    ]);
+    try {
+      const input = {
+        model: mkModel(),
+        prompt: "Give me a person",
+        outputSchema: PERSON_SCHEMA,
+        maxRetries: 2,
+      };
+      const task = new StructuredGenerationTask({ defaults: input } as any);
+      const result = (await task.execute(input as any, mkContext())) as {
+        object: Record<string, unknown>;
+        usage?: Usage;
+      };
+      expect(result.object).toEqual({ name: "Alice", age: 30 });
+      expect(result.usage).toEqual(mkUsage({ input: 140, output: 20 }));
+    } finally {
+      unregister();
+    }
+  });
+
+  it("leaves no usage key when the provider reported none", async () => {
+    const { unregister } = registerUsageProvider([
+      { payload: { name: "Alice", age: 30 }, usage: undefined },
+    ]);
+    try {
+      const input = {
+        model: mkModel(),
+        prompt: "Give me a person",
+        outputSchema: PERSON_SCHEMA,
+        maxRetries: 0,
+      };
+      const task = new StructuredGenerationTask({ defaults: input } as any);
+      const result = await task.execute(input as any, mkContext());
+      expect(result).toEqual({ object: { name: "Alice", age: 30 } });
+      expect("usage" in (result as object)).toBe(false);
+    } finally {
+      unregister();
+    }
   });
 });

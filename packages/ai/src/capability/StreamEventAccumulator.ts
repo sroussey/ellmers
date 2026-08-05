@@ -4,8 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { StreamEvent, TaskOutput } from "@workglow/task-graph";
-import { REFUSAL_CATEGORY_OUTPUT_KEY, REFUSAL_OUTPUT_KEY } from "@workglow/task-graph";
+import type { StreamEvent, TaskOutput, Usage } from "@workglow/task-graph";
+import {
+  mergeUsage,
+  REFUSAL_CATEGORY_OUTPUT_KEY,
+  REFUSAL_OUTPUT_KEY,
+  USAGE_OUTPUT_KEY,
+} from "@workglow/task-graph";
 
 const isNonEmptyObject = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length > 0;
@@ -55,6 +60,7 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
   private finishData: T | undefined;
   private refusalText = "";
   private refusalCategory: string | undefined;
+  private usage: Usage | undefined;
   /**
    * The `type` of the most recent observed event. Surfaced in the
    * no-finish materialise error so operators can see what the stream
@@ -125,6 +131,9 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
   observeFinish(event: Extract<StreamEvent<T>, { type: "finish" }>): void {
     this.finished = true;
     this.finishData = event.data;
+    // Merged rather than replaced: a consumer driving several finishes through
+    // one accumulator (a tool-calling loop) is billed for every turn.
+    this.usage = mergeUsage(this.usage, event.usage);
     this.lastEventType = "finish";
   }
 
@@ -141,19 +150,19 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
     }
     // One-shot: finish carries the complete payload.
     if (!this.hasTextDeltas && !this.hasObjectDeltas && !this.hasSnapshots) {
-      if (isNonEmptyObject(this.finishData)) return this.applyRefusal(this.finishData);
-      return this.applyRefusal(this.finishData as unknown as T);
+      if (isNonEmptyObject(this.finishData)) return this.finalize(this.finishData);
+      return this.finalize(this.finishData as unknown as T);
     }
 
     // Snapshot (replace) mode — last snapshot wins, finish merged on top.
     if (this.hasSnapshots && !this.hasTextDeltas && !this.hasObjectDeltas) {
       if (isNonEmptyObject(this.finishData)) {
-        return this.applyRefusal({
+        return this.finalize({
           ...(this.snapshotAccumulator as object),
           ...(this.finishData as object),
         } as T);
       }
-      return this.applyRefusal(this.snapshotAccumulator as T);
+      return this.finalize(this.snapshotAccumulator as T);
     }
 
     // Delta mode — text and/or object deltas. Accumulated deltas take precedence
@@ -174,7 +183,30 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
     for (const [port, obj] of this.objectAccumulator) {
       result[port] = obj;
     }
-    return this.applyRefusal(result as unknown as T);
+    return this.finalize(result as unknown as T);
+  }
+
+  /**
+   * Applies every reserved output field to a materialised value. Usage is
+   * folded last so a refused turn still reports the tokens it was billed for —
+   * {@link applyRefusal} returns early when nothing was refused.
+   */
+  private finalize(output: T): T {
+    return this.applyUsage(this.applyRefusal(output));
+  }
+
+  /**
+   * Folds accumulated token counts into the reserved `usage` output field.
+   * No-op when no provider reported usage, so the key is absent rather than
+   * present-and-empty.
+   */
+  private applyUsage(output: T): T {
+    if (!this.usage) return output;
+    const base = (output !== null && typeof output === "object" ? output : {}) as Record<
+      string,
+      unknown
+    >;
+    return { ...base, [USAGE_OUTPUT_KEY]: this.usage } as unknown as T;
   }
 
   /**
