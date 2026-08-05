@@ -19,6 +19,7 @@
     { "path": "../ai" },
     { "path": "../javascript" },
     { "path": "../mcp" },
+    { "path": "../bootstrap" },
     { "path": "../browser-control" },
     { "path": "../../providers/anthropic" },
     { "path": "../../providers/chrome-ai" },
