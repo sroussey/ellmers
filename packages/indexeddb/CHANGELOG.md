@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.37
+
+### Features
+
+#### storage
+
+- add an `in` set-membership operator to SearchCriteria
+
 ## 0.3.36
 
 ## 0.3.35

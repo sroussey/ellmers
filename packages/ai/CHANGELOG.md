@@ -1,5 +1,13 @@
 # @workglow/ai
 
+## 0.3.37
+
+### Features
+
+#### dataUri
+
+- implement dataUriToBlob function for decoding data URIs to Blobs
+
 ## 0.3.36
 
 ## 0.3.35

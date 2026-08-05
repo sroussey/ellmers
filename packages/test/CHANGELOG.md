@@ -1,5 +1,32 @@
 # @workglow/test
 
+## 0.3.37
+
+### Features
+
+#### storage
+
+- add an `in` set-membership operator to SearchCriteria
+
+#### dataUri
+
+- implement dataUriToBlob function for decoding data URIs to Blobs
+
+### Bug Fixes
+
+- data-URI decode order, own() tracking for functions, UI wiring
+- bound CLI listener retention, reject double-own, decode binary data URIs
+
+### Tests
+
+- cover wrapper removal that bypasses disown
+
+### Documentation
+
+#### test
+
+- correct the empty-in-list comment in the Supabase mock
+
 ## 0.3.36
 
 ### Features

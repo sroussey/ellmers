@@ -1,5 +1,22 @@
 # @workglow/cli
 
+## 0.3.37
+
+### Bug Fixes
+
+- data-URI decode order, own() tracking for functions, UI wiring
+- bound CLI listener retention, reject double-own, decode binary data URIs
+
+### Refactors
+
+#### cli
+
+- type the status listener and tighten removal assertions
+
+### Tests
+
+- cover wrapper removal that bypasses disown
+
 ## 0.3.36
 
 ## 0.3.35

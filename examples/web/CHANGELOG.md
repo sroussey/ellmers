@@ -1,5 +1,15 @@
 # @workglow/web
 
+## 0.3.37
+
+### Bug Fixes
+
+- data-URI decode order, own() tracking for functions, UI wiring
+
+#### web
+
+- release a disowned subtask's listeners in TaskNode
+
 ## 0.3.36
 
 ## 0.3.35

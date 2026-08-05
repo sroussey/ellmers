@@ -1,5 +1,18 @@
 # @workglow/util
 
+## 0.3.37
+
+### Features
+
+#### dataUri
+
+- implement dataUriToBlob function for decoding data URIs to Blobs
+
+### Bug Fixes
+
+- data-URI decode order, own() tracking for functions, UI wiring
+- bound CLI listener retention, reject double-own, decode binary data URIs
+
 ## 0.3.36
 
 ## 0.3.35
