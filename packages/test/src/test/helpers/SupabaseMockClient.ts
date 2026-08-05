@@ -184,7 +184,9 @@ function mockRenderFilter(f: { column: string; operator: string; value: any }): 
   if (f.operator === "IS NOT" && f.value === "NULL") return `"${f.column}" IS NOT NULL`;
   if (f.operator === "IN") {
     const values = (f.value as any[]) ?? [];
-    // PostgREST renders an empty `in.()` as a never-matching term.
+    // Defensive only: `SupabaseTabularStorage` short-circuits an empty in-list
+    // before it reaches `.in()`, precisely so nothing depends on how PostgREST
+    // renders `in.()`. Kept so a direct `.in(col, [])` here can't emit `IN ()`.
     if (values.length === 0) return "1=0";
     return `"${f.column}" IN (${values.map(mockSqlLiteral).join(", ")})`;
   }
