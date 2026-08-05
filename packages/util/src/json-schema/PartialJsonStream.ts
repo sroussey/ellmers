@@ -9,7 +9,7 @@
  * middle of any token and resume on the next `push()` without re-reading input.
  */
 const Mode = {
-  /** Discarding preamble text until the first `{` or `[`. */
+  /** Discarding preamble text until the first `{`. */
   Seek: 0,
   /** Expecting the start of a value. */
   Value: 1,
@@ -114,9 +114,14 @@ type PendingSlot =
 
 export interface PartialJsonStreamOptions {
   /**
-   * Discard any text before the first `{` or `[`. Use for providers that emit
-   * prose, a `<think>` block, or a Markdown fence ahead of the JSON. Once the
-   * root value closes, trailing text is ignored either way.
+   * Discard any text before the first `{`. Use for providers that emit prose,
+   * a `<think>` block, or a Markdown fence ahead of the JSON. Once the root
+   * value closes, trailing text is ignored either way.
+   *
+   * A `[` never starts the payload in this mode: prose is full of bracketed
+   * asides that parse as valid arrays, and the object-only contract makes an
+   * array root useless anyway. A document that really is array-rooted must be
+   * fed without `skipPreamble`.
    */
   readonly skipPreamble?: boolean;
 }
@@ -170,6 +175,8 @@ class PartialJsonStreamImpl implements PartialJsonStream {
   private escaped = false;
   private unicodeRemaining = 0;
   private unicodeValue = 0;
+  /** Raw hex digits of the `\uXXXX` escape in flight, kept so an invalid one replays verbatim. */
+  private unicodeText = "";
   private closed = false;
   private finished = false;
 
@@ -254,6 +261,8 @@ class PartialJsonStreamImpl implements PartialJsonStream {
       this.buf = "";
       this.escaped = false;
       this.unicodeRemaining = 0;
+      this.unicodeValue = 0;
+      this.unicodeText = "";
       this.root = undefined;
       this.mode = Mode.Seek;
       return index;
@@ -380,10 +389,18 @@ class PartialJsonStreamImpl implements PartialJsonStream {
     }
   }
 
+  /**
+   * Scans past preamble to the start of the payload. Only `{` opens a
+   * candidate: the parser's contract is object-only, and prose is full of
+   * bracketed asides (`[1]`, `[2024 figures]`) that parse as a perfectly
+   * valid array. A complete one would close the root and make the parser
+   * ignore the real payload behind it; an incomplete one leaves a non-empty
+   * root, which {@link fail} then refuses to discard. Neither is recoverable,
+   * so a bracket never starts a candidate here.
+   */
   private consumeSeek(chunk: string, start: number, len: number): number {
     for (let i = start; i < len; i++) {
-      const ch = chunk[i]!;
-      if (ch === "{" || ch === "[") {
+      if (chunk[i] === "{") {
         this.mode = Mode.Value;
         return i;
       }
@@ -514,18 +531,23 @@ class PartialJsonStreamImpl implements PartialJsonStream {
       if (this.unicodeRemaining > 0) {
         const digit = hexValue(chunk.charCodeAt(i));
         if (digit < 0) {
-          // Not a valid \uXXXX escape; keep the text as written.
-          this.buf += "\\u";
+          // Not a valid \uXXXX escape; keep the text exactly as written,
+          // including any hex digits already consumed (`\u00zz` must not
+          // come back as `\uzz`). The offending character is re-dispatched.
+          this.buf += `\\u${this.unicodeText}`;
           this.unicodeRemaining = 0;
           this.unicodeValue = 0;
+          this.unicodeText = "";
           continue;
         }
         this.unicodeValue = this.unicodeValue * 16 + digit;
+        this.unicodeText += chunk[i]!;
         this.unicodeRemaining--;
         i++;
         if (this.unicodeRemaining === 0) {
           this.buf += String.fromCharCode(this.unicodeValue);
           this.unicodeValue = 0;
+          this.unicodeText = "";
         }
         continue;
       }

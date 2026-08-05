@@ -79,6 +79,11 @@ describe("createPartialJsonStream", () => {
       expect(pushAll(['{"k":"a\\', '\\b"}'])).toEqual({ k: "a\\b" });
     });
 
+    it("keeps an invalid unicode escape verbatim, digits included", () => {
+      expect(pushAll(['{"k":"\\u00zz"}'])).toEqual({ k: "\\u00zz" });
+      expect(pushAll(['{"k":"\\u00', 'zz"}'])).toEqual({ k: "\\u00zz" });
+    });
+
     it("reassembles a surrogate pair split across chunks", () => {
       expect(pushAll(['{"k":"\\ud83d', '\\ude00"}'])).toEqual({ k: "😀" });
     });
@@ -172,6 +177,17 @@ describe("createPartialJsonStream", () => {
 
     it("discards a markdown code fence", () => {
       expect(pushAll(['```json\n{"a":1}\n```'], true)).toEqual({ a: 1 });
+    });
+
+    it("does not mistake a bracketed aside in the prose for the payload", () => {
+      // A citation marker parses as a complete array; locking onto it would
+      // close the root and throw away the real object behind it.
+      expect(pushAll(['See [1] for details. {"ok":true}'], true)).toEqual({ ok: true });
+      // An array that stays open until non-JSON prose is worse: its non-empty
+      // root would make the failure unrecoverable.
+      expect(pushAll(['Based on [2024 figures], here it is: {"ok":true}'], true)).toEqual({
+        ok: true,
+      });
     });
 
     it("emits nothing for text containing no JSON", () => {
