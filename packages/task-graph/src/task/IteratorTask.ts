@@ -10,7 +10,7 @@ import type { GraphAsTaskConfig } from "./GraphAsTask";
 import { GraphAsTask, graphAsTaskConfigSchema } from "./GraphAsTask";
 import type { IExecuteContext, IRunConfig } from "./ITask";
 import { IteratorTaskRunner } from "./IteratorTaskRunner";
-import type { StreamEvent, StreamFinish } from "./StreamTypes";
+import type { StreamEvent } from "./StreamTypes";
 import { TaskConfigurationError } from "./TaskError";
 import type { TaskInput, TaskOutput, TaskTypeName } from "./TaskTypes";
 
@@ -321,14 +321,18 @@ export abstract class IteratorTask<
   /**
    * IteratorTask does not support streaming pass-through because its output
    * is an aggregation of multiple iterations (arrays for MapTask, accumulated
-   * value for ReduceTask). The inherited GraphAsTask.executeStream is
-   * overridden to just emit a finish event (no streaming).
+   * value for ReduceTask). Subclass output schemas keep `x-stream` off the
+   * aggregate ports so runs never route here; if one does anyway, fail loudly
+   * — quietly skipping the iterations would return a wrong result.
    */
-  override async *executeStream(
-    input: Input,
+  override executeStream(
+    _input: Input,
     _context: IExecuteContext
   ): AsyncIterable<StreamEvent<Output>> {
-    yield { type: "finish", data: input as unknown as Output } as StreamFinish<Output>;
+    throw new TaskConfigurationError(
+      `${this.type} does not support streaming output; its result aggregates multiple ` +
+        `iterations. Remove the x-stream annotation from the iterator's output ports.`
+    );
   }
 
   // ========================================================================

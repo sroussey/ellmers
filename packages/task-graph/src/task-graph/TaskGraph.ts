@@ -177,18 +177,8 @@ export class TaskGraph implements ITaskGraph {
     config: TaskGraphRunConfig = {}
   ): Promise<GraphResultArray<ExecuteOutput>> {
     return this.runner.runGraph<ExecuteOutput>(input, {
+      ...config,
       outputCache: config?.outputCache || this.outputCache,
-      parentSignal: config?.parentSignal || undefined,
-      accumulateLeafOutputs: config?.accumulateLeafOutputs,
-      noAccumulation: config?.noAccumulation,
-      streamHighWaterBytes: config?.streamHighWaterBytes,
-      streamGateWatchdogMs: config?.streamGateWatchdogMs,
-      registry: config?.registry,
-      timeout: config?.timeout,
-      maxTasks: config?.maxTasks,
-      resourceScope: config?.resourceScope,
-      disposeStrategy: config?.disposeStrategy,
-      runId: config?.runId,
     });
   }
 

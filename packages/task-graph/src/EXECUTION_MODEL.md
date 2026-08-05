@@ -34,7 +34,7 @@ The task graph system has two **strictly orthogonal** execution paths:
 ```
 PENDING → PROCESSING → COMPLETED
                     ↘ FAILED
-                    ↘ ABORTED
+                    ↘ ABORTING (→ FAILED when the abort surfaces as an error)
 ```
 
 | Status       | Description                                                         |
@@ -43,7 +43,7 @@ PENDING → PROCESSING → COMPLETED
 | `PROCESSING` | Task is currently executing.                                        |
 | `COMPLETED`  | Task has finished successfully. **Output is locked and immutable.** |
 | `FAILED`     | Task execution threw an error.                                      |
-| `ABORTED`    | Task was cancelled via `abort()`.                                   |
+| `ABORTING`   | Task was cancelled via `abort()`. Terminal unless the abort error surfaces, which moves the task to `FAILED`. |
 
 ### Key Properties
 
