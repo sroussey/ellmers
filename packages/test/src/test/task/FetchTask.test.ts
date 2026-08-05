@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { JobError } from "@workglow/job-queue";
 import {
   createInMemoryQueue,
   InMemoryQueueStorage,
   InMemoryRateLimiterStorage,
-  JobError,
   JobQueueClient,
   JobQueueServer,
   PermanentJobError,
@@ -21,14 +21,13 @@ import {
   JobTaskFailedError,
   setTaskQueueRegistry,
 } from "@workglow/task-graph";
+import type { FetchUrlTaskInput, FetchUrlTaskOutput } from "@workglow/tasks";
 import {
   createFetchUrlJobError,
   fetchUrl,
   FetchUrlErrorCode,
   FetchUrlJob,
   FetchUrlTask,
-  FetchUrlTaskInput,
-  FetchUrlTaskOutput,
   isFetchUrlJobError,
   registerSafeFetch,
   type SafeFetchFn,

@@ -8,8 +8,11 @@ import type { ITabularStorage } from "@workglow/storage";
 import type { EventParameters } from "@workglow/util";
 import { EventEmitter } from "@workglow/util";
 
-import type { KnowledgeBaseRecord } from "./KnowledgeBaseSchema";
-import { KnowledgeBasePrimaryKeyNames, KnowledgeBaseRecordSchema } from "./KnowledgeBaseSchema";
+import type {
+  KnowledgeBasePrimaryKeyNames,
+  KnowledgeBaseRecord,
+  KnowledgeBaseRecordSchema,
+} from "./KnowledgeBaseSchema";
 
 export type KnowledgeBaseEventListeners = {
   knowledge_base_added: (record: KnowledgeBaseRecord) => void;

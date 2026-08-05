@@ -4,14 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { MapTask, ReduceTask, WhileTask } from "@workglow/task-graph";
 import {
   Dataflow,
   graphToWorkflowCode,
-  MapTask,
-  ReduceTask,
   resetMethodNameCache,
   TaskGraph,
-  WhileTask,
   Workflow,
 } from "@workglow/task-graph";
 import { deepEqual, setLogger } from "@workglow/util";

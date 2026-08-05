@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { DataPortSchemaNonBoolean, JsonSchema } from "@workglow/util/schema";
+import type { DataPortSchemaNonBoolean, JsonSchema } from "@workglow/util/schema";
 import { ModelConfigSchema } from "../../model/ModelSchema";
 
 export const TypeLanguage = (annotations: Record<string, unknown> = {}) =>

@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { StreamEvent } from "@workglow/task-graph";
-import { TaskInput, TaskOutput } from "@workglow/task-graph";
+import type { StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { JsonSchema, ServiceRegistry } from "@workglow/util/worker";
 import { createServiceToken, globalServiceRegistry, WORKER_MANAGER } from "@workglow/util/worker";
 import type { AiEmit } from "../capability/AiEmit";

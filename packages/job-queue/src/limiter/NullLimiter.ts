@@ -5,7 +5,7 @@
  */
 
 import { createServiceToken } from "@workglow/util";
-import { ILimiter, LimiterScope } from "./ILimiter";
+import type { ILimiter, LimiterScope } from "./ILimiter";
 
 export const NULL_JOB_LIMITER = createServiceToken<ILimiter>("jobqueue.limiter.null");
 

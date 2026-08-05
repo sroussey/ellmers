@@ -5,7 +5,7 @@
  */
 
 import type { DataPortSchema, PropertySchema } from "@workglow/util/schema";
-import { TaskGraph } from "../task-graph/TaskGraph";
+import type { TaskGraph } from "../task-graph/TaskGraph";
 import type { GraphAsTaskConfig } from "./GraphAsTask";
 import { GraphAsTask, graphAsTaskConfigSchema } from "./GraphAsTask";
 import type { IExecuteContext, IRunConfig } from "./ITask";

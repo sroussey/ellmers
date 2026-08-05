@@ -5,13 +5,14 @@
  */
 
 import { TypeTabularStorage } from "@workglow/knowledge-base";
+import type { AnyTabularStorage } from "@workglow/storage";
 import {
-  AnyTabularStorage,
   getGlobalTabularRepositories,
   InMemoryTabularStorage,
   registerTabularRepository,
 } from "@workglow/storage";
-import { IExecuteContext, resolveSchemaInputs, Task, TaskRegistry } from "@workglow/task-graph";
+import type { IExecuteContext } from "@workglow/task-graph";
+import { resolveSchemaInputs, Task, TaskRegistry } from "@workglow/task-graph";
 import {
   getInputResolvers,
   globalServiceRegistry,

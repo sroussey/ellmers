@@ -4,13 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  ITabularStorage,
-  PageCursor,
-  StorageUnsupportedError,
-  StorageValidationError,
-} from "@workglow/storage";
-import { DataPortSchemaObject, FromSchema } from "@workglow/util/schema";
+import type { ITabularStorage, PageCursor } from "@workglow/storage";
+import { StorageUnsupportedError, StorageValidationError } from "@workglow/storage";
+import type { DataPortSchemaObject, FromSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 export const PAYLOADS = [

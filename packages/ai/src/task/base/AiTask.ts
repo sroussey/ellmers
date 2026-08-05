@@ -11,14 +11,14 @@ import type {
   TaskEntitlement,
   TaskEntitlements,
   TaskOutput,
-} from "@workglow/task-graph";
+
+  TaskInput} from "@workglow/task-graph";
 import {
   Entitlements,
   Task,
   TaskConfigSchema,
   TaskConfigurationError,
   TaskError,
-  TaskInput,
   TaskRegistry,
   hasStructuredOutput,
 } from "@workglow/task-graph";
@@ -30,7 +30,8 @@ import type { AiEmit } from "../../capability/AiEmit";
 import { noopEmit } from "../../capability/AiEmit";
 import type { Capability } from "../../capability/Capabilities";
 import { recordUsageTelemetry } from "../../capability/UsageTelemetry";
-import { AiJob, AiJobInput } from "../../job/AiJob";
+import type { AiJobInput } from "../../job/AiJob";
+import { AiJob } from "../../job/AiJob";
 import { MODEL_REPOSITORY } from "../../model/ModelRegistry";
 import type { ModelRepository } from "../../model/ModelRepository";
 import type { ModelConfig } from "../../model/ModelSchema";

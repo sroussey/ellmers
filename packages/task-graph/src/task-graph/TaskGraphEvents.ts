@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { EventParameters } from "@workglow/util";
+import type { EventParameters } from "@workglow/util";
 import type { StreamEvent } from "../task/StreamTypes";
 import type { TaskEntitlements } from "../task/TaskEntitlements";
-import { TaskIdType } from "../task/TaskTypes";
-import { DataflowIdType } from "./Dataflow";
+import type { TaskIdType } from "../task/TaskTypes";
+import type { DataflowIdType } from "./Dataflow";
 
 /**
  * Events that can be emitted by the TaskGraph

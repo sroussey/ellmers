@@ -6,11 +6,16 @@
 
 import type { IJobExecuteContext } from "@workglow/job-queue";
 import { Job } from "@workglow/job-queue";
-import type { IExecuteContext, TaskConfig, TaskInput, TaskOutput } from "@workglow/task-graph";
+import type {
+  IExecuteContext,
+  RegisteredQueue,
+  TaskConfig,
+  TaskInput,
+  TaskOutput,
+} from "@workglow/task-graph";
 import {
   getTaskQueueRegistry,
   JobTaskFailedError,
-  RegisteredQueue,
   Task,
   TaskConfigSchema,
 } from "@workglow/task-graph";

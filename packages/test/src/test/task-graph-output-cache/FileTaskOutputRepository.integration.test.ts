@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { TaskInput, TaskOutput } from "@workglow/task-graph";
+import type { TaskInput, TaskOutput } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 import { rmSync } from "node:fs";
 import { beforeEach, describe, expect, it } from "vitest";

@@ -5,7 +5,7 @@
  */
 
 import type { IRunConfig, ITask, ITaskConstructor, TaskGraph } from "@workglow/task-graph";
-import { InputTaskConfig } from "@workglow/tasks";
+import type { InputTaskConfig } from "@workglow/tasks";
 import { render } from "ink";
 import React from "react";
 import type { PromptFieldDescriptor } from "../input/prompt";

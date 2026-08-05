@@ -4,16 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  CreateWorkflow,
-  IExecuteContext,
-  Task,
-  TaskAbortedError,
-  TaskConfig,
-  Workflow,
-} from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import { FetchUrlTask, FetchUrlTaskOutput } from "./FetchUrlTask";
+import type { IExecuteContext, TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Task, TaskAbortedError, Workflow } from "@workglow/task-graph";
+import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { FetchUrlTaskOutput } from "./FetchUrlTask";
+import { FetchUrlTask } from "./FetchUrlTask";
 
 let _papaParse: typeof import("papaparse").parse | undefined;
 

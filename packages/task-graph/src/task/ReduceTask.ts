@@ -8,12 +8,8 @@ import type { DataPortSchema } from "@workglow/util/schema";
 import { Workflow } from "../task-graph/Workflow";
 import { CreateEndLoopWorkflow, CreateLoopWorkflow } from "../task-graph/WorkflowFactories";
 import type { IRunConfig } from "./ITask";
-import {
-  IterationAnalysisResult,
-  IteratorTask,
-  IteratorTaskConfig,
-  iteratorTaskConfigSchema,
-} from "./IteratorTask";
+import type { IterationAnalysisResult, IteratorTaskConfig } from "./IteratorTask";
+import { IteratorTask, iteratorTaskConfigSchema } from "./IteratorTask";
 import type { TaskInput, TaskOutput, TaskTypeName } from "./TaskTypes";
 
 export const reduceTaskConfigSchema = {

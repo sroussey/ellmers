@@ -4,16 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ServiceRegistry } from "@workglow/util";
 import {
   createServiceToken,
   globalServiceRegistry,
   registerInputCompactor,
   registerInputResolver,
-  ServiceRegistry,
 } from "@workglow/util";
 import { InMemoryKnowledgeBaseRepository } from "./InMemoryKnowledgeBaseRepository";
 import type { KnowledgeBase } from "./KnowledgeBase";
-import { KnowledgeBaseRepository } from "./KnowledgeBaseRepository";
+import type { KnowledgeBaseRepository } from "./KnowledgeBaseRepository";
 import type { KnowledgeBaseRecord } from "./KnowledgeBaseSchema";
 import { knowledgeBaseTableNames } from "./KnowledgeBaseSchema";
 import { SHARED_CHUNK_TABLE, SHARED_DOCUMENT_TABLE } from "./SharedTableSchemas";

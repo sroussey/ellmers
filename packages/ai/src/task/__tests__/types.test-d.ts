@@ -6,9 +6,12 @@
 
 import type { FromSchema } from "@workglow/util/schema";
 import { describe, expectTypeOf, it } from "vitest";
-import { AiChatInputSchema, type AiChatTaskInput } from "../AiChatTask";
-import { ChunkRetrievalInputSchema, type ChunkRetrievalTaskInput } from "../ChunkRetrievalTask";
-import { ToolCallingInputSchema, type ToolCallingTaskInput } from "../ToolCallingTask";
+import type { AiChatInputSchema } from "../AiChatTask";
+import { type AiChatTaskInput } from "../AiChatTask";
+import type { ChunkRetrievalInputSchema } from "../ChunkRetrievalTask";
+import { type ChunkRetrievalTaskInput } from "../ChunkRetrievalTask";
+import type { ToolCallingInputSchema } from "../ToolCallingTask";
+import { type ToolCallingTaskInput } from "../ToolCallingTask";
 
 /**
  * Drift guard between the JSON schemas in `packages/ai/src/task/*.ts` and

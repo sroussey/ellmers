@@ -11,7 +11,7 @@ import type {
 } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
 import { loadTfmpTasksTextSDK } from "./TFMP_Client";
-import { TFMPModelConfig } from "./TFMP_ModelSchema";
+import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
 export const TFMP_TextClassification: AiProviderRunFn<

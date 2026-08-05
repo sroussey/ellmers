@@ -5,12 +5,12 @@
  */
 
 import { createServiceToken } from "@workglow/util";
-import { JsonSchema } from "@workglow/util/schema";
+import type { JsonSchema } from "@workglow/util/schema";
 import { mkdir, readFile, rm, unlink, writeFile } from "fs/promises";
 import path from "path";
 import { safeEmit } from "../events/safeEmit";
 import { StorageUnsupportedError } from "../tabular/StorageError";
-import { IKvStorage } from "./IKvStorage";
+import type { IKvStorage } from "./IKvStorage";
 import { KvStorage } from "./KvStorage";
 
 export const FS_FOLDER_KV_REPOSITORY = createServiceToken<IKvStorage<string, any, any>>(

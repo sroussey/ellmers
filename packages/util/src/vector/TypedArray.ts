@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { FromSchema, FromSchemaDefaultOptions, FromSchemaOptions } from "../json-schema/FromSchema";
-import { JsonSchema } from "../json-schema/JsonSchema";
+import type { FromSchema, FromSchemaOptions } from "../json-schema/FromSchema";
+import { FromSchemaDefaultOptions } from "../json-schema/FromSchema";
+import type { JsonSchema } from "../json-schema/JsonSchema";
 
 /**
  * Polyfill Float16Array for runtimes that don't support it yet (Node < 24).

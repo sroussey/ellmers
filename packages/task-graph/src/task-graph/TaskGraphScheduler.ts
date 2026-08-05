@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ITask } from "../task/ITask";
+import type { ITask } from "../task/ITask";
 import { getPortStreamMode } from "../task/StreamTypes";
 import { TaskStatus } from "../task/TaskTypes";
-import { TaskGraph } from "./TaskGraph";
+import type { TaskGraph } from "./TaskGraph";
 
 /**
  * Interface for task graph schedulers

@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Container, globalContainer } from "./Container";
+import type { Container } from "./Container";
+import { globalContainer } from "./Container";
 
 /**
  * Service token type for type-safe dependency injection

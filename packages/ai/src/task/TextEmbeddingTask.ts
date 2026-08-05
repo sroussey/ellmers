@@ -6,12 +6,8 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import {
-  DataPortSchema,
-  FromSchema,
-  TypedArraySchema,
-  TypedArraySchemaOptions,
-} from "@workglow/util/schema";
+import type { DataPortSchema, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
+import { TypedArraySchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 import type { ModelConfig } from "../model/ModelSchema";
 import { AiTask } from "./base/AiTask";

@@ -4,14 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { IExecuteContext, IExecutePreviewContext, TaskConfig } from "@workglow/task-graph";
 import {
   FallbackTask,
   GraphAsTask,
-  IExecuteContext,
-  IExecutePreviewContext,
   MapTask,
   Task,
-  TaskConfig,
   TaskGraph,
   WhileTask,
 } from "@workglow/task-graph";

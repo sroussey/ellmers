@@ -5,7 +5,7 @@
  */
 
 import { createServiceToken, sleep, uuid4 } from "@workglow/util";
-import {
+import type {
   IRateLimiterStorage,
   RateLimiterStorageOptions,
   RateLimiterStorageScope,

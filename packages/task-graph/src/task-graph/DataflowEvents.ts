@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { EventParameters } from "@workglow/util";
-import { TaskError } from "../task/TaskError";
-import { TaskStatus } from "../task/TaskTypes";
+import type { EventParameters } from "@workglow/util";
+import type { TaskError } from "../task/TaskError";
+import type { TaskStatus } from "../task/TaskTypes";
 
 /**
  * Event listeners for dataflow events

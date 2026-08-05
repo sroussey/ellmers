@@ -4,24 +4,26 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { CachePolicy } from "@workglow/task-graph";
+import type {
+  CachePolicy,
+  IExecuteContext,
+  TaskConfig,
+  TaskInput,
+  TaskOutput,
+} from "@workglow/task-graph";
 import {
   CreateWorkflow,
   GraphAsTask,
-  IExecuteContext,
   IteratorTask,
   Task,
   TaskAbortedError,
-  TaskConfig,
   TaskError,
   TaskFailedError,
   TaskGraph,
-  TaskInput,
-  TaskOutput,
   Workflow,
 } from "@workglow/task-graph";
 import { sleep } from "@workglow/util";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 
 export type TestIOTaskInput = {
   key: string;

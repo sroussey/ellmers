@@ -20,15 +20,15 @@ import {
 } from "./JobError";
 import { applyPersistedDiagnosticsToStack } from "./JobErrorDiagnostics";
 import { lookupErrorCodeReconstructor } from "./JobErrorRegistry";
-import {
+import type {
   JobProgressListener,
   JobQueueEventListener,
   JobQueueEventListeners,
   JobQueueEventParameters,
   JobQueueEvents,
   JobStreamListener,
-  type StreamChunkRow,
-  type StreamEventLike,
+  StreamChunkRow,
+  StreamEventLike,
 } from "./JobQueueEventListeners";
 import type { JobQueueServer } from "./JobQueueServer";
 import { storageToClass } from "./JobStorageConverters";

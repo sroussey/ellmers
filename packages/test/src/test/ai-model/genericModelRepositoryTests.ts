@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { getGlobalModelRepository, ModelRepository, setGlobalModelRepository } from "@workglow/ai";
+import type { ModelRepository } from "@workglow/ai";
+import { getGlobalModelRepository, setGlobalModelRepository } from "@workglow/ai";
 import { beforeEach, expect, it } from "vitest";
 
 const HF_TRANSFORMERS_ONNX = "HF_TRANSFORMERS_ONNX";

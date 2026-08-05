@@ -4,17 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { AnyGraphResult, ITask, TaskOutput } from "@workglow/task-graph";
 import {
-  AnyGraphResult,
   Dataflow,
   DataflowArrow,
-  ITask,
   TaskAbortedError,
   TaskConfigurationError,
   TaskGraph,
   TaskGraphRunner,
   TaskGraphTimeoutError,
-  TaskOutput,
   TaskStatus,
 } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";

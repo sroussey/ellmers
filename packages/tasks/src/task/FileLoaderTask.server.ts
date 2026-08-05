@@ -4,20 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  CreateWorkflow,
-  IExecuteContext,
-  TaskAbortedError,
-  TaskConfig,
-  Workflow,
-} from "@workglow/task-graph";
+import type { IExecuteContext, TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, TaskAbortedError, Workflow } from "@workglow/task-graph";
 import { readFile } from "node:fs/promises";
 
-import {
-  FileLoaderTask as BaseFileLoaderTask,
-  FileLoaderTaskInput,
-  FileLoaderTaskOutput,
-} from "./FileLoaderTask";
+import type { FileLoaderTaskInput, FileLoaderTaskOutput } from "./FileLoaderTask";
+import { FileLoaderTask as BaseFileLoaderTask } from "./FileLoaderTask";
 
 export type { FileLoaderTaskInput, FileLoaderTaskOutput };
 

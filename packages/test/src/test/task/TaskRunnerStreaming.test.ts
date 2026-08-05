@@ -4,17 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { CachePolicy, StreamEvent } from "@workglow/task-graph";
-import {
-  IExecuteContext,
-  IRunConfig,
-  Task,
-  TaskStatus,
-  getOutputStreamMode,
-  isTaskStreamable,
-} from "@workglow/task-graph";
+import type { CachePolicy, IExecuteContext, IRunConfig, StreamEvent } from "@workglow/task-graph";
+import { Task, TaskStatus, getOutputStreamMode, isTaskStreamable } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 import { getTestingLogger } from "../../binding/TestingLogger";

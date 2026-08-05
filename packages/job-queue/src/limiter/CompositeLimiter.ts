@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ILimiter, LimiterScope } from "./ILimiter";
+import type { ILimiter, LimiterScope } from "./ILimiter";
 
 export class CompositeLimiter implements ILimiter {
   private limiters: ILimiter[] = [];

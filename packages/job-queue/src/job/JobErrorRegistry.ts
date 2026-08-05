@@ -5,7 +5,7 @@
  */
 
 import { getLogger } from "@workglow/util";
-import { JobError } from "./JobError";
+import type { JobError } from "./JobError";
 
 /**
  * Reconstructs a domain-specific {@link JobError} from a persisted error code

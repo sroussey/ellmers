@@ -7,7 +7,7 @@
 import type { AiProviderRunFn, FaceDetectorTaskInput, FaceDetectorTaskOutput } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
 import { loadTfmpTasksVisionSDK } from "./TFMP_Client";
-import { TFMPModelConfig } from "./TFMP_ModelSchema";
+import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
 export const TFMP_FaceDetector: AiProviderRunFn<

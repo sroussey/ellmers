@@ -4,15 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  CreateWorkflow,
-  IExecuteContext,
-  IExecutePreviewContext,
-  Task,
-  TaskConfig,
-  Workflow,
-} from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { IExecuteContext, IExecutePreviewContext, TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Task, Workflow } from "@workglow/task-graph";
+import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
 function replaceString(text: string, search: string, replace: string): string {
   return text.replaceAll(search, replace);

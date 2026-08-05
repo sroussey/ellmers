@@ -5,7 +5,7 @@
  */
 
 import { Task, TaskRegistry } from "@workglow/task-graph";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, describe, expect, it } from "vitest";
 
 // Minimal task classes used only for TaskRegistry registration tests

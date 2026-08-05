@@ -4,17 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  CreateWorkflow,
-  IExecuteContext,
-  IExecutePreviewContext,
-  Task,
-  TaskConfig,
-  TaskInvalidInputError,
-  Workflow,
-} from "@workglow/task-graph";
+import type { IExecuteContext, IExecutePreviewContext, TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Task, TaskInvalidInputError, Workflow } from "@workglow/task-graph";
 import { SECURITY_LIMITS } from "@workglow/util";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
 /**
  * Detects regex patterns prone to catastrophic backtracking (ReDoS).

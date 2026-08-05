@@ -32,7 +32,7 @@ import {
   type TaskEntitlements,
 } from "@workglow/task-graph";
 import { Container, ServiceRegistry, setLogger } from "@workglow/util";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 

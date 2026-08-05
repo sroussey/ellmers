@@ -22,8 +22,7 @@ import {
   getAiProviderRegistry,
   setAiProviderRegistry,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
-import { TaskInput, TaskOutput } from "@workglow/task-graph";
+import type { StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
 import { makeFingerprint, setLogger } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";

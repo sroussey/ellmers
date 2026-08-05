@@ -4,8 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { EventParameters } from "@workglow/util";
-import { DataPortSchemaObject, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
+import type { EventParameters } from "@workglow/util";
+import type {
+  DataPortSchemaObject,
+  FromSchema,
+  TypedArraySchemaOptions,
+} from "@workglow/util/schema";
 import type { PageCursor } from "./Cursor";
 
 export type { PageCursor } from "./Cursor";

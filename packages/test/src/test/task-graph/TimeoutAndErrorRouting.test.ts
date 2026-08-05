@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { IExecuteContext } from "@workglow/task-graph";
 import {
   Dataflow,
   DATAFLOW_ALL_PORTS,
   DATAFLOW_ERROR_PORT,
-  IExecuteContext,
   Task,
   TaskAbortedError,
   TaskFailedError,
@@ -20,7 +20,7 @@ import {
   type CachePolicy,
 } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 

@@ -4,11 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ChunkRecord, ChunkSearchResult } from "@workglow/knowledge-base";
-import { KnowledgeBase, TypeKnowledgeBase } from "@workglow/knowledge-base";
-import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
-import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
-import { DataPortSchema, isTypedArray, TypedArray, TypedArraySchema } from "@workglow/util/schema";
+import type { ChunkRecord, ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base";
+import { TypeKnowledgeBase } from "@workglow/knowledge-base";
+import type { IExecuteContext, IRunConfig, TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Task, Workflow } from "@workglow/task-graph";
+import type { DataPortSchema, TypedArray } from "@workglow/util/schema";
+import { isTypedArray, TypedArraySchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 import type { ModelConfig } from "../model/ModelSchema";
 import { TypeModel } from "./base/AiTaskSchemas";

@@ -5,7 +5,7 @@
  */
 
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
-import { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
+import type { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
 import { LLAMACPP_DEFAULT_MODELS_DIR, LOCAL_LLAMACPP } from "./LlamaCpp_Constants";
 
 export const LlamaCppModelSchema = {

@@ -4,16 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  IExecuteContext,
-  Task,
-  TaskGraph,
-  TaskInput,
-  TaskOutput,
-  Workflow,
-} from "@workglow/task-graph";
+import type { IExecuteContext, TaskInput, TaskOutput } from "@workglow/task-graph";
+import { Task, TaskGraph, Workflow } from "@workglow/task-graph";
 import { ResourceScope } from "@workglow/util";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 
 // A task that registers a disposer on the resource scope

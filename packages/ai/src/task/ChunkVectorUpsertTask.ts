@@ -6,9 +6,10 @@
 
 import type { ChunkRecord, KnowledgeBase } from "@workglow/knowledge-base";
 import { ChunkRecordArraySchema, TypeKnowledgeBase } from "@workglow/knowledge-base";
-import type { CachePolicy, IRunConfig, TaskConfig } from "@workglow/task-graph";
-import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
-import { DataPortSchema, TypedArray, TypedArraySchema } from "@workglow/util/schema";
+import type { CachePolicy, IExecuteContext, IRunConfig, TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Task, Workflow } from "@workglow/task-graph";
+import type { DataPortSchema, TypedArray } from "@workglow/util/schema";
+import { TypedArraySchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 import { TypeSingleOrArray } from "./base/AiTaskSchemas";
 

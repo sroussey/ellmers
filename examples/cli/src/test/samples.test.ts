@@ -6,11 +6,11 @@
 
 import { registerAiTasks } from "@workglow/ai";
 import { InMemoryTabularStorage } from "@workglow/storage";
+import type { Task } from "@workglow/task-graph";
 import {
   computeGraphInputSchema,
   createGraphFromGraphJSON,
   registerBaseTasks,
-  Task,
   TaskGraph,
   TaskGraphPrimaryKeyNames,
   TaskGraphSchema,

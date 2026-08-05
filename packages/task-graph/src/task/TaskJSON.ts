@@ -7,17 +7,18 @@
 import type { ServiceRegistry } from "@workglow/util";
 import { Dataflow } from "../task-graph/Dataflow";
 import { TaskGraph } from "../task-graph/TaskGraph";
-import { CompoundMergeStrategy } from "../task-graph/TaskGraphRunner";
+import type { CompoundMergeStrategy } from "../task-graph/TaskGraphRunner";
 import type { ITransformStep } from "../task-graph/TransformTypes";
 import { TaskConfigurationError, TaskJSONError } from "../task/TaskError";
 import { getTaskConstructors } from "../task/TaskRegistry";
-import { ConditionalTaskConfig } from "./ConditionalTask";
-import { GraphAsTask, GraphAsTaskConfig } from "./GraphAsTask";
-import { IteratorTaskConfig } from "./IteratorTask";
-import { MapTaskConfig } from "./MapTask";
-import { ReduceTaskConfig } from "./ReduceTask";
-import { TaskConfig, TaskInput } from "./TaskTypes";
-import { WhileTaskConfig } from "./WhileTask";
+import type { ConditionalTaskConfig } from "./ConditionalTask";
+import type { GraphAsTaskConfig } from "./GraphAsTask";
+import { GraphAsTask } from "./GraphAsTask";
+import type { IteratorTaskConfig } from "./IteratorTask";
+import type { MapTaskConfig } from "./MapTask";
+import type { ReduceTaskConfig } from "./ReduceTask";
+import type { TaskConfig, TaskInput } from "./TaskTypes";
+import type { WhileTaskConfig } from "./WhileTask";
 
 // ========================================================================
 // JSON Serialization Types

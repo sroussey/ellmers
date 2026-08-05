@@ -4,16 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { DocumentMetadata, DocumentNode } from "@workglow/knowledge-base";
-import {
-  Document,
-  DocumentMetadataSchema,
-  KnowledgeBase,
-  TypeKnowledgeBase,
-} from "@workglow/knowledge-base";
-import type { CachePolicy, IRunConfig, TaskConfig } from "@workglow/task-graph";
-import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DocumentMetadata, DocumentNode, KnowledgeBase } from "@workglow/knowledge-base";
+import { Document, DocumentMetadataSchema, TypeKnowledgeBase } from "@workglow/knowledge-base";
+import type { CachePolicy, IExecuteContext, IRunConfig, TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Task, Workflow } from "@workglow/task-graph";
+import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 
 const inputSchema = {

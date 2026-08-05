@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { EventParameters } from "@workglow/util";
+import type { EventParameters } from "@workglow/util";
 
 /**
  * Events that can be emitted by the JobQueue

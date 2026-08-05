@@ -5,7 +5,7 @@
  */
 
 import type { JSONSchemaExtension } from "@sroussey/json-schema-to-ts";
-import { JsonSchema, JsonSchemaCustomProps } from "./JsonSchema";
+import type { JsonSchema, JsonSchemaCustomProps } from "./JsonSchema";
 
 export type DataPortSchemaNonBoolean<
   EXTENSION extends JSONSchemaExtension = JsonSchemaCustomProps,

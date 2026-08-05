@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ModelDownloadTaskRunOutput } from "@workglow/ai";
 import {
   getGlobalModelRepository,
   InMemoryModelRepository,
   ModelDownloadTask,
-  ModelDownloadTaskRunOutput,
   setGlobalModelRepository,
   unloadModel,
 } from "@workglow/ai";

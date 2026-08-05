@@ -10,7 +10,7 @@ import type {
   ModelDownloadRemoveTaskRunOutput,
 } from "@workglow/ai";
 import { closeGenaiLlm } from "./TFMP_GenaiRuntime";
-import { TFMPModelConfig } from "./TFMP_ModelSchema";
+import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { modelTaskCache, wasm_reference_counts, wasm_tasks } from "./TFMP_Runtime";
 
 export const TFMP_Unload: AiProviderRunFn<

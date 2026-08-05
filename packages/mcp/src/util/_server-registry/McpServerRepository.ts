@@ -8,8 +8,11 @@ import type { ITabularStorage } from "@workglow/storage";
 import type { EventParameters } from "@workglow/util";
 import { EventEmitter } from "@workglow/util";
 
-import type { McpServerRecord } from "./McpServerSchema";
-import { McpServerPrimaryKeyNames, McpServerRecordSchema } from "./McpServerSchema";
+import type {
+  McpServerPrimaryKeyNames,
+  McpServerRecord,
+  McpServerRecordSchema,
+} from "./McpServerSchema";
 
 export type McpServerEventListeners = {
   server_added: (record: McpServerRecord) => void;

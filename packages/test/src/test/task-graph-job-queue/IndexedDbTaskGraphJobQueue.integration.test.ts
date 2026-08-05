@@ -12,7 +12,7 @@ import {
   RateLimiter,
   wrapQueueStorage,
 } from "@workglow/job-queue";
-import { TaskInput, TaskOutput } from "@workglow/task-graph";
+import type { TaskInput, TaskOutput } from "@workglow/task-graph";
 import { setLogger, uuid4 } from "@workglow/util";
 import "fake-indexeddb/auto";
 import { describe } from "vitest";

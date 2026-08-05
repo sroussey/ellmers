@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Sqlite } from "@workglow/sqlite/storage";
+import type { Sqlite } from "@workglow/sqlite/storage";
 import type {
   IVectorStorage,
   VectorDistanceMetric,

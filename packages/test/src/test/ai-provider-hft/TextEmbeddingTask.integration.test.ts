@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { TextEmbeddingTaskOutput } from "@workglow/ai";
 import {
   getGlobalModelRepository,
   InMemoryModelRepository,
   ModelDownloadTask,
   setGlobalModelRepository,
-  TextEmbeddingTaskOutput,
 } from "@workglow/ai";
 import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-runtime";
 import {

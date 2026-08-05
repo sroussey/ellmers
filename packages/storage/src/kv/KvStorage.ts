@@ -5,9 +5,9 @@
  */
 
 import { createServiceToken, EventEmitter, makeFingerprint } from "@workglow/util";
-import { JsonSchema } from "@workglow/util/schema";
-import { JSONValue } from "../tabular/ITabularStorage";
-import {
+import type { JsonSchema } from "@workglow/util/schema";
+import type { JSONValue } from "../tabular/ITabularStorage";
+import type {
   IKvStorage,
   KvEventListener,
   KvEventListeners,

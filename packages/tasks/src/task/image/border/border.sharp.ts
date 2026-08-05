@@ -3,7 +3,8 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { SharpImage, registerFilterOp, resolveColor } from "@workglow/util/media";
+import type { SharpImage } from "@workglow/util/media";
+import { registerFilterOp, resolveColor } from "@workglow/util/media";
 import type { BorderParams } from "./border.cpu";
 
 registerFilterOp<BorderParams>("sharp", "border", (image, { borderWidth: bw, color }) => {
