@@ -735,7 +735,7 @@ export function runGenericJobQueueTests(
       // this difference collapses to ~0.
       const stored = await client.getJob(handle.id);
       expect(stored).toBeDefined();
-      const deferMs = Date.parse(stored!.visible_at!) - Date.parse(stored!.created_at!);
+      const deferMs = stored!.visibleAt.getTime() - stored!.createdAt.getTime();
       expect(deferMs).toBeGreaterThanOrEqual(150);
 
       const start = Date.now();
