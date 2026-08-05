@@ -327,6 +327,39 @@ describe("IntervalTrigger", () => {
       expect(fires).toBe(2);
     });
 
+    test("a restart while stop() is draining is not clobbered by that stop()", async () => {
+      // `stop()` releases the handler/signal only AFTER awaiting the in-flight
+      // handler. A `start()` inside that window belongs to a new generation —
+      // the old stop must not null out its state, or the trigger would report
+      // `running` while never firing again.
+      const gate = createGate();
+      const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+
+      let firstFires = 0;
+      trigger.start(async () => {
+        firstFires += 1;
+        await gate.promise;
+      });
+
+      await advanceFakeTimers(PERIOD);
+      expect(firstFires).toBe(1);
+
+      // stop() blocks on the gated handler; restart before it settles.
+      const stopping = trigger.stop();
+      let secondFires = 0;
+      trigger.start(() => {
+        secondFires += 1;
+      });
+      gate.open();
+      await stopping;
+
+      expect(trigger.running).toBe(true);
+      await advanceFakeTimers(PERIOD * 2);
+      expect(secondFires).toBe(2);
+
+      await trigger.stop();
+    });
+
     test("an already-aborted caller signal schedules nothing", async () => {
       const trigger = new IntervalTrigger({ intervalMs: PERIOD });
       let fires = 0;
