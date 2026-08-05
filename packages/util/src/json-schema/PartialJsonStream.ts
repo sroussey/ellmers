@@ -435,7 +435,12 @@ class PartialJsonStreamImpl implements PartialJsonStream {
       }
       if (ch === "}" || ch === "]") {
         // Lenient close: an empty container, or a trailing comma before the
-        // close, which a truncated model response often produces.
+        // close, which a truncated model response often produces. With no open
+        // container there is nothing to close — a stray `}` at the root is
+        // malformed input, and treating it as a close would pop the empty
+        // stack, mark the document `complete` with an undefined root, and make
+        // the parser ignore the real payload behind it.
+        if (this.stack.length === 0) return this.fail(i);
         this.closeContainer();
         return i;
       }

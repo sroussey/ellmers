@@ -147,6 +147,19 @@ describe("createPartialJsonStream", () => {
       expect(pushAll([""])).toEqual({});
       expect(pushAll(["   "])).toEqual({});
     });
+
+    it("does not let a stray close at the root end the document", () => {
+      // Popping the empty stack would mark the stream `complete` with an
+      // undefined root, so everything after the stray brace is discarded.
+      const stream = createPartialJsonStream();
+      stream.push('}{"a":1}');
+      expect(stream.complete).toBe(false);
+      expect(stream.finish()).toEqual({});
+
+      const bracket = createPartialJsonStream();
+      bracket.push("]");
+      expect(bracket.complete).toBe(false);
+    });
   });
 
   describe("preamble skipping", () => {
