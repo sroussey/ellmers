@@ -12,7 +12,6 @@ import {
   ServiceRegistry,
   SpanStatusCode,
 } from "@workglow/util";
-import type { DataPortSchema } from "@workglow/util/schema";
 import { isCacheRef, resolveReferenceThreshold } from "../cache/CacheRef";
 import type { CacheRegistry } from "../cache/CacheRegistry";
 import { CACHE_REGISTRY, DefaultCacheRegistry } from "../cache/CacheRegistry";

@@ -850,7 +850,7 @@ export class StreamPump {
               // Stream may already be closed
             }
             cleanup();
-          } else if (status === TaskStatus.COMPLETED) {
+          } else if (status === TaskStatus.COMPLETED || status === TaskStatus.ABORTING) {
             cleanup();
           }
         };

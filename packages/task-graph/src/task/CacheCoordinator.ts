@@ -138,16 +138,17 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     // entry should cost at most a recompute, never convert a runnable task into a
     // hard failure. Degrade any decode failure to a cache miss (the deterministic
     // path is safe to recompute by definition).
+    // Instance schema, not the static one: a dynamic-schema task's
+    // streaming/format ports may not exist on the static schema, and the
+    // fresh-run write path (sinks, threshold hydration) keys off the instance
+    // schema.
+    const outputSchema = this.task.outputSchema();
     let cached: unknown;
     let outputs: Output;
     try {
       cached = await outputCache.getOutput(this.cacheIdentityKey(policy, outputCache), keyInputs);
       if (cached === undefined) return undefined;
 
-      // Instance schema: a dynamic-schema task's streaming/format ports may not
-      // exist on the static schema, and the fresh-run write path (sinks,
-      // threshold hydration) already keys off the instance schema.
-      const outputSchema = this.task.outputSchema();
       outputs = (await CacheCoordinator.deserializeOutputPorts(
         cached as Record<string, unknown>,
         outputSchema as unknown as SchemaProperties
