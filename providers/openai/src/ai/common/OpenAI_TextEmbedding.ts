@@ -9,6 +9,7 @@ import type {
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
 } from "@workglow/ai";
+import { toUsageCount, usageOrUndefined } from "@workglow/ai/provider-utils";
 import { getLogger } from "@workglow/util/worker";
 import { getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
@@ -46,7 +47,21 @@ export const OpenAI_TextEmbedding_Stream: AiProviderRunFn<
         } as unknown as TextEmbeddingTaskOutput)
       : ({ vector: new Float32Array(response.data[0].embedding) } as TextEmbeddingTaskOutput);
 
-    emit({ type: "finish", data: result });
+    // Embeddings bill only the prompt side; the endpoint reports no completion,
+    // cache or reasoning counters, so those stay unreported rather than zeroed.
+    const rawUsage = (response as { usage?: { prompt_tokens?: unknown; total_tokens?: unknown } })
+      .usage;
+    const usage = usageOrUndefined({
+      input: toUsageCount(rawUsage?.prompt_tokens),
+      output: undefined,
+      cached: undefined,
+      cacheWrite: undefined,
+      reasoning: undefined,
+      total: toUsageCount(rawUsage?.total_tokens),
+      extra: undefined,
+    });
+
+    emit({ type: "finish", data: result, usage });
   } finally {
     logger.timeEnd(timerLabel, { model: getModelName(model) });
   }

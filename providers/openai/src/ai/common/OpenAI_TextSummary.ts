@@ -32,6 +32,6 @@ export const OpenAI_TextSummary_Stream: AiProviderRunFn<
     { signal }
   );
 
-  await accumulateOpenAIResponsesStream(stream as AsyncIterable<unknown>, emit);
-  emit({ type: "finish", data: {} as TextSummaryTaskOutput });
+  const usage = await accumulateOpenAIResponsesStream(stream as AsyncIterable<unknown>, emit);
+  emit({ type: "finish", data: {} as TextSummaryTaskOutput, usage });
 };

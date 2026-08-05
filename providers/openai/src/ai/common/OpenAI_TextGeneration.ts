@@ -126,8 +126,8 @@ export const OpenAI_TextGeneration_Stream: AiProviderRunFn<
       { signal }
     );
 
-    await accumulateOpenAIResponsesStream(stream as AsyncIterable<unknown>, emit);
-    emit({ type: "finish", data: {} as TextGenerationTaskOutput });
+    const usage = await accumulateOpenAIResponsesStream(stream as AsyncIterable<unknown>, emit);
+    emit({ type: "finish", data: {} as TextGenerationTaskOutput, usage });
   } finally {
     logger.timeEnd(timerLabel, { model: getModelName(model) });
   }

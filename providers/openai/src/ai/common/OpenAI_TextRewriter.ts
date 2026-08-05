@@ -33,6 +33,6 @@ export const OpenAI_TextRewriter_Stream: AiProviderRunFn<
     { signal }
   );
 
-  await accumulateOpenAIResponsesStream(stream as AsyncIterable<unknown>, emit);
-  emit({ type: "finish", data: {} as TextRewriterTaskOutput });
+  const usage = await accumulateOpenAIResponsesStream(stream as AsyncIterable<unknown>, emit);
+  emit({ type: "finish", data: {} as TextRewriterTaskOutput, usage });
 };

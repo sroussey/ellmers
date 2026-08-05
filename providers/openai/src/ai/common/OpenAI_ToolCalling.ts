@@ -77,7 +77,7 @@ export const OpenAI_ToolCalling_Stream: AiProviderRunFn<
     { signal }
   );
 
-  await accumulateOpenAIResponsesStream<ToolCallingTaskOutput>(
+  const usage = await accumulateOpenAIResponsesStream<ToolCallingTaskOutput>(
     stream as AsyncIterable<unknown>,
     (event) => {
       if (event.type === "object-delta" && event.port === "toolCalls") {
@@ -90,5 +90,5 @@ export const OpenAI_ToolCalling_Stream: AiProviderRunFn<
       emit(event);
     }
   );
-  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
+  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput, usage });
 };
