@@ -40,6 +40,7 @@ const KNOWN_SECTIONS = [
   "mcp",
   "rag",
   "resource",
+  "trigger",
 ] as const;
 type Section = (typeof KNOWN_SECTIONS)[number];
 
@@ -88,6 +89,7 @@ const SECTION_DIRS: Record<Section, string[]> = {
   mcp: [join(TEST_BASE, "mcp")],
   rag: [join(TEST_BASE, "rag")],
   resource: [join(TEST_BASE, "resource")],
+  trigger: [join(TEST_BASE, "trigger")],
   // browser: [join(TEST_BASE, "browser")],
 };
 
