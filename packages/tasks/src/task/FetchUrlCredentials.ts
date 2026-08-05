@@ -75,6 +75,12 @@ export function credentialHeaderName(
  * credential store is the authoritative source, and letting a hard-coded header
  * shadow it would silently defeat the configured credential.
  *
+ * The override is case-INSENSITIVE, because HTTP header names are. A plain
+ * `{ ...headers, Authorization: value }` leaves a caller's `authorization` key
+ * in place as a distinct object property, and the `Headers` constructor then
+ * folds the two into one comma-joined field — sending the caller's stale token
+ * alongside the real one and breaking the request.
+ *
  * @throws {TaskConfigurationError} when `headerName` is not a bare header token.
  */
 export function applyCredentialToHeaders(
@@ -98,5 +104,12 @@ export function applyCredentialToHeaders(
         ? `Basic ${credential}`
         : credential;
 
-  return { ...headers, [name]: value };
+  const lowerName = name.toLowerCase();
+  const result: Record<string, string> = {};
+  for (const [key, existing] of Object.entries(headers ?? {})) {
+    if (key.toLowerCase() === lowerName) continue;
+    result[key] = existing;
+  }
+  result[name] = value;
+  return result;
 }

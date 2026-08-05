@@ -1122,6 +1122,29 @@ describe("FetchUrlTask", () => {
       ).toThrow(TaskConfigurationError);
     });
 
+    test("replaces a differently-cased header the caller supplied", () => {
+      // HTTP header names are case-insensitive, and `new Headers({...})` folds
+      // duplicate spellings into one comma-joined field — so leaving the
+      // caller's key in place would send the stale token alongside the real one.
+      expect(
+        applyCredentialToHeaders({
+          headers: { authorization: "Bearer stale", "X-Trace": "abc" },
+          credential: "s3cret",
+          scheme: "bearer",
+          headerName: undefined,
+        })
+      ).toEqual({ "X-Trace": "abc", Authorization: "Bearer s3cret" });
+
+      expect(
+        applyCredentialToHeaders({
+          headers: { "x-api-key": "stale" },
+          credential: "s3cret",
+          scheme: "header",
+          headerName: "X-Api-Key",
+        })
+      ).toEqual({ "X-Api-Key": "s3cret" });
+    });
+
     test("validates the header name even when the scheme ignores it", () => {
       expect(() =>
         applyCredentialToHeaders({
