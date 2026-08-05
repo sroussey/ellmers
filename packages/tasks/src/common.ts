@@ -21,6 +21,7 @@ export * from "./task/ArrayTask";
 export * from "./task/DateFormatTask";
 export * from "./task/DebugLogTask";
 export * from "./task/DelayTask";
+export * from "./task/FetchUrlCredentials";
 export * from "./task/FetchUrlJobError";
 export * from "./task/FetchUrlTask";
 export * from "./task/HumanApprovalTask";

@@ -11,6 +11,7 @@ import {
   InMemoryRateLimiterStorage,
   JobQueueClient,
   JobQueueServer,
+  JobStatus,
   PermanentJobError,
   RateLimiter,
   RetryableJobError,
@@ -20,9 +21,11 @@ import {
   getTaskQueueRegistry,
   JobTaskFailedError,
   setTaskQueueRegistry,
+  TaskConfigurationError,
 } from "@workglow/task-graph";
 import type { FetchUrlTaskInput, FetchUrlTaskOutput } from "@workglow/tasks";
 import {
+  applyCredentialToHeaders,
   createFetchUrlJobError,
   fetchUrl,
   FetchUrlErrorCode,
@@ -32,7 +35,15 @@ import {
   registerSafeFetch,
   type SafeFetchFn,
 } from "@workglow/tasks";
-import { setLogger, sleep } from "@workglow/util";
+import {
+  Container,
+  InMemoryCredentialStore,
+  registerCredentialDefaults,
+  ServiceRegistry,
+  setGlobalCredentialStore,
+  setLogger,
+  sleep,
+} from "@workglow/util";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
@@ -783,6 +794,343 @@ describe("FetchUrlTask", () => {
       expect(isFetchUrlJobError(jobErr)).toBe(true);
       expect((jobErr as { code?: string }).code).toBe(FetchUrlErrorCode.NETWORK_ERROR);
       expect(jobErr).toBeInstanceOf(RetryableJobError);
+    });
+  });
+
+  describe("credentials", () => {
+    const SECRET = "sk-super-secret-value-1234567890";
+    const CREDENTIAL_KEY = "my-api-credential";
+
+    /**
+     * Builds a registry scoped to its own container so the credential store
+     * never leaks into the global registry shared by the other suites.
+     */
+    const createCredentialRegistry = async (
+      entries: Readonly<Record<string, string>> = { [CREDENTIAL_KEY]: SECRET }
+    ): Promise<ServiceRegistry> => {
+      const registry = new ServiceRegistry(new Container());
+      registerCredentialDefaults(registry);
+      const store = new InMemoryCredentialStore();
+      for (const [key, value] of Object.entries(entries)) {
+        await store.put(key, value);
+      }
+      setGlobalCredentialStore(store, registry);
+      return registry;
+    };
+
+    const lastRequestHeaders = (): Record<string, string> => {
+      const call = mockFetch.mock.calls.at(-1);
+      const options = call?.[1] as { headers?: Record<string, string> } | undefined;
+      return options?.headers ?? {};
+    };
+
+    test("resolves credential_key into an Authorization: Bearer header", async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(createMockResponse({ ok: true })));
+
+      const registry = await createCredentialRegistry();
+      const task = new FetchUrlTask();
+      await task.run(
+        { url: "https://api.example.com/data", credential_key: CREDENTIAL_KEY },
+        { registry }
+      );
+
+      expect(lastRequestHeaders().Authorization).toBe(`Bearer ${SECRET}`);
+    });
+
+    test("keeps the secret out of the request body and off the job input", async () => {
+      let seenInput: FetchUrlTaskInput | undefined;
+      const originalExecute = FetchUrlJob.prototype.execute;
+      const spy = vi.spyOn(FetchUrlJob.prototype, "execute").mockImplementation(async function (
+        this: FetchUrlJob,
+        input: any,
+        context: any
+      ) {
+        seenInput = input;
+        return originalExecute.call(this, input, context) as any;
+      });
+
+      try {
+        mockFetch.mockImplementation(() => Promise.resolve(createMockResponse({ ok: true })));
+
+        const registry = await createCredentialRegistry();
+        const task = new FetchUrlTask();
+        await task.run(
+          {
+            url: "https://api.example.com/data",
+            method: "POST",
+            body: "payload-without-secrets",
+            credential_key: CREDENTIAL_KEY,
+          },
+          { registry }
+        );
+
+        // The resolved secret must never survive as a data port: it is a header,
+        // not an input field the job (or a queue) can persist.
+        expect(seenInput).toBeDefined();
+        expect(seenInput).not.toHaveProperty("credential_key");
+        expect(seenInput?.body).toBe("payload-without-secrets");
+
+        const call = mockFetch.mock.calls.at(-1);
+        const options = call?.[1] as { body?: string } | undefined;
+        expect(options?.body).toBe("payload-without-secrets");
+        expect(options?.body ?? "").not.toContain(SECRET);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    // -----------------------------------------------------------------------
+    // Regression: a resolved secret must never reach durable queue storage.
+    // The queued path persists the job input (SQLite/Postgres/SQS), so the
+    // credential is refused up front instead of being written to disk.
+    // -----------------------------------------------------------------------
+    test("refuses the queued path when a credential is present, and persists no secret", async () => {
+      const queueName = "credential-leak-queue";
+      const storage = new InMemoryQueueStorage<FetchUrlTaskInput, FetchUrlTaskOutput>(queueName);
+      await storage.migrate();
+      const { messageQueue, jobStore } = wrapQueueStorage(storage);
+      const server = new JobQueueServer<FetchUrlTaskInput, FetchUrlTaskOutput>(FetchUrlJob, {
+        messageQueue,
+        jobStore,
+        queueName,
+        pollIntervalMs: 1,
+      });
+      const client = new JobQueueClient<FetchUrlTaskInput, FetchUrlTaskOutput>({
+        messageQueue,
+        jobStore,
+        queueName,
+      });
+      client.attach(server);
+      getTaskQueueRegistry().registerQueue({ server, client, storage });
+
+      mockFetch.mockImplementation(() => Promise.resolve(createMockResponse({ ok: true })));
+
+      try {
+        const registry = await createCredentialRegistry();
+        const task = new FetchUrlTask({ queue: queueName });
+        const error = await task
+          .run(
+            { url: "https://api.example.com/data", credential_key: CREDENTIAL_KEY },
+            { registry }
+          )
+          .catch((e: unknown) => e);
+
+        // The leak assertion comes first: it is the defect under regression.
+        const persisted = JSON.stringify(storage.jobQueue);
+        expect(persisted).not.toContain(SECRET);
+        expect(await storage.size(JobStatus.PENDING)).toBe(0);
+
+        // ...and the refusal must be explicit, never a silent downgrade to the
+        // inline path (which would quietly drop queue-level rate limiting).
+        const configError = (error as { cause?: unknown })?.cause ?? error;
+        expect(String((configError as Error)?.message ?? "")).toContain("credential");
+        expect(String((configError as Error)?.message ?? "")).not.toContain(SECRET);
+      } finally {
+        await server.stop();
+        await storage.deleteAll();
+      }
+    });
+
+    test("credential_scheme 'header' places the secret in the named header only", async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(createMockResponse({ ok: true })));
+
+      const registry = await createCredentialRegistry();
+      const task = new FetchUrlTask();
+      await task.run(
+        {
+          url: "https://api.example.com/data",
+          credential_key: CREDENTIAL_KEY,
+          credential_scheme: "header",
+          credential_header: "X-Api-Key",
+        },
+        { registry }
+      );
+
+      const headers = lastRequestHeaders();
+      expect(headers["X-Api-Key"]).toBe(SECRET);
+      expect(headers.Authorization).toBeUndefined();
+    });
+
+    test("credential_scheme 'basic' sends the secret as a Basic credential", async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(createMockResponse({ ok: true })));
+
+      const registry = await createCredentialRegistry();
+      const task = new FetchUrlTask();
+      await task.run(
+        {
+          url: "https://api.example.com/data",
+          credential_key: CREDENTIAL_KEY,
+          credential_scheme: "basic",
+        },
+        { registry }
+      );
+
+      expect(lastRequestHeaders().Authorization).toBe(`Basic ${SECRET}`);
+    });
+
+    test("credential_scheme 'none' resolves the credential but sends no header", async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(createMockResponse({ ok: true })));
+
+      const registry = await createCredentialRegistry();
+      const task = new FetchUrlTask();
+      await task.run(
+        {
+          url: "https://api.example.com/data",
+          credential_key: CREDENTIAL_KEY,
+          credential_scheme: "none",
+        },
+        { registry }
+      );
+
+      const headers = lastRequestHeaders();
+      expect(headers.Authorization).toBeUndefined();
+      expect(JSON.stringify(headers)).not.toContain(SECRET);
+    });
+
+    test("rejects a credential_header carrying CRLF (header injection)", async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(createMockResponse({ ok: true })));
+
+      const registry = await createCredentialRegistry();
+      const task = new FetchUrlTask();
+      const error = await task
+        .run(
+          {
+            url: "https://api.example.com/data",
+            credential_key: CREDENTIAL_KEY,
+            credential_scheme: "header",
+            credential_header: "X-Api-Key\r\nX-Injected: evil",
+          },
+          { registry }
+        )
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(Error);
+      const configError = (error as { cause?: unknown })?.cause ?? error;
+      expect(String((configError as Error)?.message ?? "")).toContain("credential_header");
+      expect(mockFetch.mock.calls.length).toBe(0);
+    });
+
+    test("a missing credential key sends no Authorization and never echoes the key name", async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(createMockResponse({ ok: true })));
+
+      // Registry has a store, but not this key.
+      const registry = await createCredentialRegistry({ "some-other-key": SECRET });
+      const task = new FetchUrlTask();
+      await task.run(
+        { url: "https://api.example.com/data", credential_key: "absent-key-name" },
+        { registry }
+      );
+
+      const headers = lastRequestHeaders();
+      expect(headers.Authorization).toBeUndefined();
+      // Guards the CredentialStoreRegistry invariant: a miss resolves to
+      // undefined, never to the reference id, so the key *name* is never
+      // threaded through as if it were the secret.
+      expect(JSON.stringify(headers)).not.toContain("absent-key-name");
+    });
+
+    test("a resolved credential overrides a user-supplied Authorization header", async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(createMockResponse({ ok: true })));
+
+      const registry = await createCredentialRegistry();
+      const task = new FetchUrlTask();
+      await task.run(
+        {
+          url: "https://api.example.com/data",
+          headers: { Authorization: "Bearer hard-coded-token", "X-Trace": "keep-me" },
+          credential_key: CREDENTIAL_KEY,
+        },
+        { registry }
+      );
+
+      const headers = lastRequestHeaders();
+      expect(headers.Authorization).toBe(`Bearer ${SECRET}`);
+      expect(headers["X-Trace"]).toBe("keep-me");
+    });
+  });
+
+  describe("applyCredentialToHeaders", () => {
+    test("defaults to bearer and leaves other headers intact", () => {
+      expect(
+        applyCredentialToHeaders({
+          headers: { "X-Trace": "abc" },
+          credential: "s3cret",
+          scheme: undefined,
+          headerName: undefined,
+        })
+      ).toEqual({ "X-Trace": "abc", Authorization: "Bearer s3cret" });
+    });
+
+    test("passes a basic credential through verbatim", () => {
+      expect(
+        applyCredentialToHeaders({
+          headers: undefined,
+          credential: "dXNlcjpwYXNz",
+          scheme: "basic",
+          headerName: undefined,
+        })
+      ).toEqual({ Authorization: "Basic dXNlcjpwYXNz" });
+    });
+
+    test("places the credential in a custom header", () => {
+      expect(
+        applyCredentialToHeaders({
+          headers: undefined,
+          credential: "s3cret",
+          scheme: "header",
+          headerName: "X-Api-Key",
+        })
+      ).toEqual({ "X-Api-Key": "s3cret" });
+    });
+
+    test("'none' applies nothing", () => {
+      expect(
+        applyCredentialToHeaders({
+          headers: { "X-Trace": "abc" },
+          credential: "s3cret",
+          scheme: "none",
+          headerName: undefined,
+        })
+      ).toEqual({ "X-Trace": "abc" });
+    });
+
+    test("an absent credential is a no-op", () => {
+      expect(
+        applyCredentialToHeaders({
+          headers: { "X-Trace": "abc" },
+          credential: undefined,
+          scheme: "bearer",
+          headerName: undefined,
+        })
+      ).toEqual({ "X-Trace": "abc" });
+    });
+
+    test.each([
+      ["X-Api-Key\r\nX-Injected: evil"],
+      ["X-Api Key"],
+      ["X-Api:Key"],
+      [""],
+      ["a".repeat(65)],
+    ])("rejects invalid header name %j", (headerName) => {
+      expect(() =>
+        applyCredentialToHeaders({
+          headers: undefined,
+          credential: "s3cret",
+          scheme: "header",
+          headerName,
+        })
+      ).toThrow(TaskConfigurationError);
+    });
+
+    test("validates the header name even when the scheme ignores it", () => {
+      expect(() =>
+        applyCredentialToHeaders({
+          headers: undefined,
+          credential: "s3cret",
+          scheme: "bearer",
+          headerName: "bad\r\nname",
+        })
+      ).toThrow(TaskConfigurationError);
     });
   });
 
