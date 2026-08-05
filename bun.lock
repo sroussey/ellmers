@@ -359,6 +359,7 @@
         "@workglow/task-graph": "workspace:*",
         "@workglow/tasks": "workspace:*",
         "@workglow/tf-mediapipe": "workspace:*",
+        "@workglow/triggers": "workspace:*",
         "@workglow/util": "workspace:*",
         "@workglow/xai": "workspace:*",
         "aws-sdk-client-mock": "catalog:",
@@ -368,6 +369,18 @@
         "pg": "catalog:",
         "playwright": "catalog:",
         "vitest": "catalog:",
+      },
+    },
+    "packages/triggers": {
+      "name": "@workglow/triggers",
+      "version": "0.3.37",
+      "devDependencies": {
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
       },
     },
     "packages/util": {
@@ -1683,6 +1696,8 @@
     "@workglow/test": ["@workglow/test@workspace:packages/test"],
 
     "@workglow/tf-mediapipe": ["@workglow/tf-mediapipe@workspace:providers/tf-mediapipe"],
+
+    "@workglow/triggers": ["@workglow/triggers@workspace:packages/triggers"],
 
     "@workglow/util": ["@workglow/util@workspace:packages/util"],
 

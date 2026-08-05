@@ -16,6 +16,7 @@
     { "path": "../task-graph" },
     { "path": "../knowledge-base" },
     { "path": "../tasks" },
+    { "path": "../triggers" },
     { "path": "../ai" },
     { "path": "../javascript" },
     { "path": "../indexeddb" },

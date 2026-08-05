@@ -70,6 +70,7 @@
     "@workglow/task-graph": "workspace:*",
     "@workglow/tasks": "workspace:*",
     "@workglow/tf-mediapipe": "workspace:*",
+    "@workglow/triggers": "workspace:*",
     "@workglow/util": "workspace:*",
     "@workglow/xai": "workspace:*",
     "aws-sdk-client-mock": "catalog:",
