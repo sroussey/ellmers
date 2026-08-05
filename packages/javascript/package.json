@@ -1,7 +1,9 @@
 {
   "name": "@workglow/javascript",
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/task.js"
+  ],
   "version": "0.3.38",
   "repository": {
     "type": "git",
