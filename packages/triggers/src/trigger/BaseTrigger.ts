@@ -62,6 +62,14 @@ export abstract class BaseTrigger implements ITrigger {
   private _inFlight = 0;
   private readonly _queued: number[] = [];
   private readonly _pending = new Set<Promise<void>>();
+  /**
+   * Bumped by every {@link start}. `stop()` awaits in-flight handlers before
+   * releasing state, and a restart during that await belongs to a newer
+   * generation — without this token the old `stop()` would null out the NEW
+   * run's handler and signal, leaving a trigger that reports `running` but can
+   * never fire again.
+   */
+  private _generation = 0;
 
   constructor(options: TriggerOptions = {}) {
     this.id = options.id ?? uuid4();
@@ -103,6 +111,7 @@ export abstract class BaseTrigger implements ITrigger {
     if (options.signal?.aborted) return;
 
     this._running = true;
+    this._generation += 1;
     this._handler = handler;
     this._controller = new AbortController();
     this._signal = options.signal
@@ -125,6 +134,7 @@ export abstract class BaseTrigger implements ITrigger {
   public async stop(): Promise<void> {
     if (!this._running) return;
 
+    const generation = this._generation;
     this._running = false;
     if (this._timer !== undefined) {
       clearTimeout(this._timer);
@@ -136,6 +146,10 @@ export abstract class BaseTrigger implements ITrigger {
     this._controller?.abort();
 
     await Promise.allSettled([...this._pending]);
+
+    // A `start()` during the await above installed a fresh handler/controller
+    // for a newer generation; releasing them here would strand that run.
+    if (this._generation !== generation) return;
 
     this._handler = undefined;
     this._controller = undefined;
@@ -213,7 +227,12 @@ export abstract class BaseTrigger implements ITrigger {
 
     const chain = this.runTickChain(scheduledAt);
     this._pending.add(chain);
-    void chain.finally(() => this._pending.delete(chain));
+    // `catch` before `finally`: `runTickChain` reports handler errors itself,
+    // but an `error` LISTENER that throws rejects the chain, and a bare
+    // `chain.finally(...)` would surface that as an unhandled rejection —
+    // crashing a Node host whose only fault was a noisy listener. `stop()`
+    // still awaits `chain` itself through `allSettled`.
+    void chain.catch(() => {}).finally(() => this._pending.delete(chain));
   }
 
   /**
