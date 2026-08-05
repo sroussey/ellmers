@@ -138,34 +138,43 @@ export class StreamingAiTask<
     // record it once the stream drains — a run that streamed its answer costs
     // the same tokens as one that did not.
     let usage: Usage | undefined;
-    for await (const event of iterable) {
-      if (
-        !firstDataSeen &&
-        (event.type === "text-delta" || event.type === "object-delta" || event.type === "snapshot")
-      ) {
-        firstDataSeen = true;
-        yield {
-          type: "phase",
-          message: streamingLabel,
-          progress: undefined,
-        } as StreamEvent<Output>;
-      }
+    // `finally`, not a trailing statement: a consumer that stops early closes
+    // this generator at its `yield` instead of running past the loop. The
+    // retry loop in `StructuredGenerationTask` does exactly that — it returns
+    // (or breaks) the moment it sees `finish` — so a trailing call would never
+    // record the tokens of the task that bills the most of them.
+    try {
+      for await (const event of iterable) {
+        if (
+          !firstDataSeen &&
+          (event.type === "text-delta" ||
+            event.type === "object-delta" ||
+            event.type === "snapshot")
+        ) {
+          firstDataSeen = true;
+          yield {
+            type: "phase",
+            message: streamingLabel,
+            progress: undefined,
+          } as StreamEvent<Output>;
+        }
 
-      if (event.type === "finish") {
-        usage = mergeUsage(usage, event.usage);
-      }
+        if (event.type === "finish") {
+          usage = mergeUsage(usage, event.usage);
+        }
 
-      if (event.type === "text-delta") {
-        yield { ...event, port: event.port ?? defaultPort } as StreamEvent<Output>;
-      } else if (event.type === "object-delta") {
-        yield { ...event, port: event.port ?? defaultPort } as StreamEvent<Output>;
-      } else {
-        yield event as StreamEvent<Output>;
+        if (event.type === "text-delta") {
+          yield { ...event, port: event.port ?? defaultPort } as StreamEvent<Output>;
+        } else if (event.type === "object-delta") {
+          yield { ...event, port: event.port ?? defaultPort } as StreamEvent<Output>;
+        } else {
+          yield event as StreamEvent<Output>;
+        }
       }
-    }
-
-    if (usage) {
-      recordUsageTelemetry({ [USAGE_OUTPUT_KEY]: usage }, this.type, model.model_id);
+    } finally {
+      if (usage) {
+        recordUsageTelemetry({ [USAGE_OUTPUT_KEY]: usage }, this.type, model.model_id);
+      }
     }
   }
 }

@@ -19,6 +19,8 @@ import {
 } from "@workglow/ai";
 import type { IExecuteContext, Usage } from "@workglow/task-graph";
 import { TaskConfigurationError, TaskRegistry } from "@workglow/task-graph";
+import type { ILogger } from "@workglow/util";
+import { getLogger, setLogger } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 
 // ============================================================================
@@ -398,6 +400,39 @@ describe("StructuredGenerationTask — usage aggregation", () => {
     registry.registerRunFn("fake-structured", { serves: JSON_MODE, runFn: stream });
     return { unregister: () => registry.unregisterProvider("fake-structured") };
   }
+
+  it("records usage telemetry even though the retry loop closes the stream early", async () => {
+    // `StructuredGenerationTask` returns the moment it sees a valid `finish`,
+    // which closes the base class's generator at its `yield`. A telemetry call
+    // sited after that loop would never run, so the task that bills the most
+    // tokens would be the one reporting none.
+    const { unregister } = registerUsageProvider([
+      { payload: { name: "Alice", age: 30 }, usage: mkUsage({ input: 90, output: 12 }) },
+    ]);
+    const recorded: Array<Record<string, unknown> | undefined> = [];
+    const previous = getLogger();
+    setLogger({
+      ...previous,
+      debug: (message: string, meta?: Record<string, unknown>) => {
+        if (message.startsWith("AI usage for")) recorded.push(meta);
+      },
+    } as ILogger);
+    try {
+      const input = {
+        model: mkModel(),
+        prompt: "Give me a person",
+        outputSchema: PERSON_SCHEMA,
+        maxRetries: 0,
+      };
+      const task = new StructuredGenerationTask({ defaults: input } as any);
+      await task.execute(input as any, mkContext());
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]?.usage).toEqual(mkUsage({ input: 90, output: 12 }));
+    } finally {
+      setLogger(previous);
+      unregister();
+    }
+  });
 
   it("sums usage across a failed attempt and the retry that succeeds", async () => {
     // A rejected attempt is still billed — the run costs both requests.
