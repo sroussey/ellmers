@@ -10,11 +10,16 @@ import type {
   ToolCallingTaskOutput,
   ToolCalls,
 } from "@workglow/ai";
-import { accumulateOpenAIChatStream, buildOpenAITools } from "@workglow/ai/provider-utils";
+import {
+  accumulateOpenAIChatStream,
+  buildOpenAITools,
+  OPENAI_STREAM_USAGE_OPTIONS,
+} from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, toOpenAIMessages } from "@workglow/ai/worker";
 import { RetryableJobError } from "@workglow/job-queue";
 import { getClient, getModelName, resolveMaxTokens } from "./DeepSeek_Client";
 import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
+import { mapDeepSeekUsage } from "./DeepSeek_Usage";
 
 /**
  * Thrown when the caller demanded a tool call that the model did not make.
@@ -132,6 +137,7 @@ export const DeepSeek_ToolCalling_Stream: AiProviderRunFn<
       stream: true,
       tools,
       tool_choice: toolChoice,
+      ...OPENAI_STREAM_USAGE_OPTIONS,
     },
     { signal }
   );
@@ -140,21 +146,25 @@ export const DeepSeek_ToolCalling_Stream: AiProviderRunFn<
   // latest name per id rather than counting events.
   const calledByCallId = new Map<string, string>();
 
-  await accumulateOpenAIChatStream(stream, (event) => {
-    if (event.type === "object-delta" && event.port === "toolCalls") {
-      const validated = filterValidToolCalls(event.objectDelta as ToolCalls, input.tools);
-      if (validated.length > 0) {
-        for (const call of validated) calledByCallId.set(call.id, call.name);
-        emit({ type: "object-delta", port: "toolCalls", objectDelta: validated });
+  const usage = await accumulateOpenAIChatStream(
+    stream,
+    (event) => {
+      if (event.type === "object-delta" && event.port === "toolCalls") {
+        const validated = filterValidToolCalls(event.objectDelta as ToolCalls, input.tools);
+        if (validated.length > 0) {
+          for (const call of validated) calledByCallId.set(call.id, call.name);
+          emit({ type: "object-delta", port: "toolCalls", objectDelta: validated });
+        }
+        return;
       }
-      return;
-    }
-    emit(event);
-  });
+      emit(event);
+    },
+    mapDeepSeekUsage
+  );
 
   if (isForcingToolChoice(input.toolChoice)) {
     assertToolChoiceHonored(input.toolChoice, [...calledByCallId.values()], modelName);
   }
 
-  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
+  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput, usage });
 };

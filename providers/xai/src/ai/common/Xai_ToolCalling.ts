@@ -14,6 +14,7 @@ import {
   accumulateOpenAIChatStream,
   buildOpenAITools,
   mapOpenAIToolChoice,
+  OPENAI_STREAM_USAGE_OPTIONS,
 } from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, toOpenAIMessages } from "@workglow/ai/worker";
 import { getClient, getModelName } from "./Xai_Client";
@@ -50,11 +51,12 @@ export const Xai_ToolCalling_Stream: AiProviderRunFn<
       stream: true,
       tools,
       tool_choice: toolChoice,
+      ...OPENAI_STREAM_USAGE_OPTIONS,
     },
     { signal }
   );
 
-  await accumulateOpenAIChatStream(stream, (event) => {
+  const usage = await accumulateOpenAIChatStream(stream, (event) => {
     if (event.type === "object-delta" && event.port === "toolCalls") {
       const validated = filterValidToolCalls(event.objectDelta as ToolCalls, input.tools);
       if (validated.length > 0) {
@@ -64,5 +66,5 @@ export const Xai_ToolCalling_Stream: AiProviderRunFn<
     }
     emit(event);
   });
-  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
+  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput, usage });
 };

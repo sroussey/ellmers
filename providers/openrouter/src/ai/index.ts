@@ -17,6 +17,7 @@ import { OPENROUTER_RUN_FN_SPECS } from "./common/OpenRouter_Capabilities";
 import { OPENROUTER_RUN_FNS } from "./common/OpenRouter_JobRunFns";
 import { mapOpenRouterModels } from "./common/OpenRouter_ModelSearch";
 import { buildChatParams, buildOpenRouterExtras } from "./common/OpenRouter_RequestParams";
+import { mapOpenRouterUsage } from "./common/OpenRouter_Usage";
 import { OpenRouterQueuedProvider } from "./OpenRouterQueuedProvider";
 
 /**
@@ -30,4 +31,5 @@ export const _testOnly = {
   buildChatParams,
   buildOpenRouterExtras,
   mapOpenRouterModels,
+  mapOpenRouterUsage,
 } as const;
