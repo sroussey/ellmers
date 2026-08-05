@@ -39,7 +39,7 @@ function computeDeferDelayMs(originalDelaySeconds: number | undefined): number {
 
 /**
  * Fallback used when the underlying `IJobStore` does not implement the
- * optional `markEnqueueDeferredMany` (bare InMemoryJobStore, etc.). Mirrors
+ * optional `markEnqueueDeferredMany` (a bare custom store, etc.). Mirrors
  * the WrappedJobStore default impl: parallel per-id writes via
  * `Promise.allSettled` so a single transient failure doesn't tank the rest.
  */
@@ -56,7 +56,7 @@ async function markEnqueueDeferredManyFallback<Input, Output>(
 }
 
 /**
- * Module-level dedupe set for the InMemoryJobStore-pairing warning.
+ * Module-level dedupe set for the in-memory-store-pairing warning.
  * WeakSet so we don't pin store instances in memory — the warning fires
  * once per process per store, then the store's lifecycle is unaffected.
  */
@@ -84,18 +84,19 @@ export class CloudflareMessageQueue<Input, Output> implements IMessageQueue<
     this.queueName = opts.queueName;
     this.jobStore = opts.jobStore;
 
-    // Warn loudly (once per store) when paired with InMemoryJobStore.
+    // Warn loudly (once per store) when paired with an in-memory job store.
     // CFQ delivers to a Worker invocation — across invocations, an in-memory
-    // store loses partial-failure rows entirely.
-    const storeCtor = (opts.jobStore as unknown as { constructor?: { name?: string } })
-      ?.constructor;
+    // store loses partial-failure rows entirely. Wrapped stores expose the
+    // backing storage's constructor name via `backingStorageName`.
+    const backingName = (opts.jobStore as unknown as { backingStorageName?: string })
+      ?.backingStorageName;
     if (
-      storeCtor?.name === "InMemoryJobStore" &&
+      backingName === "InMemoryQueueStorage" &&
       !__warnedInMemoryStores.has(opts.jobStore as unknown as object)
     ) {
       __warnedInMemoryStores.add(opts.jobStore as unknown as object);
       getLogger().warn(
-        "[CloudflareMessageQueue] InMemoryJobStore detected — cloud adapters require a lease-sweeping JobStore (Postgres/Supabase/SQLite). Rows may strand on partial failures."
+        "[CloudflareMessageQueue] in-memory job store detected — cloud adapters require a lease-sweeping JobStore (Postgres/Supabase/SQLite). Rows may strand on partial failures."
       );
     }
   }
@@ -181,7 +182,7 @@ export class CloudflareMessageQueue<Input, Output> implements IMessageQueue<
       // the batched many-variant when the IJobStore exposes it (WrappedJobStore
       // ships a Promise.allSettled default; native SQL backends can override
       // with a single bulk UPDATE). Fall back to a per-id allSettled fan-out
-      // for bare IJobStore impls (e.g. InMemoryJobStore in tests) that don't
+      // for bare IJobStore impls (e.g. a bare custom store) that don't
       // implement the optional method. Clamp to the original delaySeconds floor.
       const defer = new Date(Date.now() + computeDeferDelayMs(opts.delaySeconds));
       const deferOpts = { visible_at: defer, errorCode: "ENQUEUE_FAILED" };

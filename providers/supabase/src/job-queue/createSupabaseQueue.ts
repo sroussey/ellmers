@@ -5,9 +5,13 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { QueueStorageOptions } from "@workglow/job-queue";
-import { SupabaseJobStore } from "./SupabaseJobStore";
-import { SupabaseMessageQueue } from "./SupabaseMessageQueue";
+import type {
+  IJobStore,
+  IMessageQueue,
+  JobStorageFormat,
+  QueueStorageOptions,
+} from "@workglow/job-queue";
+import { wrapQueueStorage } from "@workglow/job-queue";
 import { SupabaseQueueStorage } from "./SupabaseQueueStorage";
 
 /**
@@ -20,12 +24,10 @@ export function createSupabaseQueue<Input, Output>(
   client: SupabaseClient,
   opts?: QueueStorageOptions
 ): {
-  messageQueue: SupabaseMessageQueue<Input, Output>;
-  jobStore: SupabaseJobStore<Input, Output>;
+  messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
+  jobStore: IJobStore<Input, Output>;
 } {
-  const core = new SupabaseQueueStorage<Input, Output>(client, queueName, opts);
-  return {
-    messageQueue: new SupabaseMessageQueue<Input, Output>(core),
-    jobStore: new SupabaseJobStore<Input, Output>(core),
-  };
+  return wrapQueueStorage<Input, Output>(
+    new SupabaseQueueStorage<Input, Output>(client, queueName, opts)
+  );
 }

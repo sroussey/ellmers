@@ -51,7 +51,7 @@ function computeDeferDelayMs(originalDelaySeconds: number | undefined): number {
 
 /**
  * Fallback used when the underlying `IJobStore` does not implement the
- * optional `markEnqueueDeferredMany` (bare InMemoryJobStore, etc.). Mirrors
+ * optional `markEnqueueDeferredMany` (a bare custom store, etc.). Mirrors
  * the WrappedJobStore default impl: parallel per-id writes via
  * `Promise.allSettled` so a single transient failure doesn't tank the rest.
  */
@@ -68,7 +68,7 @@ async function markEnqueueDeferredManyFallback<Input, Output>(
 }
 
 /**
- * Module-level dedupe set for the InMemoryJobStore-pairing warning.
+ * Module-level dedupe set for the in-memory-store-pairing warning.
  * WeakSet so we don't pin store instances in memory — the warning fires
  * once per process per store, then the store's lifecycle is unaffected.
  */
@@ -90,18 +90,20 @@ export class SqsMessageQueue<Input, Output> implements IMessageQueue<
     this.queueName = opts.queueName;
     this.jobStore = opts.jobStore;
 
-    // Warn loudly (once per store) when paired with InMemoryJobStore.
+    // Warn loudly (once per store) when paired with an in-memory job store.
     // SQS at-least-once + an in-memory store means partial-failure rows
     // strand forever (no shared lease-expiry sweep across processes).
-    const storeCtor = (opts.jobStore as unknown as { constructor?: { name?: string } })
-      ?.constructor;
+    // Wrapped stores expose the backing storage's constructor name via
+    // `backingStorageName`.
+    const backingName = (opts.jobStore as unknown as { backingStorageName?: string })
+      ?.backingStorageName;
     if (
-      storeCtor?.name === "InMemoryJobStore" &&
+      backingName === "InMemoryQueueStorage" &&
       !__warnedInMemoryStores.has(opts.jobStore as unknown as object)
     ) {
       __warnedInMemoryStores.add(opts.jobStore as unknown as object);
       getLogger().warn(
-        "[SqsMessageQueue] InMemoryJobStore detected — cloud adapters require a lease-sweeping JobStore (Postgres/Supabase/SQLite). Rows may strand on partial failures."
+        "[SqsMessageQueue] in-memory job store detected — cloud adapters require a lease-sweeping JobStore (Postgres/Supabase/SQLite). Rows may strand on partial failures."
       );
     }
   }
@@ -209,7 +211,7 @@ export class SqsMessageQueue<Input, Output> implements IMessageQueue<
       // the IJobStore exposes it (WrappedJobStore ships a Promise.allSettled
       // default; native SQL backends can override with a single bulk UPDATE).
       // Fall back to a per-id allSettled fan-out for bare IJobStore impls
-      // (e.g. InMemoryJobStore in tests) that don't implement the optional
+      // (e.g. a bare custom store) that don't implement the optional
       // method. Clamp to the original delaySeconds floor.
       const defer = new Date(Date.now() + computeDeferDelayMs(opts.delaySeconds));
       const failedIds = failures.map((f) => f.id);

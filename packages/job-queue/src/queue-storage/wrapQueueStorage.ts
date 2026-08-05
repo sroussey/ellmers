@@ -203,6 +203,30 @@ class WrappedMessageQueue<Input, Output> implements IMessageQueue<JobStorageForm
   }
 }
 
+/**
+ * Optional single-statement fast paths a concrete storage may implement
+ * beyond {@link IQueueStorage} (deliberately kept off the interface — see the
+ * `finalize` doc there). The wrapper prefers them when present: the SQL
+ * backends implement each as one atomic statement, where the generic
+ * composition below needs a read-then-write ({@link WrappedJobStore.failWithError})
+ * or a per-id fan-out ({@link WrappedJobStore.getMany}).
+ */
+interface QueueStorageFastPaths<Input, Output> {
+  readonly saveStatus?: (id: MessageId, status: JobStatus) => void | Promise<void>;
+  readonly getMany?: (
+    ids: readonly MessageId[]
+  ) => Promise<readonly (JobStorageFormat<Input, Output> | undefined)[]>;
+  readonly completeWithResult?: (id: MessageId, result: Output | null) => Promise<void>;
+  readonly failWithError?: (
+    id: MessageId,
+    opts: {
+      readonly error?: string | null;
+      readonly errorCode?: string | null;
+      readonly abortRequested?: boolean;
+    }
+  ) => Promise<void>;
+}
+
 class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
   /**
    * Per-instance one-shot gate for the bounded-scan exhaustion warning, so a
@@ -213,10 +237,23 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
    */
   private fingerprintScanExhaustedWarned = false;
 
+  private readonly fastPaths: QueueStorageFastPaths<Input, Output>;
+
+  /**
+   * Constructor name of the wrapped storage (e.g. `"InMemoryQueueStorage"`).
+   * Lets callers holding only the `IJobStore` facade identify the backing
+   * store — the cloud message-queue adapters probe this to warn when they
+   * are paired with a non-durable in-memory store.
+   */
+  public readonly backingStorageName: string;
+
   constructor(
     private readonly storage: IQueueStorage<Input, Output>,
     private readonly maxFingerprintScan: number = DEFAULT_LIMITS.jobQueueMaxFingerprintScan
-  ) {}
+  ) {
+    this.fastPaths = storage as IQueueStorage<Input, Output> & QueueStorageFastPaths<Input, Output>;
+    this.backingStorageName = (storage as object)?.constructor?.name ?? "";
+  }
 
   get(id: MessageId): Promise<JobRecord<Input, Output> | undefined> {
     return this.storage.get(id);
@@ -255,6 +292,11 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
   }
 
   async saveStatus(id: MessageId, status: JobStatus): Promise<void> {
+    const native = this.fastPaths.saveStatus;
+    if (typeof native === "function") {
+      await native.call(this.storage, id, status);
+      return;
+    }
     // Use finalize() so the status write does not bump attempts.
     await this.storage.finalize(id, { status });
   }
@@ -266,8 +308,17 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
 
   async findActiveByFingerprint(
     fingerprint: string,
-    _queueName: string
+    queueName: string
   ): Promise<JobRecord<Input, Output> | undefined> {
+    // The wrapped storage is scoped to a single queue. When it exposes its
+    // queue name, enforce the same queue-scoping the native SQL lookups
+    // apply via `WHERE queue = ?`: asking about a different queue returns
+    // undefined, never this queue's row.
+    const storageQueueName = (this.storage as { queueName?: unknown }).queueName;
+    if (typeof storageQueueName === "string" && storageQueueName !== queueName) {
+      return undefined;
+    }
+
     // Prefer the native storage implementation when available (Postgres,
     // SQLite, Supabase): those backends have a partial unique index on
     // (queue, fingerprint) WHERE status IN ('PENDING','PROCESSING') for
@@ -275,19 +326,17 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
     // regression on the hot dedup path.
     const native = this.storage.findActiveByFingerprint;
     if (typeof native === "function") {
-      return native.call(this.storage, fingerprint, _queueName);
+      return native.call(this.storage, fingerprint, queueName);
     }
 
-    // Fallback for backends without a native implementation (in-memory,
-    // IndexedDB): single bounded peek per status, up to this.maxFingerprintScan
-    // total rows across PENDING + PROCESSING. The actual cap is the minimum
-    // of this.maxFingerprintScan and whatever the underlying peek() impl
-    // chooses to cap `num` at internally. We rely on this.maxFingerprintScan as
-    // a hard ceiling and surface a one-shot warning when we exhaust it
-    // without finding a match. The wrapped storage is already scoped to a
-    // single queue, so any row found here is in "this" queue — the
-    // queueName parameter is accepted for interface compatibility but not
-    // used for filtering.
+    // Fallback for backends without a native implementation (IndexedDB,
+    // custom stores): single bounded peek per status, up to
+    // this.maxFingerprintScan total rows across PENDING + PROCESSING. The
+    // actual cap is the minimum of this.maxFingerprintScan and whatever the
+    // underlying peek() impl chooses to cap `num` at internally. We rely on
+    // this.maxFingerprintScan as a hard ceiling and surface a one-shot
+    // warning when we exhaust it without finding a match. Rows here are in
+    // "this" queue — the guard above already rejected foreign queue names.
     let scanned = 0;
     for (const status of ["PENDING", "PROCESSING"] as const) {
       const remaining = this.maxFingerprintScan - scanned;
@@ -312,10 +361,19 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
   async getMany(
     ids: readonly MessageId[]
   ): Promise<readonly (JobRecord<Input, Output> | undefined)[]> {
+    const native = this.fastPaths.getMany;
+    if (typeof native === "function") {
+      return native.call(this.storage, ids);
+    }
     return Promise.all(ids.map((id) => this.storage.get(id)));
   }
 
   async completeWithResult(id: MessageId, result: Output): Promise<void> {
+    const native = this.fastPaths.completeWithResult;
+    if (typeof native === "function") {
+      await native.call(this.storage, id, result);
+      return;
+    }
     await this.storage.finalize(id, {
       output: result,
       error: null,
@@ -328,8 +386,6 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
   async markDisabled(id: MessageId): Promise<void> {
     // Delegate to the core's atomic markDisabled — IQueueStorage requires
     // it to be a single-op write that preserves completed_at via COALESCE.
-    // Calling it here keeps WrappedJobStore consistent with backends that
-    // bypass the wrapper (e.g. PostgresJobStore, SupabaseJobStore).
     await this.storage.markDisabled(id);
   }
 
@@ -341,6 +397,11 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
       readonly abortRequested?: boolean;
     }
   ): Promise<void> {
+    const native = this.fastPaths.failWithError;
+    if (typeof native === "function") {
+      await native.call(this.storage, id, opts);
+      return;
+    }
     const current = await this.storage.get(id);
     const now = new Date().toISOString();
     const abortRequestedAt =

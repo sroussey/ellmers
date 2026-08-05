@@ -4,10 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { QueueStorageOptions } from "@workglow/job-queue";
+import type {
+  IJobStore,
+  IMessageQueue,
+  JobStorageFormat,
+  QueueStorageOptions,
+} from "@workglow/job-queue";
+import { wrapQueueStorage } from "@workglow/job-queue";
 import type { Pool } from "@workglow/postgres/storage";
-import { PostgresJobStore } from "./PostgresJobStore";
-import { PostgresMessageQueue } from "./PostgresMessageQueue";
 import { PostgresQueueStorage } from "./PostgresQueueStorage";
 
 /**
@@ -20,12 +24,10 @@ export function createPostgresQueue<Input, Output>(
   pool: Pool,
   opts?: QueueStorageOptions
 ): {
-  messageQueue: PostgresMessageQueue<Input, Output>;
-  jobStore: PostgresJobStore<Input, Output>;
+  messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
+  jobStore: IJobStore<Input, Output>;
 } {
-  const core = new PostgresQueueStorage<Input, Output>(pool, queueName, opts);
-  return {
-    messageQueue: new PostgresMessageQueue<Input, Output>(core),
-    jobStore: new PostgresJobStore<Input, Output>(core),
-  };
+  return wrapQueueStorage<Input, Output>(
+    new PostgresQueueStorage<Input, Output>(pool, queueName, opts)
+  );
 }

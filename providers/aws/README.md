@@ -18,11 +18,11 @@ Compose an SQS message queue with a Postgres-backed job store:
 import { SQSClient } from "@aws-sdk/client-sqs";
 import { createSqsQueue } from "@workglow/aws/job-queue";
 import { JobQueueServer } from "@workglow/job-queue";
-import { PostgresJobStore } from "@workglow/postgres/job-queue";
+import { createPostgresQueue } from "@workglow/postgres/job-queue";
 import { MyJob } from "./MyJob";
 
 const sqs = new SQSClient({ region: "us-east-1" });
-const jobStore = new PostgresJobStore({ /* pool, queueName, ... */ });
+const { jobStore } = createPostgresQueue("my-queue", pool);
 
 const { messageQueue } = createSqsQueue({
   sqs,
