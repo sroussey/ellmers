@@ -111,26 +111,62 @@ export function TaskNode(props: NodeProps<Node<TaskNodeData, string>>) {
       })
     );
 
-    if (task.hasChildren()) {
-      const tasks = task.subGraph.getTasks();
-      tasks.forEach((subTask) => {
-        unsubscribes.push(subTask.subscribe("progress", updateConsolidatedProgress));
-        unsubscribes.push(subTask.subscribe("status", updateConsolidatedProgress));
-      });
+    // Wired unconditionally, not behind `hasChildren()`: a task typically owns
+    // its first child partway through `execute()`, long after this effect ran,
+    // and the effect never re-runs because `task.subGraph` is created once and
+    // kept. Gating here would leave dynamically-owned subtasks unsubscribed.
+    //
+    // Keyed by subtask id rather than appended to `unsubscribes`, so a subtask
+    // released with `context.disown` can actually be dropped. An append-only
+    // list would retain every subtask the subgraph ever held — and a reused
+    // instance owned again would stack a second pair of subscriptions, so an
+    // own/disown loop over N jobs would recompute progress N times per event.
+    const subTaskUnsubs = new Map<string, () => void>();
 
-      // Subscribe to subgraph events to handle new tasks
-      unsubscribes.push(
-        task.subGraph.subscribe("task_added", () => {
-          setSubTasks(task.subGraph.getTasks());
-          // Subscribe to new task's progress
-          const newTasks = task.subGraph.getTasks();
-          const lastTask = newTasks[newTasks.length - 1];
-          unsubscribes.push(lastTask.subscribe("progress", updateConsolidatedProgress));
-          unsubscribes.push(lastTask.subscribe("status", updateConsolidatedProgress));
-          updateConsolidatedProgress();
-        })
-      );
+    const wireSubTask = (subTask: ITask): void => {
+      const id = String(subTask.id);
+      if (subTaskUnsubs.has(id)) return;
+      const unsubs = [
+        subTask.subscribe("progress", updateConsolidatedProgress),
+        subTask.subscribe("status", updateConsolidatedProgress),
+      ];
+      subTaskUnsubs.set(id, () => {
+        for (const u of unsubs) u();
+      });
+    };
+
+    for (const subTask of task.subGraph.getTasks()) {
+      wireSubTask(subTask);
     }
+
+    unsubscribes.push(
+      task.subGraph.subscribe("task_added", (taskId) => {
+        setSubTasks(task.subGraph.getTasks());
+        setIsExpandable(true);
+        // The added task, not whatever sorts last: re-adding a disowned
+        // instance moves it to the tail, so `getTasks()[length - 1]` would
+        // re-subscribe an already-wired task.
+        const added = task.subGraph.getTask(taskId);
+        if (added) wireSubTask(added);
+        updateConsolidatedProgress();
+      })
+    );
+
+    unsubscribes.push(
+      task.subGraph.subscribe("task_removed", (taskId) => {
+        const id = String(taskId);
+        subTaskUnsubs.get(id)?.();
+        subTaskUnsubs.delete(id);
+        setSubTasks(task.subGraph.getTasks());
+        setIsExpandable(task.hasChildren());
+        updateConsolidatedProgress();
+      })
+    );
+
+    unsubscribes.push(() => {
+      for (const u of subTaskUnsubs.values()) u();
+      subTaskUnsubs.clear();
+    });
 
     unsubscribes.push(
       task.subscribe("regenerate", () => {
