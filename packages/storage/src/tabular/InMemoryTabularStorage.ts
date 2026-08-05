@@ -21,7 +21,7 @@ import {
   CoveringIndexQueryOptions,
   DeleteSearchCriteria,
   InsertEntity,
-  isSearchCondition,
+  normalizeCriterion,
   QueryOptions,
   SearchCriteria,
   SimplifyPrimaryKey,
@@ -35,6 +35,54 @@ export const MEMORY_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
 );
 
 /** Non-persistent tabular storage backed by a `Map` keyed by row fingerprint. */
+/**
+ * Whether `entity` satisfies every criterion in `criteria`.
+ *
+ * Extracted so `query`, `deleteSearch`, and `updateWhere` share one matcher —
+ * they previously carried three byte-identical operator switches, which is
+ * three places for a new operator family to be forgotten.
+ */
+function matchesCriteria<Entity>(
+  entity: Entity,
+  criteria: DeleteSearchCriteria<Entity>,
+  criteriaKeys: ReadonlyArray<keyof Entity>
+): boolean {
+  for (const column of criteriaKeys) {
+    const columnValue = entity[column];
+    const normalized = normalizeCriterion<Entity[keyof Entity]>(criteria[column]);
+
+    if (normalized.kind === "in") {
+      // Strict membership, matching the `=` arm below: no coercion, so a
+      // string "1" never matches a numeric 1 on any backend.
+      if (!normalized.values.some((candidate) => columnValue === candidate)) return false;
+      continue;
+    }
+
+    const v = normalized.value as string | number;
+    const cv = columnValue as string | number | null | undefined;
+    switch (normalized.operator) {
+      case "=":
+        if (cv !== v) return false;
+        break;
+      case "<":
+        if (cv === null || cv === undefined || !(cv < v)) return false;
+        break;
+      case "<=":
+        if (cv === null || cv === undefined || !(cv <= v)) return false;
+        break;
+      case ">":
+        if (cv === null || cv === undefined || !(cv > v)) return false;
+        break;
+      case ">=":
+        if (cv === null || cv === undefined || !(cv >= v)) return false;
+        break;
+      default:
+        return false;
+    }
+  }
+  return true;
+}
+
 export class InMemoryTabularStorage<
   Schema extends DataPortSchemaObject,
   PrimaryKeyNames extends ReadonlyArray<keyof Schema["properties"]>,
@@ -355,40 +403,9 @@ export class InMemoryTabularStorage<
     // Materialize entries first so we don't iterate a Map while mutating it.
     const entries = Array.from(this.values.entries());
 
-    const entriesToDelete = entries.filter(([_, entity]) => {
-      for (const column of criteriaKeys) {
-        const criterion = criteria[column];
-        const columnValue = entity[column];
-
-        if (isSearchCondition(criterion)) {
-          const { value, operator } = criterion;
-          const v = value as string | number;
-          const cv = columnValue as string | number | null | undefined;
-          switch (operator) {
-            case "=":
-              if (cv !== v) return false;
-              break;
-            case "<":
-              if (cv === null || cv === undefined || !(cv < v)) return false;
-              break;
-            case "<=":
-              if (cv === null || cv === undefined || !(cv <= v)) return false;
-              break;
-            case ">":
-              if (cv === null || cv === undefined || !(cv > v)) return false;
-              break;
-            case ">=":
-              if (cv === null || cv === undefined || !(cv >= v)) return false;
-              break;
-            default:
-              return false;
-          }
-        } else {
-          if (columnValue !== criterion) return false;
-        }
-      }
-      return true;
-    });
+    const entriesToDelete = entries.filter(([_, entity]) =>
+      matchesCriteria(entity, criteria, criteriaKeys)
+    );
 
     for (const [id, entity] of entriesToDelete) {
       this.values.delete(id);
@@ -405,39 +422,7 @@ export class InMemoryTabularStorage<
     this.assertPatchKeepsPrimaryKey(patch);
     const criteriaKeys = Object.keys(match) as Array<keyof Entity>;
     for (const [id, entity] of Array.from(this.values.entries())) {
-      let matched = true;
-      for (const column of criteriaKeys) {
-        const criterion = match[column];
-        const columnValue = entity[column];
-        if (isSearchCondition(criterion)) {
-          const { value, operator } = criterion;
-          const v = value as string | number;
-          const cv = columnValue as string | number | null | undefined;
-          switch (operator) {
-            case "=":
-              if (cv !== v) matched = false;
-              break;
-            case "<":
-              if (cv === null || cv === undefined || !(cv < v)) matched = false;
-              break;
-            case "<=":
-              if (cv === null || cv === undefined || !(cv <= v)) matched = false;
-              break;
-            case ">":
-              if (cv === null || cv === undefined || !(cv > v)) matched = false;
-              break;
-            case ">=":
-              if (cv === null || cv === undefined || !(cv >= v)) matched = false;
-              break;
-            default:
-              matched = false;
-          }
-        } else if (columnValue !== criterion) {
-          matched = false;
-        }
-        if (!matched) break;
-      }
-      if (!matched) continue;
+      if (!matchesCriteria(entity, match, criteriaKeys)) continue;
 
       const updated = { ...entity, ...patch } as Entity;
       // The guard above forbids primary-key changes, so the row keeps its id.
@@ -461,40 +446,9 @@ export class InMemoryTabularStorage<
 
     const criteriaKeys = Object.keys(criteria) as Array<keyof Entity>;
 
-    let results: Entity[] = Array.from(this.values.values()).filter((entity) => {
-      for (const column of criteriaKeys) {
-        const criterion = criteria[column];
-        const columnValue = entity[column];
-
-        if (isSearchCondition(criterion)) {
-          const { value, operator } = criterion;
-          const v = value as string | number;
-          const cv = columnValue as string | number | null | undefined;
-          switch (operator) {
-            case "=":
-              if (cv !== v) return false;
-              break;
-            case "<":
-              if (cv === null || cv === undefined || !(cv < v)) return false;
-              break;
-            case "<=":
-              if (cv === null || cv === undefined || !(cv <= v)) return false;
-              break;
-            case ">":
-              if (cv === null || cv === undefined || !(cv > v)) return false;
-              break;
-            case ">=":
-              if (cv === null || cv === undefined || !(cv >= v)) return false;
-              break;
-            default:
-              return false;
-          }
-        } else {
-          if (columnValue !== criterion) return false;
-        }
-      }
-      return true;
-    });
+    let results: Entity[] = Array.from(this.values.values()).filter((entity) =>
+      matchesCriteria(entity, criteria, criteriaKeys)
+    );
 
     if (options?.orderBy && options.orderBy.length > 0) {
       results.sort((a, b) => {

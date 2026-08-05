@@ -119,8 +119,23 @@ export interface SearchCondition<T> {
 }
 
 /**
- * Criteria for deleteSearch operations supporting multiple columns.
- * Each column can have either a direct value (equality) or a SearchCondition with an operator.
+ * Set-membership criterion — `column IN (…)`. Split from
+ * {@link SearchCondition} rather than widening its `value` because only this
+ * operator takes a list, and a shared `value` would let every scalar operator
+ * accept an array.
+ *
+ * An empty `value` matches nothing (`IN ()` is a syntax error in SQL, so
+ * backends emit an always-false predicate instead).
+ */
+export interface SearchInCondition<T> {
+  readonly value: readonly T[];
+  readonly operator: "in";
+}
+
+/**
+ * Criteria for query/deleteSearch operations supporting multiple columns.
+ * Each column can have a direct value (equality), a {@link SearchCondition}
+ * with a comparison operator, or a {@link SearchInCondition} list.
  *
  * @example
  * // Equality match
@@ -129,14 +144,46 @@ export interface SearchCondition<T> {
  * // With operator
  * { createdAt: { value: date, operator: "<" } }
  *
+ * // Set membership — one round trip instead of one query per id
+ * { observation_id: { value: [1, 2, 3], operator: "in" } }
+ *
  * // Multiple columns
  * { category: "electronics", createdAt: { value: date, operator: "<" } }
  */
 export type DeleteSearchCriteria<Entity> = {
-  readonly [K in keyof Entity]?: Entity[K] | SearchCondition<Entity[K]>;
+  readonly [K in keyof Entity]?:
+    Entity[K] | SearchCondition<Entity[K]> | SearchInCondition<Entity[K]>;
 };
 
 export type SearchCriteria<Entity> = DeleteSearchCriteria<Entity>;
+
+/**
+ * A criterion resolved to exactly one shape. Backends switch on `kind` so
+ * adding an operator family surfaces as a non-exhaustive switch rather than as
+ * a criterion silently treated as a literal value.
+ */
+export type NormalizedCriterion<T> =
+  | { readonly kind: "compare"; readonly operator: SearchOperator; readonly value: T }
+  | { readonly kind: "in"; readonly values: readonly T[] };
+
+/**
+ * Resolves a raw criterion — bare value, {@link SearchCondition}, or
+ * {@link SearchInCondition} — into a {@link NormalizedCriterion}.
+ *
+ * Every backend should route through this rather than testing the guards
+ * itself: a backend that only checks `isSearchCondition` treats an `in`
+ * criterion as a literal `{value, operator}` object and silently matches
+ * nothing, which is the worst possible failure for a filter.
+ */
+export function normalizeCriterion<T>(criterion: unknown): NormalizedCriterion<T> {
+  if (isSearchInCondition<T>(criterion)) {
+    return { kind: "in", values: criterion.value };
+  }
+  if (isSearchCondition<T>(criterion)) {
+    return { kind: "compare", operator: criterion.operator, value: criterion.value };
+  }
+  return { kind: "compare", operator: "=", value: criterion as T };
+}
 
 export type SortDirection = "ASC" | "DESC";
 
@@ -228,6 +275,24 @@ export function isSearchCondition<T>(value: unknown): value is SearchCondition<T
   const operator = (value as SearchCondition<T>).operator;
   if (typeof operator !== "string") return false;
   return SEARCH_OPERATOR_SET.has(operator as SearchOperator);
+}
+
+/**
+ * Type guard for {@link SearchInCondition}.
+ *
+ * Deliberately separate from {@link isSearchCondition} so the scalar-operator
+ * allow-list stays closed: `"in"` is never a member of
+ * {@link ALLOWED_SEARCH_OPERATORS}, so it can never reach the code path that
+ * interpolates an operator raw into SQL. The list shape is verified here for
+ * the same reason the operator is — this is the JSON trust boundary for
+ * HTTP-proxied backends, where a forged `{operator: "in", value: "…"}` must
+ * not reach a query builder that assumes an array.
+ */
+export function isSearchInCondition<T>(value: unknown): value is SearchInCondition<T> {
+  if (typeof value !== "object" || value === null) return false;
+  if (!("value" in value) || !("operator" in value)) return false;
+  if ((value as SearchInCondition<T>).operator !== "in") return false;
+  return Array.isArray((value as SearchInCondition<T>).value);
 }
 
 /**

@@ -787,8 +787,16 @@ interface SearchCondition<T> {
   readonly operator: SearchOperator;
 }
 
+// Set membership takes a list, so it is a separate shape rather than a
+// widened `SearchCondition["value"]`.
+interface SearchInCondition<T> {
+  readonly value: readonly T[];
+  readonly operator: "in";
+}
+
 type DeleteSearchCriteria<Entity> = {
-  readonly [K in keyof Entity]?: Entity[K] | SearchCondition<Entity[K]>;
+  readonly [K in keyof Entity]?:
+    Entity[K] | SearchCondition<Entity[K]> | SearchInCondition<Entity[K]>;
 };
 
 // Usage examples
@@ -804,6 +812,31 @@ await repo.deleteSearch({
   value: { value: 100, operator: ">=" },
 });
 ```
+
+##### Set membership (`in`)
+
+The same criteria shape is accepted by `query`, `queryPage`, `queryIndex`,
+`count`, `updateWhere`, and `deleteSearch`. The `in` operator turns "rows for
+these N ids" into one round trip instead of N:
+
+```typescript
+// One statement, not one query per id
+const rows = await repo.query({ observation_id: { value: [1, 2, 3], operator: "in" } });
+
+// ANDs with the other columns as usual
+await repo.deleteSearch({ tenant: "acme", status: { value: ["draft", "void"], operator: "in" } });
+```
+
+An **empty list matches nothing** (`IN ()` is a syntax error in SQL, so backends
+emit an always-false predicate or skip the round trip entirely).
+
+**Backend limits.** Postgres binds the whole list as a single array parameter
+(`= ANY($1)`), so list length is unbounded. SQLite and DuckDB expand one
+placeholder per value and remain subject to their statement parameter cap
+(`SQLITE_MAX_VARIABLE_NUMBER` — 999 before SQLite 3.32, 32766 after); split a
+list longer than that yourself. `HuggingFaceTabularStorage` throws
+`StorageUnsupportedError` because its `/filter` endpoint has no IN form, and
+`FsFolderTabularStorage` does not implement `query` at all.
 
 ## Examples
 
