@@ -20,9 +20,11 @@ import { LOCAL_MLX } from "./common/Mlx_Constants";
 /**
  * MLX provider stub.
  *
- * The MLX runtime requires a Python environment which is not bundled.
- * The provider registers cleanly so the UI can list it, but all inference
- * calls throw immediately.
+ * The MLX runtime requires an mlx-lm Python environment which is not bundled,
+ * so {@link MlxProvider.isAvailable} reports `false` and `registerMlx()` skips
+ * registration. The provider is constructible for metadata inspection, and the
+ * run-fn below is the backstop for anyone registering it directly: every
+ * inference call throws immediately.
  */
 export class MlxProvider extends AiProvider {
   readonly name = LOCAL_MLX;
@@ -57,6 +59,16 @@ export class MlxProvider extends AiProvider {
 
   override inferCapabilities(model: ModelRecord): readonly Capability[] {
     return (model.capabilities as readonly Capability[] | undefined) ?? ["text.generation"];
+  }
+
+  /**
+   * Always `false`: inference needs an mlx-lm Python runtime that ships with
+   * neither this package nor its host. Reporting availability honestly keeps
+   * the provider (and its models) out of any UI that offers a choice, rather
+   * than surfacing an option whose every call throws.
+   */
+  override async isAvailable(): Promise<boolean> {
+    return false;
   }
 }
 
