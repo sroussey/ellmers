@@ -172,6 +172,26 @@
         "@workglow/util": "workspace:*",
       },
     },
+    "packages/bootstrap": {
+      "name": "@workglow/bootstrap",
+      "version": "0.3.37",
+      "devDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/knowledge-base": "workspace:*",
+        "@workglow/mcp": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/knowledge-base": "workspace:*",
+        "@workglow/mcp": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
     "packages/browser-control": {
       "name": "@workglow/browser-control",
       "version": "0.3.38",
@@ -376,6 +396,7 @@
       "dependencies": {
         "@workglow/ai": "workspace:*",
         "@workglow/anthropic": "workspace:*",
+        "@workglow/bootstrap": "workspace:*",
         "@workglow/browser-control": "workspace:*",
         "@workglow/chrome-ai": "workspace:*",
         "@workglow/deepseek": "workspace:*",
@@ -1568,6 +1589,8 @@
     "@workglow/anthropic": ["@workglow/anthropic@workspace:providers/anthropic"],
 
     "@workglow/aws": ["@workglow/aws@workspace:providers/aws"],
+
+    "@workglow/bootstrap": ["@workglow/bootstrap@workspace:packages/bootstrap"],
 
     "@workglow/browser-control": ["@workglow/browser-control@workspace:packages/browser-control"],
 
