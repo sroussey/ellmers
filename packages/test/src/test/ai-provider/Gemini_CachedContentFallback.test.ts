@@ -79,13 +79,13 @@ describe("generateGeminiStreamWithCacheFallback", () => {
     // never seed one), so no need to mock the cache-store seam here — the
     // test's contract is on the buildRequest / runStream call pattern.
     const runStream = vi
-      .fn<[Record<string, unknown>], Promise<string>>()
+      .fn<(request: Record<string, unknown>) => Promise<string>>()
       .mockImplementationOnce(async () => {
         throw { status: 404, message: "cachedContents/chk-A not found" };
       })
       .mockImplementationOnce(async () => "retry-ok");
     const buildRequest = vi
-      .fn<[boolean], Record<string, unknown>>()
+      .fn<(useCachedContent: boolean) => Record<string, unknown>>()
       .mockImplementation((useCache) => ({ useCache }));
 
     const result = await generateGeminiStreamWithCacheFallback({
