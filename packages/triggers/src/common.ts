@@ -17,6 +17,7 @@ export * from "./cron/CronSchedule";
 export * from "./trigger/BaseTrigger";
 export * from "./trigger/CronTrigger";
 export * from "./trigger/ITrigger";
+export * from "./trigger/fixedInterval";
 export * from "./trigger/IntervalTrigger";
 export * from "./trigger/PollingTrigger";
 export * from "./trigger/TriggerError";
