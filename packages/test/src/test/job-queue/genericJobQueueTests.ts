@@ -730,6 +730,14 @@ export function runGenericJobQueueTests(
         { delaySeconds: 0.2 }
       );
 
+      // The stored row must carry the deferred visibility — a backend that
+      // clobbers visible_at with "now" on add() runs the job immediately and
+      // this difference collapses to ~0.
+      const stored = await client.getJob(handle.id);
+      expect(stored).toBeDefined();
+      const deferMs = Date.parse(stored!.visible_at!) - Date.parse(stored!.created_at!);
+      expect(deferMs).toBeGreaterThanOrEqual(150);
+
       const start = Date.now();
       const result = (await Promise.race([
         handle.waitFor(),
