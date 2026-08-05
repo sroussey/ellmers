@@ -8,6 +8,7 @@ import type { AiProviderRunFn, TextRewriterTaskInput, TextRewriterTaskOutput } f
 import { createGeminiClient, getModelName } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
+import { mapGeminiUsage } from "./Gemini_Usage";
 
 export const Gemini_TextRewriter_Stream: AiProviderRunFn<
   TextRewriterTaskInput,
@@ -26,7 +27,9 @@ export const Gemini_TextRewriter_Stream: AiProviderRunFn<
   });
 
   let refusalCategory: string | undefined;
+  let lastUsageMetadata: unknown;
   for await (const chunk of result) {
+    lastUsageMetadata = chunk.usageMetadata ?? lastUsageMetadata;
     const text = chunk.text;
     if (text) {
       emit({ type: "text-delta", port: "text", textDelta: text });
@@ -34,5 +37,9 @@ export const Gemini_TextRewriter_Stream: AiProviderRunFn<
     refusalCategory = refusalCategory ?? geminiRefusalCategory(chunk);
   }
   emitGeminiRefusal(emit, refusalCategory);
-  emit({ type: "finish", data: {} as TextRewriterTaskOutput });
+  emit({
+    type: "finish",
+    data: {} as TextRewriterTaskOutput,
+    usage: mapGeminiUsage(lastUsageMetadata),
+  });
 };

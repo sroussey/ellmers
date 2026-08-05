@@ -23,6 +23,7 @@ import { evictIfStaleGeminiCachedContent, getGeminiCachedContent } from "./Gemin
 import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
+import { mapGeminiUsage } from "./Gemini_Usage";
 
 export function buildGeminiContents(
   messages: ReadonlyArray<ChatMessage> | undefined,
@@ -227,8 +228,10 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
 
   let callIndex = 0;
   let refusalCategory: string | undefined;
+  let lastUsageMetadata: unknown;
 
   for await (const chunk of result) {
+    lastUsageMetadata = chunk.usageMetadata ?? lastUsageMetadata;
     refusalCategory = refusalCategory ?? geminiRefusalCategory(chunk);
     const parts = chunk.candidates?.[0]?.content?.parts ?? [];
     for (const part of parts) {
@@ -268,5 +271,9 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
   }
 
   emitGeminiRefusal(emit, refusalCategory);
-  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
+  emit({
+    type: "finish",
+    data: { text: "", toolCalls: [] } as ToolCallingTaskOutput,
+    usage: mapGeminiUsage(lastUsageMetadata),
+  });
 };

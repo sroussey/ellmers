@@ -26,6 +26,7 @@ import {
 import { GEMINI_RUN_FNS } from "./common/Gemini_JobRunFns";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./common/Gemini_Refusal";
 import { buildGeminiContents } from "./common/Gemini_ToolCalling";
+import { mapGeminiUsage } from "./common/Gemini_Usage";
 import { GoogleGeminiQueuedProvider } from "./GoogleGeminiQueuedProvider";
 
 /**
@@ -47,4 +48,5 @@ export const _testOnly = {
   cacheStoreTestOnly: _cacheStoreTestOnly,
   isGeminiCachedContentNotFoundError,
   generateGeminiStreamWithCacheFallback,
+  mapGeminiUsage,
 } as const;
