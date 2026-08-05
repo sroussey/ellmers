@@ -9,7 +9,7 @@ import type {
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
-import { parsePartialJson } from "@workglow/util/worker";
+import { createPartialJsonStream } from "@workglow/util/worker";
 import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
@@ -31,8 +31,8 @@ const DEFAULT_STRUCTURED_THINKING_BUDGET = 2048;
  * Streaming run-fn for `["text.generation", "json-mode"]`. Gemini uses
  * `responseSchema` + `responseMimeType: "application/json"` to produce
  * structured output. Per the streaming convention exception for json-mode,
- * the `finish` event MUST include the parsed `object` so that
- * `StructuredGenerationTask` can read it without a JSON streaming parser.
+ * the `finish` event MUST include the parsed `object` — it is the definitive
+ * result `StructuredGenerationTask` validates against the schema.
  *
  * With `responseMimeType: "application/json"` the response payload is JSON only —
  * reasoning stays internal and never appears in the emitted parts — so the
@@ -71,7 +71,7 @@ export const Gemini_StructuredGeneration_Stream: AiProviderRunFn<
     },
   });
 
-  let accumulatedJson = "";
+  const json = createPartialJsonStream();
   let refusalCategory: string | undefined;
   let lastUsageMetadata: unknown;
   for await (const chunk of result) {
@@ -79,8 +79,7 @@ export const Gemini_StructuredGeneration_Stream: AiProviderRunFn<
     // `chunk.text` concatenates the answer text (thought parts are excluded).
     const text = chunk.text;
     if (text) {
-      accumulatedJson += text;
-      const partial = parsePartialJson(accumulatedJson);
+      const partial = json.push(text);
       if (partial !== undefined) {
         emit({ type: "object-delta", port: "object", objectDelta: partial });
       }
@@ -89,16 +88,10 @@ export const Gemini_StructuredGeneration_Stream: AiProviderRunFn<
   }
   emitGeminiRefusal(emit, refusalCategory);
 
-  let finalObject: Record<string, unknown>;
-  try {
-    finalObject = JSON.parse(accumulatedJson);
-  } catch {
-    finalObject = parsePartialJson(accumulatedJson) ?? {};
-  }
   // json-mode finish exception: populate finish.data.object with parsed result.
   emit({
     type: "finish",
-    data: { object: finalObject } as StructuredGenerationTaskOutput,
+    data: { object: json.finish() } as StructuredGenerationTaskOutput,
     usage: mapGeminiUsage(lastUsageMetadata),
   });
 };

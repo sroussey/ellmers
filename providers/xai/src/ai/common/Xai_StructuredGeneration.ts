@@ -15,7 +15,7 @@ import {
   mapOpenAIChatUsage,
   OPENAI_STREAM_USAGE_OPTIONS,
 } from "@workglow/ai/provider-utils";
-import { parsePartialJson } from "@workglow/util/worker";
+import { createPartialJsonStream } from "@workglow/util/worker";
 import { getClient, getModelName } from "./Xai_Client";
 import type { XaiModelConfig } from "./Xai_ModelSchema";
 
@@ -55,15 +55,14 @@ export const Xai_StructuredGeneration_Stream: AiProviderRunFn<
     { signal }
   );
 
-  let accumulatedJson = "";
+  const json = createPartialJsonStream();
   let refusal = "";
   let usage: Usage | undefined;
   for await (const chunk of stream) {
     usage = mapOpenAIChatUsage(chunk.usage) ?? usage;
     const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
-      accumulatedJson += delta;
-      const partial = parsePartialJson(accumulatedJson);
+      const partial = json.push(delta);
       if (partial !== undefined) {
         emit({ type: "object-delta", port: "object", objectDelta: partial });
       }
@@ -75,15 +74,9 @@ export const Xai_StructuredGeneration_Stream: AiProviderRunFn<
     emit({ type: "refusal", refusal });
   }
 
-  let finalObject: Record<string, unknown>;
-  try {
-    finalObject = JSON.parse(accumulatedJson);
-  } catch {
-    finalObject = parsePartialJson(accumulatedJson) ?? {};
-  }
   emit({
     type: "finish",
-    data: { object: finalObject } as StructuredGenerationTaskOutput,
+    data: { object: json.finish() } as StructuredGenerationTaskOutput,
     usage,
   });
 };

@@ -15,7 +15,7 @@ import {
   isStrictCompatibleSchema,
   mapOpenAIResponsesUsage,
 } from "@workglow/ai/provider-utils";
-import { parsePartialJson } from "@workglow/util/worker";
+import { createPartialJsonStream } from "@workglow/util/worker";
 import { finalizeResponsesRequest, getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 import { warnStrictDowngradedOnce } from "./OpenAI_ResponsesWarnings";
@@ -67,7 +67,7 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
     { signal }
   );
 
-  let accumulatedJson = "";
+  const json = createPartialJsonStream();
   let refusal = "";
   let usage: Usage | undefined;
   for await (const event of stream as AsyncIterable<{
@@ -84,8 +84,7 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
     } else if (event.type === "response.output_text.delta") {
       const delta = event.delta ?? "";
       if (delta) {
-        accumulatedJson += delta;
-        const partial = parsePartialJson(accumulatedJson);
+        const partial = json.push(delta);
         if (partial !== undefined) {
           emit({ type: "object-delta", port: "object", objectDelta: partial });
         }
@@ -101,15 +100,9 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
     emit({ type: "refusal", refusal });
   }
 
-  let finalObject: Record<string, unknown>;
-  try {
-    finalObject = JSON.parse(accumulatedJson);
-  } catch {
-    finalObject = parsePartialJson(accumulatedJson) ?? {};
-  }
   emit({
     type: "finish",
-    data: { object: finalObject } as StructuredGenerationTaskOutput,
+    data: { object: json.finish() } as StructuredGenerationTaskOutput,
     usage,
   });
 };

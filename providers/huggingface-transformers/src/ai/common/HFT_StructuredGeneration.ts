@@ -10,7 +10,7 @@ import type {
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
-import { parsePartialJson } from "@workglow/util/worker";
+import { createPartialJsonStream } from "@workglow/util/worker";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import {
   getPipeline,
@@ -27,41 +27,6 @@ function buildStructuredGenerationPrompt(input: StructuredGenerationTaskInput): 
     `You MUST respond with ONLY a valid JSON object conforming to this JSON schema:\n${schemaStr}\n\n` +
     `Output ONLY the JSON object, no other text.`
   );
-}
-
-/**
- * Strip thinking blocks (`<think>...</think>`) and HFT special tokens
- * (`<|im_end|>`, `<|end_of_turn|>`, etc.) that thinking models prepend
- * to their actual output.
- */
-function stripThinkingAndSpecialTokens(text: string): string {
-  return text
-    .replace(/<think>[\s\S]*?<\/think>/g, "")
-    .replace(/<\|[a-z_]+\|>/g, "")
-    .trim();
-}
-
-function extractJsonFromText(text: string): Record<string, unknown> {
-  // Strip thinking blocks and special tokens first so they don't
-  // interfere with JSON extraction (greedy regex would match braces
-  // inside thinking content).
-  const cleaned = stripThinkingAndSpecialTokens(text);
-
-  // Try parsing the cleaned text directly
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    // Try to extract JSON object from the text
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (match) {
-      try {
-        return JSON.parse(match[0]);
-      } catch {
-        return (parsePartialJson(match[0]) as Record<string, unknown>) ?? {};
-      }
-    }
-    return {};
-  }
 }
 
 export const HFT_StructuredGeneration: AiProviderRunFn<
@@ -81,20 +46,17 @@ export const HFT_StructuredGeneration: AiProviderRunFn<
       add_generation_prompt: true,
     }) as string;
 
-    let fullText = "";
-    // Incrementally maintain cleaned text to avoid O(n²) full-string regex on every token.
-    // Use a simple state machine to skip <think>...</think> blocks and strip special
-    // tokens only from the delta received, not from the entire accumulated string.
-    let cleanedText = "";
+    // A state machine skips <think>...</think> blocks and strips special tokens
+    // from each delta, so no full-string regex ever runs over the accumulated
+    // output. What survives is fed straight into the incremental JSON parser,
+    // which discards any remaining preamble ahead of the first '{'.
     let inThinkBlock = false;
-    let jsonStart = -1; // index into cleanedText where the first '{' was found
+    const json = createPartialJsonStream({ skipPreamble: true });
 
     const streamer = createStreamingTextStreamer(
       generateText.tokenizer,
       (delta) => {
-        fullText += delta;
-
-        // Process the delta through the state machine to update cleanedText
+        let cleanedDelta = "";
         let remaining = delta;
         while (remaining.length > 0) {
           if (inThinkBlock) {
@@ -108,26 +70,20 @@ export const HFT_StructuredGeneration: AiProviderRunFn<
           } else {
             const openIdx = remaining.indexOf("<think>");
             if (openIdx !== -1) {
-              cleanedText += remaining.slice(0, openIdx).replace(/<\|[a-z_]+\|>/g, "");
+              cleanedDelta += remaining.slice(0, openIdx).replace(/<\|[a-z_]+\|>/g, "");
               inThinkBlock = true;
               remaining = remaining.slice(openIdx + "<think>".length);
             } else {
-              cleanedText += remaining.replace(/<\|[a-z_]+\|>/g, "");
+              cleanedDelta += remaining.replace(/<\|[a-z_]+\|>/g, "");
               remaining = "";
             }
           }
         }
 
-        // Locate the start of the JSON object once and reuse that index
-        if (jsonStart === -1) {
-          jsonStart = cleanedText.indexOf("{");
-        }
-        if (jsonStart !== -1) {
-          const partial = parsePartialJson(cleanedText.slice(jsonStart));
-          if (partial !== undefined) {
-            emit({ type: "object-delta", port: "object", objectDelta: partial });
-            return;
-          }
+        const partial = json.push(cleanedDelta);
+        if (partial !== undefined) {
+          emit({ type: "object-delta", port: "object", objectDelta: partial });
+          return;
         }
         emit({ type: "text-delta", port: "text", textDelta: delta });
       },
@@ -146,7 +102,6 @@ export const HFT_StructuredGeneration: AiProviderRunFn<
       stopping_criteria: [stopping_criteria],
     });
 
-    const object = extractJsonFromText(fullText);
-    emit({ type: "finish", data: { object } as StructuredGenerationTaskOutput });
+    emit({ type: "finish", data: { object: json.finish() } as StructuredGenerationTaskOutput });
   });
 };
