@@ -25,6 +25,10 @@ export const DEFAULT_MAX_GAP_BUFFER = 1024;
  * cross-process channel correct even when a carrier delivers rows reordered,
  * while staying a trivial pass-through for an in-order carrier.
  *
+ * `dispatch` receives the row's own `seq` alongside the event so consumers can
+ * track the true delivered position (a gap-skip jumps `seq` past the dropped
+ * rows — a locally-counted cursor would lag behind it forever).
+ *
  * A carrier may also *drop* a row (best-effort publish). To avoid stalling the
  * whole stream forever on a seq that never arrives — and to keep the gap buffer
  * bounded — once more than {@link maxGapBuffer} rows pile up ahead of the gap,
@@ -36,7 +40,7 @@ export class StreamReassembler {
   private readonly gap = new Map<number, StreamChunkRow>();
 
   constructor(
-    private readonly dispatch: (event: StreamEventLike) => void,
+    private readonly dispatch: (event: StreamEventLike, seq: number) => void,
     sinceSeq: number = 0,
     private readonly maxGapBuffer: number = DEFAULT_MAX_GAP_BUFFER
   ) {
@@ -50,7 +54,7 @@ export class StreamReassembler {
       if (this.gap.size > this.maxGapBuffer) this.skipGaps();
       return;
     }
-    this.dispatch(row.event);
+    this.dispatch(row.event, row.seq);
     this.expectedSeq++;
     this.flushContiguous();
   }
@@ -60,7 +64,7 @@ export class StreamReassembler {
     let next = this.gap.get(this.expectedSeq);
     while (next) {
       this.gap.delete(this.expectedSeq);
-      this.dispatch(next.event);
+      this.dispatch(next.event, next.seq);
       this.expectedSeq++;
       next = this.gap.get(this.expectedSeq);
     }

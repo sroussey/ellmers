@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { StreamChunkRow, StreamEventLike } from "../job/JobQueueEventListeners";
 import type { IClaim } from "./IClaim";
 import type { IMessageQueue, MessageId, SendOptions } from "./IMessageQueue";
 import { InMemoryQueueStorage } from "./InMemoryQueueStorage";
@@ -109,8 +110,24 @@ export class InMemoryMessageQueue<Input, Output> implements IMessageQueue<
   /** @internal — shared with the paired job store */
   public readonly core: InMemoryQueueStorage<Input, Output>;
 
+  /**
+   * Stream-channel forwarders — mirror `WrappedMessageQueue`'s, so capability
+   * probes (`typeof … === "function"`) see the channel on this facade too.
+   * Assigned unconditionally because {@link InMemoryQueueStorage} always
+   * implements the channel (no need to probe like the wrapper does).
+   */
+  readonly publishStreamChunk: (jobId: unknown, event: StreamEventLike) => Promise<void>;
+  readonly subscribeToStream: (
+    jobId: unknown,
+    sinceSeq: number,
+    callback: (row: StreamChunkRow) => void
+  ) => () => void;
+
   constructor(core: InMemoryQueueStorage<Input, Output>) {
     this.core = core;
+    this.publishStreamChunk = (jobId, event) => core.publishStreamChunk(jobId, event);
+    this.subscribeToStream = (jobId, sinceSeq, callback) =>
+      core.subscribeToStream(jobId, sinceSeq, callback);
   }
 
   async send(body: JobStorageFormat<Input, Output>, opts?: SendOptions): Promise<MessageId> {

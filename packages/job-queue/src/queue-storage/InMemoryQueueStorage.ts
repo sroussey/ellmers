@@ -35,6 +35,18 @@ export const IN_MEMORY_QUEUE_STORAGE = createServiceToken<IQueueStorage<any, any
 );
 
 /**
+ * How long (ms) a job's stream log is retained after a terminal
+ * `finish`/`error` event is published, so a late subscriber can still replay
+ * the finished stream before the log is dropped. Kept equal to the client's
+ * `STREAM_FINISH_GRACE_MS` (`JobQueueClient.ts`) — importing it would make the
+ * storage layer depend on the client layer above it — so a client still inside
+ * its post-completion grace window can always replay. Without this, a job
+ * whose row outlives its stream (or that never had a row) would retain its log
+ * forever.
+ */
+const STREAM_LOG_RETENTION_MS = 30_000;
+
+/**
  * In-memory implementation of a job queue that manages asynchronous tasks.
  * Supports job scheduling, status tracking, result caching, and prefix-based filtering.
  */
@@ -47,6 +59,12 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
 
   /** Per-job ordered append log of published stream rows (existence + replay). */
   private readonly streamLog = new Map<string, StreamChunkRow[]>();
+  /**
+   * Per-job retention deadline (epoch ms) stamped when a terminal
+   * `finish`/`error` event is published; the log is dropped lazily once the
+   * deadline passes. See {@link STREAM_LOG_RETENTION_MS}.
+   */
+  private readonly streamLogExpiry = new Map<string, number>();
   /** Per-job live stream subscribers. */
   private readonly streamSubscribers = new Map<string, Set<(row: StreamChunkRow) => void>>();
   /**
@@ -621,13 +639,22 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   public async publishStreamChunk(jobId: unknown, event: StreamEventLike): Promise<void> {
+    this.sweepExpiredStreamLogs();
     const key = String(jobId);
     const seq = (this.streamSeq.get(key) ?? 0) + 1;
     this.streamSeq.set(key, seq);
     const row: StreamChunkRow = { jobId, seq, event };
+    // Always append — even with no subscribers — the documented contract is
+    // that a late subscriber replays rows published before it attached.
     const log = this.streamLog.get(key);
     if (log) log.push(row);
     else this.streamLog.set(key, [row]);
+    // A terminal event bounds the log's lifetime: stamp (or extend) the
+    // retention deadline so the finished stream stays replayable for the
+    // grace window and is then dropped by the lazy sweep.
+    if (event.type === "finish" || event.type === "error") {
+      this.streamLogExpiry.set(key, Date.now() + STREAM_LOG_RETENTION_MS);
+    }
     const subs = this.streamSubscribers.get(key);
     if (subs) for (const cb of subs) cb(row);
   }
@@ -637,6 +664,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     sinceSeq: number,
     callback: (row: StreamChunkRow) => void
   ): () => void {
+    this.sweepExpiredStreamLogs();
     const key = String(jobId);
     let subs = this.streamSubscribers.get(key);
     if (!subs) {
@@ -646,7 +674,8 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     subs.add(callback);
     // Replay already-published rows after registering; a row published during
     // replay (impossible in this single-threaded impl) would arrive live and the
-    // consumer's reassembler dedups by seq.
+    // consumer's reassembler dedups by seq. An expired log was swept above, so
+    // it replays as if empty.
     const log = this.streamLog.get(key);
     if (log) for (const r of log) if (r.seq > sinceSeq) callback(r);
     return () => {
@@ -657,10 +686,28 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     };
   }
 
+  /**
+   * Lazily drop stream logs whose post-terminal retention deadline has passed.
+   * Called from the channel entry points instead of a timer so an idle process
+   * holds no timers; the seq counter survives so a late publish continues the
+   * job's sequence rather than restarting at 1.
+   */
+  private sweepExpiredStreamLogs(): void {
+    if (this.streamLogExpiry.size === 0) return;
+    const now = Date.now();
+    for (const [key, deadline] of this.streamLogExpiry) {
+      if (deadline <= now) {
+        this.streamLogExpiry.delete(key);
+        this.streamLog.delete(key);
+      }
+    }
+  }
+
   /** Drop a job's stream log + subscribers + seq counter (rides row deletion). */
   private evictStream(jobId: unknown): void {
     const key = String(jobId);
     this.streamLog.delete(key);
+    this.streamLogExpiry.delete(key);
     this.streamSubscribers.delete(key);
     this.streamSeq.delete(key);
   }

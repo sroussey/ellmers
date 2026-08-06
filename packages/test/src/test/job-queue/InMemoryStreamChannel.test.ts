@@ -6,7 +6,7 @@
 
 import { InMemoryQueueStorage, type StreamChunkRow } from "@workglow/job-queue";
 import { uuid4 } from "@workglow/util";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("InMemoryQueueStorage stream channel", () => {
   let storage: InMemoryQueueStorage<Record<string, unknown>, Record<string, unknown>>;
@@ -51,6 +51,57 @@ describe("InMemoryQueueStorage stream channel", () => {
     const seen: number[] = [];
     storage.subscribeToStream!("jobDel", 0, (r) => seen.push(r.seq)); // log gone → no replay
     expect(seen).toEqual([]);
+  });
+
+  it("retains a terminated stream's log for the grace window, then sweeps it lazily", async () => {
+    vi.useFakeTimers();
+    try {
+      await storage.publishStreamChunk!("retainJob", {
+        type: "text-delta",
+        port: "p",
+        textDelta: "a",
+      });
+      await storage.publishStreamChunk!("retainJob", { type: "finish", data: {} });
+
+      // Within the retention window a late subscriber still replays the full log.
+      const within: number[] = [];
+      storage.subscribeToStream!("retainJob", 0, (r) => within.push(r.seq))();
+      expect(within).toEqual([1, 2]);
+
+      // Past the deadline the lazy sweep (no timers) drops the log on the next
+      // channel call: an expired log replays as if empty.
+      vi.advanceTimersByTime(31_000);
+      const after: number[] = [];
+      storage.subscribeToStream!("retainJob", 0, (r) => after.push(r.seq))();
+      expect(after).toEqual([]);
+
+      // A stream with no terminal event is never stamped, so it is untouched.
+      await storage.publishStreamChunk!("liveJob", {
+        type: "text-delta",
+        port: "p",
+        textDelta: "x",
+      });
+      vi.advanceTimersByTime(120_000);
+      const live: number[] = [];
+      storage.subscribeToStream!("liveJob", 0, (r) => live.push(r.seq))();
+      expect(live).toEqual([1]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("appends to the log even with no subscribers after the terminal event", async () => {
+    // The append-always contract: a late subscriber replays rows published
+    // before it attached — retention must not turn publishes into no-ops.
+    await storage.publishStreamChunk!("lateJob", { type: "finish", data: {} });
+    await storage.publishStreamChunk!("lateJob", {
+      type: "text-delta",
+      port: "p",
+      textDelta: "trailing",
+    });
+    const seen: number[] = [];
+    storage.subscribeToStream!("lateJob", 0, (r) => seen.push(r.seq))();
+    expect(seen).toEqual([1, 2]);
   });
 
   it("continues the per-job seq across attempts (a retry does not restart at 1)", async () => {

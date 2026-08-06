@@ -15,6 +15,7 @@ import {
 import type { CacheRef } from "@workglow/task-graph";
 import { makeJobOutputStreamResolver } from "@workglow/task-graph";
 import { uuid4 } from "@workglow/util";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { StreamingMemoryRepo } from "../../binding/StreamingMemoryRepo";
 
@@ -109,6 +110,29 @@ describe("JobHandle.outputStream (capability-gated streaming result reads)", () 
   });
 
   it("rejects portless discovery when the output holds two refs", async () => {
+    // Portless discovery requires a resolver built WITH the task's output
+    // schema so it can enumerate the declared streamable ports; with both
+    // ports declared, the two refs make discovery ambiguous.
+    const twoPortSchema = {
+      type: "object",
+      properties: {
+        file: { format: "binary", "x-stream": "binary" },
+        transcript: { format: "binary", "x-stream": "binary" },
+      },
+    } as const satisfies DataPortSchema;
+    const client = new JobQueueClient<SInput, SOutput>({
+      messageQueue: queueParts.messageQueue,
+      jobStore: queueParts.jobStore,
+      queueName,
+      outputStreamResolver: makeJobOutputStreamResolver(repo, twoPortSchema),
+    });
+    client.attach(server);
+
+    const handle = await client.send({ id: uuid4() });
+    await expect(handle.outputStream!()).rejects.toThrow(/contains 2 cache refs/);
+  });
+
+  it("rejects portless discovery when the resolver was built without a schema", async () => {
     const client = new JobQueueClient<SInput, SOutput>({
       messageQueue: queueParts.messageQueue,
       jobStore: queueParts.jobStore,
@@ -118,7 +142,10 @@ describe("JobHandle.outputStream (capability-gated streaming result reads)", () 
     client.attach(server);
 
     const handle = await client.send({ id: uuid4() });
-    await expect(handle.outputStream!()).rejects.toThrow(/explicit port/);
+    await expect(handle.outputStream!()).rejects.toThrow(/portless discovery requires/);
+    // An explicit port still works without a schema.
+    const stream = await handle.outputStream!("file");
+    expect(await collect(stream!)).toEqual([10, 20, 30]);
   });
 
   it("is absent when the client has no outputStreamResolver", async () => {

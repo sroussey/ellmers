@@ -65,4 +65,26 @@ describe("StreamReassembler", () => {
     r.push(row(2, "late"));
     expect(out).toEqual(["a", "c", "d", "e"]);
   });
+
+  it("passes each dispatched row's REAL seq, jumping past skipped gaps", () => {
+    // The seq argument is what the client persists as its resume cursor: after
+    // a gap-skip it must reflect the true stream position (here 3..5), not a
+    // local dispatch count (which would report 2..4 and lag forever).
+    const seqs: number[] = [];
+    const r = new StreamReassembler((_e, seq) => seqs.push(seq), 0, 2);
+    r.push(row(1, "a"));
+    r.push(row(3, "c"));
+    r.push(row(4, "d"));
+    r.push(row(5, "e")); // overflows the gap buffer → seq 2 skipped
+    expect(seqs).toEqual([1, 3, 4, 5]);
+  });
+
+  it("passes the real seq for buffered rows flushed after a gap fills", () => {
+    const seqs: number[] = [];
+    const r = new StreamReassembler((_e, seq) => seqs.push(seq));
+    r.push(row(2, "b"));
+    r.push(row(3, "c"));
+    r.push(row(1, "a")); // fills the gap → flush 1,2,3
+    expect(seqs).toEqual([1, 2, 3]);
+  });
 });

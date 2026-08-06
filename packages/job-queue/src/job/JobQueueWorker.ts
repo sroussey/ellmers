@@ -199,6 +199,13 @@ export class JobQueueWorker<
   protected readonly activeJobAbortControllers: Map<unknown, AbortController> = new Map();
 
   /**
+   * Per-job promise chains serializing stream-chunk publishes — see
+   * {@link emitStreamEvent}. Entries are dropped in {@link cleanupJob}; a
+   * still-pending tail publish settles on its own.
+   */
+  private readonly streamPublishChains: Map<unknown, Promise<void>> = new Map();
+
+  /**
    * Recent per-job processing durations (ms) used for
    * {@link getAverageProcessingTime}. Bounded to the most recent
    * {@link JobQueueWorker.maxProcessingTimeSamples} entries so a long-lived worker doesn't
@@ -904,11 +911,20 @@ export class JobQueueWorker<
     // sequence instead of restarting at 1 and colliding with the prior
     // attempt's events (which the subscriber's reassembler would then drop). A
     // publish failure must never fail the job.
+    //
+    // Publishes are serialized per job: the carrier contract permits ASYNC seq
+    // assignment, so firing publishes concurrently could let a later event
+    // claim an earlier seq and arrive permanently out of order. Chaining each
+    // publish after the previous one settles guarantees seqs are assigned in
+    // emission order.
     const publish = this.messageQueue.publishStreamChunk;
     if (typeof publish === "function") {
-      void publish.call(this.messageQueue, jobId, event).catch((err) => {
-        getLogger().error("publishStreamChunk failed", { jobId, error: err });
-      });
+      const chain = (this.streamPublishChains.get(jobId) ?? Promise.resolve())
+        .then(() => publish.call(this.messageQueue, jobId, event))
+        .catch((err) => {
+          getLogger().error("publishStreamChunk failed", { jobId, error: err });
+        });
+      this.streamPublishChains.set(jobId, chain);
     }
   }
 
@@ -1195,6 +1211,7 @@ export class JobQueueWorker<
   protected cleanupJob(jobId: unknown): void {
     this.activeJobAbortControllers.delete(jobId);
     this.activeClaims.delete(jobId);
+    this.streamPublishChains.delete(jobId);
   }
 
   /**
