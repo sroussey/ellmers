@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { BinaryRefSink, CacheRef, StreamEvent } from "@workglow/task-graph";
+import type { BinaryRefSink, CacheRef, StreamEvent, StreamSink } from "@workglow/task-graph";
 import {
   IExecuteContext,
   isCacheRef,
@@ -116,7 +116,7 @@ function makeSink(): {
   return { sink, collected };
 }
 
-describe("StreamProcessor — binaryRefSinks (direct deps wiring)", () => {
+describe("StreamProcessor — binary-mode refSinks (direct deps wiring)", () => {
   it("routes a single binary port to its sink and produces CacheRef in Output", async () => {
     const task = new BlobStreamTask();
     const { sink, collected } = makeSink();
@@ -145,7 +145,7 @@ describe("StreamProcessor — binaryRefSinks (direct deps wiring)", () => {
       inputStreams: undefined,
       onProgress: async () => {},
       own: <T>(t: T) => t,
-      binaryRefSinks: new Map([["bytes", sink]]),
+      refSinks: new Map<string, StreamSink>([["bytes", { mode: "binary", write: sink }]]),
     })) as BinOut;
 
     expect(output).toBeDefined();
@@ -181,7 +181,7 @@ describe("StreamProcessor — binaryRefSinks (direct deps wiring)", () => {
       inputStreams: undefined,
       onProgress: async () => {},
       own: <T>(t: T) => t,
-      binaryRefSinks: new Map([["audio", audioSink]]),
+      refSinks: new Map<string, StreamSink>([["audio", { mode: "binary", write: audioSink }]]),
     })) as TwoBinOut;
 
     expect(isCacheRef((output as any).audio)).toBe(true);
@@ -216,7 +216,7 @@ describe("StreamProcessor — binaryRefSinks (direct deps wiring)", () => {
       inputStreams: undefined,
       onProgress: async () => {},
       own: <T>(t: T) => t,
-      binaryRefSinks: new Map([["bytes", sink]]),
+      refSinks: new Map<string, StreamSink>([["bytes", { mode: "binary", write: sink }]]),
     })) as BinOut;
 
     // The explicit finish payload (Blob of [7]) takes the slot, not the ref.

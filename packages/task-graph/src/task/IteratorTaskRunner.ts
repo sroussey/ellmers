@@ -313,6 +313,7 @@ export class IteratorTaskRunner<
         outputCache: this.outputCache,
         registry: this.registry,
         resourceScope: this.resourceScope,
+        ...this.streamRunOptions,
       });
 
       if (results.length === 0) {

@@ -20,7 +20,13 @@
  *     downstream tasks from starting.
  */
 
-import type { BinaryRefSink, CachePolicy, CacheRef, StreamEvent } from "@workglow/task-graph";
+import type {
+  BinaryRefSink,
+  CachePolicy,
+  CacheRef,
+  StreamEvent,
+  StreamSink,
+} from "@workglow/task-graph";
 import {
   Dataflow,
   IExecuteContext,
@@ -490,7 +496,9 @@ describe("Streaming backpressure and stress", () => {
         telemetrySpan: undefined,
         dispose: () => {},
       } as any;
-      const sinks: ReadonlyMap<string, BinaryRefSink> = new Map([["bytes", sink]]);
+      const sinks: ReadonlyMap<string, StreamSink> = new Map([
+        ["bytes", { mode: "binary", write: sink }],
+      ]);
 
       const output = (await processor.run({}, ctx, {
         registry: undefined as any,
@@ -498,8 +506,8 @@ describe("Streaming backpressure and stress", () => {
         inputStreams: undefined,
         onProgress: async () => {},
         own: <T>(t: T) => t,
-        binaryRefSinks: sinks,
-        binaryHighWaterBytes: HIGH_WATER,
+        refSinks: sinks,
+        streamHighWaterBytes: HIGH_WATER,
       })) as BinOut | undefined;
 
       expect(output).toBeDefined();

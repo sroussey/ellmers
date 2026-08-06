@@ -75,37 +75,25 @@ export interface StreamProcessorDeps {
   readonly own: <T extends Taskish<any, any>>(i: T, config?: TaskConfig) => T;
   readonly disown: <T extends Taskish<any, any>>(i: T) => void;
   /**
-   * Per-port binary-stream sinks. When a port has a sink registered, the
-   * processor routes that port's `binary-delta` chunks to the sink (as an
-   * async iterable) **instead** of accumulating them into a `Blob` /
-   * `ArrayBuffer` in memory. At finish, the sink's returned {@link CacheRef}
-   * replaces the port's slot in the output object — unless an explicit
-   * binary finish payload is present for that port, which always wins
-   * (artifact precedence: an explicit whole payload wins over a delta-built one).
-   *
-   * Ports without a sink follow the normal accumulation path.
-   */
-  readonly binaryRefSinks?: ReadonlyMap<string, BinaryRefSink>;
-  /**
-   * Per-port stream sinks for any streamable mode (the superset of
-   * {@link binaryRefSinks}). When a port has a sink registered, the processor
-   * encodes that port's deltas via the sink's mode codec and routes the bytes
-   * to the sink **instead** of accumulating them in memory; at finish the
-   * sink's {@link CacheRef} replaces the port slot in the output (unless an
-   * explicit whole finish payload is present for that port, which always wins).
-   *
-   * A `binary`-mode entry here is equivalent to a {@link binaryRefSinks} entry;
-   * when both are supplied for the same port, `refSinks` wins.
+   * Per-port stream sinks, one per streamable mode (`append` / `object` /
+   * `binary`). When a port has a sink registered, the processor encodes that
+   * port's deltas via the sink's mode codec and routes the bytes to the sink
+   * **instead** of accumulating them in memory; at finish the sink's
+   * {@link CacheRef} replaces the port slot in the output (unless an explicit
+   * whole finish payload is present for that port, which always wins —
+   * artifact precedence). Ports without a sink follow the normal accumulation
+   * path. A legacy single-binary-port sink is expressed as a `binary`-mode
+   * entry (its {@link BinaryRefSink} as `write`).
    */
   readonly refSinks?: ReadonlyMap<string, StreamSink>;
   /**
-   * High-water mark (bytes) for the per-port binary stream router buffer. When
-   * the buffered (un-consumed) byte total reaches or exceeds this value,
+   * High-water mark (bytes) for the per-port stream router buffer. When the
+   * buffered (un-consumed) byte total reaches or exceeds this value,
    * `BinaryStreamRouter.push()` returns a Promise that resolves only after the
    * consumer drains the buffer back below the mark. Defaults to
    * {@link DEFAULT_BINARY_HIGH_WATER_BYTES} when omitted.
    */
-  readonly binaryHighWaterBytes?: number;
+  readonly streamHighWaterBytes?: number;
   /**
    * Consumer-edge backpressure for the no-accumulation passthrough path,
    * threaded down from the graph runner (see `IRunConfig.edgeBackpressure`).
@@ -168,19 +156,10 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
       ? new Map<string, Record<string, unknown> | unknown[]>()
       : undefined;
     const accumulatedBinary = ctx.shouldAccumulate ? new Map<string, Uint8Array[]>() : undefined;
-    // Unified per-port sink map: a `binary`-mode entry for every legacy
-    // `binaryRefSinks` sink, overlaid by `refSinks` (any mode) so a port present
-    // in both takes the explicit `refSinks` entry.
-    const sinks = new Map<string, StreamSink>();
-    if (deps.binaryRefSinks) {
-      for (const [port, write] of deps.binaryRefSinks) sinks.set(port, { mode: "binary", write });
-    }
-    if (deps.refSinks) {
-      for (const [port, sink] of deps.refSinks) sinks.set(port, sink);
-    }
+    const sinks = deps.refSinks;
     const highWaterMark =
-      deps.binaryHighWaterBytes !== undefined && deps.binaryHighWaterBytes > 0
-        ? deps.binaryHighWaterBytes
+      deps.streamHighWaterBytes !== undefined && deps.streamHighWaterBytes > 0
+        ? deps.streamHighWaterBytes
         : DEFAULT_BINARY_HIGH_WATER_BYTES;
     // Per-port routers: lazily created on the first delta whose port has a sink.
     // Routes codec-encoded bytes to the sink instead of accumulating in memory;
@@ -191,7 +170,7 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
     const ensureRouter = (
       port: string
     ): { router: BinaryStreamRouter; codec: StreamPortCodec } | undefined => {
-      const sink = sinks.get(port);
+      const sink = sinks?.get(port);
       if (!sink) return undefined;
       let r = routers.get(port);
       if (!r) {
@@ -349,11 +328,9 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
             // provider reported. Spread conditionally: an unreported usage must
             // leave no key at all rather than an explicit `usage: undefined`.
             const usageOnEvent = event.usage ? { usage: event.usage } : {};
-            const hasEnrichment =
-              accumulated !== undefined ||
-              accumulatedObjects !== undefined ||
-              accumulatedBinary !== undefined ||
-              routers.size > 0;
+            // `accumulated` witnesses all three accumulator maps — they are
+            // created together under one `ctx.shouldAccumulate` ternary.
+            const hasEnrichment = accumulated !== undefined || routers.size > 0;
             if (hasEnrichment) {
               // Emit an enriched finish event: merge accumulated deltas into
               // the finish payload so downstream dataflows get complete port data
@@ -415,9 +392,13 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
                 }
                 // No accumulated deltas, no explicit finish payload, and no
                 // snapshot to fall back on — the producer never delivered a
-                // value. A binary port may still have written a ref; only the
-                // truly empty case is a bug.
-                if (refs.size === 0) throw this.replaceModeNoValueError();
+                // value. A binary port may still have written a ref, and a
+                // refusal-terminated stream legitimately carries no value (the
+                // post-loop fold surfaces it on `output.refusal` and the task
+                // COMPLETES); only the truly empty case is a bug.
+                if (refs.size === 0 && refusalText.length === 0) {
+                  throw this.replaceModeNoValueError();
+                }
               }
               // The emitted finish event always carries the materialized payload
               // (from accumulators) so edge consumers see Blob/ArrayBuffer.
@@ -456,7 +437,10 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
                   } as StreamEvent);
                   break;
                 }
-                throw this.replaceModeNoValueError();
+                // A refusal-terminated stream legitimately carries no value:
+                // fall through so the run COMPLETES and the post-loop fold
+                // surfaces the refusal on `output.refusal`.
+                if (refusalText.length === 0) throw this.replaceModeNoValueError();
               }
               finalOutput = event.data as Output;
               this.task.emit("stream_chunk", event as StreamEvent);
@@ -573,10 +557,17 @@ export class BinaryStreamRouter {
   constructor(sink: BinaryRefSink, highWaterMarkBytes: number) {
     this.gate = new BackpressureGate(highWaterMarkBytes);
     this.refPromise = sink(this.iterable());
-    // Observe rejection so an unawaited refPromise (e.g. after fail() in an
-    // error path) doesn't surface as an unhandled rejection. Subsequent
-    // `await this.refPromise` still rejects.
-    this.refPromise.catch(() => {});
+    // A sink that dies mid-consumption (throws out of its for-await) settles
+    // refPromise while the producer may still be pushing — or parked at the
+    // high-water mark with nothing left to drain the buffer. fail() wakes a
+    // parked producer with the rejection and records the failure so later
+    // pushes reject, instead of the run wedging on a dead sink. This handler
+    // also observes the rejection, so an unawaited refPromise never surfaces
+    // as an unhandled rejection; a subsequent `await this.refPromise` still
+    // rejects.
+    this.refPromise.catch((err) => {
+      this.fail(err instanceof Error ? err : new Error(String(err)));
+    });
   }
 
   /**
@@ -586,6 +577,10 @@ export class BinaryStreamRouter {
    * `end()` / `fail()` releases all parked callers).
    */
   push(chunk: Uint8Array): Promise<void> {
+    // A recorded failure (sink death, upstream fail()) must surface to the
+    // producer: post-failure deltas reject so the processor fails the task
+    // with the sink error instead of silently dropping bytes.
+    if (this.gate.failure) return Promise.reject(this.gate.failure);
     if (this.gate.closed) return Promise.resolve();
     this.buffer.push(chunk);
     // Between the fast-path check above and here, another turn may have called

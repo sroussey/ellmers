@@ -423,7 +423,7 @@ export type BinaryFormat = "blob" | "binary";
  * even fast producers race ahead by a few chunks without stalling, while
  * bounding worst-case memory growth when the sink (cache, disk, network)
  * cannot keep up. Callers can override per-run via
- * `IRunConfig.binaryHighWaterBytes`.
+ * `IRunConfig.streamHighWaterBytes`.
  */
 export const DEFAULT_BINARY_HIGH_WATER_BYTES = 8 * 1024 * 1024;
 
@@ -439,19 +439,21 @@ export const DEFAULT_BINARY_HIGH_WATER_BYTES = 8 * 1024 * 1024;
  */
 export const DEFAULT_STREAM_GATE_WATCHDOG_MS = 60_000;
 
-const streamCostEncoder = new TextEncoder();
-
 /**
- * Buffered cost of a single stream event, in bytes, for backpressure
- * accounting. Delta events cost their payload size (UTF-8 bytes for
- * `text-delta`, JSON-encoded length for `object-delta`, raw byte length for
- * `binary-delta`); control events (`finish`, `snapshot`, `phase`, `error`)
- * cost nothing — they are not what a slow consumer buffers up on.
+ * Buffered cost of a single stream event, in approximate bytes, for
+ * backpressure accounting. Delta events cost their payload size (UTF-16 code
+ * units for `text-delta` — a cheap approximation of bytes that avoids a UTF-8
+ * encode per delta on the hot path, JSON-encoded length for `object-delta`,
+ * raw byte length for `binary-delta`); control events (`finish`, `snapshot`,
+ * `phase`, `error`) cost nothing — they are not what a slow consumer buffers
+ * up on. The gate is approximate accounting, and this function is
+ * deterministic per event, so charge and credit sites can each compute it
+ * independently and always agree.
  */
 export function streamEventCost(event: StreamEvent): number {
   switch (event.type) {
     case "text-delta":
-      return streamCostEncoder.encode(event.textDelta).byteLength;
+      return event.textDelta.length;
     case "object-delta":
       return JSON.stringify(event.objectDelta).length;
     case "binary-delta":

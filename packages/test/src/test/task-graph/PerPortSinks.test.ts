@@ -5,7 +5,7 @@
  */
 
 /**
- * Generalizes the binary-only `binaryRefSinks` path to every streamable mode:
+ * Generalizes the binary-only sink path to every streamable mode:
  * a task with an `append` port and a `binary` port, given a per-port
  * {@link StreamSink}, routes each port's deltas straight to its sink (encoded
  * by the port's codec) and lands a {@link CacheRef} at every sunk port — no

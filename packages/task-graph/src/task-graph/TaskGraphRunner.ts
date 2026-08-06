@@ -547,6 +547,12 @@ export class TaskGraphRunner {
       // `this.outputCache` (which may be undefined, letting TaskRunner use
       // CACHE_REGISTRY from the per-run ServiceRegistry).
       outputCache: this.legacyCacheExplicitlyDisabled ? false : this.outputCache,
+      // Thread stream-pacing options so a compound (subgraph-hosting) task
+      // that takes the non-streaming path still retains and forwards them
+      // into its subgraph run.
+      noAccumulation: this.noAccumulation,
+      streamHighWaterBytes: this.streamHighWaterBytes,
+      streamGateWatchdogMs: this.streamGateWatchdogMs,
       updateProgress: async (
         task: ITask,
         progress: number | undefined,

@@ -91,8 +91,10 @@ export class FallbackTaskRunner<
         // Reset the task to PENDING so it can be run
         this.resetTask(alternativeTask);
 
-        // Run the individual task with the parent's input
-        const result = await alternativeTask.run(input);
+        // Run the individual task with the parent's input, forwarding the
+        // stream-pacing options so a streaming/compound alternative inherits
+        // the caller's passthrough opt-in, high-water mark, and watchdog.
+        const result = await alternativeTask.run(input, this.streamRunOptions);
 
         await this.handleProgress(
           100,
@@ -190,6 +192,7 @@ export class FallbackTaskRunner<
             parentSignal: this.currentCtx?.abortController.signal,
             outputCache: this.outputCache,
             registry: this.registry,
+            ...this.streamRunOptions,
           });
 
           const mergedOutput = this.task.subGraph.mergeExecuteOutputsToRunOutput(

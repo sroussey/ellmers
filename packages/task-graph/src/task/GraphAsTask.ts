@@ -273,7 +273,11 @@ export class GraphAsTask<
         : () => {};
 
       const runPromise = this.subGraph
-        .run<Output>(input, { parentSignal: context.signal, accumulateLeafOutputs: false })
+        .run<Output>(input, {
+          parentSignal: context.signal,
+          accumulateLeafOutputs: false,
+          ...this.runner.streamRunOptions,
+        })
         .then(
           (results) => {
             subgraphDone = true;

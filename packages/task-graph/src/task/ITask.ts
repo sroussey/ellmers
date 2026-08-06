@@ -186,18 +186,6 @@ export interface IRunConfig {
   referenceThresholdBytes?: number;
 
   /**
-   * High-water mark (bytes) for the streaming runtime's per-port binary
-   * router buffer. When the buffered (un-consumed) byte total reaches or
-   * exceeds this threshold, the producer (`executeStream`) is parked between
-   * `binary-delta` yields until the cache sink drains the buffer back below
-   * the mark. Bounds peak memory for fast-producer / slow-sink scenarios.
-   *
-   * Defaults to {@link DEFAULT_BINARY_HIGH_WATER_BYTES} (8 MiB) when omitted
-   * or set to a non-positive value.
-   */
-  binaryHighWaterBytes?: number;
-
-  /**
    * Opt into the no-accumulation passthrough path (default `false`). When set,
    * a streaming source feeding a single same-mode streaming consumer over a
    * plain (no-transform, non-ending) edge pipes producer → (consumer + cache
@@ -214,9 +202,16 @@ export interface IRunConfig {
   noAccumulation?: boolean;
 
   /**
-   * High-water mark (bytes) for the no-accumulation passthrough gate, the
-   * all-mode analogue of {@link binaryHighWaterBytes}. When omitted, the binary
-   * high-water value (then {@link DEFAULT_BINARY_HIGH_WATER_BYTES}) applies.
+   * High-water mark (bytes) for the streaming runtime's producer pacing —
+   * both the per-port cache-sink router buffer and the no-accumulation
+   * passthrough gate. When buffered (un-consumed) cost reaches this value the
+   * producer (`executeStream`) is parked between delta yields until the
+   * consumer (cache sink or downstream edge reader) drains the buffer back
+   * below the mark. Bounds peak memory for fast-producer / slow-consumer
+   * scenarios.
+   *
+   * Defaults to {@link DEFAULT_BINARY_HIGH_WATER_BYTES} (8 MiB) when omitted
+   * or set to a non-positive value.
    */
   streamHighWaterBytes?: number;
 

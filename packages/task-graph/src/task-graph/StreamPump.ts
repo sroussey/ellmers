@@ -78,14 +78,15 @@ export interface StreamingRunOptions {
 
 /**
  * Per-port pacing state for a no-accumulation passthrough edge: the gate that
- * parks the producer, plus a FIFO of the costs charged for enqueued events so
- * the consumer-side credit reuses the charge instead of recomputing it.
+ * parks the producer. Event costs are computed symmetrically at the charge
+ * site (event enqueued) and the credit site (event pulled) via
+ * {@link streamEventCost}, which is deterministic per event and cheap enough
+ * to run twice.
  *
  * @internal
  */
 interface EdgeGateState {
   readonly gate: BackpressureGate;
-  readonly pendingCosts: number[];
   /**
    * Per-gate liveness helpers: `armWatchdog` (re)starts the fail timer; the
    * consumer-side wrapper calls it on every pull/credit so a live consumer
@@ -149,7 +150,14 @@ export class StreamPump {
   prepareStreamingInputs(task: ITask, noAccumulation: boolean = false): void {
     const dataflows = this.graph.getSourceDataflows(task.id);
     const streamingEdges = dataflows.filter((df) => df.stream !== undefined);
-    if (streamingEdges.length === 0) return;
+    if (streamingEdges.length === 0) {
+      // No live streaming edges THIS run: clear any map left by a previous
+      // run (e.g. an upstream cache hit that never flipped to STREAMING), or
+      // the task would read last run's consumed/closed streams instead of
+      // its settled input slots.
+      task.runner.inputStreams = undefined;
+      return;
+    }
     const inputStreams = new Map<string, ReadableStream<StreamEvent>>();
     for (const df of streamingEdges) {
       const stream = df.stream!;
@@ -641,6 +649,15 @@ export class StreamPump {
           ? () => {
               if (watchdogTimer) clearTimeout(watchdogTimer);
               watchdogTimer = setTimeout(() => {
+                // Only a producer parked (or about to park) at the high-water
+                // mark can be wedged by a dead consumer. Below the mark the
+                // gate is merely idle — a slow producer, an upstream stall, a
+                // pause between deltas — and nothing is waiting on a pull or
+                // credit, so re-arm instead of failing a healthy run.
+                if (!gate.isAboveMark) {
+                  armWatchdog();
+                  return;
+                }
                 gate.fail(
                   new Error(
                     `Passthrough edge gate stalled for ${watchdogMs}ms without pull or credit progress.`
@@ -660,7 +677,6 @@ export class StreamPump {
 
       const state: EdgeGateState = {
         gate,
-        pendingCosts: [],
         armWatchdog,
         disposeWatchdog,
         abortListener: () => ctx.abortController.signal.removeEventListener("abort", onAbort),
@@ -693,11 +709,11 @@ export class StreamPump {
 
   /**
    * Wraps a per-port edge stream so every event read by the consumer credits
-   * the port's gate with the cost charged when that event was enqueued (a
-   * FIFO — events cross the gate in order, so each read pops the oldest
-   * charge), waking a producer parked at the high-water mark. Close (end,
-   * cancel, or an upstream read failure) also closes the gate so an abandoned
-   * consumer can never orphan a parked producer.
+   * the port's gate with that event's {@link streamEventCost} — the same
+   * deterministic cost the charge site computed when the event was enqueued —
+   * waking a producer parked at the high-water mark. Close (end, cancel, or
+   * an upstream read failure) also closes the gate so an abandoned consumer
+   * can never orphan a parked producer.
    */
   private static wrapStreamWithGateCredit(
     stream: ReadableStream<StreamEvent>,
@@ -722,7 +738,7 @@ export class StreamPump {
           controller.close();
           return;
         }
-        state.gate.credit(state.pendingCosts.shift() ?? streamEventCost(value));
+        state.gate.credit(streamEventCost(value));
         state.armWatchdog();
         controller.enqueue(value);
       },
@@ -819,9 +835,7 @@ export class StreamPump {
               }
             }
             if (gate) {
-              const cost = streamEventCost(event);
-              gate.gate.account(cost);
-              gate.pendingCosts.push(cost);
+              gate.gate.account(streamEventCost(event));
             }
             controller.enqueue(event);
           } catch {

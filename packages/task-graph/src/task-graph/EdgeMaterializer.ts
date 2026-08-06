@@ -227,6 +227,10 @@ export class EdgeMaterializer {
     task.runOutputData = {};
     task.error = undefined;
     task.progress = 0;
+    // Drop any input streams left by a previous run — StreamPump re-attaches
+    // live streams per run, and a stale map would hand the task last run's
+    // consumed/closed streams.
+    task.runner.inputStreams = undefined;
     task.runConfig = { ...task.runConfig, runnerId: runId };
     // Bracket access — runScheduler and currentCtx stay protected on the facade.
     this.runner["runScheduler"].pushStatusFromNodeToEdges(

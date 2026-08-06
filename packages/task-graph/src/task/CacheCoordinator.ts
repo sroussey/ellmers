@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { PortCodec } from "@workglow/util";
 import { getLogger, getPortCodec } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { type CachePolicy, isPolicyCached, isPolicyPrivate } from "../cache/CachePolicy";
@@ -20,6 +21,7 @@ import type { StreamEvent } from "./StreamTypes";
 import {
   assertBinaryFormat,
   foldObjectDelta,
+  getPortStreamMode,
   getStreamingPorts,
   isDeltaStreamMode,
   materializeBinary,
@@ -151,7 +153,7 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
 
       outputs = (await CacheCoordinator.deserializeOutputPorts(
         cached as Record<string, unknown>,
-        outputSchema as unknown as SchemaProperties
+        outputSchema
       )) as Output;
     } catch (err) {
       getLogger().warn(
@@ -164,12 +166,20 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     ctx.telemetrySpan?.addEvent("workglow.task.cache_hit");
 
     if (isStreamable) {
-      const replayed = await this.replayStreamRefs(
-        outputs,
-        outputCache,
-        outputSchema as DataPortSchema,
-        replay
-      );
+      // A corrupt stored stream or a backing that throws mid-resolution must
+      // degrade to a miss exactly like the row-decode guard above: caching is
+      // a transparent optimization, and a bad entry should cost at most a
+      // recompute, never a hard failure.
+      let replayed: "none" | "handled" | "miss";
+      try {
+        replayed = await this.replayStreamRefs(outputs, outputCache, outputSchema, replay);
+      } catch (err) {
+        getLogger().warn(
+          `CacheCoordinator: failed to replay cached stream refs for ${this.task.type}; treating as cache miss`,
+          { error: err }
+        );
+        return undefined;
+      }
       // A dangling ref converts the hit into a miss: the caller re-executes
       // and the rewrite self-heals the cache entry.
       if (replayed === "miss") return undefined;
@@ -223,24 +233,42 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     if (refPorts.length === 0) return "none";
 
     // Resolve every ref before emitting any event so a dangling ref becomes a
-    // clean miss with zero observable side effects.
-    const resolved = await Promise.all(
+    // clean miss with zero observable side effects. allSettled (not all) so a
+    // failed resolution cannot strand the streams that DID open — a backing
+    // may hold a file handle per resolved stream, and every fulfilled one
+    // must be released before the lookup degrades, wherever it sits relative
+    // to the failure.
+    const settled = await Promise.allSettled(
       refPorts.map(async ({ port }) => ({
         port,
         stream: await streamRefViaBacking(source[port] as CacheRef, outputCache),
       }))
     );
     const streams = new Map<string, AsyncIterable<Uint8Array>>();
-    for (const { port, stream } of resolved) {
-      if (stream === undefined) {
-        // Release any streams already opened for other ports before reporting
-        // the miss — a backing may hold a file handle per resolved stream.
-        for (const s of streams.values()) {
-          void s[Symbol.asyncIterator]().return?.(undefined);
-        }
-        return "miss";
+    let sawFailure = false;
+    let failure: unknown;
+    let sawDangling = false;
+    for (const entry of settled) {
+      if (entry.status === "rejected") {
+        sawFailure = true;
+        failure = entry.reason;
+        continue;
       }
-      streams.set(port, stream);
+      if (entry.value.stream === undefined) {
+        sawDangling = true;
+        continue;
+      }
+      streams.set(entry.value.port, entry.value.stream);
+    }
+    if (sawFailure || sawDangling) {
+      for (const s of streams.values()) {
+        void s[Symbol.asyncIterator]().return?.(undefined);
+      }
+      // A resolver throw is anomalous — surface it to lookup's replay guard,
+      // which warns and treats it as a miss. A dangling ref is the expected
+      // self-heal path and misses quietly.
+      if (sawFailure) throw failure;
+      return "miss";
     }
 
     this.task.runOutputData = outputs;
@@ -330,7 +358,7 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     const outputSchema = this.task.outputSchema();
     const wireOutputs = await CacheCoordinator.serializeOutputPorts(
       CacheCoordinator.withoutUsage(output as Record<string, unknown>),
-      outputSchema as unknown as SchemaProperties
+      outputSchema
     );
     await outputCache.saveOutput(
       this.cacheIdentityKey(policy, outputCache),
@@ -607,14 +635,34 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     return stripped;
   }
 
+  /**
+   * Wire codec for a single output port. An explicit `format` annotation
+   * wins; a format-less `x-stream: "binary"` port falls back to the codec of
+   * its mode-derived canonical format ({@link assertBinaryFormat} defaults it
+   * to `"blob"`). Without the fallback, a JSON-row backing would stringify
+   * that port's inline `Blob`/`ArrayBuffer` to `{}` and poison every later
+   * cache hit.
+   */
+  private static outputPortWireCodec(schema: DataPortSchema, port: string): PortCodec | undefined {
+    if (typeof schema === "boolean") return undefined;
+    const prop = (schema.properties as Record<string, unknown> | undefined)?.[port];
+    if (!prop || typeof prop === "boolean") return undefined;
+    const format = (prop as { format?: string }).format;
+    if (format !== undefined) return getPortCodec(format);
+    if (getPortStreamMode(schema, port) === "binary") {
+      return getPortCodec(assertBinaryFormat(schema, port));
+    }
+    return undefined;
+  }
+
   private static async serializeOutputPorts(
     output: Record<string, unknown>,
-    schema: SchemaProperties
+    schema: DataPortSchema
   ): Promise<Record<string, unknown>> {
-    if (!schema?.properties) return output;
+    if (typeof schema === "boolean" || !schema?.properties) return output;
     const out: Record<string, unknown> = { ...output };
-    for (const [key, prop] of Object.entries(schema.properties)) {
-      const codec = prop.format ? getPortCodec(prop.format) : undefined;
+    for (const key of Object.keys(schema.properties)) {
+      const codec = CacheCoordinator.outputPortWireCodec(schema, key);
       if (codec && out[key] !== undefined) {
         out[key] = await codec.serialize(out[key]);
       }
@@ -624,12 +672,12 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
 
   private static async deserializeOutputPorts(
     output: Record<string, unknown>,
-    schema: SchemaProperties
+    schema: DataPortSchema
   ): Promise<Record<string, unknown>> {
-    if (!schema?.properties) return output;
+    if (typeof schema === "boolean" || !schema?.properties) return output;
     const out: Record<string, unknown> = { ...output };
-    for (const [key, prop] of Object.entries(schema.properties)) {
-      const codec = prop.format ? getPortCodec(prop.format) : undefined;
+    for (const key of Object.keys(schema.properties)) {
+      const codec = CacheCoordinator.outputPortWireCodec(schema, key);
       if (codec && out[key] !== undefined) {
         out[key] = await codec.deserialize(out[key]);
       }

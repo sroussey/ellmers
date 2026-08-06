@@ -104,6 +104,16 @@ export class BackpressureGate {
     return this.failureError;
   }
 
+  /**
+   * True while buffered cost is at or above the high-water mark — the state
+   * in which a producer charging (or awaiting below-mark) parks. Liveness
+   * watchdogs probe this to tell a genuinely stalled (parked) producer apart
+   * from an idle gate that simply has nothing buffered.
+   */
+  get isAboveMark(): boolean {
+    return this.bufferedCost >= this.highWaterMarkCost;
+  }
+
   /** @internal Test/observability hook: current buffered (un-credited) cost. */
   get _bufferedCost(): number {
     return this.bufferedCost;

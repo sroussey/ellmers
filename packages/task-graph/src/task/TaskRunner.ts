@@ -25,12 +25,14 @@ import { CacheCoordinator } from "./CacheCoordinator";
 import { resolveSchemaInputs, schemaHasFormatAnnotations } from "./InputResolver";
 import type { IRunConfig, ITask } from "./ITask";
 import { ITaskRunner } from "./ITaskRunner";
+import type { BinaryRefSink, StreamSink } from "./StreamProcessor";
 import { StreamProcessor } from "./StreamProcessor";
 import type { StreamEvent } from "./StreamTypes";
 import {
   getBinaryPortFormat,
   getOutputStreamMode,
   getPortStreamMode,
+  getStreamingPorts,
   isDeltaStreamMode,
   isTaskStreamable,
   portForcesStreamValidation,
@@ -61,6 +63,20 @@ function hasRunConfig(i: unknown): i is { runConfig: Partial<IRunConfig> } {
  */
 function isOwnTrackable(i: unknown): i is object {
   return i !== null && (typeof i === "object" || typeof i === "function");
+}
+
+/**
+ * Adapts the legacy single-binary-port sink map to the unified per-port
+ * {@link StreamSink} shape: a binary-mode sink is exactly a
+ * {@link BinaryRefSink} with its mode named.
+ */
+function wrapBinarySinks(
+  sinks: ReadonlyMap<string, BinaryRefSink> | undefined
+): ReadonlyMap<string, StreamSink> | undefined {
+  if (!sinks) return undefined;
+  const wrapped = new Map<string, StreamSink>();
+  for (const [port, write] of sinks) wrapped.set(port, { mode: "binary", write });
+  return wrapped;
 }
 
 /**
@@ -100,6 +116,16 @@ export class TaskRunner<
    * legacy `config.outputCache` repo shim.
    */
   protected cacheRegistry?: CacheRegistry;
+
+  /**
+   * Stream-pacing options resolved per-run in handleStart (run config over
+   * `task.runConfig`). Retained on the runner — like {@link outputCache} — so
+   * compound runners (GraphAsTask / Iterator / While / Fallback) can forward
+   * them into their subgraph runs via {@link streamRunOptions}.
+   */
+  protected noAccumulation?: boolean;
+  protected streamHighWaterBytes?: number;
+  protected streamGateWatchdogMs?: number;
 
   /**
    * Cache coordinator for the task (key normalization, lookup, save).
@@ -298,13 +324,12 @@ export class TaskRunner<
         if (outputs === undefined) {
           // Under the no-accumulation opt-in, build per-port sinks for EVERY
           // streamable mode (append/object/binary) via the port-aware backing;
-          // otherwise fall back to the legacy single-binary-port sink. Both run
-          // memory-bounded; the runtime threshold controls whether the resulting
-          // CacheRef survives in Output or is rehydrated inline below.
-          const noAccumulation =
-            (config.noAccumulation ?? this.task.runConfig.noAccumulation) === true;
-          const refSinks =
-            isStreamable && noAccumulation
+          // otherwise fall back to the legacy single-binary-port sink (adapted
+          // to the same StreamSink shape). Both run memory-bounded; the runtime
+          // threshold controls whether the resulting CacheRef survives in
+          // Output or is rehydrated inline below.
+          const portSinks =
+            isStreamable && this.noAccumulation === true
               ? this.cacheCoordinator.getRefSinksByPolicy(
                   keyInputs,
                   this.cacheRegistry,
@@ -312,21 +337,40 @@ export class TaskRunner<
                   this.task.outputSchema()
                 )
               : undefined;
-          const binaryRefSinks =
-            isStreamable && !refSinks
-              ? this.cacheCoordinator.getBinaryRefSinksByPolicy(
-                  keyInputs,
-                  this.cacheRegistry,
-                  policy,
-                  this.task.outputSchema()
+          const refSinks =
+            portSinks ??
+            (isStreamable
+              ? wrapBinarySinks(
+                  this.cacheCoordinator.getBinaryRefSinksByPolicy(
+                    keyInputs,
+                    this.cacheRegistry,
+                    policy,
+                    this.task.outputSchema()
+                  )
                 )
-              : undefined;
+              : undefined);
 
-          const binaryHighWaterBytes =
-            config.streamHighWaterBytes ??
-            this.task.runConfig.streamHighWaterBytes ??
-            config.binaryHighWaterBytes ??
-            this.task.runConfig.binaryHighWaterBytes;
+          // A streamable task with delta-mode output ports, a cache in play,
+          // and no sink resolved has nowhere to route those deltas. If
+          // accumulation is also off — the graph opted the task out expecting
+          // a sink, but the policy resolved to none here (a private policy
+          // without a usable slot, or a stream-wired run downgraded above) —
+          // the deltas would be silently discarded and the task would return
+          // (and cache!) an empty output. Force accumulation so the task
+          // still materializes its own output. Cache-off runs keep the
+          // documented raw-finish contract: with no cache configured,
+          // shouldAccumulate=false means every consumer takes the live stream
+          // and the raw `{}` finish is intentional.
+          if (
+            isStreamable &&
+            refSinks === undefined &&
+            this.cacheRegistry !== undefined &&
+            !ctx.shouldAccumulate &&
+            getStreamingPorts(this.task.outputSchema()).some((p) => isDeltaStreamMode(p.mode))
+          ) {
+            ctx.shouldAccumulate = true;
+          }
+
           outputs = isStreamable
             ? await this.streamProcessor.run(inputs, ctx, {
                 registry: this.registry,
@@ -335,9 +379,8 @@ export class TaskRunner<
                 onProgress: this.handleProgress.bind(this),
                 own: this.own,
                 disown: this.disown,
-                binaryRefSinks,
                 refSinks,
-                binaryHighWaterBytes,
+                streamHighWaterBytes: this.streamHighWaterBytes,
                 edgeBackpressure: config.edgeBackpressure,
               })
             : await this.executeTask(inputs, ctx);
@@ -359,7 +402,7 @@ export class TaskRunner<
             // before we got here; the row write failure leaves that blob
             // unreferenced. Best-effort delete it so the cache directory
             // does not accumulate orphans on every save failure.
-            if ((refSinks ?? binaryRefSinks) !== undefined && outputs !== undefined) {
+            if (refSinks !== undefined && outputs !== undefined) {
               await this.cacheCoordinator.cleanupOrphanBlobsForStreamPorts(
                 outputs as Output,
                 this.cacheRegistry,
@@ -374,7 +417,7 @@ export class TaskRunner<
           // threshold so callers see inline values for small outputs (threshold
           // default = 64 KiB). Refs at/above threshold survive. threshold = 0
           // forces every ref to survive regardless of size.
-          if (outputs !== undefined && (refSinks ?? binaryRefSinks) !== undefined) {
+          if (outputs !== undefined && refSinks !== undefined) {
             outputs = await this.cacheCoordinator.hydrateRefsBelowThreshold(
               outputs as Output,
               this.cacheRegistry,
@@ -501,11 +544,23 @@ export class TaskRunner<
     const hydrations = await Promise.all(
       Object.entries(source).map(async ([port, value]) => {
         if (!isCacheRef(value)) return undefined;
+        // Only resolve a ref at a port whose schema admits one — a
+        // delta-stream port (`append` / `object` / `binary`) or a
+        // blob/binary-format port, mirroring the output-side gating in
+        // hydrateRefsBelowThreshold. A ref-shaped value at any other port is
+        // not this runner's to interpret: resolving it would let arbitrary
+        // input JSON read cache entries into ports that never carry refs.
+        // Leave it untouched for normal input validation to reject.
+        const portMode = getPortStreamMode(schema, port);
+        const portFormat = getBinaryPortFormat(schema, port);
+        if (!isDeltaStreamMode(portMode) && portFormat !== "blob" && portFormat !== "binary") {
+          return undefined;
+        }
         // A stream-wired input port (any mode) with a live input stream keeps
         // its ref as the durable pointer — the consumer takes its data from
         // the stream, so hydrating the ref would re-materialize what the
         // stream already delivers.
-        if (getPortStreamMode(schema, port) !== "none" && this.inputStreams?.has(port)) {
+        if (portMode !== "none" && this.inputStreams?.has(port)) {
           return undefined;
         }
         // append / object refs persist codec-encoded delta bytes; decode them
@@ -742,6 +797,24 @@ export class TaskRunner<
     this.currentCtx?.abortController.abort();
   }
 
+  /**
+   * Stream-pacing options retained from the current run's config (resolved in
+   * handleStart), in the shape both `TaskGraphRunConfig` and {@link IRunConfig}
+   * accept. Compound tasks spread this into their subgraph runs so nested
+   * graphs inherit the caller's passthrough opt-in, high-water mark, and
+   * watchdog.
+   */
+  public get streamRunOptions(): Pick<
+    IRunConfig,
+    "noAccumulation" | "streamHighWaterBytes" | "streamGateWatchdogMs"
+  > {
+    return {
+      noAccumulation: this.noAccumulation,
+      streamHighWaterBytes: this.streamHighWaterBytes,
+      streamGateWatchdogMs: this.streamGateWatchdogMs,
+    };
+  }
+
   // ========================================================================
   // Protected methods
   // ========================================================================
@@ -942,6 +1015,16 @@ export class TaskRunner<
 
     // Propagate run identifier for use in IExecuteContext.
     this.runId = config.runId;
+
+    // Retain stream-pacing options for this run (like outputCache) so compound
+    // runners can forward them into subgraph runs — a nested graph must honor
+    // the same passthrough opt-in, high-water mark, and watchdog the caller
+    // configured.
+    this.noAccumulation = config.noAccumulation ?? this.task.runConfig?.noAccumulation;
+    this.streamHighWaterBytes =
+      config.streamHighWaterBytes ?? this.task.runConfig?.streamHighWaterBytes;
+    this.streamGateWatchdogMs =
+      config.streamGateWatchdogMs ?? this.task.runConfig?.streamGateWatchdogMs;
 
     // Cache resolution: prefer CacheRegistry (via ServiceRegistry); honour legacy
     // config.outputCache as a back-compat shim that maps to the deterministic slot.
