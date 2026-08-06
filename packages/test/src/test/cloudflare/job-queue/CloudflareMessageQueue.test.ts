@@ -6,10 +6,10 @@
 
 import { CloudflareMessageQueue } from "@workglow/cloudflare/job-queue";
 import {
-  InMemoryJobStore,
   InMemoryQueueStorage,
   JobStatus,
   type JobStorageFormat,
+  wrapQueueStorage,
 } from "@workglow/job-queue";
 import { describe, expect, it, vi } from "vitest";
 
@@ -33,7 +33,7 @@ function fakeQueue() {
 
 async function newStore() {
   const core = new InMemoryQueueStorage<TestInput, TestOutput>("q");
-  const jobStore = new InMemoryJobStore(core);
+  const jobStore = wrapQueueStorage(core).jobStore;
   return jobStore;
 }
 

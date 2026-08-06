@@ -125,6 +125,13 @@ class WrappedMessageQueue<Input, Output> implements IMessageQueue<JobStorageForm
     callback: (row: StreamChunkRow) => void
   ) => () => void;
 
+  /**
+   * Constructor name of the wrapped storage (e.g. `"SqliteQueueStorage"`).
+   * Mirrors {@link WrappedJobStore.backingStorageName} so log lines can name
+   * the backend instead of this wrapper.
+   */
+  public readonly backingStorageName: string;
+
   constructor(private readonly storage: IQueueStorage<Input, Output>) {
     if (typeof storage.publishStreamChunk === "function") {
       this.publishStreamChunk = (jobId, event) => storage.publishStreamChunk!(jobId, event);
@@ -133,6 +140,7 @@ class WrappedMessageQueue<Input, Output> implements IMessageQueue<JobStorageForm
       this.subscribeToStream = (jobId, sinceSeq, callback) =>
         storage.subscribeToStream!(jobId, sinceSeq, callback);
     }
+    this.backingStorageName = (storage as object)?.constructor?.name ?? "";
   }
 
   async send(body: JobStorageFormat<Input, Output>, opts?: SendOptions): Promise<MessageId> {
@@ -213,10 +221,27 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
    */
   private fingerprintScanExhaustedWarned = false;
 
+  /**
+   * Constructor name of the wrapped storage (e.g. `"InMemoryQueueStorage"`).
+   * Diagnostic label for callers holding only the `IJobStore` facade — log
+   * lines use it to name the backend. Semantic checks (durability) key on
+   * {@link durable}, not on this name.
+   */
+  public readonly backingStorageName: string;
+
+  /**
+   * Surfaced from {@link IQueueStorage.durable}: `false` only when the
+   * backing store declares its rows do not survive the process.
+   */
+  public readonly durable: boolean;
+
   constructor(
     private readonly storage: IQueueStorage<Input, Output>,
     private readonly maxFingerprintScan: number = DEFAULT_LIMITS.jobQueueMaxFingerprintScan
-  ) {}
+  ) {
+    this.backingStorageName = (storage as object)?.constructor?.name ?? "";
+    this.durable = storage.durable !== false;
+  }
 
   get(id: MessageId): Promise<JobRecord<Input, Output> | undefined> {
     return this.storage.get(id);
@@ -255,6 +280,10 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
   }
 
   async saveStatus(id: MessageId, status: JobStatus): Promise<void> {
+    if (this.storage.saveStatus) {
+      await this.storage.saveStatus(id, status);
+      return;
+    }
     // Use finalize() so the status write does not bump attempts.
     await this.storage.finalize(id, { status });
   }
@@ -266,8 +295,17 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
 
   async findActiveByFingerprint(
     fingerprint: string,
-    _queueName: string
+    queueName: string
   ): Promise<JobRecord<Input, Output> | undefined> {
+    // The wrapped storage is scoped to a single queue. When it exposes its
+    // queue name, enforce the same queue-scoping the native SQL lookups
+    // apply via `WHERE queue = ?`: asking about a different queue returns
+    // undefined, never this queue's row.
+    const storageQueueName = this.storage.queueName;
+    if (storageQueueName !== undefined && storageQueueName !== queueName) {
+      return undefined;
+    }
+
     // Prefer the native storage implementation when available (Postgres,
     // SQLite, Supabase): those backends have a partial unique index on
     // (queue, fingerprint) WHERE status IN ('PENDING','PROCESSING') for
@@ -275,19 +313,17 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
     // regression on the hot dedup path.
     const native = this.storage.findActiveByFingerprint;
     if (typeof native === "function") {
-      return native.call(this.storage, fingerprint, _queueName);
+      return native.call(this.storage, fingerprint, queueName);
     }
 
-    // Fallback for backends without a native implementation (in-memory,
-    // IndexedDB): single bounded peek per status, up to this.maxFingerprintScan
-    // total rows across PENDING + PROCESSING. The actual cap is the minimum
-    // of this.maxFingerprintScan and whatever the underlying peek() impl
-    // chooses to cap `num` at internally. We rely on this.maxFingerprintScan as
-    // a hard ceiling and surface a one-shot warning when we exhaust it
-    // without finding a match. The wrapped storage is already scoped to a
-    // single queue, so any row found here is in "this" queue — the
-    // queueName parameter is accepted for interface compatibility but not
-    // used for filtering.
+    // Fallback for backends without a native implementation (IndexedDB,
+    // custom stores): single bounded peek per status, up to
+    // this.maxFingerprintScan total rows across PENDING + PROCESSING. The
+    // actual cap is the minimum of this.maxFingerprintScan and whatever the
+    // underlying peek() impl chooses to cap `num` at internally. We rely on
+    // this.maxFingerprintScan as a hard ceiling and surface a one-shot
+    // warning when we exhaust it without finding a match. Rows here are in
+    // "this" queue — the guard above already rejected foreign queue names.
     let scanned = 0;
     for (const status of ["PENDING", "PROCESSING"] as const) {
       const remaining = this.maxFingerprintScan - scanned;
@@ -312,10 +348,17 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
   async getMany(
     ids: readonly MessageId[]
   ): Promise<readonly (JobRecord<Input, Output> | undefined)[]> {
+    if (this.storage.getMany) {
+      return this.storage.getMany(ids);
+    }
     return Promise.all(ids.map((id) => this.storage.get(id)));
   }
 
   async completeWithResult(id: MessageId, result: Output): Promise<void> {
+    if (this.storage.completeWithResult) {
+      await this.storage.completeWithResult(id, result);
+      return;
+    }
     await this.storage.finalize(id, {
       output: result,
       error: null,
@@ -328,8 +371,6 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
   async markDisabled(id: MessageId): Promise<void> {
     // Delegate to the core's atomic markDisabled — IQueueStorage requires
     // it to be a single-op write that preserves completed_at via COALESCE.
-    // Calling it here keeps WrappedJobStore consistent with backends that
-    // bypass the wrapper (e.g. PostgresJobStore, SupabaseJobStore).
     await this.storage.markDisabled(id);
   }
 
@@ -341,6 +382,10 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
       readonly abortRequested?: boolean;
     }
   ): Promise<void> {
+    if (this.storage.failWithError) {
+      await this.storage.failWithError(id, opts);
+      return;
+    }
     const current = await this.storage.get(id);
     const now = new Date().toISOString();
     const abortRequestedAt =
@@ -373,8 +418,9 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
     // Default impl — fan out the per-id writes in parallel rather than
     // forcing callers into a serial for/await loop. allSettled so a single
     // failed id doesn't tank the rest of the batch; structured failure list
-    // surfaces to the caller's AggregateError handling. SQL backends can
-    // override with a single bulk UPDATE for a one-round-trip path.
+    // surfaces to the caller's AggregateError handling. A custom IJobStore
+    // backed by native SQL can override this method with a single bulk
+    // UPDATE for a one-round-trip path.
     const results = await Promise.allSettled(ids.map((id) => this.markEnqueueDeferred(id, opts)));
     const failed = results.flatMap((r, i) =>
       r.status === "rejected" ? [{ id: ids[i]!, err: r.reason }] : []
@@ -406,13 +452,16 @@ export interface WrapQueueStorageOptions {
   readonly maxFingerprintScan?: number;
 }
 
+/** The `IMessageQueue` + `IJobStore` facade pair produced by {@link wrapQueueStorage}. */
+export interface QueuePair<Input, Output> {
+  readonly messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
+  readonly jobStore: IJobStore<Input, Output>;
+}
+
 export function wrapQueueStorage<Input, Output>(
   storage: IQueueStorage<Input, Output>,
   options: WrapQueueStorageOptions = {}
-): {
-  messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
-  jobStore: IJobStore<Input, Output>;
-} {
+): QueuePair<Input, Output> {
   return {
     messageQueue: new WrappedMessageQueue(storage),
     jobStore: new WrappedJobStore(storage, options.maxFingerprintScan),

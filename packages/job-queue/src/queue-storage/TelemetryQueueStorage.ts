@@ -24,13 +24,14 @@ export class TelemetryQueueStorage<Input, Output> implements IQueueStorage<Input
     private readonly storageName: string,
     private readonly inner: IQueueStorage<Input, Output>
   ) {
-    // findActiveByFingerprint is an OPTIONAL native method. Only expose it when
-    // the inner storage actually implements it, so wrapQueueStorage's
-    // `typeof native === "function"` probe still falls through to the bounded
-    // scan fallback when the inner has no native impl. A telemetry decorator
-    // must be transparent: always defining the method would force the O(1)
-    // native path to be reported as present even for backends (in-memory,
-    // IndexedDB) that lack it, then throw when delegating to undefined.
+    // findActiveByFingerprint and the single-statement fast paths are
+    // OPTIONAL members of IQueueStorage. Only expose each when the inner
+    // storage actually implements it, so wrapQueueStorage's presence probes
+    // still fall through to their generic compositions when the inner has no
+    // native impl. A telemetry decorator must be transparent: always defining
+    // a method would force the O(1) native path to be reported as present
+    // even for backends (in-memory, IndexedDB) that lack it, then throw when
+    // delegating to undefined.
     if (typeof inner.findActiveByFingerprint === "function") {
       this.findActiveByFingerprint = (fingerprint: string, queueName: string) =>
         traced("workglow.storage.queue.findActiveByFingerprint", this.storageName, () =>
@@ -50,21 +51,71 @@ export class TelemetryQueueStorage<Input, Output> implements IQueueStorage<Input
       this.subscribeToStream = (jobId, sinceSeq, callback) =>
         this.inner.subscribeToStream!(jobId, sinceSeq, callback);
     }
+    if (typeof inner.saveStatus === "function") {
+      this.saveStatus = (id: unknown, status: JobStatus) =>
+        traced("workglow.storage.queue.saveStatus", this.storageName, async () =>
+          this.inner.saveStatus!(id, status)
+        );
+    }
+    if (typeof inner.getMany === "function") {
+      this.getMany = (ids: readonly unknown[]) =>
+        traced("workglow.storage.queue.getMany", this.storageName, () => this.inner.getMany!(ids));
+    }
+    if (typeof inner.completeWithResult === "function") {
+      this.completeWithResult = (id: unknown, result: Output) =>
+        traced("workglow.storage.queue.completeWithResult", this.storageName, () =>
+          this.inner.completeWithResult!(id, result)
+        );
+    }
+    if (typeof inner.failWithError === "function") {
+      this.failWithError = (
+        id: unknown,
+        opts: {
+          readonly error?: string | null;
+          readonly errorCode?: string | null;
+          readonly abortRequested?: boolean;
+        }
+      ) =>
+        traced("workglow.storage.queue.failWithError", this.storageName, () =>
+          this.inner.failWithError!(id, opts)
+        );
+    }
   }
 
   public get scope(): QueueStorageScope {
     return this.inner.scope;
   }
 
+  public get queueName(): string | undefined {
+    return this.inner.queueName;
+  }
+
+  public get durable(): boolean | undefined {
+    return this.inner.durable;
+  }
+
   /**
    * Conditionally assigned in the constructor — present only when the inner
-   * storage exposes a native implementation. See the constructor for why this
-   * mirrors the inner's presence rather than always defining the method.
+   * storage exposes a native implementation. See the constructor for why these
+   * mirror the inner's presence rather than always defining the methods.
    */
   public readonly findActiveByFingerprint?: (
     fingerprint: string,
     queueName: string
   ) => Promise<JobStorageFormat<Input, Output> | undefined>;
+  public readonly saveStatus?: (id: unknown, status: JobStatus) => void | Promise<void>;
+  public readonly getMany?: (
+    ids: readonly unknown[]
+  ) => Promise<ReadonlyArray<JobStorageFormat<Input, Output> | undefined>>;
+  public readonly completeWithResult?: (id: unknown, result: Output) => Promise<void>;
+  public readonly failWithError?: (
+    id: unknown,
+    opts: {
+      readonly error?: string | null;
+      readonly errorCode?: string | null;
+      readonly abortRequested?: boolean;
+    }
+  ) => Promise<void>;
 
   /** Conditionally assigned in the constructor — mirrors the inner's presence. */
   public readonly publishStreamChunk?: (jobId: unknown, event: StreamEventLike) => Promise<void>;

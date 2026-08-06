@@ -52,6 +52,11 @@ const STREAM_LOG_RETENTION_MS = 30_000;
  */
 export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input, Output> {
   public readonly scope = "process" as const;
+  /**
+   * In-memory rows do not survive the process — declared so wrapper facades
+   * and cloud adapters can detect the non-durable pairing.
+   */
+  public readonly durable = false;
   /** The prefix values for filtering jobs */
   protected readonly prefixValues: Readonly<Record<string, string | number>>;
   /** Event emitter for change notifications */
@@ -540,7 +545,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
   /**
    * Atomically write `output` and set status to COMPLETED in one mutation.
    */
-  public async completeWithResult(id: unknown, output: Output | null): Promise<void> {
+  public async completeWithResult(id: unknown, output: Output): Promise<void> {
     await this.finalize(id, {
       output,
       error: null,

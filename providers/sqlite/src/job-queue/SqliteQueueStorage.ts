@@ -64,7 +64,7 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
 
   constructor(
     protected db: Sqlite.Database,
-    protected queueName: string,
+    public readonly queueName: string,
     protected options?: SqliteQueueStorageOptions
   ) {
     this.prefixes = options?.prefixes ?? [];
@@ -655,7 +655,7 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     jobId: unknown,
     progress: number,
     message: string,
-    details: Record<string, any>
+    details: Record<string, any> | null
   ): Promise<void> {
     const prefixConditions = this.buildPrefixWhereClause();
     const prefixParams = this.getPrefixParamValues();
@@ -671,7 +671,7 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     stmt.run(
       progress,
       message,
-      JSON.stringify(details),
+      details != null ? JSON.stringify(details) : null,
       String(jobId),
       this.queueName,
       ...prefixParams

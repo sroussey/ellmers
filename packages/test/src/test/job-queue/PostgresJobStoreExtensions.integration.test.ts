@@ -15,7 +15,7 @@ const RUN_POSTGRES_TESTS = process.env["RUN_POSTGRES_TESTS"] === "1";
 
 const db = new PGlite() as unknown as Pool;
 
-describe.skipIf(!RUN_POSTGRES_TESTS)("PostgresJobStoreExtensions", () => {
+describe.skipIf(!RUN_POSTGRES_TESTS)("Postgres jobStore extensions (createPostgresQueue)", () => {
   afterAll(async () => {
     await (db as unknown as PGlite).close();
   });
