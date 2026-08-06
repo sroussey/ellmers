@@ -14,8 +14,8 @@ import type {
 import { AiChatTask, AiProvider, getAiProviderRegistry, registerAiTasks } from "@workglow/ai";
 import type { IExecuteContext, StreamEvent, Usage } from "@workglow/task-graph";
 import { TaskRegistry } from "@workglow/task-graph";
-import type { IHumanConnector, IHumanRequest, IHumanResponse } from "@workglow/util";
-import { Container, HUMAN_CONNECTOR, ServiceRegistry } from "@workglow/util";
+import type { IHumanConnector, IHumanRequest, IHumanResponse, ILogger } from "@workglow/util";
+import { Container, getLogger, HUMAN_CONNECTOR, ServiceRegistry, setLogger } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 
 const TEXT_GENERATION = ["text.generation"] as const satisfies Capability[];
@@ -74,6 +74,7 @@ function mkModel(): ModelConfig {
   return {
     provider: "fake-chat",
     model: "fake-model",
+    model_id: "fake-model",
     capabilities: TEXT_GENERATION,
   } as unknown as ModelConfig;
 }
@@ -732,6 +733,145 @@ describe("AiChatTask — usage aggregation across turns", () => {
 
       const outer = events.find((e) => e.type === "finish")!;
       expect("usage" in outer).toBe(false);
+    } finally {
+      unregister();
+    }
+  });
+});
+
+describe("AiChatTask — usage telemetry", () => {
+  function mkUsage(partial: Partial<Usage>): Usage {
+    return {
+      input: undefined,
+      output: undefined,
+      cached: undefined,
+      cacheWrite: undefined,
+      reasoning: undefined,
+      total: undefined,
+      extra: undefined,
+      ...partial,
+    };
+  }
+
+  /**
+   * Intercepts the debug line `recordUsageTelemetry` writes. The logger is
+   * global, so restoration is mandatory or sibling tests in this worker
+   * inherit the stub.
+   */
+  async function withRecordedUsage(
+    body: () => Promise<void>
+  ): Promise<Array<Record<string, unknown> | undefined>> {
+    const recorded: Array<Record<string, unknown> | undefined> = [];
+    const previous = getLogger();
+    setLogger({
+      ...previous,
+      debug: (message: string, meta?: Record<string, unknown>) => {
+        if (message.startsWith("AI usage for")) recorded.push(meta);
+      },
+    } as ILogger);
+    try {
+      await body();
+    } finally {
+      setLogger(previous);
+    }
+    return recorded;
+  }
+
+  it("records usage telemetry once for the whole conversation", async () => {
+    const perTurnUsage = [mkUsage({ input: 100, output: 10 }), mkUsage({ input: 150, output: 20 })];
+    let turn = 0;
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _input,
+      _model,
+      _signal,
+      emit
+    ) => {
+      const usage = perTurnUsage[Math.min(turn, perTurnUsage.length - 1)];
+      turn++;
+      emit({ type: "text-delta", port: "text", textDelta: "answer" });
+      emit({ type: "finish", data: {} as any, usage } as any);
+    };
+    const unregister = registerFakeChatProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        { action: "accept", content: { content: "follow up" }, done: false, requestId: "" },
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = { model: mkModel(), prompt: "hi", maxIterations: 5 };
+      const task = new AiChatTask({ defaults: input } as any);
+
+      const recorded = await withRecordedUsage(async () => {
+        await accumulateChatStream(task.executeStream(input as any, mkContext(connector)));
+      });
+
+      expect(turn).toBe(2);
+      // One record for the run, not one per turn.
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]?.usage).toEqual(mkUsage({ input: 250, output: 30 }));
+      expect(recorded[0]?.model).toBe("fake-model");
+    } finally {
+      unregister();
+    }
+  });
+
+  it("records nothing when no turn reported usage", async () => {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _input,
+      _model,
+      _signal,
+      emit
+    ) => {
+      emit({ type: "text-delta", port: "text", textDelta: "answer" });
+      emit({ type: "finish", data: {} as any });
+    };
+    const unregister = registerFakeChatProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = { model: mkModel(), prompt: "hi", maxIterations: 5 };
+      const task = new AiChatTask({ defaults: input } as any);
+
+      const recorded = await withRecordedUsage(async () => {
+        await accumulateChatStream(task.executeStream(input as any, mkContext(connector)));
+      });
+
+      expect(recorded).toHaveLength(0);
+    } finally {
+      unregister();
+    }
+  });
+
+  it("records the turns already billed when the consumer stops mid-stream", async () => {
+    // A consumer that breaks closes this generator at its `yield` and never
+    // reaches the statement after the turn loop — the case a trailing (rather
+    // than `finally`) telemetry call silently fails.
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _input,
+      _model,
+      _signal,
+      emit
+    ) => {
+      emit({ type: "text-delta", port: "text", textDelta: "answer" });
+      emit({ type: "finish", data: {} as any, usage: mkUsage({ input: 100, output: 10 }) } as any);
+    };
+    const unregister = registerFakeChatProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        { action: "accept", content: { content: "follow up" }, done: false, requestId: "" },
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = { model: mkModel(), prompt: "hi", maxIterations: 5 };
+      const task = new AiChatTask({ defaults: input } as any);
+
+      const recorded = await withRecordedUsage(async () => {
+        for await (const ev of task.executeStream(input as any, mkContext(connector))) {
+          if (ev.type === "text-delta") break;
+        }
+      });
+
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]?.usage).toEqual(mkUsage({ input: 100, output: 10 }));
     } finally {
       unregister();
     }

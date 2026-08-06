@@ -13,11 +13,12 @@ import type {
   TaskInput,
   Usage,
 } from "@workglow/task-graph";
-import { mergeUsage, TaskConfigSchema } from "@workglow/task-graph";
+import { mergeUsage, TaskConfigSchema, USAGE_OUTPUT_KEY } from "@workglow/task-graph";
 import type { IHumanRequest } from "@workglow/util";
 import { DEFAULT_LIMITS, resolveHumanConnector } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import { recordUsageTelemetry } from "../capability/UsageTelemetry";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
@@ -444,263 +445,274 @@ export class AiChatWithKbTask extends StreamingAiTask<
     // turn but the last.
     let conversationUsage: Usage | undefined;
 
-    for (let turn = 0; turn < maxIterations; turn++) {
-      const lastUserText = extractLastUserText(history);
+    // `finally`, not a trailing call: a consumer that stops the chat early
+    // closes this generator at a `yield` and never reaches the statement
+    // after the loop — but the turns it already drove were still billed.
+    // Recorded once per conversation, not once per turn: telemetry counts
+    // one run's token accounting, and a chat run is one run.
+    try {
+      for (let turn = 0; turn < maxIterations; turn++) {
+        const lastUserText = extractLastUserText(history);
 
-      // Retrieve from all knowledge bases in parallel. Keep the kb instance
-      // alongside results so we can fetch per-doc metadata for URL resolution
-      // — chunks don't inherit `url`/`sourceUri` from their document at upsert
-      // time (only `doc_title` is propagated by ChunkVectorUpsertTask), so
-      // dedup-by-URL on the consumer side requires resolving URLs from the
-      // document record after retrieval.
-      let perKbResults: Array<{
-        kbId: string;
-        kbLabel: string;
-        kb: KnowledgeBase | undefined;
-        results: ChunkSearchResult[];
-      }> = [];
-      if (lastUserText.length > 0) {
-        let queryVector: Float32Array | undefined;
-        if (embeddingModel) {
-          const embeddingTask = context.own(new TextEmbeddingTask());
-          const embeddingResult = await embeddingTask.run(
-            {
-              text: lastUserText,
-              model: embeddingModel,
-            },
-            { resourceScope: context.resourceScope }
+        // Retrieve from all knowledge bases in parallel. Keep the kb instance
+        // alongside results so we can fetch per-doc metadata for URL resolution
+        // — chunks don't inherit `url`/`sourceUri` from their document at upsert
+        // time (only `doc_title` is propagated by ChunkVectorUpsertTask), so
+        // dedup-by-URL on the consumer side requires resolving URLs from the
+        // document record after retrieval.
+        let perKbResults: Array<{
+          kbId: string;
+          kbLabel: string;
+          kb: KnowledgeBase | undefined;
+          results: ChunkSearchResult[];
+        }> = [];
+        if (lastUserText.length > 0) {
+          let queryVector: Float32Array | undefined;
+          if (embeddingModel) {
+            const embeddingTask = context.own(new TextEmbeddingTask());
+            const embeddingResult = await embeddingTask.run(
+              {
+                text: lastUserText,
+                model: embeddingModel,
+              },
+              { resourceScope: context.resourceScope }
+            );
+            const vector = Array.isArray(embeddingResult.vector)
+              ? embeddingResult.vector[0]
+              : embeddingResult.vector;
+            queryVector = vector instanceof Float32Array ? vector : new Float32Array(vector);
+          }
+
+          perKbResults = await Promise.all(
+            (input.knowledgeBaseIds ?? []).map(async (kbId) => {
+              const kb = getKnowledgeBase(kbId);
+              if (!kb) {
+                console.warn(`[AiChatWithKbTask] knowledge base "${kbId}" not registered`);
+                return { kbId, kbLabel: kbId, kb: undefined, results: [] as ChunkSearchResult[] };
+              }
+              try {
+                let results: ChunkSearchResult[];
+                if (queryVector) {
+                  results = await (kb as KnowledgeBase).similaritySearch(queryVector, { topK });
+                } else {
+                  const search = context.own(new KbSearchTask());
+                  const out = await search.run({
+                    knowledgeBase: kb as KnowledgeBase,
+                    query: lastUserText,
+                    topK,
+                  });
+                  results = out.results;
+                }
+                return {
+                  kbId,
+                  kbLabel: kb.title || kbId,
+                  kb: kb as KnowledgeBase,
+                  results,
+                };
+              } catch (error) {
+                // A single KB's embedding/search failure must not abort the turn;
+                // degrade to empty results for that KB so other KBs still contribute.
+                console.warn(`[AiChatWithKbTask] knowledge base "${kbId}" search failed`, error);
+                return {
+                  kbId,
+                  kbLabel: kb.title || kbId,
+                  kb: kb as KnowledgeBase,
+                  results: [] as ChunkSearchResult[],
+                };
+              }
+            })
           );
-          const vector = Array.isArray(embeddingResult.vector)
-            ? embeddingResult.vector[0]
-            : embeddingResult.vector;
-          queryVector = vector instanceof Float32Array ? vector : new Float32Array(vector);
         }
 
-        perKbResults = await Promise.all(
-          (input.knowledgeBaseIds ?? []).map(async (kbId) => {
-            const kb = getKnowledgeBase(kbId);
-            if (!kb) {
-              console.warn(`[AiChatWithKbTask] knowledge base "${kbId}" not registered`);
-              return { kbId, kbLabel: kbId, kb: undefined, results: [] as ChunkSearchResult[] };
-            }
-            try {
-              let results: ChunkSearchResult[];
-              if (queryVector) {
-                results = await (kb as KnowledgeBase).similaritySearch(queryVector, { topK });
-              } else {
-                const search = context.own(new KbSearchTask());
-                const out = await search.run({
-                  knowledgeBase: kb as KnowledgeBase,
-                  query: lastUserText,
-                  topK,
-                });
-                results = out.results;
-              }
-              return {
-                kbId,
-                kbLabel: kb.title || kbId,
-                kb: kb as KnowledgeBase,
-                results,
-              };
-            } catch (error) {
-              // A single KB's embedding/search failure must not abort the turn;
-              // degrade to empty results for that KB so other KBs still contribute.
-              console.warn(`[AiChatWithKbTask] knowledge base "${kbId}" search failed`, error);
-              return {
-                kbId,
-                kbLabel: kb.title || kbId,
-                kb: kb as KnowledgeBase,
-                results: [] as ChunkSearchResult[],
-              };
-            }
+        const allChunks = perKbResults
+          .flatMap(({ kbId, kbLabel, kb, results }) =>
+            results.filter((r) => r.score >= minScore).map((r) => ({ kbId, kbLabel, kb, r }))
+          )
+          .sort((a, b) => b.r.score - a.r.score)
+          .slice(0, maxRefs);
+
+        // Resolve a URL per unique (kb, doc_id) by reading the document record's
+        // metadata.url (the public route written by the ingest workflow).
+        // One lookup per unique doc; cheap given maxRefs is small.
+
+        const docUrlKey = (kbId: string, docId: string): string => `${kbId}:${docId}`;
+        const docUrls = new Map<string, string | undefined>();
+        const docFetches: Array<Promise<void>> = [];
+        for (const { kbId, kb, r } of allChunks) {
+          if (!kb) continue;
+          const key = docUrlKey(kbId, r.doc_id);
+          if (docUrls.has(key)) continue;
+          docUrls.set(key, undefined);
+          docFetches.push(
+            kb
+              .getDocument(r.doc_id)
+              .then((doc) => {
+                const md = (doc?.metadata ?? {}) as { url?: unknown; sourceUri?: unknown };
+                const url =
+                  typeof md.url === "string"
+                    ? md.url
+                    : typeof md.sourceUri === "string"
+                      ? md.sourceUri
+                      : undefined;
+                docUrls.set(key, url);
+              })
+              .catch(() => {
+                // leave the slot as undefined so the chip renders without a URL
+              })
+          );
+        }
+        await Promise.all(docFetches);
+
+        const refs: ChatChunkReference[] = allChunks.map((entry, i) =>
+          buildChunkReference({
+            index: i + 1,
+            kbId: entry.kbId,
+            kbLabel: entry.kbLabel,
+            result: entry.r,
+            url: docUrls.get(docUrlKey(entry.kbId, entry.r.doc_id)),
           })
         );
-      }
 
-      const allChunks = perKbResults
-        .flatMap(({ kbId, kbLabel, kb, results }) =>
-          results.filter((r) => r.score >= minScore).map((r) => ({ kbId, kbLabel, kb, r }))
-        )
-        .sort((a, b) => b.r.score - a.r.score)
-        .slice(0, maxRefs);
-
-      // Resolve a URL per unique (kb, doc_id) by reading the document record's
-      // metadata.url (the public route written by the ingest workflow).
-      // One lookup per unique doc; cheap given maxRefs is small.
-
-      const docUrlKey = (kbId: string, docId: string): string => `${kbId}:${docId}`;
-      const docUrls = new Map<string, string | undefined>();
-      const docFetches: Array<Promise<void>> = [];
-      for (const { kbId, kb, r } of allChunks) {
-        if (!kb) continue;
-        const key = docUrlKey(kbId, r.doc_id);
-        if (docUrls.has(key)) continue;
-        docUrls.set(key, undefined);
-        docFetches.push(
-          kb
-            .getDocument(r.doc_id)
-            .then((doc) => {
-              const md = (doc?.metadata ?? {}) as { url?: unknown; sourceUri?: unknown };
-              const url =
-                typeof md.url === "string"
-                  ? md.url
-                  : typeof md.sourceUri === "string"
-                    ? md.sourceUri
-                    : undefined;
-              docUrls.set(key, url);
-            })
-            .catch(() => {
-              // leave the slot as undefined so the chip renders without a URL
-            })
-        );
-      }
-      await Promise.all(docFetches);
-
-      const refs: ChatChunkReference[] = allChunks.map((entry, i) =>
-        buildChunkReference({
-          index: i + 1,
-          kbId: entry.kbId,
-          kbLabel: entry.kbLabel,
-          result: entry.r,
-          url: docUrls.get(docUrlKey(entry.kbId, entry.r.doc_id)),
-        })
-      );
-
-      // Follow-up carry-forward: when this turn produced no hits but a
-      // previous turn did, treat the prior refs as the effective context
-      // instead of firing the no-match path. Short follow-ups like "tell
-      // me more" or "and on mobile?" would otherwise drop the user out of
-      // the conversation thread.
-      const effectiveRefs: readonly ChatChunkReference[] =
-        refs.length > 0 ? refs : lastNonEmptyRefs;
-      if (refs.length > 0) {
-        lastNonEmptyRefs = refs;
-      }
-
-      const emitted: ChatChunkReference[] =
-        effectiveRefs.length > 0
-          ? [...effectiveRefs]
-          : ((input.noMatchReferences as ChatChunkReference[] | undefined) ?? []);
-
-      yield {
-        type: "object-delta",
-        port: "references",
-        objectDelta: emitted,
-      } as StreamEvent<AiChatWithKbTaskOutput>;
-
-      let assistantText = "";
-      if (effectiveRefs.length === 0 && input.noMatchReply) {
-        yield {
-          type: "text-delta",
-          port: "text",
-          textDelta: input.noMatchReply,
-        } as StreamEvent<AiChatWithKbTaskOutput>;
-        assistantText = input.noMatchReply;
-      } else {
-        // Build a per-turn system prompt that includes the retrieved context.
-        const addendum = buildResponseFormatAddendum(input.responseFormat);
-        const directive = input.responseFormat === "markdown" ? KB_INLINE_CITATION_DIRECTIVE : "";
-        const userSystemPrompt = input.systemPrompt ?? "";
-        const turnSystemPrompt = [
-          userSystemPrompt,
-          addendum,
-          directive,
-          "--- Context ---",
-          formatChunksForPrompt(effectiveRefs, input.responseFormat),
-        ]
-          .filter((s) => s.length > 0)
-          .join("\n\n");
-        const perTurnInput: AiChatWithKbTaskInput = {
-          ...input,
-          messages: [
-            { role: "system", content: [{ type: "text", text: turnSystemPrompt }] },
-            ...history.filter((m) => m.role !== "system"),
-          ],
-          systemPrompt: turnSystemPrompt,
-        };
-        const turnJobInput = await this.getJobInput(perTurnInput);
-        const strategy = getAiProviderRegistry().getStrategy(model);
-
-        // The shared seam accumulates this turn's text and swallows the
-        // inner-turn `finish` (the outer `finish` is emitted at the end),
-        // keeping its `usage` sibling for the conversation total.
-        const turn_ = runChatTurn<AiChatWithKbTaskOutput>({
-          strategy,
-          jobInput: turnJobInput as unknown as AiJobInput<TaskInput>,
-          context,
-          runnerId: this.runConfig.runnerId,
-          textPort: "text",
-        });
-        // `finally`, not a trailing statement: a consumer that stops mid-turn
-        // closes this generator at its `yield`, and the tokens that turn
-        // already billed must still be accounted for.
-        try {
-          for await (const event of turn_.events) {
-            yield event;
-          }
-        } finally {
-          assistantText = turn_.text;
-          conversationUsage = mergeUsage(conversationUsage, turn_.usage);
+        // Follow-up carry-forward: when this turn produced no hits but a
+        // previous turn did, treat the prior refs as the effective context
+        // instead of firing the no-match path. Short follow-ups like "tell
+        // me more" or "and on mobile?" would otherwise drop the user out of
+        // the conversation thread.
+        const effectiveRefs: readonly ChatChunkReference[] =
+          refs.length > 0 ? refs : lastNonEmptyRefs;
+        if (refs.length > 0) {
+          lastNonEmptyRefs = refs;
         }
+
+        const emitted: ChatChunkReference[] =
+          effectiveRefs.length > 0
+            ? [...effectiveRefs]
+            : ((input.noMatchReferences as ChatChunkReference[] | undefined) ?? []);
+
+        yield {
+          type: "object-delta",
+          port: "references",
+          objectDelta: emitted,
+        } as StreamEvent<AiChatWithKbTaskOutput>;
+
+        let assistantText = "";
+        if (effectiveRefs.length === 0 && input.noMatchReply) {
+          yield {
+            type: "text-delta",
+            port: "text",
+            textDelta: input.noMatchReply,
+          } as StreamEvent<AiChatWithKbTaskOutput>;
+          assistantText = input.noMatchReply;
+        } else {
+          // Build a per-turn system prompt that includes the retrieved context.
+          const addendum = buildResponseFormatAddendum(input.responseFormat);
+          const directive = input.responseFormat === "markdown" ? KB_INLINE_CITATION_DIRECTIVE : "";
+          const userSystemPrompt = input.systemPrompt ?? "";
+          const turnSystemPrompt = [
+            userSystemPrompt,
+            addendum,
+            directive,
+            "--- Context ---",
+            formatChunksForPrompt(effectiveRefs, input.responseFormat),
+          ]
+            .filter((s) => s.length > 0)
+            .join("\n\n");
+          const perTurnInput: AiChatWithKbTaskInput = {
+            ...input,
+            messages: [
+              { role: "system", content: [{ type: "text", text: turnSystemPrompt }] },
+              ...history.filter((m) => m.role !== "system"),
+            ],
+            systemPrompt: turnSystemPrompt,
+          };
+          const turnJobInput = await this.getJobInput(perTurnInput);
+          const strategy = getAiProviderRegistry().getStrategy(model);
+
+          // The shared seam accumulates this turn's text and swallows the
+          // inner-turn `finish` (the outer `finish` is emitted at the end),
+          // keeping its `usage` sibling for the conversation total.
+          const turn_ = runChatTurn<AiChatWithKbTaskOutput>({
+            strategy,
+            jobInput: turnJobInput as unknown as AiJobInput<TaskInput>,
+            context,
+            runnerId: this.runConfig.runnerId,
+            textPort: "text",
+          });
+          // `finally`, not a trailing statement: a consumer that stops mid-turn
+          // closes this generator at its `yield`, and the tokens that turn
+          // already billed must still be accounted for.
+          try {
+            for await (const event of turn_.events) {
+              yield event;
+            }
+          } finally {
+            assistantText = turn_.text;
+            conversationUsage = mergeUsage(conversationUsage, turn_.usage);
+          }
+        }
+
+        const assistantMsg: ChatMessage = {
+          role: "assistant",
+          content: [{ type: "text", text: assistantText }],
+        };
+        history.push(assistantMsg);
+        completedTurns = turn + 1;
+        yield {
+          type: "object-delta",
+          port: "messages",
+          objectDelta: [assistantMsg],
+        } as StreamEvent<AiChatWithKbTaskOutput>;
+
+        const request: IHumanRequest = {
+          requestId: crypto.randomUUID(),
+          targetHumanId: "default",
+          kind: "elicit",
+          message: "",
+          contentSchema: chatConnectorContentSchema,
+          contentData: undefined,
+          expectsResponse: true,
+          mode: "multi-turn",
+          metadata: { iteration: turn, taskId: this.id },
+        };
+
+        const response = await connector.send(request, context.signal);
+        if (response.action === "cancel" || response.action === "decline") break;
+
+        const raw = response.content?.content;
+        let userContent: ContentBlock[];
+        if (typeof raw === "string") {
+          const text = raw.trim();
+          userContent = text.length > 0 ? [{ type: "text", text: raw }] : [];
+        } else if (Array.isArray(raw)) {
+          userContent = raw as ContentBlock[];
+        } else {
+          userContent = [];
+        }
+        if (userContent.length === 0) break;
+
+        const userMsg: ChatMessage = { role: "user", content: userContent };
+        history.push(userMsg);
+        yield {
+          type: "object-delta",
+          port: "messages",
+          objectDelta: [userMsg],
+        } as StreamEvent<AiChatWithKbTaskOutput>;
       }
 
-      const assistantMsg: ChatMessage = {
-        role: "assistant",
-        content: [{ type: "text", text: assistantText }],
-      };
-      history.push(assistantMsg);
-      completedTurns = turn + 1;
+      // `text`, `messages`, and `references` ride the x-stream merge into the
+      // final output. `iterations` has no x-stream, so we deliver it in
+      // `finish.data` for the StreamProcessor to merge over the accumulated
+      // ports.
       yield {
-        type: "object-delta",
-        port: "messages",
-        objectDelta: [assistantMsg],
+        type: "finish",
+        data: { iterations: completedTurns } as Partial<AiChatWithKbTaskOutput>,
+        ...(conversationUsage ? { usage: conversationUsage } : {}),
       } as StreamEvent<AiChatWithKbTaskOutput>;
-
-      const request: IHumanRequest = {
-        requestId: crypto.randomUUID(),
-        targetHumanId: "default",
-        kind: "elicit",
-        message: "",
-        contentSchema: chatConnectorContentSchema,
-        contentData: undefined,
-        expectsResponse: true,
-        mode: "multi-turn",
-        metadata: { iteration: turn, taskId: this.id },
-      };
-
-      const response = await connector.send(request, context.signal);
-      if (response.action === "cancel" || response.action === "decline") break;
-
-      const raw = response.content?.content;
-      let userContent: ContentBlock[];
-      if (typeof raw === "string") {
-        const text = raw.trim();
-        userContent = text.length > 0 ? [{ type: "text", text: raw }] : [];
-      } else if (Array.isArray(raw)) {
-        userContent = raw as ContentBlock[];
-      } else {
-        userContent = [];
+    } finally {
+      if (conversationUsage) {
+        recordUsageTelemetry({ [USAGE_OUTPUT_KEY]: conversationUsage }, this.type, model.model_id);
       }
-      if (userContent.length === 0) break;
-
-      const userMsg: ChatMessage = { role: "user", content: userContent };
-      history.push(userMsg);
-      yield {
-        type: "object-delta",
-        port: "messages",
-        objectDelta: [userMsg],
-      } as StreamEvent<AiChatWithKbTaskOutput>;
     }
-
-    // `text`, `messages`, and `references` ride the x-stream merge into the
-    // final output. `iterations` has no x-stream, so we deliver it in
-    // `finish.data` for the StreamProcessor to merge over the accumulated
-    // ports.
-    yield {
-      type: "finish",
-      data: { iterations: completedTurns } as Partial<AiChatWithKbTaskOutput>,
-      ...(conversationUsage ? { usage: conversationUsage } : {}),
-    } as StreamEvent<AiChatWithKbTaskOutput>;
   }
 }
 

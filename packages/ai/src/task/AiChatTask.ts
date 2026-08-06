@@ -11,11 +11,12 @@ import type {
   TaskInput,
   Usage,
 } from "@workglow/task-graph";
-import { mergeUsage, TaskConfigSchema } from "@workglow/task-graph";
+import { mergeUsage, TaskConfigSchema, USAGE_OUTPUT_KEY } from "@workglow/task-graph";
 import type { IHumanRequest } from "@workglow/util";
 import { DEFAULT_LIMITS, resolveHumanConnector } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import { recordUsageTelemetry } from "../capability/UsageTelemetry";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
@@ -331,102 +332,113 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
       objectDelta: [...history],
     } as StreamEvent<AiChatTaskOutput>;
 
-    for (let turn = 0; turn < maxIterations; turn++) {
-      const perTurnInput: AiChatTaskInput = { ...input, messages: [...history] };
-      const turnJobInput = await this.getJobInput(perTurnInput);
+    // `finally`, not a trailing call: a consumer that stops the chat early
+    // closes this generator at a `yield` and never reaches the statement
+    // after the loop — but the turns it already drove were still billed.
+    // Recorded once per conversation, not once per turn: telemetry counts
+    // one run's token accounting, and a chat run is one run.
+    try {
+      for (let turn = 0; turn < maxIterations; turn++) {
+        const perTurnInput: AiChatTaskInput = { ...input, messages: [...history] };
+        const turnJobInput = await this.getJobInput(perTurnInput);
 
-      // The shared seam accumulates this turn's text and swallows the
-      // inner-turn `finish` (the outer `finish` is emitted at the end),
-      // keeping its `usage` sibling for the conversation total.
-      const turn_ = runChatTurn<AiChatTaskOutput>({
-        strategy,
-        jobInput: turnJobInput as unknown as AiJobInput<TaskInput>,
-        context,
-        runnerId: this.runConfig.runnerId,
-        textPort: "text",
-      });
-      let assistantText = "";
-      // `finally`, not a trailing statement: a consumer that stops mid-turn
-      // closes this generator at its `yield`, and the tokens that turn
-      // already billed must still be accounted for.
-      try {
-        for await (const event of turn_.events) {
-          yield event;
+        // The shared seam accumulates this turn's text and swallows the
+        // inner-turn `finish` (the outer `finish` is emitted at the end),
+        // keeping its `usage` sibling for the conversation total.
+        const turn_ = runChatTurn<AiChatTaskOutput>({
+          strategy,
+          jobInput: turnJobInput as unknown as AiJobInput<TaskInput>,
+          context,
+          runnerId: this.runConfig.runnerId,
+          textPort: "text",
+        });
+        let assistantText = "";
+        // `finally`, not a trailing statement: a consumer that stops mid-turn
+        // closes this generator at its `yield`, and the tokens that turn
+        // already billed must still be accounted for.
+        try {
+          for await (const event of turn_.events) {
+            yield event;
+          }
+        } finally {
+          assistantText = turn_.text;
+          conversationUsage = mergeUsage(conversationUsage, turn_.usage);
         }
-      } finally {
-        assistantText = turn_.text;
-        conversationUsage = mergeUsage(conversationUsage, turn_.usage);
+
+        // A turn that produced no assistant content (provider emitted only
+        // non-text events, an immediate finish, or an empty/aborted response)
+        // must not append an empty assistant message to history nor count as a
+        // completed turn — doing so poisons multi-turn context and burns a turn.
+        // Treat it as end-of-conversation instead.
+        if (assistantText.length === 0) {
+          break;
+        }
+
+        const assistantMsg: ChatMessage = {
+          role: "assistant",
+          content: [{ type: "text", text: assistantText }],
+        };
+        history.push(assistantMsg);
+        completedTurns = turn + 1;
+        yield {
+          type: "object-delta",
+          port: "messages",
+          objectDelta: [assistantMsg],
+        } as StreamEvent<AiChatTaskOutput>;
+
+        const request: IHumanRequest = {
+          requestId: crypto.randomUUID(),
+          targetHumanId: "default",
+          kind: "elicit",
+          message: "",
+          contentSchema: chatConnectorContentSchema,
+          contentData: undefined,
+          expectsResponse: true,
+          mode: "multi-turn",
+          metadata: { iteration: turn, taskId: this.id },
+        };
+
+        const response = await connector.send(request, context.signal);
+        if (response.action === "cancel" || response.action === "decline") break;
+
+        // The elicit schema asks for a plain string; accept either shape so
+        // programmatic callers can also send raw ContentBlock[] (e.g. images).
+        // `response.done` is a form-completion flag (the submit happened), not
+        // a conversation signal — do NOT treat it as end-of-chat. The signal
+        // that the user wants to end the conversation is empty content.
+        const raw = response.content?.content;
+        let userContent: ContentBlock[];
+        if (typeof raw === "string") {
+          const text = raw.trim();
+          userContent = text.length > 0 ? [{ type: "text", text: raw }] : [];
+        } else if (Array.isArray(raw)) {
+          userContent = raw as ContentBlock[];
+        } else {
+          userContent = [];
+        }
+        if (userContent.length === 0) break;
+
+        const userMsg: ChatMessage = { role: "user", content: userContent };
+        history.push(userMsg);
+        yield {
+          type: "object-delta",
+          port: "messages",
+          objectDelta: [userMsg],
+        } as StreamEvent<AiChatTaskOutput>;
       }
 
-      // A turn that produced no assistant content (provider emitted only
-      // non-text events, an immediate finish, or an empty/aborted response)
-      // must not append an empty assistant message to history nor count as a
-      // completed turn — doing so poisons multi-turn context and burns a turn.
-      // Treat it as end-of-conversation instead.
-      if (assistantText.length === 0) {
-        break;
-      }
-
-      const assistantMsg: ChatMessage = {
-        role: "assistant",
-        content: [{ type: "text", text: assistantText }],
-      };
-      history.push(assistantMsg);
-      completedTurns = turn + 1;
+      // `text` and `messages` ride the x-stream merge into the final output.
+      // `iterations` has no x-stream, so we deliver it in `finish.data` for
+      // the StreamProcessor to merge over the accumulated ports.
       yield {
-        type: "object-delta",
-        port: "messages",
-        objectDelta: [assistantMsg],
+        type: "finish",
+        data: { iterations: completedTurns } as Partial<AiChatTaskOutput>,
+        ...(conversationUsage ? { usage: conversationUsage } : {}),
       } as StreamEvent<AiChatTaskOutput>;
-
-      const request: IHumanRequest = {
-        requestId: crypto.randomUUID(),
-        targetHumanId: "default",
-        kind: "elicit",
-        message: "",
-        contentSchema: chatConnectorContentSchema,
-        contentData: undefined,
-        expectsResponse: true,
-        mode: "multi-turn",
-        metadata: { iteration: turn, taskId: this.id },
-      };
-
-      const response = await connector.send(request, context.signal);
-      if (response.action === "cancel" || response.action === "decline") break;
-
-      // The elicit schema asks for a plain string; accept either shape so
-      // programmatic callers can also send raw ContentBlock[] (e.g. images).
-      // `response.done` is a form-completion flag (the submit happened), not
-      // a conversation signal — do NOT treat it as end-of-chat. The signal
-      // that the user wants to end the conversation is empty content.
-      const raw = response.content?.content;
-      let userContent: ContentBlock[];
-      if (typeof raw === "string") {
-        const text = raw.trim();
-        userContent = text.length > 0 ? [{ type: "text", text: raw }] : [];
-      } else if (Array.isArray(raw)) {
-        userContent = raw as ContentBlock[];
-      } else {
-        userContent = [];
+    } finally {
+      if (conversationUsage) {
+        recordUsageTelemetry({ [USAGE_OUTPUT_KEY]: conversationUsage }, this.type, model.model_id);
       }
-      if (userContent.length === 0) break;
-
-      const userMsg: ChatMessage = { role: "user", content: userContent };
-      history.push(userMsg);
-      yield {
-        type: "object-delta",
-        port: "messages",
-        objectDelta: [userMsg],
-      } as StreamEvent<AiChatTaskOutput>;
     }
-
-    // `text` and `messages` ride the x-stream merge into the final output.
-    // `iterations` has no x-stream, so we deliver it in `finish.data` for
-    // the StreamProcessor to merge over the accumulated ports.
-    yield {
-      type: "finish",
-      data: { iterations: completedTurns } as Partial<AiChatTaskOutput>,
-      ...(conversationUsage ? { usage: conversationUsage } : {}),
-    } as StreamEvent<AiChatTaskOutput>;
   }
 }
