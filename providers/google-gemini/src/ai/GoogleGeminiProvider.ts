@@ -7,6 +7,7 @@
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
 import type { Capability, ModelRecord } from "@workglow/ai/worker";
 import { AiProvider } from "@workglow/ai/worker";
+import { deleteGeminiCachedContent } from "./common/Gemini_CacheStore";
 import { geminiWorkerRunFnSpecs, inferGeminiCapabilities } from "./common/Gemini_Capabilities";
 import { GOOGLE_GEMINI } from "./common/Gemini_Constants";
 import type { GeminiModelConfig } from "./common/Gemini_ModelSchema";
@@ -31,5 +32,11 @@ export class GoogleGeminiProvider extends createCloudProviderClass<GeminiModelCo
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
     return geminiWorkerRunFnSpecs();
+  }
+
+  override async disposeSession(sessionId: string): Promise<void> {
+    // Checkpoint ids may map to server-side CachedContent, which bills storage
+    // per token-hour until its TTL — delete eagerly on dispose.
+    await deleteGeminiCachedContent(sessionId);
   }
 }

@@ -140,7 +140,7 @@ describe("WebBrowser_Chat idle-touch on text-delta", () => {
         new AbortController().signal,
         emit,
         undefined,
-        sid
+        { sessionId: sid }
       );
 
       // First chunk (progressive snapshot: chunk 1).
@@ -222,7 +222,7 @@ describe("WebBrowser_Chat idle-touch on text-delta", () => {
         new AbortController().signal,
         emit,
         undefined,
-        sid
+        { sessionId: sid }
       );
       // Cached after the turn, with a fresh idle timer running.
       expect(getChromeSession(sid)).toBeDefined();

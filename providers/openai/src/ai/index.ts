@@ -14,7 +14,11 @@ export * from "./common/OpenAI_ModelSearch";
 export * from "./registerOpenAi";
 
 import { OPENAI_RUN_FN_SPECS } from "./common/OpenAI_Capabilities";
-import { getReasoningConfig, resolvePromptCacheKey } from "./common/OpenAI_Client";
+import {
+  _testOnly as clientTestOnly,
+  getReasoningConfig,
+  resolvePromptCacheKey,
+} from "./common/OpenAI_Client";
 import { OPENAI_RUN_FNS } from "./common/OpenAI_JobRunFns";
 import {
   _resetOpenAIResponsesWarnings,
@@ -37,4 +41,5 @@ export const _testOnly = {
   warnPenaltyDroppedOnce,
   warnStrictDowngradedOnce,
   _resetOpenAIResponsesWarnings,
+  setOpenAIClientForTests: clientTestOnly.setOpenAIClientForTests,
 } as const;

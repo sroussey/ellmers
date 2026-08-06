@@ -8,6 +8,7 @@ import type { TextGenerationPipeline } from "@huggingface/transformers";
 import type {
   AiProviderRunFn,
   ChatMessage,
+  CheckpointPrefix,
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   ToolDefinition,
@@ -24,14 +25,16 @@ import {
   filterValidToolCalls,
   toTextFlatMessages,
 } from "@workglow/ai/worker";
+import { renderHftPrefixPrompt, resolveHftParityAnchor } from "./HFT_CacheCheckpoint";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
-import type { HftPrefixRewindSession } from "./HFT_Pipeline";
 import {
+  deleteHftSession,
   getHftSession,
   getPipeline,
   getPipelineCacheKey,
+  hasGpuBufferEntries,
   loadTransformersSDK,
-  setHftSession,
+  snapshotHftSession,
   withHftPipelineInUse,
 } from "./HFT_Pipeline";
 import { createStreamingTextStreamer } from "./HFT_Streaming";
@@ -87,13 +90,23 @@ function normalizeParsedToolCalls(
 // HFT tool mapping
 // ============================================================================
 
-function mapHFTTools(tools: ReadonlyArray<ToolDefinition>) {
+/** OpenAI-function-shaped tool entry accepted by HFT chat templates. */
+export interface HftTemplateTool {
+  readonly type: "function";
+  readonly function: {
+    readonly name: string;
+    readonly description: string;
+    readonly parameters: ToolDefinition["inputSchema"];
+  };
+}
+
+export function mapHFTTools(tools: ReadonlyArray<ToolDefinition>): HftTemplateTool[] {
   return tools.map((t) => ({
     type: "function" as const,
     function: {
       name: t.name,
       description: buildToolDescription(t),
-      parameters: t.inputSchema as any,
+      parameters: t.inputSchema,
     },
   }));
 }
@@ -296,6 +309,69 @@ function buildPromptAndPrefix(
   };
 }
 
+/**
+ * Builds the prompt a checkpoint consumer feeds: the checkpoint prefix's
+ * messages followed by this call's tail, rendered with the same template
+ * options as {@link renderHftPrefixPrompt} (prefix systemPrompt, prefix tools)
+ * so on concatenative templates the result begins byte-for-byte with the
+ * warm-up rendering. toolChoice adjustments that rewrite the shared region (a
+ * "required" directive, a narrowed tool list) simply break that parity — the
+ * caller's `startsWith` guard then falls back to a full re-encode, which stays
+ * correct because the prompt carries the entire prefix.
+ */
+function buildCheckpointPromptAndPrefix(
+  tokenizer: TextGenerationPipeline["tokenizer"],
+  prefix: CheckpointPrefix,
+  input: ToolCallingTaskInput,
+  modelFamily: string | null
+): { prompt: string; responsePrefix: string | undefined } {
+  const tailMessages: ReadonlyArray<ChatMessage> =
+    input.messages && input.messages.length > 0
+      ? input.messages
+      : [{ role: "user", content: [{ type: "text", text: extractPromptText(input.prompt) }] }];
+  // A caller systemPrompt wins over the prefix's; when they differ the render
+  // no longer starts with the warm-up rendering, so parity fails and the call
+  // takes the full re-encode fallback — correctness over cache.
+  const messages = buildHFTMessages(
+    [...(prefix.messages ?? []), ...tailMessages],
+    input.systemPrompt || prefix.systemPrompt,
+    undefined,
+    input.toolChoice
+  );
+
+  let tools: ReturnType<typeof mapHFTTools> | undefined;
+  if (input.toolChoice === "none") {
+    tools = undefined;
+  } else if (
+    typeof input.toolChoice === "string" &&
+    input.toolChoice !== "auto" &&
+    input.toolChoice !== "required"
+  ) {
+    const selected = (input.tools ?? []).filter((t: ToolDefinition) => t.name === input.toolChoice);
+    const source = selected.length > 0 ? selected : (prefix.tools ?? input.tools);
+    tools = source && source.length > 0 ? mapHFTTools(source) : undefined;
+  } else {
+    const source = prefix.tools && prefix.tools.length > 0 ? prefix.tools : input.tools;
+    tools = source && source.length > 0 ? mapHFTTools(source) : undefined;
+  }
+
+  const basePrompt = tokenizer.apply_chat_template(messages as any, {
+    ...(tools ? { tools: tools as any } : {}),
+    tokenize: false,
+    add_generation_prompt: true,
+  }) as string;
+
+  const responsePrefix =
+    input.toolChoice === "none" || hasToolMessages(input)
+      ? undefined
+      : getGenerationPrefix(modelFamily, forcedToolSelection(input));
+
+  return {
+    prompt: responsePrefix ? `${basePrompt}${responsePrefix}` : basePrompt,
+    responsePrefix,
+  };
+}
+
 // ============================================================================
 // Provider run functions
 // ============================================================================
@@ -304,16 +380,48 @@ export const HFT_ToolCalling: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, signal, emit, _outputSchema, sessionId) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
+  const sessionId = sessionContext?.sessionId;
+  const isCheckpoint = sessionContext?.prefix !== undefined;
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
     const generateText = (await getPipeline(model!, emit, {}, signal)) as TextGenerationPipeline;
     const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
     const modelFamily = detectModelFamilyFromConfig(model!);
-    const { prompt, responsePrefix } = buildPromptAndPrefix(
-      generateText.tokenizer,
-      input,
-      modelFamily
-    );
+
+    const modelPath = model!.provider_config.model_path;
+    const cacheKey = getPipelineCacheKey(model!);
+    let hftSession = sessionId ? getHftSession(sessionId) : undefined;
+
+    // The exact text the stored KV tokens correspond to — the `startsWith`
+    // anchor for prefix-rewind reuse. Resolved from the snapshot's own
+    // encodedText when one exists (no per-call jinja re-render); re-rendered
+    // otherwise: the fingerprint session's shared tools+systemPrompt region,
+    // or the checkpoint prefix rendering.
+    let prefixPrompt: string | undefined;
+    let promptParts: { prompt: string; responsePrefix: string | undefined };
+    if (isCheckpoint) {
+      const prefix = sessionContext!.prefix!;
+      prefixPrompt = resolveHftParityAnchor(hftSession, () =>
+        renderHftPrefixPrompt(generateText.tokenizer, prefix)
+      );
+      promptParts = buildCheckpointPromptAndPrefix(
+        generateText.tokenizer,
+        prefix,
+        input,
+        modelFamily
+      );
+    } else {
+      if (sessionId) {
+        prefixPrompt = resolveHftParityAnchor(hftSession, () =>
+          renderHftPrefixPrompt(generateText.tokenizer, {
+            systemPrompt: input.systemPrompt,
+            tools: input.tools,
+          })
+        );
+      }
+      promptParts = buildPromptAndPrefix(generateText.tokenizer, input, modelFamily);
+    }
+    const { prompt, responsePrefix } = promptParts;
 
     // Accumulate raw tokens for post-hoc tool-call parsing, and feed each
     // delta through a markup filter that emits cleaned text-delta events.
@@ -336,42 +444,57 @@ export const HFT_ToolCalling: AiProviderRunFn<
     }
 
     // Session cache: prefix-rewind for tool calling (streaming)
-    const modelPath = model!.provider_config.model_path;
-    const cacheKey = getPipelineCacheKey(model!);
-    let session = sessionId ? getHftSession(sessionId) : undefined;
     let past_key_values: any = undefined;
 
-    if (sessionId && !session) {
+    // prefix-rewind trusts cached KV tokens positionally, so a snapshot is
+    // only warmed / attached when the fed prompt provably starts with the
+    // exact text the stored KV encodes; otherwise generation falls back to a
+    // full re-encode of `prompt`, which stays correct.
+    const prefixParityOk = prefixPrompt !== undefined && prompt.startsWith(prefixPrompt);
+
+    if (sessionId && !hftSession && prefixParityOk) {
+      // Warm the shared region — the fingerprint's tools+systemPrompt block or
+      // a checkpoint's re-encoded prefix (worker restarted / state evicted).
+      // Never the full prompt: snapshotting this call's user turn would poison
+      // the cache for the next caller, whose different turn would be
+      // positionally misaligned with the stored KV.
       const { DynamicCache } = await loadTransformersSDK();
-      const hfModel = generateText.model;
-      const hfTokenizer = generateText.tokenizer;
       const cache = new DynamicCache();
-      const tokenized = hfTokenizer(prompt);
-      await hfModel.generate({
+      const tokenized = generateText.tokenizer(prefixPrompt!);
+      await generateText.model.generate({
         ...tokenized,
         max_new_tokens: 0,
         past_key_values: cache,
       });
-      // Snapshot the prefix entries so we can create fresh caches on each rewind
-      const baseEntries: Record<string, any> = {};
-      for (const key of Object.keys(cache)) {
-        baseEntries[key] = cache[key];
-      }
-      const newSession: HftPrefixRewindSession = {
-        mode: "prefix-rewind",
-        baseEntries,
-        baseSeqLength: cache.get_seq_length(),
+      hftSession = snapshotHftSession(
+        sessionId,
+        cache as Record<string, any>,
         modelPath,
         cacheKey,
-      };
-      setHftSession(sessionId, newSession);
-      session = newSession;
+        prefixPrompt
+      );
     }
 
-    if (session?.mode === "prefix-rewind") {
+    if (
+      hftSession?.mode === "prefix-rewind" &&
+      hftSession.modelPath === modelPath &&
+      prefixParityOk &&
+      // WebGPU snapshots cannot be shared: the first decode step's update()
+      // would dispose the snapshot's gpu-buffer tensors, so skip the attach
+      // and re-encode the full prompt instead.
+      !hasGpuBufferEntries(hftSession.baseEntries)
+    ) {
       // Create a fresh DynamicCache from the prefix snapshot for this call
       const { DynamicCache } = await loadTransformersSDK();
-      past_key_values = new DynamicCache(session.baseEntries);
+      past_key_values = new DynamicCache(hftSession.baseEntries);
+    }
+
+    if (sessionContext?.emitCheckpointId && !past_key_values) {
+      // Emitting without a consumable prefix KV (no parent checkpoint, or
+      // parity fell back to a full re-encode): attach an empty cache so this
+      // turn's KV can still be snapshotted under the emitted checkpoint id.
+      const { DynamicCache } = await loadTransformersSDK();
+      past_key_values = new DynamicCache();
     }
 
     try {
@@ -401,6 +524,21 @@ export const HFT_ToolCalling: AiProviderRunFn<
 
     if (validToolCalls.length > 0) {
       emit({ type: "object-delta", port: "toolCalls", objectDelta: [...validToolCalls] });
+    }
+
+    if (sessionContext?.emitCheckpointId && past_key_values) {
+      // `fullText` is the raw generated text (pre markup-filter), so
+      // prompt + fullText is exactly what the cache encodes.
+      snapshotHftSession(
+        sessionContext.emitCheckpointId,
+        past_key_values,
+        modelPath,
+        cacheKey,
+        prompt + fullText
+      );
+      if (sessionContext.supersedeParent && sessionId) {
+        deleteHftSession(sessionId);
+      }
     }
 
     emit({

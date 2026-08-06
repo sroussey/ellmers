@@ -6,6 +6,7 @@
 
 import type { AiProviderPreviewRunFn, AiProviderRunFnRegistration } from "@workglow/ai";
 import {
+  OPENAI_CACHE_CHECKPOINT,
   OPENAI_COUNT_TOKENS,
   OPENAI_IMAGE_EDITING,
   OPENAI_IMAGE_GENERATION,
@@ -22,6 +23,7 @@ import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 export { getClient, getModelName, loadOpenAISDK } from "./OpenAI_Client";
 
+import { OpenAI_CacheCheckpoint_Stream } from "./OpenAI_CacheCheckpoint";
 import {
   OpenAI_CountTokens_Preview,
   OpenAI_CountTokens_Stream,
@@ -54,6 +56,7 @@ export const OPENAI_RUN_FNS: readonly AiProviderRunFnRegistration<any, any, Open
   { serves: OPENAI_COUNT_TOKENS, runFn: OpenAI_CountTokens_Stream },
   { serves: OPENAI_MODEL_SEARCH, runFn: OpenAI_ModelSearch_Stream },
   { serves: OPENAI_MODEL_INFO, runFn: OpenAI_ModelInfo_Stream },
+  { serves: OPENAI_CACHE_CHECKPOINT, runFn: OpenAI_CacheCheckpoint_Stream },
 ];
 
 export const OPENAI_PREVIEW_TASKS: Record<

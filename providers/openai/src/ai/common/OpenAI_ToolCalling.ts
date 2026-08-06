@@ -17,6 +17,7 @@ import {
   mapResponsesToolChoice,
 } from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, toOpenAIMessages } from "@workglow/ai/worker";
+import { mergeOpenAICheckpointPrefix } from "./OpenAI_CacheCheckpoint";
 import { finalizeResponsesRequest, getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
@@ -26,20 +27,37 @@ import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
  * {@link accumulateOpenAIResponsesStream}, which emits `text-delta` and tool-call
  * `object-delta` events plus a final empty `finish`.
  *
- * Defence-in-depth: each tool-call `object-delta` is filtered against
- * `input.tools` so a hallucinated function name never reaches the consumer.
+ * Defence-in-depth: each tool-call `object-delta` is filtered against the
+ * effective tool declarations (the caller's tools, or the checkpoint prefix's
+ * on fallback) so a hallucinated function name never reaches the consumer.
  */
 export const OpenAI_ToolCalling_Stream: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   OpenAiModelConfig
-> = async (input, model, signal, emit) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
   const client = await getClient(model);
   const modelName = getModelName(model);
 
-  const tools = buildResponsesTools(input.tools);
+  // Checkpoint consumption: replay the prefix content ahead of the tail so the
+  // request's literal prefix matches the warm-up and hits the automatic
+  // server-side prompt cache. The effective tool declarations come from the
+  // merge too — the caller's tools win, and an empty list falls back to the
+  // prefix's so the warmed tool segment (and its prompt_cache_key) is shared.
+  const merged = mergeOpenAICheckpointPrefix(sessionContext, input);
+  const toolDefinitions = merged?.tools ?? input.tools;
+  const tools = buildResponsesTools(toolDefinitions);
   const { input: responsesInput, instructions } = buildResponsesInput({
-    messages: toOpenAIMessages(input),
+    messages: toOpenAIMessages(
+      merged
+        ? ({
+            ...input,
+            messages: merged.messages,
+            systemPrompt: merged.systemPrompt,
+            prompt: "",
+          } as ToolCallingTaskInput)
+        : input
+    ),
   });
   const toolChoice = mapResponsesToolChoice(input.toolChoice);
 
@@ -59,11 +77,11 @@ export const OpenAI_ToolCalling_Stream: AiProviderRunFn<
     { signal }
   );
 
-  await accumulateOpenAIResponsesStream<ToolCallingTaskOutput>(
+  const usage = await accumulateOpenAIResponsesStream<ToolCallingTaskOutput>(
     stream as AsyncIterable<unknown>,
     (event) => {
       if (event.type === "object-delta" && event.port === "toolCalls") {
-        const validated = filterValidToolCalls(event.objectDelta as ToolCalls, input.tools);
+        const validated = filterValidToolCalls(event.objectDelta as ToolCalls, toolDefinitions);
         if (validated.length > 0) {
           emit({ type: "object-delta", port: "toolCalls", objectDelta: validated });
         }
@@ -72,5 +90,5 @@ export const OpenAI_ToolCalling_Stream: AiProviderRunFn<
       emit(event);
     }
   );
-  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
+  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput, usage });
 };

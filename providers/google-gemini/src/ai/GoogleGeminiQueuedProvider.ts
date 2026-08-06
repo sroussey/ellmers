@@ -5,8 +5,10 @@
  */
 
 import type { Capability, ModelRecord } from "@workglow/ai";
-import { AiProvider } from "@workglow/ai";
+import { AiProvider, getAiProviderRegistry, noopEmit } from "@workglow/ai";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
+import type { TaskInput } from "@workglow/task-graph";
+import { deleteGeminiCachedContent } from "./common/Gemini_CacheStore";
 import { geminiWorkerRunFnSpecs, inferGeminiCapabilities } from "./common/Gemini_Capabilities";
 import { GOOGLE_GEMINI } from "./common/Gemini_Constants";
 import type { GeminiModelConfig } from "./common/Gemini_ModelSchema";
@@ -30,5 +32,23 @@ export class GoogleGeminiQueuedProvider extends createCloudProviderClass<GeminiM
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
     return geminiWorkerRunFnSpecs();
+  }
+
+  override async disposeSession(sessionId: string): Promise<void> {
+    const disposeFn = getAiProviderRegistry().getRunFnFor(this.name, ["session.dispose"]);
+    if (disposeFn) {
+      await disposeFn(
+        {} as TaskInput,
+        undefined,
+        AbortSignal.timeout(30_000),
+        noopEmit,
+        undefined,
+        { sessionId }
+      );
+      return;
+    }
+
+    // An unregistered inline provider still owns its cache in this runtime.
+    await deleteGeminiCachedContent(sessionId);
   }
 }

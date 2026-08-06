@@ -341,6 +341,11 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
    * Dispose of a previously created session.
    * Provider subclasses override this to release resources tied to the session.
    * The base implementation is a no-op.
+   *
+   * MUST be idempotent: tolerate ids that were never allocated or were already
+   * disposed. Checkpoint supersede disposes a parent session directly while the
+   * run's ResourceScope disposer for the same id still fires at run end, so a
+   * second call for a gone id is expected (guard on your session map lookup).
    */
   async disposeSession(_sessionId: string): Promise<void> {}
 

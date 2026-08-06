@@ -47,6 +47,9 @@ export const WebBrowser_TextGeneration: AiProviderRunFn<
   try {
     const stream = session.promptStreaming(input.prompt, { signal });
     await snapshotStreamToTextDeltas<TextGenerationTaskOutput>(stream, "text", emit);
+    // No `usage`: the Chrome built-in AI API reports no token counts (it exposes
+    // only quota measures such as `inputUsage`, which are not billing counters).
+    // Absent is the honest answer — a zero here would read as "cost nothing".
     emit({ type: "finish", data: {} as TextGenerationTaskOutput });
   } finally {
     session.destroy();

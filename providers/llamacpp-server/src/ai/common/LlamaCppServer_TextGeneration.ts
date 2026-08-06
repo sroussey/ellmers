@@ -8,8 +8,13 @@ import type {
   AiProviderRunFn,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
+  Usage,
 } from "@workglow/ai";
-import { localOnlyFetch } from "@workglow/ai/provider-utils";
+import {
+  localOnlyFetch,
+  mapOpenAIChatUsage,
+  OPENAI_STREAM_USAGE_OPTIONS,
+} from "@workglow/ai/provider-utils";
 import {
   acquireBaseUrl,
   buildServerUrl,
@@ -74,6 +79,7 @@ export function createLlamaCppServerTextGenerationStream(
         ? { frequency_penalty: input.frequencyPenalty }
         : {}),
       ...(input.presencePenalty !== undefined ? { presence_penalty: input.presencePenalty } : {}),
+      ...OPENAI_STREAM_USAGE_OPTIONS,
     });
 
     const { baseUrl, release } = await acquire(model, opts);
@@ -95,13 +101,15 @@ export function createLlamaCppServerTextGenerationStream(
           `LlamaCppServer: HTTP ${response.status} from /v1/chat/completions (text-generation) — ${text}`
         );
       }
+      let usage: Usage | undefined;
       for await (const delta of readChatCompletionDeltas(response, signal)) {
         if (delta.done) break;
+        usage = mapOpenAIChatUsage(delta.usage) ?? usage;
         if (delta.contentDelta) {
           emit({ type: "text-delta", port: "text", textDelta: delta.contentDelta });
         }
       }
-      emit({ type: "finish", data: {} as TextGenerationTaskOutput });
+      emit({ type: "finish", data: {} as TextGenerationTaskOutput, usage });
     } finally {
       await release();
     }

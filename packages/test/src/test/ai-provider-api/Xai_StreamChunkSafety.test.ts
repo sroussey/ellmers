@@ -146,4 +146,79 @@ describe("xAI streaming run-fns tolerate SDK chunks without choices/delta", () =
       });
     }
   });
+
+  // Turning on `include_usage` is what appends the terminal `choices: []` frame
+  // these suites guard against, so the usage assertions belong right here.
+  describe("usage from the terminal include_usage frame", () => {
+    const requestBody = (): Record<string, unknown> =>
+      JSON.parse(String((fetchSpy.mock.calls[0]?.[1] as RequestInit).body));
+
+    it("asks for usage and maps the terminal frame onto finish", async () => {
+      fetchSpy.mockResolvedValueOnce(
+        sseResponse([
+          { choices: [{ delta: { content: "hi" } }] },
+          {
+            choices: [],
+            usage: {
+              prompt_tokens: 31,
+              completion_tokens: 7,
+              total_tokens: 38,
+              prompt_tokens_details: { cached_tokens: 12 },
+              completion_tokens_details: { reasoning_tokens: 4 },
+            },
+          },
+        ])
+      );
+
+      const events: any[] = [];
+      await textSummaryFn({ text: "input" } as any, model, new AbortController().signal, (e) =>
+        events.push(e)
+      );
+
+      expect(requestBody().stream_options).toEqual({ include_usage: true });
+      const finish = events.at(-1);
+      expect(finish.type).toBe("finish");
+      expect(finish.usage).toEqual({
+        input: 31,
+        output: 7,
+        cached: 12,
+        cacheWrite: undefined,
+        reasoning: 4,
+        total: 38,
+        extra: undefined,
+      });
+    });
+
+    it("leaves usage absent when the stream never reports it", async () => {
+      fetchSpy.mockResolvedValueOnce(sseResponse([{ choices: [{ delta: { content: "hi" } }] }]));
+
+      const events: any[] = [];
+      await textSummaryFn({ text: "input" } as any, model, new AbortController().signal, (e) =>
+        events.push(e)
+      );
+
+      expect(events.at(-1).usage).toBeUndefined();
+    });
+
+    it("reports xAI's unreported cacheWrite as undefined, not 0", async () => {
+      fetchSpy.mockResolvedValueOnce(
+        sseResponse([
+          { choices: [{ delta: { content: "hi" } }] },
+          { choices: [], usage: { prompt_tokens: 5, completion_tokens: 2 } },
+        ])
+      );
+
+      const events: any[] = [];
+      await textSummaryFn({ text: "input" } as any, model, new AbortController().signal, (e) =>
+        events.push(e)
+      );
+
+      const { usage } = events.at(-1);
+      expect(usage.input).toBe(5);
+      expect(usage.cached).toBeUndefined();
+      expect(usage.cacheWrite).toBeUndefined();
+      expect(usage.reasoning).toBeUndefined();
+      expect(usage.total).toBeUndefined();
+    });
+  });
 });

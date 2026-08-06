@@ -8,8 +8,13 @@ import type {
   AiProviderRunFn,
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
+  Usage,
 } from "@workglow/ai";
-import { isStrictCompatibleSchema } from "@workglow/ai/provider-utils";
+import {
+  isStrictCompatibleSchema,
+  mapOpenAIChatUsage,
+  OPENAI_STREAM_USAGE_OPTIONS,
+} from "@workglow/ai/provider-utils";
 import { parsePartialJson } from "@workglow/util/worker";
 import { getClient, getModelName } from "./Xai_Client";
 import type { XaiModelConfig } from "./Xai_ModelSchema";
@@ -45,13 +50,16 @@ export const Xai_StructuredGeneration_Stream: AiProviderRunFn<
       max_completion_tokens: input.maxTokens,
       temperature: input.temperature,
       stream: true,
+      ...OPENAI_STREAM_USAGE_OPTIONS,
     },
     { signal }
   );
 
   let accumulatedJson = "";
   let refusal = "";
+  let usage: Usage | undefined;
   for await (const chunk of stream) {
+    usage = mapOpenAIChatUsage(chunk.usage) ?? usage;
     const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
       accumulatedJson += delta;
@@ -73,5 +81,9 @@ export const Xai_StructuredGeneration_Stream: AiProviderRunFn<
   } catch {
     finalObject = parsePartialJson(accumulatedJson) ?? {};
   }
-  emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
+  emit({
+    type: "finish",
+    data: { object: finalObject } as StructuredGenerationTaskOutput,
+    usage,
+  });
 };

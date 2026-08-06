@@ -4,8 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFn, TextRewriterTaskInput, TextRewriterTaskOutput } from "@workglow/ai";
-import { localOnlyFetch } from "@workglow/ai/provider-utils";
+import type {
+  AiProviderRunFn,
+  TextRewriterTaskInput,
+  TextRewriterTaskOutput,
+  Usage,
+} from "@workglow/ai";
+import {
+  localOnlyFetch,
+  mapOpenAIChatUsage,
+  OPENAI_STREAM_USAGE_OPTIONS,
+} from "@workglow/ai/provider-utils";
 import {
   acquireBaseUrl,
   buildServerUrl,
@@ -30,6 +39,7 @@ export function createLlamaCppServerTextRewriterStream(
         { role: "user", content: input.text },
       ],
       stream: true,
+      ...OPENAI_STREAM_USAGE_OPTIONS,
     });
     const { baseUrl, release } = await acquire(model, opts);
     try {
@@ -49,13 +59,15 @@ export function createLlamaCppServerTextRewriterStream(
           `LlamaCppServer: HTTP ${response.status} from /v1/chat/completions (rewriter) — ${text}`
         );
       }
+      let usage: Usage | undefined;
       for await (const delta of readChatCompletionDeltas(response, signal)) {
         if (delta.done) break;
+        usage = mapOpenAIChatUsage(delta.usage) ?? usage;
         if (delta.contentDelta) {
           emit({ type: "text-delta", port: "text", textDelta: delta.contentDelta });
         }
       }
-      emit({ type: "finish", data: {} as TextRewriterTaskOutput });
+      emit({ type: "finish", data: {} as TextRewriterTaskOutput, usage });
     } finally {
       await release();
     }

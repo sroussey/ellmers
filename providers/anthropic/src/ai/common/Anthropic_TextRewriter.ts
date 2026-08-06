@@ -8,6 +8,7 @@ import type { AiProviderRunFn, TextRewriterTaskInput, TextRewriterTaskOutput } f
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
+import { createAnthropicUsageCollector } from "./Anthropic_Usage";
 
 export const Anthropic_TextRewriter_Stream: AiProviderRunFn<
   TextRewriterTaskInput,
@@ -27,11 +28,13 @@ export const Anthropic_TextRewriter_Stream: AiProviderRunFn<
     { signal }
   );
 
+  const usageCollector = createAnthropicUsageCollector();
   for await (const event of stream) {
+    usageCollector.observe(event);
     maybeEmitAnthropicRefusal(event, emit);
     if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
       emit({ type: "text-delta", port: "text", textDelta: event.delta.text });
     }
   }
-  emit({ type: "finish", data: {} as TextRewriterTaskOutput });
+  emit({ type: "finish", data: {} as TextRewriterTaskOutput, usage: usageCollector.result() });
 };

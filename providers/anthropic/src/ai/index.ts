@@ -14,12 +14,14 @@ export * from "./registerAnthropic";
 
 import { AnthropicQueuedProvider } from "./AnthropicQueuedProvider";
 import { ANTHROPIC_RUN_FN_SPECS } from "./common/Anthropic_Capabilities";
+import { _testOnly as clientTestOnly } from "./common/Anthropic_Client";
 import { ANTHROPIC_RUN_FNS } from "./common/Anthropic_JobRunFns";
 import { maybeEmitAnthropicRefusal } from "./common/Anthropic_Refusal";
 import {
   anthropicAcceptsSamplingParams,
   applyAnthropicSamplingParams,
 } from "./common/Anthropic_RequestParams";
+import { createAnthropicUsageCollector } from "./common/Anthropic_Usage";
 
 /**
  * @internal Symbols exported only for use by `@workglow/test`. Not part of the stable public API.
@@ -31,4 +33,6 @@ export const _testOnly = {
   maybeEmitAnthropicRefusal,
   anthropicAcceptsSamplingParams,
   applyAnthropicSamplingParams,
+  setAnthropicClientForTests: clientTestOnly.setAnthropicClientForTests,
+  createAnthropicUsageCollector,
 } as const;

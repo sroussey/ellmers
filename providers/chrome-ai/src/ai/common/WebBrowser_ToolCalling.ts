@@ -130,7 +130,7 @@ export const WebBrowser_ToolCalling: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   WebBrowserModelConfig
-> = async (input, _model, signal, emit, _outputSchema, sessionId) => {
+> = async (input, _model, signal, emit, _outputSchema, _sessionContext) => {
   const factory = getApi("LanguageModel", getChromeGlobal<typeof LanguageModel>("LanguageModel"));
   await ensureAvailable("LanguageModel", factory);
 

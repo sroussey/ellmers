@@ -4,7 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFn, TextSummaryTaskInput, TextSummaryTaskOutput } from "@workglow/ai";
+import type {
+  AiProviderRunFn,
+  TextSummaryTaskInput,
+  TextSummaryTaskOutput,
+  Usage,
+} from "@workglow/ai";
+import { mapOpenAIChatUsage, OPENAI_STREAM_USAGE_OPTIONS } from "@workglow/ai/provider-utils";
 import { getClient, getModelName } from "./Xai_Client";
 import type { XaiModelConfig } from "./Xai_ModelSchema";
 
@@ -28,11 +34,14 @@ export const Xai_TextSummary_Stream: AiProviderRunFn<
         { role: "user", content: input.text },
       ],
       stream: true,
+      ...OPENAI_STREAM_USAGE_OPTIONS,
     },
     { signal }
   );
 
+  let usage: Usage | undefined;
   for await (const chunk of stream) {
+    usage = mapOpenAIChatUsage(chunk.usage) ?? usage;
     const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
       emit({ type: "text-delta", port: "text", textDelta: delta });
@@ -42,5 +51,5 @@ export const Xai_TextSummary_Stream: AiProviderRunFn<
       emit({ type: "refusal", refusal: refusalDelta });
     }
   }
-  emit({ type: "finish", data: {} as TextSummaryTaskOutput });
+  emit({ type: "finish", data: {} as TextSummaryTaskOutput, usage });
 };

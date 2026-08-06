@@ -14,6 +14,7 @@ import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemin
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
 import { sanitizeSchemaForGemini } from "./Gemini_Schema";
+import { mapGeminiUsage } from "./Gemini_Usage";
 
 /**
  * Default reasoning allowance (in tokens) for the model's internal "thinking"
@@ -72,7 +73,9 @@ export const Gemini_StructuredGeneration_Stream: AiProviderRunFn<
 
   let accumulatedJson = "";
   let refusalCategory: string | undefined;
+  let lastUsageMetadata: unknown;
   for await (const chunk of result) {
+    lastUsageMetadata = chunk.usageMetadata ?? lastUsageMetadata;
     // `chunk.text` concatenates the answer text (thought parts are excluded).
     const text = chunk.text;
     if (text) {
@@ -93,5 +96,9 @@ export const Gemini_StructuredGeneration_Stream: AiProviderRunFn<
     finalObject = parsePartialJson(accumulatedJson) ?? {};
   }
   // json-mode finish exception: populate finish.data.object with parsed result.
-  emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
+  emit({
+    type: "finish",
+    data: { object: finalObject } as StructuredGenerationTaskOutput,
+    usage: mapGeminiUsage(lastUsageMetadata),
+  });
 };

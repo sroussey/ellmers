@@ -10,6 +10,7 @@ import type {
   AiProviderRunFnRegistration,
 } from "@workglow/ai";
 import {
+  HFT_CACHE_CHECKPOINT,
   HFT_COUNT_TOKENS,
   HFT_IMAGE_BACKGROUND_REMOVAL,
   HFT_IMAGE_CLASSIFICATION,
@@ -22,6 +23,7 @@ import {
   HFT_MODEL_DOWNLOAD_REMOVE,
   HFT_MODEL_INFO,
   HFT_MODEL_SEARCH,
+  HFT_SESSION_DISPOSE,
   HFT_TEXT_CLASSIFICATION,
   HFT_TEXT_EMBEDDING,
   HFT_TEXT_FILL_MASK,
@@ -38,6 +40,7 @@ import {
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 
 import { HFT_BackgroundRemoval } from "./HFT_BackgroundRemoval";
+import { HFT_CacheCheckpoint } from "./HFT_CacheCheckpoint";
 import { HFT_Chat } from "./HFT_Chat";
 import { HFT_CountTokens, HFT_CountTokens_Preview } from "./HFT_CountTokens";
 import { HFT_Download } from "./HFT_Download";
@@ -49,6 +52,7 @@ import { HFT_ImageToText } from "./HFT_ImageToText";
 import { HFT_ModelInfo } from "./HFT_ModelInfo";
 import { HFT_ModelSearch } from "./HFT_ModelSearch";
 import { HFT_ObjectDetection } from "./HFT_ObjectDetection";
+import { HFT_SessionDispose } from "./HFT_SessionDispose";
 import { HFT_StructuredGeneration } from "./HFT_StructuredGeneration";
 import { HFT_TextClassification } from "./HFT_TextClassification";
 import { HFT_TextEmbedding } from "./HFT_TextEmbedding";
@@ -76,13 +80,13 @@ const HFT_TextGeneration_Unified: AiProviderRunFn<any, any, HfTransformersOnnxMo
   signal,
   emit,
   outputSchema,
-  sessionId
+  sessionContext
 ) => {
   const maybeMessages = (input as { messages?: unknown }).messages;
   if (Array.isArray(maybeMessages) && maybeMessages.length > 0) {
-    await HFT_Chat(input, model, signal, emit, outputSchema, sessionId);
+    await HFT_Chat(input, model, signal, emit, outputSchema, sessionContext);
   } else {
-    await HFT_TextGeneration(input, model, signal, emit, outputSchema, sessionId);
+    await HFT_TextGeneration(input, model, signal, emit, outputSchema, sessionContext);
   }
 };
 
@@ -124,6 +128,8 @@ export const HFT_RUN_FNS: readonly AiProviderRunFnRegistration<
   { serves: HFT_MODEL_DOWNLOAD, runFn: HFT_Download },
   { serves: HFT_MODEL_SEARCH, runFn: HFT_ModelSearch },
   { serves: HFT_MODEL_INFO, runFn: HFT_ModelInfo },
+  { serves: HFT_CACHE_CHECKPOINT, runFn: HFT_CacheCheckpoint },
+  { serves: HFT_SESSION_DISPOSE, runFn: HFT_SessionDispose },
 ];
 
 export const HFT_PREVIEW_TASKS: Record<

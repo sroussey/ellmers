@@ -370,11 +370,12 @@ export class AiChatWithKbTask extends StreamingAiTask<
       this._sessionId = getAiProviderRegistry().createSession(model.provider, model);
     }
     // Delegate to base so timeoutMs, outputSchema, and any future base fields
-    // are always populated; set sessionId afterwards so it stays a top-level
-    // job field and is not embedded in the serialized taskInput.
-    const jobInput = await super.getJobInput(input);
-    jobInput.sessionId = this._sessionId;
-    return jobInput;
+    // are always populated. The base reads (input as any).sessionId and
+    // forwards it as jobInput.session.sessionId.
+    return super.getJobInput({
+      ...input,
+      sessionId: this._sessionId,
+    } as AiChatWithKbTaskInput & { sessionId: string });
   }
 
   override async *executeStream(

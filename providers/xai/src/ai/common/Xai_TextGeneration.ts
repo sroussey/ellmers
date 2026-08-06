@@ -8,7 +8,9 @@ import type {
   AiProviderRunFn,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
+  Usage,
 } from "@workglow/ai";
+import { mapOpenAIChatUsage, OPENAI_STREAM_USAGE_OPTIONS } from "@workglow/ai/provider-utils";
 import { toOpenAIMessages } from "@workglow/ai/worker";
 import { getLogger } from "@workglow/util/worker";
 import { getClient, getModelName } from "./Xai_Client";
@@ -80,13 +82,20 @@ export const Xai_TextGeneration_Stream: AiProviderRunFn<
     const params = buildChatParams(input as UnifiedTextGenerationInput, model);
 
     const stream = await client.chat.completions.create(
-      { ...params, stream: true } as Parameters<typeof client.chat.completions.create>[0],
+      { ...params, stream: true, ...OPENAI_STREAM_USAGE_OPTIONS } as Parameters<
+        typeof client.chat.completions.create
+      >[0],
       { signal }
     );
 
+    let usage: Usage | undefined;
     for await (const chunk of stream as AsyncIterable<{
       choices?: Array<{ delta?: { content?: string | null; refusal?: string | null } }>;
+      usage?: unknown;
     }>) {
+      // The usage-bearing chunk arrives last with an empty `choices` array; the
+      // delta reads below already tolerate that, so nothing else needs guarding.
+      usage = mapOpenAIChatUsage(chunk.usage) ?? usage;
       const delta = chunk.choices?.[0]?.delta?.content ?? "";
       if (delta) {
         emit({ type: "text-delta", port: "text", textDelta: delta });
@@ -96,7 +105,7 @@ export const Xai_TextGeneration_Stream: AiProviderRunFn<
         emit({ type: "refusal", refusal: refusalDelta });
       }
     }
-    emit({ type: "finish", data: {} as TextGenerationTaskOutput });
+    emit({ type: "finish", data: {} as TextGenerationTaskOutput, usage });
   } finally {
     logger.timeEnd(timerLabel, { model: getModelName(model) });
   }

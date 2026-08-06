@@ -12,6 +12,7 @@ export * from "./registerOllama";
 
 import { OLLAMA_RUN_FN_SPECS } from "./common/Ollama_Capabilities";
 import { OLLAMA_RUN_FNS } from "./common/Ollama_JobRunFns";
+import { mapOllamaUsage } from "./common/Ollama_Usage";
 import { OllamaQueuedProvider } from "./OllamaQueuedProvider";
 
 /**
@@ -21,4 +22,5 @@ export const _testOnly = {
   OllamaQueuedProvider,
   OLLAMA_RUN_FN_SPECS,
   OLLAMA_RUN_FNS,
+  mapOllamaUsage,
 } as const;

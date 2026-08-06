@@ -22,6 +22,8 @@ import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { runChatTurn } from "./base/chatTurn";
+import type { ResolvedCheckpoint } from "./base/CheckpointPorts";
+import { resolveCheckpointSession } from "./base/CheckpointPorts";
 import { buildResponseFormatAddendum } from "./base/responseFormat";
 import { StreamingAiTask } from "./base/StreamingAiTask";
 import type { ChatMessage, ContentBlock } from "./ChatMessage";
@@ -116,6 +118,12 @@ export const AiChatInputSchema = {
         "'markdown' = GitHub-flavored Markdown.",
       "x-ui-group": "Configuration",
     },
+    checkpoint: {
+      type: "string",
+      format: "cache-checkpoint",
+      title: "Checkpoint",
+      description: "Cache checkpoint the conversation starts from",
+    },
   },
   required: ["model", "prompt"],
   additionalProperties: false,
@@ -168,6 +176,7 @@ export type AiChatTaskInput = Omit<
     temperature?: number | undefined;
     maxIterations?: number | undefined;
     responseFormat?: "text" | "markdown" | undefined;
+    checkpoint?: string | undefined;
     model: string | ModelConfig;
     prompt:
       | string
@@ -243,6 +252,14 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
 
   private _sessionId: string | undefined;
 
+  /**
+   * Checkpoint resolved on the conversation's first turn. Memoized so later
+   * turns replay the captured prefix without re-consulting the registry: a
+   * sibling task superseding (deleting) the checkpoint mid-conversation must
+   * not abort a chat whose own session already carries the prefix state.
+   */
+  private _chatCheckpoint: ResolvedCheckpoint | undefined;
+
   protected override async getJobInput(
     input: AiChatTaskInput
   ): Promise<AiJobInput<AiChatTaskInput>> {
@@ -252,10 +269,35 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
     }
     // Delegate to base so timeoutMs, outputSchema, and any future base fields
     // are always populated. The base reads (input as any).sessionId and
-    // forwards it into jobInput.sessionId.
-    return super.getJobInput({ ...input, sessionId: this._sessionId } as AiChatTaskInput & {
+    // forwards it as jobInput.session.sessionId.
+    const jobInput = await super.getJobInput({
+      ...input,
+      sessionId: this._sessionId,
+    } as AiChatTaskInput & {
       sessionId: string;
     });
+    if (input.checkpoint) {
+      this._chatCheckpoint ??= resolveCheckpointSession(
+        { checkpoint: input.checkpoint },
+        model,
+        "AiChatTask"
+      );
+      if (this._chatCheckpoint) {
+        // The chat's own mutable session seeded from the checkpoint's content.
+        // ownedSession keeps local providers' progressive per-turn KV
+        // snapshotting alive — a checkpoint-seeded chat must never re-encode
+        // the growing conversation each turn. seedCheckpointId lets providers
+        // attach the checkpoint's warmed state (server cache entry or local KV
+        // snapshot) instead of re-encoding the prefix on the first turn.
+        jobInput.session = {
+          sessionId: this._sessionId,
+          seedCheckpointId: input.checkpoint,
+          prefix: this._chatCheckpoint.session.prefix,
+          ownedSession: true,
+        };
+      }
+    }
+    return jobInput;
   }
 
   override async *executeStream(
@@ -264,6 +306,7 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
   ): AsyncIterable<StreamEvent<AiChatTaskOutput>> {
     // Reset session so re-running the task starts a fresh conversation.
     this._sessionId = undefined;
+    this._chatCheckpoint = undefined;
 
     const model = input.model as ModelConfig;
     if (!model || typeof model !== "object") {

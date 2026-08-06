@@ -9,9 +9,14 @@ import type {
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
 } from "@workglow/ai";
-import { accumulateOpenAIResponsesStream, buildResponsesInput } from "@workglow/ai/provider-utils";
+import {
+  accumulateOpenAIResponsesStream,
+  buildResponsesInput,
+  buildResponsesTools,
+} from "@workglow/ai/provider-utils";
 import { toOpenAIMessages } from "@workglow/ai/worker";
 import { getLogger } from "@workglow/util/worker";
+import { mergeOpenAICheckpointPrefix } from "./OpenAI_CacheCheckpoint";
 import { finalizeResponsesRequest, getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 import { warnPenaltyDroppedOnce } from "./OpenAI_ResponsesWarnings";
@@ -91,24 +96,38 @@ export const OpenAI_TextGeneration_Stream: AiProviderRunFn<
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
   OpenAiModelConfig
-> = async (input, model, signal, emit) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
   const logger = getLogger();
   const timerLabel = `openai:TextGeneration:${getModelName(model)}`;
   logger.time(timerLabel, { model: getModelName(model) });
   try {
     const client = await getClient(model);
-    const params = finalizeResponsesRequest(
-      model,
-      buildResponsesParams(input as UnifiedTextGenerationInput, model)
-    );
+    // Checkpoint consumption: replay the prefix content ahead of the tail so
+    // the request's literal prefix matches the warm-up and hits the automatic
+    // server-side prompt cache.
+    const unified = input as UnifiedTextGenerationInput;
+    const merged = mergeOpenAICheckpointPrefix(sessionContext, unified);
+    const effective: UnifiedTextGenerationInput = merged
+      ? { ...unified, messages: merged.messages, systemPrompt: merged.systemPrompt, prompt: "" }
+      : unified;
+    const params = buildResponsesParams(effective, model);
+    // A tools-warmed prefix replays its tool declarations too: tools precede
+    // the conversation in the serialized request, so omitting them would both
+    // miss the warm-up's cached prefix (and diverge the prompt_cache_key) and
+    // orphan replayed function_call items. tool_choice stays unset (API
+    // default), matching the warm-up request.
+    if (merged?.tools && merged.tools.length > 0) {
+      params.tools = buildResponsesTools(merged.tools);
+    }
+    finalizeResponsesRequest(model, params);
 
     const stream = await client.responses.create(
       { ...params, stream: true } as Parameters<typeof client.responses.create>[0],
       { signal }
     );
 
-    await accumulateOpenAIResponsesStream(stream as AsyncIterable<unknown>, emit);
-    emit({ type: "finish", data: {} as TextGenerationTaskOutput });
+    const usage = await accumulateOpenAIResponsesStream(stream as AsyncIterable<unknown>, emit);
+    emit({ type: "finish", data: {} as TextGenerationTaskOutput, usage });
   } finally {
     logger.timeEnd(timerLabel, { model: getModelName(model) });
   }

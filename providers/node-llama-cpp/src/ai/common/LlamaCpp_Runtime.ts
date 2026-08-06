@@ -61,17 +61,34 @@ export interface LlamaCppSessionState {
   modelKey: string;
 }
 
-export const llamaCppSessions = new Map<string, LlamaCppSessionState>();
+// Shared across bundle copies via a Symbol.for key — same pattern as
+// PortCodecRegistry/globalContainer. `./ai` and `./ai-runtime` are built as
+// separate dist entry points; without this, inline (non-worker) usage would
+// have each entry point's copy of this module see its own Map, and a session
+// set through one entry point would look absent through the other.
+const GLOBAL_SESSIONS_KEY = Symbol.for("@workglow/node-llama-cpp/llamaCppSessions");
+const _sessionsGlobal = globalThis as Record<symbol, unknown>;
+if (!_sessionsGlobal[GLOBAL_SESSIONS_KEY]) {
+  _sessionsGlobal[GLOBAL_SESSIONS_KEY] = new Map<string, LlamaCppSessionState>();
+}
+export const llamaCppSessions = _sessionsGlobal[GLOBAL_SESSIONS_KEY] as Map<
+  string,
+  LlamaCppSessionState
+>;
 
 /**
- * Per-`sessionId` promise-chain mutex. Two concurrent generation callers that
- * consume the same immutable checkpoint (keep-parent flow) share one cached
- * `LlamaChatSession`, so their `session.prompt` / `LlamaChat.generateResponse`
- * calls must not overlap on the sequence. `withSessionLock` chains them so the
- * second waits until the first has fully returned (and the wrapper has had a
- * chance to rewind the KV cache back to the immutable prefix) before running.
- * The lock is intentionally session-scoped, not global, so unrelated sessions
- * still run in parallel.
+ * Per-`sessionId` promise-chain mutex. The non-checkpoint shared-session paths
+ * (a fingerprint session reused across same-toolset calls, or a chat's
+ * `ownedSession`) read-modify-write one live `LlamaContextSequence` with async
+ * gaps between the map lookup, sequence acquisition, generation, and the
+ * store-back. `withSessionLock` chains same-id callers so the second waits
+ * until the first has fully returned — a live sequence advances in place and
+ * cannot be shared, and an unserialized double-create would overwrite the
+ * first store and strand its sequence. The lock is intentionally
+ * session-scoped, not global, so unrelated sessions still run in parallel.
+ * (Checkpoint consumption does not take the lock: {@link stealLlamaCppSession}
+ * is its atomic hand-off, and the losing consumer re-encodes on its own
+ * sequence.)
  */
 const sessionLocks = new Map<string, Promise<void>>();
 
@@ -101,6 +118,114 @@ export function getLlamaCppSession(sessionId: string): LlamaCppSessionState | un
 
 export function setLlamaCppSession(sessionId: string, state: LlamaCppSessionState): void {
   llamaCppSessions.set(sessionId, state);
+}
+
+/**
+ * Atomic get-and-remove for a checkpoint session id. Two concurrent consumers
+ * of the same immutable checkpoint would otherwise both observe the cached
+ * state and both call `.generate()` on the shared `LlamaContextSequence` — a
+ * live sequence advances in place and cannot be safely shared. The
+ * synchronous `Map.get` + `Map.delete` here is race-free on JS's single
+ * thread: exactly one caller sees the state, every subsequent caller
+ * observes `undefined` and re-encodes via the existing missing-state fallback
+ * (which acquires its own sequence). Intentionally NOT used by AiChatTask,
+ * whose `ownedSession` mode is the caller's mutable session, not a checkpoint.
+ */
+export function stealLlamaCppSession(sessionId: string): LlamaCppSessionState | undefined {
+  const state = llamaCppSessions.get(sessionId);
+  if (state) llamaCppSessions.delete(sessionId);
+  return state;
+}
+
+/** Pre-generation KV boundary captured by {@link captureSequenceTokenBoundary}. */
+export interface SequenceTokenBoundary {
+  /** `nextTokenIndex` before the generation — the first cell the turn wrote. */
+  readonly index: number;
+  /**
+   * The prefix's token ids at capture time (when the sequence exposes
+   * `contextTokens`), used to detect a context shift during the turn — a
+   * shift rewrites cells below the boundary, making a rewind unsound.
+   */
+  readonly prefixTokens: readonly number[] | undefined;
+}
+
+/**
+ * Capture the sequence's current token boundary before a generation so
+ * {@link restoreLlamaCppCheckpointSession} can rewind back to it afterwards.
+ * Returns undefined when the sequence does not expose the rewind API
+ * (`nextTokenIndex` + `eraseContextTokenRanges`) — callers then skip the
+ * restore and dispose the consumed session as before.
+ */
+export function captureSequenceTokenBoundary(sequence: any): SequenceTokenBoundary | undefined {
+  if (
+    typeof sequence?.nextTokenIndex !== "number" ||
+    typeof sequence?.eraseContextTokenRanges !== "function"
+  ) {
+    return undefined;
+  }
+  const index = sequence.nextTokenIndex as number;
+  const contextTokens = sequence.contextTokens;
+  return {
+    index,
+    prefixTokens: Array.isArray(contextTokens)
+      ? (contextTokens.slice(0, index) as number[])
+      : undefined,
+  };
+}
+
+/**
+ * Rewind a consumed checkpoint session back to its pre-generation prefix state
+ * and re-register it under the checkpoint id, so "warm once, consume many"
+ * holds: consuming steals the warmed session out of the map, and without a
+ * restore the parent checkpoint's KV state would be destroyed on first
+ * consumption, forcing every later consumer to silently pay a full prefix
+ * re-encode.
+ *
+ * KV cells past the boundary are erased via `eraseContextTokenRanges` (start
+ * inclusive, end exclusive) and the JS-side chat history is reset to
+ * `prefixHistory` (the same rendering the warm-up encoded), so the next
+ * consumer's generation aligns against exactly the warmed prefix tokens.
+ *
+ * Returns true when the map owns the session again. Returns false — the
+ * caller must then dispose the session, so post-generation state is never
+ * left registered under the checkpoint id — when the rewind API is
+ * unavailable, the rewind fails, the prefix cells were rewritten by a context
+ * shift during the turn, or a concurrent consumer (one that lost the steal
+ * and re-encoded on its own sequence) restored the id first.
+ */
+export async function restoreLlamaCppCheckpointSession(
+  sessionId: string,
+  state: LlamaCppSessionState,
+  prefixBoundary: SequenceTokenBoundary | undefined,
+  prefixHistory: any[]
+): Promise<boolean> {
+  if (prefixBoundary === undefined) return false;
+  if (llamaCppSessions.has(sessionId)) return false;
+  try {
+    const end = state.sequence?.nextTokenIndex;
+    if (typeof end !== "number" || end < prefixBoundary.index) return false;
+    // A context shift during the turn (context overflow) deletes/rewrites
+    // cells below the boundary; verify the prefix token ids are intact before
+    // trusting a positional rewind.
+    if (prefixBoundary.prefixTokens !== undefined) {
+      const current = state.sequence?.contextTokens;
+      if (!Array.isArray(current)) return false;
+      for (let i = 0; i < prefixBoundary.index; i++) {
+        if (current[i] !== prefixBoundary.prefixTokens[i]) return false;
+      }
+    }
+    if (end > prefixBoundary.index) {
+      await state.sequence.eraseContextTokenRanges([{ start: prefixBoundary.index, end }]);
+    }
+    state.session?.setChatHistory?.(prefixHistory);
+    // Re-check after the awaited rewind: a concurrent consumer may have
+    // restored its own re-encoded session under this id in the meantime.
+    if (llamaCppSessions.has(sessionId)) return false;
+    llamaCppSessions.set(sessionId, state);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function deleteLlamaCppSession(sessionId: string): Promise<boolean> {

@@ -42,6 +42,9 @@ export const HFI_ToolCalling_Stream: AiProviderRunFn<
 
   const stream = client.chatCompletionStream(params, { signal });
 
-  await accumulateOpenAIChatStream(stream, emit);
-  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
+  // No `include_usage` opt-in here: the request is routed to a third-party
+  // inference provider whose support for it varies. Usage is forwarded when the
+  // upstream volunteers it on the terminal chunk, and stays absent otherwise.
+  const usage = await accumulateOpenAIChatStream(stream, emit);
+  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput, usage });
 };

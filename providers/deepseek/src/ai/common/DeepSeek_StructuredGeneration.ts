@@ -8,7 +8,9 @@ import type {
   AiProviderRunFn,
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
+  Usage,
 } from "@workglow/ai";
+import { OPENAI_STREAM_USAGE_OPTIONS } from "@workglow/ai/provider-utils";
 import { parsePartialJson } from "@workglow/util/worker";
 import {
   assertNotTruncatedByReasoning,
@@ -17,6 +19,7 @@ import {
   resolveMaxTokens,
 } from "./DeepSeek_Client";
 import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
+import { mapDeepSeekUsage } from "./DeepSeek_Usage";
 
 /**
  * Build the user message for DeepSeek's JSON mode.
@@ -67,6 +70,7 @@ export const DeepSeek_StructuredGeneration_Stream: AiProviderRunFn<
       max_tokens: resolveMaxTokens(model, input.maxTokens),
       temperature: input.temperature,
       stream: true,
+      ...OPENAI_STREAM_USAGE_OPTIONS,
     },
     { signal }
   );
@@ -74,7 +78,9 @@ export const DeepSeek_StructuredGeneration_Stream: AiProviderRunFn<
   let accumulatedJson = "";
   let refusal = "";
   let finishReason: string | null | undefined;
+  let usage: Usage | undefined;
   for await (const chunk of stream) {
+    usage = mapDeepSeekUsage(chunk.usage) ?? usage;
     const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
       accumulatedJson += delta;
@@ -99,5 +105,9 @@ export const DeepSeek_StructuredGeneration_Stream: AiProviderRunFn<
   } catch {
     finalObject = parsePartialJson(accumulatedJson) ?? {};
   }
-  emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
+  emit({
+    type: "finish",
+    data: { object: finalObject } as StructuredGenerationTaskOutput,
+    usage,
+  });
 };

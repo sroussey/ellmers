@@ -8,8 +8,13 @@ import type {
   AiProviderRunFn,
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
+  Usage,
 } from "@workglow/ai";
-import { firstNonStrictReason, isStrictCompatibleSchema } from "@workglow/ai/provider-utils";
+import {
+  firstNonStrictReason,
+  isStrictCompatibleSchema,
+  mapOpenAIResponsesUsage,
+} from "@workglow/ai/provider-utils";
 import { parsePartialJson } from "@workglow/util/worker";
 import { finalizeResponsesRequest, getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
@@ -64,8 +69,19 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
 
   let accumulatedJson = "";
   let refusal = "";
-  for await (const event of stream as AsyncIterable<{ type?: string; delta?: string }>) {
-    if (event.type === "response.output_text.delta") {
+  let usage: Usage | undefined;
+  for await (const event of stream as AsyncIterable<{
+    type?: string;
+    delta?: string;
+    response?: { usage?: unknown };
+  }>) {
+    if (
+      event.type === "response.completed" ||
+      event.type === "response.incomplete" ||
+      event.type === "response.failed"
+    ) {
+      usage = mapOpenAIResponsesUsage(event.response?.usage) ?? usage;
+    } else if (event.type === "response.output_text.delta") {
       const delta = event.delta ?? "";
       if (delta) {
         accumulatedJson += delta;
@@ -91,5 +107,9 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
   } catch {
     finalObject = parsePartialJson(accumulatedJson) ?? {};
   }
-  emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
+  emit({
+    type: "finish",
+    data: { object: finalObject } as StructuredGenerationTaskOutput,
+    usage,
+  });
 };

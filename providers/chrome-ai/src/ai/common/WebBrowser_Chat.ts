@@ -62,7 +62,8 @@ export const WebBrowser_Chat: AiProviderRunFn<
   AiChatProviderInput,
   AiChatProviderOutput,
   WebBrowserModelConfig
-> = async (input, model, signal, emit, _outputSchema, sessionId) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
+  const sessionId = sessionContext?.sessionId;
   const factory = getApi("LanguageModel", getChromeGlobal<typeof LanguageModel>("LanguageModel"));
   await ensureAvailable("LanguageModel", factory);
 

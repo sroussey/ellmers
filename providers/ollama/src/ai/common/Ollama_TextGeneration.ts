@@ -8,9 +8,11 @@ import type {
   AiProviderRunFn,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
+  Usage,
 } from "@workglow/ai";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getOllamaModelName } from "./Ollama_ModelUtil";
+import { mapOllamaUsage } from "./Ollama_Usage";
 
 type GetClient = (model: OllamaModelConfig | undefined) => Promise<any>;
 
@@ -63,13 +65,15 @@ export function createOllamaTextGenerationStream(
     try {
       if (signal?.aborted) stream.abort();
       signal?.throwIfAborted?.();
+      let usage: Usage | undefined;
       for await (const chunk of stream) {
+        usage = mapOllamaUsage(chunk) ?? usage;
         const delta = chunk.message.content;
         if (delta) {
           emit({ type: "text-delta", port: "text", textDelta: delta });
         }
       }
-      emit({ type: "finish", data: {} as TextGenerationTaskOutput });
+      emit({ type: "finish", data: {} as TextGenerationTaskOutput, usage });
     } finally {
       signal?.removeEventListener("abort", onAbort);
     }

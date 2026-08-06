@@ -10,11 +10,13 @@ import type {
   ToolCallingTaskOutput,
   ToolCalls,
   ToolDefinition,
+  Usage,
 } from "@workglow/ai";
 import { buildToolDescription, filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
 import { parsePartialJson } from "@workglow/util/worker";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getOllamaModelName } from "./Ollama_ModelUtil";
+import { mapOllamaUsage } from "./Ollama_Usage";
 
 type GetClient = (model: OllamaModelConfig | undefined) => Promise<any>;
 
@@ -60,9 +62,11 @@ export function createOllamaToolCallingStream(
     signal?.addEventListener("abort", onAbort, { once: true });
 
     let callIndex = 0;
+    let usage: Usage | undefined;
 
     try {
       for await (const chunk of stream) {
+        usage = mapOllamaUsage(chunk) ?? usage;
         const delta = chunk.message.content;
         if (delta) {
           emit({ type: "text-delta", port: "text", textDelta: delta });
@@ -106,6 +110,7 @@ export function createOllamaToolCallingStream(
       emit({
         type: "finish",
         data: { text: "", toolCalls: [] } as ToolCallingTaskOutput,
+        usage,
       });
     } finally {
       signal?.removeEventListener("abort", onAbort);
