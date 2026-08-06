@@ -4,19 +4,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { CachePolicy, IExecuteContext, StreamEvent } from "@workglow/task-graph";
-import { TaskConfigSchema } from "@workglow/task-graph";
+import type {
+  CachePolicy,
+  IExecuteContext,
+  StreamEvent,
+  TaskInput,
+  Usage,
+} from "@workglow/task-graph";
+import { mergeUsage, TaskConfigSchema } from "@workglow/task-graph";
 import type { IHumanRequest } from "@workglow/util";
 import { DEFAULT_LIMITS, resolveHumanConnector } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
-import type { AiEmit } from "../capability/AiEmit";
 import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
+import { runChatTurn } from "./base/chatTurn";
 import { buildResponseFormatAddendum } from "./base/responseFormat";
-import { runWithIterable } from "./base/runWithIterable";
 import { StreamingAiTask } from "./base/StreamingAiTask";
 import type { ChatMessage, ContentBlock } from "./ChatMessage";
 import { ChatMessageSchema, ContentBlockSchema } from "./ChatMessage";
@@ -308,6 +313,12 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
     // declaration applies to a one-shot scalar like this.)
     let completedTurns = 0;
 
+    // Token accounting for the whole conversation. Each turn is its own provider
+    // request, and only the outer finish reaches the caller, so the per-turn
+    // counts have to be summed here or the run under-reports its cost by every
+    // turn but the last.
+    let conversationUsage: Usage | undefined;
+
     // Emit the initial messages as an object-delta. TaskRunner accumulates
     // array object-deltas by appending items (upsert-by-id when an `id`
     // field is present; plain append otherwise). ChatMessage has no id,
@@ -324,34 +335,27 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
       const perTurnInput: AiChatTaskInput = { ...input, messages: [...history] };
       const turnJobInput = await this.getJobInput(perTurnInput);
 
-      let assistantText = "";
-      // Drive the inner turn through `runWithIterable` so a consumer
-      // break / context abort cancels the provider stream rather than
-      // leaving it running into a closed queue. The emit factory is
-      // where we accumulate per-turn text and swallow inner-turn
-      // `finish` events (the outer `finish` is emitted at the end).
-      const iterable = runWithIterable<AiChatTaskOutput>(
+      // The shared seam accumulates this turn's text and swallows the
+      // inner-turn `finish` (the outer `finish` is emitted at the end),
+      // keeping its `usage` sibling for the conversation total.
+      const turn_ = runChatTurn<AiChatTaskOutput>({
         strategy,
-        turnJobInput as any,
+        jobInput: turnJobInput as unknown as AiJobInput<TaskInput>,
         context,
-        this.runConfig.runnerId,
-        (queue): AiEmit<AiChatTaskOutput> =>
-          (event) => {
-            if (event.type === "text-delta") {
-              assistantText += (event as any).textDelta;
-              queue.push({
-                ...event,
-                port: (event as any).port ?? "text",
-              } as StreamEvent<AiChatTaskOutput>);
-            } else if (event.type === "finish") {
-              // swallow — we emit our own finish at the end
-            } else {
-              queue.push(event as StreamEvent<AiChatTaskOutput>);
-            }
-          }
-      );
-      for await (const event of iterable) {
-        yield event;
+        runnerId: this.runConfig.runnerId,
+        textPort: "text",
+      });
+      let assistantText = "";
+      // `finally`, not a trailing statement: a consumer that stops mid-turn
+      // closes this generator at its `yield`, and the tokens that turn
+      // already billed must still be accounted for.
+      try {
+        for await (const event of turn_.events) {
+          yield event;
+        }
+      } finally {
+        assistantText = turn_.text;
+        conversationUsage = mergeUsage(conversationUsage, turn_.usage);
       }
 
       // A turn that produced no assistant content (provider emitted only
@@ -422,6 +426,7 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
     yield {
       type: "finish",
       data: { iterations: completedTurns } as Partial<AiChatTaskOutput>,
+      ...(conversationUsage ? { usage: conversationUsage } : {}),
     } as StreamEvent<AiChatTaskOutput>;
   }
 }

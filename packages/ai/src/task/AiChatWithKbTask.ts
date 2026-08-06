@@ -6,23 +6,28 @@
 
 import type { ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base";
 import { getKnowledgeBase, slugifyHeading } from "@workglow/knowledge-base";
-import type { CachePolicy, IExecuteContext, StreamEvent, Usage } from "@workglow/task-graph";
+import type {
+  CachePolicy,
+  IExecuteContext,
+  StreamEvent,
+  TaskInput,
+  Usage,
+} from "@workglow/task-graph";
 import { mergeUsage, TaskConfigSchema } from "@workglow/task-graph";
 import type { IHumanRequest } from "@workglow/util";
 import { DEFAULT_LIMITS, resolveHumanConnector } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
-import type { AiEmit } from "../capability/AiEmit";
 import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
+import { runChatTurn } from "./base/chatTurn";
 import {
   buildResponseFormatAddendum,
   KB_INLINE_CITATION_DIRECTIVE,
   type ResponseFormat,
 } from "./base/responseFormat";
-import { runWithIterable } from "./base/runWithIterable";
 import { StreamingAiTask } from "./base/StreamingAiTask";
 import type { ChatMessage, ContentBlock } from "./ChatMessage";
 import { ChatMessageSchema, ContentBlockSchema } from "./ChatMessage";
@@ -616,38 +621,26 @@ export class AiChatWithKbTask extends StreamingAiTask<
         const turnJobInput = await this.getJobInput(perTurnInput);
         const strategy = getAiProviderRegistry().getStrategy(model);
 
-        // Drive the inner turn through `runWithIterable` so a consumer
-        // break / context abort cancels the provider stream rather than
-        // leaving it running into a closed queue. The emit factory does
-        // the per-port wrapping and swallows inner-turn `finish` events
-        // (the outer `finish` is emitted at the end).
-        const iterable = runWithIterable<AiChatWithKbTaskOutput>(
+        // The shared seam accumulates this turn's text and swallows the
+        // inner-turn `finish` (the outer `finish` is emitted at the end),
+        // keeping its `usage` sibling for the conversation total.
+        const turn_ = runChatTurn<AiChatWithKbTaskOutput>({
           strategy,
-          turnJobInput as any,
+          jobInput: turnJobInput as unknown as AiJobInput<TaskInput>,
           context,
-          this.runConfig.runnerId,
-          (queue): AiEmit<AiChatWithKbTaskOutput> =>
-            (event) => {
-              if (event.type === "text-delta") {
-                assistantText += (event as any).textDelta;
-                queue.push({
-                  ...event,
-                  port: (event as any).port ?? "text",
-                } as StreamEvent<AiChatWithKbTaskOutput>);
-              } else if (event.type === "finish") {
-                // Invariant: inner turn run-fns must be text.generation only;
-                // finish.data from inner turns is intentionally discarded. If
-                // json-mode capability is ever added to inner dispatch, this
-                // swallow must be revisited. The `usage` sibling is NOT
-                // discarded — it is summed onto the outer finish below.
-                conversationUsage = mergeUsage(conversationUsage, event.usage);
-              } else {
-                queue.push(event as StreamEvent<AiChatWithKbTaskOutput>);
-              }
-            }
-        );
-        for await (const event of iterable) {
-          yield event;
+          runnerId: this.runConfig.runnerId,
+          textPort: "text",
+        });
+        // `finally`, not a trailing statement: a consumer that stops mid-turn
+        // closes this generator at its `yield`, and the tokens that turn
+        // already billed must still be accounted for.
+        try {
+          for await (const event of turn_.events) {
+            yield event;
+          }
+        } finally {
+          assistantText = turn_.text;
+          conversationUsage = mergeUsage(conversationUsage, turn_.usage);
         }
       }
 
