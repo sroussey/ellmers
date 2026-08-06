@@ -12,7 +12,7 @@ import {
 } from "@workglow/job-queue";
 import { SqliteQueueStorage } from "@workglow/sqlite/job-queue";
 import { Sqlite } from "@workglow/sqlite/storage";
-import { TaskInput, TaskOutput } from "@workglow/task-graph";
+import type { TaskInput, TaskOutput } from "@workglow/task-graph";
 import { setLogger, uuid4 } from "@workglow/util";
 import { describe } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";

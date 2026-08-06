@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ITask, TaskStatus } from "@workglow/task-graph";
+import type { ITask } from "@workglow/task-graph";
+import { TaskStatus } from "@workglow/task-graph";
 
 export const getStatusColorBg = (status: TaskStatus): string => {
   switch (status) {

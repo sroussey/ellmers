@@ -9,7 +9,8 @@ import { PROPERTY_ARRAY } from "../task-graph/TaskGraphRunner";
 import { Workflow } from "../task-graph/Workflow";
 import { CreateEndLoopWorkflow, CreateLoopWorkflow } from "../task-graph/WorkflowFactories";
 import type { IRunConfig } from "./ITask";
-import { IteratorTask, IteratorTaskConfig, iteratorTaskConfigSchema } from "./IteratorTask";
+import type { IteratorTaskConfig } from "./IteratorTask";
+import { IteratorTask, iteratorTaskConfigSchema } from "./IteratorTask";
 import type { TaskInput, TaskOutput, TaskTypeName } from "./TaskTypes";
 export const mapTaskConfigSchema = {
   type: "object",

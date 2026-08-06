@@ -12,10 +12,10 @@
  * of hanging forever on a gate nothing will ever drain.
  */
 
-import type { BinaryRefSink, StreamEvent, StreamSink } from "@workglow/task-graph";
-import { BinaryStreamRouter, IExecuteContext, makeCacheRef, Task } from "@workglow/task-graph";
+import type { BinaryRefSink, IExecuteContext, StreamEvent, StreamSink } from "@workglow/task-graph";
+import { BinaryStreamRouter, makeCacheRef, Task } from "@workglow/task-graph";
 import { sleep } from "@workglow/util";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 
 describe("BinaryStreamRouter — sink failure surfaces to the producer", () => {

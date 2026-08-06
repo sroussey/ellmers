@@ -24,7 +24,8 @@ import {
 } from "../task/StreamTypes";
 import type { TaskIdType, TaskInput } from "../task/TaskTypes";
 import { TaskStatus } from "../task/TaskTypes";
-import { Dataflow, DATAFLOW_ALL_PORTS } from "./Dataflow";
+import type { Dataflow } from "./Dataflow";
+import { DATAFLOW_ALL_PORTS } from "./Dataflow";
 import type { EdgeMaterializer } from "./EdgeMaterializer";
 import type { RunContext } from "./RunContext";
 import type { RunScheduler } from "./RunScheduler";

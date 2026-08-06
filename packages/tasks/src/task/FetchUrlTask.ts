@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { AbortSignalJobError, IJobExecuteContext, Job } from "@workglow/job-queue";
+import type { IJobExecuteContext } from "@workglow/job-queue";
+import { AbortSignalJobError, Job } from "@workglow/job-queue";
 import type {
   IExecuteContext,
   RegisteredQueue,
@@ -23,7 +24,7 @@ import {
   TaskConfigurationError,
   Workflow,
 } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { safeFetch } from "../util/SafeFetch";
 import { classifyUrl, urlResourcePattern } from "../util/UrlClassifier";
 import {

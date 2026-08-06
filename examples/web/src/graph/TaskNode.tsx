@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ITask, TaskStatus, type StreamEvent } from "@workglow/task-graph";
+import type { ITask, StreamEvent } from "@workglow/task-graph";
+import { TaskStatus } from "@workglow/task-graph";
 import { ArrayTask } from "@workglow/tasks";
-import { Node, NodeProps } from "@xyflow/react";
+import type { Node, NodeProps } from "@xyflow/react";
 import { useEffect, useRef, useState } from "react";
 import { FiCloud, FiCloudLightning } from "react-icons/fi";
 import { ProgressBar } from "../components/ProgressBar";

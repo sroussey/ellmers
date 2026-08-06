@@ -4,11 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFn, AiProviderRunFnRegistration, Capability } from "@workglow/ai";
+import type {
+  AiJobInput,
+  AiProviderRunFn,
+  AiProviderRunFnRegistration,
+  Capability,
+} from "@workglow/ai";
 import {
   accumulatingEmit,
   AiJob,
-  AiJobInput,
   AiProviderRegistry,
   getAiProviderRegistry,
   setAiProviderRegistry,
@@ -22,11 +26,10 @@ import {
   RateLimiter,
   wrapQueueStorage,
 } from "@workglow/job-queue";
+import type { TaskInput, TaskOutput } from "@workglow/task-graph";
 import {
   getTaskQueueRegistry,
   setTaskQueueRegistry,
-  TaskInput,
-  TaskOutput,
   TaskQueueRegistry,
 } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";

@@ -4,14 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { DocumentRootNode, getChildren, hasChildren } from "@workglow/knowledge-base";
+import { getChildren, hasChildren } from "@workglow/knowledge-base";
 
-import type { DocumentNode, Entity, NodeEnrichment } from "@workglow/knowledge-base";
-import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
-import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
-import { DataPortSchema } from "@workglow/util/schema";
+import type {
+  DocumentNode,
+  DocumentRootNode,
+  Entity,
+  NodeEnrichment,
+} from "@workglow/knowledge-base";
+import type { IExecuteContext, IRunConfig, TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Task, Workflow } from "@workglow/task-graph";
+import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
-import { ModelConfig } from "../model/ModelSchema";
+import type { ModelConfig } from "../model/ModelSchema";
 import { TextNamedEntityRecognitionTask } from "./TextNamedEntityRecognitionTask";
 import { TextSummaryTask } from "./TextSummaryTask";
 import { TypeModel } from "./base/AiTaskSchemas";

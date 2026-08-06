@@ -5,7 +5,7 @@
  */
 
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
-import { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
+import type { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
 import { ANTHROPIC, ANTHROPIC_DEFAULT_MAX_TOKENS } from "./Anthropic_Constants";
 
 export const AnthropicModelSchema = {

@@ -4,18 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskEntitlements } from "@workglow/task-graph";
+import type { TaskConfig, TaskEntitlements } from "@workglow/task-graph";
 import {
   CreateWorkflow,
   Entitlements,
   Task,
-  TaskConfig,
   TaskConfigSchema,
   TaskInvalidInputError,
   TaskRegistry,
   Workflow,
 } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { Interpreter } from "./interpreter";
 
 const isValidIdentifier = (key: string) => /^[a-z_$][\w$]*$/i.test(key);

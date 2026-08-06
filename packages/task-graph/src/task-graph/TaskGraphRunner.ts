@@ -4,10 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ISpan } from "@workglow/util";
+import type { ConvertAllToOptionalArray, ISpan } from "@workglow/util";
 import {
   collectPropertyValues,
-  ConvertAllToOptionalArray,
   getLogger,
   getTelemetryProvider,
   globalServiceRegistry,
@@ -18,24 +17,22 @@ import {
 } from "@workglow/util";
 import { CACHE_REGISTRY, DefaultCacheRegistry } from "../cache/CacheRegistry";
 import { RunPrivateCacheRepo } from "../cache/RunPrivateCacheRepo";
-import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOutputRepository";
+import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
+import { TASK_OUTPUT_REPOSITORY } from "../storage/TaskOutputRepository";
 import { ENTITLEMENT_ENFORCER, formatEntitlementDenial } from "../task/EntitlementEnforcer";
-import { ITask } from "../task/ITask";
+import type { ITask } from "../task/ITask";
 import { isTaskStreamable } from "../task/StreamTypes";
 import { Task } from "../task/Task";
-import {
-  TaskAbortedError,
-  TaskConfigurationError,
-  TaskEntitlementError,
-  TaskError,
-} from "../task/TaskError";
-import { TaskInput, TaskOutput, TaskStatus } from "../task/TaskTypes";
+import type { TaskError } from "../task/TaskError";
+import { TaskAbortedError, TaskConfigurationError, TaskEntitlementError } from "../task/TaskError";
+import type { TaskInput, TaskOutput } from "../task/TaskTypes";
+import { TaskStatus } from "../task/TaskTypes";
 import { EdgeMaterializer } from "./EdgeMaterializer";
 import { computeGraphEntitlements } from "./GraphEntitlementUtils";
 import { RunContext } from "./RunContext";
 import { RunScheduler } from "./RunScheduler";
 import { StreamPump } from "./StreamPump";
-import { TaskGraph, TaskGraphRunConfig, TaskGraphRunPreviewConfig } from "./TaskGraph";
+import type { TaskGraph, TaskGraphRunConfig, TaskGraphRunPreviewConfig } from "./TaskGraph";
 import { DependencyBasedScheduler, TopologicalScheduler } from "./TaskGraphScheduler";
 
 /**

@@ -11,7 +11,8 @@ import type {
   ImageEmbeddingTaskOutput,
 } from "@workglow/ai";
 import { imageValueToBlob } from "@workglow/ai/provider-utils";
-import { getLogger, TypedArray } from "@workglow/util/worker";
+import type { TypedArray } from "@workglow/util/worker";
+import { getLogger } from "@workglow/util/worker";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline, getPipelineCacheKey, withHftPipelineInUse } from "./HFT_Pipeline";
 

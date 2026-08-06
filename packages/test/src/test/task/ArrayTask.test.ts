@@ -4,21 +4,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  Dataflow,
+import type {
   IExecuteContext,
   ITask,
-  PROPERTY_ARRAY,
-  Task,
   TaskConfig,
-  TaskGraph,
   TaskInput,
   TaskOutput,
-  TaskStatus,
 } from "@workglow/task-graph";
+import { Dataflow, PROPERTY_ARRAY, Task, TaskGraph, TaskStatus } from "@workglow/task-graph";
 import { ArrayTask } from "@workglow/tasks";
-import { ConvertAllToOptionalArray, setLogger } from "@workglow/util";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { ConvertAllToOptionalArray } from "@workglow/util";
+import { setLogger } from "@workglow/util";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, test, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 

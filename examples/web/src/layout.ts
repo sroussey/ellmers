@@ -5,7 +5,7 @@
  */
 
 import { DirectedAcyclicGraph } from "@workglow/util/graph";
-import { Edge, Node } from "@xyflow/react";
+import type { Edge, Node } from "@xyflow/react";
 
 type PositionXY = {
   x: number;

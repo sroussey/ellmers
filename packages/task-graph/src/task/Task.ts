@@ -13,10 +13,10 @@ import { DATAFLOW_ALL_PORTS } from "../task-graph/Dataflow";
 import { TaskGraph } from "../task-graph/TaskGraph";
 import type { IExecuteContext, IExecutePreviewContext, IRunConfig, ITask } from "./ITask";
 import { EMPTY_ENTITLEMENTS, type TaskEntitlements } from "./TaskEntitlements";
+import type { TaskError } from "./TaskError";
 import {
   TaskAbortedError,
   TaskConfigurationError,
-  TaskError,
   TaskInvalidInputError,
   TaskSerializationError,
 } from "./TaskError";

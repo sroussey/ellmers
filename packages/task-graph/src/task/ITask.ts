@@ -12,14 +12,14 @@ import type {
 } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import type { CachePolicy } from "../cache/CachePolicy";
-import { TaskOutputRepository } from "../storage/TaskOutputRepository";
-import { ITaskGraph } from "../task-graph/ITaskGraph";
-import { IWorkflow } from "../task-graph/IWorkflow";
+import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
+import type { ITaskGraph } from "../task-graph/ITaskGraph";
+import type { IWorkflow } from "../task-graph/IWorkflow";
 import type { TaskGraph } from "../task-graph/TaskGraph";
-import { CompoundMergeStrategy } from "../task-graph/TaskGraphRunner";
+import type { CompoundMergeStrategy } from "../task-graph/TaskGraphRunner";
 import type { StreamEvent } from "./StreamTypes";
 import type { TaskEntitlements } from "./TaskEntitlements";
-import { TaskError } from "./TaskError";
+import type { TaskError } from "./TaskError";
 import type {
   TaskEventListener,
   TaskEventListeners,
@@ -27,7 +27,7 @@ import type {
   TaskEvents,
 } from "./TaskEvents";
 import type { JsonTaskItem, TaskGraphItemJson, TaskGraphJsonOptions } from "./TaskJSON";
-import { TaskRunner } from "./TaskRunner";
+import type { TaskRunner } from "./TaskRunner";
 import type { TaskConfig, TaskInput, TaskOutput, TaskStatus } from "./TaskTypes";
 
 export interface IExecuteContext {

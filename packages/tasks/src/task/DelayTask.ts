@@ -4,18 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { CachePolicy } from "@workglow/task-graph";
+import type { CachePolicy, IExecuteContext, TaskConfig } from "@workglow/task-graph";
 import {
   CreateWorkflow,
-  IExecuteContext,
   Task,
   TaskAbortedError,
-  TaskConfig,
   TaskConfigSchema,
   Workflow,
 } from "@workglow/task-graph";
 import { sleep } from "@workglow/util";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
 const delayTaskConfigSchema = {
   type: "object",

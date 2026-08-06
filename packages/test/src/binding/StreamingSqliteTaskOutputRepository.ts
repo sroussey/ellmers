@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Sqlite, SqliteTabularStorage } from "@workglow/sqlite/storage";
+import type { Sqlite } from "@workglow/sqlite/storage";
+import { SqliteTabularStorage } from "@workglow/sqlite/storage";
 import {
   tabularTaskOutputStorage,
   TaskOutputPrimaryKeyNames,

@@ -5,7 +5,7 @@
  */
 
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
-import { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
+import type { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
 import { TENSORFLOW_MEDIAPIPE, TextPipelineTask } from "../common/TFMP_Constants";
 
 export const TFMPModelSchema = {

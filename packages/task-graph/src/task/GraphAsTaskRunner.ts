@@ -5,9 +5,8 @@
  */
 
 import { bridgeSubGraphTaskEvents } from "../task-graph/SubGraphEventBridge";
-import { GraphResultArray } from "../task-graph/TaskGraphRunner";
-import type { GraphAsTaskConfig } from "./GraphAsTask";
-import { GraphAsTask } from "./GraphAsTask";
+import type { GraphResultArray } from "../task-graph/TaskGraphRunner";
+import type { GraphAsTask, GraphAsTaskConfig } from "./GraphAsTask";
 import type { TaskRunContext } from "./TaskRunContext";
 import { TaskRunner } from "./TaskRunner";
 import type { TaskInput, TaskOutput } from "./TaskTypes";

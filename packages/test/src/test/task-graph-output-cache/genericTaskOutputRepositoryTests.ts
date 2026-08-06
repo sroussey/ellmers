@@ -4,12 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  TaskInput,
-  TaskOutput,
-  TaskOutputRepository,
-  TaskOutputTabularRepository,
-} from "@workglow/task-graph";
+import type { TaskInput, TaskOutput, TaskOutputRepository } from "@workglow/task-graph";
+import { TaskOutputTabularRepository } from "@workglow/task-graph";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mock = vi.fn;

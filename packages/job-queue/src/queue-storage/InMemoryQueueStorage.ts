@@ -13,14 +13,14 @@ import {
   uuid4,
 } from "@workglow/util";
 import type { StreamChunkRow, StreamEventLike } from "../job/JobQueueEventListeners";
-import {
+import type {
   IQueueStorage,
-  JobStatus,
   JobStorageFormat,
   QueueChangePayload,
   QueueStorageOptions,
   QueueSubscribeOptions,
 } from "./IQueueStorage";
+import { JobStatus } from "./IQueueStorage";
 import { validateLeaseMs } from "./validateLeaseMs";
 
 /**

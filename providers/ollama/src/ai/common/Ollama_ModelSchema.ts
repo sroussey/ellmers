@@ -5,7 +5,7 @@
  */
 
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
-import { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
+import type { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
 import { OLLAMA, OLLAMA_DEFAULT_BASE_URL } from "./Ollama_Constants";
 
 export const OllamaModelSchema = {

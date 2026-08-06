@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createServiceToken, globalServiceRegistry, ServiceRegistry } from "../di/ServiceRegistry";
+import type { ServiceRegistry } from "../di/ServiceRegistry";
+import { createServiceToken, globalServiceRegistry } from "../di/ServiceRegistry";
 import { readRuntimeEnv } from "../utilities/runtimeEnv";
 import { ConsoleTelemetryProvider } from "./ConsoleTelemetryProvider";
 import type { ITelemetryProvider } from "./ITelemetryProvider";

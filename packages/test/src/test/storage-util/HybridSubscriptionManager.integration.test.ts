@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ChangePayloadFactory, HybridSubscriptionManager } from "@workglow/storage";
+import type { ChangePayloadFactory } from "@workglow/storage";
+import { HybridSubscriptionManager } from "@workglow/storage";
 import { setLogger, sleep } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";

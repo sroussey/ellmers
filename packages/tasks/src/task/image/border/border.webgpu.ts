@@ -3,7 +3,8 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { VERTEX_PRELUDE, WebGpuImage, registerFilterOp, resolveColor } from "@workglow/util/media";
+import type { WebGpuImage } from "@workglow/util/media";
+import { VERTEX_PRELUDE, registerFilterOp, resolveColor } from "@workglow/util/media";
 import type { BorderParams } from "./border.cpu";
 
 const SHADER_SRC = `${VERTEX_PRELUDE}

@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IQueueStorage } from "@workglow/job-queue";
-import { JobQueueClient, JobQueueServer } from "@workglow/job-queue";
+import type { IQueueStorage, JobQueueClient, JobQueueServer } from "@workglow/job-queue";
 import { EventEmitter } from "@workglow/util";
 
 /**

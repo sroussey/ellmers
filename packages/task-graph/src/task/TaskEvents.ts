@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { EventParameters } from "@workglow/util";
+import type { EventParameters } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import type { StreamEvent } from "./StreamTypes";
 import type { TaskEntitlements } from "./TaskEntitlements";
-import { TaskAbortedError, TaskError } from "./TaskError";
-import { TaskStatus } from "./TaskTypes";
+import type { TaskAbortedError, TaskError } from "./TaskError";
+import type { TaskStatus } from "./TaskTypes";
 
 // ========================================================================
 // Event Handling Types

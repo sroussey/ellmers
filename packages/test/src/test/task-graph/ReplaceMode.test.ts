@@ -19,7 +19,7 @@ import {
   type IRunConfig,
   Task,
 } from "@workglow/task-graph";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 
 type In = { prompt: string };

@@ -4,22 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Dataflow, TaskGraph, TaskGraphEvents } from "@workglow/task-graph";
-import {
-  Controls,
-  Edge,
-  EdgeTypes,
-  Node,
-  NodeTypes,
-  ReactFlow,
-  useEdgesState,
-  useNodesState,
-  useReactFlow,
-} from "@xyflow/react";
-import React, { Dispatch, SetStateAction, useCallback, useEffect, useRef } from "react";
+import type { Dataflow, TaskGraph, TaskGraphEvents } from "@workglow/task-graph";
+import type { Edge, EdgeTypes, Node, NodeTypes } from "@xyflow/react";
+import { Controls, ReactFlow, useEdgesState, useNodesState, useReactFlow } from "@xyflow/react";
+import type { Dispatch, SetStateAction } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { computeLayout, GraphPipelineCenteredLayout, GraphPipelineLayout } from "../layout";
-import { DataflowEdge, DataflowEdgeData } from "./DataflowEdge";
-import { TaskNode, TaskNodeData } from "./TaskNode";
+import type { DataflowEdgeData } from "./DataflowEdge";
+import { DataflowEdge } from "./DataflowEdge";
+import type { TaskNodeData } from "./TaskNode";
+import { TaskNode } from "./TaskNode";
 import { updateNode } from "./util";
 
 import "@xyflow/react/dist/base.css";

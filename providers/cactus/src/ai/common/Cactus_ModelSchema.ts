@@ -5,8 +5,7 @@
  */
 
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
-import type { DataPortSchemaObject } from "@workglow/util/schema";
-import { FromSchema } from "@workglow/util/schema";
+import type { DataPortSchemaObject, FromSchema } from "@workglow/util/schema";
 import { CACTUS_DEFAULT_MODELS_DIR, CACTUS_NEEDLE_26M, LOCAL_CACTUS } from "./Cactus_Constants";
 
 export const CactusModelSchema = {

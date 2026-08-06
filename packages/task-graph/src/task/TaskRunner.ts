@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ServiceRegistry } from "@workglow/util";
 import {
   getLogger,
   getTelemetryProvider,
   globalServiceRegistry,
   ResourceScope,
-  ServiceRegistry,
   SpanStatusCode,
 } from "@workglow/util";
 import { isCacheRef, resolveReferenceThreshold } from "../cache/CacheRef";
@@ -24,7 +24,7 @@ import { ensureTask } from "../task-graph/Conversions";
 import { CacheCoordinator } from "./CacheCoordinator";
 import { resolveSchemaInputs, schemaHasFormatAnnotations } from "./InputResolver";
 import type { IRunConfig, ITask } from "./ITask";
-import { ITaskRunner } from "./ITaskRunner";
+import type { ITaskRunner } from "./ITaskRunner";
 import type { BinaryRefSink, StreamSink } from "./StreamProcessor";
 import { StreamProcessor } from "./StreamProcessor";
 import type { StreamEvent } from "./StreamTypes";
@@ -47,7 +47,8 @@ import {
   TaskTimeoutError,
 } from "./TaskError";
 import { TaskRunContext } from "./TaskRunContext";
-import { TaskConfig, TaskInput, TaskOutput, TaskStatus } from "./TaskTypes";
+import type { TaskConfig, TaskInput, TaskOutput } from "./TaskTypes";
+import { TaskStatus } from "./TaskTypes";
 
 /**
  * Type guard that checks whether a value is an ITask-like object with a mutable `runConfig`.

@@ -5,15 +5,15 @@
  */
 
 import { EventEmitter, getLogger } from "@workglow/util";
-import { ILimiter } from "../limiter/ILimiter";
+import type { ILimiter } from "../limiter/ILimiter";
 import { NullLimiter } from "../limiter/NullLimiter";
 import type { IJobStore } from "../queue-storage/IJobStore";
 import type { IMessageQueue } from "../queue-storage/IMessageQueue";
 import type { JobStorageFormat, QueueChangePayload } from "../queue-storage/IQueueStorage";
 import { JobStatus } from "../queue-storage/IQueueStorage";
 import type { DeadLetter } from "./DeadLetter";
-import { Job, JobClass } from "./Job";
-import { JobQueueClient } from "./JobQueueClient";
+import type { Job, JobClass } from "./Job";
+import type { JobQueueClient } from "./JobQueueClient";
 import type { StreamEventLike } from "./JobQueueEventListeners";
 import { JobQueueWorker } from "./JobQueueWorker";
 import { storageToClass } from "./JobStorageConverters";

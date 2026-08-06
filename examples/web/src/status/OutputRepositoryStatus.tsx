@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { TaskOutputRepository } from "@workglow/task-graph";
+import type { TaskOutputRepository } from "@workglow/task-graph";
 import { useCallback, useEffect, useState } from "react";
 
 export function OutputRepositoryStatus({

@@ -7,7 +7,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { PostgresQueueStorage } from "@workglow/postgres/job-queue";
 import { setLogger } from "@workglow/util";
-import { Pool } from "pg";
+import type { Pool } from "pg";
 import { afterAll, describe } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 import { runGenericPrefixedQueueStorageTests } from "./genericPrefixedQueueStorageTests";

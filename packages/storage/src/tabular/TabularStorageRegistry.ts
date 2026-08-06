@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ServiceRegistry } from "@workglow/util";
 import {
   createServiceToken,
   globalServiceRegistry,
   registerInputCompactor,
   registerInputResolver,
-  ServiceRegistry,
 } from "@workglow/util";
-import { AnyTabularStorage } from "./ITabularStorage";
+import type { AnyTabularStorage } from "./ITabularStorage";
 
 export const TABULAR_REPOSITORIES = createServiceToken<Map<string, AnyTabularStorage>>(
   "storage.tabular.repositories"

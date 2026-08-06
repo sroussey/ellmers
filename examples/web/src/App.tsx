@@ -6,11 +6,11 @@
 
 import { registerAiTasks } from "@workglow/ai";
 import { registerHuggingFaceTransformers } from "@workglow/huggingface-transformers/ai";
+import type { JsonTaskItem } from "@workglow/task-graph";
 import {
   CACHE_REGISTRY,
   DefaultCacheRegistry,
   getTaskQueueRegistry,
-  JsonTaskItem,
   registerBaseTasks,
   TaskGraph,
   Workflow,

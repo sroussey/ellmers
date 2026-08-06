@@ -5,7 +5,7 @@
  */
 
 import type { IRateLimiterStorage } from "../rate-limiter-storage/IRateLimiterStorage";
-import { ILimiter, LimiterScope, RateLimiterWithBackoffOptions } from "./ILimiter";
+import type { ILimiter, LimiterScope, RateLimiterWithBackoffOptions } from "./ILimiter";
 
 /**
  * Base rate limiter implementation that uses a storage backend.

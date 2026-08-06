@@ -13,7 +13,7 @@ import {
   SpanStatusCode,
   uuid4,
 } from "@workglow/util";
-import { ILimiter } from "../limiter/ILimiter";
+import type { ILimiter } from "../limiter/ILimiter";
 import { NullLimiter } from "../limiter/NullLimiter";
 import type { IClaim } from "../queue-storage/IClaim";
 import type { IJobStore } from "../queue-storage/IJobStore";
@@ -21,7 +21,7 @@ import type { IMessageQueue } from "../queue-storage/IMessageQueue";
 import type { JobStorageFormat } from "../queue-storage/IQueueStorage";
 import { JobStatus } from "../queue-storage/IQueueStorage";
 import type { DeadLetter } from "./DeadLetter";
-import { Job, JobClass } from "./Job";
+import type { Job, JobClass } from "./Job";
 import {
   AbortSignalJobError,
   JobDisabledError,

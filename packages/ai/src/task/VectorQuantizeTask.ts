@@ -6,13 +6,8 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Task, Workflow } from "@workglow/task-graph";
-import {
-  DataPortSchema,
-  normalizeNumberArray,
-  TensorType,
-  TypedArray,
-  TypedArraySchema,
-} from "@workglow/util/schema";
+import type { DataPortSchema, TypedArray } from "@workglow/util/schema";
+import { normalizeNumberArray, TensorType, TypedArraySchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 
 const inputSchema = {

@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ITask } from "../task/ITask";
+import type { ITask } from "../task/ITask";
 import type { StreamEvent } from "../task/StreamTypes";
-import { JsonTaskItem, TaskGraphJson, TaskGraphJsonOptions } from "../task/TaskJSON";
+import type { JsonTaskItem, TaskGraphJson, TaskGraphJsonOptions } from "../task/TaskJSON";
 import type { TaskIdType, TaskInput, TaskOutput, TaskStatus } from "../task/TaskTypes";
-import { Dataflow, DataflowIdType } from "./Dataflow";
+import type { Dataflow, DataflowIdType } from "./Dataflow";
 import type { TaskGraphRunConfig } from "./TaskGraph";
 import type { TaskGraphEventListener, TaskGraphEvents } from "./TaskGraphEvents";
-import {
+import type {
   CompoundMergeStrategy,
   GraphResult,
   GraphResultArray,

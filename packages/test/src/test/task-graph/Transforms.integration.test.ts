@@ -3,10 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { StreamEvent } from "@workglow/task-graph";
+import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import {
   Dataflow,
-  IExecuteContext,
   Task,
   TaskGraph,
   TaskGraphRunner,

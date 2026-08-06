@@ -5,9 +5,10 @@
  */
 
 import { createServiceToken } from "@workglow/util";
-import { JsonSchema } from "@workglow/util/schema";
+import type { JsonSchema } from "@workglow/util/schema";
 import { FsFolderTabularStorage } from "../tabular/FsFolderTabularStorage";
-import { DefaultKeyValueKey, DefaultKeyValueSchema, IKvStorage } from "./IKvStorage";
+import type { IKvStorage } from "./IKvStorage";
+import { DefaultKeyValueKey, DefaultKeyValueSchema } from "./IKvStorage";
 import { KvViaTabularStorage } from "./KvViaTabularStorage";
 
 export const FS_FOLDER_JSON_KV_REPOSITORY = createServiceToken<IKvStorage<string, any, any>>(

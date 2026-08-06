@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { EventParameters } from "@workglow/util";
-import { DataPortSchemaObject } from "@workglow/util/schema";
-import { JSONValue } from "../tabular/ITabularStorage";
+import type { EventParameters } from "@workglow/util";
+import type { DataPortSchemaObject } from "@workglow/util/schema";
+import type { JSONValue } from "../tabular/ITabularStorage";
 
 export const DefaultKeyValueSchema = {
   type: "object",

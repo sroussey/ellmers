@@ -4,8 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ISpan, ITelemetryProvider, SpanAttributes, SpanOptions } from "./ITelemetryProvider";
-import { SpanStatusCode } from "./ITelemetryProvider";
+import type {
+  ISpan,
+  ITelemetryProvider,
+  SpanAttributes,
+  SpanOptions,
+  SpanStatusCode,
+} from "./ITelemetryProvider";
 
 /**
  * A no-op span that does nothing. Used when telemetry is disabled.

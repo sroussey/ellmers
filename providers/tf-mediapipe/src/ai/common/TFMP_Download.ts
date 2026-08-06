@@ -12,7 +12,7 @@ import type {
 import { PermanentJobError } from "@workglow/job-queue";
 import { loadTfmpTasksTextSDK, loadTfmpTasksVisionSDK } from "./TFMP_Client";
 import { closeGenaiLlm, getGenaiLlm, withGenaiLock } from "./TFMP_GenaiRuntime";
-import { TFMPModelConfig } from "./TFMP_ModelSchema";
+import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 import type { TaskInstance } from "./TFMP_Runtime";
 import { getModelTask, modelTaskCache, wasm_reference_counts, wasm_tasks } from "./TFMP_Runtime";
 

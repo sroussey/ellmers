@@ -12,16 +12,10 @@
  * port dropped, no in-memory materialization of the sunk bytes required.
  */
 
-import type { CacheRef, StreamEvent, StreamSink } from "@workglow/task-graph";
-import {
-  IExecuteContext,
-  isCacheRef,
-  makeCacheRef,
-  Task,
-  TaskRegistry,
-} from "@workglow/task-graph";
+import type { CacheRef, IExecuteContext, StreamEvent, StreamSink } from "@workglow/task-graph";
+import { isCacheRef, makeCacheRef, Task, TaskRegistry } from "@workglow/task-graph";
 import { sleep } from "@workglow/util";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { beforeAll, describe, expect, it } from "vitest";
 
 type MixedOut = { text: string; bytes: Blob };

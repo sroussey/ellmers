@@ -6,6 +6,7 @@
 
 import type {
   CacheRef,
+  IExecuteContext,
   JobHandleLike,
   StreamEvent,
   TaskInput,
@@ -14,7 +15,6 @@ import type {
 import {
   CACHE_REGISTRY,
   DefaultCacheRegistry,
-  IExecuteContext,
   isCacheRef,
   makeCacheRef,
   resolveJobOutput,
@@ -23,7 +23,7 @@ import {
   TaskRegistry,
 } from "@workglow/task-graph";
 import { Container, ServiceRegistry, sleep } from "@workglow/util";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 type BinOut = { bytes: Blob };

@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { EventParameters } from "@workglow/util";
-import { EventEmitter, ServiceRegistry } from "@workglow/util";
+import type { EventParameters, ServiceRegistry } from "@workglow/util";
+import { EventEmitter } from "@workglow/util";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ConditionFn } from "../task/ConditionalTask";
 import { GraphAsTask } from "../task/GraphAsTask";
 import type { IRunConfig, ITask, ITaskConstructor } from "../task/ITask";
 import type { StreamEvent } from "../task/StreamTypes";
-import { Task } from "../task/Task";
+import type { Task } from "../task/Task";
 import type { TaskEntitlements } from "../task/TaskEntitlements";
 import { TaskAbortedError, WorkflowError } from "../task/TaskError";
 import type { JsonTaskItem, TaskGraphJson, TaskGraphJsonOptions } from "../task/TaskJSON";
@@ -24,8 +24,8 @@ import { computeGraphEntitlements } from "./GraphEntitlementUtils";
 import type { IWorkflow, WorkflowRunConfig } from "./IWorkflow";
 import { LoopBuilderContext, runLoopAutoConnect } from "./LoopBuilderContext";
 import { TaskGraph } from "./TaskGraph";
-import type { PropertyArrayGraphResult } from "./TaskGraphRunner";
-import { CompoundMergeStrategy, PROPERTY_ARRAY } from "./TaskGraphRunner";
+import type { CompoundMergeStrategy, PropertyArrayGraphResult } from "./TaskGraphRunner";
+import { PROPERTY_ARRAY } from "./TaskGraphRunner";
 import type { ITransformStep } from "./TransformTypes";
 import type { IWorkflowBuilderHandle } from "./WorkflowBuilder";
 import { WorkflowBuilder } from "./WorkflowBuilder";

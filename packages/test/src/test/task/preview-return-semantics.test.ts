@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { IExecutePreviewContext, Task, TaskConfig } from "@workglow/task-graph";
+import type { IExecutePreviewContext, TaskConfig } from "@workglow/task-graph";
+import { Task } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 

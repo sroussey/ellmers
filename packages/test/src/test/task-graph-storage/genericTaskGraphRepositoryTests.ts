@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { TaskGraphRepository } from "@workglow/task-graph";
 import {
   Dataflow,
   TaskGraph,
-  TaskGraphRepository,
   TaskGraphTabularRepository,
   TaskRegistry,
 } from "@workglow/task-graph";

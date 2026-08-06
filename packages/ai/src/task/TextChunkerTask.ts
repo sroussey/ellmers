@@ -6,10 +6,10 @@
 
 import type { ChunkRecord } from "@workglow/knowledge-base";
 import { ChunkRecordArraySchema } from "@workglow/knowledge-base";
-import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
+import { CreateWorkflow, Task, Workflow } from "@workglow/task-graph";
 
-import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { IExecuteContext, IRunConfig, TaskConfig } from "@workglow/task-graph";
+import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 
 export const ChunkingStrategy = {

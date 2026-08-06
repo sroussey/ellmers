@@ -6,7 +6,7 @@
 
 import { ModelPrimaryKeyNames, ModelRecordSchema, ModelRepository } from "@workglow/ai";
 import { PostgresTabularStorage } from "@workglow/postgres/storage";
-import { Pool } from "pg";
+import type { Pool } from "pg";
 
 /**
  * PostgreSQL implementation of a model repository.

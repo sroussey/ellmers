@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { TaskGraphRepository } from "@workglow/task-graph";
+import type { TaskGraphRepository } from "@workglow/task-graph";
 import { useCallback } from "react";
 
 export function GraphStoreStatus({ repository }: { repository: TaskGraphRepository }) {

@@ -13,11 +13,16 @@
  * that IS above the mark with no pull/credit progress still trips.
  */
 
-import type { CacheRef, StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
+import type {
+  CacheRef,
+  IExecuteContext,
+  StreamEvent,
+  TaskInput,
+  TaskOutput,
+} from "@workglow/task-graph";
 import {
   BackpressureGate,
   Dataflow,
-  IExecuteContext,
   makeCacheRef,
   Task,
   TaskGraph,
@@ -25,7 +30,7 @@ import {
   TaskOutputRepository,
 } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 

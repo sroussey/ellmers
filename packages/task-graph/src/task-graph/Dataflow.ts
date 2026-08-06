@@ -8,17 +8,18 @@ import type { ServiceRegistry } from "@workglow/util";
 import { EventEmitter } from "@workglow/util";
 import { areSemanticallyCompatible } from "@workglow/util/schema";
 import type { StreamEvent } from "../task/StreamTypes";
-import { Task } from "../task/Task";
+import type { Task } from "../task/Task";
 import { TaskError } from "../task/TaskError";
 import type { DataflowJson } from "../task/TaskJSON";
-import { TaskIdType, TaskOutput, TaskStatus } from "../task/TaskTypes";
-import {
+import type { TaskIdType, TaskOutput } from "../task/TaskTypes";
+import { TaskStatus } from "../task/TaskTypes";
+import type {
   DataflowEventListener,
   DataflowEventListeners,
   DataflowEventParameters,
   DataflowEvents,
 } from "./DataflowEvents";
-import { TaskGraph } from "./TaskGraph";
+import type { TaskGraph } from "./TaskGraph";
 import { TRANSFORM_DEFS, TransformRegistry } from "./TransformRegistry";
 import type { ITransformStep } from "./TransformTypes";
 

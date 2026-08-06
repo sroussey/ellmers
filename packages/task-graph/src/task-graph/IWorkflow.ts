@@ -5,9 +5,9 @@
  */
 
 import type { ResourceScope, ServiceRegistry } from "@workglow/util";
-import { TaskInput, TaskOutput } from "../task/TaskTypes";
-import { TaskGraph } from "./TaskGraph";
-import { GraphResult, PROPERTY_ARRAY } from "./TaskGraphRunner";
+import type { TaskInput, TaskOutput } from "../task/TaskTypes";
+import type { TaskGraph } from "./TaskGraph";
+import type { GraphResult, PROPERTY_ARRAY } from "./TaskGraphRunner";
 
 export interface WorkflowRunConfig {
   /** Optional service registry to use for this workflow run */

@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { IJobExecuteContext } from "@workglow/job-queue";
 import {
   AbortSignalJobError,
-  IJobExecuteContext,
   Job,
   PermanentJobError,
   RetryableJobError,
   withJobErrorDiagnostics,
 } from "@workglow/job-queue";
-import { TaskInput, TaskOutput } from "@workglow/task-graph";
+import type { TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { JsonSchema } from "@workglow/util/schema";
 import type { AiEmit } from "../capability/AiEmit";
 import type { Capability } from "../capability/Capabilities";

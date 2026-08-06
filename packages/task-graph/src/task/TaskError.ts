@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { JobError } from "@workglow/job-queue";
+import type { JobError } from "@workglow/job-queue";
 import { BaseError } from "@workglow/util";
 
 export class TaskError extends BaseError {

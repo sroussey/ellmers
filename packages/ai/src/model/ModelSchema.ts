@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { DataPortSchemaObject } from "@workglow/util/worker";
+import type { DataPortSchemaObject } from "@workglow/util/worker";
 
 /**
  * A model configuration suitable for task/job inputs.

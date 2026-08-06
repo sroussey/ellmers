@@ -11,7 +11,7 @@ import type {
   TaskOutputRow,
   TaskOutputRowPrimaryKey,
 } from "./ITaskOutputStorage";
-import { TaskOutputPrimaryKeyNames, TaskOutputSchema } from "./TaskOutputStorageSchema";
+import type { TaskOutputPrimaryKeyNames, TaskOutputSchema } from "./TaskOutputStorageSchema";
 
 type TaskOutputTabularBacking = ITabularStorage<
   typeof TaskOutputSchema,

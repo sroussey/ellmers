@@ -3,7 +3,8 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { registerFilterOp, SharpImage } from "@workglow/util/media";
+import type { SharpImage } from "@workglow/util/media";
+import { registerFilterOp } from "@workglow/util/media";
 import type { ContrastParams } from "./contrast.cpu";
 
 registerFilterOp<ContrastParams>("sharp", "contrast", (image, { amount }) => {

@@ -4,16 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { BinaryRefSink, CacheRef, StreamEvent, StreamSink } from "@workglow/task-graph";
-import {
+import type {
+  BinaryRefSink,
+  CacheRef,
   IExecuteContext,
-  isCacheRef,
-  makeCacheRef,
-  Task,
-  TaskRegistry,
+  StreamEvent,
+  StreamSink,
 } from "@workglow/task-graph";
+import { isCacheRef, makeCacheRef, Task, TaskRegistry } from "@workglow/task-graph";
 import { sleep } from "@workglow/util";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { beforeAll, describe, expect, it } from "vitest";
 
 type BinOut = { bytes: Blob | ArrayBuffer };

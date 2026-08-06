@@ -24,19 +24,17 @@
  *  - Cache: auto-enables accumulation
  */
 
-import type { CachePolicy, StreamEvent, Usage } from "@workglow/task-graph";
-import {
-  Dataflow,
+import type {
+  CachePolicy,
   IExecuteContext,
   IRunConfig,
+  StreamEvent,
   StreamFinish,
-  Task,
-  TaskGraph,
-  TaskGraphRunner,
-  TaskStatus,
+  Usage,
 } from "@workglow/task-graph";
+import { Dataflow, Task, TaskGraph, TaskGraphRunner, TaskStatus } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { beforeEach, describe, expect, it } from "vitest";
 import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 import { getTestingLogger } from "../../binding/TestingLogger";

@@ -4,8 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Dataflow, TaskStatus } from "@workglow/task-graph";
-import { BaseEdge, Edge, EdgeLabelRenderer, EdgeProps, getBezierPath } from "@xyflow/react";
+import type { Dataflow } from "@workglow/task-graph";
+import { TaskStatus } from "@workglow/task-graph";
+import type { Edge, EdgeProps } from "@xyflow/react";
+import { BaseEdge, EdgeLabelRenderer, getBezierPath } from "@xyflow/react";
 import { useEffect, useMemo, useState } from "react";
 import { DataDialog } from "../components/DataDialog";
 import { getStatusColorBg } from "./util";

@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createServiceToken, globalServiceRegistry, ServiceRegistry } from "@workglow/util";
+import type { ServiceRegistry } from "@workglow/util";
+import { createServiceToken, globalServiceRegistry } from "@workglow/util";
 import type { ITransformDef } from "./TransformTypes";
 
 const transformDefs = new Map<string, ITransformDef<any>>();

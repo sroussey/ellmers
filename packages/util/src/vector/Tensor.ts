@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { FromSchema } from "../json-schema/FromSchema";
-import { JsonSchema } from "../json-schema/JsonSchema";
-import { TypedArraySchema, TypedArraySchemaOptions } from "./TypedArray";
+import type { FromSchema } from "../json-schema/FromSchema";
+import type { JsonSchema } from "../json-schema/JsonSchema";
+import type { TypedArraySchemaOptions } from "./TypedArray";
+import { TypedArraySchema } from "./TypedArray";
 
 export const TensorType = {
   FLOAT16: "float16",

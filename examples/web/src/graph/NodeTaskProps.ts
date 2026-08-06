@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ITask, TaskStatus } from "@workglow/task-graph";
+import type { ITask, TaskStatus } from "@workglow/task-graph";
 
 // Common props for all node types
 export interface NodeTaskProps {

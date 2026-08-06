@@ -12,7 +12,7 @@ import type {
 import { PermanentJobError } from "@workglow/job-queue";
 import { imageValueFromBitmap } from "@workglow/util/media";
 import { loadTfmpTasksVisionSDK } from "./TFMP_Client";
-import { TFMPModelConfig } from "./TFMP_ModelSchema";
+import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
 export const TFMP_ImageSegmentation: AiProviderRunFn<

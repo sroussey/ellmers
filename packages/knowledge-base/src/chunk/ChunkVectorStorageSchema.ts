@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { IVectorStorage } from "@workglow/storage";
+import type { IVectorStorage } from "@workglow/storage";
 import type { DataPortSchemaObject, TypedArray } from "@workglow/util/schema";
 import { TypedArraySchema } from "@workglow/util/schema";
 import type { ChunkRecord } from "./ChunkSchema";

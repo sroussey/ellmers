@@ -3,13 +3,12 @@
  * Copyright 2026 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
-import type { CachePolicy, StreamEvent } from "@workglow/task-graph";
+import type { CachePolicy, IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import {
   CACHE_REGISTRY,
   Dataflow,
   DefaultCacheRegistry,
   FsFolderTaskOutputRepository,
-  IExecuteContext,
   isCacheRef,
   Task,
   TaskGraph,

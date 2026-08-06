@@ -3,7 +3,8 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { registerFilterOp, SharpImage } from "@workglow/util/media";
+import type { SharpImage } from "@workglow/util/media";
+import { registerFilterOp } from "@workglow/util/media";
 import type { RotateParams } from "./rotate.cpu";
 
 registerFilterOp<RotateParams>("sharp", "rotate", (image, { angle, background }) => {

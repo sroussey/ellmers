@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { getLogger, ServiceRegistry, uuid4 } from "@workglow/util";
+import type { ServiceRegistry } from "@workglow/util";
+import { getLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import type { ConditionFn } from "../task/ConditionalTask";
-import { GraphAsTask } from "../task/GraphAsTask";
+import type { GraphAsTask } from "../task/GraphAsTask";
 import type { IRunConfig, ITask, ITaskConstructor } from "../task/ITask";
 import { WorkflowError } from "../task/TaskError";
 import type { DataPorts, TaskConfig, TaskInput } from "../task/TaskTypes";
@@ -17,7 +18,7 @@ import type { Taskish } from "./Conversions";
 import { ensureTask } from "./Conversions";
 import { Dataflow, DATAFLOW_ALL_PORTS, DATAFLOW_ERROR_PORT } from "./Dataflow";
 import { updateBoundaryTaskSchemas } from "./GraphSchemaUtils";
-import { LoopBuilderContext } from "./LoopBuilderContext";
+import type { LoopBuilderContext } from "./LoopBuilderContext";
 import type { RenameOptions, Workflow } from "./Workflow";
 import { getLastTask } from "./WorkflowPipe";
 

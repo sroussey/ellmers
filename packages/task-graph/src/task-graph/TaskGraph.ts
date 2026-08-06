@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IDisposeStrategy, ResourceScope } from "@workglow/util";
-import { EventEmitter, ServiceRegistry, uuid4 } from "@workglow/util";
+import type { IDisposeStrategy, ResourceScope, ServiceRegistry } from "@workglow/util";
+import { EventEmitter, uuid4 } from "@workglow/util";
 import { DirectedAcyclicGraph } from "@workglow/util/graph";
-import { TaskOutputRepository } from "../storage/TaskOutputRepository";
+import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ITask } from "../task/ITask";
 import type { StreamEvent } from "../task/StreamTypes";
 import type { TaskEntitlements } from "../task/TaskEntitlements";
@@ -20,8 +20,7 @@ import { Dataflow, DataflowArrow } from "./Dataflow";
 import { computeGraphEntitlements } from "./GraphEntitlementUtils";
 import { addBoundaryNodesToDependencyJson, addBoundaryNodesToGraphJson } from "./GraphSchemaUtils";
 import type { ITaskGraph } from "./ITaskGraph";
-import {
-  EventTaskGraphToDagMapping,
+import type {
   GraphEventDagEvents,
   GraphEventDagParameters,
   TaskGraphEventListener,
@@ -30,8 +29,9 @@ import {
   TaskGraphStatusEvents,
   TaskGraphStatusListeners,
 } from "./TaskGraphEvents";
-import type { GraphResultArray } from "./TaskGraphRunner";
-import { CompoundMergeStrategy, GraphResult, TaskGraphRunner } from "./TaskGraphRunner";
+import { EventTaskGraphToDagMapping } from "./TaskGraphEvents";
+import type { CompoundMergeStrategy, GraphResult, GraphResultArray } from "./TaskGraphRunner";
+import { TaskGraphRunner } from "./TaskGraphRunner";
 
 /**
  * Configuration for running a task graph

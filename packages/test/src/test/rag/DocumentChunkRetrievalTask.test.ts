@@ -5,11 +5,8 @@
  */
 
 import { chunkRetrieval } from "@workglow/ai";
-import {
-  createKnowledgeBase,
-  KnowledgeBase,
-  registerKnowledgeBase,
-} from "@workglow/knowledge-base";
+import type { KnowledgeBase } from "@workglow/knowledge-base";
+import { createKnowledgeBase, registerKnowledgeBase } from "@workglow/knowledge-base";
 import { setLogger, uuid4 } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";

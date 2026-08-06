@@ -1,4 +1,5 @@
-import { ITask, TaskStatus } from "@workglow/task-graph";
+import type { ITask } from "@workglow/task-graph";
+import { TaskStatus } from "@workglow/task-graph";
 import { ViewportPortal } from "@xyflow/react";
 import React, { useState } from "react";
 import { DataDialog } from "./DataDialog";

@@ -5,7 +5,7 @@
  */
 
 import { McpListTask, McpToolCallTask } from "@workglow/mcp/tasks";
-import type { McpServerRecord } from "@workglow/mcp/util";
+import type { McpServerRecord, McpServerRepository } from "@workglow/mcp/util";
 import {
   getGlobalMcpServerRepository,
   getGlobalMcpServers,
@@ -14,7 +14,6 @@ import {
   InMemoryMcpServerRepository,
   MCP_SERVERS,
   mcpClientFactory,
-  McpServerRepository,
   registerMcpServer,
   setGlobalMcpServerRepository,
 } from "@workglow/mcp/util";

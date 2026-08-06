@@ -5,22 +5,23 @@
  */
 
 import { uuid4 } from "@workglow/util";
-import type { DataPortSchema } from "@workglow/util/schema";
-import { DataPortSchemaNonBoolean, TypedArray, VectorFromSchema } from "@workglow/util/schema";
+import type {
+  DataPortSchema,
+  DataPortSchemaNonBoolean,
+  TypedArray,
+  VectorFromSchema,
+} from "@workglow/util/schema";
 
-import type { TaskRunContext } from "@workglow/task-graph";
-import {
-  GraphAsTask,
+import type {
   GraphAsTaskConfig,
-  GraphAsTaskRunner,
   GraphResultArray,
   JsonTaskItem,
-  PROPERTY_ARRAY,
-  TaskGraph,
   TaskGraphItemJson,
   TaskInput,
   TaskOutput,
+  TaskRunContext,
 } from "@workglow/task-graph";
+import { GraphAsTask, GraphAsTaskRunner, PROPERTY_ARRAY, TaskGraph } from "@workglow/task-graph";
 
 export function TypeReplicateArray<const T extends DataPortSchemaNonBoolean>(
   type: T,

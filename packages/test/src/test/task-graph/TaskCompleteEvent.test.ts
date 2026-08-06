@@ -4,13 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
+import type { IExecuteContext, MapTask, StreamEvent } from "@workglow/task-graph";
 import {
   bridgeSubGraphTaskEvents,
   Dataflow,
   FallbackTask,
   GraphAsTask,
-  MapTask,
   Task,
   TaskGraph,
   TaskRegistry,

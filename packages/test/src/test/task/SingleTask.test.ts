@@ -4,13 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  Task,
-  TaskAbortedError,
-  TaskConfigurationError,
-  TaskError,
-  TaskStatus,
-} from "@workglow/task-graph";
+import type { TaskError } from "@workglow/task-graph";
+import { Task, TaskAbortedError, TaskConfigurationError, TaskStatus } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";

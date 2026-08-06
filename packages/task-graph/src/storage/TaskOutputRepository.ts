@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createServiceToken, EventEmitter, EventParameters } from "@workglow/util";
+import type { EventParameters } from "@workglow/util";
+import { createServiceToken, EventEmitter } from "@workglow/util";
 import type { CacheRef } from "../cache/CacheRef";
 import type { StreamMode } from "../task/StreamTypes";
-import { TaskInput, TaskOutput } from "../task/TaskTypes";
+import type { TaskInput, TaskOutput } from "../task/TaskTypes";
 
 export const TASK_OUTPUT_REPOSITORY = createServiceToken<TaskOutputRepository>(
   "taskgraph.taskOutputRepository"

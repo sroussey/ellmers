@@ -17,10 +17,15 @@
  * the pre-change behavior.
  */
 
-import type { CacheRef, StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
+import type {
+  CacheRef,
+  IExecuteContext,
+  StreamEvent,
+  TaskInput,
+  TaskOutput,
+} from "@workglow/task-graph";
 import {
   Dataflow,
-  IExecuteContext,
   isCacheRef,
   makeCacheRef,
   Task,
@@ -29,7 +34,7 @@ import {
   TaskOutputRepository,
 } from "@workglow/task-graph";
 import { sleep } from "@workglow/util";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const CHUNK_BYTES = 64;

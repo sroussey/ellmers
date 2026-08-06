@@ -18,10 +18,15 @@
  * sink map, so the streamed output survives.
  */
 
-import type { CacheRef, StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
+import type {
+  CacheRef,
+  IExecuteContext,
+  StreamEvent,
+  TaskInput,
+  TaskOutput,
+} from "@workglow/task-graph";
 import {
   Dataflow,
-  IExecuteContext,
   isCacheRef,
   makeCacheRef,
   Task,
@@ -30,7 +35,7 @@ import {
   TaskOutputRepository,
   TaskStatus,
 } from "@workglow/task-graph";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 class StreamPortMemoryRepo extends TaskOutputRepository {
