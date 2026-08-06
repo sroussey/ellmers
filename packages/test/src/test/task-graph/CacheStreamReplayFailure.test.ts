@@ -19,7 +19,7 @@
 import type { CacheRef, StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
 import { makeCacheRef, Task, TaskOutputRepository, TaskStatus } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 

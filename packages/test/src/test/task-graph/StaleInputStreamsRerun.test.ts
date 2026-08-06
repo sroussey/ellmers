@@ -16,16 +16,15 @@
  * back to its settled input slot.
  */
 
-import type { StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
+import type { IExecuteContext, StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
 import {
   Dataflow,
-  IExecuteContext,
   Task,
   TaskGraph,
   TaskGraphRunner,
   TaskOutputRepository,
 } from "@workglow/task-graph";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 
 /** Plain non-streaming row repo (no by-ref surface, no stream sinks). */

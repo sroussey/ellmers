@@ -19,18 +19,23 @@
  * watchdog) and the ungated regression path.
  */
 
-import type { CacheRef, StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
+import type {
+  CacheRef,
+  IExecuteContext,
+  StreamEvent,
+  TaskInput,
+  TaskOutput,
+} from "@workglow/task-graph";
 import {
   BackpressureGate,
   Dataflow,
-  IExecuteContext,
   makeCacheRef,
   Task,
   TaskGraph,
   TaskGraphRunner,
   TaskOutputRepository,
 } from "@workglow/task-graph";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 class StreamPortMemoryRepo extends TaskOutputRepository {

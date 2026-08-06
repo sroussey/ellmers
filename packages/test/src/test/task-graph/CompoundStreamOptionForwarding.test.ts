@@ -24,7 +24,7 @@ import {
   TaskGraph,
   WhileTask,
 } from "@workglow/task-graph";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 class AddOneTask extends Task<{ value: number }, { value: number }> {

@@ -10,9 +10,9 @@ import type {
   TaskConfig,
   TaskEntitlement,
   TaskEntitlements,
+  TaskInput,
   TaskOutput,
-
-  TaskInput} from "@workglow/task-graph";
+} from "@workglow/task-graph";
 import {
   Entitlements,
   Task,

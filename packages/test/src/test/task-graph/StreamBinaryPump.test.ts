@@ -22,10 +22,15 @@
  * `StreamProcessorBinaryRefSink.test.ts` / `TaskRunnerRefPath.test.ts`.
  */
 
-import type { CacheRef, StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
+import type {
+  CacheRef,
+  IExecuteContext,
+  StreamEvent,
+  TaskInput,
+  TaskOutput,
+} from "@workglow/task-graph";
 import {
   Dataflow,
-  IExecuteContext,
   makeCacheRef,
   StreamPump,
   Task,

@@ -15,17 +15,22 @@
  * `object` modes.
  */
 
-import type { CacheRef, StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
+import type {
+  CacheRef,
+  IExecuteContext,
+  StreamEvent,
+  TaskInput,
+  TaskOutput,
+} from "@workglow/task-graph";
 import {
   Dataflow,
-  IExecuteContext,
   makeCacheRef,
   Task,
   TaskGraph,
   TaskGraphRunner,
   TaskOutputRepository,
 } from "@workglow/task-graph";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { beforeEach, describe, expect, it } from "vitest";
 
 class StreamPortMemoryRepo extends TaskOutputRepository {

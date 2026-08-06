@@ -4,11 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { CacheRef, StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
+import type {
+  CacheRef,
+  IExecuteContext,
+  StreamEvent,
+  TaskInput,
+  TaskOutput,
+} from "@workglow/task-graph";
 import {
   CACHE_REGISTRY,
   DefaultCacheRegistry,
-  IExecuteContext,
   isCacheRef,
   makeCacheRef,
   Task,
@@ -16,7 +21,7 @@ import {
   TaskRegistry,
 } from "@workglow/task-graph";
 import { Container, ServiceRegistry, sleep } from "@workglow/util";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 type BinOut = { bytes: Blob | ArrayBuffer };

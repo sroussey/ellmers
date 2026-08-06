@@ -13,8 +13,9 @@ import type {
   StreamEvent,
   TaskConfig,
 } from "@workglow/task-graph";
-import { makeFingerprint, ServiceRegistry } from "@workglow/util";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { ServiceRegistry } from "@workglow/util";
+import { makeFingerprint } from "@workglow/util";
+import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";

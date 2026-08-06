@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createGraphFromDependencyJSON, JsonTaskItem, TaskGraph } from "@workglow/task-graph";
+import type { JsonTaskItem, TaskGraph } from "@workglow/task-graph";
+import { createGraphFromDependencyJSON } from "@workglow/task-graph";
 
 /** True if any task item (including nested subtasks) is a synthetic boundary task. */
 export function dependencyJsonHasBoundaryTasks(items: JsonTaskItem[]): boolean {

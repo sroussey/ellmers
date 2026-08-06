@@ -4,22 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  CreateWorkflow,
-  IExecuteContext,
-  Task,
-  TaskConfig,
-  TaskInvalidInputError,
-  Workflow,
-} from "@workglow/task-graph";
-import {
-  createTypedArrayFrom,
+import type { IExecuteContext, TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Task, TaskInvalidInputError, Workflow } from "@workglow/task-graph";
+import type {
   DataPortSchema,
   FromSchema,
   TypedArray,
-  TypedArraySchema,
   TypedArraySchemaOptions,
 } from "@workglow/util/schema";
+import { createTypedArrayFrom, TypedArraySchema } from "@workglow/util/schema";
 import { sumPrecise } from "../scalar/sumPrecise";
 
 const inputSchema = {
