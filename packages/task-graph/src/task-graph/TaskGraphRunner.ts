@@ -118,6 +118,20 @@ export class TaskGraphRunner {
    * output. True by default so workflow return values are complete.
    */
   protected accumulateLeafOutputs: boolean = true;
+
+  /**
+   * Opt-in to the no-accumulation passthrough path for this run. Off by
+   * default — every edge takes today's drain unless this is set AND the edge
+   * meets the passthrough conditions (see {@link TaskGraphRunConfig.noAccumulation}).
+   */
+  protected noAccumulation: boolean = false;
+
+  /** High-water mark (bytes) for the no-accumulation passthrough gate. */
+  protected streamHighWaterBytes?: number;
+
+  /** Liveness watchdog (ms) for the no-accumulation passthrough gate. */
+  protected streamGateWatchdogMs?: number;
+
   /**
    * Service registry for this graph run.
    * Read by EdgeMaterializer via bracket access (`runner["registry"]`).
@@ -484,7 +498,7 @@ export class TaskGraphRunner {
     // the task's executeStream() (via inputStreams) while the other stays
     // on the edge for materialization by awaitStreamInputs.
     if (isStreamable) {
-      this.streamPump.prepareStreamingInputs(task);
+      this.streamPump.prepareStreamingInputs(task, this.noAccumulation);
     }
 
     // Await any active streams on input dataflow edges so their values
@@ -494,7 +508,7 @@ export class TaskGraphRunner {
     // Streaming downstream tasks are still unblocked early by the scheduler
     // (they can start setup while upstream is streaming), but their actual
     // input data waits for upstream completion.
-    await this.streamPump.awaitStreamInputs(task, this.registry);
+    await this.streamPump.awaitStreamInputs(task, this.registry, this.noAccumulation);
 
     this.edgeMaterializer.copyInputFromEdgesToNode(task);
 
@@ -517,6 +531,9 @@ export class TaskGraphRunner {
         outputCache: this.outputCache,
         resourceScope: this.resourceScope,
         accumulateLeafOutputs: this.accumulateLeafOutputs,
+        noAccumulation: this.noAccumulation,
+        streamHighWaterBytes: this.streamHighWaterBytes,
+        streamGateWatchdogMs: this.streamGateWatchdogMs,
         updateProgress: (t, p, m, ...a) =>
           this.runScheduler.handleProgress(this.currentCtx!, t, p, m, ...a),
         runId: this.runId,
@@ -530,6 +547,12 @@ export class TaskGraphRunner {
       // `this.outputCache` (which may be undefined, letting TaskRunner use
       // CACHE_REGISTRY from the per-run ServiceRegistry).
       outputCache: this.legacyCacheExplicitlyDisabled ? false : this.outputCache,
+      // Thread stream-pacing options so a compound (subgraph-hosting) task
+      // that takes the non-streaming path still retains and forwards them
+      // into its subgraph run.
+      noAccumulation: this.noAccumulation,
+      streamHighWaterBytes: this.streamHighWaterBytes,
+      streamGateWatchdogMs: this.streamGateWatchdogMs,
       updateProgress: async (
         task: ITask,
         progress: number | undefined,
@@ -688,6 +711,9 @@ export class TaskGraphRunner {
     }
 
     this.accumulateLeafOutputs = config?.accumulateLeafOutputs !== false;
+    this.noAccumulation = config?.noAccumulation === true;
+    this.streamHighWaterBytes = config?.streamHighWaterBytes;
+    this.streamGateWatchdogMs = config?.streamGateWatchdogMs;
 
     if (config?.outputCache !== undefined) {
       if (typeof config.outputCache === "boolean") {

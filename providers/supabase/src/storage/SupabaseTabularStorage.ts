@@ -173,7 +173,7 @@ export class SupabaseTabularStorage<
     const sql = `
       CREATE TABLE IF NOT EXISTS "${this.table}" (
         ${this.constructPrimaryKeyColumns('"')} ${this.constructValueColumns('"')},
-        PRIMARY KEY (${this.primaryKeyColumnList()})
+        PRIMARY KEY (${this.primaryKeyColumnList('"')})
       )
     `;
     const { error } = await this.client.rpc("exec_sql", { query: sql });

@@ -20,10 +20,18 @@
  *     downstream tasks from starting.
  */
 
-import type { CachePolicy, StreamEvent } from "@workglow/task-graph";
+import type {
+  BinaryRefSink,
+  CachePolicy,
+  CacheRef,
+  StreamEvent,
+  StreamSink,
+} from "@workglow/task-graph";
 import {
   Dataflow,
   IExecuteContext,
+  isCacheRef,
+  makeCacheRef,
   Task,
   TaskGraph,
   TaskGraphRunner,
@@ -312,6 +320,200 @@ describe("Streaming backpressure and stress", () => {
         expect(output.text).toBe(expected);
       }
     });
+  });
+
+  describe("binary backpressure", () => {
+    // Sized so a fast producer would overwhelm a slow sink: 100 chunks of 1 MiB
+    // each = 100 MiB total, sink consumes one chunk every 50 ms (~5 s end-to-end).
+    const CHUNK = 1024 * 1024;
+    const CHUNKS = 100;
+    const HIGH_WATER = 4 * 1024 * 1024;
+
+    type BinOut = { bytes: Blob };
+
+    /**
+     * Streams `CHUNKS` × `CHUNK` bytes; awaits the producer-side `push`
+     * promise so the byte-bounded backpressure check actually parks when the
+     * router buffer reaches the high-water mark.
+     */
+    class FastBinaryProducer extends Task<Record<string, never>, BinOut> {
+      public static override type = "StreamingBackpressure_FastBinaryProducer";
+      public static override cachePolicy: CachePolicy = { kind: "none" };
+      public static override cacheable = true;
+
+      public static override inputSchema(): DataPortSchema {
+        return { type: "object", properties: {}, additionalProperties: false } as const;
+      }
+      public static override outputSchema(): DataPortSchema {
+        return {
+          type: "object",
+          properties: { bytes: { type: "object", format: "blob", "x-stream": "binary" } },
+          additionalProperties: false,
+        } as const satisfies DataPortSchema;
+      }
+
+      async *executeStream(
+        _input: Record<string, never>,
+        _ctx: IExecuteContext
+      ): AsyncIterable<StreamEvent<BinOut>> {
+        for (let i = 0; i < CHUNKS; i++) {
+          const chunk = new Uint8Array(CHUNK).fill(i & 0xff);
+          yield { type: "binary-delta", port: "bytes", binaryDelta: chunk };
+        }
+        yield { type: "finish", data: {} as BinOut };
+      }
+    }
+
+    it("keeps router buffer at-or-below the high-water mark while a slow sink drains", async () => {
+      const router = await import("@workglow/task-graph");
+      const { BinaryStreamRouter } = router as unknown as {
+        BinaryStreamRouter: new (
+          sink: BinaryRefSink,
+          highWaterMarkBytes: number
+        ) => {
+          push(chunk: Uint8Array): Promise<void>;
+          end(): void;
+          ref(): Promise<CacheRef>;
+          readonly _bufferedBytes: number;
+        };
+      };
+
+      let observedPeak = 0;
+      const consumed: number[] = [];
+      const sink: BinaryRefSink = async (chunks) => {
+        for await (const c of chunks) {
+          consumed.push(c.byteLength);
+          // Slow consumer: 50 ms per chunk.
+          await new Promise((res) => setTimeout(res, 50));
+        }
+        return makeCacheRef({ $ref: "inmem://bp", size: consumed.reduce((a, b) => a + b, 0) });
+      };
+
+      const r = new BinaryStreamRouter(sink, HIGH_WATER);
+      for (let i = 0; i < CHUNKS; i++) {
+        const chunk = new Uint8Array(CHUNK).fill(i & 0xff);
+        await r.push(chunk);
+        observedPeak = Math.max(observedPeak, r._bufferedBytes);
+      }
+      r.end();
+      const ref = await r.ref();
+
+      // Peak buffer stayed at-or-below the high-water mark + at most one chunk
+      // (the chunk that pushed us over the mark is counted before we park).
+      expect(observedPeak).toBeLessThanOrEqual(HIGH_WATER + CHUNK);
+
+      // Every byte was delivered.
+      const totalDelivered = consumed.reduce((a, b) => a + b, 0);
+      expect(totalDelivered).toBe(CHUNKS * CHUNK);
+      expect(ref.size).toBe(CHUNKS * CHUNK);
+      expect(isCacheRef(ref)).toBe(true);
+    }, 30_000);
+
+    it("releases a parked push() promise within 100ms when the router is ended (abort path)", async () => {
+      const router = await import("@workglow/task-graph");
+      const { BinaryStreamRouter } = router as unknown as {
+        BinaryStreamRouter: new (
+          sink: BinaryRefSink,
+          highWaterMarkBytes: number
+        ) => {
+          push(chunk: Uint8Array): Promise<void>;
+          end(): void;
+          fail(err: Error): void;
+          ref(): Promise<CacheRef>;
+          readonly _bufferedBytes: number;
+        };
+      };
+
+      // Sink starts consuming but the gate keeps it parked so the producer
+      // buffer fills to the high-water mark. The orphaned-Promise bug pre-fix:
+      // `end()` did not release the parked producer, so the test would
+      // wait until the test-level timeout.
+      let gateRelease: (() => void) | undefined;
+      const gate = new Promise<void>((res) => {
+        gateRelease = res;
+      });
+      const seen: Uint8Array[] = [];
+      const sink: BinaryRefSink = async (chunks) => {
+        await gate; // park the sink so the buffer stays full
+        for await (const c of chunks) {
+          seen.push(c);
+        }
+        return makeCacheRef({ $ref: "inmem://parked", size: 0 });
+      };
+
+      // High-water mark of 1 byte so a single non-empty chunk parks the next push.
+      const r = new BinaryStreamRouter(sink, 1);
+      // The first push parks immediately (1 byte >= 1-byte mark, no consumer).
+      const parked = r.push(new Uint8Array([0xff]));
+
+      let parkedResolved = false;
+      parked.then(() => {
+        parkedResolved = true;
+      });
+
+      // Park before measuring.
+      await new Promise((res) => setTimeout(res, 10));
+      expect(parkedResolved).toBe(false);
+
+      const t0 = Date.now();
+      r.end();
+      await parked;
+      const elapsed = Date.now() - t0;
+
+      expect(parkedResolved).toBe(true);
+      expect(elapsed).toBeLessThan(100);
+
+      // Release the sink so the test exits cleanly.
+      gateRelease?.();
+      await r.ref();
+      void seen;
+    }, 10_000);
+
+    it("runs a 100MiB stream end-to-end through StreamProcessor with byte-bounded backpressure", async () => {
+      const producer = new FastBinaryProducer({ id: "producer" });
+
+      let received = 0;
+      const sink: BinaryRefSink = async (chunks) => {
+        for await (const c of chunks) {
+          received += c.byteLength;
+          // Slow consumer — gives the producer time to outrun it without
+          // bound if backpressure didn't apply. The byte-bounded invariant
+          // itself is exercised directly in the BinaryStreamRouter unit
+          // test above; here we verify the full StreamProcessor path
+          // delivers every byte through the throttle without hangs or drops.
+          await new Promise((res) => setTimeout(res, 2));
+        }
+        return makeCacheRef({ $ref: "inmem://e2e", size: received });
+      };
+
+      const processor = (producer as any).runner.streamProcessor as {
+        run(input: any, ctx: any, deps: any): Promise<BinOut | undefined>;
+      };
+      const abortController = new AbortController();
+      const ctx = {
+        abortController,
+        shouldAccumulate: false,
+        telemetrySpan: undefined,
+        dispose: () => {},
+      } as any;
+      const sinks: ReadonlyMap<string, StreamSink> = new Map([
+        ["bytes", { mode: "binary", write: sink }],
+      ]);
+
+      const output = (await processor.run({}, ctx, {
+        registry: undefined as any,
+        resourceScope: undefined,
+        inputStreams: undefined,
+        onProgress: async () => {},
+        own: <T>(t: T) => t,
+        refSinks: sinks,
+        streamHighWaterBytes: HIGH_WATER,
+      })) as BinOut | undefined;
+
+      expect(output).toBeDefined();
+      // Every byte arrived; backpressure didn't drop chunks.
+      expect(received).toBe(CHUNKS * CHUNK);
+    }, 30_000);
   });
 
   describe("StreamError propagation", () => {

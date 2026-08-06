@@ -883,6 +883,28 @@ export class Task<
     return config;
   }
 
+  /**
+   * Returns a copy of an object input schema with `ports` removed from both
+   * `properties` and `required`. Used by {@link validateInput} to exclude
+   * stream-wired ports (which have no settled value this run) from whole-value
+   * validation. Boolean schemas and non-object schemas pass through unchanged.
+   */
+  private static schemaWithoutPorts(
+    schema: DataPortSchema,
+    ports: ReadonlySet<string>
+  ): DataPortSchema {
+    if (typeof schema === "boolean" || !schema.properties) return schema;
+    const properties: Record<string, unknown> = {};
+    for (const [name, prop] of Object.entries(schema.properties)) {
+      if (!ports.has(name)) properties[name] = prop;
+    }
+    const next: Record<string, unknown> = { ...schema, properties };
+    if (Array.isArray(schema.required)) {
+      next.required = schema.required.filter((r: string) => !ports.has(r));
+    }
+    return next as DataPortSchema;
+  }
+
   protected static generateInputSchemaNode(schema: DataPortSchema) {
     if (typeof schema === "boolean") {
       if (schema === false) {
@@ -932,15 +954,34 @@ export class Task<
   }
 
   /**
-   * Validates an input data object against the task's input schema
+   * Validates an input data object against the task's input schema.
+   *
+   * `skipPorts` exempts the named input ports from validation: they are dropped
+   * from both the validated object and a derived copy of the schema (removed
+   * from `properties` and `required`), so neither a type mismatch nor a
+   * `required` check fires for them. The runner passes the ports it is feeding
+   * as a live event stream this run — a stream-wired port has no settled value
+   * to validate (its slot may hold only a {@link CacheRef} pointer), so
+   * whole-value validation does not apply. Ports that carry a settled value are
+   * always validated, even when they declare `x-stream`.
    */
-  public async validateInput(input: Input): Promise<boolean> {
+  public async validateInput(input: Input, skipPorts?: ReadonlySet<string>): Promise<boolean> {
     if (typeof input !== "object" || input === null) {
       throw new TaskInvalidInputError("Input must be an object");
     }
     const ctor = this.constructor as typeof Task;
+    const skip = skipPorts && skipPorts.size > 0 ? skipPorts : undefined;
+    let validated: Record<string, unknown> = input as Record<string, unknown>;
     let schemaNode: SchemaNode;
-    if (ctor.hasDynamicSchemas) {
+    if (skip) {
+      // Validate the settled ports against a schema with the streamed ports
+      // removed; drop their keys from the object so `additionalProperties:false`
+      // does not then reject them as unknown.
+      const base = ctor.hasDynamicSchemas ? this.inputSchema() : ctor.inputSchema();
+      schemaNode = ctor.generateInputSchemaNode(Task.schemaWithoutPorts(base, skip));
+      validated = { ...(input as Record<string, unknown>) };
+      for (const port of skip) delete validated[port];
+    } else if (ctor.hasDynamicSchemas) {
       // Dynamic-schema tasks use instance inputSchema() (e.g. config.inputSchema), not the static fallback.
       // The cached getInputSchemaNode uses static inputSchema() which would reject valid instance-specific inputs.
       const instanceSchema = this.inputSchema();
@@ -948,7 +989,7 @@ export class Task<
     } else {
       schemaNode = this.getInputSchemaNode();
     }
-    const result = schemaNode.validate(input);
+    const result = schemaNode.validate(validated);
 
     if (!result.valid) {
       const errorMessages = result.errors.map((e) => {

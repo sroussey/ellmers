@@ -53,6 +53,25 @@ export interface TaskGraphRunConfig {
    */
   accumulateLeafOutputs?: boolean;
   /**
+   * Opt into the no-accumulation passthrough path for this run (default
+   * `false`). Same semantics as {@link IRunConfig.noAccumulation}: a streaming
+   * source feeding a single same-mode streaming consumer over a plain edge
+   * skips the full-speed materialize drain and is paced by the consumer's read
+   * rate. Edges that don't qualify fall back to today's drain. Off ⇒ behavior
+   * is byte-identical to the accumulation path.
+   */
+  noAccumulation?: boolean;
+  /**
+   * High-water mark (bytes) for the no-accumulation passthrough gate. See
+   * {@link IRunConfig.streamHighWaterBytes}.
+   */
+  streamHighWaterBytes?: number;
+  /**
+   * Liveness watchdog (ms) for the no-accumulation passthrough gate. See
+   * {@link IRunConfig.streamGateWatchdogMs}.
+   */
+  streamGateWatchdogMs?: number;
+  /**
    * Maximum time in milliseconds for the entire graph execution.
    * When exceeded, all in-progress tasks are aborted and a TaskTimeoutError is thrown.
    */
@@ -161,6 +180,9 @@ export class TaskGraph implements ITaskGraph {
       outputCache: config?.outputCache || this.outputCache,
       parentSignal: config?.parentSignal || undefined,
       accumulateLeafOutputs: config?.accumulateLeafOutputs,
+      noAccumulation: config?.noAccumulation,
+      streamHighWaterBytes: config?.streamHighWaterBytes,
+      streamGateWatchdogMs: config?.streamGateWatchdogMs,
       registry: config?.registry,
       timeout: config?.timeout,
       maxTasks: config?.maxTasks,

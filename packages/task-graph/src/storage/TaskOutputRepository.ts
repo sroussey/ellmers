@@ -5,6 +5,8 @@
  */
 
 import { createServiceToken, EventEmitter, EventParameters } from "@workglow/util";
+import type { CacheRef } from "../cache/CacheRef";
+import type { StreamMode } from "../task/StreamTypes";
 import { TaskInput, TaskOutput } from "../task/TaskTypes";
 
 export const TASK_OUTPUT_REPOSITORY = createServiceToken<TaskOutputRepository>(
@@ -79,6 +81,107 @@ export abstract class TaskOutputRepository {
     createdAt?: Date // for testing purposes
   ): Promise<void>;
 
+  /**
+   * OPTIONAL streaming sink. Implementations that can ingest a byte stream
+   * without materializing the full payload (e.g. a file-backed cache) declare
+   * this method; the runner pipes `binary-delta` chunks straight to it. The
+   * default base class does NOT implement it — call `supportsStreaming()` to
+   * branch. `metadata` carries side-band data (e.g. HTTP response headers).
+   *
+   * Returns a {@link CacheRef} that the runner places into `Output` at the
+   * binary port slot when the reference threshold is met. The `$ref` string is
+   * opaque; only this repository (and any wrapping namespacer like
+   * {@link RunPrivateCacheRepo}) needs to know how to decode it via
+   * {@link getOutputByRef} / {@link getOutputStreamByRef}.
+   *
+   * Implementations that provide `saveOutputStream` MUST also provide
+   * `getOutputByRef` (and ideally `getOutputStreamByRef`); a ref written by
+   * one without a paired reader is unresolvable.
+   *
+   * Implementations SHOULD populate `size` on the returned ref: refs without
+   * a known size are conservatively kept as refs, silently bypassing
+   * below-threshold inlining for callers that expect small outputs inline.
+   */
+  saveOutputStream?(
+    taskType: string,
+    inputs: TaskInput,
+    chunks: AsyncIterable<Uint8Array>,
+    metadata: Record<string, unknown>
+  ): Promise<CacheRef>;
+
+  /**
+   * OPTIONAL port-aware superset of {@link saveOutputStream}. Persists one
+   * output port's already-encoded byte stream (a stream codec applies the
+   * per-mode encoding before this call), keyed by `(taskType, inputs, port)` so
+   * a task with several streamable ports stores each independently. The
+   * returned {@link CacheRef} carries `port` and `mode` so the reader knows
+   * which codec to replay. Bytes are read back through {@link getOutputByRef} /
+   * {@link getOutputStreamByRef}, exactly like a binary ref. Backings that
+   * implement {@link saveOutputStream} but not this method support only the
+   * legacy single-binary-port path.
+   */
+  saveOutputStreamPort?(
+    taskType: string,
+    inputs: TaskInput,
+    port: string,
+    mode: StreamMode,
+    chunks: AsyncIterable<Uint8Array>,
+    metadata: Record<string, unknown>
+  ): Promise<CacheRef>;
+
+  /**
+   * OPTIONAL reader counterpart of {@link saveOutputStream}. Resolves a
+   * {@link CacheRef} previously produced by `saveOutputStream` to a `Blob`.
+   * Returns `undefined` on cache miss (TTL expiry, manual clear). The runner
+   * never calls this directly; consumers calling `JobHandle.result()` or
+   * `resolveOutput` reach it through the resolver layer.
+   */
+  getOutputByRef?(ref: CacheRef): Promise<Blob | undefined>;
+
+  /**
+   * OPTIONAL streaming reader counterpart of {@link saveOutputStream}. Returns
+   * an async iterable of bytes for the referenced entry, or `undefined` when
+   * the entry is absent or this backing does not support streaming retrieval.
+   *
+   * Synchronous backings (filesystem `openSync`, in-memory) return the iterable
+   * directly. Asynchronous backings (IndexedDB, SQL) that cannot probe
+   * existence synchronously MAY return a Promise; the runtime's read helper
+   * ({@link streamRefViaBacking}) awaits it, so a dangling ref still resolves to
+   * `undefined` (a cache miss) rather than a silently empty stream.
+   *
+   * Implementations MUST yield bounded-size chunks (e.g. filesystem read
+   * chunks): cache-hit replay paces consumers per chunk, so yielding the
+   * whole payload as one chunk defeats the memory bound this reader exists
+   * to provide.
+   */
+  getOutputStreamByRef?(
+    ref: CacheRef
+  ): AsyncIterable<Uint8Array> | undefined | Promise<AsyncIterable<Uint8Array> | undefined>;
+
+  /**
+   * OPTIONAL cleanup hook for orphan blobs. Called by the runner when a
+   * stream-write succeeded (producing a {@link CacheRef}) but the row write
+   * that points at it failed — without this, the blob would persist on disk
+   * with no row referencing it, and the row-driven cleanup paths would never
+   * find it. Implementations SHOULD be best-effort and idempotent (no error
+   * on missing entry). Returns when the deletion attempt has settled.
+   */
+  deleteOutputByRef?(ref: CacheRef): Promise<void>;
+
+  /** True when this repository implements `saveOutputStream`. */
+  supportsStreaming(): boolean {
+    return typeof this.saveOutputStream === "function";
+  }
+
+  /**
+   * True when this repository implements the port-aware {@link saveOutputStreamPort}
+   * (the all-mode, multi-port superset of {@link saveOutputStream}). Backings
+   * that stream only the legacy single binary port return `false`.
+   */
+  supportsStreamingPorts(): boolean {
+    return typeof this.saveOutputStreamPort === "function";
+  }
+
   abstract getOutput(taskType: string, inputs: TaskInput): Promise<TaskOutput | undefined>;
 
   abstract clear(): Promise<void>;
@@ -152,4 +255,68 @@ export abstract class TaskOutputRepository {
   async sizeForRun(_runId: string): Promise<number> {
     throw new Error(`${this.constructor.name}: sizeForRun is not supported by this repository.`);
   }
+
+  /**
+   * OPTIONAL run-scoped counterpart of {@link saveOutputStream}. Persists a
+   * binary stream under a specific `runId` so a streaming task with
+   * `kind: "private"` writes through the same sidecar as the deterministic
+   * tier without leaking across runs. {@link RunPrivateCacheRepo} forwards to
+   * this method when the backing declares it; backings that cannot stream
+   * (e.g. a tabular run-private table) omit it and the private tier degrades to
+   * accumulation. The returned {@link CacheRef}'s `$ref` is opaque; the SAME
+   * backing resolves it via {@link getOutputByRef} / {@link getOutputStreamByRef}
+   * and reclaims it when {@link deleteRun} runs for `runId`.
+   */
+  saveOutputStreamForRun?(
+    runId: string,
+    taskType: string,
+    inputs: TaskInput,
+    chunks: AsyncIterable<Uint8Array>,
+    metadata: Record<string, unknown>
+  ): Promise<CacheRef>;
+
+  /**
+   * OPTIONAL run-scoped, port-aware counterpart of {@link saveOutputStreamPort}
+   * (the all-mode, multi-port superset of {@link saveOutputStreamForRun}). Keys
+   * one output port's encoded byte stream by `(runId, taskType, inputs, port)`.
+   */
+  saveOutputStreamPortForRun?(
+    runId: string,
+    taskType: string,
+    inputs: TaskInput,
+    port: string,
+    mode: StreamMode,
+    chunks: AsyncIterable<Uint8Array>,
+    metadata: Record<string, unknown>
+  ): Promise<CacheRef>;
+
+  /**
+   * OPTIONAL run-scoped reader counterpart of {@link getOutputByRef}. A `ref`
+   * that was NOT produced by a `*ForRun` writer for the given `runId` MUST
+   * resolve to `undefined` — foreign refs are treated as cache misses, never
+   * as errors, to match {@link getOutputByRef}'s idempotency contract.
+   * {@link RunPrivateCacheRepo} routes its by-ref reads through this method
+   * so a wrapper never resolves another run's blob.
+   */
+  getOutputByRefForRun?(ref: CacheRef, runId: string): Promise<Blob | undefined>;
+
+  /**
+   * OPTIONAL run-scoped streaming reader counterpart of
+   * {@link getOutputStreamByRef}. A `ref` that was NOT produced by a `*ForRun`
+   * writer for the given `runId` MUST resolve to `undefined`; foreign refs
+   * never throw. Same synchronous / Promise-returning shape as the unscoped
+   * variant so async backings can probe existence before returning an iterable.
+   */
+  getOutputStreamByRefForRun?(
+    ref: CacheRef,
+    runId: string
+  ): AsyncIterable<Uint8Array> | undefined | Promise<AsyncIterable<Uint8Array> | undefined>;
+
+  /**
+   * OPTIONAL run-scoped counterpart of {@link deleteOutputByRef}. A `ref` that
+   * was NOT produced by a `*ForRun` writer for the given `runId` MUST be a
+   * no-op — foreign refs never touch disk / storage, matching the base
+   * contract's best-effort idempotency (no throw on missing entry).
+   */
+  deleteOutputByRefForRun?(ref: CacheRef, runId: string): Promise<void>;
 }

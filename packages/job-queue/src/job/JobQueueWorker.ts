@@ -32,6 +32,7 @@ import {
   RetryableJobError,
 } from "./JobError";
 import { withJobErrorDiagnostics } from "./JobErrorDiagnostics";
+import type { StreamEventLike } from "./JobQueueEventListeners";
 import { storageToClass } from "./JobStorageConverters";
 
 /**
@@ -57,6 +58,7 @@ export type JobQueueWorkerEventListeners<Input, Output> = {
     message: string,
     details: Record<string, unknown> | null
   ) => void;
+  job_stream: (jobId: unknown, event: StreamEventLike) => void;
   worker_start: () => void;
   worker_stop: () => void;
 };
@@ -195,6 +197,13 @@ export class JobQueueWorker<
    * Abort controllers for active jobs
    */
   protected readonly activeJobAbortControllers: Map<unknown, AbortController> = new Map();
+
+  /**
+   * Per-job promise chains serializing stream-chunk publishes — see
+   * {@link emitStreamEvent}. Entries are dropped in {@link cleanupJob}; a
+   * still-pending tail publish settles on its own.
+   */
+  private readonly streamPublishChains: Map<unknown, Promise<void>> = new Map();
 
   /**
    * Recent per-job processing durations (ms) used for
@@ -863,6 +872,7 @@ export class JobQueueWorker<
     return await job.execute(job.input, {
       signal,
       updateProgress: this.updateProgress.bind(this, job.id),
+      emitStreamEvent: (event) => this.emitStreamEvent(job.id, event),
     });
   }
 
@@ -882,6 +892,40 @@ export class JobQueueWorker<
   ): Promise<void> {
     progress = Math.max(0, Math.min(100, progress));
     this.events.emit("job_progress", jobId, progress, message, details);
+  }
+
+  /**
+   * Emit a cross-process stream event for a job.
+   *
+   * Mirrors {@link updateProgress}: stream events are delivered in-memory via
+   * the `job_stream` event and forwarded by an attached `JobQueueServer` to
+   * subscribed clients. Storage is not touched.
+   */
+  protected emitStreamEvent(jobId: unknown, event: StreamEventLike): void {
+    // In-memory fast path (same-process attached clients) — unchanged.
+    this.events.emit("job_stream", jobId, event);
+
+    // Cross-process side-channel (best-effort). The CARRIER assigns the per-job
+    // `seq` from a counter it owns, so the sequence is continuous across
+    // attempts: a retry claimed by a different worker continues the same job's
+    // sequence instead of restarting at 1 and colliding with the prior
+    // attempt's events (which the subscriber's reassembler would then drop). A
+    // publish failure must never fail the job.
+    //
+    // Publishes are serialized per job: the carrier contract permits ASYNC seq
+    // assignment, so firing publishes concurrently could let a later event
+    // claim an earlier seq and arrive permanently out of order. Chaining each
+    // publish after the previous one settles guarantees seqs are assigned in
+    // emission order.
+    const publish = this.messageQueue.publishStreamChunk;
+    if (typeof publish === "function") {
+      const chain = (this.streamPublishChains.get(jobId) ?? Promise.resolve())
+        .then(() => publish.call(this.messageQueue, jobId, event))
+        .catch((err) => {
+          getLogger().error("publishStreamChunk failed", { jobId, error: err });
+        });
+      this.streamPublishChains.set(jobId, chain);
+    }
   }
 
   /** Internal — resolve the active claim for a job id, throw if missing. */
@@ -1167,6 +1211,7 @@ export class JobQueueWorker<
   protected cleanupJob(jobId: unknown): void {
     this.activeJobAbortControllers.delete(jobId);
     this.activeClaims.delete(jobId);
+    this.streamPublishChains.delete(jobId);
   }
 
   /**

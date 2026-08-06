@@ -12,9 +12,12 @@ import {
   ServiceRegistry,
   SpanStatusCode,
 } from "@workglow/util";
+import { isCacheRef, resolveReferenceThreshold } from "../cache/CacheRef";
 import type { CacheRegistry } from "../cache/CacheRegistry";
 import { CACHE_REGISTRY, DefaultCacheRegistry } from "../cache/CacheRegistry";
+import { streamRefViaBacking } from "../cache/resolveRef";
 import { RunPrivateCacheRepo } from "../cache/RunPrivateCacheRepo";
+import { getStreamPortCodec } from "../cache/streamCodec";
 import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { Taskish } from "../task-graph/Conversions";
 import { ensureTask } from "../task-graph/Conversions";
@@ -22,9 +25,18 @@ import { CacheCoordinator } from "./CacheCoordinator";
 import { resolveSchemaInputs, schemaHasFormatAnnotations } from "./InputResolver";
 import type { IRunConfig, ITask } from "./ITask";
 import { ITaskRunner } from "./ITaskRunner";
+import type { BinaryRefSink, StreamSink } from "./StreamProcessor";
 import { StreamProcessor } from "./StreamProcessor";
 import type { StreamEvent } from "./StreamTypes";
-import { getOutputStreamMode, isTaskStreamable } from "./StreamTypes";
+import {
+  getBinaryPortFormat,
+  getOutputStreamMode,
+  getPortStreamMode,
+  getStreamingPorts,
+  isDeltaStreamMode,
+  isTaskStreamable,
+  portForcesStreamValidation,
+} from "./StreamTypes";
 import { Task } from "./Task";
 import {
   TaskAbortedError,
@@ -51,6 +63,20 @@ function hasRunConfig(i: unknown): i is { runConfig: Partial<IRunConfig> } {
  */
 function isOwnTrackable(i: unknown): i is object {
   return i !== null && (typeof i === "object" || typeof i === "function");
+}
+
+/**
+ * Adapts the legacy single-binary-port sink map to the unified per-port
+ * {@link StreamSink} shape: a binary-mode sink is exactly a
+ * {@link BinaryRefSink} with its mode named.
+ */
+function wrapBinarySinks(
+  sinks: ReadonlyMap<string, BinaryRefSink> | undefined
+): ReadonlyMap<string, StreamSink> | undefined {
+  if (!sinks) return undefined;
+  const wrapped = new Map<string, StreamSink>();
+  for (const [port, write] of sinks) wrapped.set(port, { mode: "binary", write });
+  return wrapped;
 }
 
 /**
@@ -90,6 +116,16 @@ export class TaskRunner<
    * legacy `config.outputCache` repo shim.
    */
   protected cacheRegistry?: CacheRegistry;
+
+  /**
+   * Stream-pacing options resolved per-run in handleStart (run config over
+   * `task.runConfig`). Retained on the runner — like {@link outputCache} — so
+   * compound runners (GraphAsTask / Iterator / While / Fallback) can forward
+   * them into their subgraph runs via {@link streamRunOptions}.
+   */
+  protected noAccumulation?: boolean;
+  protected streamHighWaterBytes?: number;
+  protected streamGateWatchdogMs?: number;
 
   /**
    * Cache coordinator for the task (key normalization, lookup, save).
@@ -197,8 +233,10 @@ export class TaskRunner<
 
         await this.resolveSchemas();
 
-        const inputs: Input = this.task.runInputData as Input;
-        const isValid = await this.task.validateInput(inputs);
+        const inputs: Input = await this.hydrateInputRefs(this.task.runInputData as Input);
+        this.task.runInputData = inputs;
+        const streamWiredSkips = this.streamWiredValidationSkips(inputs);
+        const isValid = await this.task.validateInput(inputs, streamWiredSkips);
         if (!isValid) {
           throw new TaskInvalidInputError("Invalid input data");
         }
@@ -222,6 +260,16 @@ export class TaskRunner<
         }
 
         let policy = this.task.getCachePolicy(inputs);
+
+        // A port fed by a live event stream has no settled value when the
+        // cache key is computed — the streamed content cannot contribute to
+        // the key, so two runs differing only in stream payload would collide
+        // on one entry (stale hits, poisoned rows). Disable caching for any
+        // run consuming a live stream at an unsettled port; a drained edge
+        // settles the value before this point and keeps caching as usual.
+        if (streamWiredSkips !== undefined && streamWiredSkips.size > 0) {
+          policy = { kind: "none" };
+        }
 
         // Standalone TaskRunner cannot namespace private cache writes without a
         // runId — TaskGraphRunner owns the wrap. If a standalone caller routes
@@ -257,15 +305,72 @@ export class TaskRunner<
           this.cacheRegistry,
           policy
         );
+        const referenceThresholdBytes = resolveReferenceThreshold(
+          config.referenceThresholdBytes ?? this.task.runConfig.referenceThresholdBytes
+        );
         let outputs = await this.cacheCoordinator.lookupByPolicy(
           keyInputs,
           this.cacheRegistry,
           policy,
           isStreamable,
-          ctx
+          ctx,
+          {
+            hasMaterializingConsumers: config.hasMaterializingConsumers === true,
+            hasStreamingConsumers: config.hasStreamingConsumers === true,
+            edgeBackpressure: config.edgeBackpressure,
+          }
         );
 
         if (outputs === undefined) {
+          // Under the no-accumulation opt-in, build per-port sinks for EVERY
+          // streamable mode (append/object/binary) via the port-aware backing;
+          // otherwise fall back to the legacy single-binary-port sink (adapted
+          // to the same StreamSink shape). Both run memory-bounded; the runtime
+          // threshold controls whether the resulting CacheRef survives in
+          // Output or is rehydrated inline below.
+          const portSinks =
+            isStreamable && this.noAccumulation === true
+              ? this.cacheCoordinator.getRefSinksByPolicy(
+                  keyInputs,
+                  this.cacheRegistry,
+                  policy,
+                  this.task.outputSchema()
+                )
+              : undefined;
+          const refSinks =
+            portSinks ??
+            (isStreamable
+              ? wrapBinarySinks(
+                  this.cacheCoordinator.getBinaryRefSinksByPolicy(
+                    keyInputs,
+                    this.cacheRegistry,
+                    policy,
+                    this.task.outputSchema()
+                  )
+                )
+              : undefined);
+
+          // A streamable task with delta-mode output ports, a cache in play,
+          // and no sink resolved has nowhere to route those deltas. If
+          // accumulation is also off — the graph opted the task out expecting
+          // a sink, but the policy resolved to none here (a private policy
+          // without a usable slot, or a stream-wired run downgraded above) —
+          // the deltas would be silently discarded and the task would return
+          // (and cache!) an empty output. Force accumulation so the task
+          // still materializes its own output. Cache-off runs keep the
+          // documented raw-finish contract: with no cache configured,
+          // shouldAccumulate=false means every consumer takes the live stream
+          // and the raw `{}` finish is intentional.
+          if (
+            isStreamable &&
+            refSinks === undefined &&
+            this.cacheRegistry !== undefined &&
+            !ctx.shouldAccumulate &&
+            getStreamingPorts(this.task.outputSchema()).some((p) => isDeltaStreamMode(p.mode))
+          ) {
+            ctx.shouldAccumulate = true;
+          }
+
           outputs = isStreamable
             ? await this.streamProcessor.run(inputs, ctx, {
                 registry: this.registry,
@@ -274,17 +379,66 @@ export class TaskRunner<
                 onProgress: this.handleProgress.bind(this),
                 own: this.own,
                 disown: this.disown,
+                refSinks,
+                streamHighWaterBytes: this.streamHighWaterBytes,
+                edgeBackpressure: config.edgeBackpressure,
               })
             : await this.executeTask(inputs, ctx);
 
-          await this.cacheCoordinator.saveByPolicy(
-            keyInputs,
+          // Save the wire form FIRST: a CacheRef at a binary port is a small
+          // JSON-safe envelope, while an inline Blob/ArrayBuffer would be
+          // destroyed by JSON-row backings (JSON.stringify(Blob) === "{}").
+          // The row therefore always carries the ref; hydration below applies
+          // only to the value returned to the caller.
+          try {
+            await this.cacheCoordinator.saveByPolicy(
+              keyInputs,
+              outputs as Output,
+              this.cacheRegistry,
+              policy
+            );
+          } catch (saveErr) {
+            // The stream sink already wrote the blob and minted a CacheRef
+            // before we got here; the row write failure leaves that blob
+            // unreferenced. Best-effort delete it so the cache directory
+            // does not accumulate orphans on every save failure.
+            if (refSinks !== undefined && outputs !== undefined) {
+              await this.cacheCoordinator.cleanupOrphanBlobsForStreamPorts(
+                outputs as Output,
+                this.cacheRegistry,
+                policy,
+                this.task.outputSchema()
+              );
+            }
+            throw saveErr;
+          }
+
+          // Rehydrate refs whose committed size is below the configured
+          // threshold so callers see inline values for small outputs (threshold
+          // default = 64 KiB). Refs at/above threshold survive. threshold = 0
+          // forces every ref to survive regardless of size.
+          if (outputs !== undefined && refSinks !== undefined) {
+            outputs = await this.cacheCoordinator.hydrateRefsBelowThreshold(
+              outputs as Output,
+              this.cacheRegistry,
+              policy,
+              this.task.outputSchema(),
+              referenceThresholdBytes
+            );
+          }
+        } else {
+          // Cache hit: rows store refs (wire form), so apply the same
+          // below-threshold hydration a fresh run applies before returning —
+          // small outputs come back as inline Blob/ArrayBuffer either way.
+          outputs = await this.cacheCoordinator.hydrateRefsBelowThreshold(
             outputs as Output,
             this.cacheRegistry,
-            policy
+            policy,
+            this.task.outputSchema(),
+            referenceThresholdBytes
           );
-          this.task.runOutputData = outputs ?? ({} as Output);
         }
+        this.task.runOutputData = outputs ?? ({} as Output);
 
         await this.handleComplete(ctx);
 
@@ -329,6 +483,123 @@ export class TaskRunner<
       }
       this.ownsResourceScope = false;
     }
+  }
+
+  /**
+   * Ports to exempt from whole-value input validation this run: an input port
+   * fed by a live event stream has no settled value to validate (its slot holds
+   * only a {@link CacheRef} pointer, or nothing, until the stream finishes).
+   * A port that already carries a settled value is still validated — only a
+   * ref/undefined slot is skipped — so off the no-accumulation path (where the
+   * drain materializes the value) behavior is unchanged. A port that declares
+   * `x-validate-stream: true` opts back in (it wants its stream materialized and
+   * validated, forcing the accumulation fallback for that edge).
+   */
+  private streamWiredValidationSkips(inputs: Input): ReadonlySet<string> | undefined {
+    if (!this.inputStreams || this.inputStreams.size === 0) return undefined;
+    if (inputs === null || typeof inputs !== "object") return undefined;
+    const schema = this.task.inputSchema();
+    const source = inputs as Record<string, unknown>;
+    let skip: Set<string> | undefined;
+    for (const port of this.inputStreams.keys()) {
+      if (getPortStreamMode(schema, port) === "none") continue;
+      if (portForcesStreamValidation(schema, port)) continue;
+      const value = source[port];
+      if (value !== undefined && !isCacheRef(value)) continue;
+      (skip ??= new Set()).add(port);
+    }
+    return skip;
+  }
+
+  /**
+   * Hydrate branded {@link CacheRef} values in resolved inputs to inline
+   * values before `execute()` runs, resolving against the run's cache registry
+   * (private repo first, then deterministic). Materialization is mode-aware:
+   * an `append` / `object` ref decodes through its stream codec back to the
+   * string / folded object the port expects; anything else follows the input
+   * port's `format` annotation (`"binary"` → `ArrayBuffer`, else → `Blob`).
+   *
+   * Stream-wired input ports with a live input stream are skipped: those
+   * consumers take their data from the stream and the ref at the port remains
+   * the durable pointer — hydrating it would re-materialize what the stream
+   * already delivers.
+   *
+   * Hydration runs before cache-key computation so a ref-bearing input
+   * fingerprints identically to the materialized input a fresh upstream run
+   * would have produced.
+   *
+   * A ref that no longer resolves throws: by this point the bytes were
+   * expected to exist, and letting `undefined` flow into `execute()` produces
+   * far less debuggable failures than a named-port error.
+   */
+  private async hydrateInputRefs(inputs: Input): Promise<Input> {
+    if (inputs === null || typeof inputs !== "object") return inputs;
+    const repos = [this.cacheRegistry?.private, this.cacheRegistry?.deterministic].filter(
+      (r): r is TaskOutputRepository => r !== undefined && typeof r.getOutputByRef === "function"
+    );
+    if (repos.length === 0) return inputs;
+
+    const schema = this.task.inputSchema();
+    const source = inputs as Record<string, unknown>;
+    const hydrations = await Promise.all(
+      Object.entries(source).map(async ([port, value]) => {
+        if (!isCacheRef(value)) return undefined;
+        // Only resolve a ref at a port whose schema admits one — a
+        // delta-stream port (`append` / `object` / `binary`) or a
+        // blob/binary-format port, mirroring the output-side gating in
+        // hydrateRefsBelowThreshold. A ref-shaped value at any other port is
+        // not this runner's to interpret: resolving it would let arbitrary
+        // input JSON read cache entries into ports that never carry refs.
+        // Leave it untouched for normal input validation to reject.
+        const portMode = getPortStreamMode(schema, port);
+        const portFormat = getBinaryPortFormat(schema, port);
+        if (!isDeltaStreamMode(portMode) && portFormat !== "blob" && portFormat !== "binary") {
+          return undefined;
+        }
+        // A stream-wired input port (any mode) with a live input stream keeps
+        // its ref as the durable pointer — the consumer takes its data from
+        // the stream, so hydrating the ref would re-materialize what the
+        // stream already delivers.
+        if (portMode !== "none" && this.inputStreams?.has(port)) {
+          return undefined;
+        }
+        // append / object refs persist codec-encoded delta bytes; decode them
+        // back to the settled value instead of handing a byte Blob to a
+        // string/object port.
+        if (value.mode !== undefined && value.mode !== "binary" && isDeltaStreamMode(value.mode)) {
+          for (const repo of repos) {
+            const stream = await streamRefViaBacking(value, repo);
+            if (stream === undefined) continue;
+            const inlined = await getStreamPortCodec(value.mode).materialize(stream, port);
+            return { port, inlined };
+          }
+          throw this.unresolvableInputRefError(port);
+        }
+        let blob: Blob | undefined;
+        for (const repo of repos) {
+          blob = await repo.getOutputByRef!(value);
+          if (blob !== undefined) break;
+        }
+        if (blob === undefined) throw this.unresolvableInputRefError(port);
+        const inlined =
+          getBinaryPortFormat(schema, port) === "binary" ? await blob.arrayBuffer() : blob;
+        return { port, inlined };
+      })
+    );
+    let out: Record<string, unknown> | undefined;
+    for (const h of hydrations) {
+      if (!h) continue;
+      out ??= { ...source };
+      out[h.port] = h.inlined;
+    }
+    return (out ?? source) as Input;
+  }
+
+  private unresolvableInputRefError(port: string): TaskFailedError {
+    return new TaskFailedError(
+      `Task "${this.task.type}" input port "${port}" holds a cache ref that no configured ` +
+        `cache backing can resolve (entry evicted?).`
+    );
   }
 
   public async runPreview(overrides: Partial<Input> = {}): Promise<Output> {
@@ -524,6 +795,24 @@ export class TaskRunner<
 
   public abort(): void {
     this.currentCtx?.abortController.abort();
+  }
+
+  /**
+   * Stream-pacing options retained from the current run's config (resolved in
+   * handleStart), in the shape both `TaskGraphRunConfig` and {@link IRunConfig}
+   * accept. Compound tasks spread this into their subgraph runs so nested
+   * graphs inherit the caller's passthrough opt-in, high-water mark, and
+   * watchdog.
+   */
+  public get streamRunOptions(): Pick<
+    IRunConfig,
+    "noAccumulation" | "streamHighWaterBytes" | "streamGateWatchdogMs"
+  > {
+    return {
+      noAccumulation: this.noAccumulation,
+      streamHighWaterBytes: this.streamHighWaterBytes,
+      streamGateWatchdogMs: this.streamGateWatchdogMs,
+    };
   }
 
   // ========================================================================
@@ -727,6 +1016,16 @@ export class TaskRunner<
     // Propagate run identifier for use in IExecuteContext.
     this.runId = config.runId;
 
+    // Retain stream-pacing options for this run (like outputCache) so compound
+    // runners can forward them into subgraph runs — a nested graph must honor
+    // the same passthrough opt-in, high-water mark, and watchdog the caller
+    // configured.
+    this.noAccumulation = config.noAccumulation ?? this.task.runConfig?.noAccumulation;
+    this.streamHighWaterBytes =
+      config.streamHighWaterBytes ?? this.task.runConfig?.streamHighWaterBytes;
+    this.streamGateWatchdogMs =
+      config.streamGateWatchdogMs ?? this.task.runConfig?.streamGateWatchdogMs;
+
     // Cache resolution: prefer CacheRegistry (via ServiceRegistry); honour legacy
     // config.outputCache as a back-compat shim that maps to the deterministic slot.
     const legacy = config.outputCache ?? this.task.runConfig?.outputCache;
@@ -752,6 +1051,25 @@ export class TaskRunner<
       this.cacheRegistry = this.registry.has(CACHE_REGISTRY)
         ? this.registry.get(CACHE_REGISTRY)
         : undefined;
+    }
+
+    // The private tier's whole job is to reject foreign-run refs. If the two
+    // slots are wired to the same backing instance, the private wrapper rejects
+    // the ref but hydrateInputRefs' deterministic fallback resolves it anyway
+    // through the unscoped reader, reopening the same cross-run leak. Reject
+    // the misconfiguration up front rather than let hydration silently bypass
+    // the scope.
+    if (
+      this.cacheRegistry?.private instanceof RunPrivateCacheRepo &&
+      this.cacheRegistry.deterministic !== undefined &&
+      this.cacheRegistry.private.backing === this.cacheRegistry.deterministic
+    ) {
+      throw new TaskConfigurationError(
+        "CacheRegistry: the `private` and `deterministic` slots resolve to the same " +
+          "backing repository. Run-scoping via RunPrivateCacheRepo is bypassed when a " +
+          "foreign-run ref rejected by the private wrapper still resolves through the " +
+          "unscoped deterministic reader. Point the two slots at distinct backings."
+      );
     }
 
     // shouldAccumulate defaults to true (backward-compatible for standalone runs)

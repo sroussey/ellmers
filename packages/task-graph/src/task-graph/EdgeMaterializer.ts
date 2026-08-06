@@ -11,6 +11,7 @@ import type { ITask } from "../task/ITask";
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
 import { TaskStatus } from "../task/TaskTypes";
 import { DATAFLOW_ALL_PORTS, DATAFLOW_ERROR_PORT } from "./Dataflow";
+import { StreamPump } from "./StreamPump";
 import type { TaskGraph } from "./TaskGraph";
 import type { TaskGraphRunner } from "./TaskGraphRunner";
 
@@ -115,7 +116,21 @@ export class EdgeMaterializer {
       // Setting port data here would be overwritten by the finish event, and
       // applying transforms again on this path would double-apply
       // non-idempotent transforms, so skip the whole post-materialisation step.
-      if (dataflow.stream !== undefined) continue;
+      if (dataflow.stream !== undefined) {
+        // Exception: a no-accumulation passthrough edge is NOT drained
+        // downstream, so nothing else populates its value. Set the settled
+        // slot from the producer's result (no transforms by definition):
+        // either the per-port CacheRef (large output — a static-slot reader
+        // resolves it via input hydration) or the inline value a
+        // below-threshold ref was rehydrated to. Without this, the edge's
+        // settled value would depend on output size.
+        const noAccumulation = this.runner["noAccumulation"] === true;
+        if (StreamPump.isNoAccumulationPassthroughEdge(this.graph, dataflow, noAccumulation)) {
+          const value = (results as Record<string, unknown>)[dataflow.sourceTaskPortId];
+          if (value !== undefined) dataflow.value = value;
+        }
+        continue;
+      }
       // Bracket access — registry stays protected on the facade.
       const registry = this.runner["registry"];
       const compatibility = dataflow.semanticallyCompatible(this.graph, dataflow, registry);
@@ -212,6 +227,10 @@ export class EdgeMaterializer {
     task.runOutputData = {};
     task.error = undefined;
     task.progress = 0;
+    // Drop any input streams left by a previous run — StreamPump re-attaches
+    // live streams per run, and a stale map would hand the task last run's
+    // consumed/closed streams.
+    task.runner.inputStreams = undefined;
     task.runConfig = { ...task.runConfig, runnerId: runId };
     // Bracket access — runScheduler and currentCtx stay protected on the facade.
     this.runner["runScheduler"].pushStatusFromNodeToEdges(

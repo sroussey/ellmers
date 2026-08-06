@@ -14,6 +14,7 @@ import {
 } from "@workglow/util";
 import { validateSchema } from "@workglow/util/schema";
 import type { ITaskConstructor } from "./ITask";
+import { assertBinaryFormat, getStreamingPorts } from "./StreamTypes";
 
 type AnyTaskConstructor = ITaskConstructor<any, any, any>;
 
@@ -40,12 +41,36 @@ function registerTask(baseClass: AnyTaskConstructor): void {
       `Task type "${baseClass.type}" is already registered. Unregister it first to replace.`
     );
   }
+
+  // Validate every binary streaming port's `format` against the canonical
+  // {@link BinaryFormat} vocabulary BEFORE adding to the registry — output
+  // ports (materializeBinary picks the runtime type) AND input ports (input
+  // hydration picks Blob vs ArrayBuffer the same way). A typo like
+  // `format: "Blob"` would otherwise silently coerce to the wrong branch,
+  // producing the wrong runtime type. Fail at registration so the
+  // misconfiguration surfaces near the task definition site.
+  const outputSchema = baseClass.outputSchema();
+  const inputSchema = baseClass.inputSchema();
+  for (const schema of [outputSchema, inputSchema]) {
+    for (const { port, mode } of getStreamingPorts(schema)) {
+      if (mode !== "binary") continue;
+      try {
+        assertBinaryFormat(schema, port);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(
+          `Cannot register task "${baseClass.type}": invalid binary stream port. ${message}`
+        );
+      }
+    }
+  }
+
   taskConstructors.set(baseClass.type, baseClass);
 
   // Validate schemas at registration time (soft — warn only, don't throw)
   const schemas = [
-    { name: "inputSchema", schema: baseClass.inputSchema() },
-    { name: "outputSchema", schema: baseClass.outputSchema() },
+    { name: "inputSchema", schema: inputSchema },
+    { name: "outputSchema", schema: outputSchema },
   ] as const;
 
   for (const { name, schema } of schemas) {

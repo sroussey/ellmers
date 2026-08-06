@@ -5,6 +5,7 @@
  */
 
 import { traced } from "@workglow/util";
+import type { StreamChunkRow, StreamEventLike } from "../job/JobQueueEventListeners";
 import type {
   IQueueStorage,
   JobStatus,
@@ -36,6 +37,19 @@ export class TelemetryQueueStorage<Input, Output> implements IQueueStorage<Input
           this.inner.findActiveByFingerprint!(fingerprint, queueName)
         );
     }
+    // The stream-channel methods are OPTIONAL, capability-probed the same way
+    // (`typeof storage.subscribeToStream === "function"`). Forward them only
+    // when present so the decorator stays transparent — otherwise a
+    // telemetry-wrapped channel-capable storage would lose `onStream`. Plain
+    // forwards (like subscribeToChanges): publishStreamChunk is per-delta hot,
+    // so it is not wrapped in a span.
+    if (typeof inner.publishStreamChunk === "function") {
+      this.publishStreamChunk = (jobId, event) => this.inner.publishStreamChunk!(jobId, event);
+    }
+    if (typeof inner.subscribeToStream === "function") {
+      this.subscribeToStream = (jobId, sinceSeq, callback) =>
+        this.inner.subscribeToStream!(jobId, sinceSeq, callback);
+    }
   }
 
   public get scope(): QueueStorageScope {
@@ -51,6 +65,16 @@ export class TelemetryQueueStorage<Input, Output> implements IQueueStorage<Input
     fingerprint: string,
     queueName: string
   ) => Promise<JobStorageFormat<Input, Output> | undefined>;
+
+  /** Conditionally assigned in the constructor — mirrors the inner's presence. */
+  public readonly publishStreamChunk?: (jobId: unknown, event: StreamEventLike) => Promise<void>;
+
+  /** Conditionally assigned in the constructor — mirrors the inner's presence. */
+  public readonly subscribeToStream?: (
+    jobId: unknown,
+    sinceSeq: number,
+    callback: (row: StreamChunkRow) => void
+  ) => () => void;
 
   add(job: JobStorageFormat<Input, Output>): Promise<unknown> {
     return traced("workglow.storage.queue.add", this.storageName, () => this.inner.add(job));

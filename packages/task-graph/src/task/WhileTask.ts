@@ -428,6 +428,7 @@ export class WhileTask<
         // Run the subgraph (it resets itself on each run)
         const results = await this.subGraph.run<Output>(iterationInput, {
           parentSignal: context.signal,
+          ...this.runner.streamRunOptions,
         });
 
         // Merge results
@@ -548,6 +549,7 @@ export class WhileTask<
         // run non-streaming first, then decide after the condition check.
         const results = await this.subGraph.run<Output>(iterationInput, {
           parentSignal: context.signal,
+          ...this.runner.streamRunOptions,
         });
 
         currentOutput = this.subGraph.mergeExecuteOutputsToRunOutput(

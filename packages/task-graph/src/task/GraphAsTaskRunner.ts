@@ -49,6 +49,7 @@ export class GraphAsTaskRunner<
         outputCache: this.outputCache,
         registry: this.registry,
         resourceScope: this.resourceScope,
+        ...this.streamRunOptions,
       });
     } finally {
       // Always tear down — if subGraph.run() rejects (timeout/abort/inner

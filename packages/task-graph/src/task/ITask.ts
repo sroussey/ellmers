@@ -97,6 +97,18 @@ export interface IExecuteContext {
    * did not provide it.
    */
   resourceScope?: ResourceScope;
+  /**
+   * Optional cooperative backpressure hook for streaming tasks that emit
+   * large outputs by direct event emission (rather than through the
+   * StreamProcessor's awaited per-event path). Tasks may `await` this between
+   * yields/emits to give downstream sinks and consumers a chance to drain: it
+   * resolves once every active cache-sink router AND any consumer-edge gate
+   * is back below its high-water mark.
+   *
+   * Defaults to a no-op when the runtime does not install a real backpressure
+   * source — tasks can call it unconditionally without paying a cost.
+   */
+  backpressure?: () => Promise<void>;
 }
 
 export type IExecutePreviewContext = Pick<IExecuteContext, "own">;
@@ -137,6 +149,92 @@ export interface IRunConfig {
    * materialized data (cache off, all downstream tasks are also streaming).
    */
   shouldAccumulate?: boolean;
+
+  /**
+   * Graph-computed hint: `true` when at least one downstream dataflow edge
+   * consumes this task's binary output port as a stream (`x-stream: "binary"`
+   * on both ends). On a cache hit the runner replays cached bytes as
+   * `binary-delta` events only when a stream-capable consumer exists.
+   * `undefined` (standalone runs) means "no known stream consumers".
+   */
+  hasStreamingConsumers?: boolean;
+
+  /**
+   * Graph-computed hint: `true` when at least one downstream dataflow edge
+   * needs this task's output materialized (the target port cannot consume the
+   * stream mode directly). On a cache hit the runner hydrates binary
+   * {@link CacheRef} values into the enriched finish event so those consumers
+   * receive `Blob`/`ArrayBuffer` just like on a fresh run. `undefined`
+   * (standalone runs) means "no known materializing consumers".
+   */
+  hasMaterializingConsumers?: boolean;
+
+  /**
+   * Threshold (in bytes) at which a binary output port's value is replaced by
+   * a {@link CacheRef} in `Output` instead of being inlined. Below this size,
+   * the runner inlines the bytes; at or above, it emits a reference and the
+   * bytes live only in the cache backing.
+   *
+   * `0` forces a reference for every binary port regardless of size. Negative
+   * values and `undefined` fall back to
+   * {@link REFERENCE_THRESHOLD_BYTES_DEFAULT} (64 KB).
+   *
+   * Only applied when the cache backing implements `saveOutputStream` and the
+   * port carries binary stream events; otherwise the value is always inlined
+   * regardless of this setting.
+   */
+  referenceThresholdBytes?: number;
+
+  /**
+   * Opt into the no-accumulation passthrough path (default `false`). When set,
+   * a streaming source feeding a single same-mode streaming consumer over a
+   * plain (no-transform, non-ending) edge pipes producer → (consumer + cache
+   * sink) **without** the full-speed materialize drain on that edge: the edge
+   * carries the per-port {@link CacheRef} (resolved by the consumer's input
+   * hydration) instead of an accumulated value, and the producer is paced by
+   * the consumer's read rate through the per-port backpressure gate.
+   *
+   * Every edge that does not meet the passthrough conditions (transform edges,
+   * ending-node edges, multi-consumer fan-out, no live sink, mode mismatch)
+   * falls back to today's drain — correct, just without the backpressure win.
+   * Off ⇒ behavior is byte-identical to the accumulation path.
+   */
+  noAccumulation?: boolean;
+
+  /**
+   * High-water mark (bytes) for the streaming runtime's producer pacing —
+   * both the per-port cache-sink router buffer and the no-accumulation
+   * passthrough gate. When buffered (un-consumed) cost reaches this value the
+   * producer (`executeStream`) is parked between delta yields until the
+   * consumer (cache sink or downstream edge reader) drains the buffer back
+   * below the mark. Bounds peak memory for fast-producer / slow-consumer
+   * scenarios.
+   *
+   * Defaults to {@link DEFAULT_BINARY_HIGH_WATER_BYTES} (8 MiB) when omitted
+   * or set to a non-positive value.
+   */
+  streamHighWaterBytes?: number;
+
+  /**
+   * Liveness watchdog (milliseconds) for the no-accumulation passthrough gate:
+   * if the gate sees neither a pull nor a credit within this window while a
+   * producer is parked, the gate fails so the producer's `push()` rejects
+   * rather than hanging the run. When omitted, `DEFAULT_STREAM_GATE_WATCHDOG_MS`
+   * applies; pass `0` to disable the watchdog.
+   */
+  streamGateWatchdogMs?: number;
+
+  /**
+   * Graph-installed producer park for the no-accumulation passthrough path.
+   * The graph runner owns the consumer-edge gates (it is the only layer that
+   * knows the edges); this thunk closes over them so the task-level streaming
+   * runtime can pace the producer without any edge knowledge. Called with a
+   * port name it awaits that port's gate (used after each delta); called with
+   * no argument it awaits every gate (the cooperative
+   * {@link IExecuteContext.backpressure} hook). Absent on standalone runs and
+   * whenever no outgoing edge qualifies for the passthrough.
+   */
+  edgeBackpressure?: (port?: string) => Promise<void>;
 
   /**
    * Optional callback invoked whenever a task's progress changes during execution.
@@ -283,7 +381,7 @@ export interface ITaskIO<Input extends TaskInput> {
   resetInputData(): void;
   setInput(input: Partial<Input>): void;
   addInput(overrides: Partial<Input> | undefined): boolean;
-  validateInput(input: Input): Promise<boolean>;
+  validateInput(input: Input, skipPorts?: ReadonlySet<string>): Promise<boolean>;
   get cacheable(): boolean;
   getCacheVersion(): string;
   getCachePolicy(inputs: Input): CachePolicy;

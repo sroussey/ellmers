@@ -6,6 +6,10 @@
 
 // organize-imports-ignore
 
+// Side-effect: registers the default "blob"/"binary" port codecs so JSON-row
+// cache backings round-trip inline binary values instead of storing "{}".
+import "./cache/BinaryPortCodec";
+
 export * from "./task-graph/Dataflow";
 export * from "./task-graph/DataflowEvents";
 
@@ -41,6 +45,7 @@ export * from "./task-graph/transforms";
 export * from "./task-graph/TransformTypes";
 
 export * from "./cache";
+export * from "./task/BackpressureGate";
 export * from "./task/CacheCoordinator";
 export * from "./task/StreamProcessor";
 export * from "./task/TaskRunContext";

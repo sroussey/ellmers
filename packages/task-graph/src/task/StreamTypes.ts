@@ -12,12 +12,13 @@ import type { DataPortSchema, JsonSchema } from "@workglow/util/schema";
  * - `append`: Each chunk is a delta (e.g., a new token).
  * - `replace`: Each chunk is a corrected/revised snapshot of the complete output so far.
  * - `object`: Each chunk is a progressively more complete partial object snapshot.
+ * - `binary`: Each chunk is an ordered byte slice; consumer concatenates into a Blob/ArrayBuffer.
  * - `mixed`: Multiple ports use different stream modes (e.g., append + object).
  *
  * Declared per-port via the `x-stream` schema extension property.
  * Absent `x-stream` = `"none"`.
  */
-export type StreamMode = "none" | "append" | "replace" | "object" | "mixed";
+export type StreamMode = "none" | "append" | "replace" | "object" | "binary" | "mixed";
 
 /**
  * Append mode: delta chunk (consumer accumulates).
@@ -43,6 +44,18 @@ export type StreamObjectDelta = {
   type: "object-delta";
   port: string;
   objectDelta: Record<string, unknown> | unknown[];
+};
+
+/**
+ * Binary mode: an ordered, append-only chunk of bytes (consumer concatenates).
+ * `port` identifies which output port this delta belongs to. Chunks are
+ * materialized on `finish` into a `Blob` or `ArrayBuffer` per the port's
+ * schema `format` (see `materializeBinary`).
+ */
+export type StreamBinaryDelta = {
+  type: "binary-delta";
+  port: string;
+  binaryDelta: Uint8Array;
 };
 
 /**
@@ -210,6 +223,7 @@ export type StreamPhase = {
 export type StreamEvent<Output = Record<string, any>> =
   | StreamTextDelta
   | StreamObjectDelta
+  | StreamBinaryDelta
   | StreamSnapshot<Output>
   | StreamFinish<Output>
   | StreamError
@@ -233,7 +247,8 @@ export function getPortStreamMode(schema: DataPortSchema | JsonSchema, portId: s
   const prop = (schema.properties as Record<string, any>)?.[portId];
   if (!prop || typeof prop === "boolean") return "none";
   const xStream = prop["x-stream"];
-  if (xStream === "append" || xStream === "replace" || xStream === "object") return xStream;
+  if (xStream === "append" || xStream === "replace" || xStream === "object" || xStream === "binary")
+    return xStream;
   return "none";
 }
 
@@ -254,11 +269,44 @@ export function getStreamingPorts(
   for (const [name, prop] of Object.entries(props)) {
     if (!prop || typeof prop === "boolean") continue;
     const xStream = (prop as any)["x-stream"];
-    if (xStream === "append" || xStream === "replace" || xStream === "object") {
+    if (
+      xStream === "append" ||
+      xStream === "replace" ||
+      xStream === "object" ||
+      xStream === "binary"
+    ) {
       result.push({ port: name, mode: xStream });
     }
   }
   return result;
+}
+
+/**
+ * Delta stream modes: the modes whose events are incremental per-port deltas
+ * that can be encoded to (and replayed from) a single-port byte stream via
+ * {@link getStreamPortCodec}. `replace` (snapshot-driven), `none`, and `mixed`
+ * are not delta modes.
+ */
+export function isDeltaStreamMode(
+  mode: StreamMode
+): mode is Extract<StreamMode, "append" | "object" | "binary"> {
+  return mode === "append" || mode === "object" || mode === "binary";
+}
+
+/**
+ * Reads the per-port `x-validate-stream` opt-in from an input schema: a port
+ * that sets it wants its stream materialized and validated as a whole value,
+ * opting out of both the validation exemption for stream-wired ports and the
+ * no-accumulation passthrough for its edge.
+ */
+export function portForcesStreamValidation(
+  schema: DataPortSchema | JsonSchema,
+  port: string
+): boolean {
+  if (typeof schema === "boolean") return false;
+  const prop = (schema.properties as Record<string, any>)?.[port];
+  if (!prop || typeof prop === "boolean") return false;
+  return prop["x-validate-stream"] === true;
 }
 
 /**
@@ -356,6 +404,157 @@ export function getObjectPortId(schema: DataPortSchema): string | undefined {
     if ((prop as any)["x-stream"] === "object") return name;
   }
   return undefined;
+}
+
+/**
+ * Canonical vocabulary for the `format` annotation on a binary streaming output
+ * port. `"blob"` materializes chunks into a `Blob` (the default); `"binary"`
+ * materializes them into an `ArrayBuffer`. Any other value is rejected at
+ * registration time (see {@link assertBinaryFormat}) so a typo like `"Blob"`
+ * cannot silently fall through to the ArrayBuffer branch.
+ */
+export type BinaryFormat = "blob" | "binary";
+
+/**
+ * Default high-water mark for the binary-stream router's producer buffer, in
+ * bytes. When the buffered (un-consumed) byte total reaches this threshold the
+ * producer awaits a drain signal from the consumer before pushing further
+ * chunks; below the threshold the producer is allowed to run free. 8 MiB lets
+ * even fast producers race ahead by a few chunks without stalling, while
+ * bounding worst-case memory growth when the sink (cache, disk, network)
+ * cannot keep up. Callers can override per-run via
+ * `IRunConfig.streamHighWaterBytes`.
+ */
+export const DEFAULT_BINARY_HIGH_WATER_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Default watchdog timeout (milliseconds) for the no-accumulation passthrough
+ * gate: if a producer parks at the high-water mark and neither pull nor credit
+ * progresses within this window, the gate fails so the producer's `push()`
+ * rejects rather than hanging the run. 60 s is long enough to survive a normal
+ * consumer stall (GC pause, disk fsync spike) while short enough that a truly
+ * dead consumer surfaces as a run-level error instead of a wedged process.
+ * Callers can override per-run via `IRunConfig.streamGateWatchdogMs`; pass `0`
+ * to disable the watchdog entirely.
+ */
+export const DEFAULT_STREAM_GATE_WATCHDOG_MS = 60_000;
+
+/**
+ * Buffered cost of a single stream event, in approximate bytes, for
+ * backpressure accounting. Delta events cost their payload size (UTF-16 code
+ * units for `text-delta` — a cheap approximation of bytes that avoids a UTF-8
+ * encode per delta on the hot path, JSON-encoded length for `object-delta`,
+ * raw byte length for `binary-delta`); control events (`finish`, `snapshot`,
+ * `phase`, `error`) cost nothing — they are not what a slow consumer buffers
+ * up on. The gate is approximate accounting, and this function is
+ * deterministic per event, so charge and credit sites can each compute it
+ * independently and always agree.
+ */
+export function streamEventCost(event: StreamEvent): number {
+  switch (event.type) {
+    case "text-delta":
+      return event.textDelta.length;
+    case "object-delta":
+      return JSON.stringify(event.objectDelta).length;
+    case "binary-delta":
+      return event.binaryDelta.byteLength;
+    default:
+      return 0;
+  }
+}
+
+/**
+ * Reads the `format` annotation of a single output port from the task's output
+ * schema. Returns the raw string (or `undefined`) — callers needing the
+ * canonical {@link BinaryFormat} vocabulary should go through
+ * {@link assertBinaryFormat}, which rejects unknown values.
+ */
+export function getBinaryPortFormat(schema: DataPortSchema, port: string): string | undefined {
+  if (typeof schema === "boolean") return undefined;
+  const prop = (schema.properties as Record<string, any>)?.[port];
+  if (!prop || typeof prop === "boolean") return undefined;
+  return prop.format as string | undefined;
+}
+
+/**
+ * Resolves the `format` annotation on a binary streaming port to a canonical
+ * {@link BinaryFormat}. `undefined` and `"blob"` both resolve to `"blob"`;
+ * `"binary"` resolves to `"binary"`. Anything else throws — a casing typo such
+ * as `"Blob"` or a leftover legacy value would otherwise be silently coerced
+ * to one branch and produce the wrong runtime type, so this is checked at
+ * task-registration time and again on the streaming hot paths.
+ */
+export function assertBinaryFormat(schema: DataPortSchema, port: string): BinaryFormat {
+  const f = getBinaryPortFormat(schema, port);
+  if (f === undefined || f === "blob") return "blob";
+  if (f === "binary") return "binary";
+  throw new Error(
+    `Port "${port}" has x-stream:"binary" but format:"${f}". Allowed: "blob" | "binary".`
+  );
+}
+
+/**
+ * Materializes ordered binary chunks into the value type declared by the
+ * output port's canonical {@link BinaryFormat}:
+ *  - `"blob"`   → `Blob` (the default)
+ *  - `"binary"` → `ArrayBuffer`
+ *
+ * Chunks are concatenated in arrival order. Callers MUST pass chunks in the
+ * order they were emitted, and MUST resolve `format` through
+ * {@link assertBinaryFormat} so unknown values are rejected at registration
+ * rather than reinterpreted here.
+ *
+ * @param chunks - Ordered binary chunks to concatenate
+ * @param format - Canonical binary format selector
+ * @returns The materialized `Blob` or `ArrayBuffer`
+ */
+export function materializeBinary(
+  chunks: readonly Uint8Array[],
+  format: BinaryFormat
+): Blob | ArrayBuffer {
+  if (format === "blob") return new Blob(chunks as unknown as BlobPart[]);
+  let total = 0;
+  for (const c of chunks) total += c.byteLength;
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    merged.set(c, offset);
+    offset += c.byteLength;
+  }
+  return merged.buffer;
+}
+
+/**
+ * Folds one `object-delta` into the running accumulated value, matching the
+ * live accumulator semantics:
+ *  - **Array** delta: upsert each item by its `id` into the accumulated array
+ *    (replace an existing entry with the same `id`, otherwise append). Items
+ *    without an `id` are appended.
+ *  - **Non-array** delta (e.g. structured generation): replace the accumulated
+ *    value entirely with the latest snapshot.
+ *
+ * Shared by the live streaming accumulator and the object stream codec so a
+ * replayed/materialized cache value folds identically to a fresh run.
+ */
+export function foldObjectDelta(
+  existing: Record<string, unknown> | unknown[] | undefined,
+  delta: Record<string, unknown> | unknown[]
+): Record<string, unknown> | unknown[] {
+  if (Array.isArray(delta)) {
+    const arr: unknown[] = Array.isArray(existing) ? [...existing] : [];
+    for (const item of delta) {
+      const itemObj = item as Record<string, unknown>;
+      if (itemObj && typeof itemObj === "object" && "id" in itemObj) {
+        const idx = arr.findIndex((e) => (e as Record<string, unknown>).id === itemObj.id);
+        if (idx >= 0) arr[idx] = item;
+        else arr.push(item);
+      } else {
+        arr.push(item);
+      }
+    }
+    return arr;
+  }
+  return delta;
 }
 
 /**

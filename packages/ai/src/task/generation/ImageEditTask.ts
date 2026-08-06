@@ -93,8 +93,11 @@ export class ImageEditTask extends AiImageOutputTask<ImageEditTaskInput, ImageEd
     return ImageEditOutputSchema as DataPortSchema;
   }
 
-  public override async validateInput(input: ImageEditTaskInput): Promise<boolean> {
-    const ok = await super.validateInput(input);
+  public override async validateInput(
+    input: ImageEditTaskInput,
+    skipPorts?: ReadonlySet<string>
+  ): Promise<boolean> {
+    const ok = await super.validateInput(input, skipPorts);
     if (!ok) return false;
     await this.validateProviderImageInput(input);
     return true;
