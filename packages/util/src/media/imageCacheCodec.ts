@@ -3,7 +3,7 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { registerPortCodec } from "@workglow/util";
+import { base64ToBytes, bytesToBase64, registerPortCodec } from "@workglow/util";
 import type { BrowserImageValue, ImageValue, NodeImageFormat } from "./imageValue";
 import { imageValueFromBuffer, isBrowserImageValue, isNodeImageValue } from "./imageValue";
 
@@ -38,26 +38,6 @@ function isImageValueWire(v: unknown): v is ImageValueWire {
     typeof o.height === "number" &&
     typeof o.previewScale === "number"
   );
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  if (typeof Buffer !== "undefined") {
-    return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
-  }
-  let bin = "";
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i] ?? 0);
-  return btoa(bin);
-}
-
-function base64ToBytes(b64: string): Uint8Array {
-  if (typeof Buffer !== "undefined") {
-    const buf = Buffer.from(b64, "base64");
-    return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
-  }
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
 }
 
 async function browserToPngBase64(value: BrowserImageValue): Promise<string> {

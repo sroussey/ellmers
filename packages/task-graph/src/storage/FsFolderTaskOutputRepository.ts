@@ -6,12 +6,11 @@
 
 import { FsFolderTabularStorage } from "@workglow/storage";
 import { makeFingerprint } from "@workglow/util";
-import { randomUUID } from "node:crypto";
 import { createReadStream, openSync } from "node:fs";
 import { mkdir, open, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { CacheRef } from "../cache/CacheRef";
-import { makeCacheRef } from "../cache/CacheRef";
+import { makeCacheRef, makeRefPattern, mintRefKey } from "../cache/CacheRef";
 import type { StreamMode } from "../task/StreamTypes";
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
 import { tabularTaskOutputStorage } from "./TabularTaskOutputStorage";
@@ -22,15 +21,11 @@ import {
 } from "./TaskOutputTabularRepository";
 
 /**
- * Blob names are `<sanitized-taskType>_<input-fingerprint>.bin`; anything else
- * (including in-flight `.tmp` files and foreign `$ref` schemes) never resolves.
- * The single-segment match also rules out path traversal through a crafted ref.
+ * Blob names are `<mintRefKey token>.bin` ({@link makeRefPattern} single-segment
+ * match); anything else — in-flight `.tmp` files, foreign `$ref` schemes,
+ * traversal-shaped refs — never resolves.
  */
-const REF_PATTERN = /^fsfolder:\/\/blobs\/([\w.-]+\.bin)$/;
-
-function sanitize(s: string): string {
-  return s.replace(/[^\w.-]/g, "-");
-}
+const REF_PATTERN = makeRefPattern("fsfolder", { pathPrefix: "blobs/", suffix: ".bin" });
 
 /**
  * Fold a `runId` into the `taskType` axis. FsFolder has no runId column — rows
@@ -42,15 +37,21 @@ function runScopedType(runId: string, taskType: string): string {
 }
 
 /**
- * Netstring-length prefix for a run's taskType namespace. The length digits
- * force any two distinct runIds to diverge before either one's content is
- * compared, so no sanitized prefix can ever be a strict prefix of another's.
- * Necessary because {@link sanitize} collapses `:` → `-`, which would otherwise
- * let `runA` (sanitized `__run-runA--`) look like a prefix of `runA-`
- * (sanitized `__run-runA---`) and leak reads/deletes across runs.
+ * Namespace prefix for a run's taskType axis. The runId rides as hex (UTF-8
+ * bytes, lowercase), so the prefix stays inside the blob-name alphabet and
+ * {@link sanitize} is the identity on it: the raw prefix compared against rows
+ * and the prefix embedded in sanitized blob names coincide. Hex is injective
+ * and never contains the terminating `.`, so two distinct runIds can never
+ * yield equal or prefix-related namespaces — neither same-length sanitize
+ * collisions (a raw-runId scheme sanitizes `a:b` and `a-b` to the same
+ * `a-b`, merging their blob namespaces) nor boundary extensions (`runA` vs
+ * `runA-`) can leak reads/deletes across runs.
  */
 function runScopePrefix(runId: string): string {
-  return `__run:${runId.length}:${runId}::`;
+  const bytes = new TextEncoder().encode(runId);
+  let hex = "";
+  for (const byte of bytes) hex += byte.toString(16).padStart(2, "0");
+  return `__run.${hex}.`;
 }
 
 /**
@@ -111,7 +112,7 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     metadata: Record<string, unknown>
   ): Promise<CacheRef> {
     const fingerprint = await makeFingerprint({ __taskType: taskType, inputs });
-    const name = `${sanitize(taskType)}_${fingerprint}_${randomUUID()}.bin`;
+    const name = `${mintRefKey(taskType, fingerprint)}.bin`;
     const size = await this.writeSidecar(name, chunks);
     this.emit("output_saved", taskType);
     const mime = typeof metadata.mime === "string" ? metadata.mime : undefined;
@@ -131,7 +132,7 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     // remain greppable / prefix-deletable; the file stays an opaque `.bin` so
     // the existing readers resolve it unchanged — the codec to replay is named
     // by the ref's `mode`, not the extension.
-    const name = `${sanitize(taskType)}_${fingerprint}_${sanitize(port)}_${randomUUID()}.bin`;
+    const name = `${mintRefKey(taskType, fingerprint, port)}.bin`;
     const size = await this.writeSidecar(name, chunks);
     this.emit("output_saved", taskType);
     const mime = typeof metadata.mime === "string" ? metadata.mime : undefined;
@@ -202,9 +203,10 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
       }
     }
     this.emit("output_pruned");
-    // Blob names lead with `sanitize(taskType)`, so the sanitized namespace is
-    // the shared prefix of every sidecar this run wrote (streamed or orphaned).
-    await this.deleteBlobsByPrefix(sanitize(nsPrefix));
+    // Blob names lead with `sanitize(taskType)` and `sanitize` is the identity
+    // on the hex run-scope prefix, so `nsPrefix` itself is the shared prefix of
+    // every sidecar this run wrote (streamed or orphaned).
+    await this.deleteBlobsByPrefix(nsPrefix);
   }
 
   override async deleteRunOlderThan(runId: string, olderThanInMs: number): Promise<void> {
@@ -218,7 +220,7 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
       }
     }
     this.emit("output_pruned");
-    await this.deleteBlobsByPrefix(sanitize(nsPrefix), cutoff);
+    await this.deleteBlobsByPrefix(nsPrefix, cutoff);
   }
 
   override async sizeForRun(runId: string): Promise<number> {
@@ -294,23 +296,22 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
 
   /**
    * Return the blob path for `ref` only when its blob name lies within
-   * `runId`'s sanitized run-scope namespace. Foreign refs (malformed,
-   * wrong-runId, or unscoped deterministic writes) yield `undefined` — the
-   * caller then reports a cache miss / no-op instead of touching another run's
-   * blobs. Blob names lead with `sanitize(taskType)`, so a run's sanitized
-   * `runScopePrefix` is the shared prefix of every sidecar it wrote.
+   * `runId`'s run-scope namespace. Foreign refs (malformed, wrong-runId, or
+   * unscoped deterministic writes) yield `undefined` — the caller then reports
+   * a cache miss / no-op instead of touching another run's blobs. Blob names
+   * lead with `sanitize(taskType)` and `sanitize` is the identity on the hex
+   * `runScopePrefix`, so the prefix is the shared lead of every sidecar the
+   * run wrote.
    */
   private blobPathInRunScope(ref: CacheRef, runId: string): string | undefined {
     const match = REF_PATTERN.exec(ref.$ref);
     if (match === null) return undefined;
-    const expectedPrefix = sanitize(runScopePrefix(runId));
-    if (!match[1].startsWith(expectedPrefix)) return undefined;
+    if (!match[1].startsWith(runScopePrefix(runId))) return undefined;
     return join(this.blobsDir, match[1]);
   }
 
-  override async getOutputByRef(ref: CacheRef): Promise<Blob | undefined> {
-    const path = this.blobPath(ref);
-    if (path === undefined) return undefined;
+  /** Materialize the blob at `path`, or `undefined` when absent (cache miss). */
+  private async readBlobAt(path: string): Promise<Blob | undefined> {
     try {
       return new Blob([await readFile(path)]);
     } catch (err) {
@@ -319,24 +320,15 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     }
   }
 
-  override async getOutputByRefForRun(ref: CacheRef, runId: string): Promise<Blob | undefined> {
-    const path = this.blobPathInRunScope(ref, runId);
-    if (path === undefined) return undefined;
-    try {
-      return new Blob([await readFile(path)]);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-      throw err;
-    }
-  }
-
-  override getOutputStreamByRef(ref: CacheRef): AsyncIterable<Uint8Array> | undefined {
-    const path = this.blobPath(ref);
-    if (path === undefined) return undefined;
-    // Open the file descriptor NOW so a missing blob reports `undefined` (the
-    // clean cache-miss contract, matching getOutputByRef) instead of an ENOENT
-    // thrown mid-iteration; once open, a concurrent prune can no longer break
-    // the read (POSIX keeps the inode alive until the handle closes).
+  /**
+   * Open a byte stream over the blob at `path`, or `undefined` when absent.
+   * Deliberately synchronous: the file descriptor opens NOW so a missing blob
+   * reports `undefined` (the clean cache-miss contract, matching
+   * {@link readBlobAt}) instead of an ENOENT thrown mid-iteration; once open,
+   * a concurrent prune can no longer break the read (POSIX keeps the inode
+   * alive until the handle closes).
+   */
+  private openBlobStreamAt(path: string): AsyncIterable<Uint8Array> | undefined {
     let fd: number;
     try {
       fd = openSync(path, "r");
@@ -351,32 +343,44 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     return createReadStream(path, { fd, autoClose: true }) as unknown as AsyncIterable<Uint8Array>;
   }
 
+  /** Best-effort delete of the blob at `path` (no error when absent). */
+  private async deleteBlobAt(path: string): Promise<void> {
+    await rm(path, { force: true });
+  }
+
+  override async getOutputByRef(ref: CacheRef): Promise<Blob | undefined> {
+    const path = this.blobPath(ref);
+    return path === undefined ? undefined : this.readBlobAt(path);
+  }
+
+  override async getOutputByRefForRun(ref: CacheRef, runId: string): Promise<Blob | undefined> {
+    const path = this.blobPathInRunScope(ref, runId);
+    return path === undefined ? undefined : this.readBlobAt(path);
+  }
+
+  override getOutputStreamByRef(ref: CacheRef): AsyncIterable<Uint8Array> | undefined {
+    const path = this.blobPath(ref);
+    return path === undefined ? undefined : this.openBlobStreamAt(path);
+  }
+
   override getOutputStreamByRefForRun(
     ref: CacheRef,
     runId: string
   ): AsyncIterable<Uint8Array> | undefined {
     const path = this.blobPathInRunScope(ref, runId);
-    if (path === undefined) return undefined;
-    let fd: number;
-    try {
-      fd = openSync(path, "r");
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-      throw err;
-    }
-    return createReadStream(path, { fd, autoClose: true }) as unknown as AsyncIterable<Uint8Array>;
+    return path === undefined ? undefined : this.openBlobStreamAt(path);
   }
 
   override async deleteOutputByRef(ref: CacheRef): Promise<void> {
     const path = this.blobPath(ref);
     if (path === undefined) return;
-    await rm(path, { force: true });
+    await this.deleteBlobAt(path);
   }
 
   override async deleteOutputByRefForRun(ref: CacheRef, runId: string): Promise<void> {
     const path = this.blobPathInRunScope(ref, runId);
     if (path === undefined) return;
-    await rm(path, { force: true });
+    await this.deleteBlobAt(path);
   }
 
   override async clear(): Promise<void> {

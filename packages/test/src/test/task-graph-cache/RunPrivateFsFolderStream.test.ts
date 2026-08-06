@@ -57,7 +57,7 @@ describe("run-private streaming over an FsFolder backing", () => {
     const streamable = new RunPrivateCacheRepo({ backing, runId: "run-A" });
     expect(streamable.supportsStreaming()).toBe(true);
     expect(streamable.supportsStreamingPorts()).toBe(true);
-    expect(streamable.supportsStreamingReads()).toBe(true);
+    expect(typeof streamable.getOutputStreamByRef).toBe("function");
 
     const tabular = new RunPrivateCacheRepo({
       backing: new RunPrivateInMemoryTaskOutputRepository(),
@@ -65,7 +65,7 @@ describe("run-private streaming over an FsFolder backing", () => {
     });
     expect(tabular.supportsStreaming()).toBe(false);
     expect(tabular.supportsStreamingPorts()).toBe(false);
-    expect(tabular.supportsStreamingReads()).toBe(false);
+    expect(typeof tabular.getOutputStreamByRef).toBe("undefined");
   });
 
   it("round-trips a streamed port through the wrapper's by-ref readers", async () => {
@@ -228,6 +228,10 @@ describe("run-private streaming over an FsFolder backing", () => {
         ["session1", "session1-"],
         ["run-1", "run-1:x"],
         ["x", "x-y"],
+        // Same-length sanitize collision: a scheme embedding the raw runId in
+        // blob names would sanitize both of these to the same `a-b`, merging
+        // the two runs' namespaces; the hex prefix keeps them distinct.
+        ["a:b", "a-b"],
       ])("victim=%s cannot access blobs written by attacker=%s", async (victimId, attackerId) => {
         const codec = getStreamPortCodec("append");
         const mk = (t: string): AsyncIterable<Uint8Array> =>

@@ -40,7 +40,7 @@ describe("StreamingIndexedDbTaskOutputRepository capability probes", () => {
     const repo = new StreamingIndexedDbTaskOutputRepository(`probe_${uuid4().replace(/-/g, "_")}`);
     await repo.setupDatabase();
     expect(repo.supportsStreaming()).toBe(true);
-    expect(repo.supportsStreamingReads()).toBe(true);
+    expect(typeof repo.getOutputStreamByRef).toBe("function");
     expect(repo.supportsStreamingPorts()).toBe(true);
     expect(repo.isDurable()).toBe(true);
     await repo.clear();

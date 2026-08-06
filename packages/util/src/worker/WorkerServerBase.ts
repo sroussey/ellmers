@@ -27,12 +27,16 @@ const EVICT_BATCH = 500;
  * @param obj - The object to extract transferables from.
  * @param ownedBuffersOnly - When true, a TypedArray's backing `ArrayBuffer` is
  *   transferred only if the view owns the whole buffer (`byteOffset === 0` and
- *   it spans the full length). Partial views — `subarray()` slices and small
- *   Node `Buffer`s carved from the shared allocation pool — are left to
- *   structured clone instead, so transferring one payload can never detach a
- *   buffer that a *later* payload (or worker-retained state) still aliases.
- *   Callers that emit many payloads over time (streaming) must pass true;
- *   one-shot callers (`postResult`) keep the default zero-copy-everything path.
+ *   it spans the full length) and the buffer is non-empty. Partial views —
+ *   `subarray()` slices and small Node `Buffer`s carved from the shared
+ *   allocation pool — are left to structured clone instead, so transferring one
+ *   payload can never detach a buffer that a *later* payload (or
+ *   worker-retained state) still aliases. Detached buffers report
+ *   `byteLength === 0` on both the view and the buffer, so the non-empty check
+ *   also keeps an already-detached (or zero-byte) buffer off the transfer list
+ *   rather than failing the `postMessage`. Callers that emit many payloads over
+ *   time (streaming) must pass true; one-shot callers (`postResult`) keep the
+ *   default zero-copy-everything path.
  * @returns An array of transferables.
  */
 function extractTransferables(obj: any, ownedBuffersOnly: boolean = false): Transferable[] {
@@ -63,7 +67,9 @@ function extractTransferables(obj: any, ownedBuffersOnly: boolean = false): Tran
       value instanceof BigUint64Array
     ) {
       const ownsWholeBuffer =
-        value.byteOffset === 0 && value.byteLength === value.buffer.byteLength;
+        value.byteOffset === 0 &&
+        value.byteLength === value.buffer.byteLength &&
+        value.buffer.byteLength > 0;
       if (!ownedBuffersOnly || ownsWholeBuffer) {
         transferables.push(value.buffer);
       }
@@ -84,9 +90,13 @@ function extractTransferables(obj: any, ownedBuffersOnly: boolean = false): Tran
     else if (typeof MessagePort !== "undefined" && value instanceof MessagePort) {
       transferables.push(value);
     }
-    // Handle ArrayBuffer
+    // Handle ArrayBuffer. In ownedBuffersOnly mode a detached buffer
+    // (byteLength 0 once detached) or a zero-byte one is cloned instead of
+    // transferred — transferring a detached buffer throws DataCloneError.
     else if (value instanceof ArrayBuffer) {
-      transferables.push(value);
+      if (!ownedBuffersOnly || value.byteLength > 0) {
+        transferables.push(value);
+      }
     }
     // Recursively search arrays and objects
     else if (Array.isArray(value)) {
@@ -243,15 +253,24 @@ export class WorkerServerBase {
     }
     // Transfer (not clone) any binary payload a stream event carries
     // (binary-delta buffers, snapshot image bytes) across the worker boundary.
-    // `ownedBuffersOnly` transfers only fully-owned buffers: a stream emits many
-    // payloads over the job's life, so transferring a partial view (a subarray
-    // chunk, or a pooled Node Buffer) would detach a buffer a later chunk still
-    // aliases — throwing DataCloneError on the next emit or neutering the
-    // worker's Buffer pool. Those views clone byte-for-byte instead. Non-binary
-    // events (text-delta, object-delta, phase, finish) yield an empty list.
+    // `ownedBuffersOnly` transfers only fully-owned, non-empty buffers: a
+    // stream emits many payloads over the job's life, so transferring a partial
+    // view (a subarray chunk, or a pooled Node Buffer) would detach a buffer a
+    // later chunk still aliases — throwing DataCloneError on the next emit or
+    // neutering the worker's Buffer pool — and a detached/empty buffer cannot
+    // be transferred at all. Those cases clone byte-for-byte instead.
+    // Non-binary events (text-delta, object-delta, phase, finish) yield an
+    // empty list.
     const transferables = [...new Set(extractTransferables(event, true))];
-    // @ts-expect-error - Ignore type mismatch between standard Transferable and Bun.Transferable
-    postMessage({ id, type: "stream_chunk", data: event }, transferables);
+    try {
+      // @ts-expect-error - Ignore type mismatch between standard Transferable and Bun.Transferable
+      postMessage({ id, type: "stream_chunk", data: event }, transferables);
+    } catch {
+      // An unforeseen transfer failure (a buffer detached between extraction
+      // and post, a platform refusing a specific transferable) must not fail
+      // the job: degrade to the pre-transfer behavior and clone the event.
+      postMessage({ id, type: "stream_chunk", data: event });
+    }
   };
 
   /**
@@ -326,6 +345,14 @@ export class WorkerServerBase {
    * `signal.aborted` (e.g. stop generating tokens / abort the network request)
    * to actually release CPU/GPU; ignoring it lets the work run to completion
    * after the caller has moved on.
+   *
+   * Binary payload ownership: a fully-owned binary payload (a TypedArray whose
+   * view spans its entire non-empty backing `ArrayBuffer`, or a bare non-empty
+   * `ArrayBuffer`) carried by an emitted event is TRANSFERRED to the main
+   * thread — the buffer is consumed (detached) by `emit`, and the run-fn must
+   * not touch it afterwards. Emit a copy (`bytes.slice()`) to keep using the
+   * bytes. Partial views (`subarray()` slices, pooled Node `Buffer`s) and
+   * empty/detached buffers are structure-cloned instead and stay usable.
    */
   registerRunFunction(
     name: string,

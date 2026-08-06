@@ -5,22 +5,54 @@
  */
 
 import type { CacheRef, ITaskOutputStorage, StreamMode, TaskInput } from "@workglow/task-graph";
-import { makeCacheRef, TaskOutputTabularRepository } from "@workglow/task-graph";
-import { makeFingerprint, uuid4 } from "@workglow/util";
-import type { TabularBlobChunkStore } from "./TabularBlobChunkStore";
+import {
+  makeCacheRef,
+  makeRefPattern,
+  mintRefKey,
+  TaskOutputTabularRepository,
+} from "@workglow/task-graph";
+import { makeFingerprint } from "@workglow/util";
 
-function sanitize(s: string): string {
-  return s.replace(/[^\w.-]/g, "-");
+/**
+ * Structural contract for a blob store keyed by opaque `refKey`, as consumed by
+ * {@link TabularStreamingTaskOutputRepository}. Both `TabularBlobChunkStore`
+ * (SQL-shaped chunk/manifest tables) and `IdbBlobChunkStore` (raw IndexedDB)
+ * satisfy it, so one repository base serves every chunked-blob backing.
+ */
+export interface IBlobChunkStore {
+  setup(): Promise<void>;
+  /**
+   * Stream `chunks` into the store under `refKey`; returns the total byte
+   * count. Implementations must never accumulate the whole payload.
+   */
+  writeStream(
+    refKey: string,
+    chunks: AsyncIterable<Uint8Array>,
+    createdAt?: string
+  ): Promise<number>;
+  /** Materialize the whole payload as a Blob, or `undefined` on miss. */
+  readBlob(refKey: string): Promise<Blob | undefined>;
+  /**
+   * Bounded-memory ordered read of the payload's bytes; `undefined` when the
+   * ref is absent.
+   */
+  readStream(refKey: string): Promise<AsyncIterable<Uint8Array> | undefined>;
+  /** Delete a ref's payload. Idempotent. */
+  deleteRef(refKey: string): Promise<void>;
+  /** Remove every stored payload. */
+  clear(): Promise<void>;
+  /** Delete every ref created strictly before `cutoffIso`. */
+  pruneOlderThan(cutoffIso: string): Promise<void>;
 }
 
 /**
- * Shared base for durable, SQL-shaped streaming task-output repositories. JSON
- * output rows persist through an injected {@link ITaskOutputStorage}; streamed
- * port payloads persist as ordered chunk rows via an injected
- * {@link TabularBlobChunkStore}, referenced by a {@link CacheRef} whose `$ref`
- * carries the subclass's `<scheme>://<refKey>` form.
+ * Shared base for durable streaming task-output repositories. JSON output rows
+ * persist through an injected {@link ITaskOutputStorage}; streamed port
+ * payloads persist as ordered chunks via an injected {@link IBlobChunkStore},
+ * referenced by a {@link CacheRef} whose `$ref` carries the subclass's
+ * `<scheme>://<refKey>` form.
  *
- * Subclasses (Postgres, SQLite, …) only wire the backend-specific tabular
+ * Subclasses (Postgres, SQLite, IndexedDB, …) only wire the backend-specific
  * storages and pick a `scheme`; every streaming method lives here. Mirrors
  * `FsFolderTaskOutputRepository`: writes never accumulate, reads are bounded per
  * chunk, and two instances over the same backing interoperate. Reads are
@@ -33,21 +65,19 @@ function sanitize(s: string): string {
  * reclaims them.
  */
 export abstract class TabularStreamingTaskOutputRepository extends TaskOutputTabularRepository {
-  private readonly blobs: TabularBlobChunkStore;
+  private readonly blobs: IBlobChunkStore;
   private readonly scheme: string;
   private readonly refPattern: RegExp;
 
   protected constructor(opts: {
     storage: ITaskOutputStorage;
-    blobs: TabularBlobChunkStore;
+    blobs: IBlobChunkStore;
     scheme: string;
   }) {
     super({ storage: opts.storage });
     this.blobs = opts.blobs;
     this.scheme = opts.scheme;
-    // The refKey is a single path-segment-free token, so a foreign `$ref`
-    // scheme or a traversal-shaped ref never resolves to a stored blob.
-    this.refPattern = new RegExp(`^${opts.scheme}://([\\w.-]+)$`);
+    this.refPattern = makeRefPattern(opts.scheme);
   }
 
   override async setupDatabase(): Promise<void> {
@@ -62,7 +92,7 @@ export abstract class TabularStreamingTaskOutputRepository extends TaskOutputTab
     metadata: Record<string, unknown>
   ): Promise<CacheRef> {
     const fingerprint = await makeFingerprint({ __taskType: taskType, inputs });
-    const refKey = `${sanitize(taskType)}_${fingerprint}_${uuid4()}`;
+    const refKey = mintRefKey(taskType, fingerprint);
     const size = await this.blobs.writeStream(refKey, chunks);
     this.emit("output_saved", taskType);
     const mime = typeof metadata.mime === "string" ? metadata.mime : undefined;
@@ -78,7 +108,7 @@ export abstract class TabularStreamingTaskOutputRepository extends TaskOutputTab
     metadata: Record<string, unknown>
   ): Promise<CacheRef> {
     const fingerprint = await makeFingerprint({ __taskType: taskType, inputs });
-    const refKey = `${sanitize(taskType)}_${fingerprint}_${sanitize(port)}_${uuid4()}`;
+    const refKey = mintRefKey(taskType, fingerprint, port);
     const size = await this.blobs.writeStream(refKey, chunks);
     this.emit("output_saved", taskType);
     const mime = typeof metadata.mime === "string" ? metadata.mime : undefined;

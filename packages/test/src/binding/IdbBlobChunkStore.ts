@@ -4,9 +4,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { openIdb } from "@workglow/indexeddb/storage";
+
 const CHUNKS_STORE = "chunks";
 const MANIFEST_STORE = "manifest";
 const DEFAULT_PAGE_SIZE = 64;
+
+/**
+ * Max bytes buffered per write page: incoming deltas accumulate up to this
+ * budget and each full page commits its rows in ONE readwrite transaction, so
+ * a many-small-delta stream costs one transaction per ~256 KiB instead of one
+ * per delta. The buffer is bounded by the budget plus one delta — the whole
+ * payload is never accumulated.
+ */
+const WRITE_PAGE_BYTES = 256 * 1024;
 
 interface ChunkRow {
   readonly refKey: string;
@@ -27,10 +38,12 @@ interface ManifestRow {
  * as the existence witness — so a legitimately empty (zero-chunk) payload is
  * still distinguishable from a missing ref.
  *
- * Writes stream one row per incoming chunk (never accumulate); reads page the
- * chunk store so at most `pageSize` chunk rows are resident at once and each
- * page runs in its own short-lived transaction (IndexedDB auto-closes an idle
- * transaction, so a single cursor cannot be held across a slow consumer).
+ * Writes keep one row per incoming chunk but batch row commits into ~256 KiB
+ * pages (one transaction per page, never accumulating the whole payload); a
+ * failed write best-effort deletes the rows it already committed. Reads page
+ * the chunk store so at most `pageSize` chunk rows are resident at once and
+ * each page runs in its own short-lived transaction (IndexedDB auto-closes an
+ * idle transaction, so a single cursor cannot be held across a slow consumer).
  *
  * The database (`<dbName>__blobs`) is deterministic in `dbName`, so a second
  * instance constructed with the same `dbName` resolves refs the first wrote —
@@ -48,24 +61,17 @@ export class IdbBlobChunkStore {
 
   async setup(): Promise<void> {
     if (this.db) return;
-    this.db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open(this.dbName, 1);
-      req.onupgradeneeded = () => {
-        const db = req.result;
+    this.db = await openIdb(this.dbName, {
+      version: 1,
+      onUpgradeNeeded: (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
         if (!db.objectStoreNames.contains(CHUNKS_STORE)) {
           db.createObjectStore(CHUNKS_STORE, { keyPath: ["refKey", "seq"] });
         }
         if (!db.objectStoreNames.contains(MANIFEST_STORE)) {
           db.createObjectStore(MANIFEST_STORE, { keyPath: "refKey" });
         }
-      };
-      req.onsuccess = () => {
-        const db = req.result;
-        db.onversionchange = () => db.close();
-        resolve(db);
-      };
-      req.onerror = () => reject(req.error);
-      req.onblocked = () => reject(new Error(`IndexedDB ${this.dbName} blocked`));
+      },
     });
   }
 
@@ -80,9 +86,16 @@ export class IdbBlobChunkStore {
   }
 
   /**
-   * Stream `chunks` into the store under `refKey`, one chunk row per incoming
-   * delta, and commit a manifest row. Returns the total byte count. Never
-   * accumulates the payload in memory.
+   * Stream `chunks` into the store under `refKey` — one chunk row per incoming
+   * delta, rows committed in ~{@link WRITE_PAGE_BYTES} pages (one transaction
+   * per page) — then commit the manifest row as the existence witness. Returns
+   * the total byte count; the whole payload is never accumulated in memory.
+   *
+   * On any failure (a rejected transaction, a throwing producer) the rows
+   * already committed for `refKey` are best-effort deleted before rethrowing —
+   * mirroring `FsFolderTaskOutputRepository`'s `.tmp` cleanup — so a failed
+   * write does not strand manifest-less chunk rows. Whatever the cleanup
+   * itself misses is reclaimed by {@link pruneOlderThan}'s orphan sweep.
    */
   async writeStream(
     refKey: string,
@@ -92,14 +105,34 @@ export class IdbBlobChunkStore {
     const db = await this.getDb();
     let size = 0;
     let seq = 0;
-    for await (const chunk of chunks) {
-      const row: ChunkRow = { refKey, seq, bytes: chunk };
-      await this.put(db, CHUNKS_STORE, row);
-      size += chunk.byteLength;
-      seq += 1;
+    let page: ChunkRow[] = [];
+    let pageBytes = 0;
+    try {
+      for await (const chunk of chunks) {
+        page.push({ refKey, seq, bytes: chunk });
+        pageBytes += chunk.byteLength;
+        size += chunk.byteLength;
+        seq += 1;
+        if (pageBytes >= WRITE_PAGE_BYTES) {
+          await this.putAll(db, CHUNKS_STORE, page);
+          page = [];
+          pageBytes = 0;
+        }
+      }
+      if (page.length > 0) {
+        await this.putAll(db, CHUNKS_STORE, page);
+        page = [];
+      }
+      const manifest: ManifestRow = { refKey, size, createdAt };
+      await this.put(db, MANIFEST_STORE, manifest);
+    } catch (err) {
+      try {
+        await this.deleteChunkRange(db, refKey);
+      } catch {
+        // Cleanup is best-effort; the pruneOlderThan orphan sweep catches it.
+      }
+      throw err;
     }
-    const manifest: ManifestRow = { refKey, size, createdAt };
-    await this.put(db, MANIFEST_STORE, manifest);
     return size;
   }
 
@@ -144,12 +177,27 @@ export class IdbBlobChunkStore {
     await this.delete(db, MANIFEST_STORE, refKey);
   }
 
-  /** Delete every ref whose manifest `createdAt` is strictly before `cutoffIso`. */
+  /**
+   * Delete every ref whose manifest `createdAt` is strictly before `cutoffIso`,
+   * then sweep orphaned chunk rows: chunk rows carry no timestamp, so a crashed
+   * write (chunks committed, manifest never written) would otherwise strand
+   * unreachable rows forever. Any distinct chunk `refKey` without a manifest
+   * row — never readable, since the manifest is the existence witness — has its
+   * whole chunk range deleted.
+   */
   async pruneOlderThan(cutoffIso: string): Promise<void> {
     const db = await this.getDb();
     const manifests = await this.getAll<ManifestRow>(db, MANIFEST_STORE);
+    const live = new Set<string>();
     for (const m of manifests) {
-      if (m.createdAt < cutoffIso) await this.deleteRef(m.refKey);
+      if (m.createdAt < cutoffIso) {
+        await this.deleteRef(m.refKey);
+      } else {
+        live.add(m.refKey);
+      }
+    }
+    for (const refKey of await this.distinctChunkRefKeys(db)) {
+      if (!live.has(refKey)) await this.deleteChunkRange(db, refKey);
     }
   }
 
@@ -182,6 +230,32 @@ export class IdbBlobChunkStore {
     });
   }
 
+  /**
+   * Enumerate the distinct `refKey`s present in the chunks store with a
+   * keys-only cursor (no row values are loaded). After recording a refKey the
+   * cursor jumps straight to the next one via `continue([refKey, []])` — an
+   * array upper-bounds every numeric `seq` in IDB key order — so the scan
+   * touches one key per refKey, not one per chunk row.
+   */
+  private distinctChunkRefKeys(db: IDBDatabase): Promise<string[]> {
+    return new Promise<string[]>((resolve, reject) => {
+      const refKeys: string[] = [];
+      const tx = db.transaction(CHUNKS_STORE, "readonly");
+      const req = tx.objectStore(CHUNKS_STORE).openKeyCursor();
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (cursor === null) {
+          resolve(refKeys);
+          return;
+        }
+        const refKey = (cursor.key as [string, number])[0];
+        refKeys.push(refKey);
+        cursor.continue([refKey, []]);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
   private deleteChunkRange(db: IDBDatabase, refKey: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const tx = db.transaction(CHUNKS_STORE, "readwrite");
@@ -195,10 +269,18 @@ export class IdbBlobChunkStore {
   }
 
   private put(db: IDBDatabase, storeName: string, value: unknown): Promise<void> {
+    return this.putAll(db, storeName, [value]);
+  }
+
+  /** Put every value in ONE readwrite transaction (one `oncomplete`). */
+  private putAll(db: IDBDatabase, storeName: string, values: readonly unknown[]): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const tx = db.transaction(storeName, "readwrite");
-      const req = tx.objectStore(storeName).put(value);
-      req.onerror = () => reject(req.error);
+      const store = tx.objectStore(storeName);
+      for (const value of values) {
+        const req = store.put(value);
+        req.onerror = () => reject(req.error);
+      }
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });

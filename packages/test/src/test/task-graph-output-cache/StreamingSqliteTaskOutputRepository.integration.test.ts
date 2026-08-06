@@ -56,7 +56,7 @@ describe("StreamingSqliteTaskOutputRepository", () => {
   it("advertises the full streaming surface and is durable", async () => {
     const { repo } = await makeRepo();
     expect(repo.supportsStreaming()).toBe(true);
-    expect(repo.supportsStreamingReads()).toBe(true);
+    expect(typeof repo.getOutputStreamByRef).toBe("function");
     expect(repo.supportsStreamingPorts()).toBe(true);
     expect(repo.isDurable()).toBe(true);
   });

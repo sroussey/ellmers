@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { registerPortCodec } from "@workglow/util";
+import { base64ToBytes, bytesToBase64, registerPortCodec } from "@workglow/util";
 import { isCacheRef } from "./CacheRef";
 
 /**
@@ -29,32 +29,6 @@ function isBinaryPortWire(value: unknown): value is BinaryPortWire {
   if (value === null || typeof value !== "object") return false;
   const o = value as Record<string, unknown>;
   return o.__binaryPortWire === 1 && typeof o.base64 === "string" && typeof o.size === "number";
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  if (typeof Buffer !== "undefined") {
-    return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
-  }
-  // Block-wise String.fromCharCode: one call per 32 KiB instead of per byte —
-  // a per-byte loop is minutes of main-thread jank on multi-MB payloads, and
-  // spreading the whole array in one call overflows the argument stack.
-  const BLOCK = 0x8000;
-  let bin = "";
-  for (let i = 0; i < bytes.length; i += BLOCK) {
-    bin += String.fromCharCode(...bytes.subarray(i, i + BLOCK));
-  }
-  return btoa(bin);
-}
-
-function base64ToBytes(b64: string): Uint8Array {
-  if (typeof Buffer !== "undefined") {
-    const buf = Buffer.from(b64, "base64");
-    return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
-  }
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
 }
 
 /**

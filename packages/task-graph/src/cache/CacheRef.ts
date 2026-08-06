@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { uuid4 } from "@workglow/util";
 import type { StreamMode } from "../task/StreamTypes";
 
 /**
@@ -89,6 +90,49 @@ export function makeCacheRef(raw: {
     ...(raw.size !== undefined && { size: raw.size }),
     ...(raw.mime !== undefined && { mime: raw.mime }),
   };
+}
+
+/**
+ * Collapse a string onto the blob-name alphabet `[\w.-]` (every other
+ * character becomes `-`). Blob/ref tokens minted from `taskType` / `port`
+ * pass through this so a name is always a single filesystem/URI-safe segment.
+ * Lossy: distinct inputs may collide (`My@Task` and `My/Task` both sanitize
+ * to `My-Task`), so uniqueness always comes from the fingerprint + UUID
+ * portions of a token, never from the sanitized prefix.
+ */
+export function sanitize(s: string): string {
+  return s.replace(/[^\w.-]/g, "-");
+}
+
+/**
+ * Mint the storage token for one streamed write:
+ * `<sanitize(taskType)>_<fingerprint>[_<sanitize(port)>]_<uuid>`. The prefix
+ * keeps tokens greppable and prefix-deletable per task type; the per-write
+ * UUID suffix makes every token unique, so two concurrent writers of the same
+ * `(taskType, inputs[, port])` land at distinct blobs and cannot race on one.
+ */
+export function mintRefKey(taskType: string, fingerprint: string, port?: string): string {
+  const portPart = port === undefined ? "" : `_${sanitize(port)}`;
+  return `${sanitize(taskType)}_${fingerprint}${portPart}_${uuid4()}`;
+}
+
+/**
+ * Build the `$ref` matcher for a blob scheme. The captured token is a single
+ * `[\w.-]+` segment (the {@link mintRefKey} alphabet), so anything else —
+ * foreign `$ref` schemes, in-flight `.tmp` sidecars, and traversal-shaped
+ * refs (`../../etc/passwd`) — never resolves to a stored blob: `/` cannot
+ * appear inside the token, which rules out path traversal through a crafted
+ * ref. `pathPrefix` (e.g. `blobs/`) sits between `<scheme>://` and the token;
+ * `suffix` (e.g. `.bin`) must terminate the token and is captured with it.
+ */
+export function makeRefPattern(
+  scheme: string,
+  opts: { readonly pathPrefix?: string; readonly suffix?: string } = {}
+): RegExp {
+  const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pathPrefix = opts.pathPrefix === undefined ? "" : escape(opts.pathPrefix);
+  const suffix = opts.suffix === undefined ? "" : escape(opts.suffix);
+  return new RegExp(`^${escape(scheme)}://${pathPrefix}([\\w.-]+${suffix})$`);
 }
 
 /**

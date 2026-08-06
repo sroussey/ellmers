@@ -173,11 +173,6 @@ export abstract class TaskOutputRepository {
     return typeof this.saveOutputStream === "function";
   }
 
-  /** True when this repository implements `getOutputStreamByRef`. */
-  supportsStreamingReads(): boolean {
-    return typeof this.getOutputStreamByRef === "function";
-  }
-
   /**
    * True when this repository implements the port-aware {@link saveOutputStreamPort}
    * (the all-mode, multi-port superset of {@link saveOutputStream}). Backings

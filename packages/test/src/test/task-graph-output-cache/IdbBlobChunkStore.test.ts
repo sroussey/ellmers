@@ -18,6 +18,45 @@ async function collect(stream: AsyncIterable<Uint8Array>): Promise<number[]> {
   return out;
 }
 
+/** Open the store's raw backing database (`<dbName>__blobs`) for inspection. */
+function openRaw(dbName: string): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(`${dbName}__blobs`);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/** Count the chunk rows stored for one refKey, bypassing the store's readers. */
+async function chunkRowsFor(dbName: string, refKey: string): Promise<number> {
+  const db = await openRaw(dbName);
+  try {
+    return await new Promise<number>((resolve, reject) => {
+      const tx = db.transaction("chunks", "readonly");
+      const req = tx.objectStore("chunks").count(IDBKeyRange.bound([refKey], [refKey, []]));
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+/** Simulate a crashed writer: a committed chunk row with no manifest row. */
+async function plantOrphanChunk(dbName: string, refKey: string): Promise<void> {
+  const db = await openRaw(dbName);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction("chunks", "readwrite");
+      tx.objectStore("chunks").put({ refKey, seq: 0, bytes: Uint8Array.from([1, 2, 3]) });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
 describe("IdbBlobChunkStore", () => {
   let store: IdbBlobChunkStore;
   let dbName: string;
@@ -98,5 +137,46 @@ describe("IdbBlobChunkStore", () => {
     await sibling.setup();
     expect(await collect((await sibling.readStream("shared"))!)).toEqual([4, 2]);
     sibling.close();
+  });
+
+  it("a failing producer leaves no committed chunk rows behind", async () => {
+    // Two 200 KiB chunks cross the ~256 KiB write-page budget, so rows are
+    // COMMITTED before the producer throws; the failure path must delete them
+    // (mirroring FsFolder's `.tmp` cleanup) rather than strand orphans.
+    async function* failing(): AsyncIterable<Uint8Array> {
+      yield new Uint8Array(200 * 1024).fill(1);
+      yield new Uint8Array(200 * 1024).fill(2);
+      throw new Error("producer failed");
+    }
+    await expect(store.writeStream("doomed", failing())).rejects.toThrow("producer failed");
+    expect(await store.has("doomed")).toBe(false);
+    expect(await chunkRowsFor(dbName, "doomed")).toBe(0);
+  });
+
+  it("pruneOlderThan sweeps orphaned chunk rows that lack a manifest", async () => {
+    await store.writeStream("live", gen(Uint8Array.from([7])), "2100-01-01T00:00:00.000Z");
+    await plantOrphanChunk(dbName, "ghost");
+    expect(await chunkRowsFor(dbName, "ghost")).toBe(1);
+    // Cutoff far in the past: no manifested ref is old enough to prune, but
+    // the manifest-less orphan (unreadable, timestamp-less) is swept anyway.
+    await store.pruneOlderThan("2000-01-01T00:00:00.000Z");
+    expect(await chunkRowsFor(dbName, "ghost")).toBe(0);
+    expect(await collect((await store.readStream("live"))!)).toEqual([7]);
+  });
+
+  it("batches multi-page writes and round-trips the full payload", async () => {
+    // 6 x 100 KiB fills the ~256 KiB write-page budget twice; rows stay one
+    // per incoming delta and read back in order.
+    const chunks = Array.from({ length: 6 }, (_, i) => new Uint8Array(100 * 1024).fill(i + 1));
+    const size = await store.writeStream("big", gen(...chunks));
+    expect(size).toBe(6 * 100 * 1024);
+    const stream = await store.readStream("big");
+    let idx = 0;
+    for await (const c of stream!) {
+      expect(c.byteLength).toBe(100 * 1024);
+      expect(c[0]).toBe(idx + 1);
+      idx += 1;
+    }
+    expect(idx).toBe(6);
   });
 });

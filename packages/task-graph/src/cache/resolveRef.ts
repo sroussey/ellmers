@@ -85,21 +85,15 @@ export type ResolveOutputOptions = {
    * Set a finite value when the backing is rate-limited.
    */
   readonly concurrency?: number;
-  /**
-   * Predicate deciding which refs are resolved. Refs that fail the filter are
-   * left in place (the slot keeps the original {@link CacheRef}). When omitted,
-   * every ref is resolved.
-   */
-  readonly filter?: (ref: CacheRef) => boolean;
 };
 
 /**
  * Recursively visit a task output and replace every {@link CacheRef} encountered
  * with the value produced by the resolver. Non-ref values are returned as-is.
  *
- * Identity is preserved when the input contains no refs (or none that match the
- * optional filter): the same object reference comes back, so callers can rely
- * on `===` / `WeakMap` keys not being silently invalidated by an auto-resolve.
+ * Identity is preserved when the input contains no refs: the same object
+ * reference comes back, so callers can rely on `===` / `WeakMap` keys not
+ * being silently invalidated by an auto-resolve.
  *
  * Walker policy is opaque-by-default: only plain objects (prototype
  * `Object.prototype` or `null`), `Array`, `Map`, and `Set` are walked
@@ -120,7 +114,7 @@ export async function resolveOutput<T>(
   resolver: CacheRefResolver,
   options?: ResolveOutputOptions
 ): Promise<T> {
-  if (!hasMatchingRef(output, options?.filter, new WeakSet())) return output;
+  if (!hasRef(output, new WeakSet())) return output;
   const limit = createLimiter(options?.concurrency);
   // Acyclic values (the norm) memoize each container's resolution promise so a
   // subtree shared between two slots resolves ONCE and both slots receive the
@@ -128,7 +122,7 @@ export async function resolveOutput<T>(
   // original, unresolved object. Cyclic values keep the conservative
   // visited-set behavior: cycles are returned by reference, unrewritten.
   const memo = containsCycle(output) ? undefined : new WeakMap<object, Promise<unknown>>();
-  return (await walk(output, resolver, limit, options?.filter, new WeakSet(), memo)) as T;
+  return (await walk(output, resolver, limit, new WeakSet(), memo)) as T;
 }
 
 /**
@@ -162,9 +156,9 @@ function containsCycle(
 }
 
 /**
- * Cheap pre-scan: returns `true` if any {@link CacheRef} (matching the
- * optional filter) is reachable inside `value`. Lets `resolveOutput`
- * short-circuit and preserve identity when nothing needs resolving.
+ * Cheap pre-scan: returns `true` if any {@link CacheRef} is reachable inside
+ * `value`. Lets `resolveOutput` short-circuit and preserve identity when
+ * nothing needs resolving.
  *
  * `visited` short-circuits cyclic and shared-subtree structures: revisiting an
  * already-seen object answers `false` instead of recursing forever. The
@@ -172,12 +166,8 @@ function containsCycle(
  * if a ref were reachable through that subtree, the FIRST visit would have
  * found it.
  */
-function hasMatchingRef(
-  value: unknown,
-  filter: ((ref: CacheRef) => boolean) | undefined,
-  visited: WeakSet<object>
-): boolean {
-  if (isCacheRef(value)) return filter ? filter(value) : true;
+function hasRef(value: unknown, visited: WeakSet<object>): boolean {
+  if (isCacheRef(value)) return true;
   if (value === null || value === undefined) return false;
   if (isLeaf(value)) return false;
   if (typeof value === "object") {
@@ -186,26 +176,26 @@ function hasMatchingRef(
   }
   if (Array.isArray(value)) {
     for (const v of value) {
-      if (hasMatchingRef(v, filter, visited)) return true;
+      if (hasRef(v, visited)) return true;
     }
     return false;
   }
   if (value instanceof Map) {
     for (const v of value.values()) {
-      if (hasMatchingRef(v, filter, visited)) return true;
+      if (hasRef(v, visited)) return true;
     }
     return false;
   }
   if (value instanceof Set) {
     for (const v of value) {
-      if (hasMatchingRef(v, filter, visited)) return true;
+      if (hasRef(v, visited)) return true;
     }
     return false;
   }
   if (typeof value === "object") {
     const source = value as Record<string, unknown>;
     for (const k of Object.keys(source)) {
-      if (hasMatchingRef(source[k], filter, visited)) return true;
+      if (hasRef(source[k], visited)) return true;
     }
     return false;
   }
@@ -216,12 +206,10 @@ async function walk(
   value: unknown,
   resolver: CacheRefResolver,
   limit: Limiter,
-  filter: ((ref: CacheRef) => boolean) | undefined,
   visited: WeakSet<object>,
   memo: WeakMap<object, Promise<unknown>> | undefined
 ): Promise<unknown> {
   if (isCacheRef(value)) {
-    if (filter && !filter(value)) return value;
     return limit.run(() => resolver(value));
   }
   if (value === null || value === undefined) return value;
@@ -238,34 +226,31 @@ async function walk(
     // topology, including any unresolved refs the cycle contains.
     return value;
   }
-  if (!hasMatchingRef(value, filter, new WeakSet())) return value;
+  if (!hasRef(value, new WeakSet())) return value;
   if (memo) {
-    const promise = walkContainer(value, resolver, limit, filter, visited, memo);
+    const promise = walkContainer(value, resolver, limit, visited, memo);
     memo.set(obj, promise);
     return promise;
   }
   visited.add(obj);
-  return walkContainer(value, resolver, limit, filter, visited, memo);
+  return walkContainer(value, resolver, limit, visited, memo);
 }
 
 async function walkContainer(
   value: unknown,
   resolver: CacheRefResolver,
   limit: Limiter,
-  filter: ((ref: CacheRef) => boolean) | undefined,
   visited: WeakSet<object>,
   memo: WeakMap<object, Promise<unknown>> | undefined
 ): Promise<unknown> {
   if (Array.isArray(value)) {
-    return Promise.all(value.map((v) => walk(v, resolver, limit, filter, visited, memo)));
+    return Promise.all(value.map((v) => walk(v, resolver, limit, visited, memo)));
   }
   if (value instanceof Map) {
     const out = new Map();
     const entries = Array.from(value.entries());
     const resolved = await Promise.all(
-      entries.map(
-        async ([k, v]) => [k, await walk(v, resolver, limit, filter, visited, memo)] as const
-      )
+      entries.map(async ([k, v]) => [k, await walk(v, resolver, limit, visited, memo)] as const)
     );
     for (const [k, v] of resolved) out.set(k, v);
     return out;
@@ -273,7 +258,7 @@ async function walkContainer(
   if (value instanceof Set) {
     const out = new Set();
     const resolved = await Promise.all(
-      Array.from(value).map((v) => walk(v, resolver, limit, filter, visited, memo))
+      Array.from(value).map((v) => walk(v, resolver, limit, visited, memo))
     );
     for (const v of resolved) out.add(v);
     return out;
@@ -288,7 +273,7 @@ async function walkContainer(
     // matches the input even though resolutions race.
     const keys = Object.keys(source);
     const resolvedValues = await Promise.all(
-      keys.map((k) => walk(source[k], resolver, limit, filter, visited, memo))
+      keys.map((k) => walk(source[k], resolver, limit, visited, memo))
     );
     for (let i = 0; i < keys.length; i++) out[keys[i]!] = resolvedValues[i];
     return out;

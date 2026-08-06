@@ -50,6 +50,15 @@ type ManifestTabular = ITabularStorage<
 
 const DEFAULT_PAGE_SIZE = 64;
 
+/**
+ * Max bytes buffered per write page: incoming deltas accumulate up to this
+ * budget and each full page flushes its rows in ONE `putBulk`, so a
+ * many-small-delta stream costs one storage round-trip per ~256 KiB instead of
+ * one per delta. The buffer is bounded by the budget plus one delta — the
+ * whole payload is never accumulated.
+ */
+const WRITE_PAGE_BYTES = 256 * 1024;
+
 /** Normalize whatever a backing returns for a blob column to a `Uint8Array`. */
 function toUint8Array(value: unknown): Uint8Array {
   if (value instanceof Uint8Array) return value;
@@ -68,10 +77,11 @@ function toUint8Array(value: unknown): Uint8Array {
  * SQLite, Supabase, in-memory — so a single implementation serves every
  * SQL-shaped streaming cache backing.
  *
- * Streaming writes persist one chunk row per incoming delta (never accumulate);
- * reads keyset-page the chunk table by `seq` so at most `pageSize` rows are
- * resident at once and each page is its own query. The manifest row is written
- * last and is the existence witness.
+ * Streaming writes keep one chunk row per incoming delta but flush rows in
+ * ~256 KiB pages via `putBulk` (never accumulating the whole payload); reads
+ * keyset-page the chunk table by `seq` so at most `pageSize` rows are resident
+ * at once and each page is its own query. The manifest row is written last and
+ * is the existence witness.
  */
 export class TabularBlobChunkStore {
   private readonly chunks: ChunkTabular;
@@ -94,8 +104,9 @@ export class TabularBlobChunkStore {
   }
 
   /**
-   * Stream `chunks` into the store under `refKey`, one chunk row per incoming
-   * delta, then commit the manifest row. Returns the total byte count.
+   * Stream `chunks` into the store under `refKey` — one chunk row per incoming
+   * delta, rows flushed in ~{@link WRITE_PAGE_BYTES} pages via `putBulk` —
+   * then commit the manifest row. Returns the total byte count.
    */
   async writeStream(
     refKey: string,
@@ -104,8 +115,17 @@ export class TabularBlobChunkStore {
   ): Promise<number> {
     let size = 0;
     let seq = 0;
+    type ChunkInsert = Parameters<ChunkTabular["putBulk"]>[0][number];
+    let page: ChunkInsert[] = [];
+    let pageBytes = 0;
+    const flush = async (): Promise<void> => {
+      if (page.length === 0) return;
+      await this.chunks.putBulk(page);
+      page = [];
+      pageBytes = 0;
+    };
     for await (const chunk of chunks) {
-      await this.chunks.put({
+      page.push({
         refKey,
         seq,
         // Blob column: raw bytes stored under a string-typed schema (see
@@ -113,9 +133,12 @@ export class TabularBlobChunkStore {
         bytes: chunk as unknown as string,
         createdAt,
       });
+      pageBytes += chunk.byteLength;
       size += chunk.byteLength;
       seq += 1;
+      if (pageBytes >= WRITE_PAGE_BYTES) await flush();
     }
+    await flush();
     await this.manifest.put({ refKey, size, createdAt });
     return size;
   }

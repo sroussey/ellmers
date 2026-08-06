@@ -78,6 +78,93 @@ describe("WorkerServerBase.postStreamChunk transferables", () => {
     expect(stub.captured.some((c) => c.msg.type === "complete")).toBe(true);
   });
 
+  it("clones (does not transfer) an empty binary-delta payload", async () => {
+    const server = new WorkerServerBase();
+    server.registerRunFunction("emitEmpty", async (_i, _m, _sig, emit) => {
+      emit({ type: "binary-delta", port: "bytes", binaryDelta: new Uint8Array(0) });
+    });
+
+    await server.handleMessage({
+      type: "message",
+      data: {
+        id: "rEmpty",
+        type: "call",
+        functionName: "emitEmpty",
+        args: [{}, undefined, undefined, undefined],
+        run: true,
+      },
+    });
+
+    const chunk = stub.captured.find((c) => c.msg.type === "stream_chunk")!;
+    expect(chunk.transfer).toEqual([]);
+    expect(stub.captured.some((c) => c.msg.type === "complete")).toBe(true);
+  });
+
+  it("clones (does not transfer) an already-detached buffer instead of failing the post", async () => {
+    const server = new WorkerServerBase();
+    const bytes = new Uint8Array([1, 2, 3]);
+    // Detach the backing buffer, as a prior transfer of retained state would.
+    structuredClone(bytes.buffer, { transfer: [bytes.buffer] });
+    expect(bytes.buffer.byteLength).toBe(0);
+    server.registerRunFunction("emitDetached", async (_i, _m, _sig, emit) => {
+      emit({ type: "binary-delta", port: "bytes", binaryDelta: bytes });
+    });
+
+    await server.handleMessage({
+      type: "message",
+      data: {
+        id: "rDetached",
+        type: "call",
+        functionName: "emitDetached",
+        args: [{}, undefined, undefined, undefined],
+        run: true,
+      },
+    });
+
+    // A detached buffer must never ride the transfer list (transferring it
+    // throws DataCloneError); the event posts without one and the job completes.
+    const chunk = stub.captured.find((c) => c.msg.type === "stream_chunk")!;
+    expect(chunk.transfer).toEqual([]);
+    expect(stub.captured.some((c) => c.msg.type === "complete")).toBe(true);
+  });
+
+  it("degrades to a clone post when the transfer-list post throws", async () => {
+    // Simulate a platform refusing the transferable: the first, transfer-list
+    // post of a stream chunk throws; the fallback must re-post as a clone
+    // instead of failing the job.
+    const posts: PostedMessage[] = [];
+    (
+      globalThis as unknown as { postMessage: (m: any, t?: readonly unknown[]) => void }
+    ).postMessage = (m, t) => {
+      if (m.type === "stream_chunk" && t !== undefined && t.length > 0) {
+        throw new Error("simulated DataCloneError");
+      }
+      posts.push({ msg: m, transfer: t ?? [] });
+    };
+
+    const server = new WorkerServerBase();
+    server.registerRunFunction("emitOwned", async (_i, _m, _sig, emit) => {
+      emit({ type: "binary-delta", port: "bytes", binaryDelta: new Uint8Array([4, 5]) });
+    });
+
+    await server.handleMessage({
+      type: "message",
+      data: {
+        id: "rFallback",
+        type: "call",
+        functionName: "emitOwned",
+        args: [{}, undefined, undefined, undefined],
+        run: true,
+      },
+    });
+
+    const chunk = posts.find((c) => c.msg.type === "stream_chunk")!;
+    expect(chunk).toBeDefined();
+    expect(chunk.transfer).toEqual([]);
+    expect(Array.from(chunk.msg.data.binaryDelta as Uint8Array)).toEqual([4, 5]);
+    expect(posts.some((c) => c.msg.type === "complete")).toBe(true);
+  });
+
   it("clones (does not transfer) a partial-view binary-delta so a shared buffer is not detached", async () => {
     const server = new WorkerServerBase();
     // A subarray view: byteOffset 1, spans 2 of the backing buffer's 5 bytes.

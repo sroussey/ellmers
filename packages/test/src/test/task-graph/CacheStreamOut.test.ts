@@ -28,10 +28,10 @@ async function collect(stream: AsyncIterable<Uint8Array>): Promise<number[]> {
   return out;
 }
 
-describe("supportsStreamingReads", () => {
-  it("reflects presence of getOutputStreamByRef", () => {
-    expect(new StreamingMemoryRepo({}).supportsStreamingReads()).toBe(true);
-    expect(new NonStreamingMemoryRepo({}).supportsStreamingReads()).toBe(false);
+describe("streaming-read capability", () => {
+  it("is probed via typeof getOutputStreamByRef (the check streamRefViaBacking makes)", () => {
+    expect(typeof new StreamingMemoryRepo({}).getOutputStreamByRef).toBe("function");
+    expect(typeof new NonStreamingMemoryRepo({}).getOutputStreamByRef).toBe("undefined");
   });
 
   it("RunPrivateCacheRepo exposes by-ref reads only over a run-scoped streaming backing", () => {
@@ -39,9 +39,9 @@ describe("supportsStreamingReads", () => {
     // run-scoped stream writers (a ref can only exist here if it was written
     // through one). StreamingMemoryRepo streams for the DETERMINISTIC tier
     // (no `saveOutputStream*ForRun`), so the run-private wrapper over it exposes
-    // no readable refs and reports no read capability.
+    // no readable refs and no streaming reader.
     const wrapper = new RunPrivateCacheRepo({ backing: new StreamingMemoryRepo({}), runId: "r" });
-    expect(wrapper.supportsStreamingReads()).toBe(false);
+    expect(typeof wrapper.getOutputStreamByRef).toBe("undefined");
   });
 });
 
@@ -112,7 +112,7 @@ function runCacheStreamOutContractTests(name: string, setup: () => Promise<Contr
         gen(new Uint8Array([1, 2]), new Uint8Array([3]), new Uint8Array([4, 5, 6])),
         {}
       );
-      expect(repo.supportsStreamingReads()).toBe(true);
+      expect(typeof repo.getOutputStreamByRef).toBe("function");
       expect(ref.size).toBe(6);
       const stream = await repo.getOutputStreamByRef!(ref);
       expect(stream).toBeDefined();

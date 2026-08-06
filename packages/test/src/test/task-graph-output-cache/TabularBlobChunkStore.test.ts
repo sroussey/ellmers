@@ -5,7 +5,7 @@
  */
 
 import { InMemoryTabularStorage } from "@workglow/storage";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BlobChunkPrimaryKeyNames,
   BlobChunkSchema,
@@ -103,5 +103,40 @@ describe("TabularBlobChunkStore (InMemory backing)", () => {
     await store.writeStream("b", gen(Uint8Array.from([2, 2, 2])));
     expect(await collect((await store.readStream("a"))!)).toEqual([1, 1]);
     expect(await collect((await store.readStream("b"))!)).toEqual([2, 2, 2]);
+  });
+
+  it("flushes chunk rows in ~256 KiB pages via putBulk, not one put per delta", async () => {
+    const chunkStorage = new InMemoryTabularStorage(BlobChunkSchema, BlobChunkPrimaryKeyNames, [
+      "createdAt",
+    ]);
+    const manifestStorage = new InMemoryTabularStorage(
+      BlobManifestSchema,
+      BlobManifestPrimaryKeyNames,
+      ["createdAt"]
+    );
+    const paged = new TabularBlobChunkStore(chunkStorage, manifestStorage);
+    await paged.setup();
+    const putBulkSpy = vi.spyOn(chunkStorage, "putBulk");
+
+    // 6 x 100 KiB fills the ~256 KiB page budget twice -> exactly two bulk
+    // flushes of 3 rows each. (The backing may implement putBulk via put
+    // internally; the store-level round-trips are what the page coalescing
+    // bounds.)
+    const chunks = Array.from({ length: 6 }, (_, i) => new Uint8Array(100 * 1024).fill(i + 1));
+    const size = await paged.writeStream("big", gen(...chunks));
+    expect(size).toBe(6 * 100 * 1024);
+    expect(putBulkSpy).toHaveBeenCalledTimes(2);
+    expect(putBulkSpy.mock.calls.map((c) => c[0].length)).toEqual([3, 3]);
+
+    // The full payload reads back in delta order regardless of page grouping.
+    const stream = await paged.readStream("big");
+    let idx = 0;
+    for await (const c of stream!) {
+      expect(c.byteLength).toBe(100 * 1024);
+      expect(c[0]).toBe(idx + 1);
+      idx += 1;
+    }
+    expect(idx).toBe(6);
+    await paged.clear();
   });
 });
