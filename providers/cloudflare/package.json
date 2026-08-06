@@ -35,7 +35,7 @@
     }
   },
   "peerDependencies": {
-    "@cloudflare/workers-types": "^5.20260801.1",
+    "@cloudflare/workers-types": "^5.20260804.1",
     "@workglow/job-queue": "workspace:*",
     "@workglow/util": "workspace:*"
   },
@@ -48,7 +48,7 @@
     }
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260801.1",
+    "@cloudflare/workers-types": "^5.20260804.1",
     "@workglow/job-queue": "workspace:*",
     "@workglow/util": "workspace:*"
   },
