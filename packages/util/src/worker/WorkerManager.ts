@@ -271,8 +271,12 @@ export class WorkerManager {
             resolve(data);
           } else if (type === "error") {
             cleanup();
-            getLogger().debug(`Worker ${workerName} function ${functionName} error.`, { data });
-            reject(rehydrateWorkerError(data));
+            // Log the rehydrated error, not the raw payload — a third-party
+            // worker's `data.stack` may carry the absolute paths scrubbing
+            // exists to remove.
+            const error = rehydrateWorkerError(data);
+            getLogger().debug(`Worker ${workerName} function ${functionName} error.`, { error });
+            reject(error);
           }
         };
 
@@ -343,7 +347,7 @@ export class WorkerManager {
           } else if (type === "error") {
             cleanup();
             getLogger().warn(`Worker ${workerName} preview function ${functionName} error:`, {
-              error: data,
+              error: rehydrateWorkerError(data),
             });
             resolve(undefined);
           }

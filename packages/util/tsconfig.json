@@ -1,10 +1,6 @@
 {
   "extends": "../../tsconfig.json",
-  "include": [
-    "src/common.ts",
-    "src/limits.ts",
-    "src/*/**/*"
-  ],
+  "include": ["src/common.ts", "src/limits.ts", "src/*/**/*"],
   "files": [
     "./src/node.ts",
     "./src/browser.ts",
@@ -20,10 +16,7 @@
     "./src/compress-browser.ts",
     "./src/compress-node.ts"
   ],
-  "exclude": [
-    "dist",
-    "node_modules"
-  ],
+  "exclude": ["dist", "node_modules"],
   "compilerOptions": {
     "composite": true,
     "outDir": "./dist",

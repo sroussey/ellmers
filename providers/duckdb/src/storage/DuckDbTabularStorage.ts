@@ -147,10 +147,15 @@ export class DuckDbTabularStorage<
    * handle is shared) and then this instance's own mutex. Calls arriving
    * through the `tx` proxy go straight to the `_xInternal` methods and never
    * re-enter here, so the transaction holder cannot deadlock against itself.
+   * The chain is consulted even while `inTransaction` is set: `runOnConnection`
+   * inlines a genuine descendant of the open transaction body and queues an
+   * unrelated concurrent call — skipping it would let a write deferred on the
+   * instance mutex wake after COMMIT and reach the shared connection without a
+   * chain slot, interleaving into a sibling instance's next transaction.
    */
   private guardedWrite<T>(fn: () => Promise<T>): Promise<T> {
     const handle = this.connectionHandle();
-    if (handle !== null && !this.inTransaction) {
+    if (handle !== null) {
       return runOnConnection(handle, this, () => this.mutex(fn));
     }
     return this.mutex(fn);

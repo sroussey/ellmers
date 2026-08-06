@@ -15,15 +15,14 @@ import type {
 } from "@workglow/storage";
 import {
   assertVectorShape,
+  emitSimilaritySearch,
   getMetadataProperty,
   getVectorProperty,
   matchesFilter,
   PostgresDialect,
-  safeEmit,
   StorageValidationError,
   validateVectorEntities,
 } from "@workglow/storage";
-import type { EventEmitter } from "@workglow/util";
 import type {
   DataPortSchemaObject,
   FromSchema,
@@ -297,7 +296,7 @@ export class PostgresVectorStorage<
         } as Entity & { score: number });
       }
 
-      return this.emitSimilaritySearch(query, results);
+      return emitSimilaritySearch(this.events, query, results);
     } catch (error) {
       if (error instanceof StorageValidationError) {
         throw error; // Don't swallow validation errors
@@ -355,27 +354,6 @@ export class PostgresVectorStorage<
     results.sort((a, b) => b.score - a.score);
     const topResults = results.slice(0, topK);
 
-    return this.emitSimilaritySearch(query, topResults);
-  }
-
-  /**
-   * Emits the `similaritySearch` event declared on the vector event surface.
-   * The inherited `events` emitter is typed for the tabular events; the
-   * instance is the same object, so widen the view to carry the vector event.
-   */
-  private emitSimilaritySearch(
-    query: TypedArray,
-    results: Array<Entity & { score: number }>
-  ): Array<Entity & { score: number }> {
-    type SimilaritySearchEvents = {
-      similaritySearch: (query: TypedArray, results: (Entity & { score: number })[]) => void;
-    };
-    safeEmit(
-      this.events as unknown as EventEmitter<SimilaritySearchEvents>,
-      "similaritySearch",
-      query,
-      results
-    );
-    return results;
+    return emitSimilaritySearch(this.events, query, topResults);
   }
 }

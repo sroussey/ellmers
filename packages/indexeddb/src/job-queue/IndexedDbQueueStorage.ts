@@ -124,7 +124,8 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     jobWithPrefixes.id = jobWithPrefixes.id ?? uuid4();
     jobWithPrefixes.job_run_id = jobWithPrefixes.job_run_id ?? uuid4();
     jobWithPrefixes.queue = this.queueName;
-    jobWithPrefixes.fingerprint = await makeFingerprint(jobWithPrefixes.input);
+    jobWithPrefixes.fingerprint =
+      jobWithPrefixes.fingerprint ?? (await makeFingerprint(jobWithPrefixes.input));
     jobWithPrefixes.status = JobStatus.PENDING;
     jobWithPrefixes.progress = 0;
     jobWithPrefixes.progress_message = "";

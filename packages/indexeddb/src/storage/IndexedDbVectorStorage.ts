@@ -14,13 +14,12 @@ import type {
 } from "@workglow/storage";
 import {
   assertVectorShape,
+  emitSimilaritySearch,
   getMetadataProperty,
   getVectorProperty,
   matchesFilter,
-  safeEmit,
   validateVectorEntities,
 } from "@workglow/storage";
-import type { EventEmitter } from "@workglow/util";
 import { createServiceToken } from "@workglow/util";
 import type {
   DataPortSchemaObject,
@@ -166,21 +165,6 @@ export class IndexedDbVectorStorage<
     }
 
     results.sort((a, b) => b.score - a.score);
-    const topResults = results.slice(0, topK);
-    // The inherited `events` emitter is typed for the tabular event surface;
-    // `similaritySearch` lives on the vector extension of that surface. The
-    // emitter instance is the same object, so widen the view to a record that
-    // carries the event so it can be emitted type-safely.
-    type SimilaritySearchEvents = {
-      similaritySearch: (query: TypedArray, results: (Entity & { score: number })[]) => void;
-    };
-    safeEmit(
-      this.events as unknown as EventEmitter<SimilaritySearchEvents>,
-      "similaritySearch",
-      query,
-      topResults
-    );
-
-    return topResults;
+    return emitSimilaritySearch(this.events, query, results.slice(0, topK));
   }
 }

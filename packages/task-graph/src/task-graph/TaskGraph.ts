@@ -178,7 +178,10 @@ export class TaskGraph implements ITaskGraph {
   ): Promise<GraphResultArray<ExecuteOutput>> {
     return this.runner.runGraph<ExecuteOutput>(input, {
       ...config,
-      outputCache: config?.outputCache || this.outputCache,
+      // `??`, not `||`: an explicit `outputCache: false` is a documented
+      // "disable all caching" signal the runner branches on — `||` would
+      // swallow it and substitute the graph's own cache repository.
+      outputCache: config?.outputCache ?? this.outputCache,
     });
   }
 

@@ -232,6 +232,74 @@ describe("DuckDbTabularStorage regressions", () => {
     b.destroy();
   });
 
+  it("a write deferred during its own instance's transaction still takes the connection chain", async () => {
+    // Scripted stub instead of a real database: exec/query log their SQL and
+    // the first INSERT stalls until released, so cross-instance ordering is
+    // asserted at the statement level with no timing races.
+    const log: string[] = [];
+    let releaseInsert: () => void = () => {};
+    const stubDb = {
+      exec: async (sql: string) => {
+        log.push(sql);
+      },
+      query: async (sql: string) => {
+        log.push(sql);
+        if (sql.trimStart().startsWith("INSERT")) {
+          await new Promise<void>((resolve) => {
+            releaseInsert = resolve;
+          });
+        }
+        return { rows: [{ a: "x", b: "y" }] };
+      },
+    };
+    const settle = async () => {
+      for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+    };
+    const a = new DuckDbTabularStorage<typeof JunctionSchema, readonly ["a", "b"]>(
+      stubDb as any,
+      "chain_a",
+      JunctionSchema,
+      ["a", "b"] as const
+    );
+    const b = new DuckDbTabularStorage<typeof JunctionSchema, readonly ["a", "b"]>(
+      stubDb as any,
+      "chain_b",
+      JunctionSchema,
+      ["a", "b"] as const
+    );
+
+    let openTx: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      openTx = resolve;
+    });
+    const tx = a.withTransaction(async () => {
+      await gate;
+    });
+    await settle();
+
+    // Issued while a's transaction is open: the write must queue on the shared
+    // connection chain, not merely on a's instance mutex — a mutex-only wait
+    // would wake after COMMIT and run with no chain slot, free to interleave
+    // into a sibling's next BEGIN/COMMIT.
+    const put = a.put({ a: "x", b: "y" });
+    await settle();
+    openTx();
+    await tx;
+    // a's deferred put now holds the chain slot with its INSERT in flight.
+    await settle();
+
+    const txB = b.withTransaction(async () => {});
+    await settle();
+    expect(log.filter((sql) => sql === "BEGIN")).toHaveLength(1);
+
+    releaseInsert();
+    await Promise.all([put, txB]);
+    const relevant = log
+      .filter((sql) => sql === "BEGIN" || sql === "COMMIT" || sql.trimStart().startsWith("INSERT"))
+      .map((sql) => (sql.trimStart().startsWith("INSERT") ? "INSERT" : sql));
+    expect(relevant).toEqual(["BEGIN", "COMMIT", "INSERT", "BEGIN", "COMMIT"]);
+  });
+
   it("tx.updateWhere enforces the primary-key immutability guard", async () => {
     const storage = new DuckDbTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
       ":memory:",
