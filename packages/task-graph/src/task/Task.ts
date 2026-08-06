@@ -16,11 +16,7 @@ import { collectCacheVersion, isDeterministicId, resolveCachePolicy } from "./Ta
 import { smartClone, stripSymbols } from "./TaskCloneOps";
 import { EMPTY_ENTITLEMENTS, type TaskEntitlements } from "./TaskEntitlements";
 import type { TaskError } from "./TaskError";
-import {
-  TaskAbortedError,
-  TaskConfigurationError,
-  TaskInvalidInputError,
-} from "./TaskError";
+import { TaskAbortedError, TaskConfigurationError, TaskInvalidInputError } from "./TaskError";
 import type {
   TaskEventListener,
   TaskEventListeners,
