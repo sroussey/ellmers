@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { StreamEvent } from "@workglow/task-graph";
+import type { StreamEvent, Usage } from "@workglow/task-graph";
 import type { ToolCalls, ToolDefinition } from "../task/ToolCallingUtils";
 import { buildToolDescription, sanitizeToolArgs } from "../task/ToolCallingUtils";
 import { parseToolArgs } from "./OpenAIShapedChat";
+import { mapOpenAIResponsesUsage } from "./UsageMapping";
 
 /**
  * Shared helpers for the OpenAI **Responses** API (`client.responses.create`),
@@ -233,17 +234,23 @@ interface ResponsesToolCallEntry {
  * own `finish` event after this returns (per the streaming convention). Generic
  * over the output type so non-tool-calling run-fns (TextGeneration / Rewriter /
  * Summary) can pass their own `emit` under `strictFunctionTypes`.
+ *
+ * Returns the token accounting off the terminal `response.completed` event —
+ * the Responses API reports usage there unprompted — or `undefined` when the
+ * stream ended without one. The caller attaches it to its `finish` event as a
+ * sibling of `data`.
  */
 export async function accumulateOpenAIResponsesStream<Output = Record<string, any>>(
   stream: AsyncIterable<any>,
   emit: (event: StreamEvent<Output>) => void
-): Promise<void> {
+): Promise<Usage | undefined> {
   // Keyed by the output item's stable id (`item.id` on `output_item.{added,done}`,
   // `item_id` on `function_call_arguments.delta`). Falls back to `output_index`
   // only for gateways that omit both — keying purely on `output_index` collapses
   // concurrent function calls that share (or lack) the index onto one slot,
   // silently dropping every call but the last.
   const toolCalls = new Map<string, ResponsesToolCallEntry>();
+  let usage: Usage | undefined;
 
   const emitToolCall = (entry: ResponsesToolCallEntry): void => {
     const parsed = parseToolArgs(entry.arguments);
@@ -341,10 +348,22 @@ export async function accumulateOpenAIResponsesStream<Output = Record<string, an
         break;
       }
 
+      case "response.completed":
+      case "response.incomplete":
+      case "response.failed": {
+        // Terminal lifecycle events carry the authoritative token accounting.
+        // An incomplete/failed response still consumed tokens, so its usage is
+        // recorded too rather than being dropped as a non-success.
+        usage = mapOpenAIResponsesUsage(event.response?.usage) ?? usage;
+        break;
+      }
+
       default:
-        // Ignore lifecycle (created/in_progress/completed), reasoning summaries,
-        // and non-function tool events.
+        // Ignore the remaining lifecycle events (created/in_progress),
+        // reasoning summaries, and non-function tool events.
         break;
     }
   }
+
+  return usage;
 }

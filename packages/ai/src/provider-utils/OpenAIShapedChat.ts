@@ -4,11 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { StreamEvent } from "@workglow/task-graph";
+import type { StreamEvent, Usage } from "@workglow/task-graph";
 import { parsePartialJson } from "@workglow/util/worker";
 import type { ToolCallingTaskOutput } from "../task/ToolCallingTask";
 import type { ToolCalls, ToolDefinition } from "../task/ToolCallingUtils";
 import { buildToolDescription, sanitizeToolArgs } from "../task/ToolCallingUtils";
+import { mapOpenAIChatUsage } from "./UsageMapping";
 
 /**
  * Shared helpers for providers that expose an OpenAI-compatible chat-completions
@@ -135,14 +136,28 @@ interface ToolCallAccumulatorEntry {
  * `{ text: "", toolCalls: [] }` so the final output satisfies
  * {@link ToolCallingTaskOutput} even when the model streams only
  * `tool_calls` (no `content` deltas).
+ *
+ * Returns the stream's token accounting when the request opted in with
+ * `stream_options: { include_usage: true }`, else `undefined`. That usage
+ * arrives on a final chunk with an **empty** `choices` array, so it is read
+ * before the choice-less chunk is skipped. The caller attaches it to its
+ * `finish` event as a sibling of `data`.
+ *
+ * `mapUsage` defaults to the standard OpenAI-shape mapping; a provider that
+ * reports counters beyond that common set (DeepSeek's cache hit/miss split,
+ * OpenRouter's `cost`) passes its own mapper instead.
  */
 export async function accumulateOpenAIChatStream(
   stream: AsyncIterable<any>,
-  emit: (event: StreamEvent<ToolCallingTaskOutput>) => void
-): Promise<void> {
+  emit: (event: StreamEvent<ToolCallingTaskOutput>) => void,
+  mapUsage: (raw: unknown) => Usage | undefined = mapOpenAIChatUsage
+): Promise<Usage | undefined> {
   const toolCallAccumulator = new Map<number, ToolCallAccumulatorEntry>();
+  let usage: Usage | undefined;
 
   for await (const chunk of stream) {
+    usage = mapUsage(chunk?.usage) ?? usage;
+
     const choice = chunk?.choices?.[0];
     if (!choice) continue;
 
@@ -188,4 +203,6 @@ export async function accumulateOpenAIChatStream(
       });
     }
   }
+
+  return usage;
 }

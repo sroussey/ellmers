@@ -13,6 +13,7 @@ import { parsePartialJson } from "@workglow/util/worker";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
+import { createAnthropicUsageCollector } from "./Anthropic_Usage";
 
 /**
  * Streaming run-fn for the `["text.generation", "json-mode"]` capability.
@@ -54,7 +55,9 @@ export const Anthropic_StructuredGeneration_Stream: AiProviderRunFn<
   );
 
   let accumulatedJson = "";
+  const usageCollector = createAnthropicUsageCollector();
   for await (const event of stream) {
+    usageCollector.observe(event);
     maybeEmitAnthropicRefusal(event, emit);
     if (event.type === "content_block_delta" && event.delta.type === "input_json_delta") {
       accumulatedJson += event.delta.partial_json;
@@ -74,5 +77,9 @@ export const Anthropic_StructuredGeneration_Stream: AiProviderRunFn<
   // Exception: structured generation MUST populate finish.data.object so the
   // StructuredGenerationTask consumer can read the parsed object without a
   // JSON streaming parser. See CLAUDE.md streaming-convention-exception note.
-  emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
+  emit({
+    type: "finish",
+    data: { object: finalObject } as StructuredGenerationTaskOutput,
+    usage: usageCollector.result(),
+  });
 };

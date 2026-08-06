@@ -8,11 +8,14 @@ import type {
   AiProviderRunFn,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
+  Usage,
 } from "@workglow/ai";
+import { OPENAI_STREAM_USAGE_OPTIONS } from "@workglow/ai/provider-utils";
 import { getLogger } from "@workglow/util/worker";
 import { getClient, getModelName } from "./OpenRouter_Client";
 import type { OpenRouterModelConfig } from "./OpenRouter_ModelSchema";
 import { buildChatParams, buildOpenRouterExtras } from "./OpenRouter_RequestParams";
+import { mapOpenRouterUsage } from "./OpenRouter_Usage";
 
 /**
  * Streaming run-fn for `["text.generation"]`. Serves both TextGenerationTask
@@ -32,13 +35,20 @@ export const OpenRouter_TextGeneration_Stream: AiProviderRunFn<
     const params = { ...buildChatParams(input, model), ...buildOpenRouterExtras(model) };
 
     const stream = await client.chat.completions.create(
-      { ...params, stream: true } as Parameters<typeof client.chat.completions.create>[0],
+      { ...params, stream: true, ...OPENAI_STREAM_USAGE_OPTIONS } as Parameters<
+        typeof client.chat.completions.create
+      >[0],
       { signal }
     );
 
+    let usage: Usage | undefined;
     for await (const chunk of stream as AsyncIterable<{
       choices?: Array<{ delta?: { content?: string | null; refusal?: string | null } }>;
+      usage?: unknown;
     }>) {
+      // The usage-bearing chunk arrives last with an empty `choices` array; the
+      // delta reads below already tolerate that, so nothing else needs guarding.
+      usage = mapOpenRouterUsage(chunk.usage) ?? usage;
       const delta = chunk.choices?.[0]?.delta?.content ?? "";
       if (delta) {
         emit({ type: "text-delta", port: "text", textDelta: delta });
@@ -48,7 +58,7 @@ export const OpenRouter_TextGeneration_Stream: AiProviderRunFn<
         emit({ type: "refusal", refusal: refusalDelta });
       }
     }
-    emit({ type: "finish", data: {} as TextGenerationTaskOutput });
+    emit({ type: "finish", data: {} as TextGenerationTaskOutput, usage });
   } finally {
     logger.timeEnd(timerLabel, { model: getModelName(model) });
   }

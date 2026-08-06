@@ -8,7 +8,9 @@ import type {
   AiProviderRunFn,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
+  Usage,
 } from "@workglow/ai";
+import { OPENAI_STREAM_USAGE_OPTIONS } from "@workglow/ai/provider-utils";
 import { toOpenAIMessages } from "@workglow/ai/worker";
 import { getLogger } from "@workglow/util/worker";
 import {
@@ -18,6 +20,7 @@ import {
   resolveMaxTokens,
 } from "./DeepSeek_Client";
 import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
+import { mapDeepSeekUsage } from "./DeepSeek_Usage";
 
 /**
  * Inputs that the unified `["text.generation"]` runFn handles. Both
@@ -86,18 +89,25 @@ export const DeepSeek_TextGeneration_Stream: AiProviderRunFn<
     const params = buildChatParams(input as UnifiedTextGenerationInput, model);
 
     const stream = await client.chat.completions.create(
-      { ...params, stream: true } as Parameters<typeof client.chat.completions.create>[0],
+      { ...params, stream: true, ...OPENAI_STREAM_USAGE_OPTIONS } as Parameters<
+        typeof client.chat.completions.create
+      >[0],
       { signal }
     );
 
     let emittedText = "";
     let finishReason: string | null | undefined;
+    let usage: Usage | undefined;
     for await (const chunk of stream as AsyncIterable<{
       choices?: Array<{
         delta?: { content?: string | null; refusal?: string | null };
         finish_reason?: string | null;
       }>;
+      usage?: unknown;
     }>) {
+      // The usage-bearing chunk arrives last with an empty `choices` array; the
+      // delta reads below already tolerate that, so nothing else needs guarding.
+      usage = mapDeepSeekUsage(chunk.usage) ?? usage;
       const delta = chunk.choices?.[0]?.delta?.content ?? "";
       if (delta) {
         emittedText += delta;
@@ -110,7 +120,7 @@ export const DeepSeek_TextGeneration_Stream: AiProviderRunFn<
       finishReason = chunk.choices?.[0]?.finish_reason ?? finishReason;
     }
     assertNotTruncatedByReasoning(finishReason, emittedText, input.maxTokens);
-    emit({ type: "finish", data: {} as TextGenerationTaskOutput });
+    emit({ type: "finish", data: {} as TextGenerationTaskOutput, usage });
   } finally {
     logger.timeEnd(timerLabel, { model: getModelName(model) });
   }

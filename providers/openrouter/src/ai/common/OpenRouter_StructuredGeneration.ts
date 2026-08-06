@@ -8,12 +8,14 @@ import type {
   AiProviderRunFn,
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
+  Usage,
 } from "@workglow/ai";
-import { isStrictCompatibleSchema } from "@workglow/ai/provider-utils";
+import { isStrictCompatibleSchema, OPENAI_STREAM_USAGE_OPTIONS } from "@workglow/ai/provider-utils";
 import { parsePartialJson } from "@workglow/util/worker";
 import { getClient, getModelName } from "./OpenRouter_Client";
 import type { OpenRouterModelConfig } from "./OpenRouter_ModelSchema";
 import { buildOpenRouterExtras } from "./OpenRouter_RequestParams";
+import { mapOpenRouterUsage } from "./OpenRouter_Usage";
 
 /**
  * Streaming run-fn for `["text.generation", "json-mode"]`. Emits `object-delta`
@@ -52,13 +54,16 @@ export const OpenRouter_StructuredGeneration_Stream: AiProviderRunFn<
       temperature: input.temperature,
       stream: true,
       ...buildOpenRouterExtras(model),
+      ...OPENAI_STREAM_USAGE_OPTIONS,
     },
     { signal }
   );
 
   let accumulatedJson = "";
   let refusal = "";
+  let usage: Usage | undefined;
   for await (const chunk of stream) {
+    usage = mapOpenRouterUsage(chunk.usage) ?? usage;
     const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
       accumulatedJson += delta;
@@ -80,5 +85,9 @@ export const OpenRouter_StructuredGeneration_Stream: AiProviderRunFn<
   } catch {
     finalObject = parsePartialJson(accumulatedJson) ?? {};
   }
-  emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
+  emit({
+    type: "finish",
+    data: { object: finalObject } as StructuredGenerationTaskOutput,
+    usage,
+  });
 };

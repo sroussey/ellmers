@@ -137,3 +137,73 @@ describe("createOllamaTextGenerationStream abort behavior", () => {
     expect(deltas.length).toBeGreaterThanOrEqual(2);
   });
 });
+
+/**
+ * Ollama reports token counts only on the terminal `done: true` chunk; the
+ * intermediate chunks carry none, and treating their absence as `0` would
+ * report a free request.
+ */
+describe("createOllamaTextGenerationStream usage", () => {
+  const model = {
+    model_id: "ollama:test",
+    provider_config: { model_name: "llama3.2" },
+  } as any;
+  const input = { prompt: "hi" } as any;
+
+  function streamOf(chunks: readonly Record<string, unknown>[]) {
+    return {
+      abort: vi.fn(),
+      async *[Symbol.asyncIterator]() {
+        for (const c of chunks) yield c;
+      },
+    };
+  }
+
+  async function finishEvent(chunks: readonly Record<string, unknown>[]) {
+    const getClient = vi.fn().mockResolvedValue({
+      chat: vi.fn().mockResolvedValue(streamOf(chunks)),
+    });
+    const events: any[] = [];
+    await createOllamaTextGenerationStream(getClient)(
+      input,
+      model,
+      new AbortController().signal,
+      (e: any) => events.push(e)
+    );
+    return events.at(-1);
+  }
+
+  it("maps the done chunk's prompt/eval counts onto finish", async () => {
+    const finish = await finishEvent([
+      { message: { content: "Hel" } },
+      { message: { content: "lo" } },
+      { message: { content: "" }, done: true, prompt_eval_count: 34, eval_count: 8 },
+    ]);
+
+    expect(finish.type).toBe("finish");
+    expect(finish.usage).toEqual({
+      input: 34,
+      output: 8,
+      // Ollama runs locally and reports no cache, reasoning or total counters.
+      cached: undefined,
+      cacheWrite: undefined,
+      reasoning: undefined,
+      total: undefined,
+      extra: undefined,
+    });
+  });
+
+  it("leaves usage absent when the stream never reaches a done chunk", async () => {
+    const finish = await finishEvent([{ message: { content: "hi" } }]);
+    expect(finish.usage).toBeUndefined();
+  });
+
+  it("ignores counts on non-terminal chunks", async () => {
+    const finish = await finishEvent([
+      { message: { content: "hi" }, done: false, prompt_eval_count: 999, eval_count: 999 },
+      { message: { content: "" }, done: true, prompt_eval_count: 12, eval_count: 3 },
+    ]);
+    expect(finish.usage.input).toBe(12);
+    expect(finish.usage.output).toBe(3);
+  });
+});

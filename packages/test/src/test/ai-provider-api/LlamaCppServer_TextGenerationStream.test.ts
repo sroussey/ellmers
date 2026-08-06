@@ -91,4 +91,84 @@ describe("createLlamaCppServerTextGenerationStream", () => {
     const emit = (_e: any) => undefined;
     await expect(fn({ prompt: "x" } as any, model, controller.signal, emit)).rejects.toThrow();
   });
+
+  /**
+   * The usage frame carries an EMPTY `choices` array. The SSE parser used to
+   * admit a chunk only when it had a content delta, tool calls, or a finish
+   * reason — so a usage-only frame was dropped before any caller could see it.
+   */
+  describe("usage from the terminal include_usage frame", () => {
+    function usageLine(usage: Record<string, unknown>): string {
+      return `data: ${JSON.stringify({ choices: [], usage })}\n`;
+    }
+
+    it("requests usage and maps the usage-only frame onto finish", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          sseResponse([
+            dataLine("Hel"),
+            dataLine("lo"),
+            usageLine({ prompt_tokens: 26, completion_tokens: 5, total_tokens: 31 }),
+            "data: [DONE]\n",
+          ])
+        );
+      const fn = createLlamaCppServerTextGenerationStream({});
+
+      const events: any[] = [];
+      await fn({ prompt: "hi" } as any, model, undefined as any, (e: any) => events.push(e));
+
+      const body = JSON.parse(String((fetchSpy.mock.calls[0]![1] as RequestInit).body));
+      expect(body.stream_options).toEqual({ include_usage: true });
+
+      const finish = events.at(-1);
+      expect(finish.type).toBe("finish");
+      expect(finish.usage).toEqual({
+        input: 26,
+        output: 5,
+        cached: undefined,
+        cacheWrite: undefined,
+        reasoning: undefined,
+        total: 31,
+        extra: undefined,
+      });
+      // The usage frame must not be mistaken for content.
+      expect(events.filter((e) => e.type === "text-delta").map((e) => e.textDelta)).toEqual([
+        "Hel",
+        "lo",
+      ]);
+    });
+
+    it("leaves usage absent when the server reports none", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        sseResponse([dataLine("hi"), "data: [DONE]\n"])
+      );
+      const fn = createLlamaCppServerTextGenerationStream({});
+
+      const events: any[] = [];
+      await fn({ prompt: "hi" } as any, model, undefined as any, (e: any) => events.push(e));
+
+      expect(events.at(-1).usage).toBeUndefined();
+    });
+
+    it("reports counters llama.cpp omits as undefined, never 0", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        sseResponse([
+          dataLine("hi"),
+          usageLine({ prompt_tokens: 9, completion_tokens: 2 }),
+          "data: [DONE]\n",
+        ])
+      );
+      const fn = createLlamaCppServerTextGenerationStream({});
+
+      const events: any[] = [];
+      await fn({ prompt: "hi" } as any, model, undefined as any, (e: any) => events.push(e));
+
+      const { usage } = events.at(-1);
+      expect(usage.input).toBe(9);
+      expect(usage.cached).toBeUndefined();
+      expect(usage.reasoning).toBeUndefined();
+      expect(usage.total).toBeUndefined();
+    });
+  });
 });

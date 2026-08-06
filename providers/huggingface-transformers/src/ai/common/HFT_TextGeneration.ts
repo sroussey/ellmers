@@ -210,6 +210,9 @@ export const HFT_TextGeneration: AiProviderRunFn<
       snapshotHftSession(sessionContext.emitCheckpointId, past_key_values, modelPath, cacheKey);
     }
 
+    // No `usage`: transformers.js runs the model in-process and reports no
+    // token accounting of its own. Absent is the honest answer — counting our
+    // own emitted tokens would be a local estimate dressed up as a provider fact.
     emit({ type: "finish", data: {} as TextGenerationTaskOutput });
   });
 };

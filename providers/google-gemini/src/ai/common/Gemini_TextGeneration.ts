@@ -17,6 +17,7 @@ import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemin
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
 import { buildGeminiContents } from "./Gemini_ToolCalling";
+import { mapGeminiUsage } from "./Gemini_Usage";
 
 interface GeminiGenerationConfig {
   maxOutputTokens?: number;
@@ -187,17 +188,23 @@ export const Gemini_TextGeneration_Stream: AiProviderRunFn<
     });
 
     let refusalCategory: string | undefined;
+    let lastUsageMetadata: unknown;
     for await (const chunk of result) {
       // `chunk.text` concatenates answer text and already skips thought parts.
       const text = chunk.text;
       if (text) {
         emit({ type: "text-delta", port: "text", textDelta: text });
       }
+      lastUsageMetadata = chunk.usageMetadata ?? lastUsageMetadata;
       refusalCategory = refusalCategory ?? geminiRefusalCategory(chunk);
     }
     emitGeminiRefusal(emit, refusalCategory);
 
-    emit({ type: "finish", data: {} as TextGenerationTaskOutput });
+    emit({
+      type: "finish",
+      data: {} as TextGenerationTaskOutput,
+      usage: mapGeminiUsage(lastUsageMetadata),
+    });
   } finally {
     logger.timeEnd(timerLabel, { model: getModelName(model) });
   }

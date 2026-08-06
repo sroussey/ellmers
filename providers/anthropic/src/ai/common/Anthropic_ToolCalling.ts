@@ -25,6 +25,7 @@ import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
 import { applyAnthropicSamplingParams } from "./Anthropic_RequestParams";
+import { createAnthropicUsageCollector } from "./Anthropic_Usage";
 
 /**
  * Anthropic rejects empty text blocks and empty content arrays on non-final
@@ -201,7 +202,9 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
   const validatedToolCallsInStreamOrder = (): ToolCall[] =>
     filterValidToolCalls(toolCallsInStreamOrder(), toolDefinitions);
 
+  const usageCollector = createAnthropicUsageCollector();
   for await (const event of stream) {
+    usageCollector.observe(event);
     maybeEmitAnthropicRefusal(event, emit);
     if (event.type === "content_block_start") {
       const block = event.content_block;
@@ -270,5 +273,9 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
     }
   }
 
-  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
+  emit({
+    type: "finish",
+    data: { text: "", toolCalls: [] } as ToolCallingTaskOutput,
+    usage: usageCollector.result(),
+  });
 };
