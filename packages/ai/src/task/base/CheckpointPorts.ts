@@ -195,7 +195,12 @@ export async function finalizeEmittedCheckpoint(opts: {
   readonly model: ModelConfig;
   readonly resolved: ResolvedCheckpoint;
   readonly tailMessages: readonly ChatMessage[];
-  readonly assistantMessage: ChatMessage;
+  /**
+   * Omit when the turn produced no content: an empty assistant message in the
+   * prefix is rejected on replay by some providers (Anthropic 400s on empty
+   * content arrays and empty text blocks).
+   */
+  readonly assistantMessage: ChatMessage | undefined;
   readonly systemPrompt: string | undefined;
   readonly tools: readonly ToolDefinition[] | undefined;
 }): Promise<void> {
@@ -207,12 +212,18 @@ export async function finalizeEmittedCheckpoint(opts: {
     prefix: mergeCheckpointPrefix(resolved.parentEntry?.prefix, {
       systemPrompt: opts.systemPrompt,
       tools: opts.tools,
-      messages: [...opts.tailMessages, opts.assistantMessage],
+      messages: [...opts.tailMessages, ...(opts.assistantMessage ? [opts.assistantMessage] : [])],
     }),
     ...(resolved.parentId ? { parentId: resolved.parentId } : {}),
   });
   if (resolved.session.supersedeParent && resolved.parentId) {
-    await getAiProviderRegistry().disposeSession(model.provider, resolved.parentId);
+    try {
+      await getAiProviderRegistry().disposeSession(model.provider, resolved.parentId);
+    } catch {
+      // Best-effort: a parent-dispose failure (worker restarted, transport
+      // error) must not fail a task whose generation already succeeded. The
+      // parent's scope disposer retries at run end and dispose is idempotent.
+    }
     deleteCheckpoint(resolved.parentId);
   }
 }

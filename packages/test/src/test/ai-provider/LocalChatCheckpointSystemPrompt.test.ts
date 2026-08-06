@@ -113,6 +113,7 @@ describe("checkpoint-seeded local chat system prompts", () => {
 
   it("bakes the caller prompt into a new owned Llama session and reuses it next turn", async () => {
     const constructorOptions = vi.fn();
+    const historyCalls: Array<Array<Record<string, unknown>>> = [];
     const prompt = vi.fn(
       async (_text: string, options: { onTextChunk: (text: string) => void }) => {
         options.onTextChunk("reply");
@@ -124,7 +125,9 @@ describe("checkpoint-seeded local chat system prompts", () => {
         constructorOptions(options);
       }
 
-      setChatHistory(): void {}
+      setChatHistory(history: Array<Record<string, unknown>>): void {
+        historyCalls.push(structuredClone(history));
+      }
 
       async preloadPrompt(): Promise<void> {}
 
@@ -169,6 +172,13 @@ describe("checkpoint-seeded local chat system prompts", () => {
     expect(constructorOptions).toHaveBeenCalledWith(
       expect.objectContaining({ systemPrompt: "caller system" })
     );
+    // setChatHistory replaces the constructor-baked history wholesale, so the
+    // rebuild history itself must carry the CALLER's system prompt (not the
+    // checkpoint's) alongside the checkpoint prefix's conversation.
+    expect(historyCalls).toHaveLength(1);
+    expect(historyCalls[0][0]).toEqual({ type: "system", text: "caller system" });
+    expect(historyCalls[0]).toContainEqual({ type: "user", text: "checkpoint question" });
+    expect(historyCalls[0]).not.toContainEqual({ type: "system", text: "checkpoint system" });
     expect(prompt).toHaveBeenCalledTimes(2);
     expect(prompt.mock.calls.map(([text]) => text)).toEqual(["first question", "follow-up"]);
     expect(llamaRuntime.llamaCppSessions.get("owned-chat")?.mode).toBe("progressive");

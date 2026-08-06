@@ -14,14 +14,14 @@ import type {
 import type { StreamPhase } from "@workglow/task-graph";
 import { renderHftPrefixPrompt } from "./HFT_CacheCheckpoint";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
-import type { HftPrefixRewindSession } from "./HFT_Pipeline";
 import {
   deleteHftSession,
   getHftSession,
   getPipeline,
   getPipelineCacheKey,
+  hasGpuBufferEntries,
   loadTransformersSDK,
-  setHftSession,
+  snapshotHftSession,
   withHftPipelineInUse,
 } from "./HFT_Pipeline";
 import { createStreamingTextStreamer, createTextStreamer } from "./HFT_Streaming";
@@ -57,7 +57,7 @@ async function generateTurn(
   onDelta: ((text: string) => void) | undefined
 ): Promise<string> {
   const generateText = await getPipeline(model, emit, {}, signal);
-  const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
+  const { TextStreamer, InterruptableStoppingCriteria, DynamicCache } = await loadTransformersSDK();
 
   const sessionId = sessionContext?.sessionId;
   const isCheckpoint = sessionContext?.prefix !== undefined;
@@ -78,7 +78,6 @@ async function generateTurn(
   // must come FIRST so the render can start byte-for-byte with the warm-up
   // rendering — the invariant prefix-rewind KV reuse relies on.
   const prefix = sessionContext?.prefix;
-  const prefixPrompt = isCheckpoint ? renderHftPrefixPrompt(hfTokenizer, prefix!) : undefined;
   let messages: Array<Record<string, unknown>>;
   if (isCheckpoint) {
     // buildHFTMessages only falls back to `prompt` when the message list is
@@ -108,12 +107,12 @@ async function generateTurn(
     add_generation_prompt: true,
   }) as string;
 
-  // prefix-rewind trusts cached KV tokens positionally: only re-encode /
-  // attach the prefix snapshot when the rendered prompt provably starts with
-  // the warm-up rendering; otherwise fall back to a full re-encode of the
-  // prompt (correct — it carries the entire prefix).
-  const prefixParityOk =
-    !isCheckpoint || (prefixPrompt !== undefined && prompt.startsWith(prefixPrompt));
+  // The checkpoint-prefix rendering is needed only for the turn-1 seed /
+  // restore paths (and legacy snapshots without encodedText); render lazily so
+  // steady-state turns skip the per-call jinja re-render entirely.
+  let renderedPrefix: string | undefined;
+  const renderPrefix = (): string =>
+    (renderedPrefix ??= renderHftPrefixPrompt(hfTokenizer, prefix!));
 
   const inputs = hfTokenizer(prompt);
   const promptLen = inputs.input_ids.dims[1];
@@ -121,39 +120,96 @@ async function generateTurn(
   // Session cache: prefix-rewind growing with the conversation.
   const modelPath = model.provider_config.model_path;
   const cacheKey = getPipelineCacheKey(model);
-  let hftSession = sessionId ? getHftSession(sessionId) : undefined;
+  const hftSession = sessionId ? getHftSession(sessionId) : undefined;
   let past_key_values: any = undefined;
 
-  if (sessionId && !hftSession && isCheckpoint && prefixParityOk) {
-    // Worker restarted or state evicted: re-encode the serialized prefix
-    // and re-store the snapshot under the checkpoint id.
-    const { DynamicCache } = await loadTransformersSDK();
-    const cache = new DynamicCache();
-    const prefixInputs = hfTokenizer(prefixPrompt!);
-    await hfModel.generate({ ...prefixInputs, max_new_tokens: 0, past_key_values: cache });
-    const baseEntries: Record<string, any> = {};
-    for (const key of Object.keys(cache)) {
-      baseEntries[key] = cache[key];
-    }
-    const restored: HftPrefixRewindSession = {
-      mode: "prefix-rewind",
-      baseEntries,
-      baseSeqLength: cache.get_seq_length(),
-      modelPath,
-      cacheKey,
-    };
-    setHftSession(sessionId, restored);
-    hftSession = restored;
-  }
-
+  // Attach the session's own previous-turn snapshot whenever the new prompt
+  // provably extends the exact text that snapshot encodes — independent of
+  // checkpoint-prefix parity, so a chat whose own systemPrompt diverges from
+  // the prefix's still reuses its per-turn KV. prefix-rewind trusts cached KV
+  // tokens positionally; when no anchor matches, generation falls back to a
+  // full re-encode of `prompt` (correct — it carries the entire prefix).
   if (
     hftSession?.mode === "prefix-rewind" &&
     hftSession.modelPath === modelPath &&
-    prefixParityOk
+    // WebGPU snapshots cannot be shared: the first decode step's update()
+    // would dispose the snapshot's gpu-buffer tensors, so skip the attach and
+    // re-encode instead.
+    !hasGpuBufferEntries(hftSession.baseEntries)
   ) {
-    // Reconstruct a fresh DynamicCache from the previous turn's snapshot.
-    const { DynamicCache } = await loadTransformersSDK();
-    past_key_values = new DynamicCache(hftSession.baseEntries);
+    const attachOk =
+      hftSession.encodedText !== undefined
+        ? prompt.startsWith(hftSession.encodedText)
+        : isCheckpoint
+          ? prompt.startsWith(renderPrefix())
+          : // A plain chat's session has this run-fn as its sole writer;
+            // pre-encodedText entries keep the historical unconditional attach.
+            true;
+    if (attachOk) {
+      past_key_values = new DynamicCache(hftSession.baseEntries);
+    }
+  }
+
+  // Turn-1 seed: the chat's own session does not exist yet, but the warmed
+  // checkpoint snapshot sits in this runtime under seedCheckpointId. Read-only
+  // reuse — snapshots are stored under the chat's OWN sessionId only, and the
+  // seed entry is never deleted or overwritten here.
+  const seedCheckpointId = sessionContext?.seedCheckpointId;
+  if (past_key_values === undefined && sessionId && !hftSession && seedCheckpointId) {
+    const seed = getHftSession(seedCheckpointId);
+    if (
+      seed?.mode === "prefix-rewind" &&
+      seed.modelPath === modelPath &&
+      !hasGpuBufferEntries(seed.baseEntries)
+    ) {
+      const seedAnchor =
+        seed.encodedText !== undefined
+          ? seed.encodedText
+          : isCheckpoint
+            ? renderPrefix()
+            : undefined;
+      if (seedAnchor !== undefined && prompt.startsWith(seedAnchor)) {
+        past_key_values = new DynamicCache(seed.baseEntries);
+      }
+    }
+  }
+
+  if (past_key_values === undefined && sessionId && !hftSession && isCheckpoint) {
+    // Worker restarted or state evicted (and no seed applied): re-encode the
+    // serialized prefix and store the snapshot under the session id.
+    if (prompt.startsWith(renderPrefix())) {
+      const cache = new DynamicCache();
+      const prefixInputs = hfTokenizer(renderPrefix());
+      await hfModel.generate({ ...prefixInputs, max_new_tokens: 0, past_key_values: cache });
+      const restored = snapshotHftSession(
+        sessionId,
+        cache as Record<string, any>,
+        modelPath,
+        cacheKey,
+        renderPrefix()
+      );
+      if (!hasGpuBufferEntries(restored.baseEntries)) {
+        past_key_values = new DynamicCache(restored.baseEntries);
+      }
+    }
+  }
+
+  // Snapshot target resolved BEFORE generation so a parity-failed turn can
+  // still capture its KV. Checkpoint ids are immutable: snapshot under
+  // emitCheckpointId (if any), never overwrite the checkpoint id itself. An
+  // ownedSession id is the CALLER's mutable session (a chat seeded from a
+  // checkpoint prefix) — keep snapshotting under it so later turns rewind to
+  // the previous turn instead of re-encoding the whole growing conversation;
+  // a checkpoint must never make a chat slower.
+  const immutableCheckpoint = isCheckpoint && !sessionContext?.ownedSession;
+  const snapshotTargetId = immutableCheckpoint ? sessionContext?.emitCheckpointId : sessionId;
+
+  if (past_key_values === undefined && snapshotTargetId) {
+    // No reusable snapshot (first turn, parity failure, or gpu-buffer guard):
+    // attach a fresh empty cache so generate() populates it in place and a
+    // snapshot exists for the next turn — without this the chat re-encodes
+    // the whole growing conversation every turn.
+    past_key_values = new DynamicCache();
   }
 
   // Accumulator used regardless of streaming mode.
@@ -197,14 +253,9 @@ async function generateTurn(
     accumulated = hfTokenizer.decode(newTokens, { skip_special_tokens: true });
   }
 
-  // Snapshot the output KV cache for the next turn. Checkpoint ids are
-  // immutable: snapshot under emitCheckpointId (if any), never overwrite the
-  // checkpoint id itself. An ownedSession id is the CALLER's mutable session
-  // (a chat seeded from a checkpoint prefix) — keep snapshotting under it so
-  // later turns rewind to the previous turn instead of re-encoding the whole
-  // growing conversation; a checkpoint must never make a chat slower.
-  const immutableCheckpoint = isCheckpoint && !sessionContext?.ownedSession;
-  const snapshotTargetId = immutableCheckpoint ? sessionContext?.emitCheckpointId : sessionId;
+  // Snapshot the output KV cache for the next turn, recording the exact text
+  // it encodes (this turn's prompt + reply) so the next turn's attach compares
+  // against the stored string instead of re-rendering the checkpoint prefix.
   if (snapshotTargetId) {
     let outputCache: any;
     if (past_key_values) {
@@ -215,18 +266,7 @@ async function generateTurn(
     }
 
     if (outputCache) {
-      const baseEntries: Record<string, any> = {};
-      for (const key of Object.keys(outputCache)) {
-        baseEntries[key] = outputCache[key];
-      }
-      const newSession: HftPrefixRewindSession = {
-        mode: "prefix-rewind",
-        baseEntries,
-        baseSeqLength: outputCache.get_seq_length ? outputCache.get_seq_length() : 0,
-        modelPath,
-        cacheKey,
-      };
-      setHftSession(snapshotTargetId, newSession);
+      snapshotHftSession(snapshotTargetId, outputCache, modelPath, cacheKey, prompt + accumulated);
     }
   }
 

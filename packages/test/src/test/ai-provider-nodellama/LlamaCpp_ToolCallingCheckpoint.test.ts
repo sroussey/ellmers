@@ -38,6 +38,15 @@ const sdkState = {
   sessionHistories: [] as any[][],
 };
 
+/** Nominal token counts the fake SDK "encodes" per preload / generated turn. */
+const PREFIX_TOKENS = 7;
+const TURN_TOKENS = 3;
+
+function advanceFakeSequence(sequence: unknown, tokens: number): void {
+  const seq = sequence as { nextTokenIndex?: number };
+  if (typeof seq?.nextTokenIndex === "number") seq.nextTokenIndex += tokens;
+}
+
 vi.mock("node-llama-cpp", () => ({
   LlamaChat: class {
     readonly sequence: unknown;
@@ -72,6 +81,7 @@ vi.mock("node-llama-cpp", () => ({
       if (options.signal.aborted) {
         return Promise.reject(options.signal.reason);
       }
+      advanceFakeSequence(this.sequence, TURN_TOKENS);
       options.onTextChunk("calling");
       const cleanHistory = [
         ...history,
@@ -102,10 +112,12 @@ vi.mock("node-llama-cpp", () => ({
     }
   },
   LlamaChatSession: class {
+    readonly sequence: unknown;
     private history: any[];
     private disposed = false;
 
     constructor(options: { readonly contextSequence: unknown; readonly systemPrompt?: string }) {
+      this.sequence = options.contextSequence;
       this.history =
         options.systemPrompt === undefined ? [] : [{ type: "system", text: options.systemPrompt }];
     }
@@ -115,6 +127,7 @@ vi.mock("node-llama-cpp", () => ({
       if (sdkState.failure === "preload") {
         throw new Error("preload failed");
       }
+      advanceFakeSequence(this.sequence, PREFIX_TOKENS);
     }
 
     getChatHistory(): any[] {
@@ -217,8 +230,15 @@ async function callToolWithPrompt(
   );
 }
 
+interface FakeSequence {
+  readonly id: number;
+  nextTokenIndex: number;
+  readonly eraseContextTokenRanges: ReturnType<typeof vi.fn>;
+  readonly dispose: ReturnType<typeof vi.fn>;
+}
+
 describe("LlamaCpp tool-calling checkpoint lifecycle", () => {
-  const sequences: Array<{ readonly id: number; readonly dispose: ReturnType<typeof vi.fn> }> = [];
+  const sequences: FakeSequence[] = [];
 
   beforeEach(async () => {
     setAiProviderRegistry(new AiProviderRegistry());
@@ -238,7 +258,16 @@ describe("LlamaCpp tool-calling checkpoint lifecycle", () => {
         return 4;
       },
       getSequence() {
-        const sequence = { id: sequences.length, dispose: vi.fn(async () => {}) };
+        const sequence: FakeSequence = {
+          id: sequences.length,
+          nextTokenIndex: 0,
+          eraseContextTokenRanges: vi.fn(async (ranges: Array<{ start: number; end: number }>) => {
+            for (const { start, end } of ranges) {
+              sequence.nextTokenIndex -= end - start;
+            }
+          }),
+          dispose: vi.fn(async () => {}),
+        };
         sequences.push(sequence);
         return sequence;
       },
@@ -258,6 +287,7 @@ describe("LlamaCpp tool-calling checkpoint lifecycle", () => {
     await callTool({
       sessionId: "checkpoint-parent",
       emitCheckpointId: "checkpoint-child",
+      supersedeParent: true,
       prefix,
     });
 
@@ -287,6 +317,7 @@ describe("LlamaCpp tool-calling checkpoint lifecycle", () => {
     await callTool({
       sessionId: "checkpoint-missing",
       emitCheckpointId: "checkpoint-rebuilt",
+      supersedeParent: true,
       prefix,
     });
 
@@ -391,6 +422,7 @@ describe("LlamaCpp tool-calling checkpoint lifecycle", () => {
     await callTool({
       sessionId: "checkpoint-parent",
       emitCheckpointId: "checkpoint-child",
+      supersedeParent: true,
       prefix,
     });
 
@@ -598,11 +630,92 @@ describe("LlamaCpp tool-calling checkpoint lifecycle", () => {
     // The loser's sequence is a fresh one, not the warmed shared one.
     const distinctSequences = new Set(sdkState.chatSequences);
     expect(distinctSequences.size).toBe(2);
-    // The checkpoint id was stolen atomically so no map entry survives.
-    expect(llamaCppSessions.has("checkpoint-shared")).toBe(false);
+    // Exactly one finisher restored its rewound session under the checkpoint
+    // id (the other disposed instead of overwriting the restored entry).
+    expect(llamaCppSessions.has("checkpoint-shared")).toBe(true);
     // Exactly one loser preloaded via the fallback (empty preload after
     // setChatHistory + functions); the winner did not preload.
     expect(sdkState.preloadPrompts).toEqual([""]);
+  });
+
+  it("restores the consumed checkpoint so a second consumption reuses the warmed state", async () => {
+    await warmCheckpoint("checkpoint-reuse");
+    const warmed = llamaCppSessions.get("checkpoint-reuse");
+    expect(warmed).toBeDefined();
+    const warmedSequence = warmed!.sequence as FakeSequence;
+    expect(warmedSequence.nextTokenIndex).toBe(PREFIX_TOKENS);
+    sdkState.preloadPrompts.length = 0;
+    sdkState.sessionHistories.length = 0;
+
+    await callToolWithPrompt("First consumption.", { sessionId: "checkpoint-reuse", prefix });
+
+    // Restored under the checkpoint id: same sequence, KV rewound back to the
+    // prefix boundary, session history reset to the prefix rendering.
+    expect(llamaCppSessions.get("checkpoint-reuse")?.sequence).toBe(warmedSequence);
+    expect(warmedSequence.eraseContextTokenRanges).toHaveBeenCalledWith([
+      { start: PREFIX_TOKENS, end: PREFIX_TOKENS + TURN_TOKENS },
+    ]);
+    expect(warmedSequence.nextTokenIndex).toBe(PREFIX_TOKENS);
+    expect(sdkState.sessionHistories.at(-1)).toEqual([
+      { type: "system", text: "Use the lookup tool." },
+      { type: "user", text: "Remember this checkpoint prefix." },
+    ]);
+
+    await callToolWithPrompt("Second consumption.", { sessionId: "checkpoint-reuse", prefix });
+
+    // The second consumption generated on the same warmed sequence and no
+    // prefix re-encode (preload) ever happened.
+    expect(sdkState.chatSequences).toEqual([warmedSequence, warmedSequence]);
+    expect(sdkState.preloadPrompts).toEqual([]);
+    expect(llamaCppSessions.get("checkpoint-reuse")?.sequence).toBe(warmedSequence);
+  });
+
+  it("keeps the parent's warmed state on a non-superseding emit (emitted id gets no local state)", async () => {
+    await warmCheckpoint("checkpoint-keep");
+    const warmed = llamaCppSessions.get("checkpoint-keep");
+    expect(warmed).toBeDefined();
+
+    // keepParentCheckpoint flow: the task layer omits supersedeParent.
+    await callTool({
+      sessionId: "checkpoint-keep",
+      emitCheckpointId: "checkpoint-branch",
+      prefix,
+    });
+
+    // The parent keeps its warmed state; the emitted id carries no local KV
+    // state (its consumers take the documented re-encode fallback).
+    expect(llamaCppSessions.get("checkpoint-keep")?.sequence).toBe(warmed!.sequence);
+    expect(llamaCppSessions.has("checkpoint-branch")).toBe(false);
+  });
+
+  it('treats an explicit "" systemPrompt as absent — the prefix system prompt still applies', async () => {
+    await warmCheckpoint("checkpoint-empty-system");
+
+    const input: ToolCallingTaskInput = {
+      model,
+      prompt: "Find the weather.",
+      systemPrompt: "",
+      tools: [tool],
+      toolChoice: "required",
+      maxTokens: 16,
+    };
+    await run(
+      getRunFn(["text.generation", "tool-use"]),
+      input as unknown as Record<string, unknown>,
+      {
+        sessionId: "checkpoint-empty-system",
+        prefix,
+      }
+    );
+
+    // `systemPrompt: ""` must fall through to the checkpoint prefix's system
+    // prompt (`||`, not `??`) — matching the other providers.
+    expect(sdkState.generatedHistories[0][0]).toEqual({
+      type: "system",
+      text:
+        "Use the lookup tool.\n\n" +
+        "You must call at least one tool from the provided tool list when answering.",
+    });
   });
 
   it("keeps ownedSession entries when two concurrent runs race for the same id", async () => {

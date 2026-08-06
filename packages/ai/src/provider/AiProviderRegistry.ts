@@ -35,6 +35,10 @@ import type { CheckpointPrefix } from "./CheckpointRegistry";
  *   Local providers keep their normal progressive per-turn KV snapshotting
  *   under it — a checkpoint-seeded chat must never be slower than a plain
  *   one — instead of applying checkpoint immutability semantics.
+ * - `seedCheckpointId`: for `ownedSession` consumers, the checkpoint id whose
+ *   provider-side warmed state (server cache entry or local KV snapshot) can
+ *   seed the session's first turn. Read-only: providers must never write back
+ *   or dispose under this id — its lifecycle belongs to the checkpoint.
  */
 export interface AiSessionContext {
   readonly sessionId?: string | undefined;
@@ -42,6 +46,7 @@ export interface AiSessionContext {
   readonly supersedeParent?: boolean | undefined;
   readonly prefix?: CheckpointPrefix | undefined;
   readonly ownedSession?: boolean | undefined;
+  readonly seedCheckpointId?: string | undefined;
 }
 
 /**

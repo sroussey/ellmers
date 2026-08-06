@@ -46,7 +46,32 @@ interface ResolvedProviderConfig {
   readonly trustedBaseUrl?: boolean;
 }
 
+let _testClient: unknown;
+
+/**
+ * Override the client returned by {@link getClient} so runtime tests can
+ * capture the requests the Anthropic run-fns build without a live SDK,
+ * API key, or network call. Pass `undefined` to restore normal SDK-backed
+ * creation. This lives in the runtime module (not a `vi.mock` of
+ * `@anthropic-ai/sdk`) so it works identically whether the provider resolves
+ * to `src` or the bundled `dist`, and is immune to duplicate SDK copies
+ * across the workspace defeating module-level mocks.
+ */
+function setAnthropicClientForTests(client: unknown): void {
+  _testClient = client;
+}
+
+/**
+ * @internal Symbols exported only for use by `@workglow/test`. Not part of the
+ * stable public API. Surfaced on the `ai-runtime` barrel (via `export *`) and
+ * merged into the `/ai` barrel's `_testOnly`.
+ */
+export const _testOnly = {
+  setAnthropicClientForTests,
+} as const;
+
 export async function getClient(model: AnthropicModelConfig | undefined) {
+  if (_testClient) return _testClient as InstanceType<AnthropicClientClass>;
   const Anthropic = await loadAnthropicSDK();
   const config = model?.provider_config as ResolvedProviderConfig | undefined;
   const apiKey = resolveApiKey({

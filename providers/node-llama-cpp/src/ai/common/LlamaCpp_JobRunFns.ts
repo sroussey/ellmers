@@ -17,6 +17,7 @@ import {
   LLAMACPP_MODEL_INFO,
   LLAMACPP_MODEL_SEARCH,
   LLAMACPP_MODEL_UNLOAD,
+  LLAMACPP_SESSION_DISPOSE,
   LLAMACPP_TEXT_EMBEDDING,
   LLAMACPP_TEXT_GENERATION,
   LLAMACPP_TEXT_REWRITER,
@@ -45,6 +46,7 @@ import { LlamaCpp_CountTokens, LlamaCpp_CountTokens_Preview } from "./LlamaCpp_C
 import { LlamaCpp_Download } from "./LlamaCpp_Download";
 import { LlamaCpp_ModelInfo } from "./LlamaCpp_ModelInfo";
 import { LlamaCpp_ModelSearch } from "./LlamaCpp_ModelSearch";
+import { LlamaCpp_SessionDispose } from "./LlamaCpp_SessionDispose";
 import { LlamaCpp_StructuredGeneration_Stream } from "./LlamaCpp_StructuredGeneration";
 import { LlamaCpp_TextEmbedding } from "./LlamaCpp_TextEmbedding";
 import { LlamaCpp_TextGeneration_Stream } from "./LlamaCpp_TextGeneration";
@@ -97,6 +99,7 @@ export const LLAMACPP_RUN_FNS: readonly AiProviderRunFnRegistration<
   { serves: LLAMACPP_MODEL_SEARCH, runFn: LlamaCpp_ModelSearch },
   { serves: LLAMACPP_MODEL_INFO, runFn: LlamaCpp_ModelInfo },
   { serves: LLAMACPP_CACHE_CHECKPOINT, runFn: LlamaCpp_CacheCheckpoint_Stream },
+  { serves: LLAMACPP_SESSION_DISPOSE, runFn: LlamaCpp_SessionDispose },
 ];
 
 export const LLAMACPP_PREVIEW_TASKS: Record<

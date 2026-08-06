@@ -25,16 +25,16 @@ import {
   filterValidToolCalls,
   toTextFlatMessages,
 } from "@workglow/ai/worker";
-import { renderHftPrefixPrompt } from "./HFT_CacheCheckpoint";
+import { renderHftPrefixPrompt, resolveHftParityAnchor } from "./HFT_CacheCheckpoint";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
-import type { HftPrefixRewindSession } from "./HFT_Pipeline";
 import {
   deleteHftSession,
   getHftSession,
   getPipeline,
   getPipelineCacheKey,
+  hasGpuBufferEntries,
   loadTransformersSDK,
-  setHftSession,
+  snapshotHftSession,
   withHftPipelineInUse,
 } from "./HFT_Pipeline";
 import { createStreamingTextStreamer } from "./HFT_Streaming";
@@ -90,13 +90,23 @@ function normalizeParsedToolCalls(
 // HFT tool mapping
 // ============================================================================
 
-export function mapHFTTools(tools: ReadonlyArray<ToolDefinition>) {
+/** OpenAI-function-shaped tool entry accepted by HFT chat templates. */
+export interface HftTemplateTool {
+  readonly type: "function";
+  readonly function: {
+    readonly name: string;
+    readonly description: string;
+    readonly parameters: ToolDefinition["inputSchema"];
+  };
+}
+
+export function mapHFTTools(tools: ReadonlyArray<ToolDefinition>): HftTemplateTool[] {
   return tools.map((t) => ({
     type: "function" as const,
     function: {
       name: t.name,
       description: buildToolDescription(t),
-      parameters: t.inputSchema as any,
+      parameters: t.inputSchema,
     },
   }));
 }
@@ -319,9 +329,12 @@ function buildCheckpointPromptAndPrefix(
     input.messages && input.messages.length > 0
       ? input.messages
       : [{ role: "user", content: [{ type: "text", text: extractPromptText(input.prompt) }] }];
+  // A caller systemPrompt wins over the prefix's; when they differ the render
+  // no longer starts with the warm-up rendering, so parity fails and the call
+  // takes the full re-encode fallback — correctness over cache.
   const messages = buildHFTMessages(
     [...(prefix.messages ?? []), ...tailMessages],
-    prefix.systemPrompt,
+    input.systemPrompt || prefix.systemPrompt,
     undefined,
     input.toolChoice
   );
@@ -375,15 +388,22 @@ export const HFT_ToolCalling: AiProviderRunFn<
     const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
     const modelFamily = detectModelFamilyFromConfig(model!);
 
-    // The exact warm-up rendering the stored KV tokens correspond to — the
-    // `startsWith` anchor for prefix-rewind reuse. For the fingerprint session
-    // this is the shared tools+systemPrompt region; for a checkpoint it is the
-    // checkpoint prefix rendering.
+    const modelPath = model!.provider_config.model_path;
+    const cacheKey = getPipelineCacheKey(model!);
+    let hftSession = sessionId ? getHftSession(sessionId) : undefined;
+
+    // The exact text the stored KV tokens correspond to — the `startsWith`
+    // anchor for prefix-rewind reuse. Resolved from the snapshot's own
+    // encodedText when one exists (no per-call jinja re-render); re-rendered
+    // otherwise: the fingerprint session's shared tools+systemPrompt region,
+    // or the checkpoint prefix rendering.
     let prefixPrompt: string | undefined;
     let promptParts: { prompt: string; responsePrefix: string | undefined };
     if (isCheckpoint) {
       const prefix = sessionContext!.prefix!;
-      prefixPrompt = renderHftPrefixPrompt(generateText.tokenizer, prefix);
+      prefixPrompt = resolveHftParityAnchor(hftSession, () =>
+        renderHftPrefixPrompt(generateText.tokenizer, prefix)
+      );
       promptParts = buildCheckpointPromptAndPrefix(
         generateText.tokenizer,
         prefix,
@@ -392,10 +412,12 @@ export const HFT_ToolCalling: AiProviderRunFn<
       );
     } else {
       if (sessionId) {
-        prefixPrompt = renderHftPrefixPrompt(generateText.tokenizer, {
-          systemPrompt: input.systemPrompt,
-          tools: input.tools,
-        });
+        prefixPrompt = resolveHftParityAnchor(hftSession, () =>
+          renderHftPrefixPrompt(generateText.tokenizer, {
+            systemPrompt: input.systemPrompt,
+            tools: input.tools,
+          })
+        );
       }
       promptParts = buildPromptAndPrefix(generateText.tokenizer, input, modelFamily);
     }
@@ -422,15 +444,12 @@ export const HFT_ToolCalling: AiProviderRunFn<
     }
 
     // Session cache: prefix-rewind for tool calling (streaming)
-    const modelPath = model!.provider_config.model_path;
-    const cacheKey = getPipelineCacheKey(model!);
-    let hftSession = sessionId ? getHftSession(sessionId) : undefined;
     let past_key_values: any = undefined;
 
     // prefix-rewind trusts cached KV tokens positionally, so a snapshot is
     // only warmed / attached when the fed prompt provably starts with the
-    // exact warm-up rendering; otherwise generation falls back to a full
-    // re-encode of `prompt`, which stays correct.
+    // exact text the stored KV encodes; otherwise generation falls back to a
+    // full re-encode of `prompt`, which stays correct.
     const prefixParityOk = prefixPrompt !== undefined && prompt.startsWith(prefixPrompt);
 
     if (sessionId && !hftSession && prefixParityOk) {
@@ -447,22 +466,24 @@ export const HFT_ToolCalling: AiProviderRunFn<
         max_new_tokens: 0,
         past_key_values: cache,
       });
-      const baseEntries: Record<string, any> = {};
-      for (const key of Object.keys(cache)) {
-        baseEntries[key] = cache[key];
-      }
-      const newSession: HftPrefixRewindSession = {
-        mode: "prefix-rewind",
-        baseEntries,
-        baseSeqLength: cache.get_seq_length(),
+      hftSession = snapshotHftSession(
+        sessionId,
+        cache as Record<string, any>,
         modelPath,
         cacheKey,
-      };
-      setHftSession(sessionId, newSession);
-      hftSession = newSession;
+        prefixPrompt
+      );
     }
 
-    if (hftSession?.mode === "prefix-rewind" && prefixParityOk) {
+    if (
+      hftSession?.mode === "prefix-rewind" &&
+      hftSession.modelPath === modelPath &&
+      prefixParityOk &&
+      // WebGPU snapshots cannot be shared: the first decode step's update()
+      // would dispose the snapshot's gpu-buffer tensors, so skip the attach
+      // and re-encode the full prompt instead.
+      !hasGpuBufferEntries(hftSession.baseEntries)
+    ) {
       // Create a fresh DynamicCache from the prefix snapshot for this call
       const { DynamicCache } = await loadTransformersSDK();
       past_key_values = new DynamicCache(hftSession.baseEntries);
@@ -506,15 +527,15 @@ export const HFT_ToolCalling: AiProviderRunFn<
     }
 
     if (sessionContext?.emitCheckpointId && past_key_values) {
-      const baseEntries: Record<string, any> = {};
-      for (const key of Object.keys(past_key_values)) baseEntries[key] = past_key_values[key];
-      setHftSession(sessionContext.emitCheckpointId, {
-        mode: "prefix-rewind",
-        baseEntries,
-        baseSeqLength: past_key_values.get_seq_length ? past_key_values.get_seq_length() : 0,
+      // `fullText` is the raw generated text (pre markup-filter), so
+      // prompt + fullText is exactly what the cache encodes.
+      snapshotHftSession(
+        sessionContext.emitCheckpointId,
+        past_key_values,
         modelPath,
         cacheKey,
-      });
+        prompt + fullText
+      );
       if (sessionContext.supersedeParent && sessionId) {
         deleteHftSession(sessionId);
       }

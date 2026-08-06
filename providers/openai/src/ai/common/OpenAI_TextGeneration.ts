@@ -9,7 +9,11 @@ import type {
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
 } from "@workglow/ai";
-import { accumulateOpenAIResponsesStream, buildResponsesInput } from "@workglow/ai/provider-utils";
+import {
+  accumulateOpenAIResponsesStream,
+  buildResponsesInput,
+  buildResponsesTools,
+} from "@workglow/ai/provider-utils";
 import { toOpenAIMessages } from "@workglow/ai/worker";
 import { getLogger } from "@workglow/util/worker";
 import { mergeOpenAICheckpointPrefix } from "./OpenAI_CacheCheckpoint";
@@ -106,7 +110,16 @@ export const OpenAI_TextGeneration_Stream: AiProviderRunFn<
     const effective: UnifiedTextGenerationInput = merged
       ? { ...unified, messages: merged.messages, systemPrompt: merged.systemPrompt, prompt: "" }
       : unified;
-    const params = finalizeResponsesRequest(model, buildResponsesParams(effective, model));
+    const params = buildResponsesParams(effective, model);
+    // A tools-warmed prefix replays its tool declarations too: tools precede
+    // the conversation in the serialized request, so omitting them would both
+    // miss the warm-up's cached prefix (and diverge the prompt_cache_key) and
+    // orphan replayed function_call items. tool_choice stays unset (API
+    // default), matching the warm-up request.
+    if (merged?.tools && merged.tools.length > 0) {
+      params.tools = buildResponsesTools(merged.tools);
+    }
+    finalizeResponsesRequest(model, params);
 
     const stream = await client.responses.create(
       { ...params, stream: true } as Parameters<typeof client.responses.create>[0],

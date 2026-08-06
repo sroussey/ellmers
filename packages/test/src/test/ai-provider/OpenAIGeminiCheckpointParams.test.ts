@@ -20,7 +20,11 @@ import {
   geminiCachedToolsMatch,
   _testOnly as runtimeTestOnly,
 } from "@workglow/google-gemini/ai-runtime";
-import { mergeOpenAICheckpointPrefix } from "@workglow/openai/ai-runtime";
+import { _testOnly as openAiTestOnly } from "@workglow/openai/ai";
+import {
+  mergeOpenAICheckpointPrefix,
+  _testOnly as openAiRuntimeTestOnly,
+} from "@workglow/openai/ai-runtime";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 /**
@@ -124,6 +128,111 @@ describe("mergeOpenAICheckpointPrefix", () => {
     expect(merged!.messages).toHaveLength(3);
     expect(merged!.messages[2]).toEqual(tail[0]);
     expect(merged!.systemPrompt).toBe("own");
+  });
+
+  it("keeps the prefix system prompt when the caller passes an empty string", () => {
+    const session: AiSessionContext = { sessionId: "ckpt", prefix };
+    const merged = mergeOpenAICheckpointPrefix(session, { prompt: "tail", systemPrompt: "" });
+    expect(merged!.systemPrompt).toBe("sys");
+  });
+
+  it("returns the prefix tools when the caller declares none", () => {
+    const session: AiSessionContext = { sessionId: "ckpt", prefix };
+    expect(mergeOpenAICheckpointPrefix(session, { prompt: "tail" })!.tools).toEqual(prefix.tools);
+    expect(mergeOpenAICheckpointPrefix(session, { prompt: "tail", tools: [] })!.tools).toEqual(
+      prefix.tools
+    );
+  });
+
+  it("prefers the caller's tools when it declares any", () => {
+    const session: AiSessionContext = { sessionId: "ckpt", prefix };
+    const own: ToolDefinition[] = [
+      { name: "mine", description: "Mine", inputSchema: { type: "object" } },
+    ];
+    expect(mergeOpenAICheckpointPrefix(session, { prompt: "tail", tools: own })!.tools).toEqual(
+      own
+    );
+  });
+});
+
+/**
+ * Request-level parity: drive the real OpenAI warm-up and consumer run-fns
+ * through the client test seam and compare the captured Responses requests.
+ * The seam is set on both the `ai` and `ai-runtime` entrypoints because the
+ * dist build splits them into bundles with independent module state.
+ */
+describe("OpenAI checkpoint prompt_cache_key parity", () => {
+  const openAiRequests: Array<Record<string, unknown>> = [];
+  const fakeOpenAiClient = {
+    responses: {
+      create: async (request: Record<string, unknown>) => {
+        openAiRequests.push(request);
+        return { async *[Symbol.asyncIterator]() {} };
+      },
+    },
+  } as never;
+  const openAiModel = { provider_config: { model_name: "gpt-test" } } as never;
+
+  beforeEach(() => {
+    openAiRequests.length = 0;
+    openAiTestOnly.setOpenAIClientForTests(fakeOpenAiClient);
+    openAiRuntimeTestOnly.setOpenAIClientForTests(fakeOpenAiClient);
+  });
+
+  afterEach(() => {
+    openAiTestOnly.setOpenAIClientForTests(undefined);
+    openAiRuntimeTestOnly.setOpenAIClientForTests(undefined);
+  });
+
+  /** Registration lookup — first entry whose `serves` includes the capability. */
+  function findOpenAiRunFn(capability: string): AiProviderRunFn {
+    const registration = openAiTestOnly.OPENAI_RUN_FNS.find(({ serves }) =>
+      (serves as readonly string[]).includes(capability)
+    );
+    expect(registration).toBeDefined();
+    return registration!.runFn as AiProviderRunFn;
+  }
+
+  async function runWarmUp(session: AiSessionContext): Promise<void> {
+    const warmUp = findOpenAiRunFn("cache.checkpoint");
+    const input: CacheCheckpointTaskInput = { model: "gpt-test" };
+    await warmUp(input, openAiModel, new AbortController().signal, () => {}, undefined, session);
+  }
+
+  it("a text consumer of a tools-warmed prefix matches the warm-up key and tools", async () => {
+    const session: AiSessionContext = { sessionId: "ckpt-oai", prefix };
+    await runWarmUp(session);
+
+    const consume = findOpenAiRunFn("text.generation");
+    const input: TextGenerationTaskInput = { model: "gpt-test", prompt: "tail" };
+    await consume(input, openAiModel, new AbortController().signal, () => {}, undefined, session);
+
+    expect(openAiRequests).toHaveLength(2);
+    const [warmUpRequest, consumerRequest] = openAiRequests;
+    expect(warmUpRequest.prompt_cache_key).toBeDefined();
+    expect(consumerRequest.prompt_cache_key).toBe(warmUpRequest.prompt_cache_key);
+    expect(consumerRequest.tools).toEqual(warmUpRequest.tools);
+    expect(consumerRequest.instructions).toBe(warmUpRequest.instructions);
+    // tool_choice stays unset, matching the warm-up request
+    expect(consumerRequest.tool_choice).toBeUndefined();
+  });
+
+  it("an empty-string system prompt keeps the warmed instructions and cache key", async () => {
+    const session: AiSessionContext = { sessionId: "ckpt-oai-2", prefix };
+    await runWarmUp(session);
+
+    const consume = findOpenAiRunFn("text.generation");
+    const input = {
+      model: "gpt-test",
+      prompt: "tail",
+      systemPrompt: "",
+    } as unknown as TextGenerationTaskInput;
+    await consume(input, openAiModel, new AbortController().signal, () => {}, undefined, session);
+
+    expect(openAiRequests).toHaveLength(2);
+    const [warmUpRequest, consumerRequest] = openAiRequests;
+    expect(consumerRequest.instructions).toBe(warmUpRequest.instructions);
+    expect(consumerRequest.prompt_cache_key).toBe(warmUpRequest.prompt_cache_key);
   });
 });
 

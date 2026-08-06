@@ -24,6 +24,7 @@ import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import type { LlamaCppSessionState } from "./LlamaCpp_Runtime";
 import {
   acquireContextSequence,
+  captureSequenceTokenBoundary,
   getActualModelPath,
   getConfigKey,
   getLlamaCppSdk,
@@ -32,10 +33,12 @@ import {
   llamaCppChatSessionConstructorSpread,
   llamaCppSeedPromptSpread,
   loadSdk,
+  restoreLlamaCppCheckpointSession,
   setLlamaCppSession,
   stealLlamaCppSession,
   withModelInUse,
   withSequence,
+  withSessionLock,
 } from "./LlamaCpp_Runtime";
 import { extractToolCallsFromText } from "./LlamaCpp_ToolParser";
 
@@ -43,7 +46,9 @@ function buildSystemPrompt(
   input: ToolCallingTaskInput,
   prefixSystemPrompt: string | undefined = undefined
 ): string | undefined {
-  const base = input.systemPrompt ?? prefixSystemPrompt;
+  // `||`, not `??`: an explicit empty-string systemPrompt falls through to the
+  // checkpoint prefix's system prompt, matching the other providers.
+  const base = input.systemPrompt || prefixSystemPrompt;
   if (input.toolChoice === "required") {
     const instruction =
       "You must call at least one tool from the provided tool list when answering.";
@@ -433,121 +438,176 @@ export const LlamaCpp_ToolCalling_Stream: AiProviderRunFn<
     // session (not a checkpoint) so it uses the non-consuming getter.
     const isCheckpointConsumption =
       isCheckpoint && sessionId !== undefined && !sessionContext.ownedSession;
-    let cached = sessionId
-      ? isCheckpointConsumption
-        ? stealLlamaCppSession(sessionId)
-        : getLlamaCppSession(sessionId)
-      : undefined;
-    // A stolen checkpoint session's map entry is already gone — track owned=false
-    // so the dispose path frees it unless we re-key it under an emitCheckpointId.
-    // A non-consumption cache hit keeps the map entry, so it stays map-owned.
-    let ownedByMap = Boolean(cached) && !isCheckpointConsumption;
 
-    if (sessionId && !cached && isCheckpoint) {
-      const prefix = sessionContext.prefix!;
-      const { LlamaChatSession } = getLlamaCppSdk();
-      const context = await getOrCreateTextContext(model);
-      const sequence = await acquireContextSequence(context, signal);
-      let chatSession: any;
-      let state: LlamaCppSessionState | undefined;
-      try {
-        chatSession = new LlamaChatSession({
-          contextSequence: sequence,
-          ...(prefix.systemPrompt !== undefined && { systemPrompt: prefix.systemPrompt }),
-          ...llamaCppChatSessionConstructorSpread(model),
-        });
-        // Route the prefix through the model's chat template — feeding role/text
-        // strings via preloadPrompt would bypass the wrapper and drop
-        // tool_use / tool_result blocks. setChatHistory + preloadPrompt("", { functions })
-        // populates KV state via the same wrapper the consumer's generation uses.
-        const history = renderLlamaCppPrefixChatHistory(prefix);
-        chatSession.setChatHistory(history);
-        const functions = renderLlamaCppPrefixFunctions(prefix);
-        await chatSession.preloadPrompt("", {
-          signal,
-          ...(functions ? { functions } : {}),
-        });
-        state = {
-          mode: "prefix-rewind",
-          sequence,
-          session: chatSession,
-          modelKey: getConfigKey(model),
-        };
-      } catch (err) {
-        if (chatSession) {
+    const runGeneration = async (): Promise<void> => {
+      // Defense-in-depth at the get site: an entry stored under this id for a
+      // DIFFERENT model must be treated as a miss — its KV tokens belong to the
+      // other model — without stealing, disposing, or overwriting it (the entry
+      // belongs to that task). This run then stays ephemeral.
+      const peeked = sessionId ? getLlamaCppSession(sessionId) : undefined;
+      const modelKeyMismatch = peeked !== undefined && peeked.modelKey !== getConfigKey(model);
+      let cached =
+        peeked !== undefined && !modelKeyMismatch
+          ? isCheckpointConsumption
+            ? stealLlamaCppSession(sessionId!)
+            : peeked
+          : undefined;
+      // A stolen checkpoint session's map entry is already gone — track owned=false
+      // so the dispose path frees it unless it is re-keyed / restored below.
+      // A non-consumption cache hit keeps the map entry, so it stays map-owned.
+      let ownedByMap = Boolean(cached) && !isCheckpointConsumption;
+
+      if (sessionId && !cached && isCheckpoint) {
+        const prefix = sessionContext.prefix!;
+        const { LlamaChatSession } = getLlamaCppSdk();
+        const context = await getOrCreateTextContext(model);
+        const sequence = await acquireContextSequence(context, signal);
+        let chatSession: any;
+        let state: LlamaCppSessionState | undefined;
+        try {
+          chatSession = new LlamaChatSession({
+            contextSequence: sequence,
+            ...(prefix.systemPrompt !== undefined && { systemPrompt: prefix.systemPrompt }),
+            ...llamaCppChatSessionConstructorSpread(model),
+          });
+          // Route the prefix through the model's chat template — feeding role/text
+          // strings via preloadPrompt would bypass the wrapper and drop
+          // tool_use / tool_result blocks. setChatHistory + preloadPrompt("", { functions })
+          // populates KV state via the same wrapper the consumer's generation uses.
+          const history = renderLlamaCppPrefixChatHistory(prefix);
+          chatSession.setChatHistory(history);
+          const functions = renderLlamaCppPrefixFunctions(prefix);
+          await chatSession.preloadPrompt("", {
+            signal,
+            ...(functions ? { functions } : {}),
+          });
+          state = {
+            mode: "prefix-rewind",
+            sequence,
+            session: chatSession,
+            modelKey: getConfigKey(model),
+          };
+        } catch (err) {
+          if (chatSession) {
+            try {
+              await chatSession.dispose({ disposeSequence: false });
+            } catch {}
+          }
           try {
-            await chatSession.dispose({ disposeSequence: false });
+            await sequence.dispose();
           } catch {}
+          throw err;
         }
-        try {
-          await sequence.dispose();
-        } catch {}
-        throw err;
+        cached = state;
       }
-      cached = state;
-    }
 
-    // Ownership tracking (`ownedByMap`) was decided above alongside the
-    // steal-vs-get split: a stolen or freshly-encoded checkpoint session is
-    // caller-owned until we re-key it under an emitCheckpointId; a plain
-    // cache hit (progressive / ownedSession) stays map-owned.
-    const context = cached ? undefined : await getOrCreateTextContext(model);
-    const sequence = cached ? cached.sequence : await acquireContextSequence(context!, signal);
-    let session = cached?.session;
-    if (!session) {
-      const { LlamaChatSession } = getLlamaCppSdk();
-      try {
-        session = new LlamaChatSession({
-          contextSequence: sequence,
-          ...llamaCppChatSessionConstructorSpread(model),
-        });
-      } catch (err) {
+      // Ownership tracking (`ownedByMap`) was decided above alongside the
+      // steal-vs-get split: a stolen or freshly-encoded checkpoint session is
+      // caller-owned until we re-key or restore it; a plain cache hit
+      // (progressive / ownedSession) stays map-owned.
+      const context = cached ? undefined : await getOrCreateTextContext(model);
+      const sequence = cached ? cached.sequence : await acquireContextSequence(context!, signal);
+      let session = cached?.session;
+      if (!session) {
+        const { LlamaChatSession } = getLlamaCppSdk();
         try {
-          await sequence.dispose();
-        } catch {}
-        throw err;
+          session = new LlamaChatSession({
+            contextSequence: sequence,
+            ...llamaCppChatSessionConstructorSpread(model),
+          });
+        } catch (err) {
+          try {
+            await sequence.dispose();
+          } catch {}
+          throw err;
+        }
       }
-    }
 
-    if (sessionId && !cached) {
-      setLlamaCppSession(sessionId, {
-        mode: "progressive",
-        sequence,
-        session,
-        modelKey: getConfigKey(model),
-      });
-      ownedByMap = true;
-    }
-
-    try {
-      const { output, cleanHistory } = await generateToolResponse(
-        input,
-        model,
-        signal,
-        emit,
-        sequence,
-        sessionContext.prefix
-      );
-      session.setChatHistory(cleanHistory);
-      emit({ type: "finish", data: output });
-      if (sessionContext.emitCheckpointId) {
-        setLlamaCppSession(sessionContext.emitCheckpointId, {
-          mode: "prefix-rewind",
+      if (sessionId && !cached && !modelKeyMismatch) {
+        setLlamaCppSession(sessionId, {
+          mode: "progressive",
           sequence,
           session,
           modelKey: getConfigKey(model),
         });
         ownedByMap = true;
       }
-    } finally {
-      if (!ownedByMap) {
-        try {
-          await session.dispose({ disposeSequence: false });
-        } catch {}
-        try {
-          await sequence.dispose();
-        } catch {}
+
+      // Capture the prefix token boundary before generation so a successful
+      // non-superseding consumption can rewind the KV back to the warmed prefix.
+      const prefixBoundary = isCheckpointConsumption
+        ? captureSequenceTokenBoundary(sequence)
+        : undefined;
+
+      try {
+        const { output, cleanHistory } = await generateToolResponse(
+          input,
+          model,
+          signal,
+          emit,
+          sequence,
+          sessionContext.prefix
+        );
+        const emitId = sessionContext.emitCheckpointId;
+        // Re-key under the emitted id only when the consumed parent is
+        // superseded (or when nothing was consumed at all). An emit that keeps
+        // the parent leaves the emitted id with no local KV state — its
+        // consumers take the documented re-encode fallback — so the parent's
+        // warmed state can be restored below.
+        const reKeyForEmit =
+          emitId !== undefined &&
+          (!isCheckpointConsumption || sessionContext.supersedeParent === true);
+        if (!isCheckpointConsumption || reKeyForEmit) {
+          session.setChatHistory(cleanHistory);
+        }
+        emit({ type: "finish", data: output });
+        if (emitId !== undefined && reKeyForEmit) {
+          setLlamaCppSession(emitId, {
+            mode: "prefix-rewind",
+            sequence,
+            session,
+            modelKey: getConfigKey(model),
+          });
+          ownedByMap = true;
+        } else if (isCheckpointConsumption && sessionId) {
+          // Restore-after-consume: rewind the sequence KV to the prefix
+          // boundary and re-register the warmed state under the checkpoint id
+          // so the next consumer reuses it instead of paying a full prefix
+          // re-encode. A consumer that arrived while the session was stolen
+          // already re-encoded via the missing-state fallback (acceptable);
+          // whichever finisher restores first wins and the other disposes. On
+          // any rewind failure the state is disposed below — post-generation
+          // state is never left registered under the checkpoint id.
+          const restored = await restoreLlamaCppCheckpointSession(
+            sessionId,
+            { mode: "prefix-rewind", sequence, session, modelKey: getConfigKey(model) },
+            prefixBoundary,
+            renderLlamaCppPrefixChatHistory(sessionContext.prefix!)
+          );
+          if (restored) ownedByMap = true;
+        }
+      } finally {
+        if (!ownedByMap) {
+          try {
+            await session.dispose({ disposeSequence: false });
+          } catch {}
+          try {
+            await sequence.dispose();
+          } catch {}
+        }
       }
+    };
+
+    // Non-consuming shared-session paths (a fingerprint session reused across
+    // same-toolset calls, or a chat's ownedSession) read-modify-write one live
+    // sequence with async gaps between lookup, creation, generation, and the
+    // store-back — serialize them per session id. Checkpoint consumption skips
+    // the lock: the steal above is atomic and the loser re-encodes on its own
+    // sequence.
+    if (sessionId !== undefined && !isCheckpointConsumption) {
+      await withSessionLock(sessionId, runGeneration);
+    } else {
+      await runGeneration();
     }
   });
 };

@@ -23,6 +23,7 @@ import {
   HFT_MODEL_DOWNLOAD_REMOVE,
   HFT_MODEL_INFO,
   HFT_MODEL_SEARCH,
+  HFT_SESSION_DISPOSE,
   HFT_TEXT_CLASSIFICATION,
   HFT_TEXT_EMBEDDING,
   HFT_TEXT_FILL_MASK,
@@ -51,6 +52,7 @@ import { HFT_ImageToText } from "./HFT_ImageToText";
 import { HFT_ModelInfo } from "./HFT_ModelInfo";
 import { HFT_ModelSearch } from "./HFT_ModelSearch";
 import { HFT_ObjectDetection } from "./HFT_ObjectDetection";
+import { HFT_SessionDispose } from "./HFT_SessionDispose";
 import { HFT_StructuredGeneration } from "./HFT_StructuredGeneration";
 import { HFT_TextClassification } from "./HFT_TextClassification";
 import { HFT_TextEmbedding } from "./HFT_TextEmbedding";
@@ -127,6 +129,7 @@ export const HFT_RUN_FNS: readonly AiProviderRunFnRegistration<
   { serves: HFT_MODEL_SEARCH, runFn: HFT_ModelSearch },
   { serves: HFT_MODEL_INFO, runFn: HFT_ModelInfo },
   { serves: HFT_CACHE_CHECKPOINT, runFn: HFT_CacheCheckpoint },
+  { serves: HFT_SESSION_DISPOSE, runFn: HFT_SessionDispose },
 ];
 
 export const HFT_PREVIEW_TASKS: Record<

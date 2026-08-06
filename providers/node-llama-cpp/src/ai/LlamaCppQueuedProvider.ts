@@ -11,7 +11,8 @@ import type {
   ModelConfig,
   ModelRecord,
 } from "@workglow/ai";
-import { QueuedAiProvider } from "@workglow/ai";
+import { getAiProviderRegistry, noopEmit, QueuedAiProvider } from "@workglow/ai";
+import type { TaskInput } from "@workglow/task-graph";
 import {
   inferLlamaCppCapabilities,
   llamaCppWorkerRunFnSpecs,
@@ -48,6 +49,25 @@ export class LlamaCppQueuedProvider extends QueuedAiProvider<LlamaCppModelConfig
   }
 
   override async disposeSession(sessionId: string): Promise<void> {
+    // In worker-backed registration the session map lives in the worker, so a
+    // direct deleteLlamaCppSession here would silently no-op and leak the
+    // worker's context-sequence slot. Dispatch through the registered
+    // ["session.dispose"] run-fn — a worker proxy in worker mode, the local
+    // run-fn inline — so the delete executes in the runtime that owns the map.
+    const disposeFn = getAiProviderRegistry().getRunFnFor(this.name, ["session.dispose"]);
+    if (disposeFn) {
+      await disposeFn(
+        {} as TaskInput,
+        undefined,
+        AbortSignal.timeout(30_000),
+        noopEmit,
+        undefined,
+        { sessionId }
+      );
+      return;
+    }
+
+    // An unregistered inline provider still owns its session map in this runtime.
     await deleteLlamaCppSession(sessionId);
   }
 }
