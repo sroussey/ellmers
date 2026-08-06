@@ -72,6 +72,8 @@ describe("LLAMACPP_RUN_FNS shape", () => {
     expect(sets).toContain("model.download-remove");
     expect(sets).toContain("model.search");
     expect(sets).toContain("model.info");
+    expect(sets).toContain("cache.checkpoint");
+    expect(sets).toContain("session.dispose");
   });
 
   it("tiebreaks `text.generation` to smallest serves entry", () => {

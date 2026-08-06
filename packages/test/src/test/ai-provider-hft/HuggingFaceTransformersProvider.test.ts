@@ -49,6 +49,7 @@ describe("HuggingFaceTransformersQueuedProvider.inferCapabilities", () => {
     );
     expect(caps).toContain("text.generation");
     expect(caps).toContain("tool-use");
+    expect(caps).toContain("cache.checkpoint");
     expect(caps).toContain("model.count-tokens");
     expect(caps).toContain("model.download-remove");
   });
@@ -79,6 +80,14 @@ describe("HuggingFaceTransformersQueuedProvider.inferCapabilities", () => {
     const caps = provider.inferCapabilities(model("onnx-community/Llama-3.2-1B-Instruct-q4f16"));
     expect(caps).toContain("text.generation");
     expect(caps).toContain("tool-use");
+    expect(caps).toContain("cache.checkpoint");
+  });
+
+  it("does not infer cache.checkpoint for non-generative pipelines", () => {
+    const caps = provider.inferCapabilities(
+      model("Xenova/all-MiniLM-L6-v2", { pipeline_task: "feature-extraction" })
+    );
+    expect(caps).not.toContain("cache.checkpoint");
   });
 
   it("falls back to name-pattern matching for embedding models (MiniLM)", () => {
@@ -153,6 +162,8 @@ describe("HFT_RUN_FNS shape", () => {
     expect(sets).toContain("model.download-remove");
     expect(sets).toContain("model.search");
     expect(sets).toContain("model.info");
+    expect(sets).toContain("cache.checkpoint");
+    expect(sets).toContain("session.dispose");
   });
 
   it("tiebreaks `text.generation` to the smallest serves entry", () => {

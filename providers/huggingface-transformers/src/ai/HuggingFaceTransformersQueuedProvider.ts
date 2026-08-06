@@ -18,7 +18,7 @@ import { QueuedAiProvider } from "@workglow/ai";
 import { hftWorkerRunFnSpecs, inferHftCapabilities } from "./common/HFT_Capabilities";
 import { HF_TRANSFORMERS_ONNX, HF_TRANSFORMERS_ONNX_CPU } from "./common/HFT_Constants";
 import type { HfTransformersOnnxModelConfig } from "./common/HFT_ModelSchema";
-import { deleteHftSession } from "./common/HFT_Pipeline";
+import { disposeHftSessionViaRegistry } from "./common/HFT_SessionDispose";
 
 const GPU_DEVICES = new Set(["webgpu", "gpu", "metal"]);
 
@@ -90,7 +90,10 @@ export class HuggingFaceTransformersQueuedProvider extends QueuedAiProvider<HfTr
   }
 
   override async disposeSession(sessionId: string): Promise<void> {
-    deleteHftSession(sessionId);
+    // In worker-backed registrations the session map lives in the worker;
+    // dispatch through the registered ["session.dispose"] run-fn (a worker
+    // proxy there) so the delete reaches the runtime that owns the tensors.
+    await disposeHftSessionViaRegistry(this.name, sessionId);
   }
 
   protected override async afterRegister(options: AiProviderRegisterOptions): Promise<void> {

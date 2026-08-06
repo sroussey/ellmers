@@ -13,15 +13,30 @@ import type {
   CheckpointPrefix,
 } from "@workglow/ai";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
-import type { HftPrefixRewindSession } from "./HFT_Pipeline";
+import type { HftSessionState } from "./HFT_Pipeline";
 import {
   getPipeline,
   getPipelineCacheKey,
   loadTransformersSDK,
-  setHftSession,
+  snapshotHftSession,
   withHftPipelineInUse,
 } from "./HFT_Pipeline";
 import { buildHFTMessages, mapHFTTools } from "./HFT_ToolCalling";
+
+/**
+ * The `startsWith` anchor for prefix-rewind KV reuse: the exact text the
+ * stored snapshot encodes ({@link HftPrefixRewindSession.encodedText}) when
+ * present, else the `renderPrefix` fallback re-rendering — so consumers skip
+ * the per-call jinja re-render for snapshots that carry their own text.
+ */
+export function resolveHftParityAnchor(
+  session: HftSessionState | undefined,
+  renderPrefix: () => string
+): string {
+  return session?.mode === "prefix-rewind" && session.encodedText !== undefined
+    ? session.encodedText
+    : renderPrefix();
+}
 
 /**
  * Renders a checkpoint prefix with the model's chat template (no generation prompt).
@@ -34,25 +49,36 @@ import { buildHFTMessages, mapHFTTools } from "./HFT_ToolCalling";
  * No empty user turn is appended for a message-less prefix (the common
  * system-prompt + tools warm-up): consumers append a REAL user turn, so an
  * empty one here would make their continuation diverge right after the system
- * block and defeat the `startsWith` KV-reuse check. Only a prefix with neither
- * system prompt nor messages keeps the placeholder turn, since some templates
- * reject an empty message list.
+ * block and defeat the `startsWith` KV-reuse check. A prefix with neither
+ * system prompt nor messages (typically tools-only) is rendered from an EMPTY
+ * message list, which yields just the template's standing header (tools block /
+ * default system preamble) that every real continuation starts with; only
+ * templates that reject an empty list fall back to the placeholder user turn —
+ * which no real continuation begins with, so those consumers take the full
+ * re-encode path.
  */
 export function renderHftPrefixPrompt(
   tokenizer: TextGenerationPipeline["tokenizer"],
   prefix: CheckpointPrefix
 ): string {
-  const messages =
-    prefix.messages && prefix.messages.length > 0
-      ? buildHFTMessages(prefix.messages, prefix.systemPrompt, undefined, undefined)
-      : prefix.systemPrompt
-        ? [{ role: "system", content: prefix.systemPrompt }]
-        : buildHFTMessages(undefined, undefined, undefined, undefined);
-  return tokenizer.apply_chat_template(messages as any, {
+  const templateOptions = {
     ...(prefix.tools && prefix.tools.length > 0 ? { tools: mapHFTTools(prefix.tools) as any } : {}),
     tokenize: false,
     add_generation_prompt: false,
-  }) as string;
+  };
+  const hasMessages = prefix.messages !== undefined && prefix.messages.length > 0;
+  if (!hasMessages && !prefix.systemPrompt) {
+    try {
+      return tokenizer.apply_chat_template([] as any, templateOptions) as string;
+    } catch {
+      const placeholder = buildHFTMessages(undefined, undefined, undefined, undefined);
+      return tokenizer.apply_chat_template(placeholder as any, templateOptions) as string;
+    }
+  }
+  const messages = hasMessages
+    ? buildHFTMessages(prefix.messages, prefix.systemPrompt, undefined, undefined)
+    : [{ role: "system", content: prefix.systemPrompt }];
+  return tokenizer.apply_chat_template(messages as any, templateOptions) as string;
 }
 
 /**
@@ -67,16 +93,23 @@ export function renderHftPrefixPrompt(
  * {@link renderHftPrefixPrompt} rendering — the invariant prefix-rewind KV
  * reuse relies on. Consumers still verify with `startsWith` before trusting
  * cached KV, because some templates rewrite earlier turns.
+ *
+ * @param systemPrompt - Effective system prompt override (a caller's own
+ *   system prompt taking precedence over the prefix's). When it differs from
+ *   the prefix's, the rendering no longer starts with the warm-up rendering,
+ *   so parity fails and consumers take the full re-encode fallback —
+ *   correctness over cache. Omit to render with the prefix's own.
  */
 export function renderHftContinuationPrompt(
   tokenizer: TextGenerationPipeline["tokenizer"],
   prefix: CheckpointPrefix,
-  prompt: string
+  prompt: string,
+  systemPrompt?: string | undefined
 ): string {
   const userMessage: ChatMessage = { role: "user", content: [{ type: "text", text: prompt }] };
   const messages = buildHFTMessages(
     [...(prefix.messages ?? []), userMessage],
-    prefix.systemPrompt,
+    systemPrompt ?? prefix.systemPrompt,
     undefined,
     undefined
   );
@@ -108,18 +141,13 @@ export const HFT_CacheCheckpoint: AiProviderRunFn<
     const tokenized = hfTokenizer(prompt);
     await hfModel.generate({ ...tokenized, max_new_tokens: 0, past_key_values: cache });
 
-    const baseEntries: Record<string, any> = {};
-    for (const key of Object.keys(cache)) {
-      baseEntries[key] = (cache as Record<string, any>)[key];
-    }
-    const newSession: HftPrefixRewindSession = {
-      mode: "prefix-rewind",
-      baseEntries,
-      baseSeqLength: cache.get_seq_length(),
-      modelPath: model!.provider_config.model_path,
-      cacheKey: getPipelineCacheKey(model!),
-    };
-    setHftSession(checkpointId, newSession);
+    snapshotHftSession(
+      checkpointId,
+      cache as Record<string, any>,
+      model!.provider_config.model_path,
+      getPipelineCacheKey(model!),
+      prompt
+    );
     emit({ type: "finish", data: { checkpoint: checkpointId } });
   });
 };

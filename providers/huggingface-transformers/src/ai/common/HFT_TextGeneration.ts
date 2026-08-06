@@ -10,16 +10,22 @@ import type {
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
 } from "@workglow/ai";
-import { renderHftContinuationPrompt, renderHftPrefixPrompt } from "./HFT_CacheCheckpoint";
+import {
+  renderHftContinuationPrompt,
+  renderHftPrefixPrompt,
+  resolveHftParityAnchor,
+} from "./HFT_CacheCheckpoint";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
-import type { HftPrefixRewindSession, HftProgressiveSession } from "./HFT_Pipeline";
+import type { HftProgressiveSession } from "./HFT_Pipeline";
 import {
   deleteHftSession,
   getHftSession,
   getPipeline,
   getPipelineCacheKey,
+  hasGpuBufferEntries,
   loadTransformersSDK,
   setHftSession,
+  snapshotHftSession,
   withHftPipelineInUse,
 } from "./HFT_Pipeline";
 import { createStreamingTextStreamer } from "./HFT_Streaming";
@@ -33,9 +39,15 @@ export const HFT_TextGeneration: AiProviderRunFn<
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
     const generateText = (await getPipeline(model!, emit, {}, signal)) as TextGenerationPipeline;
     const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
+    // Accumulated only to record the emitted checkpoint's encodedText; the
+    // finish event stays empty per the streaming convention.
+    let accumulated = "";
     const streamer = createStreamingTextStreamer(
       generateText.tokenizer,
-      (text) => emit({ type: "text-delta", port: "text", textDelta: text }),
+      (text) => {
+        accumulated += text;
+        emit({ type: "text-delta", port: "text", textDelta: text });
+      },
       TextStreamer
     );
     const stopping_criteria = new InterruptableStoppingCriteria();
@@ -55,45 +67,63 @@ export const HFT_TextGeneration: AiProviderRunFn<
     if (isCheckpoint) {
       const prefix = sessionContext!.prefix!;
       const tokenizer = generateText.tokenizer;
-      const prefixPrompt = renderHftPrefixPrompt(tokenizer, prefix);
-      const prompt = renderHftContinuationPrompt(tokenizer, prefix, input.prompt);
+      // The unified ["text.generation"] run-fn also routes messages-less
+      // chat-shaped inputs here, so honor a caller systemPrompt when the input
+      // carries one; a differing caller prompt breaks warm-up parity below and
+      // takes the full re-encode — correctness over cache.
+      const inputSystemPrompt = (input as { systemPrompt?: string | undefined }).systemPrompt;
+      const prompt = renderHftContinuationPrompt(
+        tokenizer,
+        prefix,
+        input.prompt,
+        inputSystemPrompt || prefix.systemPrompt
+      );
 
       // prefix-rewind trusts cached KV tokens positionally, so only attach the
-      // prefix cache when the continuation provably starts with the exact
-      // warm-up rendering. A non-concatenative template (one that rewrites
-      // earlier turns) falls back to a full re-encode of `prompt` — slower, but
-      // still correct because `prompt` carries the entire prefix.
+      // prefix cache when the continuation provably starts with the exact text
+      // the stored KV encodes — the snapshot's own encodedText when present
+      // (no per-call jinja re-render), else the re-rendered warm-up prefix. A
+      // non-concatenative template (one that rewrites earlier turns) falls
+      // back to a full re-encode of `prompt` — slower, but still correct
+      // because `prompt` carries the entire prefix.
       let past_key_values: any = undefined;
-      if (prompt.startsWith(prefixPrompt)) {
-        let session = sessionId ? getHftSession(sessionId) : undefined;
-        if (sessionId && !session) {
-          // Missing-state fallback: the checkpoint id has no worker-side KV
-          // (worker restarted / evicted). Re-encode the serialized prefix and
-          // store the snapshot under the checkpoint id.
-          const { DynamicCache } = await loadTransformersSDK();
-          const cache = new DynamicCache();
-          const tokenized = tokenizer(prefixPrompt);
-          await generateText.model.generate({
-            ...tokenized,
-            max_new_tokens: 0,
-            past_key_values: cache,
-          });
-          const baseEntries: Record<string, any> = {};
-          for (const key of Object.keys(cache))
-            baseEntries[key] = (cache as Record<string, any>)[key];
-          const restored: HftPrefixRewindSession = {
-            mode: "prefix-rewind",
-            baseEntries,
-            baseSeqLength: cache.get_seq_length(),
-            modelPath,
-            cacheKey,
-          };
-          setHftSession(sessionId, restored);
-          session = restored;
-        }
-        if (session?.mode === "prefix-rewind") {
-          const { DynamicCache } = await loadTransformersSDK();
-          past_key_values = new DynamicCache(session.baseEntries);
+      if (sessionId) {
+        let session = getHftSession(sessionId);
+        const anchor = resolveHftParityAnchor(session, () =>
+          renderHftPrefixPrompt(tokenizer, prefix)
+        );
+        if (prompt.startsWith(anchor)) {
+          if (!session) {
+            // Missing-state fallback: the checkpoint id has no worker-side KV
+            // (worker restarted / evicted). Re-encode the serialized prefix and
+            // store the snapshot under the checkpoint id.
+            const { DynamicCache } = await loadTransformersSDK();
+            const cache = new DynamicCache();
+            const tokenized = tokenizer(anchor);
+            await generateText.model.generate({
+              ...tokenized,
+              max_new_tokens: 0,
+              past_key_values: cache,
+            });
+            session = snapshotHftSession(
+              sessionId,
+              cache as Record<string, any>,
+              modelPath,
+              cacheKey,
+              anchor
+            );
+          }
+          if (
+            session?.mode === "prefix-rewind" &&
+            session.modelPath === modelPath &&
+            // WebGPU snapshots cannot be shared: the first decode step would
+            // dispose the snapshot's gpu-buffer tensors (update() replaces
+            // them), so skip the attach and re-encode the full prompt instead.
+            !hasGpuBufferEntries(session.baseEntries)
+          ) {
+            const { DynamicCache } = await loadTransformersSDK();
+            past_key_values = new DynamicCache(session.baseEntries);
+          }
         }
       }
 
@@ -116,15 +146,13 @@ export const HFT_TextGeneration: AiProviderRunFn<
       // Checkpoints are immutable: snapshot post-turn state under
       // emitCheckpointId only, never overwrite the consumed checkpoint id.
       if (sessionContext?.emitCheckpointId && past_key_values) {
-        const baseEntries: Record<string, any> = {};
-        for (const key of Object.keys(past_key_values)) baseEntries[key] = past_key_values[key];
-        setHftSession(sessionContext.emitCheckpointId, {
-          mode: "prefix-rewind",
-          baseEntries,
-          baseSeqLength: past_key_values.get_seq_length ? past_key_values.get_seq_length() : 0,
+        snapshotHftSession(
+          sessionContext.emitCheckpointId,
+          past_key_values,
           modelPath,
           cacheKey,
-        });
+          prompt + accumulated
+        );
         if (sessionContext.supersedeParent && sessionId) {
           deleteHftSession(sessionId);
         }
@@ -176,15 +204,10 @@ export const HFT_TextGeneration: AiProviderRunFn<
     });
 
     if (sessionContext?.emitCheckpointId && past_key_values) {
-      const baseEntries: Record<string, any> = {};
-      for (const key of Object.keys(past_key_values)) baseEntries[key] = past_key_values[key];
-      setHftSession(sessionContext.emitCheckpointId, {
-        mode: "prefix-rewind",
-        baseEntries,
-        baseSeqLength: past_key_values.get_seq_length ? past_key_values.get_seq_length() : 0,
-        modelPath,
-        cacheKey,
-      });
+      // The pipeline rendered the chat template internally, so the exact text
+      // this KV encodes is not knowable here — store no encodedText and let
+      // consumers fall back to re-rendering the checkpoint prefix.
+      snapshotHftSession(sessionContext.emitCheckpointId, past_key_values, modelPath, cacheKey);
     }
 
     emit({ type: "finish", data: {} as TextGenerationTaskOutput });

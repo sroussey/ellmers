@@ -11,10 +11,7 @@ import type {
   AiSessionContext,
   ChatMessage,
 } from "@workglow/ai";
-import {
-  renderLlamaCppPrefixChatHistory,
-  renderLlamaCppPrefixFunctions,
-} from "./LlamaCpp_CacheCheckpoint";
+import { renderLlamaCppPrefixFunctions } from "./LlamaCpp_CacheCheckpoint";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
   acquireContextSequence,
@@ -28,6 +25,7 @@ import {
   setLlamaCppSession,
   withModelInUse,
 } from "./LlamaCpp_Runtime";
+import { messagesToPureChatHistoryForPrefix } from "./LlamaCpp_ToolCalling";
 
 export function resolveLlamaCppCheckpointSystemPrompt(
   inputSystemPrompt: string | undefined,
@@ -40,6 +38,7 @@ async function getOrCreateChatSession(
   sessionContext: AiSessionContext | undefined,
   model: LlamaCppModelConfig,
   systemPrompt: string | undefined,
+  priorMessages: ReadonlyArray<ChatMessage>,
   signal: AbortSignal
 ): Promise<{ session: any; sequence: any }> {
   const sessionId = sessionContext?.sessionId;
@@ -63,9 +62,6 @@ async function getOrCreateChatSession(
   const { LlamaChatSession } = await loadSdk();
   const context = await getOrCreateTextContext(model);
   const sequence = await acquireContextSequence(context, signal);
-  // When rebuilding a missing checkpoint, reconstruct it the way the warm-up
-  // run-fn did: bake the prefix's system prompt into the constructor and
-  // preload the rendered prefix text below.
   const effectiveSystemPrompt = isCheckpoint
     ? resolveLlamaCppCheckpointSystemPrompt(systemPrompt, sessionContext!.prefix!.systemPrompt)
     : systemPrompt;
@@ -80,16 +76,26 @@ async function getOrCreateChatSession(
       ...llamaCppChatSessionConstructorSpread(model),
     });
 
-    // Missing-state fallback: a checkpoint id was supplied but its worker-side
-    // sequence is gone. Re-encode the prefix through the model's chat wrapper
-    // (setChatHistory + preloadPrompt with the tool set) so the KV tokens
-    // match the consumer's generateResponse — a raw-text preload would bypass
-    // the template and drop tool_use / tool_result blocks.
-    if (isCheckpoint) {
-      const prefix = sessionContext!.prefix!;
-      const history = renderLlamaCppPrefixChatHistory(prefix);
+    // Missing-state rebuild: the session for this id is gone (worker restart,
+    // VRAM eviction) or this is the conversation's first turn seeded from a
+    // checkpoint. Re-encode the checkpoint prefix (when present) PLUS every
+    // conversation turn before the final user turn — the caller prompts only
+    // that final user text, so a prefix-only rebuild would silently forget
+    // turns 1..N-1. Rendered via the pure history helper so tool_use /
+    // tool_result blocks survive (a raw-text preload would drop them), with
+    // the EFFECTIVE system prompt rendered into the history: setChatHistory
+    // replaces the constructor-baked history wholesale, so rendering the
+    // prefix's own systemPrompt here would wipe the caller's.
+    const rebuildMessages: ChatMessage[] = [
+      ...(isCheckpoint ? (sessionContext!.prefix!.messages ?? []) : []),
+      ...priorMessages,
+    ];
+    if (isCheckpoint || rebuildMessages.length > 0) {
+      const history = messagesToPureChatHistoryForPrefix(rebuildMessages, effectiveSystemPrompt);
       session.setChatHistory(history);
-      const functions = renderLlamaCppPrefixFunctions(prefix);
+      const functions = isCheckpoint
+        ? renderLlamaCppPrefixFunctions(sessionContext!.prefix!)
+        : undefined;
       await session.preloadPrompt("", {
         signal,
         ...(functions ? { functions } : {}),
@@ -122,16 +128,25 @@ async function getOrCreateChatSession(
   return { session, sequence };
 }
 
-function lastUserText(messages: ReadonlyArray<ChatMessage>): string {
+/**
+ * Split the chat's message list into the final user turn's text (what
+ * `session.prompt` sends) and everything before it (what a missing-session
+ * rebuild must re-encode). The chat task sends the FULL conversation every
+ * turn, so the rebuild path needs all prior turns, not just the prompted one.
+ */
+function splitFinalUserTurn(messages: ReadonlyArray<ChatMessage>): {
+  readonly priorMessages: ReadonlyArray<ChatMessage>;
+  readonly userText: string;
+} {
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role !== "user") continue;
     const text = messages[i].content
       .filter((b) => b.type === "text")
       .map((b) => (b as { type: "text"; text: string }).text)
       .join("");
-    if (text) return text;
+    if (text) return { priorMessages: messages.slice(0, i), userText: text };
   }
-  return "";
+  return { priorMessages: messages, userText: "" };
 }
 
 export const LlamaCpp_Chat_Stream: AiProviderRunFn<
@@ -145,14 +160,14 @@ export const LlamaCpp_Chat_Stream: AiProviderRunFn<
   const modelPath = getActualModelPath(model);
 
   await withModelInUse(modelPath, async () => {
+    const { priorMessages, userText } = splitFinalUserTurn(input.messages ?? []);
     const { session, sequence } = await getOrCreateChatSession(
       sessionContext,
       model,
       input.systemPrompt,
+      priorMessages,
       signal
     );
-
-    const userText = lastUserText(input.messages ?? []);
 
     const queue: string[] = [];
     let done = false;

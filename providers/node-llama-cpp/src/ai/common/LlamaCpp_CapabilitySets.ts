@@ -18,6 +18,7 @@ export const LLAMACPP_MODEL_DOWNLOAD = ["model.download"] as const satisfies Cap
 export const LLAMACPP_MODEL_SEARCH = ["model.search"] as const satisfies Capability[];
 export const LLAMACPP_MODEL_INFO = ["model.info"] as const satisfies Capability[];
 export const LLAMACPP_CACHE_CHECKPOINT = ["cache.checkpoint"] as const satisfies Capability[];
+export const LLAMACPP_SESSION_DISPOSE = ["session.dispose"] as const satisfies Capability[];
 
 export const LLAMACPP_CAPABILITY_SETS = [
   LLAMACPP_TEXT_GENERATION,
@@ -32,4 +33,5 @@ export const LLAMACPP_CAPABILITY_SETS = [
   LLAMACPP_MODEL_SEARCH,
   LLAMACPP_MODEL_INFO,
   LLAMACPP_CACHE_CHECKPOINT,
+  LLAMACPP_SESSION_DISPOSE,
 ] as const;

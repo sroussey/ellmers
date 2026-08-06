@@ -41,6 +41,15 @@ const sdkState = {
   promptCalls: [] as { readonly prompt: string; readonly sequence: unknown }[],
 };
 
+/** Nominal token counts the fake SDK "encodes" per preload / generated turn. */
+const PREFIX_TOKENS = 7;
+const TURN_TOKENS = 3;
+
+function advanceFakeSequence(sequence: unknown, tokens: number): void {
+  const seq = sequence as { nextTokenIndex?: number };
+  if (typeof seq?.nextTokenIndex === "number") seq.nextTokenIndex += tokens;
+}
+
 vi.mock("node-llama-cpp", () => ({
   LlamaChatSession: class {
     readonly sequence: unknown;
@@ -56,6 +65,7 @@ vi.mock("node-llama-cpp", () => ({
 
     async preloadPrompt(prompt: string): Promise<void> {
       sdkState.preloadPrompts.push(prompt);
+      advanceFakeSequence(this.sequence, PREFIX_TOKENS);
     }
 
     getChatHistory(): any[] {
@@ -76,6 +86,7 @@ vi.mock("node-llama-cpp", () => ({
     ): Promise<string> {
       sdkState.promptCalls.push({ prompt, sequence: this.sequence });
       if (options.signal.aborted) return Promise.reject(options.signal.reason);
+      advanceFakeSequence(this.sequence, TURN_TOKENS);
       options.onTextChunk("out");
       return "out";
     }
@@ -144,8 +155,15 @@ async function generate(
   );
 }
 
+interface FakeSequence {
+  readonly id: number;
+  nextTokenIndex: number;
+  readonly eraseContextTokenRanges: ReturnType<typeof vi.fn>;
+  readonly dispose: ReturnType<typeof vi.fn>;
+}
+
 describe("LlamaCpp text-generation checkpoint lifecycle", () => {
-  const sequences: Array<{ readonly id: number; readonly dispose: ReturnType<typeof vi.fn> }> = [];
+  const sequences: FakeSequence[] = [];
 
   beforeEach(async () => {
     setAiProviderRegistry(new AiProviderRegistry());
@@ -163,7 +181,16 @@ describe("LlamaCpp text-generation checkpoint lifecycle", () => {
         return 4;
       },
       getSequence() {
-        const sequence = { id: sequences.length, dispose: vi.fn(async () => {}) };
+        const sequence: FakeSequence = {
+          id: sequences.length,
+          nextTokenIndex: 0,
+          eraseContextTokenRanges: vi.fn(async (ranges: Array<{ start: number; end: number }>) => {
+            for (const { start, end } of ranges) {
+              sequence.nextTokenIndex -= end - start;
+            }
+          }),
+          dispose: vi.fn(async () => {}),
+        };
         sequences.push(sequence);
         return sequence;
       },
@@ -183,6 +210,7 @@ describe("LlamaCpp text-generation checkpoint lifecycle", () => {
     await generate("continue the story", {
       sessionId: "ckpt-parent",
       emitCheckpointId: "ckpt-child",
+      supersedeParent: true,
       prefix,
     });
 
@@ -208,6 +236,59 @@ describe("LlamaCpp text-generation checkpoint lifecycle", () => {
       { type: "system", text: "You are helpful." },
       { type: "user", text: "Remember this checkpoint prefix." },
     ]);
+    // The re-encoded session is rewound and restored under the checkpoint id,
+    // so the next consumer reuses it instead of re-encoding again.
+    expect(llamaCppSessions.has("ckpt-missing")).toBe(true);
+  });
+
+  it("restores the consumed checkpoint so a second consumption reuses the warmed state", async () => {
+    await warmCheckpoint("ckpt-reuse");
+    const warmed = llamaCppSessions.get("ckpt-reuse");
+    expect(warmed).toBeDefined();
+    const warmedSequence = warmed!.sequence as FakeSequence;
+    expect(warmedSequence.nextTokenIndex).toBe(PREFIX_TOKENS);
+    sdkState.preloadPrompts.length = 0;
+    sdkState.sessionHistories.length = 0;
+
+    await generate("first consumption", { sessionId: "ckpt-reuse", prefix });
+
+    // Restored under the checkpoint id: same sequence, KV rewound back to the
+    // prefix boundary, history reset to the prefix rendering.
+    expect(llamaCppSessions.get("ckpt-reuse")?.sequence).toBe(warmedSequence);
+    expect(warmedSequence.eraseContextTokenRanges).toHaveBeenCalledWith([
+      { start: PREFIX_TOKENS, end: PREFIX_TOKENS + TURN_TOKENS },
+    ]);
+    expect(warmedSequence.nextTokenIndex).toBe(PREFIX_TOKENS);
+    expect(sdkState.sessionHistories.at(-1)).toEqual([
+      { type: "system", text: "You are helpful." },
+      { type: "user", text: "Remember this checkpoint prefix." },
+    ]);
+
+    await generate("second consumption", { sessionId: "ckpt-reuse", prefix });
+
+    // The second consumption reused the restored warm state — both prompts ran
+    // on the warmed sequence and no prefix re-encode (preload) ever happened.
+    expect(sdkState.promptCalls.map((c) => c.sequence)).toEqual([warmedSequence, warmedSequence]);
+    expect(sdkState.preloadPrompts).toEqual([]);
+    expect(llamaCppSessions.get("ckpt-reuse")?.sequence).toBe(warmedSequence);
+  });
+
+  it("keeps the parent's warmed state on a non-superseding emit (emitted id gets no local state)", async () => {
+    await warmCheckpoint("ckpt-keep");
+    const warmed = llamaCppSessions.get("ckpt-keep");
+    expect(warmed).toBeDefined();
+
+    // keepParentCheckpoint flow: the task layer omits supersedeParent.
+    await generate("branching turn", {
+      sessionId: "ckpt-keep",
+      emitCheckpointId: "ckpt-branch",
+      prefix,
+    });
+
+    // The parent keeps its warmed state; the emitted id carries no local KV
+    // state (its consumers take the documented re-encode fallback).
+    expect(llamaCppSessions.get("ckpt-keep")?.sequence).toBe(warmed!.sequence);
+    expect(llamaCppSessions.has("ckpt-branch")).toBe(false);
   });
 
   it("serializes concurrent consumers — winner reuses the warmed sequence, loser re-encodes", async () => {
@@ -229,7 +310,68 @@ describe("LlamaCpp text-generation checkpoint lifecycle", () => {
     expect(sdkState.promptCalls.some((c) => c.sequence === warmed!.sequence)).toBe(true);
     // Exactly one loser re-encoded via the fallback.
     expect(sdkState.preloadPrompts).toEqual([""]);
-    // The checkpoint id was stolen atomically so no map entry survives.
-    expect(llamaCppSessions.has("ckpt-shared")).toBe(false);
+    // Exactly one finisher restored the checkpoint id (the other disposed its
+    // session instead of overwriting the restored entry).
+    expect(llamaCppSessions.has("ckpt-shared")).toBe(true);
+  });
+
+  // The unified ["text.generation"] run-fn routes messages-shaped inputs to
+  // the chat path; these cover its missing-session rebuild.
+  it("re-encodes prefix + all prior turns when a checkpoint-seeded chat session is missing mid-conversation", async () => {
+    const messages = [
+      { role: "user", content: [{ type: "text", text: "turn one" }] },
+      { role: "assistant", content: [{ type: "text", text: "reply one" }] },
+      { role: "user", content: [{ type: "text", text: "turn two" }] },
+    ];
+
+    await run(
+      getRunFn(["text.generation"]),
+      { model, messages, systemPrompt: "caller sys" } as never,
+      { sessionId: "chat-rebuilt", ownedSession: true, prefix }
+    );
+
+    expect(sdkState.preloadPrompts).toEqual([""]);
+    // The rebuild history carries the EFFECTIVE system prompt (the caller's
+    // wins over the prefix's), the checkpoint prefix's conversation, and every
+    // conversation turn before the final user turn — which is prompted.
+    expect(sdkState.sessionHistories[0]).toEqual([
+      { type: "system", text: "caller sys" },
+      { type: "user", text: "Remember this checkpoint prefix." },
+      { type: "user", text: "turn one" },
+      { type: "model", response: ["reply one"] },
+    ]);
+    expect(sdkState.promptCalls.map((c) => c.prompt)).toEqual(["turn two"]);
+    expect(llamaCppSessions.get("chat-rebuilt")?.mode).toBe("progressive");
+  });
+
+  it("re-encodes prior turns when a plain chat session is missing mid-conversation", async () => {
+    const messages = [
+      { role: "user", content: [{ type: "text", text: "turn one" }] },
+      { role: "assistant", content: [{ type: "text", text: "reply one" }] },
+      { role: "user", content: [{ type: "text", text: "turn two" }] },
+    ];
+
+    await run(getRunFn(["text.generation"]), { model, messages } as never, {
+      sessionId: "chat-plain",
+    });
+
+    expect(sdkState.preloadPrompts).toEqual([""]);
+    expect(sdkState.sessionHistories[0]).toEqual([
+      { type: "user", text: "turn one" },
+      { type: "model", response: ["reply one"] },
+    ]);
+    expect(sdkState.promptCalls.map((c) => c.prompt)).toEqual(["turn two"]);
+  });
+
+  it("does not preload anything for a plain first-turn chat", async () => {
+    await run(
+      getRunFn(["text.generation"]),
+      { model, messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }] } as never,
+      { sessionId: "chat-fresh" }
+    );
+
+    expect(sdkState.preloadPrompts).toEqual([]);
+    expect(sdkState.sessionHistories).toEqual([]);
+    expect(sdkState.promptCalls.map((c) => c.prompt)).toEqual(["hello"]);
   });
 });
