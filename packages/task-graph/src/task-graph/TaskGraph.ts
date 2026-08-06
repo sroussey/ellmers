@@ -177,18 +177,11 @@ export class TaskGraph implements ITaskGraph {
     config: TaskGraphRunConfig = {}
   ): Promise<GraphResultArray<ExecuteOutput>> {
     return this.runner.runGraph<ExecuteOutput>(input, {
-      outputCache: config?.outputCache || this.outputCache,
-      parentSignal: config?.parentSignal || undefined,
-      accumulateLeafOutputs: config?.accumulateLeafOutputs,
-      noAccumulation: config?.noAccumulation,
-      streamHighWaterBytes: config?.streamHighWaterBytes,
-      streamGateWatchdogMs: config?.streamGateWatchdogMs,
-      registry: config?.registry,
-      timeout: config?.timeout,
-      maxTasks: config?.maxTasks,
-      resourceScope: config?.resourceScope,
-      disposeStrategy: config?.disposeStrategy,
-      runId: config?.runId,
+      ...config,
+      // `??`, not `||`: an explicit `outputCache: false` is a documented
+      // "disable all caching" signal the runner branches on — `||` would
+      // swallow it and substitute the graph's own cache repository.
+      outputCache: config?.outputCache ?? this.outputCache,
     });
   }
 

@@ -55,6 +55,7 @@ export * from "./migrations";
 export * from "./sql";
 
 export * from "./vector/assertVectorShape";
+export * from "./vector/emitSimilaritySearch";
 export * from "./vector/InMemoryVectorStorage";
 export * from "./vector/IVectorStorage";
 export * from "./vector/TelemetryVectorStorage";

@@ -4,14 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  createGraphFromDependencyJSON,
-  Dataflow,
-  GraphAsTask,
-  JsonTaskItem,
-  TaskConfigurationError,
-  TaskGraph,
-} from "@workglow/task-graph";
+import { createGraphFromDependencyJSON, JsonTaskItem, TaskGraph } from "@workglow/task-graph";
 
 /** True if any task item (including nested subtasks) is a synthetic boundary task. */
 export function dependencyJsonHasBoundaryTasks(items: JsonTaskItem[]): boolean {
@@ -74,31 +67,7 @@ export function stripBoundaryTasksFromDependencyJson(items: JsonTaskItem[]): Jso
   return filtered;
 }
 
-function wireDependencyDataflows(graph: TaskGraph, items: JsonTaskItem[]): void {
-  for (const item of items) {
-    if (!item.dependencies) continue;
-    for (const [input, dependency] of Object.entries(item.dependencies)) {
-      const dependencies = Array.isArray(dependency) ? dependency : [dependency];
-      for (const dep of dependencies) {
-        const sourceTask = graph.getTask(dep.id);
-        if (!sourceTask) {
-          throw new TaskConfigurationError(`Dependency id ${String(dep.id)} not found`);
-        }
-        graph.addDataflow(new Dataflow(sourceTask.id, dep.output, item.id, input));
-      }
-    }
-    if (item.subtasks && item.subtasks.length > 0) {
-      const task = graph.getTask(item.id);
-      if (task instanceof GraphAsTask && task.subGraph) {
-        wireDependencyDataflows(task.subGraph, item.subtasks);
-      }
-    }
-  }
-}
-
 /** Same construction path as JsonTask.regenerateGraph (tasks + dependency dataflows). */
 export function graphFromDependencyJsonItems(items: JsonTaskItem[]): TaskGraph {
-  const g = createGraphFromDependencyJSON(items);
-  wireDependencyDataflows(g, items);
-  return g;
+  return createGraphFromDependencyJSON(items);
 }

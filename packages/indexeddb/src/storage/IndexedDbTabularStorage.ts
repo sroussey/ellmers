@@ -413,7 +413,7 @@ export class IndexedDbTabularStorage<
             recordToStore = { ...recordToStore, [keyName]: request.result } as Entity;
           }
         }
-        this.events.emit("put", recordToStore);
+        safeEmit(this.events, "put", recordToStore);
         resolve(recordToStore);
       };
       transaction.oncomplete = () => {
@@ -578,11 +578,11 @@ export class IndexedDbTabularStorage<
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
         if (!request.result) {
-          this.events.emit("get", key, undefined);
+          safeEmit(this.events, "get", key, undefined);
           resolve(undefined);
           return;
         }
-        this.events.emit("get", key, request.result);
+        safeEmit(this.events, "get", key, request.result);
         resolve(request.result);
       };
     });
@@ -639,7 +639,7 @@ export class IndexedDbTabularStorage<
       const request = store.delete(this.getIndexedKey(key));
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
-        this.events.emit("delete", key as Partial<Entity>);
+        safeEmit(this.events, "delete", key as Partial<Entity>);
         resolve();
       };
       transaction.oncomplete = () => {
@@ -659,7 +659,7 @@ export class IndexedDbTabularStorage<
       const request = store.clear();
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
-        this.events.emit("clearall");
+        safeEmit(this.events, "clearall");
         resolve();
       };
       transaction.oncomplete = () => {
@@ -913,7 +913,7 @@ export class IndexedDbTabularStorage<
         const store = transaction.objectStore(this.table);
 
         transaction.oncomplete = () => {
-          this.events.emit("delete", this.deleteIdentity(criteria));
+          safeEmit(this.events, "delete", this.deleteIdentity(criteria));
           this.hybridManager?.notifyLocalChange();
           resolve();
         };
@@ -1192,7 +1192,7 @@ export class IndexedDbTabularStorage<
           }
 
           const result = finalResults.length > 0 ? finalResults : undefined;
-          this.events.emit("query", criteria as Partial<Entity>, result);
+          safeEmit(this.events, "query", criteria as Partial<Entity>, result);
           resolve(result);
           return;
         }
@@ -1205,7 +1205,7 @@ export class IndexedDbTabularStorage<
             results.push(record);
             if (indexedQuery.appliedLimit && results.length === options?.limit) {
               const result = results.length > 0 ? results : undefined;
-              this.events.emit("query", criteria as Partial<Entity>, result);
+              safeEmit(this.events, "query", criteria as Partial<Entity>, result);
               resolve(result);
               return;
             }

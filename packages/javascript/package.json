@@ -1,8 +1,11 @@
 {
   "name": "@workglow/javascript",
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/task.js"
+  ],
   "version": "0.3.38",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",

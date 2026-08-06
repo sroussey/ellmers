@@ -126,7 +126,8 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     job.progress_message = "";
     job.progress_details = null;
     job.created_at = now;
-    job.visible_at = now;
+    // A caller-set future visible_at is a delayed send (delaySeconds) — keep it.
+    job.visible_at = job.visible_at ?? now;
 
     const { columns: prefixColumnsInsert, placeholders: prefixPlaceholders } =
       buildPrefixInsertFragments(SqliteDialect, this.prefixes);

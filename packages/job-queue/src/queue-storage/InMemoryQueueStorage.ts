@@ -126,7 +126,8 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     jobWithPrefixes.progress_message = "";
     jobWithPrefixes.progress_details = null;
     jobWithPrefixes.created_at = now;
-    jobWithPrefixes.visible_at = now;
+    // A caller-set future visible_at is a delayed send (delaySeconds) — keep it.
+    jobWithPrefixes.visible_at = jobWithPrefixes.visible_at ?? now;
 
     for (const [key, value] of Object.entries(this.prefixValues)) {
       jobWithPrefixes[key] = value;

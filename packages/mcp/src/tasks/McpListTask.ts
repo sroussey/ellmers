@@ -217,7 +217,10 @@ export class McpListTask extends Task<McpListTaskInput, McpListTaskOutput, TaskC
       });
     }
     return mergeEntitlements(base, {
-      entitlements: [{ id: Entitlements.NETWORK_HTTP, reason: "Connects to MCP server over HTTP" }],
+      entitlements: [
+        { id: Entitlements.NETWORK_HTTP, reason: "Connects to MCP server over HTTP" },
+        { id: Entitlements.CREDENTIAL, reason: "May require authentication", optional: true },
+      ],
     });
   }
 
