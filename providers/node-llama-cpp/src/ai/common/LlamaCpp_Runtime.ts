@@ -61,7 +61,20 @@ export interface LlamaCppSessionState {
   modelKey: string;
 }
 
-export const llamaCppSessions = new Map<string, LlamaCppSessionState>();
+// Shared across bundle copies via a Symbol.for key — same pattern as
+// PortCodecRegistry/globalContainer. `./ai` and `./ai-runtime` are built as
+// separate dist entry points; without this, inline (non-worker) usage would
+// have each entry point's copy of this module see its own Map, and a session
+// set through one entry point would look absent through the other.
+const GLOBAL_SESSIONS_KEY = Symbol.for("@workglow/node-llama-cpp/llamaCppSessions");
+const _sessionsGlobal = globalThis as Record<symbol, unknown>;
+if (!_sessionsGlobal[GLOBAL_SESSIONS_KEY]) {
+  _sessionsGlobal[GLOBAL_SESSIONS_KEY] = new Map<string, LlamaCppSessionState>();
+}
+export const llamaCppSessions = _sessionsGlobal[GLOBAL_SESSIONS_KEY] as Map<
+  string,
+  LlamaCppSessionState
+>;
 
 /**
  * Per-`sessionId` promise-chain mutex. The non-checkpoint shared-session paths
