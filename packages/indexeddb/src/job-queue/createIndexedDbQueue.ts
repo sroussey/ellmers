@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IJobStore, IMessageQueue, JobStorageFormat } from "@workglow/job-queue";
+import type { QueuePair } from "@workglow/job-queue";
 import { wrapQueueStorage } from "@workglow/job-queue";
 import { IndexedDbQueueStorage, type IndexedDbQueueStorageOptions } from "./IndexedDbQueueStorage";
 
@@ -16,9 +16,6 @@ import { IndexedDbQueueStorage, type IndexedDbQueueStorageOptions } from "./Inde
 export function createIndexedDbQueue<Input, Output>(
   queueName: string,
   opts?: IndexedDbQueueStorageOptions
-): {
-  messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
-  jobStore: IJobStore<Input, Output>;
-} {
+): QueuePair<Input, Output> {
   return wrapQueueStorage<Input, Output>(new IndexedDbQueueStorage<Input, Output>(queueName, opts));
 }

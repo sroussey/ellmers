@@ -4,10 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IJobStore } from "./IJobStore";
-import type { IMessageQueue } from "./IMessageQueue";
 import { InMemoryQueueStorage } from "./InMemoryQueueStorage";
-import type { JobStorageFormat, QueueStorageOptions } from "./IQueueStorage";
+import type { QueueStorageOptions } from "./IQueueStorage";
+import type { QueuePair } from "./wrapQueueStorage";
 import { wrapQueueStorage } from "./wrapQueueStorage";
 
 /**
@@ -18,9 +17,6 @@ import { wrapQueueStorage } from "./wrapQueueStorage";
 export function createInMemoryQueue<Input, Output>(
   queueName: string = "default",
   opts?: QueueStorageOptions
-): {
-  messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
-  jobStore: IJobStore<Input, Output>;
-} {
+): QueuePair<Input, Output> {
   return wrapQueueStorage<Input, Output>(new InMemoryQueueStorage<Input, Output>(queueName, opts));
 }

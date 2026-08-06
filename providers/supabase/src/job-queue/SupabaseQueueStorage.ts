@@ -48,7 +48,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
 
   constructor(
     client: SupabaseClient,
-    protected readonly queueName: string,
+    public readonly queueName: string,
     options?: QueueStorageOptions
   ) {
     this.client = client as SupabaseClient;
@@ -828,7 +828,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
     jobId: unknown,
     progress: number,
     message: string,
-    details: Record<string, any>
+    details: Record<string, any> | null
   ): Promise<void> {
     let query = this.client
       .from(this.tableName)

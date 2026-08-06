@@ -57,7 +57,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
 
   constructor(
     protected readonly db: Pool,
-    protected readonly queueName: string,
+    public readonly queueName: string,
     options?: QueueStorageOptions
   ) {
     this.prefixes = options?.prefixes ?? [];
@@ -624,7 +624,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
     jobId: unknown,
     progress: number,
     message: string,
-    details: Record<string, any>
+    details: Record<string, any> | null
   ): Promise<void> {
     const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(6);
     await this.db.query(

@@ -241,15 +241,15 @@ export interface IQueueStorage<Input, Output> {
    * atomic `disable` path can release the lease and clear progress in the
    * same single write.
    *
-   * `finalize` (plus {@link markDisabled}) is the ONLY interface-level
-   * terminal-write primitive. The atomic convenience wrappers
-   * `completeWithResult` / `failWithError` (and `saveStatus` / `getMany`) live
-   * on the concrete `InMemoryQueueStorage` and on the `IJobStore` facade
-   * produced by {@link wrapQueueStorage}, NOT on this interface — callers
-   * holding an `IQueueStorage` should reach those via the wrapper's
-   * `IJobStore`, or compose the field bag and call `finalize` directly. Kept
-   * off the interface so cloud adapters aren't forced to reimplement sugar
-   * that the wrapper already provides on top of `finalize`.
+   * `finalize` (plus {@link markDisabled}) is the REQUIRED terminal-write
+   * primitive every backend must implement. The atomic conveniences
+   * (`saveStatus` / `getMany` / `completeWithResult` / `failWithError`) are
+   * declared as OPTIONAL members: a backend that can express them as one
+   * native statement should implement them and the {@link wrapQueueStorage}
+   * facade prefers them, while backends without them rely on the wrapper's
+   * composition over `finalize`. Callers holding an `IQueueStorage` should
+   * still reach the sugar via the wrapper's `IJobStore` rather than probing
+   * the storage directly.
    *
    * @param id - The ID of the job to finalize
    * @param fields - Terminal fields to write
@@ -310,6 +310,64 @@ export interface IQueueStorage<Input, Output> {
     fingerprint: string,
     queueName: string
   ): Promise<JobStorageFormat<Input, Output> | undefined>;
+
+  /**
+   * Name of the single queue this storage is scoped to. The
+   * {@link wrapQueueStorage} facade reads it to enforce queue-scoping on
+   * `findActiveByFingerprint`: asking about a different queue returns
+   * undefined, matching the native SQL `WHERE queue = ?` lookups. Optional
+   * only for custom stores; every built-in backend exposes it.
+   */
+  readonly queueName?: string;
+
+  /**
+   * Declared durability of this store's rows. `false` marks a store whose
+   * rows do not survive the process (in-memory); leave undefined for stores
+   * that persist. Cloud message-queue adapters warn when paired with a
+   * non-durable store, since at-least-once delivery plus a process-local
+   * store strands partial-failure rows.
+   */
+  readonly durable?: boolean;
+
+  /**
+   * Optional single-statement fast path: overwrite the status field without
+   * bumping `attempts`. When present, the {@link wrapQueueStorage} facade
+   * prefers it over its generic `finalize({ status })` composition. Declared
+   * on the interface — like {@link findActiveByFingerprint} — so decorators
+   * (e.g. TelemetryQueueStorage) forward it; a decorator that hid it would
+   * silently downgrade the atomic write back to the generic composition.
+   */
+  saveStatus?(id: unknown, status: JobStatus): void | Promise<void>;
+
+  /**
+   * Optional batched lookup fast path: one query for N ids. The wrapper
+   * falls back to a per-id `get()` fan-out when absent.
+   */
+  getMany?(
+    ids: readonly unknown[]
+  ): Promise<ReadonlyArray<JobStorageFormat<Input, Output> | undefined>>;
+
+  /**
+   * Optional atomic completion fast path: persist result + COMPLETED in one
+   * statement. The wrapper's fallback composes it via {@link finalize}.
+   */
+  completeWithResult?(id: unknown, result: Output): Promise<void>;
+
+  /**
+   * Optional atomic failure fast path: persist error fields + FAILED in one
+   * statement (SQL backends COALESCE `abort_requested_at` / `completed_at`
+   * server-side). The wrapper's fallback is a read-then-write composition,
+   * which a concurrent abort can race — implement this where the backend
+   * can do it atomically.
+   */
+  failWithError?(
+    id: unknown,
+    opts: {
+      readonly error?: string | null;
+      readonly errorCode?: string | null;
+      readonly abortRequested?: boolean;
+    }
+  ): Promise<void>;
 
   /**
    * Deletes all jobs from the queue storage

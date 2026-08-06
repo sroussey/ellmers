@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IJobStore, IMessageQueue, JobStorageFormat } from "@workglow/job-queue";
+import type { QueuePair } from "@workglow/job-queue";
 import { wrapQueueStorage } from "@workglow/job-queue";
 import type { Sqlite } from "@workglow/sqlite/storage";
 import { SqliteQueueStorage, type SqliteQueueStorageOptions } from "./SqliteQueueStorage";
@@ -18,10 +18,7 @@ export function createSqliteQueue<Input, Output>(
   queueName: string,
   db: Sqlite.Database,
   opts?: SqliteQueueStorageOptions
-): {
-  messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
-  jobStore: IJobStore<Input, Output>;
-} {
+): QueuePair<Input, Output> {
   return wrapQueueStorage<Input, Output>(
     new SqliteQueueStorage<Input, Output>(db, queueName, opts)
   );

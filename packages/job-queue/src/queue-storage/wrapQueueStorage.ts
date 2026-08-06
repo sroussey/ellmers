@@ -125,6 +125,13 @@ class WrappedMessageQueue<Input, Output> implements IMessageQueue<JobStorageForm
     callback: (row: StreamChunkRow) => void
   ) => () => void;
 
+  /**
+   * Constructor name of the wrapped storage (e.g. `"SqliteQueueStorage"`).
+   * Mirrors {@link WrappedJobStore.backingStorageName} so log lines can name
+   * the backend instead of this wrapper.
+   */
+  public readonly backingStorageName: string;
+
   constructor(private readonly storage: IQueueStorage<Input, Output>) {
     if (typeof storage.publishStreamChunk === "function") {
       this.publishStreamChunk = (jobId, event) => storage.publishStreamChunk!(jobId, event);
@@ -133,6 +140,7 @@ class WrappedMessageQueue<Input, Output> implements IMessageQueue<JobStorageForm
       this.subscribeToStream = (jobId, sinceSeq, callback) =>
         storage.subscribeToStream!(jobId, sinceSeq, callback);
     }
+    this.backingStorageName = (storage as object)?.constructor?.name ?? "";
   }
 
   async send(body: JobStorageFormat<Input, Output>, opts?: SendOptions): Promise<MessageId> {
@@ -203,30 +211,6 @@ class WrappedMessageQueue<Input, Output> implements IMessageQueue<JobStorageForm
   }
 }
 
-/**
- * Optional single-statement fast paths a concrete storage may implement
- * beyond {@link IQueueStorage} (deliberately kept off the interface — see the
- * `finalize` doc there). The wrapper prefers them when present: the SQL
- * backends implement each as one atomic statement, where the generic
- * composition below needs a read-then-write ({@link WrappedJobStore.failWithError})
- * or a per-id fan-out ({@link WrappedJobStore.getMany}).
- */
-interface QueueStorageFastPaths<Input, Output> {
-  readonly saveStatus?: (id: MessageId, status: JobStatus) => void | Promise<void>;
-  readonly getMany?: (
-    ids: readonly MessageId[]
-  ) => Promise<readonly (JobStorageFormat<Input, Output> | undefined)[]>;
-  readonly completeWithResult?: (id: MessageId, result: Output | null) => Promise<void>;
-  readonly failWithError?: (
-    id: MessageId,
-    opts: {
-      readonly error?: string | null;
-      readonly errorCode?: string | null;
-      readonly abortRequested?: boolean;
-    }
-  ) => Promise<void>;
-}
-
 class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
   /**
    * Per-instance one-shot gate for the bounded-scan exhaustion warning, so a
@@ -237,22 +221,26 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
    */
   private fingerprintScanExhaustedWarned = false;
 
-  private readonly fastPaths: QueueStorageFastPaths<Input, Output>;
-
   /**
    * Constructor name of the wrapped storage (e.g. `"InMemoryQueueStorage"`).
-   * Lets callers holding only the `IJobStore` facade identify the backing
-   * store — the cloud message-queue adapters probe this to warn when they
-   * are paired with a non-durable in-memory store.
+   * Diagnostic label for callers holding only the `IJobStore` facade — log
+   * lines use it to name the backend. Semantic checks (durability) key on
+   * {@link durable}, not on this name.
    */
   public readonly backingStorageName: string;
+
+  /**
+   * Surfaced from {@link IQueueStorage.durable}: `false` only when the
+   * backing store declares its rows do not survive the process.
+   */
+  public readonly durable: boolean;
 
   constructor(
     private readonly storage: IQueueStorage<Input, Output>,
     private readonly maxFingerprintScan: number = DEFAULT_LIMITS.jobQueueMaxFingerprintScan
   ) {
-    this.fastPaths = storage as IQueueStorage<Input, Output> & QueueStorageFastPaths<Input, Output>;
     this.backingStorageName = (storage as object)?.constructor?.name ?? "";
+    this.durable = storage.durable !== false;
   }
 
   get(id: MessageId): Promise<JobRecord<Input, Output> | undefined> {
@@ -292,9 +280,8 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
   }
 
   async saveStatus(id: MessageId, status: JobStatus): Promise<void> {
-    const native = this.fastPaths.saveStatus;
-    if (typeof native === "function") {
-      await native.call(this.storage, id, status);
+    if (this.storage.saveStatus) {
+      await this.storage.saveStatus(id, status);
       return;
     }
     // Use finalize() so the status write does not bump attempts.
@@ -314,8 +301,8 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
     // queue name, enforce the same queue-scoping the native SQL lookups
     // apply via `WHERE queue = ?`: asking about a different queue returns
     // undefined, never this queue's row.
-    const storageQueueName = (this.storage as { queueName?: unknown }).queueName;
-    if (typeof storageQueueName === "string" && storageQueueName !== queueName) {
+    const storageQueueName = this.storage.queueName;
+    if (storageQueueName !== undefined && storageQueueName !== queueName) {
       return undefined;
     }
 
@@ -361,17 +348,15 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
   async getMany(
     ids: readonly MessageId[]
   ): Promise<readonly (JobRecord<Input, Output> | undefined)[]> {
-    const native = this.fastPaths.getMany;
-    if (typeof native === "function") {
-      return native.call(this.storage, ids);
+    if (this.storage.getMany) {
+      return this.storage.getMany(ids);
     }
     return Promise.all(ids.map((id) => this.storage.get(id)));
   }
 
   async completeWithResult(id: MessageId, result: Output): Promise<void> {
-    const native = this.fastPaths.completeWithResult;
-    if (typeof native === "function") {
-      await native.call(this.storage, id, result);
+    if (this.storage.completeWithResult) {
+      await this.storage.completeWithResult(id, result);
       return;
     }
     await this.storage.finalize(id, {
@@ -397,9 +382,8 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
       readonly abortRequested?: boolean;
     }
   ): Promise<void> {
-    const native = this.fastPaths.failWithError;
-    if (typeof native === "function") {
-      await native.call(this.storage, id, opts);
+    if (this.storage.failWithError) {
+      await this.storage.failWithError(id, opts);
       return;
     }
     const current = await this.storage.get(id);
@@ -434,8 +418,9 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
     // Default impl — fan out the per-id writes in parallel rather than
     // forcing callers into a serial for/await loop. allSettled so a single
     // failed id doesn't tank the rest of the batch; structured failure list
-    // surfaces to the caller's AggregateError handling. SQL backends can
-    // override with a single bulk UPDATE for a one-round-trip path.
+    // surfaces to the caller's AggregateError handling. A custom IJobStore
+    // backed by native SQL can override this method with a single bulk
+    // UPDATE for a one-round-trip path.
     const results = await Promise.allSettled(ids.map((id) => this.markEnqueueDeferred(id, opts)));
     const failed = results.flatMap((r, i) =>
       r.status === "rejected" ? [{ id: ids[i]!, err: r.reason }] : []
@@ -467,13 +452,16 @@ export interface WrapQueueStorageOptions {
   readonly maxFingerprintScan?: number;
 }
 
+/** The `IMessageQueue` + `IJobStore` facade pair produced by {@link wrapQueueStorage}. */
+export interface QueuePair<Input, Output> {
+  readonly messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
+  readonly jobStore: IJobStore<Input, Output>;
+}
+
 export function wrapQueueStorage<Input, Output>(
   storage: IQueueStorage<Input, Output>,
   options: WrapQueueStorageOptions = {}
-): {
-  messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
-  jobStore: IJobStore<Input, Output>;
-} {
+): QueuePair<Input, Output> {
   return {
     messageQueue: new WrappedMessageQueue(storage),
     jobStore: new WrappedJobStore(storage, options.maxFingerprintScan),

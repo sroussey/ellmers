@@ -5,6 +5,9 @@
  */
 
 import {
+  computeDeferDelayMs,
+  markEnqueueDeferredManyFallback,
+  warnIfNonDurableJobStore,
   type IClaim,
   type IJobStore,
   type IMessageQueue,
@@ -17,50 +20,6 @@ import { getLogger } from "@workglow/util";
 import type { CloudMessageBody, CloudflareQueueOptions } from "./types";
 
 const CF_MAX_DELAY_SECONDS = 12 * 60 * 60;
-/**
- * Backoff applied to `visible_at` when an enqueue throws transiently. Keeps
- * the row PENDING so a subsequent producer retry / poll picks it up again
- * instead of marking it FAILED on the first network blip.
- */
-const ENQUEUE_DEFER_BACKOFF_MS = 30_000;
-
-/**
- * Clamp the defer interval to the original `delaySeconds` floor so a row
- * with a legitimate large delay (e.g. 1h scheduled work) is NOT pulled
- * forward to now + 30s by a producer-side blip. Returns the maximum of the
- * original delay and the producer-retry backoff so:
- *   - delaySeconds = 0   → wait 30s before next producer attempt
- *   - delaySeconds = 3600 → wait 3600s (the original schedule)
- */
-function computeDeferDelayMs(originalDelaySeconds: number | undefined): number {
-  const original = originalDelaySeconds != null ? originalDelaySeconds * 1000 : 0;
-  return Math.max(original, ENQUEUE_DEFER_BACKOFF_MS);
-}
-
-/**
- * Fallback used when the underlying `IJobStore` does not implement the
- * optional `markEnqueueDeferredMany` (a bare custom store, etc.). Mirrors
- * the WrappedJobStore default impl: parallel per-id writes via
- * `Promise.allSettled` so a single transient failure doesn't tank the rest.
- */
-async function markEnqueueDeferredManyFallback<Input, Output>(
-  jobStore: IJobStore<Input, Output>,
-  ids: readonly MessageId[],
-  opts: { readonly visible_at: Date; readonly errorCode: string }
-): Promise<{ failed: readonly { id: MessageId; err: unknown }[] }> {
-  const results = await Promise.allSettled(ids.map((id) => jobStore.markEnqueueDeferred(id, opts)));
-  const failed = results.flatMap((r, i) =>
-    r.status === "rejected" ? [{ id: ids[i]!, err: r.reason }] : []
-  );
-  return { failed };
-}
-
-/**
- * Module-level dedupe set for the in-memory-store-pairing warning.
- * WeakSet so we don't pin store instances in memory — the warning fires
- * once per process per store, then the store's lifecycle is unaffected.
- */
-const __warnedInMemoryStores = new WeakSet<object>();
 
 /**
  * `IMessageQueue` adapter backed by a Cloudflare Queues producer binding.
@@ -84,21 +43,9 @@ export class CloudflareMessageQueue<Input, Output> implements IMessageQueue<
     this.queueName = opts.queueName;
     this.jobStore = opts.jobStore;
 
-    // Warn loudly (once per store) when paired with an in-memory job store.
-    // CFQ delivers to a Worker invocation — across invocations, an in-memory
-    // store loses partial-failure rows entirely. Wrapped stores expose the
-    // backing storage's constructor name via `backingStorageName`.
-    const backingName = (opts.jobStore as unknown as { backingStorageName?: string })
-      ?.backingStorageName;
-    if (
-      backingName === "InMemoryQueueStorage" &&
-      !__warnedInMemoryStores.has(opts.jobStore as unknown as object)
-    ) {
-      __warnedInMemoryStores.add(opts.jobStore as unknown as object);
-      getLogger().warn(
-        "[CloudflareMessageQueue] in-memory job store detected — cloud adapters require a lease-sweeping JobStore (Postgres/Supabase/SQLite). Rows may strand on partial failures."
-      );
-    }
+    // CFQ delivers to a Worker invocation — across invocations, a
+    // non-durable store loses partial-failure rows entirely.
+    warnIfNonDurableJobStore(opts.jobStore, "CloudflareMessageQueue");
   }
 
   async send(body: JobStorageFormat<Input, Output>, opts: SendOptions = {}): Promise<MessageId> {
