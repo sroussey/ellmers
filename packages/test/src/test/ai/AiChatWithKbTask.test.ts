@@ -17,8 +17,15 @@ import type { ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base"
 import { getGlobalKnowledgeBases } from "@workglow/knowledge-base";
 import type { IExecuteContext, StreamEvent, Usage } from "@workglow/task-graph";
 import { TaskRegistry } from "@workglow/task-graph";
-import type { IHumanConnector, IHumanRequest, IHumanResponse } from "@workglow/util";
-import { Container, HUMAN_CONNECTOR, ResourceScope, ServiceRegistry } from "@workglow/util";
+import type { IHumanConnector, IHumanRequest, IHumanResponse, ILogger } from "@workglow/util";
+import {
+  Container,
+  getLogger,
+  HUMAN_CONNECTOR,
+  ResourceScope,
+  ServiceRegistry,
+  setLogger,
+} from "@workglow/util";
 import { describe, expect, it } from "vitest";
 
 const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
@@ -81,7 +88,11 @@ function mkContext(connector?: IHumanConnector): IExecuteContext {
 }
 
 function mkModel(): ModelConfig {
-  return { provider: "fake-chat-kb", model: "fake-model" } as unknown as ModelConfig;
+  return {
+    provider: "fake-chat-kb",
+    model: "fake-model",
+    model_id: "fake-model",
+  } as unknown as ModelConfig;
 }
 
 class FakeConnector implements IHumanConnector {
@@ -1238,6 +1249,101 @@ describe("AiChatWithKbTask — usage aggregation across turns", () => {
 
       const outer = events.find((e) => e.type === "finish")!;
       expect("usage" in outer).toBe(false);
+    } finally {
+      unregister();
+      fake.unregister();
+    }
+  });
+});
+
+describe("AiChatWithKbTask — usage telemetry", () => {
+  function mkUsage(partial: Partial<Usage>): Usage {
+    return {
+      input: undefined,
+      output: undefined,
+      cached: undefined,
+      cacheWrite: undefined,
+      reasoning: undefined,
+      total: undefined,
+      extra: undefined,
+      ...partial,
+    };
+  }
+
+  /**
+   * Intercepts the debug line `recordUsageTelemetry` writes. The logger is
+   * global, so restoration is mandatory or sibling tests in this worker
+   * inherit the stub.
+   */
+  async function withRecordedUsage(
+    body: () => Promise<void>
+  ): Promise<Array<Record<string, unknown> | undefined>> {
+    const recorded: Array<Record<string, unknown> | undefined> = [];
+    const previous = getLogger();
+    setLogger({
+      ...previous,
+      debug: (message: string, meta?: Record<string, unknown>) => {
+        if (message.startsWith("AI usage for")) recorded.push(meta);
+      },
+    } as ILogger);
+    try {
+      await body();
+    } finally {
+      setLogger(previous);
+    }
+    return recorded;
+  }
+
+  it("records usage telemetry once for the whole conversation", async () => {
+    const fake = makeFakeKb({
+      id: "kb-usage-telemetry",
+      label: "Help",
+      results: [
+        {
+          chunk_id: "c1",
+          doc_id: "d1",
+          score: 0.9,
+          metadata: { doc_title: "Doc 1", text: "chunk" },
+        } as any,
+      ],
+    });
+    const perTurnUsage = [mkUsage({ input: 100, output: 10 }), mkUsage({ input: 150, output: 20 })];
+    let turn = 0;
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _taskInput,
+      _model,
+      _signal,
+      emit
+    ) => {
+      const usage = perTurnUsage[Math.min(turn, perTurnUsage.length - 1)];
+      turn++;
+      emit({ type: "text-delta", port: "text", textDelta: "answer" });
+      emit({ type: "finish", data: {} as any, usage } as any);
+    };
+    const unregister = registerFakeChatKbProvider(stream);
+
+    try {
+      const connector = new FakeConnector([
+        { action: "accept", content: { content: "follow up" }, done: false, requestId: "" },
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "q",
+        knowledgeBaseIds: ["kb-usage-telemetry"],
+        maxIterations: 5,
+      };
+      const task = new AiChatWithKbTask({ defaults: input } as any);
+
+      const recorded = await withRecordedUsage(async () => {
+        await accumulateKbChatStream(task.executeStream(input as any, mkContext(connector)));
+      });
+
+      expect(turn).toBe(2);
+      // One record for the run, not one per turn.
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]?.usage).toEqual(mkUsage({ input: 250, output: 30 }));
+      expect(recorded[0]?.model).toBe("fake-model");
     } finally {
       unregister();
       fake.unregister();
