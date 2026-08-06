@@ -4,7 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IExecuteContext, IRunConfig, StreamEvent, TaskConfig } from "@workglow/task-graph";
+import type {
+  CachePolicy,
+  IExecuteContext,
+  IRunConfig,
+  StreamEvent,
+  TaskConfig,
+} from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
@@ -109,7 +115,7 @@ export type TextGenerationTaskInput = {
   emitCheckpoint?: boolean | undefined;
   keepParentCheckpoint?: boolean | undefined;
 };
-export type TextGenerationTaskOutput = { text: string; checkpoint?: string };
+export type TextGenerationTaskOutput = { text: string; checkpoint?: string | undefined };
 export type TextGenerationTaskConfig = TaskConfig<TextGenerationTaskInput>;
 
 export class TextGenerationTask extends StreamingAiTask<
@@ -133,6 +139,16 @@ export class TextGenerationTask extends StreamingAiTask<
   }
 
   private _resolvedCheckpoint: ResolvedCheckpoint | undefined;
+
+  /**
+   * Checkpoint runs must never be output-cached: the emitted/consumed
+   * checkpoint ids are run-scoped registry handles, so a cache hit would
+   * replay an id whose session no longer exists.
+   */
+  public override getCachePolicy(inputs: TextGenerationTaskInput): CachePolicy {
+    if (inputs.checkpoint || inputs.emitCheckpoint) return { kind: "none" };
+    return super.getCachePolicy(inputs);
+  }
 
   /**
    * Clear the checkpoint resolved by a prior run of a reused task instance.
@@ -181,7 +197,7 @@ export class TextGenerationTask extends StreamingAiTask<
       model: input.model as ModelConfig,
       resolved,
       tailMessages: [promptToUserMessage(input.prompt)],
-      assistantMessage: { role: "assistant", content: [{ type: "text", text }] },
+      assistantMessage: text ? { role: "assistant", content: [{ type: "text", text }] } : undefined,
       systemPrompt: undefined,
       tools: undefined,
     });

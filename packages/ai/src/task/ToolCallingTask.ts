@@ -6,14 +6,20 @@
 
 import { CreateWorkflow, getTaskConstructors, Workflow } from "@workglow/task-graph";
 
-import type { IExecuteContext, IRunConfig, StreamEvent, TaskConfig } from "@workglow/task-graph";
+import type {
+  CachePolicy,
+  IExecuteContext,
+  IRunConfig,
+  StreamEvent,
+  TaskConfig,
+} from "@workglow/task-graph";
 import { makeFingerprint, ServiceRegistry } from "@workglow/util";
 import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
-import { deleteCheckpoint } from "../provider/CheckpointRegistry";
+import { checkpointModelKey, deleteCheckpoint } from "../provider/CheckpointRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
 import type { ResolvedCheckpoint } from "./base/CheckpointPorts";
 import {
@@ -291,11 +297,11 @@ export type ToolCallingTaskInput = Omit<
   "messages" | "tools"
 > & {
   readonly tools: ToolDefinition[];
-  readonly messages?: ReadonlyArray<ChatMessage>;
-  readonly sessionId?: string;
-  readonly checkpoint?: string;
-  readonly emitCheckpoint?: boolean;
-  readonly keepParentCheckpoint?: boolean;
+  readonly messages?: ReadonlyArray<ChatMessage> | undefined;
+  readonly sessionId?: string | undefined;
+  readonly checkpoint?: string | undefined;
+  readonly emitCheckpoint?: boolean | undefined;
+  readonly keepParentCheckpoint?: boolean | undefined;
 };
 
 export type ToolCallingTaskOutput = {
@@ -306,7 +312,7 @@ export type ToolCallingTaskOutput = {
     input: { [x: string]: unknown };
     providerSignature?: string;
   }[];
-  checkpoint?: string;
+  checkpoint?: string | undefined;
 };
 export type ToolCallingTaskConfig = TaskConfig<ToolCallingTaskInput>;
 
@@ -335,6 +341,16 @@ export class ToolCallingTask extends StreamingAiTask<
 
   /** Resolved checkpoint ports (rewind/emit) when the task consumes/emits checkpoints. */
   private _resolvedCheckpoint: ResolvedCheckpoint | undefined;
+
+  /**
+   * Checkpoint runs must never be output-cached: the emitted/consumed
+   * checkpoint ids are run-scoped registry handles, so a cache hit would
+   * replay an id whose session no longer exists.
+   */
+  public override getCachePolicy(inputs: ToolCallingTaskInput): CachePolicy {
+    if (inputs.checkpoint || inputs.emitCheckpoint) return { kind: "none" };
+    return super.getCachePolicy(inputs);
+  }
 
   /**
    * Clear per-run session state left by a prior run of a reused task instance:
@@ -373,9 +389,17 @@ export class ToolCallingTask extends StreamingAiTask<
     }
 
     if (!jobInput.session?.sessionId && input.tools && input.tools.length > 0) {
+      // Model identity must be part of the fingerprint: the local providers'
+      // session maps are keyed by this id alone, so two models sharing a
+      // toolset would otherwise reuse each other's KV state.
+      const modelKey =
+        model && typeof model === "object"
+          ? `${model.provider}:${checkpointModelKey(model)}`
+          : String(input.model);
       const sessionId = await makeFingerprint({
         tools: input.tools,
         systemPrompt: input.systemPrompt,
+        model: modelKey,
         runnerId: this.runConfig.runnerId,
       });
       jobInput.session = { sessionId };
@@ -420,20 +444,20 @@ export class ToolCallingTask extends StreamingAiTask<
       input.messages && input.messages.length > 0
         ? [...input.messages]
         : [promptToUserMessage(input.prompt)];
-    const assistantMessage: ChatMessage = {
-      role: "assistant",
-      content: [
-        ...(out.text ? ([{ type: "text", text: out.text }] as const) : []),
-        ...out.toolCalls.map(
-          (tc) => ({ type: "tool_use", id: tc.id, name: tc.name, input: tc.input }) as const
-        ),
-      ],
-    };
+    const assistantContent = [
+      ...(out.text ? ([{ type: "text", text: out.text }] as const) : []),
+      ...out.toolCalls.map(
+        (tc) => ({ type: "tool_use", id: tc.id, name: tc.name, input: tc.input }) as const
+      ),
+    ];
     await finalizeEmittedCheckpoint({
       model,
       resolved,
       tailMessages,
-      assistantMessage,
+      // A turn with no text and no valid tool calls records no assistant
+      // message — an empty one poisons the prefix for replay (Anthropic 400s).
+      assistantMessage:
+        assistantContent.length > 0 ? { role: "assistant", content: assistantContent } : undefined,
       systemPrompt: input.systemPrompt,
       tools: input.tools,
     });

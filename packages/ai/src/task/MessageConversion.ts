@@ -16,6 +16,27 @@
 import type { ChatMessage, ContentBlock } from "./ChatMessage";
 import type { ToolCallingTaskInput } from "./ToolCallingTask";
 
+/**
+ * Lifts a task `prompt` (string or block array) into a user-message tail for
+ * checkpoint replay. An absent/empty prompt yields no tail message — the
+ * shared message builders fall back to `prompt` only when the message list is
+ * empty, and a checkpoint consumer with no tail must not append an empty turn.
+ */
+export function promptToTailMessages(prompt: unknown): ChatMessage[] {
+  if (prompt === undefined || prompt === "") return [];
+  if (typeof prompt === "string") {
+    return [{ role: "user", content: [{ type: "text", text: prompt }] }];
+  }
+  if (Array.isArray(prompt)) {
+    const blocks = prompt.map((p): ContentBlock => {
+      if (typeof p === "string") return { type: "text", text: p };
+      return p as ContentBlock;
+    });
+    return [{ role: "user", content: blocks }];
+  }
+  return [{ role: "user", content: [{ type: "text", text: String(prompt) }] }];
+}
+
 function getInputMessages(input: ToolCallingTaskInput): ReadonlyArray<ChatMessage> | undefined {
   const messages = input.messages;
   if (!messages || messages.length === 0) return undefined;

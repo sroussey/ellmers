@@ -191,15 +191,26 @@ export class CacheCheckpointTask extends AiTask<
     executeContext: IExecuteContext
   ): Promise<CacheCheckpointTaskOutput | undefined> {
     this.prepareCheckpoint(input, executeContext);
-    const output = await super.execute(input, executeContext);
+    await super.execute(input, executeContext);
 
     if (this._parentId && !input.keepParent) {
       const model = input.model as ModelConfig;
-      await getAiProviderRegistry().disposeSession(model.provider, this._parentId);
+      try {
+        await getAiProviderRegistry().disposeSession(model.provider, this._parentId);
+      } catch {
+        // Best-effort: a parent-dispose failure (worker restarted, transport
+        // error) must not fail a warm-up that already succeeded. The parent's
+        // scope disposer retries at run end and dispose is idempotent.
+      }
       deleteCheckpoint(this._parentId);
     }
 
-    return { checkpoint: this._checkpointId ?? output?.checkpoint ?? "" };
+    // prepareCheckpoint either threw or set the id; a silent empty-string
+    // handle would surface far away as "unknown cache checkpoint".
+    if (!this._checkpointId) {
+      throw new TaskConfigurationError("CacheCheckpointTask: checkpoint id missing after warm-up");
+    }
+    return { checkpoint: this._checkpointId };
   }
 }
 
