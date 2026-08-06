@@ -15,6 +15,7 @@ import {
   CreateWorkflow,
   GraphAsTask,
   IteratorTask,
+  smartClone,
   Task,
   TaskAbortedError,
   TaskError,
@@ -1554,7 +1555,7 @@ export class TestGraphAsTask extends GraphAsTask<{ input: string }, { output: st
   }
 }
 
-/** Exposes private smartClone for testing. */
+/** Exposes the shared smartClone helper for testing. */
 export class TestSmartCloneTask extends Task<{ data: any }, { result: any }> {
   static override readonly type = "TestSmartCloneTask";
   static override readonly category = "Test";
@@ -1589,7 +1590,7 @@ export class TestSmartCloneTask extends Task<{ data: any }, { result: any }> {
 
   /** Expose smartClone for testing */
   public testSmartClone(obj: any): any {
-    return (this as any).smartClone(obj);
+    return smartClone(obj);
   }
 }
 
