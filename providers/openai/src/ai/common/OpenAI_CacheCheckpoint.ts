@@ -10,36 +10,25 @@ import type {
   CacheCheckpointTaskInput,
   CacheCheckpointTaskOutput,
   ChatMessage,
-  ContentBlock,
+  ToolDefinition,
 } from "@workglow/ai";
 import { buildResponsesInput, buildResponsesTools } from "@workglow/ai/provider-utils";
-import { toOpenAIMessages } from "@workglow/ai/worker";
+import { promptToTailMessages, toOpenAIMessages } from "@workglow/ai/worker";
 import { finalizeResponsesRequest, getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
-
-/** Lifts a task `prompt` (string or block array) into a user-message tail. */
-function promptTail(prompt: unknown): ChatMessage[] {
-  if (prompt === undefined || prompt === "") return [];
-  if (typeof prompt === "string") {
-    return [{ role: "user", content: [{ type: "text", text: prompt }] }];
-  }
-  if (Array.isArray(prompt)) {
-    const blocks = prompt.map((p): ContentBlock => {
-      if (typeof p === "string") return { type: "text", text: p };
-      return p as ContentBlock;
-    });
-    return [{ role: "user", content: blocks }];
-  }
-  return [{ role: "user", content: [{ type: "text", text: String(prompt) }] }];
-}
 
 /**
  * Merges a checkpoint prefix into the unified generation input: the prefix's
  * messages come first, the caller's tail follows (its `messages`, or its
  * `prompt` lifted into a user message — the shared message builders only fall
- * back to `prompt` when the message list is empty), and the prefix system
- * prompt applies when the call carries none. Returns undefined when the
- * session has no prefix so plain calls take the unmodified path.
+ * back to `prompt` when the message list is empty), the prefix system prompt
+ * applies when the call carries none (an explicit `""` falls through too —
+ * suppressing the warmed instructions would diverge the replayed prefix), and
+ * the effective `tools` are the caller's when it declares any, else the
+ * prefix's — tools precede the conversation in the serialized request, so a
+ * tools-warmed prefix consumed without them never shares the warm-up's cached
+ * prefix. Returns undefined when the session has no prefix so plain calls
+ * take the unmodified path.
  *
  * OpenAI's prompt caching is automatic and keyed on the request's literal
  * token prefix, so replaying identical prefix content is both the correctness
@@ -51,17 +40,25 @@ export function mergeOpenAICheckpointPrefix(
     readonly messages?: readonly unknown[] | undefined;
     readonly systemPrompt?: string | undefined;
     readonly prompt?: unknown;
+    readonly tools?: readonly ToolDefinition[] | undefined;
   }
-): { messages: readonly ChatMessage[]; systemPrompt: string | undefined } | undefined {
+):
+  | {
+      messages: readonly ChatMessage[];
+      systemPrompt: string | undefined;
+      tools: readonly ToolDefinition[] | undefined;
+    }
+  | undefined {
   const prefix = session?.prefix;
   if (!prefix) return undefined;
   const tail: readonly ChatMessage[] =
     Array.isArray(input.messages) && input.messages.length > 0
       ? (input.messages as readonly ChatMessage[])
-      : promptTail(input.prompt);
+      : promptToTailMessages(input.prompt);
   return {
     messages: [...(prefix.messages ?? []), ...tail],
-    systemPrompt: input.systemPrompt ?? prefix.systemPrompt,
+    systemPrompt: input.systemPrompt || prefix.systemPrompt,
+    tools: input.tools && input.tools.length > 0 ? input.tools : prefix.tools,
   };
 }
 

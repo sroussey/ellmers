@@ -12,18 +12,14 @@ import type {
   ToolCallingTaskOutput,
 } from "@workglow/ai";
 import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
-import { getLogger } from "@workglow/util/worker";
 import {
   buildGeminiFunctionDeclarations,
   buildGeminiPrefixedContents,
   geminiCachedToolsMatch,
+  geminiCachedToolsMatchCanonical,
 } from "./Gemini_CacheCheckpoint";
 import { generateGeminiStreamWithCacheFallback } from "./Gemini_CachedContentFallback";
-import {
-  deleteGeminiCachedContentLocal,
-  getGeminiCachedContent,
-  isGeminiCacheEntryStale,
-} from "./Gemini_CacheStore";
+import { evictIfStaleGeminiCachedContent, getGeminiCachedContent } from "./Gemini_CacheStore";
 import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
@@ -152,19 +148,31 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
     defaultToolChoice &&
     prefix.tools !== undefined &&
     prefix.tools.length > 0 &&
-    geminiCachedToolsMatch(prefix.tools, input.tools) &&
     (input.systemPrompt === undefined ||
       input.systemPrompt === "" ||
       input.systemPrompt === cachedEntry.systemPrompt);
 
-  // Proactive stale check. Explicit CachedContent is TTL-bound (~1h), and a
-  // consumer reaching a nearly-expired entry would eat a reactive NOT_FOUND
-  // that costs a round-trip. Evict the runtime-local entry (leave the server
-  // side to its own TTL) and fall back to inline replay up front.
-  if (useCachedContent && cachedEntry && isGeminiCacheEntryStale(cachedEntry) && checkpointId) {
-    getLogger().debug("Gemini cache entry stale; falling back to inline replay");
-    deleteGeminiCachedContentLocal(checkpointId);
+  // Proactive stale eviction — drop a nearly-expired runtime-local entry up
+  // front and replay inline instead of eating a reactive NOT_FOUND. Runs
+  // before the tools comparison below so a doomed entry never pays for it.
+  if (
+    useCachedContent &&
+    cachedEntry &&
+    checkpointId &&
+    evictIfStaleGeminiCachedContent(checkpointId, cachedEntry)
+  ) {
     useCachedContent = false;
+  }
+
+  // Tools comparison last — it recursively canonicalizes the declarations, so
+  // the cheap eligibility checks (and the stale eviction) must not pay for it.
+  // The prefix side was canonicalized once at cache creation; an entry seeded
+  // without `canonicalTools` falls back to canonicalizing both sides.
+  if (useCachedContent && prefix?.tools !== undefined && cachedEntry !== undefined) {
+    useCachedContent =
+      cachedEntry.canonicalTools !== undefined
+        ? geminiCachedToolsMatchCanonical(cachedEntry.canonicalTools, input.tools)
+        : geminiCachedToolsMatch(prefix.tools, input.tools);
   }
 
   // Thinking is opt-in here (no default budget): the model uses its own default

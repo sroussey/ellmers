@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { getLogger } from "@workglow/util/worker";
 import { createGeminiClient } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 
@@ -22,6 +23,15 @@ export interface GeminiCachedContentEntry {
   readonly model: GeminiModelConfig;
   /** The prefix system prompt baked into the cache (consumption must not resend it). */
   readonly systemPrompt: string | undefined;
+  /**
+   * Canonical wire form of the prefix tools the cache was created with
+   * (see `canonicalGeminiToolsKey`), computed once at creation so consumers
+   * compare their input tool list against a stored string instead of
+   * re-canonicalizing the prefix side on every request. `undefined` when the
+   * cache was warmed without tools (or the entry predates the field), in which
+   * case consumers fall back to comparing both tool lists directly.
+   */
+  readonly canonicalTools: string | undefined;
   /**
    * Wall-clock timestamp (ms since epoch) recorded when the entry was inserted,
    * used by the proactive stale check so consumers can evict an entry before
@@ -47,12 +57,12 @@ export function getGeminiCachedContent(id: string): GeminiCachedContentEntry | u
 
 export function setGeminiCachedContent(
   id: string,
-  entry: Omit<GeminiCachedContentEntry, "createdAtMs"> &
-    Partial<Pick<GeminiCachedContentEntry, "createdAtMs">>
+  entry: Omit<GeminiCachedContentEntry, "createdAtMs" | "canonicalTools"> &
+    Partial<Pick<GeminiCachedContentEntry, "createdAtMs" | "canonicalTools">>
 ): void {
   _preSetHook?.(id);
   const createdAtMs = entry.createdAtMs ?? Date.now();
-  geminiCachedContents.set(id, { ...entry, createdAtMs });
+  geminiCachedContents.set(id, { ...entry, canonicalTools: entry.canonicalTools, createdAtMs });
 }
 
 /**
@@ -81,6 +91,23 @@ export function isGeminiCacheEntryStale(
   maxAgeMs: number = GEMINI_CACHE_DEFAULT_MAX_AGE_MS
 ): boolean {
   return Date.now() - entry.createdAtMs > maxAgeMs;
+}
+
+/**
+ * Proactive stale eviction shared by the checkpoint consumers. Explicit
+ * CachedContent is TTL-bound (~1h), and a consumer referencing a nearly-expired
+ * entry would eat a reactive NOT_FOUND that costs a round-trip. When `entry` is
+ * stale, this drops the runtime-local entry (leaving the server side to its own
+ * TTL) and returns `true` so the caller falls back to inline replay.
+ */
+export function evictIfStaleGeminiCachedContent(
+  checkpointId: string,
+  entry: GeminiCachedContentEntry
+): boolean {
+  if (!isGeminiCacheEntryStale(entry)) return false;
+  getLogger().debug("Gemini cache entry stale; falling back to inline replay");
+  deleteGeminiCachedContentLocal(checkpointId);
+  return true;
 }
 
 /**

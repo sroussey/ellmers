@@ -103,9 +103,9 @@ interface ExecuteWithFallbackParams<TStream> {
  * one-liner records that the propagating error was NOT treated as a cache
  * miss, so a genuine cache regression stays diagnosable.
  *
- * The proactive stale check lives in the callers (they own the request-shape
- * choice and want to log a different debug line); this helper covers only the
- * reactive path.
+ * The callers run the proactive stale check up front (via
+ * `evictIfStaleGeminiCachedContent` in the cache store) before building their
+ * request; this helper owns only the reactive NOT_FOUND path.
  */
 export async function generateGeminiStreamWithCacheFallback<TStream>(
   params: ExecuteWithFallbackParams<TStream>

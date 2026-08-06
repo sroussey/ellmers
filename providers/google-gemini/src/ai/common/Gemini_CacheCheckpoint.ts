@@ -10,10 +10,9 @@ import type {
   CacheCheckpointTaskOutput,
   ChatMessage,
   CheckpointPrefix,
-  ContentBlock,
   ToolDefinition,
 } from "@workglow/ai";
-import { buildToolDescription } from "@workglow/ai/worker";
+import { buildToolDescription, promptToTailMessages } from "@workglow/ai/worker";
 import { getLogger } from "@workglow/util/worker";
 import { setGeminiCachedContent } from "./Gemini_CacheStore";
 import { createGeminiClient, getModelName } from "./Gemini_Client";
@@ -36,6 +35,19 @@ export function buildGeminiFunctionDeclarations(
 }
 
 /**
+ * Canonical string form of the function declarations Gemini receives for a
+ * tool list — declaration order and JSON object-key order are normalized away.
+ * The warm-up computes this once per cache creation and stores it on the entry
+ * ({@link setGeminiCachedContent}) so consumers only canonicalize their own
+ * input side per request.
+ */
+export function canonicalGeminiToolsKey(tools: readonly ToolDefinition[]): string {
+  return JSON.stringify(
+    buildGeminiFunctionDeclarations(tools).map(normalizeGeminiWireDeclaration).sort()
+  );
+}
+
+/**
  * Compares the function declarations Gemini receives, ignoring declaration
  * order and JSON object-key order.
  */
@@ -43,14 +55,18 @@ export function geminiCachedToolsMatch(
   prefixTools: readonly ToolDefinition[],
   inputTools: readonly ToolDefinition[]
 ): boolean {
-  const normalizedPrefix = buildGeminiFunctionDeclarations(prefixTools)
-    .map(normalizeGeminiWireDeclaration)
-    .sort();
-  const normalizedInput = buildGeminiFunctionDeclarations(inputTools)
-    .map(normalizeGeminiWireDeclaration)
-    .sort();
+  return canonicalGeminiToolsKey(prefixTools) === canonicalGeminiToolsKey(inputTools);
+}
 
-  return JSON.stringify(normalizedPrefix) === JSON.stringify(normalizedInput);
+/**
+ * {@link geminiCachedToolsMatch} against a prefix side already canonicalized at
+ * cache creation — only the input side pays the recursive canonicalization.
+ */
+export function geminiCachedToolsMatchCanonical(
+  canonicalPrefixTools: string,
+  inputTools: readonly ToolDefinition[]
+): boolean {
+  return canonicalPrefixTools === canonicalGeminiToolsKey(inputTools);
 }
 
 function normalizeGeminiWireDeclaration(declaration: Record<string, unknown>): string {
@@ -214,23 +230,8 @@ export function buildGeminiPrefixedContents(
   prompt: unknown
 ): any[] {
   const tail: ChatMessage[] =
-    messages && messages.length > 0 ? [...messages] : promptTailMessages(prompt);
+    messages && messages.length > 0 ? [...messages] : promptToTailMessages(prompt);
   return buildGeminiContents([...(prefix.messages ?? []), ...tail], "");
-}
-
-function promptTailMessages(prompt: unknown): ChatMessage[] {
-  if (prompt === undefined || prompt === "") return [];
-  if (typeof prompt === "string") {
-    return [{ role: "user", content: [{ type: "text", text: prompt }] }];
-  }
-  if (Array.isArray(prompt)) {
-    const blocks = prompt.map((p): ContentBlock => {
-      if (typeof p === "string") return { type: "text", text: p };
-      return p as ContentBlock;
-    });
-    return [{ role: "user", content: blocks }];
-  }
-  return [{ role: "user", content: [{ type: "text", text: String(prompt) }] }];
 }
 
 /**
@@ -274,8 +275,12 @@ function classifyGeminiCacheError(
   }
   const status = anyErr?.status;
   const code = anyErr?.code;
+  // The live API rejects an undersized prefix with "Cached content is too
+  // small. total_token_count=…, min_total_token_count=…" — and the SDK may
+  // deliver that JSON-wrapped inside ApiError.message — so match that wording
+  // (and the min_total_token field name), not just "prefix … too … small".
   const looksLikePrefixTooSmall =
-    /prefix.*too.*small|cached.*content.*not.*supported|minimum.*token/i.test(message);
+    /too.?small|min_total_token|cached.*content.*not.*supported|minimum.*token/i.test(message);
   if ((status === 400 || code === "INVALID_ARGUMENT") && looksLikePrefixTooSmall) {
     return "degrade";
   }
@@ -324,6 +329,10 @@ export const Gemini_CacheCheckpoint_Stream: AiProviderRunFn<
         name: cached.name,
         model: model!,
         systemPrompt: prefix.systemPrompt,
+        canonicalTools:
+          prefix.tools && prefix.tools.length > 0
+            ? canonicalGeminiToolsKey(prefix.tools)
+            : undefined,
       });
     }
   } catch (err) {

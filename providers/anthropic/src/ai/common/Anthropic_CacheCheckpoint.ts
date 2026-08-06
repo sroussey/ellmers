@@ -17,7 +17,12 @@ import { getClient, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { buildAnthropicMessages } from "./Anthropic_ToolCalling";
 
-function toAnthropicTools(tools: readonly ToolDefinition[]): Record<string, unknown>[] {
+/**
+ * Maps workglow tool definitions onto Anthropic `tools` entries. The warm-up
+ * and every consumer must encode tools through this one mapping — a divergent
+ * encoding changes the serialized tool segment and breaks prompt-cache parity.
+ */
+export function toAnthropicTools(tools: readonly ToolDefinition[]): Record<string, unknown>[] {
   return tools.map((t) => ({
     name: t.name,
     description: buildToolDescription(t),
@@ -25,13 +30,37 @@ function toAnthropicTools(tools: readonly ToolDefinition[]): Record<string, unkn
   }));
 }
 
-function annotateLastBlock(message: { content: unknown }): void {
+/** Replaces the last tool entry with a copy carrying a cache_control breakpoint. */
+export function annotateLastTool(tools: Array<Record<string, unknown>>): void {
+  if (tools.length === 0) return;
+  tools[tools.length - 1] = {
+    ...tools[tools.length - 1],
+    cache_control: { type: "ephemeral" },
+  };
+}
+
+/** Wraps a plain system prompt string into the annotated block form Anthropic caches. */
+export function wrapSystemWithCacheControl(system: string): Array<Record<string, unknown>> {
+  return [{ type: "text", text: system, cache_control: { type: "ephemeral" } }];
+}
+
+/**
+ * Places a cache_control breakpoint at the end of a message. Block-array
+ * content annotates its last block; non-empty string content (the prompt-path
+ * tail shape) is lifted into an annotated text block array. Empty content is
+ * left alone — there is nothing cacheable to mark.
+ */
+export function annotateLastBlock(message: { content: unknown }): void {
   if (Array.isArray(message.content) && message.content.length > 0) {
     const blocks = message.content as Array<Record<string, unknown>>;
     blocks[blocks.length - 1] = {
       ...blocks[blocks.length - 1],
       cache_control: { type: "ephemeral" },
     };
+  } else if (typeof message.content === "string" && message.content.length > 0) {
+    message.content = [
+      { type: "text", text: message.content, cache_control: { type: "ephemeral" } },
+    ];
   }
 }
 
@@ -48,16 +77,11 @@ export function buildAnthropicCheckpointParams(
 ): Record<string, unknown> {
   const params: Record<string, unknown> = { model: modelName, max_tokens: 1 };
   if (prefix.systemPrompt) {
-    params.system = [
-      { type: "text", text: prefix.systemPrompt, cache_control: { type: "ephemeral" } },
-    ];
+    params.system = wrapSystemWithCacheControl(prefix.systemPrompt);
   }
   if (prefix.tools && prefix.tools.length > 0) {
     const tools = toAnthropicTools(prefix.tools);
-    tools[tools.length - 1] = {
-      ...tools[tools.length - 1],
-      cache_control: { type: "ephemeral" },
-    };
+    annotateLastTool(tools);
     params.tools = tools;
     params.tool_choice = { type: "auto" };
   }
@@ -79,9 +103,10 @@ export function buildAnthropicCheckpointParams(
 /**
  * Mutates consuming-call params to replay a checkpoint prefix: prepends the
  * prefix messages, applies the prefix system prompt (when the call has none),
- * and places cache_control at the checkpoint boundary. When the call emits a
- * chained checkpoint, the final message block is annotated too so the next
- * chained call reads this turn from cache.
+ * replays the prefix tools (when the call declares none), and places
+ * cache_control at the checkpoint boundary. When the call emits a chained
+ * checkpoint, the final message block is annotated too so the next chained
+ * call reads this turn from cache.
  */
 export function applyAnthropicPrefixReplay(
   params: Record<string, unknown>,
@@ -91,9 +116,23 @@ export function applyAnthropicPrefixReplay(
   if (!prefix) return;
 
   if (prefix.systemPrompt && params.system === undefined) {
-    params.system = [
-      { type: "text", text: prefix.systemPrompt, cache_control: { type: "ephemeral" } },
-    ];
+    params.system = wrapSystemWithCacheControl(prefix.systemPrompt);
+  }
+
+  // Consumers that declare no tools of their own replay the prefix's: tools
+  // are the topmost segment of Anthropic's cache prefix, so omitting them
+  // shares nothing with the warm-up, and replayed tool_use/tool_result blocks
+  // are rejected outright without a tools param. tool_choice is left unset
+  // (API default auto).
+  const callerTools = params.tools;
+  if (
+    (!Array.isArray(callerTools) || callerTools.length === 0) &&
+    prefix.tools &&
+    prefix.tools.length > 0
+  ) {
+    const tools = toAnthropicTools(prefix.tools);
+    annotateLastTool(tools);
+    params.tools = tools;
   }
 
   // Guard on the CONVERTED array: buildAnthropicMessages skips system-role

@@ -12,11 +12,7 @@ import type {
 import { getLogger } from "@workglow/util/worker";
 import { buildGeminiPrefixedContents } from "./Gemini_CacheCheckpoint";
 import { generateGeminiStreamWithCacheFallback } from "./Gemini_CachedContentFallback";
-import {
-  deleteGeminiCachedContentLocal,
-  getGeminiCachedContent,
-  isGeminiCacheEntryStale,
-} from "./Gemini_CacheStore";
+import { evictIfStaleGeminiCachedContent, getGeminiCachedContent } from "./Gemini_CacheStore";
 import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
@@ -87,25 +83,37 @@ export const Gemini_TextGeneration_Stream: AiProviderRunFn<
     // CachedContent and send only the tail. The API rejects requests that set
     // systemInstruction alongside cachedContent, so the cache handle is only
     // usable when the call carries no system prompt of its own (or the same
-    // one the cache was created with). Otherwise — including after the cache's
-    // TTL expiry — replay the prefix content inline; implicit caching still
-    // applies there.
+    // one the cache was created with) and when the cache was not created with
+    // tool declarations. Otherwise — including after the cache's TTL expiry —
+    // replay the prefix content inline; implicit caching still applies there.
     const prefix = sessionContext?.prefix;
-    const checkpointId = sessionContext?.sessionId;
+    // For an ownedSession consumer (a checkpoint-seeded AiChatTask), sessionId
+    // is the chat's own session id; the warm-up registered the CachedContent
+    // under the seed checkpoint id, so resolve the cache lookup through it.
+    const checkpointId = sessionContext?.seedCheckpointId ?? sessionContext?.sessionId;
     const cachedEntry = checkpointId ? getGeminiCachedContent(checkpointId) : undefined;
     const ownSystemPrompt = hasMessages ? unified.systemPrompt || undefined : undefined;
     let useCachedContent =
       prefix !== undefined &&
       cachedEntry !== undefined &&
+      (prefix.tools === undefined || prefix.tools.length === 0) &&
       (ownSystemPrompt === undefined || ownSystemPrompt === cachedEntry.systemPrompt);
+    if (cachedEntry !== undefined && prefix?.tools !== undefined && prefix.tools.length > 0) {
+      // A CachedContent warmed WITH tools keeps its function declarations
+      // active on every request that references it, and this text-only
+      // consumer would silently drop any functionCall parts the model then
+      // returns — so tools-warmed checkpoints replay the prefix inline.
+      logger.debug("Gemini cached content warmed with tools; text-only consumer replaying inline");
+    }
 
-    // Proactive stale check. Explicit CachedContent is TTL-bound (~1h), and a
-    // consumer reaching a nearly-expired entry would eat a reactive NOT_FOUND
-    // that costs a round-trip. Evict the runtime-local entry (leave the server
-    // side to its own TTL) and fall back to inline replay up front.
-    if (useCachedContent && cachedEntry && isGeminiCacheEntryStale(cachedEntry) && checkpointId) {
-      logger.debug("Gemini cache entry stale; falling back to inline replay");
-      deleteGeminiCachedContentLocal(checkpointId);
+    // Proactive stale eviction — drop a nearly-expired runtime-local entry up
+    // front and replay inline instead of eating a reactive NOT_FOUND.
+    if (
+      useCachedContent &&
+      cachedEntry &&
+      checkpointId &&
+      evictIfStaleGeminiCachedContent(checkpointId, cachedEntry)
+    ) {
       useCachedContent = false;
     }
 

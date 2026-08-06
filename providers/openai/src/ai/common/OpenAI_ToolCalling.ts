@@ -27,8 +27,9 @@ import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
  * {@link accumulateOpenAIResponsesStream}, which emits `text-delta` and tool-call
  * `object-delta` events plus a final empty `finish`.
  *
- * Defence-in-depth: each tool-call `object-delta` is filtered against
- * `input.tools` so a hallucinated function name never reaches the consumer.
+ * Defence-in-depth: each tool-call `object-delta` is filtered against the
+ * effective tool declarations (the caller's tools, or the checkpoint prefix's
+ * on fallback) so a hallucinated function name never reaches the consumer.
  */
 export const OpenAI_ToolCalling_Stream: AiProviderRunFn<
   ToolCallingTaskInput,
@@ -38,11 +39,14 @@ export const OpenAI_ToolCalling_Stream: AiProviderRunFn<
   const client = await getClient(model);
   const modelName = getModelName(model);
 
-  const tools = buildResponsesTools(input.tools);
   // Checkpoint consumption: replay the prefix content ahead of the tail so the
   // request's literal prefix matches the warm-up and hits the automatic
-  // server-side prompt cache.
+  // server-side prompt cache. The effective tool declarations come from the
+  // merge too — the caller's tools win, and an empty list falls back to the
+  // prefix's so the warmed tool segment (and its prompt_cache_key) is shared.
   const merged = mergeOpenAICheckpointPrefix(sessionContext, input);
+  const toolDefinitions = merged?.tools ?? input.tools;
+  const tools = buildResponsesTools(toolDefinitions);
   const { input: responsesInput, instructions } = buildResponsesInput({
     messages: toOpenAIMessages(
       merged
@@ -77,7 +81,7 @@ export const OpenAI_ToolCalling_Stream: AiProviderRunFn<
     stream as AsyncIterable<unknown>,
     (event) => {
       if (event.type === "object-delta" && event.port === "toolCalls") {
-        const validated = filterValidToolCalls(event.objectDelta as ToolCalls, input.tools);
+        const validated = filterValidToolCalls(event.objectDelta as ToolCalls, toolDefinitions);
         if (validated.length > 0) {
           emit({ type: "object-delta", port: "toolCalls", objectDelta: validated });
         }
