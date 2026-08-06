@@ -57,7 +57,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
 
   constructor(
     protected readonly db: Pool,
-    protected readonly queueName: string,
+    public readonly queueName: string,
     options?: QueueStorageOptions
   ) {
     this.prefixes = options?.prefixes ?? [];
@@ -130,7 +130,8 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
     job.progress_message = "";
     job.progress_details = null;
     job.created_at = now;
-    job.visible_at = now;
+    // A caller-set future visible_at is a delayed send (delaySeconds) — keep it.
+    job.visible_at = job.visible_at ?? now;
 
     const prefixColumnNames = getPrefixColumnNames(this.prefixes);
     const { columns: prefixColumnsInsert, placeholders: prefixParamPlaceholders } =
@@ -624,7 +625,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
     jobId: unknown,
     progress: number,
     message: string,
-    details: Record<string, any>
+    details: Record<string, any> | null
   ): Promise<void> {
     const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(6);
     await this.db.query(

@@ -2,6 +2,7 @@
   "name": "@workglow-dev/libs",
   "type": "module",
   "version": "0.3.38",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git"
@@ -60,7 +61,7 @@
     "dev-link": "bun ./scripts/dev-link-workglow.ts"
   },
   "dependencies": {
-    "caniuse-lite": "^1.0.30001806"
+    "caniuse-lite": "^1.0.30001807"
   },
   "catalog": {
     "@huggingface/transformers": "^4.2.0",
@@ -69,13 +70,13 @@
     "@mediapipe/tasks-audio": "^1.0.1",
     "@mediapipe/tasks-genai": "^0.10.29",
     "@anthropic-ai/sdk": "^0.115.0",
-    "electron": "^43.2.0",
-    "@google/genai": "^2.14.0",
+    "electron": "^43.3.0",
+    "@google/genai": "^2.16.0",
     "node-llama-cpp": "^3.19.1",
     "needle-rs": "^0.1.0",
-    "@huggingface/inference": "^4.13.24",
+    "@huggingface/inference": "^4.13.25",
     "ollama": "^0.6.3",
-    "openai": "^7.3.0",
+    "openai": "^7.4.0",
     "tiktoken": "^1.0.22",
     "js-tiktoken": "^1.0.16",
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -83,11 +84,11 @@
     "playwright": "^1.62.1",
     "@electric-sql/pglite": "^0.5.4",
     "@electric-sql/pglite-pgvector": "^0.0.5",
-    "@supabase/supabase-js": "^2.111.0",
+    "@supabase/supabase-js": "^2.112.2",
     "@duckdb/node-api": "^1.5.5-r.3",
     "@sqlite.org/sqlite-wasm": "^3.53.0-build1",
     "@sqliteai/sqlite-vector": "^1.0.0",
-    "better-sqlite3": "^13.0.2"
+    "better-sqlite3": "^13.0.3"
   },
   "optionalDependencies": {
     "@sqliteai/sqlite-vector-darwin-arm64": "^1.0.0",
@@ -102,8 +103,8 @@
     "@sqliteai/sqlite-vector": "catalog:",
     "@types/bun": "^1.3.14",
     "@types/node": "^24.13.3",
-    "@typescript-eslint/eslint-plugin": "^8.65.0",
-    "@typescript-eslint/parser": "^8.65.0",
+    "@typescript-eslint/eslint-plugin": "^8.66.0",
+    "@typescript-eslint/parser": "^8.66.0",
     "@typescript/native-preview": "=7.0.0-dev.20260707.2",
     "@vitest/coverage-v8": "^4.1.10",
     "@vitest/ui": "4.1.10",
@@ -118,7 +119,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.3.0",
     "nyc": "^18.0.0",
-    "pkg-pr-new": "^0.0.86",
+    "pkg-pr-new": "^0.0.87",
     "prettier": "^3.9.6",
     "prettier-plugin-organize-imports": "^4.3.0",
     "turbo": "^2.10.8",

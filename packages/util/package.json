@@ -2,6 +2,7 @@
   "name": "@workglow/util",
   "type": "module",
   "version": "0.3.38",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
@@ -117,7 +118,7 @@
         "types": "./dist/worker-bun.d.ts",
         "import": "./dist/worker-bun.js"
       },
-      "types": "./dist/worker-entry.d.ts",
+      "types": "./dist/worker-node.d.ts",
       "import": "./dist/worker-node.js"
     }
   },

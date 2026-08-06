@@ -4,7 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, IExecuteContext, Task, TaskConfig, Workflow } from "@workglow/task-graph";
+import {
+  CreateWorkflow,
+  IExecuteContext,
+  Task,
+  TaskConfig,
+  TaskInvalidInputError,
+  Workflow,
+} from "@workglow/task-graph";
 import {
   createTypedArrayFrom,
   DataPortSchema,
@@ -68,12 +75,12 @@ export class VectorDivideTask<
   override async execute(input: Input, _context: IExecuteContext): Promise<Output> {
     const { vectors } = input as { vectors: TypedArray[] };
     if (vectors.length < 2) {
-      throw new Error("At least two vectors are required");
+      throw new TaskInvalidInputError("At least two vectors are required");
     }
     const len = vectors[0].length;
     for (let i = 1; i < vectors.length; i++) {
       if (vectors[i].length !== len) {
-        throw new Error("All vectors must have the same length");
+        throw new TaskInvalidInputError("All vectors must have the same length");
       }
     }
     const values = Array.from({ length: len }, (_, i) => {

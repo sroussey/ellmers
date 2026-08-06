@@ -6,10 +6,10 @@
 
 import { CloudflareMessageQueue } from "@workglow/cloudflare/job-queue";
 import {
-  InMemoryJobStore,
   InMemoryQueueStorage,
   JobStatus,
   type JobStorageFormat,
+  wrapQueueStorage,
 } from "@workglow/job-queue";
 import { describe, expect, it, vi } from "vitest";
 
@@ -32,7 +32,7 @@ function body(v: string): JobStorageFormat<TestInput, TestOutput> {
 describe("CloudflareMessageQueue.sendBatch — transient failure", () => {
   it("queue.sendBatch throw: re-throws but all rows stay PENDING with deferred visible_at", async () => {
     const core = new InMemoryQueueStorage<TestInput, TestOutput>("q");
-    const jobStore = new InMemoryJobStore(core);
+    const jobStore = wrapQueueStorage(core).jobStore;
 
     const send = vi.fn().mockResolvedValue(undefined);
     const sendBatch = vi.fn().mockRejectedValue(new Error("cf transient"));

@@ -28,12 +28,12 @@
 
 import { createCloudflareQueue, handleQueueBatch } from "@workglow/cloudflare/job-queue";
 import {
-  InMemoryJobStore,
   InMemoryQueueStorage,
   Job,
   JobError,
   JobQueueWorker,
   JobStatus,
+  wrapQueueStorage,
   type IJobExecuteContext,
   type JobStorageFormat,
 } from "@workglow/job-queue";
@@ -60,7 +60,7 @@ class TestJob extends Job<TInput, TOutput> {
 
 function setup() {
   const core = new InMemoryQueueStorage<TInput, TOutput>("cfq-test");
-  const jobStore = new InMemoryJobStore(core);
+  const jobStore = wrapQueueStorage(core).jobStore;
   const binding = new FakeQueueBinding();
   const { messageQueue } = createCloudflareQueue<TInput, TOutput>({
     queue: binding.queue,

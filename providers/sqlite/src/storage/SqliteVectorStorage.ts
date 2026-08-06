@@ -13,6 +13,7 @@ import type {
 } from "@workglow/storage";
 import {
   assertVectorShape,
+  emitSimilaritySearch,
   getMetadataProperty,
   getVectorProperty,
   matchesFilter,
@@ -164,6 +165,6 @@ export class SqliteVectorStorage<
     results.sort((a, b) => b.score - a.score);
     const topResults = results.slice(0, topK);
 
-    return topResults;
+    return emitSimilaritySearch(this.events, query, topResults);
   }
 }

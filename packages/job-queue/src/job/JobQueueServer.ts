@@ -177,7 +177,9 @@ export class JobQueueServer<
         {
           queueName: this.queueName,
           limiterScope: this.limiter.scope,
-          storage: this.messageQueue.constructor.name,
+          storage:
+            (this.messageQueue as { backingStorageName?: string }).backingStorageName ??
+            this.messageQueue.constructor.name,
         }
       );
     }

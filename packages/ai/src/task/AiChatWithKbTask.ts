@@ -369,13 +369,13 @@ export class AiChatWithKbTask extends StreamingAiTask<
     if (!this._sessionId) {
       this._sessionId = getAiProviderRegistry().createSession(model.provider, model);
     }
-    return {
-      taskType: "AiChatWithKbTask",
-      requires: (this.constructor as typeof AiChatWithKbTask).requires,
-      aiProvider: model.provider,
-      taskInput: input as AiChatWithKbTaskInput & { model: ModelConfig },
-      session: { sessionId: this._sessionId },
-    };
+    // Delegate to base so timeoutMs, outputSchema, and any future base fields
+    // are always populated. The base reads (input as any).sessionId and
+    // forwards it as jobInput.session.sessionId.
+    return super.getJobInput({
+      ...input,
+      sessionId: this._sessionId,
+    } as AiChatWithKbTaskInput & { sessionId: string });
   }
 
   override async *executeStream(
@@ -389,6 +389,12 @@ export class AiChatWithKbTask extends StreamingAiTask<
     if (!model || typeof model !== "object") {
       throw new Error("AiChatWithKbTask: model was not resolved to ModelConfig");
     }
+
+    // Strict gating: this override doesn't call super.executeStream, so we
+    // must gate here to match the contract AiTask.execute and
+    // StreamingAiTask.executeStream both enforce.
+    this.gateOrThrow(model);
+
     const connector = resolveHumanConnector(context);
 
     const embeddingModel = input.embeddingModel as ModelConfig | undefined;

@@ -14,7 +14,6 @@ import type {
 } from "@workglow/job-queue";
 import {
   ConcurrencyLimiter,
-  InMemoryMessageQueue,
   InMemoryQueueStorage,
   InMemoryRateLimiterStorage,
   Job,
@@ -171,7 +170,7 @@ describe("InMemoryQueueStorage — abort_requested_at & lease expiry", () => {
     await expect(storage.extendLease(id, "worker-y", 5000)).rejects.toThrow(/extendLease failed/);
   });
 
-  it("InMemoryClaim.ack(undefined) overwrites a stale output with null (matches WrappedClaim)", async () => {
+  it("WrappedClaim.ack(undefined) overwrites a stale output with null", async () => {
     // Seed a row that already carries an output from a prior attempt.
     const id = await storage.add({
       input: { data: "stale" },
@@ -180,12 +179,13 @@ describe("InMemoryQueueStorage — abort_requested_at & lease expiry", () => {
       completed_at: null,
     });
 
-    const mq = new InMemoryMessageQueue<TI, TO>(storage);
+    const mq = wrapQueueStorage<TI, TO>(storage).messageQueue;
     const claims = await mq.receive({ workerId: "w-ack", leaseMs: 30_000, max: 1 });
     expect(claims).toHaveLength(1);
 
     // ack with no result must NOT fall back to current.output — finalize()
-    // overwrites it with null, identical to WrappedClaim.ack.
+    // overwrites it with null (that fallback would resurrect the prior
+    // attempt's value).
     await claims[0]!.ack();
 
     const after = await storage.get(id);
@@ -193,7 +193,7 @@ describe("InMemoryQueueStorage — abort_requested_at & lease expiry", () => {
     expect(after?.output).toBeNull();
   });
 
-  it("InMemoryClaim.fail() with no error overwrites stale error fields with null (matches WrappedClaim)", async () => {
+  it("WrappedClaim.fail() with no error overwrites stale error fields with null", async () => {
     const id = await storage.add({
       input: { data: "stale-err" },
       error: "prior error",
@@ -202,7 +202,7 @@ describe("InMemoryQueueStorage — abort_requested_at & lease expiry", () => {
       completed_at: null,
     });
 
-    const mq = new InMemoryMessageQueue<TI, TO>(storage);
+    const mq = wrapQueueStorage<TI, TO>(storage).messageQueue;
     const claims = await mq.receive({ workerId: "w-fail", leaseMs: 30_000, max: 1 });
     expect(claims).toHaveLength(1);
 

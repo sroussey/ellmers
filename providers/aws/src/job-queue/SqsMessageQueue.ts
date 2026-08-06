@@ -21,6 +21,9 @@ import {
   type MessageId,
   type QueueStorageScope,
   type SendOptions,
+  computeDeferDelayMs,
+  markEnqueueDeferredManyFallback,
+  warnIfNonDurableJobStore,
 } from "@workglow/job-queue";
 import { getLogger, uuid4 } from "@workglow/util";
 import { SqsClaim } from "./SqsClaim";
@@ -29,50 +32,6 @@ import type { SqsMessageBody, SqsQueueOptions } from "./types";
 const SQS_MAX_DELAY_SECONDS = 900;
 const SQS_BATCH_SIZE = 10;
 const SQS_MAX_RECEIVE = 10;
-/**
- * Backoff applied to `visible_at` when an enqueue throws transiently. Keeps
- * the row PENDING so a subsequent producer retry / poll picks it up again
- * instead of marking it FAILED on the first network blip.
- */
-const ENQUEUE_DEFER_BACKOFF_MS = 30_000;
-
-/**
- * Clamp the defer interval to the original `delaySeconds` floor so a row
- * with a legitimate large delay (e.g. 1h scheduled work) is NOT pulled
- * forward to now + 30s by a producer-side blip. Returns the maximum of the
- * original delay and the producer-retry backoff so:
- *   - delaySeconds = 0   → wait 30s before next producer attempt
- *   - delaySeconds = 3600 → wait 3600s (the original schedule)
- */
-function computeDeferDelayMs(originalDelaySeconds: number | undefined): number {
-  const original = originalDelaySeconds != null ? originalDelaySeconds * 1000 : 0;
-  return Math.max(original, ENQUEUE_DEFER_BACKOFF_MS);
-}
-
-/**
- * Fallback used when the underlying `IJobStore` does not implement the
- * optional `markEnqueueDeferredMany` (bare InMemoryJobStore, etc.). Mirrors
- * the WrappedJobStore default impl: parallel per-id writes via
- * `Promise.allSettled` so a single transient failure doesn't tank the rest.
- */
-async function markEnqueueDeferredManyFallback<Input, Output>(
-  jobStore: IJobStore<Input, Output>,
-  ids: readonly MessageId[],
-  opts: { readonly visible_at: Date; readonly errorCode: string }
-): Promise<{ failed: readonly { id: MessageId; err: unknown }[] }> {
-  const results = await Promise.allSettled(ids.map((id) => jobStore.markEnqueueDeferred(id, opts)));
-  const failed = results.flatMap((r, i) =>
-    r.status === "rejected" ? [{ id: ids[i]!, err: r.reason }] : []
-  );
-  return { failed };
-}
-
-/**
- * Module-level dedupe set for the InMemoryJobStore-pairing warning.
- * WeakSet so we don't pin store instances in memory — the warning fires
- * once per process per store, then the store's lifecycle is unaffected.
- */
-const __warnedInMemoryStores = new WeakSet<object>();
 
 export class SqsMessageQueue<Input, Output> implements IMessageQueue<
   JobStorageFormat<Input, Output>
@@ -90,20 +49,9 @@ export class SqsMessageQueue<Input, Output> implements IMessageQueue<
     this.queueName = opts.queueName;
     this.jobStore = opts.jobStore;
 
-    // Warn loudly (once per store) when paired with InMemoryJobStore.
-    // SQS at-least-once + an in-memory store means partial-failure rows
+    // SQS at-least-once + a non-durable store means partial-failure rows
     // strand forever (no shared lease-expiry sweep across processes).
-    const storeCtor = (opts.jobStore as unknown as { constructor?: { name?: string } })
-      ?.constructor;
-    if (
-      storeCtor?.name === "InMemoryJobStore" &&
-      !__warnedInMemoryStores.has(opts.jobStore as unknown as object)
-    ) {
-      __warnedInMemoryStores.add(opts.jobStore as unknown as object);
-      getLogger().warn(
-        "[SqsMessageQueue] InMemoryJobStore detected — cloud adapters require a lease-sweeping JobStore (Postgres/Supabase/SQLite). Rows may strand on partial failures."
-      );
-    }
+    warnIfNonDurableJobStore(opts.jobStore, "SqsMessageQueue");
   }
 
   async send(body: JobStorageFormat<Input, Output>, opts: SendOptions = {}): Promise<MessageId> {
@@ -204,13 +152,14 @@ export class SqsMessageQueue<Input, Output> implements IMessageQueue<
       // Transient — keep every failed row PENDING with visible_at pushed
       // forward and error_code set, instead of FAILING (which would
       // permanently drop the work for any consumer that's polling for
-      // PENDING). Successful rows in the batch keep their original PENDING +
-      // visible_at = now from create(). Prefer the batched many-variant when
-      // the IJobStore exposes it (WrappedJobStore ships a Promise.allSettled
-      // default; native SQL backends can override with a single bulk UPDATE).
-      // Fall back to a per-id allSettled fan-out for bare IJobStore impls
-      // (e.g. InMemoryJobStore in tests) that don't implement the optional
-      // method. Clamp to the original delaySeconds floor.
+      // PENDING). Successful rows in the batch keep the PENDING status and
+      // visible_at that create() stored (now + delaySeconds for a delayed
+      // send, once the storage preserves caller-set visibility). Prefer the
+      // batched many-variant when the IJobStore exposes it (WrappedJobStore
+      // ships a Promise.allSettled default; a custom native-SQL IJobStore
+      // can override it with a single bulk UPDATE). Fall back to a per-id
+      // allSettled fan-out for bare IJobStore impls that don't implement
+      // the optional method. Clamp to the original delaySeconds floor.
       const defer = new Date(Date.now() + computeDeferDelayMs(opts.delaySeconds));
       const failedIds = failures.map((f) => f.id);
       const deferOpts = { visible_at: defer, errorCode: "ENQUEUE_FAILED" };

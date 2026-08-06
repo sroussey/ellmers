@@ -3,6 +3,7 @@
   "type": "module",
   "private": true,
   "version": "0.3.38",
+  "license": "Apache-2.0",
   "bugs": {
     "url": "https://github.com/workglow-dev/libs/issues"
   },
@@ -27,8 +28,8 @@
     "test-concurrently": "bash -c 'cmds=(); for d in ./src/test/*/; do cmds+=(\"cd $d && bun test\"); done; concurrently \"${cmds[@]}\"'"
   },
   "devDependencies": {
-    "@aws-sdk/client-sqs": "^3.1101.0",
-    "@cloudflare/workers-types": "^5.20260801.1",
+    "@aws-sdk/client-sqs": "^3.1105.0",
+    "@cloudflare/workers-types": "^5.20260804.1",
     "@duckdb/node-api": "catalog:",
     "@electric-sql/pglite": "catalog:",
     "@electric-sql/pglite-pgvector": "catalog:",
@@ -36,7 +37,7 @@
     "@sqliteai/sqlite-vector": "catalog:",
     "@supabase/supabase-js": "catalog:",
     "@types/dom-chromium-ai": "^0.0.17",
-    "@types/pg": "^8.20.3",
+    "@types/pg": "^8.20.4",
     "@workglow/ai": "workspace:*",
     "@workglow/anthropic": "workspace:*",
     "@workglow/aws": "workspace:*",
@@ -75,7 +76,7 @@
     "@workglow/xai": "workspace:*",
     "aws-sdk-client-mock": "^4.0.0",
     "fake-indexeddb": "^6.2.4",
-    "miniflare": "^4.20260730.0",
+    "miniflare": "^5.20260801.0-alpha",
     "node-llama-cpp": "catalog:",
     "pg": "catalog:",
     "playwright": "catalog:",

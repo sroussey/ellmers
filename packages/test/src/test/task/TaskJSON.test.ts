@@ -5,6 +5,7 @@
  */
 
 import type {
+  JsonTaskItem,
   TaskConfig,
   TaskDeserializationOptions,
   TaskGraphItemJson,
@@ -12,6 +13,7 @@ import type {
 } from "@workglow/task-graph";
 import {
   ConditionalTask,
+  createGraphFromDependencyJSON,
   createGraphFromGraphJSON,
   createTaskFromGraphJSON,
   Dataflow,
@@ -332,6 +334,92 @@ describe("TaskJSON", () => {
       expect(graphAsTask.subGraph).toBeDefined();
       const subTasks = graphAsTask.subGraph!.getTasks();
       expect(subTasks).toHaveLength(2);
+    });
+  });
+
+  describe("createGraphFromDependencyJSON()", () => {
+    test("wires top-level dependencies into dataflows", () => {
+      const items: JsonTaskItem[] = [
+        { id: "task1", type: "DoubleToResultTask", defaults: { value: 10 } },
+        {
+          id: "task2",
+          type: "DoubleToResultTask",
+          dependencies: { value: { id: "task1", output: "result" } },
+        },
+      ];
+
+      const graph = createGraphFromDependencyJSON(items, registry);
+
+      const dataflows = graph.getDataflows();
+      expect(dataflows).toHaveLength(1);
+      expect(dataflows[0].sourceTaskId).toBe("task1");
+      expect(dataflows[0].targetTaskId).toBe("task2");
+    });
+
+    test("wires dependencies inside recursed subtasks", () => {
+      const items: JsonTaskItem[] = [
+        {
+          id: "parent",
+          type: "TestGraphAsTask",
+          subtasks: [
+            { id: "child1", type: "DoubleToResultTask", defaults: { value: 5 } },
+            {
+              id: "child2",
+              type: "DoubleToResultTask",
+              dependencies: { value: { id: "child1", output: "result" } },
+            },
+          ],
+        },
+      ];
+
+      const graph = createGraphFromDependencyJSON(items, registry);
+
+      const parent = graph.getTasks()[0] as GraphAsTask<any, any>;
+      const subDataflows = parent.subGraph!.getDataflows();
+      expect(subDataflows).toHaveLength(1);
+      expect(subDataflows[0].sourceTaskId).toBe("child1");
+      expect(subDataflows[0].targetTaskId).toBe("child2");
+    });
+
+    test("throws for a nested dependency id outside its own subgraph", () => {
+      const items: JsonTaskItem[] = [
+        { id: "outside", type: "DoubleToResultTask", defaults: { value: 1 } },
+        {
+          id: "parent",
+          type: "TestGraphAsTask",
+          subtasks: [
+            {
+              id: "child",
+              type: "DoubleToResultTask",
+              dependencies: { value: { id: "outside", output: "result" } },
+            },
+          ],
+        },
+      ];
+
+      expect(() => createGraphFromDependencyJSON(items, registry)).toThrow(
+        "Dependency id outside not found"
+      );
+    });
+
+    test("round-trips subgraph dataflows via toDependencyJSON", () => {
+      const originalGraph = new TaskGraph();
+      const parentTask = new TestGraphAsTask({ id: "parent", defaults: { input: "test" } });
+      const childGraph = new TaskGraph();
+      childGraph.addTask(new DoubleToResultTask({ id: "child1", defaults: { value: 5 } }));
+      childGraph.addTask(new DoubleToResultTask({ id: "child2", defaults: { value: 10 } }));
+      childGraph.addDataflow(new Dataflow("child1", "result", "child2", "value"));
+      parentTask.subGraph = childGraph;
+      originalGraph.addTask(parentTask);
+
+      const items = originalGraph.toDependencyJSON();
+      const restoredGraph = createGraphFromDependencyJSON(items, registry);
+
+      const restoredParent = restoredGraph.getTasks()[0] as GraphAsTask<any, any>;
+      const restoredDataflows = restoredParent.subGraph!.getDataflows();
+      expect(restoredDataflows).toHaveLength(1);
+      expect(restoredDataflows[0].sourceTaskId).toBe("child1");
+      expect(restoredDataflows[0].targetTaskId).toBe("child2");
     });
   });
 
