@@ -1,5 +1,122 @@
 # @workglow/test
 
+## 0.3.38
+
+### Features
+
+#### job-queue
+
+- storage-only client reassembles the stream channel into onStream
+- InMemory stream-channel reference carrier
+- stream-channel contract + StreamReassembler
+- capability-gated JobHandle.outputStream for cached binary results
+- in-process stream observability via JobHandle.onStream
+
+#### util
+
+- transfer binary stream chunks across the worker boundary
+
+#### test
+
+- Supabase streaming cache backing
+- tabular streaming cache backings (Postgres + SQLite)
+- durable IndexedDB streaming task-output repository
+- raw-IndexedDB chunked blob store for streaming cache
+
+#### task-graph
+
+- allow async getOutputStreamByRef for non-filesystem backings
+- stream the run-private cache tier over an FsFolder backing
+- backpressure gate on the no-accumulation passthrough edge
+- cache-hit replay parity for non-binary refs (Task 6)
+- no-accumulation passthrough — skip the materialize drain
+- exempt stream-wired input ports from whole-value validation
+- generalize stream sinks to all modes (per-port refs)
+- per-mode stream codecs + port-aware repo stream sink
+- add optional port/mode axis to CacheRef
+- FsFolderTaskOutputRepository with streaming blob sidecar files
+- hydrate cache refs in task inputs before execute
+- cache-hit replay and hydration of binary cache refs
+- expose binary stream-consumer detection for cache-hit replay
+- resolveJobOutputStream for streaming job results from cache
+- streaming read helpers for cache refs
+- binary-streaming framework + result-as-reference
+
+#### ai
+
+- add a uniform usage telemetry channel
+
+### Bug Fixes
+
+- restore branch-final content drifted during the rebase onto main
+
+#### task-graph,util
+
+- close storage and worker review findings
+
+#### job-queue
+
+- close stream-channel review findings
+- harden the cross-process stream channel
+- stream-channel code-review fixes
+
+#### task-graph
+
+- close streaming engine review findings
+- fail passthrough edge gates on abort and enforce watchdog liveness
+- make BinaryStreamRouter push/end race-safe
+- restrict portless outputStream discovery to declared streamable ports
+- reject same-backing CacheRegistry misconfiguration at run start
+- netstring-encode runScopePrefix to close sanitize collision
+- route RunPrivateCacheRepo by-ref through *ForRun to prevent cross-run leak
+- correctness fixes from branch-wide streaming review
+- replace-mode streams must carry a value, else error
+- stamp FsFolder blobs with unique suffix to prevent orphan-cleanup races
+- fsync blobs directory after rename to survive crashes between rename and dir-metadata flush
+- treat all class instances as opaque in ref walker
+- clean up orphan blobs when stream-write succeeds but row commit fails
+- treat Error and URL as opaque leaves in ref walker
+- guard resolveOutput walker against cycles and shared subtrees
+- default blob/binary port codecs for JSON-row cache backings
+- cache rows store refs, not inline binary; enforce single-binary-port streaming
+- blob lifecycle hardening in FsFolderTaskOutputRepository
+- byte-bounded backpressure in binary stream router (default 8 MiB)
+- canonicalize binary stream format vocabulary to "blob"|"binary"
+- brand CacheRef with literal kind to prevent shape-only collisions
+
+#### util
+
+- transfer only fully-owned buffers for worker stream chunks
+
+#### test
+
+- cast Uint8Array to BlobPart in streaming-port test repos
+
+#### ai
+
+- record usage telemetry for the multi-turn chat tasks
+- sum every chat turn's usage onto the outer finish
+- record usage telemetry when a stream consumer stops early
+
+#### mlx
+
+- report the stub provider as unavailable and skip registration
+
+### Refactors
+
+#### task-graph
+
+- extract BackpressureGate from BinaryStreamRouter
+- remove dead pipeBinaryToCache; detach edge-stream listeners on abort/error
+
+### Tests
+
+#### task-graph
+
+- await streaming reader in stream-out contract suites
+- widen Uint8Array to ArrayBuffer-backed for Blob construction
+- lock delta-wins on the StreamProcessor path
+
 ## 0.3.37
 
 ### Features

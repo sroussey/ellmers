@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.38
+
+### Bug Fixes
+
+#### supabase
+
+- quote the PK column list in CREATE TABLE bootstrap
+
 ## 0.3.37
 
 ### Features

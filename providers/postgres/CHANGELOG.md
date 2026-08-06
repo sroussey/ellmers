@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.38
+
+### Bug Fixes
+
+#### postgres
+
+- quote the PK column list in CREATE TABLE
+
 ## 0.3.37
 
 ## 0.3.36

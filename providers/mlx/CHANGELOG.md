@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.38
+
+### Bug Fixes
+
+#### mlx
+
+- report the stub provider as unavailable and skip registration
+
 ## 0.3.37
 
 ## 0.3.36

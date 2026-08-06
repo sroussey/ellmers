@@ -1,5 +1,30 @@
 # @workglow/job-queue
 
+## 0.3.38
+
+### Features
+
+#### job-queue
+
+- storage-only client reassembles the stream channel into onStream
+- worker publishes stream chunks to the queue channel
+- forward stream-channel capability through WrappedMessageQueue
+- InMemory stream-channel reference carrier
+- stream-channel contract + StreamReassembler
+- capability-gated JobHandle.outputStream for cached binary results
+- in-process stream observability via JobHandle.onStream
+
+### Bug Fixes
+
+- restore branch-final content drifted during the rebase onto main
+
+#### job-queue
+
+- close stream-channel review findings
+- harden the cross-process stream channel
+- stream-channel code-review fixes
+- drop stale classToStorage import in JobQueueWorker
+
 ## 0.3.37
 
 ## 0.3.36

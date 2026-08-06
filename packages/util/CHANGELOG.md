@@ -1,5 +1,27 @@
 # @workglow/util
 
+## 0.3.38
+
+### Features
+
+#### util
+
+- transfer binary stream chunks across the worker boundary
+
+#### task-graph
+
+- binary-streaming framework + result-as-reference
+
+### Bug Fixes
+
+#### task-graph,util
+
+- close storage and worker review findings
+
+#### util
+
+- transfer only fully-owned buffers for worker stream chunks
+
 ## 0.3.37
 
 ### Features

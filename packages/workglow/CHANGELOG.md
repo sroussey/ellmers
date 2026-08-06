@@ -1,5 +1,13 @@
 # workglow
 
+## 0.3.38
+
+### Bug Fixes
+
+#### build
+
+- declare the meta-package's runtime dependency on its deps' JS
+
 ## 0.3.37
 
 ## 0.3.36

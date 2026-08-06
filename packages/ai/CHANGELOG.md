@@ -1,5 +1,26 @@
 # @workglow/ai
 
+## 0.3.38
+
+### Features
+
+#### ai
+
+- add a uniform usage telemetry channel
+
+### Bug Fixes
+
+#### task-graph
+
+- correctness fixes from branch-wide streaming review
+
+#### ai
+
+- record usage telemetry for the multi-turn chat tasks
+- sum every chat turn's usage onto the outer finish
+- record usage telemetry when a stream consumer stops early
+- record usage telemetry on the streaming path too
+
 ## 0.3.37
 
 ### Features

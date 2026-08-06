@@ -1,5 +1,7 @@
 # @workglow/cli
 
+## 0.3.38
+
 ## 0.3.37
 
 ### Bug Fixes

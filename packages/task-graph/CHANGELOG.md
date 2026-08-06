@@ -1,5 +1,94 @@
 # @workglow/task-graph
 
+## 0.3.38
+
+### Features
+
+#### task-graph
+
+- implement runId-scoped ref readers on FsFolder
+- add optional *ForRun ref methods to TaskOutputRepository
+- allow async getOutputStreamByRef for non-filesystem backings
+- stream the run-private cache tier over an FsFolder backing
+- backpressure gate on the no-accumulation passthrough edge
+- cache-hit replay parity for non-binary refs (Task 6)
+- no-accumulation passthrough — skip the materialize drain
+- exempt stream-wired input ports from whole-value validation
+- thread noAccumulation run flag to the streaming seam
+- generalize stream sinks to all modes (per-port refs)
+- per-mode stream codecs + port-aware repo stream sink
+- add optional port/mode axis to CacheRef
+- FsFolderTaskOutputRepository with streaming blob sidecar files
+- hydrate cache refs in task inputs before execute
+- cache-hit replay and hydration of binary cache refs
+- expose binary stream-consumer detection for cache-hit replay
+- resolveJobOutputStream for streaming job results from cache
+- streaming read helpers for cache refs
+- binary-streaming framework + result-as-reference
+
+#### test
+
+- Supabase streaming cache backing
+
+#### ai
+
+- add a uniform usage telemetry channel
+
+### Bug Fixes
+
+- restore branch-final content drifted during the rebase onto main
+
+#### task-graph,util
+
+- close storage and worker review findings
+
+#### job-queue
+
+- close stream-channel review findings
+- harden the cross-process stream channel
+
+#### task-graph
+
+- close streaming engine review findings
+- fail passthrough edge gates on abort and enforce watchdog liveness
+- make BinaryStreamRouter push/end race-safe
+- restrict portless outputStream discovery to declared streamable ports
+- reject same-backing CacheRegistry misconfiguration at run start
+- netstring-encode runScopePrefix to close sanitize collision
+- route RunPrivateCacheRepo by-ref through *ForRun to prevent cross-run leak
+- correctness fixes from branch-wide streaming review
+- replace-mode streams must carry a value, else error
+- stamp FsFolder blobs with unique suffix to prevent orphan-cleanup races
+- fsync blobs directory after rename to survive crashes between rename and dir-metadata flush
+- treat all class instances as opaque in ref walker
+- document single-tenant assumption of FsFolderTaskOutputRepository deterministic tier
+- clean up orphan blobs when stream-write succeeds but row commit fails
+- fsync blob temp handle before rename in FsFolderTaskOutputRepository
+- treat Error and URL as opaque leaves in ref walker
+- guard resolveOutput walker against cycles and shared subtrees
+- default blob/binary port codecs for JSON-row cache backings
+- cache rows store refs, not inline binary; enforce single-binary-port streaming
+- blob lifecycle hardening in FsFolderTaskOutputRepository
+- byte-bounded backpressure in binary stream router (default 8 MiB)
+- canonicalize binary stream format vocabulary to "blob"|"binary"
+- brand CacheRef with literal kind to prevent shape-only collisions
+
+### Refactors
+
+#### task-graph
+
+- extract BackpressureGate from BinaryStreamRouter
+- remove dead pipeBinaryToCache; detach edge-stream listeners on abort/error
+
+### Documentation
+
+#### task-graph
+
+- document live cross-process stream transport
+- document tabular SQL streaming cache backings
+- document IndexedDB streaming cache backing
+- document binary cache stream-out in EXECUTION_MODEL
+
 ## 0.3.37
 
 ### Features
