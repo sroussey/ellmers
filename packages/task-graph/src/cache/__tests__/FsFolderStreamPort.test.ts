@@ -13,12 +13,11 @@
  */
 
 import type { StreamEvent } from "@workglow/task-graph";
-import { getStreamPortCodec, isCacheRef } from "@workglow/task-graph";
+import { FsFolderTaskOutputRepository, getStreamPortCodec, isCacheRef } from "@workglow/task-graph";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { FsFolderTaskOutputRepository } from "../../binding/FsFolderTaskOutputRepository";
 
 async function* fromArray<T>(items: T[]): AsyncIterable<T> {
   for (const it of items) yield it;
