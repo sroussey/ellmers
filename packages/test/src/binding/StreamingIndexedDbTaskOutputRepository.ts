@@ -10,8 +10,8 @@ import {
   TaskOutputPrimaryKeyNames,
   TaskOutputSchema,
 } from "@workglow/task-graph";
+import { TabularStreamingTaskOutputRepository } from "@workglow/task-graph/test";
 import { IdbBlobChunkStore } from "./IdbBlobChunkStore";
-import { TabularStreamingTaskOutputRepository } from "./TabularStreamingTaskOutputRepository";
 
 /**
  * Durable, browser-oriented streaming task-output repository. JSON output rows

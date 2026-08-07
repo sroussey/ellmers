@@ -11,12 +11,20 @@ import {
   TaskGraphTabularRepository,
   TaskRegistry,
 } from "@workglow/task-graph";
-import { TestIOTask } from "@workglow/task-graph/test";
+// Sibling under `testing/`, so relative is correct here: this code is unique to
+// the `./test` bundle and has no counterpart in the main bundle to diverge from.
+// Reaching it by package specifier would make this entry import itself.
 import { afterEach, beforeEach, expect, it } from "vitest";
+import { TestIOTask } from "./TestTasks";
 
-export function runGenericTaskGraphRepositoryTests(
+/**
+ * Conformance suite for a {@link TaskGraphRepository}: save a graph, read it
+ * back identically, and refuse to rehydrate a graph whose task types are not
+ * registered. An adapter supplies a factory and inherits every assertion.
+ */
+export function runTaskGraphRepositoryContract(
   createRepository: () => Promise<TaskGraphRepository>
-) {
+): void {
   let repository: TaskGraphRepository;
 
   beforeEach(async () => {

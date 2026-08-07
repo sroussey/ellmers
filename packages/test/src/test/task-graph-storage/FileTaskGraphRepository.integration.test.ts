@@ -5,12 +5,11 @@
  */
 
 import { Dataflow, TaskGraph, TaskRegistry } from "@workglow/task-graph";
-import { TestIOTask } from "@workglow/task-graph/test";
+import { FsFolderTaskGraphRepository, TestIOTask } from "@workglow/task-graph/test";
 import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
 import { rmSync } from "fs";
 import { beforeEach, describe, expect, it } from "vitest";
-import { FsFolderTaskGraphRepository } from "../../binding/FsFolderTaskGraphRepository";
 
 TaskRegistry.registerTask(TestIOTask);
 

@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { RunPrivateInMemoryTaskOutputRepository } from "@workglow/task-graph/test";
 import { describe, expect, it } from "vitest";
-import { RunPrivateInMemoryTaskOutputRepository } from "../../binding/RunPrivateInMemoryTaskOutputRepository";
 
 describe("RunPrivateTaskOutputRepository.clearOlderThan", () => {
   it("preserves live runs even when they have stale rows", async () => {

@@ -8,7 +8,6 @@
 
 export * from "./common";
 
-export * from "./binding/FsFolderTaskGraphRepository";
 export * from "./binding/IndexedDbTaskGraphRepository";
 export * from "./binding/SqliteTaskGraphRepository";
 

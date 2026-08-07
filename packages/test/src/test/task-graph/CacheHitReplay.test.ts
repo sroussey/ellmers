@@ -15,13 +15,13 @@ import {
   TaskGraphRunner,
   TaskStatus,
 } from "@workglow/task-graph";
+import { StreamingMemoryRepo } from "@workglow/task-graph/test";
 import { Container, ServiceRegistry, sleep } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { StreamingMemoryRepo } from "../../binding/StreamingMemoryRepo";
 
 type BinOut = { bytes: Blob | ArrayBuffer };
 type SinkInput = { bytes: Blob | ArrayBuffer };

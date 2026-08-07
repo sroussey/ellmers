@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { RunPrivateCacheRepo } from "@workglow/task-graph";
+import { NonStreamingMemoryRepo, StreamingMemoryRepo } from "@workglow/task-graph/test";
 import { describe, expect, it } from "vitest";
-import { NonStreamingMemoryRepo, StreamingMemoryRepo } from "../../binding/StreamingMemoryRepo";
 
 async function* gen(...chunks: Uint8Array[]): AsyncIterable<Uint8Array> {
   for (const c of chunks) yield c;

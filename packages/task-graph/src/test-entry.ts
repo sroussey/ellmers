@@ -20,7 +20,20 @@
  * Nothing here is public API and none of it is re-exported from `.`.
  */
 
+export { FsFolderTaskGraphRepository } from "./testing/FsFolderTaskGraphRepository";
+export { InMemoryTaskGraphRepository } from "./testing/InMemoryTaskGraphRepository";
 export { InMemoryTaskOutputRepository } from "./testing/InMemoryTaskOutputRepository";
+export { RunPrivateInMemoryTaskOutputRepository } from "./testing/RunPrivateInMemoryTaskOutputRepository";
+export { NonStreamingMemoryRepo, StreamingMemoryRepo } from "./testing/StreamingMemoryRepo";
+
+/**
+ * Shared base for durable streaming task-output repositories. Not a test double
+ * itself — the backend adapters that extend it (SQLite, Postgres, Supabase,
+ * IndexedDB) live in the packages that own their drivers, and MUST import it
+ * from here by package specifier so they extend the one class.
+ */
+export { TabularStreamingTaskOutputRepository } from "./testing/TabularStreamingTaskOutputRepository";
+export type { IBlobChunkStore } from "./testing/TabularStreamingTaskOutputRepository";
 
 /**
  * The shared cast of fake tasks the task-graph suites act on. Re-exported as a
@@ -36,6 +49,12 @@ export * from "./testing/TestTasks";
  * ~15-line shim in its own package rather than an edit to someone else's tests.
  */
 export { runTaskOutputRepositoryContract } from "./testing/taskOutputRepositoryContract";
+
+/**
+ * Conformance suite for {@link TaskGraphRepository} — graph round-trip and the
+ * unregistered-task-type rejection.
+ */
+export { runTaskGraphRepositoryContract } from "./testing/taskGraphRepositoryContract";
 
 /**
  * Conformance suite for a STREAMING task-output repository (JSON rows plus port

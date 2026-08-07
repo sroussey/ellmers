@@ -5,8 +5,8 @@
  */
 
 import { CacheJanitor } from "@workglow/task-graph";
+import { RunPrivateInMemoryTaskOutputRepository } from "@workglow/task-graph/test";
 import { describe, expect, it } from "vitest";
-import { RunPrivateInMemoryTaskOutputRepository } from "../../binding/RunPrivateInMemoryTaskOutputRepository";
 
 describe("CacheJanitor", () => {
   it("sweepStaleRunPrivate prunes only entries older than the cutoff", async () => {

@@ -13,10 +13,10 @@ import {
   TaskGraph,
   type CachePolicy,
 } from "@workglow/task-graph";
+import { RunPrivateInMemoryTaskOutputRepository } from "@workglow/task-graph/test";
 import { Container, ResourceScope, ServiceRegistry, getLogger, setLogger } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { RunPrivateInMemoryTaskOutputRepository } from "../../binding/RunPrivateInMemoryTaskOutputRepository";
 
 class PrivatePolicyTask extends Task<{ q: string }, { r: string }> {
   public static override type = "PrivateRunIdTask";
