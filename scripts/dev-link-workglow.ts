@@ -37,7 +37,6 @@ async function main(): Promise<void> {
   await run(embarcData, ["run", "link-sec-workglow"]); // link from workglow and sec
 
   console.log("\n✅ dev-link complete (libs → sec → embarc-data)");
-  console.log("Remember: bun run use-dist in libs/sec before committing export changes.");
 }
 
 main().catch((error) => {

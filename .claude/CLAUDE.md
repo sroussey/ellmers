@@ -306,6 +306,8 @@ When making code changes, run the tests on that section only, and pass vitest on
 
 ### Developing without building
 
-`bun run use-source` (or `./scripts/bunsrc-workspace.ts source`) will change the packages' package.json exports to use the source files instead of the built files. This is useful for developing without having to build the packages. Never commit this change. It can be reverted with `bun run use-dist`.
+`bun run use-source` (or `./scripts/bunsrc-workspace.ts source`) makes every package resolve to its source files instead of its built files, so you can develop without rebuilding. It does **not** touch `package.json`: `exports` keeps pointing at `./dist/*`, and the script writes tiny re-export stubs into each package's (gitignored) `dist` folder — `dist/node.js` becomes `export * from "../src/node.ts"`, `dist/node.d.ts` the declaration equivalent. Source mode therefore leaves `git status` clean and there is nothing to revert before committing.
+
+`bun run use-dist` removes the stubs (identified by a `@workglow-source-stub` sentinel, so real build output is never deleted) and rebuilds; pass `--no-build` to skip the rebuild. A stubbed `dist` can never be published — `publish-workspaces.ts` refuses any workspace that still contains stubs.
 
 `bun run link-all` registers every workspace package (and providers/examples) for `bun link` consumers such as builder, sec, and embarc-data. `bun run unlink-all` reverses that. For the full libs → sec → embarc-data chain (register + use-source + consumer links), run `bun run dev-link` from libs, or `bun ./dev-link.ts` from the parent `workglow/` folder.

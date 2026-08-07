@@ -4,6 +4,7 @@ import { spawn } from "child_process";
 import { existsSync } from "fs";
 import { readFile } from "fs/promises";
 import { join } from "path";
+import { findSourceStubs } from "./lib/sourceStubs";
 import { findWorkspaces } from "./lib/util";
 
 interface PackageJson {
@@ -81,6 +82,21 @@ async function checkAndPublishWorkspace(workspacePath: string): Promise<{
 
   if (!packageJson.publishConfig?.access || packageJson.publishConfig.access === "none") {
     return { error: null, success: null };
+  }
+
+  // Source mode leaves re-export stubs in dist that point at src/, which is not
+  // shipped. Publishing one would produce a package that resolves to nothing.
+  const stubs = await findSourceStubs(workspacePath);
+  if (stubs.length > 0) {
+    return {
+      error: {
+        packageName: packageJson.name,
+        error: "dist contains source-mode stubs — run `bun run use-dist` before publishing",
+        isVersionConflict: false,
+        output: stubs.join("\n"),
+      },
+      success: null,
+    };
   }
 
   const access = packageJson.publishConfig.access;
