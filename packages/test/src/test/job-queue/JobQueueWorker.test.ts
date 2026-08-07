@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IJobExecuteContext } from "@workglow/job-queue";
+import type { IJobExecuteContext, JobStorageFormat } from "@workglow/job-queue";
 import {
   InMemoryQueueStorage,
   InMemoryRateLimiterStorage,
@@ -305,6 +305,80 @@ describe("JobQueueWorker — PR #511 follow-up regressions", () => {
     expect(seen.length).toBeGreaterThanOrEqual(1);
     expect(seen[0]!.errorCode).toBe("PermanentJobError");
   });
+});
+
+/**
+ * Storage that mirrors a backend whose round trips are slower than a short
+ * deferral, and whose change feed is unavailable (Supabase realtime when it
+ * isn't wired up) so the submit-time notify is the only wake path. The claim
+ * attempt in an idle iteration then runs *before* a deferred job's `visible_at`
+ * and the idle peek resolves *after* it.
+ */
+class SlowPeekStorage extends InMemoryQueueStorage<TI, TO> {
+  public constructor(
+    queueName: string,
+    private readonly peekDelayMs: number
+  ) {
+    super(queueName);
+  }
+
+  public override async peek(
+    status?: JobStatus,
+    num?: number
+  ): Promise<JobStorageFormat<TI, TO>[]> {
+    const rows = await super.peek(status, num);
+    await sleep(this.peekDelayMs);
+    return rows;
+  }
+
+  public override subscribeToChanges(): () => void {
+    throw new Error("change feed unavailable");
+  }
+}
+
+describe("JobQueueWorker idle delay", () => {
+  setLogger(getTestingLogger());
+
+  it("picks up a deferred job whose visible_at elapsed during the idle peek", async () => {
+    // The submit-time notify wakes the worker before the job is visible, so the
+    // claim comes back empty; the idle peek then resolves after `visible_at`
+    // has passed. Reading that as "nothing to do" would sleep the whole poll
+    // interval (60s here) on a job that is claimable right now.
+    const queueName = `idle-delay-${uuid4()}`;
+    const storage = new SlowPeekStorage(queueName, 300);
+    await storage.migrate();
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
+    const server = new JobQueueServer<TI, TO, TJob>(TJob, {
+      messageQueue,
+      jobStore,
+      queueName,
+      pollIntervalMs: 60_000,
+      stopTimeoutMs: 0,
+    });
+    const client = new JobQueueClient<TI, TO>({ messageQueue, jobStore, queueName });
+    client.attach(server);
+    await server.start();
+
+    // Let the worker settle into its idle sleep, so the submit below is what
+    // wakes it rather than being latched as a pending wake.
+    await sleep(600);
+
+    const handle = await client.send(
+      { taskType: "default", data: "deferred" },
+      { delaySeconds: 0.2 }
+    );
+
+    const start = Date.now();
+    const result = await Promise.race([
+      handle.waitFor(),
+      sleep(5_000).then(() => "TIMEOUT" as const),
+    ]);
+    expect(result).not.toBe("TIMEOUT");
+    expect(Date.now() - start).toBeLessThan(5_000);
+
+    await server.stop();
+    await storage.deleteAll();
+  }, 20_000);
 });
 
 describe("JobQueueWorker limit overrides", () => {
