@@ -15,18 +15,16 @@
   "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
-    "watch-js": "concurrently -c 'auto' -n 'browser,node,bun,electron' 'bun run watch-browser' 'bun run watch-node' 'bun run watch-bun' 'bun run watch-electron'",
+    "watch-js": "concurrently -c 'auto' -n 'browser,node,electron' 'bun run watch-browser' 'bun run watch-node' 'bun run watch-electron'",
     "watch-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "watch-node": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
-    "watch-bun": "bun build --watch --no-clear-screen --target=bun --sourcemap=external --packages=external --outdir ./dist ./src/bun.ts",
     "watch-electron": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/electron.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
-    "build-package": "concurrently -c 'auto' -n 'browser,node,bun,electron,types' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-electron' 'bun run build-types'",
-    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'browser,node,bun,electron' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-electron'",
+    "build-package": "concurrently -c 'auto' -n 'browser,node,electron,types' 'bun run build-browser' 'bun run build-node' 'bun run build-electron' 'bun run build-types'",
+    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'browser,node,electron' 'bun run build-browser' 'bun run build-node' 'bun run build-electron'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "build-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
-    "build-bun": "bun build --target=bun --sourcemap=external --packages=external --outdir ./dist ./src/bun.ts",
     "build-electron": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/electron.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
@@ -41,10 +39,6 @@
       "browser": {
         "types": "./dist/browser.d.ts",
         "import": "./dist/browser.js"
-      },
-      "bun": {
-        "types": "./dist/bun.d.ts",
-        "import": "./dist/bun.js"
       },
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js"

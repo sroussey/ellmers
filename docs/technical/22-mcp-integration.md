@@ -405,7 +405,7 @@ interface McpTaskDeps {
 }
 ```
 
-Platform entry files (`browser.ts`, `node.ts`, `bun.ts`) register appropriate implementations via `registerMcpTaskDeps()`. The browser build omits the stdio transport factory, while Node.js and Bun provide implementations that spawn child processes.
+Platform entry files (`browser.ts`, `node.ts`) register appropriate implementations via `registerMcpTaskDeps()`. The browser build omits the stdio transport factory, while the Node build — which also serves Bun — provides an implementation that spawns child processes.
 
 Attempting to use MCP tasks without registering dependencies throws a descriptive error directing the developer to import from a platform entry file.
 

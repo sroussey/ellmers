@@ -60,16 +60,17 @@ debug                                 (Chrome DevTools formatters)
 
 ### Per-package build
 
-Each package builds three runtime targets via `bun build --target=X`:
+Each package builds two runtime targets via `bun build --target=X`:
 
 - `src/browser.ts` → `dist/browser.js`
 - `src/node.ts` → `dist/node.js`
-- `src/bun.ts` → `dist/bun.js`
-- `src/common.ts` — shared exports re-exported by all three
+- `src/common.ts` — shared exports re-exported by both
 
 Types built with `tsc` (composite + incremental). Conditional exports in `package.json` resolve automatically per runtime.
 
-Exception: vendor packages under `providers/*` (e.g. `@workglow/anthropic`, `@workglow/openai`, `@workglow/google-gemini`) ship `./ai` and `./ai-runtime` sub-paths instead of browser/node/bun.
+**No `bun` entry unless it differs.** Bun is not a build target by default: with no `"bun"` condition in `exports`, Bun resolves the default `"import"` and loads the node build. Add a `src/bun.ts`, a `--target=bun` build, and a `"bun"` export condition only when the Bun code genuinely differs — a duplicate of `node.ts` is a third bundle and a third `.d.ts` to keep in sync for no behavior change. Only two entries qualify today: `@workglow/util`'s `"."` (`Worker.bun` vs `Worker.node`) and `@workglow/sqlite`'s `./storage` (`bun:sqlite` vs the node driver).
+
+Exception: vendor packages under `providers/*` (e.g. `@workglow/anthropic`, `@workglow/openai`, `@workglow/google-gemini`) ship `./ai` and `./ai-runtime` sub-paths instead of browser/node.
 
 Exception: `util` has multiple named exports beyond `"."`:
 

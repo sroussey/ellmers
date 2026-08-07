@@ -7,7 +7,7 @@
 /**
  * Build-time detector for ambiguous re-exports in the meta-package barrels.
  *
- * Each barrel (`common.ts`, `browser.ts`, `node.ts`, `bun.ts`) fans a set of
+ * Each barrel (`common.ts`, `browser.ts`, `node.ts`) fans a set of
  * sub-packages out through `export * from "<pkg>"`. When two of those sources
  * export the same symbol name, ESM silently makes that name ambiguous — a plain
  * `import { X } from "workglow"` resolves to nothing with no error. This detector

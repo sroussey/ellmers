@@ -9,8 +9,9 @@
 ## Overview
 
 Workglow uses **Turborepo** to orchestrate builds across a **Bun workspaces** monorepo. Each
-package compiles its TypeScript source into multiple JavaScript targets (browser, Node.js, Bun)
-using `bun build`, and generates type declarations using `tsgo` (the native TypeScript compiler).
+package compiles its TypeScript source into multiple JavaScript targets (browser, Node.js, and —
+where Bun genuinely needs different code — Bun) using `bun build`, and generates type declarations
+using `tsgo` (the native TypeScript compiler).
 Turbo manages the dependency graph between packages so that upstream packages are always built
 before their dependents, and its caching layer avoids redundant rebuilds when source files have
 not changed.
@@ -153,11 +154,11 @@ it runs JS compilation and type generation in sequence or in parallel:
 
 ```json
 {
-  "build-package": "concurrently -c 'auto' -n 'browser,node,bun,types' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-types'"
+  "build-package": "concurrently -c 'auto' -n 'browser,node,types' 'bun run build-browser' 'bun run build-node' 'bun run build-types'"
 }
 ```
 
-All four sub-tasks (three JS targets + types) run concurrently within the package.
+All three sub-tasks (two JS targets + types) run concurrently within the package.
 
 **Complex package (`@workglow/util`):**
 
@@ -218,15 +219,22 @@ bun run build:types   # Root script: turbo run build-types
 
 ## Per-Package Multi-Target Builds
 
-### Standard Three-Target Pattern
+### Standard Two-Target Pattern
 
-Most packages build three runtime targets from three entry points:
+Most packages build two runtime targets from two entry points:
 
 ```
 src/browser.ts  →  dist/browser.js   (--target=browser)
 src/node.ts     →  dist/node.js      (--target=node)
-src/bun.ts      →  dist/bun.js       (--target=bun)
 ```
+
+Bun is not a third target by default. A package's `exports` carries no `"bun"` condition, so Bun
+resolves the default `"import"` and loads `dist/node.js` — which is exactly what a `src/bun.ts`
+identical to `src/node.ts` would have produced. Add a `src/bun.ts`, a `--target=bun` build, and a
+`"bun"` export condition only when the Bun code genuinely differs; a duplicate is a third bundle
+and a third `.d.ts` to keep in sync for no behavior change. Two entries qualify today:
+`@workglow/util`'s `"."` (`Worker.bun` vs `Worker.node`) and `@workglow/sqlite`'s `./storage`
+(`bun:sqlite` vs the Node driver).
 
 Each build command follows the same template:
 
@@ -249,7 +257,8 @@ tree-shaking impossible for downstream consumers.
 
 ### Extended Pattern (util)
 
-`@workglow/util` has additional entry points beyond the standard three. Each sub-path export
+`@workglow/util` has additional entry points beyond the standard two, and is one of the two places
+that still earns a `--target=bun` build (`bun.ts` and `worker-bun.ts`). Each sub-path export
 gets its own build:
 
 ```
@@ -303,21 +312,25 @@ bun build --target=browser --sourcemap=external --packages=external --outdir ./d
   # ...
 ```
 
-### Storage Pattern
+### Storage Backend Pattern (`providers/*`)
 
-`@workglow/storage` extends the standard three-target pattern with additional sub-path builds for
-backend-specific modules:
+Storage backend packages build one set of entry points per sub-path export:
 
 ```
-src/sqlite/browser.ts  →  dist/sqlite/browser.js  (--target=browser)
-src/sqlite/node.ts     →  dist/sqlite/node.js     (--target=node)
-src/sqlite/bun.ts      →  dist/sqlite/bun.js      (--target=bun)
-src/postgres/browser.ts     →  dist/postgres/browser.js     (--target=browser)
-src/postgres/node-bun.ts    →  dist/postgres/node-bun.js    (--target=node)
+src/storage/browser.ts    →  dist/storage/browser.js    (--target=browser)
+src/storage/node.ts       →  dist/storage/node.js       (--target=node)
+src/storage/bun.ts        →  dist/storage/bun.js        (--target=bun)   # @workglow/sqlite only
+src/job-queue/browser.ts  →  dist/job-queue/browser.js  (--target=browser)
+src/job-queue/node.ts     →  dist/job-queue/node.js     (--target=node)
 ```
 
-Note that the output directories for sub-paths (`dist/sqlite/`, `dist/postgres/`) use
-`--outdir ./dist/sqlite` etc. to place them in nested directories matching the sub-path export
+`@workglow/sqlite`'s `./storage` is the one sub-path with a real Bun build: it selects `bun:sqlite`
+where the Node entry selects the Node driver. Its `./job-queue`, and every sub-path of
+`@workglow/postgres` / `@workglow/supabase` / `@workglow/aws` / `@workglow/duckdb`, is
+runtime-agnostic on the server and serves Bun from the Node build.
+
+Note that the output directories for sub-paths (`dist/storage/`, `dist/job-queue/`) use
+`--outdir ./dist/storage` etc. to place them in nested directories matching the sub-path export
 structure.
 
 ---
@@ -365,8 +378,7 @@ Each package's `tsconfig.json` extends the root and specifies its entry points:
   "extends": "../../tsconfig.json",
   "files": [
     "./src/node.ts",
-    "./src/browser.ts",
-    "./src/bun.ts"
+    "./src/browser.ts"
   ],
   "compilerOptions": {
     "composite": true,
@@ -389,7 +401,6 @@ The build system produces multiple artifacts per package, and the `"exports"` fi
     ".": {
       "react-native": { "types": "./dist/browser.d.ts", "import": "./dist/browser.js" },
       "browser":      { "types": "./dist/browser.d.ts", "import": "./dist/browser.js" },
-      "bun":          { "types": "./dist/bun.d.ts",     "import": "./dist/bun.js" },
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js"
     }
@@ -402,8 +413,9 @@ support:
 
 1. **React Native** tooling matches `"react-native"` and gets the browser build.
 2. **Browser bundlers** (Vite, webpack, esbuild) match `"browser"`.
-3. **Bun** matches `"bun"`.
-4. **Node.js** and everything else falls through to the top-level `"import"` (Node build).
+3. **Bun**, **Node.js**, and everything else falls through to the top-level `"import"` (Node
+   build). A package whose Bun code genuinely differs inserts a `"bun"` condition ahead of the
+   fallback; most do not.
 
 Each condition block includes `"types"` so TypeScript resolves platform-appropriate type
 declarations. This is important because `.d.ts` files may differ across platforms — for example,
