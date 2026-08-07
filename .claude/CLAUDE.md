@@ -247,10 +247,29 @@ sequence of partial deltas cannot supply.
 Do **not** accumulate the JSON text to produce it. Feed the deltas to
 `createPartialJsonStream()` (`@workglow/util/worker`, or `/schema` off-worker):
 `push(chunk)` is O(chunk) and returns the partial object to emit as an
-`object-delta`, and `finish()` returns the value for `finish.data.object`.
+`object-delta`, and `finishObject()` returns the value for `finish.data.object`.
 Re-parsing a growing buffer on every delta is O(n²) and blocks the worker
 thread. Use the `skipPreamble` option for providers that emit prose, a
 `<think>` block, or a code fence ahead of the JSON.
+
+Use `finishObject()`, not `finish()`. `finish()` is typed `JsonValue` because it
+honestly returns whatever the document had at its root — an array or a scalar
+for a malformed response — and `StructuredGenerationTask` requires an object.
+`finishObject()` yields `{}` for a non-object root, so validation fails loudly on
+the missing required keys instead of the task receiving a value whose "keys" are
+array indices.
+
+`skipPreamble` is **last-complete-wins**: a closed root is provisional, so a
+later `{` starts a fresh candidate that supersedes it and the LAST complete
+object is what `finish()` returns. A thinking model that restates the schema or
+shows a few-shot example before answering would otherwise lock onto the prose
+object — and a schema-shaped one passes re-validation, so the wrong record gets
+persisted with no error anywhere. The cost is that trailing prose containing its
+own complete object supersedes the payload, so keep asking for the JSON last;
+trailing prose with no `{` in it never restarts anything. Nothing is re-scanned
+(a restart begins at the `{` that triggered it), so the parser stays O(total
+input) — but it does keep scanning trailing text for the life of the stream
+rather than exiting early at the first close.
 
 `push()` returns the parser's **live** root, which later pushes mutate — that
 aliasing is what keeps it linear. It is safe for the `object-delta` path

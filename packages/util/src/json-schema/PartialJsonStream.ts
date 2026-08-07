@@ -25,7 +25,11 @@ const Mode = {
   Number: 6,
   /** Inside a `true` / `false` / `null` token. */
   Literal: 7,
-  /** The root value closed; further input is ignored. */
+  /**
+   * The root value closed; further input is ignored. Unreachable while skipping
+   * preamble, where a closed root is provisional and scanning resumes in
+   * {@link Mode.Seek} — see {@link PartialJsonStreamOptions.skipPreamble}.
+   */
   Done: 8,
   /** Malformed input; further input is ignored and the partial root is kept. */
   Invalid: 9,
@@ -112,11 +116,31 @@ type PendingSlot =
   | { readonly kind: "array"; readonly target: unknown[]; readonly index: number }
   | { readonly kind: "root" };
 
+/** Any value `JSON.parse` can produce. */
+export type JsonValue =
+  string | number | boolean | null | readonly JsonValue[] | { readonly [key: string]: JsonValue };
+
 export interface PartialJsonStreamOptions {
   /**
    * Discard any text before the first `{`. Use for providers that emit prose,
-   * a `<think>` block, or a Markdown fence ahead of the JSON. Once the root
-   * value closes, trailing text is ignored either way.
+   * a `<think>` block, or a Markdown fence ahead of the JSON.
+   *
+   * **Last complete object wins.** A closed root is provisional in this mode,
+   * not final: it is retained and scanning resumes, so a later `{` starts a
+   * fresh candidate that supersedes it. A thinking model that restates the
+   * schema (`{"type":"object"}`) or shows a few-shot example
+   * (`{"name":"Alice"}`) before emitting the real payload would otherwise
+   * latch onto the prose object — and a schema-shaped one is indistinguishable
+   * from the payload, so it would pass validation and be persisted. The cost
+   * is that trailing prose containing its own complete object supersedes the
+   * payload; prompts that ask for the JSON last make that far rarer than the
+   * preamble case, and trailing prose without a `{` never restarts anything.
+   *
+   * Nothing is re-scanned: a restart begins at the `{` that triggered it, so
+   * the parser stays O(total input). A candidate abandoned this way leaves the
+   * already-emitted object deltas in place; the next {@link push} that opens
+   * the replacement returns a fresh empty root, and object-delta folding
+   * replaces wholesale, so the consumer's accumulator resets on its own.
    *
    * A `[` never starts the payload in this mode: prose is full of bracketed
    * asides that parse as valid arrays, and the object-only contract makes an
@@ -149,17 +173,40 @@ export interface PartialJsonStream {
    * has an array or scalar at its root. Mirrors {@link parsePartialJson}'s
    * object-only contract, so a caller can emit the result as an object delta
    * without first checking for an array.
+   *
+   * While skipping preamble it also reports `undefined` once a candidate closes
+   * — nothing is live until the next `{` — so the last object delta a stream
+   * emits may lag the closing chunk. {@link finish} is the authoritative
+   * document; do not reconstruct it from deltas.
    */
   push(chunk: string): Record<string, unknown> | undefined;
   /**
    * Closes any open strings and containers and returns the parsed document.
    * A trailing incomplete token (`1.`, `tru`, a partial key) is dropped, matching
    * {@link parsePartialJson}'s repair. Idempotent; input after it is ignored.
+   *
+   * The result is a {@link JsonValue}, not necessarily an object: a document
+   * with an array or scalar at its root is repaired and returned as such, even
+   * though {@link push} reports `undefined` for those. Use
+   * {@link finishObject} when the caller requires an object.
+   *
+   * While skipping preamble this returns the last complete candidate unless the
+   * one in flight already carries data — see
+   * {@link PartialJsonStreamOptions.skipPreamble}.
    */
-  finish(): Record<string, unknown>;
+  finish(): JsonValue;
+  /**
+   * {@link finish}, narrowed to the object-only contract {@link push} follows:
+   * an array or scalar root yields `{}` rather than a value whose keys are
+   * array indices. Prefer this when feeding a consumer that requires an object.
+   */
+  finishObject(): Record<string, unknown>;
   /** A detached deep copy of the current live root; O(size of the value). */
   snapshot(): Record<string, unknown> | undefined;
-  /** Whether the root value closed on its own (as opposed to being truncated). */
+  /**
+   * Whether the value {@link finish} would return closed on its own, as opposed
+   * to being truncated and repaired. End-of-stream repair never sets it.
+   */
   readonly complete: boolean;
 }
 
@@ -177,8 +224,13 @@ class PartialJsonStreamImpl implements PartialJsonStream {
   private unicodeValue = 0;
   /** Raw hex digits of the `\uXXXX` escape in flight, kept so an invalid one replays verbatim. */
   private unicodeText = "";
-  private closed = false;
+  /** Set only when real input closed a root value — never by {@link finish}'s repair. */
+  private sawClose = false;
+  /** Last root that closed on its own while skipping preamble; superseded by a later one. */
+  private lastComplete: unknown = undefined;
   private finished = false;
+  /** True while {@link finish} flushes, so repaired tokens do not report a close. */
+  private finishing = false;
 
   constructor(skipPreamble: boolean) {
     this.skipPreamble = skipPreamble;
@@ -186,7 +238,12 @@ class PartialJsonStreamImpl implements PartialJsonStream {
   }
 
   get complete(): boolean {
-    return this.closed;
+    if (!this.skipPreamble) return this.sawClose;
+    // Last-complete-wins: a candidate carrying data is the answer and it has
+    // not closed (a closed one is moved to `lastComplete`), so only a retained
+    // complete candidate counts as a closed document.
+    if (!this.rootIsEmpty()) return false;
+    return this.lastComplete !== undefined;
   }
 
   push(chunk: string): Record<string, unknown> | undefined {
@@ -196,14 +253,28 @@ class PartialJsonStreamImpl implements PartialJsonStream {
     return this.liveRoot();
   }
 
-  finish(): Record<string, unknown> {
+  finish(): JsonValue {
     if (!this.finished) {
       this.finished = true;
+      this.finishing = true;
       this.flushPendingToken();
+      this.finishing = false;
       this.stack.length = 0;
     }
+    // A candidate that already carries data is a genuinely truncated payload
+    // and outranks an earlier complete one; an empty or absent candidate is
+    // prose the scan never resolved, so the retained candidate stands.
+    if (this.skipPreamble && this.lastComplete !== undefined && this.rootIsEmpty()) {
+      return this.lastComplete as JsonValue;
+    }
     const root = this.root;
-    return root === undefined ? {} : (root as Record<string, unknown>);
+    return root === undefined ? {} : (root as JsonValue);
+  }
+
+  finishObject(): Record<string, unknown> {
+    const value = this.finish();
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
+    return value as Record<string, unknown>;
   }
 
   snapshot(): Record<string, unknown> | undefined {
@@ -255,20 +326,30 @@ class PartialJsonStreamImpl implements PartialJsonStream {
    * candidate that did produce data is kept rather than gambling on a better one.
    */
   private fail(index: number): number {
-    if (this.skipPreamble && !this.closed && this.rootIsEmpty()) {
-      this.stack.length = 0;
-      this.pending = undefined;
-      this.buf = "";
-      this.escaped = false;
-      this.unicodeRemaining = 0;
-      this.unicodeValue = 0;
-      this.unicodeText = "";
-      this.root = undefined;
-      this.mode = Mode.Seek;
+    if (this.skipPreamble && this.rootIsEmpty()) {
+      this.restartCandidate();
       return index;
     }
     this.mode = Mode.Invalid;
     return index;
+  }
+
+  /**
+   * Abandons the candidate in flight and resumes scanning for the payload.
+   * Only the candidate's state is cleared — {@link lastComplete} survives, so a
+   * completed object followed by unparseable prose braces keeps its result.
+   */
+  private restartCandidate(): void {
+    this.stack.length = 0;
+    this.pending = undefined;
+    this.buf = "";
+    this.stringIsKey = false;
+    this.escaped = false;
+    this.unicodeRemaining = 0;
+    this.unicodeValue = 0;
+    this.unicodeText = "";
+    this.root = undefined;
+    this.mode = Mode.Seek;
   }
 
   private rootIsEmpty(): boolean {
@@ -330,8 +411,19 @@ class PartialJsonStreamImpl implements PartialJsonStream {
 
   private afterValue(): void {
     if (this.stack.length === 0) {
+      // `finish()` repairs a truncated token by committing it; that is not the
+      // document closing on its own, so it must not be reported as one.
+      if (!this.finishing) {
+        this.sawClose = true;
+        if (this.skipPreamble) {
+          // Provisional: retain it and keep scanning, so a payload behind a
+          // prose object still wins. See `skipPreamble`.
+          this.lastComplete = this.root;
+          this.restartCandidate();
+          return;
+        }
+      }
       this.mode = Mode.Done;
-      this.closed = true;
       return;
     }
     this.mode = Mode.Comma;
@@ -393,10 +485,10 @@ class PartialJsonStreamImpl implements PartialJsonStream {
    * Scans past preamble to the start of the payload. Only `{` opens a
    * candidate: the parser's contract is object-only, and prose is full of
    * bracketed asides (`[1]`, `[2024 figures]`) that parse as a perfectly
-   * valid array. A complete one would close the root and make the parser
-   * ignore the real payload behind it; an incomplete one leaves a non-empty
-   * root, which {@link fail} then refuses to discard. Neither is recoverable,
-   * so a bracket never starts a candidate here.
+   * valid array. An incomplete one leaves a non-empty root, which {@link fail}
+   * then refuses to discard, hiding the real payload behind it; a complete one
+   * would be retained as the answer for a document that has no object at all.
+   * So a bracket never starts a candidate here.
    */
   private consumeSeek(chunk: string, start: number, len: number): number {
     for (let i = start; i < len; i++) {

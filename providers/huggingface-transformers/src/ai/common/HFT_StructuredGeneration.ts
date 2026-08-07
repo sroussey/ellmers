@@ -102,6 +102,9 @@ export const HFT_StructuredGeneration: AiProviderRunFn<
       stopping_criteria: [stopping_criteria],
     });
 
-    emit({ type: "finish", data: { object: json.finish() } as StructuredGenerationTaskOutput });
+    emit({
+      type: "finish",
+      data: { object: json.finishObject() } as StructuredGenerationTaskOutput,
+    });
   });
 };

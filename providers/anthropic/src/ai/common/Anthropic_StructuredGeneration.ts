@@ -69,7 +69,7 @@ export const Anthropic_StructuredGeneration_Stream: AiProviderRunFn<
 
   emit({
     type: "finish",
-    data: { object: json.finish() } as StructuredGenerationTaskOutput,
+    data: { object: json.finishObject() } as StructuredGenerationTaskOutput,
     usage: usageCollector.result(),
   });
 };

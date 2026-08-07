@@ -97,7 +97,7 @@ export const Gemini_StructuredGeneration_Stream: AiProviderRunFn<
   // json-mode finish exception: populate finish.data.object with parsed result.
   emit({
     type: "finish",
-    data: { object: json.finish() } as StructuredGenerationTaskOutput,
+    data: { object: json.finishObject() } as StructuredGenerationTaskOutput,
     usage: mapGeminiUsage(lastUsageMetadata),
   });
 };

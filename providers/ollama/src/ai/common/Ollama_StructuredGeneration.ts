@@ -76,7 +76,7 @@ export function createOllamaStructuredGenerationStream(
 
     emit({
       type: "finish",
-      data: { object: json.finish() } as StructuredGenerationTaskOutput,
+      data: { object: json.finishObject() } as StructuredGenerationTaskOutput,
       usage,
     });
   };

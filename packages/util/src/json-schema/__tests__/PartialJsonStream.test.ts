@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { JsonValue } from "@workglow/util/schema";
 import { createPartialJsonStream, parsePartialJson } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 
@@ -22,7 +23,7 @@ const DOCS: readonly string[] = [
   '{"pretty": {\n  "x": 1,\n  "y": [ 2, 3 ]\n}}',
 ];
 
-function pushAll(chunks: readonly string[], skipPreamble = false): Record<string, unknown> {
+function pushAll(chunks: readonly string[], skipPreamble = false): JsonValue {
   const stream = createPartialJsonStream(skipPreamble ? { skipPreamble: true } : {});
   for (const chunk of chunks) stream.push(chunk);
   return stream.finish();
@@ -215,6 +216,111 @@ describe("createPartialJsonStream", () => {
     });
   });
 
+  describe("preamble skipping: last complete object wins", () => {
+    it("prefers the payload over a complete object inside a <think> block", () => {
+      // A thinking model that restates the schema emits a syntactically valid
+      // object before the answer. Latching onto it silently returns the wrong
+      // document — and reports `complete`, so nothing downstream notices.
+      expect(
+        pushAll(
+          ['<think>the schema is {"type":"object"} so I will emit</think>{"name":"Bob"}'],
+          true
+        )
+      ).toEqual({ name: "Bob" });
+    });
+
+    it("prefers the payload over a schema-shaped few-shot example", () => {
+      // The worst case: the preamble object validates against the same schema
+      // as the payload, so a re-validating consumer accepts and persists it.
+      expect(pushAll(['<think>e.g. {"name":"Alice"}</think>{"name":"Bob"}'], true)).toEqual({
+        name: "Bob",
+      });
+    });
+
+    it("keeps the last complete object when trailing prose braces fail", () => {
+      const stream = createPartialJsonStream({ skipPreamble: true });
+      stream.push('{"ok":true} note: {not json}');
+      expect(stream.finish()).toEqual({ ok: true });
+      expect(stream.complete).toBe(true);
+    });
+
+    it("keeps the completed payload when a restarted candidate is truncated", () => {
+      // The restart produced no data, so the completed candidate stands.
+      expect(pushAll(['{"ok":true} then {'], true)).toEqual({ ok: true });
+    });
+
+    it("prefers a restarted candidate that carries data over the completed one", () => {
+      // Data in flight outranks an earlier complete object: it is the later,
+      // genuinely truncated payload rather than prose.
+      const stream = createPartialJsonStream({ skipPreamble: true });
+      stream.push('{"ok":true} then {"name":"Bo');
+      expect(stream.finish()).toEqual({ name: "Bo" });
+      expect(stream.complete).toBe(false);
+    });
+
+    it("restarting a candidate replaces the emitted delta", () => {
+      // Object deltas are folded with replace semantics, so the fresh empty
+      // root the restart returns resets the consumer's accumulator; the
+      // abandoned object never has to be retracted.
+      const stream = createPartialJsonStream({ skipPreamble: true });
+      expect(stream.push('<think>{"name":"Ali')).toEqual({ name: "Ali" });
+      // Closing the prose candidate retires it: nothing is live to emit.
+      expect(stream.push('ce"}</think>')).toBeUndefined();
+      // The chunk carrying the real `{` opens a fresh root, which replaces it.
+      expect(stream.push('{"name"')).toEqual({});
+      expect(stream.push(':"Bob"}')).toBeUndefined();
+      expect(stream.finish()).toEqual({ name: "Bob" });
+    });
+
+    it("still reports `complete` false when no candidate ever closed", () => {
+      const stream = createPartialJsonStream({ skipPreamble: true });
+      stream.push('prose {"a":1');
+      expect(stream.complete).toBe(false);
+      expect(stream.finish()).toEqual({ a: 1 });
+    });
+  });
+
+  describe("finish() typing", () => {
+    it("is typed as JsonValue for an array root", () => {
+      const stream = createPartialJsonStream();
+      stream.push("[1,2,3]");
+      const value = stream.finish();
+      expect(Array.isArray(value)).toBe(true);
+      expect(value).toEqual([1, 2, 3]);
+      // @ts-expect-error finish() is a JsonValue, so object-style use of an
+      // array or scalar root no longer type-checks silently.
+      const keys: string[] = Object.keys(stream.finish());
+      // The runtime behavior is unchanged and deliberately still wrong-looking,
+      // which is precisely why the compile error above matters.
+      expect(keys).toEqual(["0", "1", "2"]);
+    });
+
+    it("finishObject() returns {} for an array root", () => {
+      const stream = createPartialJsonStream();
+      stream.push("[1,2,3]");
+      expect(stream.finishObject()).toEqual({});
+    });
+
+    it("finishObject() returns {} for a scalar root but keeps an object root", () => {
+      const scalar = createPartialJsonStream();
+      scalar.push('"abc"');
+      expect(scalar.finishObject()).toEqual({});
+
+      const object = createPartialJsonStream();
+      object.push('{"a":1}');
+      expect(object.finishObject()).toEqual({ a: 1 });
+    });
+
+    it("complete is false for a truncated scalar root", () => {
+      // End-of-stream repair commits the unterminated string; that is not the
+      // document closing on its own.
+      const stream = createPartialJsonStream();
+      stream.push('"abc');
+      expect(stream.finish()).toBe("abc");
+      expect(stream.complete).toBe(false);
+    });
+  });
+
   describe("live root and snapshot", () => {
     it("returns undefined until a top-level object opens", () => {
       const stream = createPartialJsonStream();
@@ -252,7 +358,7 @@ describe("createPartialJsonStream", () => {
     });
 
     it("creates __proto__ as an own property without polluting Object.prototype", () => {
-      const result = pushAll(['{"__proto__":{"polluted":1},"x":2}']);
+      const result = pushAll(['{"__proto__":{"polluted":1},"x":2}']) as Record<string, unknown>;
       expect(Object.prototype.hasOwnProperty.call(result, "__proto__")).toBe(true);
       expect(({} as Record<string, unknown>).polluted).toBeUndefined();
       expect(result.x).toBe(2);
