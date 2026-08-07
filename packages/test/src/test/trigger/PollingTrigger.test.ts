@@ -220,6 +220,100 @@ describe("PollingTrigger", () => {
     expect(signals[0]?.aborted).toBe(true);
   });
 
+  test("a restart resets the change-detection baseline", async () => {
+    // The baseline belongs to a RUN. Carrying it across a stop/start would make
+    // the first poll of the new run look unchanged and swallow the very value
+    // the restarted trigger was meant to report.
+    let polls = 0;
+    const trigger = new PollingTrigger<string>({
+      intervalMs: PERIOD,
+      poll: () => {
+        polls += 1;
+        return "steady";
+      },
+      shouldFire: firesOnChange,
+    });
+
+    const payloads: unknown[] = [];
+    const handler = (context: { payload: unknown }): void => {
+      payloads.push(context.payload);
+    };
+
+    trigger.start(handler);
+    await advanceFakeTimers(PERIOD * 2);
+    expect(payloads).toEqual(["steady"]);
+    await trigger.stop();
+
+    trigger.start(handler);
+    await advanceFakeTimers(PERIOD);
+    expect(payloads).toEqual(["steady", "steady"]);
+    expect(polls).toBe(3);
+
+    await trigger.stop();
+  });
+
+  describe("errorBackoff", () => {
+    test("rejects an invalid backoff", () => {
+      expect(
+        () =>
+          new PollingTrigger({
+            intervalMs: PERIOD,
+            poll: () => 1,
+            errorBackoff: { initialMs: 0, maxMs: 100 },
+          })
+      ).toThrow(TriggerConfigurationError);
+      expect(
+        () =>
+          new PollingTrigger({
+            intervalMs: PERIOD,
+            poll: () => 1,
+            errorBackoff: { initialMs: 200, maxMs: 100 },
+          })
+      ).toThrow(TriggerConfigurationError);
+    });
+
+    test("slows the loop down while the poll keeps failing, and recovers", async () => {
+      let polls = 0;
+      let failing = true;
+      const trigger = new PollingTrigger<number>({
+        intervalMs: PERIOD,
+        poll: () => {
+          polls += 1;
+          if (failing) throw new Error("dependency down");
+          return polls;
+        },
+        errorBackoff: { initialMs: PERIOD * 2, maxMs: PERIOD * 8 },
+      });
+      trigger.on("error", () => {});
+      trigger.start(() => {});
+
+      // Full-rate ticks at P and 2P (the tick after a failure is already
+      // scheduled), then backoff: 2P, 4P, 8P, 8P...
+      await advanceFakeTimers(PERIOD * 2);
+      expect(polls).toBe(2);
+      expect(trigger.consecutiveFailures).toBe(2);
+
+      await advanceFakeTimers(PERIOD * 2);
+      expect(polls).toBe(3);
+
+      // Without backoff the same window would have added 10 more polls.
+      await advanceFakeTimers(PERIOD * 10);
+      expect(polls).toBeLessThan(7);
+
+      failing = false;
+      await advanceFakeTimers(PERIOD * 8);
+      expect(trigger.consecutiveFailures).toBe(0);
+
+      // One backed-off gap is still outstanding (the tick after the recovering
+      // poll was scheduled before it succeeded); after that, full rate resumes.
+      const recovered = polls;
+      await advanceFakeTimers(PERIOD * 4);
+      expect(polls).toBeGreaterThanOrEqual(recovered + 3);
+
+      await trigger.stop();
+    });
+  });
+
   test("stop() halts polling", async () => {
     let polls = 0;
     const trigger = new PollingTrigger<number>({

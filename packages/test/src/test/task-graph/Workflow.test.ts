@@ -171,6 +171,33 @@ describe("Workflow", () => {
 
       await expect(runPromise).rejects.toThrow();
     });
+
+    it("should abort a run through a caller-supplied runConfig.signal", async () => {
+      // Per-run cancellation: the caller aborts THIS run without touching the
+      // workflow's own current-run controller, which is what several
+      // independent drivers (e.g. triggers) on one workflow need.
+      workflow = workflow.longRunning();
+      const controller = new AbortController();
+
+      const runPromise = workflow.run({}, { registry, signal: controller.signal });
+      await sleep(1);
+      controller.abort();
+
+      await expect(runPromise).rejects.toThrow();
+    });
+
+    it("should still honour abort() when a runConfig.signal is supplied", async () => {
+      // Both sources stay live: combining them must not shadow `abort()`.
+      workflow = workflow.longRunning();
+      const controller = new AbortController();
+
+      const runPromise = workflow.run({}, { registry, signal: controller.signal });
+      await sleep(1);
+      workflow.abort();
+
+      await expect(runPromise).rejects.toThrow();
+      expect(controller.signal.aborted).toBe(false);
+    });
   });
 
   describe("pop", () => {

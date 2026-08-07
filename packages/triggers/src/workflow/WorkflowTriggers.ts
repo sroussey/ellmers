@@ -6,6 +6,7 @@
 
 import type { DataPorts, WorkflowRunConfig } from "@workglow/task-graph";
 import { Workflow } from "@workglow/task-graph";
+import { getLogger } from "@workglow/util";
 import type { ITrigger, ITriggerFireContext } from "../trigger/ITrigger";
 import { WorkflowTriggerError } from "../trigger/TriggerError";
 
@@ -113,17 +114,25 @@ Workflow.prototype.listen = async function (
     );
   }
 
-  for (const binding of bindings) {
-    binding.trigger.start(
-      (context) => runWorkflowForFire(this, binding, context),
-      options.signal ? { signal: options.signal } : {}
-    );
-  }
-
   const triggers = bindings.map((binding) => binding.trigger);
-  const stop = async (): Promise<void> => {
-    await Promise.all(triggers.map((trigger) => trigger.stop()));
+  let detachAbort: (() => void) | undefined;
+
+  const releaseHandle = (): void => {
+    detachAbort?.();
+    detachAbort = undefined;
     if (workflowHandles.get(this) === handle) workflowHandles.delete(this);
+  };
+
+  const stop = async (): Promise<void> => {
+    // `allSettled`, not `all`: a trigger whose stop rejects must not leave the
+    // rest of them scheduling forever.
+    const results = await Promise.allSettled(triggers.map((trigger) => trigger.stop()));
+    releaseHandle();
+    for (const result of results) {
+      if (result.status === "rejected") {
+        getLogger().error("Trigger failed to stop", { error: String(result.reason) });
+      }
+    }
   };
   const handle: ITriggerListenerHandle = {
     triggers,
@@ -131,7 +140,42 @@ Workflow.prototype.listen = async function (
     [Symbol.asyncDispose]: stop,
   };
 
+  // Registered BEFORE the triggers start, so the rollback path below (and a
+  // caller-signal abort) can always find the handle to release.
   workflowHandles.set(this, handle);
+
+  if (options.signal) {
+    const signal = options.signal;
+    // Each trigger already stops itself on this signal, but the HANDLE also has
+    // to go: otherwise an aborted listen() leaves `workflow.trigger(...)`
+    // throwing forever and a later listen() returning dead triggers.
+    const onAbort = (): void => {
+      void stop();
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    detachAbort = () => signal.removeEventListener("abort", onAbort);
+    // An already-aborted signal never fires the listener; nothing will start.
+    if (signal.aborted) void stop();
+  }
+
+  const started: ITrigger[] = [];
+  try {
+    for (const binding of bindings) {
+      binding.trigger.start(
+        (context) => runWorkflowForFire(this, binding, context),
+        options.signal ? { signal: options.signal } : {}
+      );
+      started.push(binding.trigger);
+    }
+  } catch (error) {
+    // A `start()` can throw (an unsatisfiable cron, say). Leaving the earlier
+    // triggers running would drive the workflow forever with no handle to stop
+    // them through.
+    await Promise.allSettled(started.map((trigger) => trigger.stop()));
+    releaseHandle();
+    throw error;
+  }
+
   return handle;
 };
 
@@ -146,20 +190,17 @@ async function runWorkflowForFire(
 ): Promise<void> {
   const input = binding.options.input ? await binding.options.input(context) : {};
 
-  // Stopping the trigger must also cancel the run it started, not merely stop
-  // scheduling the next one.
-  const onAbort = (): void => {
-    void workflow.abort();
-  };
-  context.signal.addEventListener("abort", onAbort, { once: true });
+  // Forward the trigger's signal into the run itself rather than calling
+  // `workflow.abort()`: that aborts the workflow's CURRENT run, which — with
+  // two triggers bound to one workflow — is whichever run started last, so
+  // stopping trigger A would cancel trigger B's in-flight run and leave A's own
+  // older run going. A per-run signal cancels exactly the run this fire started.
   try {
-    await workflow.run(input, binding.options.runConfig);
+    await workflow.run(input, { ...binding.options.runConfig, signal: context.signal });
   } catch (error) {
     // A run cancelled by our own stop() is the expected path, not a failure to
     // report on the trigger's `error` event.
     if (context.signal.aborted) return;
     throw error;
-  } finally {
-    context.signal.removeEventListener("abort", onAbort);
   }
 }

@@ -11,6 +11,7 @@ import type {
   OverlapPolicy,
   TriggerEventListener,
   TriggerEventListeners,
+  TriggerEventParameters,
   TriggerEvents,
   TriggerHandler,
   TriggerStartOptions,
@@ -32,6 +33,47 @@ export interface TriggerOptions {
   readonly overlap?: OverlapPolicy | undefined;
   /** Backlog bound for the `"queue"` policy. Defaults to `1`. */
   readonly maxQueuedFires?: number | undefined;
+  /**
+   * Call `unref()` on the scheduled timer where the host supports it (Node and
+   * Bun; a browser's numeric handle has no such method and is left alone).
+   *
+   * A running trigger otherwise keeps a Node process alive, which is the right
+   * default for a server but wrong for a CLI or a test that forgets `stop()`.
+   */
+  readonly unrefTimer?: boolean | undefined;
+}
+
+/**
+ * Everything one {@link BaseTrigger.start} owns: the handler, the abort
+ * plumbing, the pending timer, and the overlap counters.
+ *
+ * The OBJECT IDENTITY is the generation token. Every scheduling and dispatch
+ * path takes its run as a parameter instead of reading `this`, so a chain left
+ * over from a previous `start()` physically cannot see a newer run's counters,
+ * shift its queued ticks, or invoke its handler with a stale (already aborted)
+ * signal. A `stop()` that is still draining therefore cannot disturb a restart.
+ */
+export interface TriggerRun {
+  /** Handler registered by the `start()` that created this run. */
+  readonly handler: TriggerHandler;
+  /** Aborted by `stop()`; the source of {@link TriggerRun.signal}. */
+  readonly controller: AbortController;
+  /** Signal handed to handlers — the controller, linked with any caller signal. */
+  readonly signal: AbortSignal;
+  /** Scheduled instants held back by the `"queue"` overlap policy. */
+  readonly queued: number[];
+  /** Tick chains that have not settled yet; `stop()` awaits these. */
+  readonly pending: Set<Promise<void>>;
+  /** Handle of the pending tick, if one is scheduled. */
+  timer: ReturnType<typeof setTimeout> | undefined;
+  /** Handler invocations currently in flight. */
+  inFlight: number;
+  /** False from the moment `stop()` is entered; nothing new is scheduled after. */
+  active: boolean;
+  /** Detaches the caller-signal abort listener, when one was registered. */
+  removeExternalAbort: (() => void) | undefined;
+  /** The in-flight `stop()` for this run, so a second `stop()` joins it. */
+  stopping: Promise<void> | undefined;
 }
 
 /**
@@ -52,24 +94,10 @@ export abstract class BaseTrigger implements ITrigger {
 
   protected readonly overlap: OverlapPolicy;
   protected readonly maxQueuedFires: number;
+  protected readonly unrefTimer: boolean;
 
-  private _running = false;
-  private _handler: TriggerHandler | undefined;
-  private _controller: AbortController | undefined;
-  private _signal: AbortSignal | undefined;
-  private _externalAbort: (() => void) | undefined;
-  private _timer: ReturnType<typeof setTimeout> | undefined;
-  private _inFlight = 0;
-  private readonly _queued: number[] = [];
-  private readonly _pending = new Set<Promise<void>>();
-  /**
-   * Bumped by every {@link start}. `stop()` awaits in-flight handlers before
-   * releasing state, and a restart during that await belongs to a newer
-   * generation — without this token the old `stop()` would null out the NEW
-   * run's handler and signal, leaving a trigger that reports `running` but can
-   * never fire again.
-   */
-  private _generation = 0;
+  /** The current run, or `undefined` when the trigger is stopped and drained. */
+  private _run: TriggerRun | undefined;
 
   constructor(options: TriggerOptions = {}) {
     this.id = options.id ?? uuid4();
@@ -85,10 +113,11 @@ export abstract class BaseTrigger implements ITrigger {
         `maxQueuedFires must be a positive integer, received ${String(options.maxQueuedFires)}.`
       );
     }
+    this.unrefTimer = options.unrefTimer ?? false;
   }
 
   public get running(): boolean {
-    return this._running;
+    return this._run?.active === true;
   }
 
   public on<Event extends TriggerEvents>(name: Event, fn: TriggerEventListener<Event>): void {
@@ -103,58 +132,86 @@ export abstract class BaseTrigger implements ITrigger {
     this.events.once(name, fn);
   }
 
+  /**
+   * @throws whatever {@link computeNextFireTime} throws (a `CronTrigger` whose
+   *   expression matches no instant within the search horizon raises
+   *   `CronUnsatisfiableError` here). The first fire time is computed BEFORE any
+   *   state is touched, so a throw leaves the trigger exactly as it was — still
+   *   stopped, with nothing scheduled and no listener attached.
+   */
   public start(handler: TriggerHandler, options: TriggerStartOptions = {}): void {
     // Starting twice is a no-op rather than an error, so a start/start/stop
     // sequence leaves no orphaned timer behind.
-    if (this._running) return;
+    if (this.running) return;
     // An already-aborted caller signal means "do not schedule anything".
     if (options.signal?.aborted) return;
 
-    this._running = true;
-    this._generation += 1;
-    this._handler = handler;
-    this._controller = new AbortController();
-    this._signal = options.signal
-      ? AbortSignal.any([this._controller.signal, options.signal])
-      : this._controller.signal;
+    // Compute first, mutate second. Setting `_run` before a computation that can
+    // throw would leave the trigger reporting `running` with no timer, and every
+    // later `start()` would be a silent no-op forever.
+    const firstFireAt = this.computeNextFireTime(Date.now());
+
+    const controller = new AbortController();
+    const run: TriggerRun = {
+      handler,
+      controller,
+      signal: options.signal
+        ? AbortSignal.any([controller.signal, options.signal])
+        : controller.signal,
+      queued: [],
+      pending: new Set(),
+      timer: undefined,
+      inFlight: 0,
+      active: true,
+      removeExternalAbort: undefined,
+      stopping: undefined,
+    };
+    this._run = run;
 
     if (options.signal) {
       const externalSignal = options.signal;
       const onExternalAbort = (): void => {
-        void this.stop();
+        // `.catch` rather than `void`: a `stop` listener that throws would
+        // otherwise reject a floating promise and take a Node host down with an
+        // unhandledRejection. `stop()` reports its own failures.
+        this.stop().catch(() => {});
       };
       externalSignal.addEventListener("abort", onExternalAbort, { once: true });
-      this._externalAbort = () => externalSignal.removeEventListener("abort", onExternalAbort);
+      run.removeExternalAbort = () => externalSignal.removeEventListener("abort", onExternalAbort);
     }
 
-    this.scheduleAt(this.computeNextFireTime(Date.now()));
-    this.events.emit("start");
+    this.scheduleAt(run, firstFireAt);
+    this.safeEmit("start");
   }
 
-  public async stop(): Promise<void> {
-    if (!this._running) return;
+  /**
+   * Cancels the pending tick, aborts the signal handed to handlers, and
+   * resolves once every in-flight handler for this run has settled.
+   *
+   * Concurrent calls join the same drain: the second call returns the first
+   * call's promise rather than resolving early, so `await stop()` always means
+   * "no handler of that run is still running".
+   */
+  public stop(): Promise<void> {
+    const run = this._run;
+    if (!run) return Promise.resolve();
+    if (run.stopping) return run.stopping;
 
-    const generation = this._generation;
-    this._running = false;
-    if (this._timer !== undefined) {
-      clearTimeout(this._timer);
-      this._timer = undefined;
+    run.active = false;
+    if (run.timer !== undefined) {
+      clearTimeout(run.timer);
+      run.timer = undefined;
     }
-    this._queued.length = 0;
-    this._externalAbort?.();
-    this._externalAbort = undefined;
-    this._controller?.abort();
+    run.queued.length = 0;
+    run.removeExternalAbort?.();
+    run.removeExternalAbort = undefined;
 
-    await Promise.allSettled([...this._pending]);
-
-    // A `start()` during the await above installed a fresh handler/controller
-    // for a newer generation; releasing them here would strand that run.
-    if (this._generation !== generation) return;
-
-    this._handler = undefined;
-    this._controller = undefined;
-    this._signal = undefined;
-    this.events.emit("stop");
+    // Record the drain BEFORE aborting: an abort listener that re-enters
+    // `stop()` must join this drain instead of starting a second one.
+    const stopping = this.releaseWhenIdle(run);
+    run.stopping = stopping;
+    run.controller.abort();
+    return stopping;
   }
 
   /**
@@ -169,53 +226,95 @@ export abstract class BaseTrigger implements ITrigger {
    * that resolves data first (see `PollingTrigger`) overrides this and may
    * decline to invoke the handler at all. A throw here is caught by the loop,
    * reported on the `error` event, and does not stop the trigger.
+   *
+   * The run is passed explicitly — read `run.signal`, never a field on `this` —
+   * so a chain belonging to a superseded generation stays on its own state.
    */
-  protected async runTick(scheduledAt: number, signal: AbortSignal): Promise<void> {
-    await this.invokeHandler({
+  protected async runTick(scheduledAt: number, run: TriggerRun): Promise<void> {
+    await this.invokeHandler(run, {
       triggerId: this.id,
       scheduledAt,
-      signal,
+      signal: run.signal,
       payload: undefined,
     });
   }
 
-  /** Emits `fire` and awaits the registered handler. */
-  protected async invokeHandler(context: ITriggerFireContext): Promise<void> {
-    const handler = this._handler;
-    if (!handler) return;
-    this.events.emit("fire", context);
-    await handler(context);
+  /** Emits `fire` and awaits the run's registered handler. */
+  protected async invokeHandler(run: TriggerRun, context: ITriggerFireContext): Promise<void> {
+    this.safeEmit("fire", context);
+    await run.handler(context);
   }
 
-  private scheduleAt(targetMs: number): void {
+  /**
+   * Called once a run has stopped and every handler it started has settled, so
+   * a subclass can release per-generation state (see `PollingTrigger`).
+   *
+   * NOT called when a newer `start()` has already taken over: that run owns the
+   * subclass state now, and resetting it here would corrupt it.
+   */
+  protected onRunStopped(): void {}
+
+  private async releaseWhenIdle(run: TriggerRun): Promise<void> {
+    // A loop, not a single `allSettled`: a chain draining queued ticks may still
+    // be adding work when the first snapshot is taken.
+    while (run.pending.size > 0) {
+      await Promise.allSettled([...run.pending]);
+    }
+
+    // A `start()` during the drain installed a newer run; releasing subclass
+    // state or clearing `_run` here would strand it.
+    if (this._run === run) {
+      this._run = undefined;
+      this.onRunStopped();
+    }
+    this.safeEmit("stop");
+  }
+
+  private scheduleAt(run: TriggerRun, targetMs: number): void {
     const remaining = Math.max(0, targetMs - Date.now());
-    this._timer = setTimeout(
+    const timer = setTimeout(
       () => {
-        this._timer = undefined;
-        if (!this._running) return;
+        run.timer = undefined;
+        if (!run.active) return;
         // A chunked wait (or an early host timer) lands before the target.
         if (Date.now() < targetMs) {
-          this.scheduleAt(targetMs);
+          this.scheduleAt(run, targetMs);
           return;
         }
-        this.onTick(targetMs);
+        this.onTick(run, targetMs);
       },
       Math.min(remaining, MAX_TIMER_DELAY_MS)
     );
+    run.timer = timer;
+    if (this.unrefTimer) {
+      // Node/Bun return a Timeout object; a browser returns a number.
+      (timer as unknown as { unref?: () => void }).unref?.();
+    }
   }
 
-  private onTick(scheduledAt: number): void {
-    this.scheduleAt(this.computeNextFireTime(scheduledAt));
-    this.dispatch(scheduledAt);
+  private onTick(run: TriggerRun, scheduledAt: number): void {
+    let nextFireAt: number;
+    try {
+      nextFireAt = this.computeNextFireTime(scheduledAt);
+    } catch (error) {
+      // Nothing can be scheduled, so there is no half-live state worth keeping:
+      // report and shut down rather than leave a trigger that reports `running`
+      // and will never fire again.
+      this.reportError(error, scheduledAt);
+      this.stop().catch(() => {});
+      return;
+    }
+    this.scheduleAt(run, nextFireAt);
+    this.dispatch(run, scheduledAt);
   }
 
-  private dispatch(scheduledAt: number): void {
-    if (this.overlap !== "concurrent" && (this._inFlight > 0 || this._queued.length > 0)) {
-      if (this.overlap === "queue" && this._queued.length < this.maxQueuedFires) {
-        this._queued.push(scheduledAt);
+  private dispatch(run: TriggerRun, scheduledAt: number): void {
+    if (this.overlap !== "concurrent" && (run.inFlight > 0 || run.queued.length > 0)) {
+      if (this.overlap === "queue" && run.queued.length < this.maxQueuedFires) {
+        run.queued.push(scheduledAt);
         return;
       }
-      this.events.emit("skip", scheduledAt);
+      this.safeEmit("skip", scheduledAt);
       getLogger().warn("Trigger fire skipped; previous handler still running", {
         triggerId: this.id,
         kind: this.kind,
@@ -225,48 +324,80 @@ export abstract class BaseTrigger implements ITrigger {
       return;
     }
 
-    const chain = this.runTickChain(scheduledAt);
-    this._pending.add(chain);
+    const chain = this.runTickChain(run, scheduledAt);
+    run.pending.add(chain);
     // `catch` before `finally`: `runTickChain` reports handler errors itself,
     // but an `error` LISTENER that throws rejects the chain, and a bare
     // `chain.finally(...)` would surface that as an unhandled rejection —
     // crashing a Node host whose only fault was a noisy listener. `stop()`
     // still awaits `chain` itself through `allSettled`.
-    void chain.catch(() => {}).finally(() => this._pending.delete(chain));
+    void chain.catch(() => {}).finally(() => run.pending.delete(chain));
   }
 
   /**
    * Runs a tick and then drains queued ticks iteratively — a recursive drain
    * would keep every queued frame alive for the lifetime of the trigger.
    */
-  private async runTickChain(first: number): Promise<void> {
-    // `stop()` clears the signal only after awaiting the pending chains, so the
-    // signal captured here stays valid for every tick in this chain.
-    const signal = this._signal;
-    if (!signal) return;
-
+  private async runTickChain(run: TriggerRun, first: number): Promise<void> {
     let scheduledAt: number | undefined = first;
     while (scheduledAt !== undefined) {
-      this._inFlight += 1;
+      run.inFlight += 1;
       try {
-        await this.runTick(scheduledAt, signal);
+        await this.runTick(scheduledAt, run);
       } catch (error) {
         this.reportError(error, scheduledAt);
       } finally {
-        this._inFlight -= 1;
+        run.inFlight -= 1;
       }
-      scheduledAt = this._running ? this._queued.shift() : undefined;
+      // Only this run's queue: a superseded chain must never shift a tick a
+      // newer generation queued, nor hand it the newer handler.
+      scheduledAt = run.active ? run.queued.shift() : undefined;
     }
   }
 
   private reportError(error: unknown, scheduledAt: number): void {
     const wrapped = error instanceof Error ? error : new Error(String(error));
-    this.events.emit("error", wrapped);
+    this.safeEmit("error", wrapped);
     getLogger().error("Trigger handler failed", {
       triggerId: this.id,
       kind: this.kind,
       scheduledAt,
       error: wrapped.message,
     });
+  }
+
+  /**
+   * Emits without letting a listener's throw escape.
+   *
+   * `EventEmitter.emit` deliberately RE-THROWS what listeners throw, which is
+   * load-bearing elsewhere in the monorepo but fatal here: most of these emits
+   * happen inside a `setTimeout` callback, where a throw is an
+   * uncaughtException that takes the process down — a `metrics.inc(...)` on a
+   * torn-down client is enough. A failing listener is reported on `error`
+   * instead, and an `error` listener that itself throws is only logged, so this
+   * can never recurse.
+   */
+  private safeEmit<Event extends TriggerEvents>(
+    name: Event,
+    ...args: TriggerEventParameters<Event>
+  ): void {
+    try {
+      this.events.emit(name, ...args);
+    } catch (error) {
+      const wrapped = error instanceof Error ? error : new Error(String(error));
+      if (name !== "error") {
+        try {
+          this.events.emit("error", wrapped);
+        } catch {
+          // Nowhere left to report it; the log below is the last word.
+        }
+      }
+      getLogger().error("Trigger event listener failed", {
+        triggerId: this.id,
+        kind: this.kind,
+        event: name,
+        error: wrapped.message,
+      });
+    }
   }
 }

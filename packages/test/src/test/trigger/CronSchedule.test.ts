@@ -137,6 +137,16 @@ describe("nextCronFireTime", () => {
     );
   });
 
+  test("finds a leap day across a century non-leap year", () => {
+    // 2100 is divisible by 100 but not 400, so it is NOT a leap year: the gap
+    // from 2096-02-29 to 2104-02-29 is just under eight years, longer than a
+    // five-year search horizon would reach.
+    const schedule = parseCronExpression("0 0 29 2 *");
+    expect(iso(nextCronFireTime(schedule, at("2097-03-01T00:00:00.000Z")))).toBe(
+      "2104-02-29T00:00:00.000Z"
+    );
+  });
+
   test("day-of-month and day-of-week use OR semantics when both are restricted", () => {
     // The 1st of the month, OR any Monday.
     const schedule = parseCronExpression("0 0 1 * 1");
@@ -146,6 +156,23 @@ describe("nextCronFireTime", () => {
     expect(iso(nextCronFireTime(schedule, at("2026-03-30T12:00:00.000Z")))).toBe(
       "2026-04-01T00:00:00.000Z"
     );
+  });
+
+  test("a day list plus a weekday still ORs", () => {
+    const schedule = parseCronExpression("0 0 1,15 * 1");
+    // 2026-03-10 is a Tuesday: the 15th (a Sunday) arrives before the 16th.
+    expect(iso(nextCronFireTime(schedule, anchor))).toBe("2026-03-15T00:00:00.000Z");
+  });
+
+  test("a day field beginning with * keeps AND semantics (Vixie parity)", () => {
+    // Vixie tests the LEADING character, so `*/2` is a "star" field: the
+    // expression means "an odd day of the month AND a Monday", not "or".
+    const schedule = parseCronExpression("0 0 */2 * 1");
+    expect(schedule.dayOfMonthRestricted).toBe(false);
+    expect(schedule.dayOfWeekRestricted).toBe(true);
+    // Mondays after the Tuesday anchor are the 16th (even, no match) and the
+    // 23rd (odd, match). Under OR semantics this would answer the 11th.
+    expect(iso(nextCronFireTime(schedule, anchor))).toBe("2026-03-23T00:00:00.000Z");
   });
 
   test("a restricted day-of-month alone must match (no OR fallback)", () => {

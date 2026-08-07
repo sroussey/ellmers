@@ -113,13 +113,21 @@ export interface ITrigger {
   /**
    * Begins scheduling. Calling this on an already-running trigger is a no-op,
    * so a start/start/stop sequence leaves nothing scheduled.
+   *
+   * @throws when the first fire time cannot be computed — a `CronTrigger` whose
+   *   expression matches no instant within the search horizon raises
+   *   `CronUnsatisfiableError`. The computation happens before any state is
+   *   touched, so a throwing `start()` leaves the trigger stopped with nothing
+   *   scheduled; callers that start several triggers should stop the ones they
+   *   already started.
    */
   start(handler: TriggerHandler, options?: TriggerStartOptions): void;
 
   /**
    * Cancels the pending tick, aborts the signal handed to handlers, and
    * resolves once any in-flight handler has settled — so a caller that awaits
-   * `stop()` knows no handler is still running.
+   * `stop()` knows no handler is still running. Concurrent calls join the same
+   * drain rather than resolving early.
    */
   stop(): Promise<void>;
 

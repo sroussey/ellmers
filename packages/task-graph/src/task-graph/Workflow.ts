@@ -235,6 +235,9 @@ export class Workflow<
     this.events.emit("start");
     const ctx = new WorkflowRunContext();
     this._currentRun = ctx;
+    // A caller-supplied signal cancels only THIS run; `abort()` keeps working
+    // through the run's own controller, which both sources feed.
+    if (config?.signal) ctx.linkSignal(config.signal);
     // Streaming unsub lives on the context (not the bridge) so concurrent
     // run() calls don't clobber each other's subscriptions.
     ctx.unsubStreaming = this._bridge?.beginRun();

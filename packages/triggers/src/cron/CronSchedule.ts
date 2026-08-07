@@ -22,9 +22,12 @@ export interface CronSchedule {
   readonly months: ReadonlySet<number>;
   /** 0-6, Sunday = 0. A `7` in the expression is normalized to `0`. */
   readonly daysOfWeek: ReadonlySet<number>;
-  /** True when the day-of-month field is anything other than `*`. */
+  /**
+   * True when the day-of-month field does NOT begin with `*` — Vixie cron's
+   * `DOM_STAR` flag, inverted. See {@link matchesDay} for what it selects.
+   */
   readonly dayOfMonthRestricted: boolean;
-  /** True when the day-of-week field is anything other than `*`. */
+  /** True when the day-of-week field does NOT begin with `*`. */
   readonly dayOfWeekRestricted: boolean;
 }
 
@@ -45,8 +48,19 @@ const CRON_FIELD_COUNT = 5;
 
 const MINUTE_MS = 60_000;
 
-/** How far ahead {@link nextCronFireTime} searches before declaring an expression unsatisfiable. */
-const MAX_SEARCH_YEARS = 5;
+/**
+ * How far ahead {@link nextCronFireTime} searches before declaring an
+ * expression unsatisfiable.
+ *
+ * It has to clear the longest real gap between two matches, and leap day is
+ * that gap: century years divisible by 100 but not 400 are NOT leap years, so
+ * `0 0 29 2 *` jumps from 2096-02-29 straight to 2104-02-29 — just under eight
+ * years. Nine gives that margin without letting a genuinely impossible
+ * expression (`0 0 30 2 *`) search for long: the month and day fast-forwards in
+ * {@link nextCronFireTime} skip whole months and days at a time, so the horizon
+ * costs a few hundred iterations, not years of minutes.
+ */
+const MAX_SEARCH_YEARS = 9;
 
 /**
  * Parses a 5-field cron expression.
@@ -61,9 +75,11 @@ const MAX_SEARCH_YEARS = 5;
  * a year and zero times on another); UTC has no such gaps, so it is the only
  * dialect this package will guess at.
  *
- * Day-of-month and day-of-week use standard cron **OR** semantics: when both are
- * restricted a day matches if EITHER matches, so `0 0 1 * 1` fires on the 1st of
- * the month AND on every Monday.
+ * Day-of-month and day-of-week use standard cron **OR** semantics: when NEITHER
+ * field begins with `*`, a day matches if EITHER matches — so `0 0 1 * 1` fires
+ * on the 1st of the month AND on every Monday. A field beginning with `*`
+ * (including a step such as `*&#47;2`) switches back to AND, matching Vixie
+ * cron's `DOM_STAR`/`DOW_STAR` rule. See {@link matchesDay}.
  */
 export function parseCronExpression(expression: string): CronSchedule {
   if (typeof expression !== "string") {
@@ -102,8 +118,12 @@ export function parseCronExpression(expression: string): CronSchedule {
     daysOfMonth: parseField(dayOfMonthRaw, DAY_OF_MONTH_FIELD, normalized),
     months: parseField(monthRaw, MONTH_FIELD, normalized),
     daysOfWeek,
-    dayOfMonthRestricted: dayOfMonthRaw !== "*",
-    dayOfWeekRestricted: dayOfWeekRaw !== "*",
+    // Vixie tests the LEADING character, not the whole field: `*/2` is still a
+    // "star" field there, so it keeps AND semantics. Comparing against `"*"`
+    // instead made `0 0 */2 * 1` mean "every other day OR every Monday", which
+    // is not what the same crontab line does anywhere else.
+    dayOfMonthRestricted: !dayOfMonthRaw.startsWith("*"),
+    dayOfWeekRestricted: !dayOfWeekRaw.startsWith("*"),
   };
 }
 
@@ -261,13 +281,21 @@ export function nextCronFireTime(schedule: CronSchedule, afterMs: number): numbe
   );
 }
 
+/**
+ * Vixie cron's day rule: when BOTH day fields are restricted (neither begins
+ * with `*`) a day matches if EITHER set contains it; otherwise both sets must
+ * contain it — which, since `*` expands to every value, reduces to "the
+ * restricted field decides".
+ *
+ * The AND branch consults both sets deliberately. A field like `*&#47;2` is a
+ * star field for the OR/AND decision but still carries a narrowed set, so
+ * `0 0 *&#47;2 * 1` means "every other day of the month AND a Monday".
+ */
 function matchesDay(schedule: CronSchedule, date: Date): boolean {
-  const dayOfMonth = date.getUTCDate();
-  const dayOfWeek = date.getUTCDay();
+  const dayOfMonthMatches = schedule.daysOfMonth.has(date.getUTCDate());
+  const dayOfWeekMatches = schedule.daysOfWeek.has(date.getUTCDay());
   if (schedule.dayOfMonthRestricted && schedule.dayOfWeekRestricted) {
-    return schedule.daysOfMonth.has(dayOfMonth) || schedule.daysOfWeek.has(dayOfWeek);
+    return dayOfMonthMatches || dayOfWeekMatches;
   }
-  if (schedule.dayOfMonthRestricted) return schedule.daysOfMonth.has(dayOfMonth);
-  if (schedule.dayOfWeekRestricted) return schedule.daysOfWeek.has(dayOfWeek);
-  return true;
+  return dayOfMonthMatches && dayOfWeekMatches;
 }
