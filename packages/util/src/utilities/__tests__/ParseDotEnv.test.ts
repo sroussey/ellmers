@@ -15,7 +15,10 @@ interface ParseDotEnvModule {
 let parseDotEnv: ParseDotEnvModule["parseDotEnv"];
 
 beforeAll(async () => {
-  const modulePath = "../../../../../scripts/lib/parse-dot-env";
+  // Absolute, via import.meta.url: a bare relative string is resolved against
+  // this module's ROOT-RELATIVE url, so the number of `../` needed depends on
+  // where the vitest project root sits — which is per-package now.
+  const modulePath = new URL("../../../../../scripts/lib/parse-dot-env.ts", import.meta.url).href;
   const mod = (await import(/* @vite-ignore */ modulePath)) as ParseDotEnvModule;
   parseDotEnv = mod.parseDotEnv;
 });

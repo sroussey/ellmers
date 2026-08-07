@@ -31,7 +31,11 @@ let installAndHydrate: TestCredentialsModule["installAndHydrate"];
 let ENV_VARS: readonly string[];
 
 beforeAll(async () => {
-  const modulePath = "../../../../../scripts/lib/test-credentials";
+  // Absolute, via import.meta.url: a bare relative string is resolved against
+  // this module's ROOT-RELATIVE url, so the number of `../` needed depends on
+  // where the vitest project root sits — which is per-package now.
+  const modulePath = new URL("../../../../../scripts/lib/test-credentials.ts", import.meta.url)
+    .href;
   const mod = (await import(/* @vite-ignore */ modulePath)) as TestCredentialsModule;
   buildCredentialStore = mod.buildCredentialStore;
   CREDENTIAL_TO_ENV = mod.CREDENTIAL_TO_ENV;
