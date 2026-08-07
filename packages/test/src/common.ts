@@ -7,4 +7,4 @@
 // organize-imports-ignore
 
 export * from "./binding/InMemoryTaskGraphRepository";
-export * from "./binding/InMemoryTaskOutputRepository";
+// InMemoryTaskOutputRepository now ships from `@workglow/task-graph/test`.

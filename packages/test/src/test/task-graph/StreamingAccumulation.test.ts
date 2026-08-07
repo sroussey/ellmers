@@ -33,11 +33,11 @@ import type {
   Usage,
 } from "@workglow/task-graph";
 import { Dataflow, Task, TaskGraph, TaskGraphRunner, TaskStatus } from "@workglow/task-graph";
+import { InMemoryTaskOutputRepository } from "@workglow/task-graph/test";
 import { setLogger } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { getTestingLogger } from "@workglow/util/test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 
 // ============================================================================
 // Test task definitions

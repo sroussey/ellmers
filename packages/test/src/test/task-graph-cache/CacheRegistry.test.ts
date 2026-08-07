@@ -5,9 +5,9 @@
  */
 
 import { CACHE_REGISTRY, type CacheRegistry, DefaultCacheRegistry } from "@workglow/task-graph";
+import { InMemoryTaskOutputRepository } from "@workglow/task-graph/test";
 import { ServiceRegistry } from "@workglow/util";
 import { describe, expect, it } from "vitest";
-import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 
 describe("CacheRegistry", () => {
   it("starts with both slots undefined", () => {

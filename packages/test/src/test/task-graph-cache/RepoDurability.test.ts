@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { InMemoryTaskOutputRepository } from "@workglow/task-graph/test";
 import { describe, expect, it } from "vitest";
-import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 
 describe("Repository durability", () => {
   it("in-memory repository is not durable", () => {

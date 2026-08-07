@@ -9,7 +9,7 @@ import { Task } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it, vi } from "vitest";
 
-import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
+import { InMemoryTaskOutputRepository } from "@workglow/task-graph/test";
 
 const inputSchema = {
   type: "object",

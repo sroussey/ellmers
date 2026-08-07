@@ -6,11 +6,11 @@
 
 import type { CachePolicy, IExecuteContext, IRunConfig, StreamEvent } from "@workglow/task-graph";
 import { Task, TaskStatus, getOutputStreamMode, isTaskStreamable } from "@workglow/task-graph";
+import { InMemoryTaskOutputRepository } from "@workglow/task-graph/test";
 import { setLogger, sleep } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, it } from "vitest";
-import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 
 // ============================================================================
 // Test Tasks

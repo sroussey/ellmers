@@ -20,12 +20,13 @@
     "watch-node": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "concurrently -c 'auto' -n 'browser,node,types' 'bun run build-browser' 'bun run build-node' 'bun run build-types'",
-    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'browser,node' 'bun run build-browser' 'bun run build-node'",
+    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'browser,node,test' 'bun run build-browser' 'bun run build-node' 'bun run build-test'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "build-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "build-test": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/test-entry.ts"
   },
   "exports": {
     ".": {
@@ -39,6 +40,10 @@
       },
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js"
+    },
+    "./test": {
+      "types": "./dist/test-entry.d.ts",
+      "import": "./dist/test-entry.js"
     }
   },
   "files": [

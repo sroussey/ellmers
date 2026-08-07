@@ -5,10 +5,10 @@
  */
 
 import { CACHE_REGISTRY, DefaultCacheRegistry, Task, type CachePolicy } from "@workglow/task-graph";
+import { InMemoryTaskOutputRepository } from "@workglow/task-graph/test";
 import { Container, ServiceRegistry } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
-import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 
 class CountingTask extends Task<{ q: string }, { r: string }> {
   public static override type = "CountingTask";

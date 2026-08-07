@@ -7,9 +7,9 @@
 import { pipe, Workflow } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
+import { InMemoryTaskOutputRepository } from "@workglow/task-graph/test";
 import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
-import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 import {
   AddFiveTask,
   PipelineDoubleTask as DoubleTask,

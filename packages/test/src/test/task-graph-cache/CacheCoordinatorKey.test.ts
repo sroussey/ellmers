@@ -5,8 +5,8 @@
  */
 
 import { CacheCoordinator, Task } from "@workglow/task-graph";
+import { InMemoryTaskOutputRepository } from "@workglow/task-graph/test";
 import { describe, expect, it } from "vitest";
-import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 
 describe("CacheCoordinator key with version", () => {
   it("bumping task.version invalidates cache hits", async () => {

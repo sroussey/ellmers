@@ -10,8 +10,8 @@ import {
   Task,
   type CachePolicy,
 } from "@workglow/task-graph";
+import { InMemoryTaskOutputRepository } from "@workglow/task-graph/test";
 import { describe, expect, it } from "vitest";
-import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 
 class T extends Task {
   public static override type = "PolicyT";
