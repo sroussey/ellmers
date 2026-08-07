@@ -4,10 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { LogLevel } from "../logging/ConsoleLogger";
-import { ConsoleLogger } from "../logging/ConsoleLogger";
-import type { ILogger } from "../logging/ILogger";
-import { NullLogger } from "../logging/NullLogger";
+// Package specifier, not `../logging/*`: `./test` is its own
+// `bun build --packages=external` bundle, so a relative import would inline a
+// second copy of ConsoleLogger and NullLogger here. The bare specifier stays
+// external and shares the one copy the rest of the code uses.
+import type { ILogger, LogLevel } from "@workglow/util";
+import { ConsoleLogger, NullLogger } from "@workglow/util";
 
 function getEnv(name: string): string | undefined {
   if (typeof process !== "undefined" && process.env) {
