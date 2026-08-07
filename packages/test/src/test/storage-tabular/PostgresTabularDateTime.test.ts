@@ -108,7 +108,7 @@ describe("PostgresTabularStorage date-typed string columns", () => {
       effective_on: "2026-04-02",
     });
 
-    const rows = await s.getAll();
+    const rows = (await s.getAll()) ?? [];
     expect(() => rows.sort((x, y) => x.valid_from.localeCompare(y.valid_from))).not.toThrow();
     expect(rows.map((r) => r.id)).toEqual(["a", "b"]);
   });
