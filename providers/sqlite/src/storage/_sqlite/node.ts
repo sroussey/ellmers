@@ -53,8 +53,9 @@ function initSqlite(): Promise<void> {
       sqliteModule = await import("node:sqlite");
     } catch {
       throw new Error(
-        "The built-in node:sqlite module is required for @workglow/sqlite/storage on Node.js. " +
-          "It is stable in Node 24+; on Node 22 run with --experimental-sqlite."
+        "The built-in node:sqlite module is required for @workglow/sqlite/storage. " +
+          "It is stable in Node 24+ (on Node 22, run with --experimental-sqlite) " +
+          "and available in Bun 1.4+."
       );
     }
   })());
@@ -248,6 +249,9 @@ const END_RE = /^\s*(?:COMMIT|END|ROLLBACK)(?:\s+TRANSACTION)?\s*$/i;
 /**
  * `node:sqlite` database wrapped as {@link SqliteApi.Database} (bindings-first
  * `prepare` generics). Construct only after {@link Sqlite.init}.
+ *
+ * Shared by the Node and Bun entry points — both runtimes expose `node:sqlite`
+ * with identical semantics.
  */
 export class NodeSqliteDatabase implements SqliteApi.Database {
   readonly #inner: NodeDatabaseSync;

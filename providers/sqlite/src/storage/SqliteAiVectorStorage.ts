@@ -503,7 +503,7 @@ export class SqliteAiVectorStorage<
 
   private async runVectorPutBulkOnHandle(entities: any[]): Promise<Entity[]> {
     const updatedEntities: Entity[] = [];
-    // bun:sqlite exposes `inTransaction` as a runtime getter on the underlying
+    // Some drivers expose `inTransaction` as a runtime getter on the underlying
     // handle; the canonical API doesn't surface it. When it's
     // present and true (e.g. an outer `withTransaction` BEGIN is open and the
     // proxy routed `tx.putBulk` here), iterate rows directly so we don't open a

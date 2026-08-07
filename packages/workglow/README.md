@@ -88,7 +88,7 @@ bun add @mediapipe/tasks-text @mediapipe/tasks-vision @mediapipe/tasks-audio @me
 
 # Storage backends
 bun add @sqlite.org/sqlite-wasm   # Browser SQLite
-                                  # Node.js uses the built-in node:sqlite, Bun uses bun:sqlite
+                                  # Node.js and Bun use the built-in node:sqlite
 bun add pg                        # PostgreSQL
 bun add @supabase/supabase-js     # Supabase
 ```

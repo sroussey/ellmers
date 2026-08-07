@@ -5,13 +5,13 @@
  */
 
 /**
- * Canonical SQLite surface for `@workglow/sqlite/storage` across Node (the built-in
- * `node:sqlite`), Bun (native `bun:sqlite`, via adapter), and browser (WASM).
+ * Canonical SQLite surface for `@workglow/sqlite/storage` across Node and Bun
+ * (both on the built-in `node:sqlite`) and the browser (WASM).
  *
  * On every platform, call `await Sqlite.init()` once before `new Sqlite.Database(...)`.
  *
  * **Generic order:** `prepare<BindParameters, Result>(sql)` — bindings first,
- * row/result second, not `bun:sqlite`’s reversed order.
+ * row/result second.
  */
 
 /**
