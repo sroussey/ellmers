@@ -102,7 +102,7 @@ export interface TabularSubscribeOptions {
 export type JSONValue =
   string | number | boolean | null | JSONValue[] | { [key: string]: JSONValue };
 
-export type SearchOperator = "=" | "<" | "<=" | ">" | ">=";
+export type SearchOperator = "=" | "!=" | "<" | "<=" | ">" | ">=";
 
 /**
  * Closed allow-list of SQL comparison operators that can be interpolated
@@ -112,7 +112,7 @@ export type SearchOperator = "=" | "<" | "<=" | ">" | ">=";
  * outside the union (defense in depth at the JSON trust boundary used by
  * HTTP-proxied storage backends).
  */
-export const ALLOWED_SEARCH_OPERATORS = ["=", "<", "<=", ">", ">="] as const;
+export const ALLOWED_SEARCH_OPERATORS = ["=", "!=", "<", "<=", ">", ">="] as const;
 
 /** Set form of {@link ALLOWED_SEARCH_OPERATORS} for O(1) membership checks. */
 export const SEARCH_OPERATOR_SET: ReadonlySet<SearchOperator> = new Set(ALLOWED_SEARCH_OPERATORS);
@@ -169,6 +169,47 @@ export type SearchCriteria<Entity> = DeleteSearchCriteria<Entity>;
 export type NormalizedCriterion<T> =
   | { readonly kind: "compare"; readonly operator: SearchOperator; readonly value: T }
   | { readonly kind: "in"; readonly values: readonly T[] };
+
+/**
+ * Whether a stored column value equals a criterion value, for the `=` operator.
+ *
+ * Exists so every non-SQL backend applies the same null rule the SQL backends
+ * get from `IS NULL` rewriting in the predicate builder: a `null` criterion
+ * matches a column that is null OR absent. The two spellings are the same state
+ * — SQL stores an omitted column as NULL, while an in-memory row simply lacks
+ * the key and reads back `undefined` — so a strict `===` matched nothing for
+ * exactly the rows the caller was asking for.
+ *
+ * That mattered well beyond a missing row. A repo doing "look up by tuple, else
+ * create" never found its own row when any column in the tuple was null, so it
+ * created a duplicate on every call; the in-memory backend agreed with the
+ * broken SQL behavior, so tests could not see it.
+ */
+export function matchesEqualityCriterion(columnValue: unknown, criterionValue: unknown): boolean {
+  if (criterionValue === null) return columnValue === null || columnValue === undefined;
+  return columnValue === criterionValue;
+}
+
+/**
+ * Whether a stored column value satisfies a `!=` criterion.
+ *
+ * Mirrors {@link matchesEqualityCriterion}, and deliberately follows SQL's
+ * three-valued logic rather than JavaScript's `!==`:
+ *
+ * - `!= null` means IS NOT NULL — it matches every row holding a value.
+ * - `!= <value>` does NOT match a row whose column is null. In SQL
+ *   `col != 'x'` is UNKNOWN when `col` is NULL, so the row is excluded, and a
+ *   JS-native `!==` would include it. Diverging would make the same criterion
+ *   return different rows on Postgres and on the in-memory backend, which is
+ *   the one guarantee this abstraction exists to provide. Use an explicit
+ *   `{ operator: "=", value: null }` alongside it to include nulls.
+ */
+export function matchesInequalityCriterion(columnValue: unknown, criterionValue: unknown): boolean {
+  const isNull = columnValue === null || columnValue === undefined;
+  if (criterionValue === null) return !isNull;
+  if (isNull) return false;
+  return columnValue !== criterionValue;
+}
 
 /**
  * Resolves a raw criterion — bare value, {@link SearchCondition}, or

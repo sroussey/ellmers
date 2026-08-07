@@ -24,6 +24,8 @@ import {
   HybridSubscriptionManager,
   isSearchCondition,
   isSearchInCondition,
+  matchesEqualityCriterion,
+  matchesInequalityCriterion,
   normalizeCriterion,
   pickCoveringIndex,
   safeEmit,
@@ -879,13 +881,19 @@ export class IndexedDbTabularStorage<
       }
       const { operator, value } = normalized;
 
-      if (operator !== "=" && (recordValue === null || recordValue === undefined)) {
+      // `=` and `!=` carry their own null semantics (see the matches* helpers);
+      // every ordering operator is UNKNOWN against null, so the row is excluded.
+      if (operator !== "=" && operator !== "!=" && (recordValue === null || recordValue === undefined)) {
         return false;
       }
 
       switch (operator) {
         case "=":
-          if (recordValue !== value) return false;
+          // Shared rule: a null criterion matches null OR an absent column.
+          if (!matchesEqualityCriterion(recordValue, value)) return false;
+          break;
+        case "!=":
+          if (!matchesInequalityCriterion(recordValue, value)) return false;
           break;
         case "<":
           if (!(recordValue < value)) return false;
@@ -1448,6 +1456,8 @@ function compareWithOperator(a: unknown, op: SearchOperator, b: unknown): boolea
   switch (op) {
     case "=":
       return av === bv;
+    case "!=":
+      return matchesInequalityCriterion(av, bv);
     case "<":
       return av !== null && av !== undefined && av < bv;
     case "<=":

@@ -879,11 +879,11 @@
     },
   },
   "trustedDependencies": [
-    "protobufjs",
+    "node-llama-cpp",
     "better-sqlite3",
+    "protobufjs",
     "sharp",
     "onnxruntime-node",
-    "node-llama-cpp",
   ],
   "overrides": {
     "@hono/node-server": "^2.0.11",

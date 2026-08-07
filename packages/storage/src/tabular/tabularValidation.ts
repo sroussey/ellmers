@@ -11,7 +11,12 @@ import type {
   QueryOptions,
   SearchCriteria,
 } from "./ITabularStorage";
-import { isSearchCondition, isSearchInCondition } from "./ITabularStorage";
+import {
+  ALLOWED_SEARCH_OPERATORS,
+  isSearchCondition,
+  isSearchInCondition,
+  SEARCH_OPERATOR_SET,
+} from "./ITabularStorage";
 import {
   StorageEmptyCriteriaError,
   StorageInvalidColumnError,
@@ -78,10 +83,13 @@ export function validateQueryParams<Entity>(
     }
     const criterion = criteria[column];
     if (isSearchCondition(criterion)) {
-      const validOperators = ["=", "<", "<=", ">", ">="];
-      if (!validOperators.includes(criterion.operator)) {
+      // Read from the shared allow-list rather than a local copy: a literal
+      // here silently rejects any operator added to the union, which is exactly
+      // how `!=` came to be unreachable despite every backend implementing it.
+      if (!SEARCH_OPERATOR_SET.has(criterion.operator)) {
         throw new StorageValidationError(
-          `Invalid operator "${criterion.operator}". Must be one of: ${validOperators.join(", ")}`
+          `Invalid operator "${criterion.operator}". Must be one of: ` +
+            ALLOWED_SEARCH_OPERATORS.join(", ")
         );
       }
     } else if (

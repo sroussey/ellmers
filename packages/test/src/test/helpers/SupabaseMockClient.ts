@@ -182,6 +182,9 @@ function mockSqlLiteral(val: any): string {
  */
 function mockRenderFilter(f: { column: string; operator: string; value: any }): string {
   if (f.operator === "IS NOT" && f.value === "NULL") return `"${f.column}" IS NOT NULL`;
+  // PostgREST `.is(col, null)` — the only way to express IS NULL, since
+  // `eq.null` is a literal comparison and never true.
+  if (f.operator === "IS" && f.value === null) return `"${f.column}" IS NULL`;
   if (f.operator === "IN") {
     const values = (f.value as any[]) ?? [];
     // Defensive only: `SupabaseTabularStorage` short-circuits an empty in-list
@@ -507,6 +510,20 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
               queryBuilder._filters.push({ column, operator: "=", value });
               return updateBuilder; // Return self for chaining
             },
+            is: (column: string, value: any) => {
+              queryBuilder._filters.push({ column, operator: "IS", value: null });
+              return updateBuilder;
+            },
+            not: (column: string, operator: string, value: any) => {
+              if (operator === "is" && value === null) {
+                queryBuilder._filters.push({ column, operator: "IS NOT", value: "NULL" });
+              }
+              return updateBuilder;
+            },
+            neq: (column: string, value: any) => {
+              queryBuilder._filters.push({ column, operator: "!=", value });
+              return updateBuilder;
+            },
             in: (column: string, values: any[]) => {
               queryBuilder._filters.push({ column, operator: "IN", value: values });
               return updateBuilder;
@@ -565,6 +582,10 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
               queryBuilder._filters.push({ column, operator: "=", value });
               return deleteBuilder;
             },
+            is: (column: string, value: any) => {
+              queryBuilder._filters.push({ column, operator: "IS", value: null });
+              return deleteBuilder;
+            },
             in: (column: string, values: any[]) => {
               queryBuilder._filters.push({ column, operator: "IN", value: values });
               return deleteBuilder;
@@ -615,6 +636,16 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
 
         eq: (column: string, value: any) => {
           queryBuilder._filters.push({ column, operator: "=", value });
+          return queryBuilder;
+        },
+        is: (column: string, value: any) => {
+          queryBuilder._filters.push({ column, operator: "IS", value: null });
+          return queryBuilder;
+        },
+        not: (column: string, operator: string, value: any) => {
+          if (operator === "is" && value === null) {
+            queryBuilder._filters.push({ column, operator: "IS NOT", value: "NULL" });
+          }
           return queryBuilder;
         },
         in: (column: string, values: any[]) => {
@@ -715,6 +746,10 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
       const deleteBuilder = {
         eq: (column: string, value: any) => {
           queryBuilder._filters.push({ column, operator: "=", value });
+          return deleteBuilder;
+        },
+        is: (column: string, value: any) => {
+          queryBuilder._filters.push({ column, operator: "IS", value: null });
           return deleteBuilder;
         },
         in: (column: string, values: any[]) => {

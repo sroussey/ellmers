@@ -752,7 +752,15 @@ export class SupabaseTabularStorage<
 
       switch (operator) {
         case "=":
-          q = q.eq(String(column), value);
+          // PostgREST renders `eq.null` as a literal comparison, which is never
+          // true; `is.null` is its IS NULL. Same rule the SQL backends get from
+          // the predicate builder.
+          q = value === null ? q.is(String(column), null) : q.eq(String(column), value);
+          break;
+        case "!=":
+          // PostgREST spells IS NOT NULL as `not.is.null`; `neq.null` would be a
+          // literal comparison and never true.
+          q = value === null ? q.not(String(column), "is", null) : q.neq(String(column), value);
           break;
         case "<":
           q = q.lt(String(column), value);
@@ -822,7 +830,13 @@ export class SupabaseTabularStorage<
 
       switch (operator) {
         case "=":
-          query = query.eq(String(column), value);
+          query = value === null ? query.is(String(column), null) : query.eq(String(column), value);
+          break;
+        case "!=":
+          query =
+            value === null
+              ? query.not(String(column), "is", null)
+              : query.neq(String(column), value);
           break;
         case "<":
           query = query.lt(String(column), value);
