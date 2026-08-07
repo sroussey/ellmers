@@ -2,7 +2,7 @@
   "extends": "../../tsconfig.json",
   "include": ["src/**/*"],
   "files": ["./src/browser.ts", "./src/node.ts", "./src/test-entry.ts"],
-  "exclude": ["dist", "node_modules", "src/**/__tests__/**"],
+  "exclude": ["dist", "node_modules", "src/**/__tests__/**", "src/**/*.test.ts"],
   "compilerOptions": {
     "composite": true,
     "outDir": "./dist",

@@ -3,12 +3,13 @@
   "compilerOptions": {
     "noEmit": true,
     "composite": false,
+    "incremental": false,
     "declaration": false,
     "declarationMap": false,
     "emitDeclarationOnly": false,
     "types": ["@types/bun"]
   },
-  "include": ["src/**/__tests__/**/*.ts"],
+  "include": ["src/**/__tests__/**/*.ts", "src/**/*.test.ts"],
   "exclude": ["dist", "node_modules"],
   "references": [{ "path": "./tsconfig.json" }]
 }

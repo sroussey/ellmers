@@ -114,7 +114,8 @@ function walkFiles(base: string, suffix: string, out: string[] = []): string[] {
   return out;
 }
 
-function listDirs(base: string): string[] {
+/** Immediate subdirectories of `base`; empty when `base` does not exist. */
+export function listDirs(base: string): string[] {
   try {
     return readdirSync(base).filter((d) => {
       try {
@@ -210,9 +211,25 @@ export function listTestProjects(files: readonly TestFile[]): TestProject[] {
     const dir = projectDirOf(f.path);
     if (dir !== undefined) byDir.set(dir, dir.split("/").pop() ?? dir);
   }
-  return [...byDir.entries()]
+  const projects = [...byDir.entries()]
     .map(([dir, name]) => ({ name, dir }))
     .sort((a, b) => a.dir.localeCompare(b.dir));
+
+  // The name is the directory's basename, and the same basename can appear in
+  // two groups (`packages/foo` and `providers/foo`). Two projects sharing a name
+  // make `--project foo` ambiguous and each package's own `test` script point at
+  // the wrong tree, so fail loudly here rather than run the wrong suite.
+  const byName = new Map<string, string[]>();
+  for (const p of projects) byName.set(p.name, [...(byName.get(p.name) ?? []), p.dir]);
+  const collisions = [...byName.entries()].filter(([, dirs]) => dirs.length > 1);
+  if (collisions.length > 0) {
+    throw new Error(
+      `Duplicate vitest project name(s): ${collisions
+        .map(([name, dirs]) => `${name} (${dirs.join(", ")})`)
+        .join("; ")}`
+    );
+  }
+  return projects;
 }
 
 /** The project directory a test file belongs to, or `undefined` if none covers it. */

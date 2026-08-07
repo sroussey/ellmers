@@ -8,7 +8,13 @@
     "./src/provider-utils.ts",
     "./src/test-entry.ts"
   ],
-  "exclude": ["dist", "node_modules", "src/**/*.test-d.ts", "src/**/__tests__/**"],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "src/**/*.test-d.ts",
+    "src/**/__tests__/**",
+    "src/**/*.test.ts"
+  ],
   "compilerOptions": {
     "composite": true,
     "outDir": "./dist",

@@ -15,7 +15,7 @@
   "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
-    "watch-js": "concurrently -c 'auto' -n 'browser,node,bun,worker,schema,graph,media-b,media-n,compress-b,compress-n,test' 'bun run watch-browser' 'bun run watch-node' 'bun run watch-bun' 'bun run watch-worker' 'bun run watch-schema' 'bun run watch-graph' 'bun run watch-media-browser' 'bun run watch-media-node' 'bun run watch-compress-browser' 'bun run watch-compress-node' 'bun run build-test'",
+    "watch-js": "concurrently -c 'auto' -n 'browser,node,bun,worker,schema,graph,media-b,media-n,compress-b,compress-n,test-b,test-n' 'bun run watch-browser' 'bun run watch-node' 'bun run watch-bun' 'bun run watch-worker' 'bun run watch-schema' 'bun run watch-graph' 'bun run watch-media-browser' 'bun run watch-media-node' 'bun run watch-compress-browser' 'bun run watch-compress-node' 'bun run watch-test-browser' 'bun run watch-test-node'",
     "watch-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "watch-node": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
     "watch-bun": "bun build --watch --no-clear-screen --target=bun --sourcemap=external --packages=external --outdir ./dist ./src/bun.ts",
@@ -50,7 +50,9 @@
     "build-test": "concurrently -c 'auto' -n 'test-browser,test-node' 'bun run build-test-browser' 'bun run build-test-node'",
     "build-test-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/test-browser.ts",
     "build-test-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/test-node.ts",
-    "test": "vitest run --config ../../vitest.config.ts --project util"
+    "test": "vitest run --config ../../vitest.config.ts --project util",
+    "watch-test-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/test-browser.ts",
+    "watch-test-node": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/test-node.ts"
   },
   "exports": {
     ".": {

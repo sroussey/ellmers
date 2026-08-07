@@ -7,7 +7,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ROOT } from "./lib/testDiscovery";
+import { listDirs, ROOT } from "./lib/testDiscovery";
 
 /**
  * A `./test` entry is built by its own `bun build --packages=external` pass, so
@@ -30,20 +30,6 @@ import { ROOT } from "./lib/testDiscovery";
 interface Offence {
   readonly file: string;
   readonly specifier: string;
-}
-
-function listDirs(base: string): string[] {
-  try {
-    return readdirSync(base).filter((d) => {
-      try {
-        return statSync(join(base, d)).isDirectory();
-      } catch {
-        return false;
-      }
-    });
-  } catch {
-    return [];
-  }
 }
 
 /** Test-entry sources: `src/test*.ts` plus everything under `src/testing/`. */

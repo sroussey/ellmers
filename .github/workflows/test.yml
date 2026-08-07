@@ -35,6 +35,14 @@ jobs:
       # growth with: bun run typecheck:budget --update
       - name: Typecheck budget guard
         run: bun run typecheck:budget
+      # Co-located `__tests__` are excluded from each package's build program so
+      # they never reach `dist`, which also takes them out of every tsc run.
+      # `tsconfig.test.json` is the program that still checks them; without this
+      # step a type error in a test file is invisible until someone runs it.
+      # Must follow the budget guard, which is what emits the `dist/*.d.ts` these
+      # programs resolve their own package against.
+      - name: Typecheck co-located tests
+        run: bun run typecheck:tests
 
   test-discovery:
     runs-on: ubuntu-latest

@@ -12,6 +12,7 @@ import {
   findAllTestFiles,
   findUnreachable,
   KNOWN_KINDS,
+  listDirs,
   listSections,
   listTestProjects,
   matchesKind,
@@ -100,6 +101,29 @@ describe("test discovery", () => {
       })
       .map((p) => p.dir);
     expect(missing).toEqual([]);
+  });
+
+  it("gives no workspace a `test` script it cannot satisfy", () => {
+    // The converse of the check above, and the one that actually breaks CI:
+    // `bun test` in a workspace with no test files exits 1 ("No tests found"),
+    // so a leftover script fails `turbo run test` — i.e. `--changed` — for every
+    // change that reaches that package, no matter what the tests say.
+    const withTests = new Set(listTestProjects(files).map((p) => p.dir));
+    const offenders: string[] = [];
+    for (const group of PACKAGE_GROUPS) {
+      for (const pkg of listDirs(join(ROOT, group))) {
+        const dir = `${group}/${pkg}`;
+        if (withTests.has(dir)) continue;
+        let pkgJson: { scripts?: Record<string, string> };
+        try {
+          pkgJson = JSON.parse(readFileSync(join(ROOT, dir, "package.json"), "utf8"));
+        } catch {
+          continue;
+        }
+        if (typeof pkgJson.scripts?.test === "string") offenders.push(dir);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 
   it("maps every grouped directory to a section that still exists", () => {

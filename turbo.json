@@ -65,6 +65,8 @@
     },
     "test": {
       "dependsOn": [
+        "build-types",
+        "build-js",
         "^build-types",
         "^build-js"
       ],

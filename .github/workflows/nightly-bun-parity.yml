@@ -47,8 +47,9 @@ jobs:
       - run: bun run build
       # Excluded on purpose: the live tier (model downloads, paid APIs) belongs
       # to its own schedule, and `browser` needs Playwright binaries this job
-      # does not install.
+      # does not install. Everything else is covered by subtraction, so a new
+      # section joins this run without anyone remembering to add it.
       - name: Run ${{ matrix.kind }} tests under Bun
         env:
           WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
-        run: bun scripts/test.ts bun ${{ matrix.kind }} graph task storage queue util mcp ai provider entitlement resource aws cloudflare knowledge-base scripts
+        run: bun scripts/test.ts bun ${{ matrix.kind }} --except rag,browser,provider-hft,provider-nodellama,provider-api,provider-cactus

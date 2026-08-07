@@ -25,8 +25,7 @@
     "build-jq-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/browser.ts",
     "build-jq-node-bun": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/node.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "test": "bun test"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "exports": {
     "./job-queue": {

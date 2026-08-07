@@ -16,10 +16,18 @@ const abs = (p: string): string => path.join(__dirname, p);
  *
  * `scripts/test.ts` sets `all` when it spawns vitest, because it has already
  * applied the requested kind filter and hands over an explicit file list — an
- * exclude here would silently drop files the caller asked for by name.
+ * exclude here would silently drop files the caller asked for by name. It sets
+ * `e2e` only when the caller named the `end2end` kind: e2e files cost money and
+ * multi-GB downloads, so they stay excluded from every other tier — including
+ * `--all` — but a run that asks for them by name must not resolve to zero files.
  */
 const tier = process.env.WORKGLOW_TEST_TIER ?? "unit";
-const tierExclude = tier === "unit" ? ["**/*.integration.test.ts"] : [];
+const tierExclude =
+  tier === "e2e"
+    ? []
+    : tier === "all"
+      ? ["**/*.e2e.test.ts"]
+      : ["**/*.integration.test.ts", "**/*.e2e.test.ts"];
 
 /**
  * Options every project needs. Project roots differ, so anything path-shaped
@@ -39,7 +47,7 @@ const shared = {
   // Vitest uses hookTimeout for beforeEach/afterAll separately from testTimeout; keep both aligned
   hookTimeout: 15000,
   retry: 1,
-  exclude: [...configDefaults.exclude, "**/*.e2e.test.ts", ...tierExclude],
+  exclude: [...configDefaults.exclude, ...tierExclude],
 };
 
 const discovered = discoverTestFiles();
