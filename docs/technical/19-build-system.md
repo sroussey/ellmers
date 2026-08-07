@@ -232,9 +232,12 @@ Bun is not a third target by default. A package's `exports` carries no `"bun"` c
 resolves the default `"import"` and loads `dist/node.js` — which is exactly what a `src/bun.ts`
 identical to `src/node.ts` would have produced. Add a `src/bun.ts`, a `--target=bun` build, and a
 `"bun"` export condition only when the Bun code genuinely differs; a duplicate is a third bundle
-and a third `.d.ts` to keep in sync for no behavior change. Two entries qualify today:
-`@workglow/util`'s `"."` (`Worker.bun` vs `Worker.node`) and `@workglow/sqlite`'s `./storage`
-(`bun:sqlite` vs the Node driver).
+and a third `.d.ts` to keep in sync for no behavior change. Three entries qualify today:
+`@workglow/util`'s `"."` (`Worker.bun` vs `Worker.node`), `@workglow/util`'s `"./worker"`
+(`dist/worker-bun.js` vs `dist/worker-node.js`), and `@workglow/sqlite`'s `./storage`
+(`bun:sqlite` vs the Node driver). That set is pinned by
+`packages/test/src/test/util/BunExportConditions.test.ts`, which fails in both directions — on a
+redundant `"bun"` condition added back, and on one of the three being deleted.
 
 Each build command follows the same template:
 
@@ -257,8 +260,9 @@ tree-shaking impossible for downstream consumers.
 
 ### Extended Pattern (util)
 
-`@workglow/util` has additional entry points beyond the standard two, and is one of the two places
-that still earns a `--target=bun` build (`bun.ts` and `worker-bun.ts`). Each sub-path export
+`@workglow/util` has additional entry points beyond the standard two, and accounts for two of the
+three `--target=bun` builds that a surviving `"bun"` export condition still earns (`bun.ts` and
+`worker-bun.ts`; the third is `@workglow/sqlite`'s `storage/bun.ts`). Each sub-path export
 gets its own build:
 
 ```
