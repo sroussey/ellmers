@@ -29,6 +29,5 @@ export * from "@workglow/util/compress";
 export * from "./logging";
 export * from "./bootstrap";
 
-// Multiple sub-packages export _testOnly; consumers should import it directly
-// from the specific sub-package.
-export { _testOnly } from "@workglow/ai";
+// Test-only surface is not re-exported here. Each package that has one ships it
+// as its own `./test` entry (e.g. `@workglow/ai/test`); import that directly.

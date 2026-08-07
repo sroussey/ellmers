@@ -22,7 +22,6 @@ import {
   ToolCallingTask,
   cacheCheckpoint,
   checkpointModelKey,
-  clearCheckpointsForTesting,
   deleteCheckpoint,
   getAiProviderRegistry,
   getCheckpoint,
@@ -30,6 +29,7 @@ import {
   requireCheckpointModelKey,
   setAiProviderRegistry,
 } from "@workglow/ai";
+import { clearCheckpoints as clearCheckpointsForTesting } from "@workglow/ai/test";
 import type { IExecuteContext, StreamEvent, TaskOutput } from "@workglow/task-graph";
 import { Container, HUMAN_CONNECTOR, ResourceScope, ServiceRegistry } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

@@ -1,7 +1,13 @@
 {
   "extends": "../../tsconfig.json",
   "include": ["src/worker.ts", "src/common.ts", "src/provider-utils.ts", "src/*/**/*"],
-  "files": ["./src/worker.ts", "./src/browser.ts", "./src/node.ts", "./src/provider-utils.ts"],
+  "files": [
+    "./src/worker.ts",
+    "./src/browser.ts",
+    "./src/node.ts",
+    "./src/provider-utils.ts",
+    "./src/test-entry.ts"
+  ],
   "exclude": ["dist", "node_modules", "src/**/*.test-d.ts"],
   "compilerOptions": {
     "composite": true,
@@ -9,10 +15,20 @@
     "rootDir": "./src"
   },
   "references": [
-    { "path": "../util" },
-    { "path": "../storage" },
-    { "path": "../job-queue" },
-    { "path": "../task-graph" },
-    { "path": "../knowledge-base" }
+    {
+      "path": "../util"
+    },
+    {
+      "path": "../storage"
+    },
+    {
+      "path": "../job-queue"
+    },
+    {
+      "path": "../task-graph"
+    },
+    {
+      "path": "../knowledge-base"
+    }
   ]
 }

@@ -4,16 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  type Capability,
-  AiImageOutputTask,
-  AiTask,
-  StreamingAiTask,
-  _testOnly,
-} from "@workglow/ai";
+import { type Capability, AiImageOutputTask, AiTask, StreamingAiTask } from "@workglow/ai";
+import { AiVisionTask } from "@workglow/ai/test";
 import { describe, expect, it } from "vitest";
-
-const { AiVisionTask } = _testOnly;
 
 // ---------------------------------------------------------------------------
 // Base class defaults
