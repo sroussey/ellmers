@@ -37,8 +37,8 @@ const passthroughConvert = (_column: string, value: Row[keyof Row]): ValueOption
 
 describe("PredicateBuilder operator allow-list (L-MAIN-01)", () => {
   describe("ALLOWED_SEARCH_OPERATORS / SEARCH_OPERATOR_SET", () => {
-    it("contains exactly the five SQL comparison operators", () => {
-      expect([...ALLOWED_SEARCH_OPERATORS].sort()).toEqual(["<", "<=", "=", ">", ">="]);
+    it("contains exactly the six SQL comparison operators", () => {
+      expect([...ALLOWED_SEARCH_OPERATORS].sort()).toEqual(["!=", "<", "<=", "=", ">", ">="]);
     });
 
     it("SEARCH_OPERATOR_SET mirrors ALLOWED_SEARCH_OPERATORS", () => {
