@@ -466,7 +466,7 @@ export class SqliteAiVectorStorage<
    * Internal `putBulk` that the proxy dispatches to from `tx.putBulk(...)`.
    * When already inside an outer `withTransaction` BEGIN we cannot open a
    * second `db.transaction(...)` here — that would be a nested transaction
-   * (better-sqlite3 turns it into a SAVEPOINT, but we still want all
+   * (the driver turns it into a SAVEPOINT, but we still want all
    * row-level rollback to fall under the outer BEGIN). In that case we
    * iterate the rows directly; otherwise we wrap them in a SQLite
    * transaction to collapse N fsyncs into one COMMIT.
@@ -503,8 +503,8 @@ export class SqliteAiVectorStorage<
 
   private async runVectorPutBulkOnHandle(entities: any[]): Promise<Entity[]> {
     const updatedEntities: Entity[] = [];
-    // better-sqlite3 / bun:sqlite expose `inTransaction` as a runtime getter
-    // on the underlying handle; the canonical API doesn't surface it. When it's
+    // bun:sqlite exposes `inTransaction` as a runtime getter on the underlying
+    // handle; the canonical API doesn't surface it. When it's
     // present and true (e.g. an outer `withTransaction` BEGIN is open and the
     // proxy routed `tx.putBulk` here), iterate rows directly so we don't open a
     // nested SQLite transaction. Browser-WASM has no such flag and never wraps

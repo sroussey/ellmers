@@ -488,7 +488,7 @@ export class SqliteTabularStorage<
   /**
    * Synchronously inserts a single entity using prepared `INSERT OR REPLACE …
    * RETURNING *`. Extracted so {@link putBulk} can call it inside a single
-   * `db.transaction(...)` — better-sqlite3 transactions require a sync body,
+   * `db.transaction(...)` — driver transactions require a sync body,
    * and every step here (key generation, statement prep, bind, RETURNING) is
    * synchronous in our SQLite drivers.
    *
@@ -790,8 +790,8 @@ export class SqliteTabularStorage<
     // every chunk in one atomic unit. All statement execution is synchronous
     // sqlite work, so no other writer interleaves between BEGIN and COMMIT.
     // Prefer our own `inTransaction` flag: the driver-wrapped `Sqlite.Database`
-    // does not surface better-sqlite3's native `inTransaction` getter, so
-    // reading through the wrapper misses the nested-tx signal.
+    // does not surface a native `inTransaction` getter, so reading through the
+    // wrapper misses the nested-tx signal.
     const nativeFlag = (this.db as unknown as { inTransaction?: boolean }).inTransaction === true;
     const alreadyInTx = this.inTransaction || nativeFlag;
     if (!alreadyInTx) this.db.exec("BEGIN");
@@ -898,7 +898,7 @@ export class SqliteTabularStorage<
   /**
    * Runs `fn` inside a single SQLite transaction. Uses raw `BEGIN` /
    * `COMMIT` / `ROLLBACK` rather than {@link Sqlite.Database.transaction}
-   * because `fn` is async — better-sqlite3's transaction wrapper requires a
+   * because `fn` is async — the driver's transaction wrapper requires a
    * synchronous body.
    *
    * Concurrent ops on the same storage instance from *outside* `fn` queue

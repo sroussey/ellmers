@@ -5,13 +5,13 @@
  */
 
 /**
- * Canonical SQLite surface for `@workglow/sqlite/storage` across Node (better-sqlite3),
- * Bun (native, via adapter), and browser (WASM).
+ * Canonical SQLite surface for `@workglow/sqlite/storage` across Node (the built-in
+ * `node:sqlite`), Bun (native `bun:sqlite`, via adapter), and browser (WASM).
  *
  * On every platform, call `await Sqlite.init()` once before `new Sqlite.Database(...)`.
  *
  * **Generic order:** `prepare<BindParameters, Result>(sql)` — bindings first,
- * row/result second (better-sqlite3 order), not `bun:sqlite`’s reversed order.
+ * row/result second, not `bun:sqlite`’s reversed order.
  */
 
 /**
@@ -36,6 +36,11 @@ export namespace SqliteApi {
     run(...params: unknown[]): RunResult;
     get(...params: unknown[]): Result | undefined;
     all(...params: unknown[]): Result[];
+    /**
+     * Releases the statement where the driver supports it. `node:sqlite` has no
+     * explicit finalizer — statements are released on GC or when the database
+     * closes — so the Node driver disposes only when the runtime offers it.
+     */
     finalize(): void;
   }
 

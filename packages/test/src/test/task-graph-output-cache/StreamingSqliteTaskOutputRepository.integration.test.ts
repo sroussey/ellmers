@@ -8,7 +8,7 @@
  * `StreamingSqliteTaskOutputRepository` is a durable, embedded streaming cache
  * backing: JSON rows via `SqliteTabularStorage`, port payloads as ordered BLOB
  * chunk rows via `TabularBlobChunkStore`. Exercised against an in-memory SQLite
- * database (better-sqlite3).
+ * database (node:sqlite).
  */
 
 import { Sqlite } from "@workglow/sqlite/storage";

@@ -57,7 +57,6 @@
     }
   },
   "peerDependencies": {
-    "better-sqlite3": "catalog:",
     "@sqlite.org/sqlite-wasm": "catalog:",
     "@sqliteai/sqlite-vector": "catalog:",
     "@workglow/job-queue": "workspace:*",
@@ -65,9 +64,6 @@
     "@workglow/util": "workspace:*"
   },
   "peerDependenciesMeta": {
-    "better-sqlite3": {
-      "optional": true
-    },
     "@sqlite.org/sqlite-wasm": {
       "optional": true
     },
@@ -87,11 +83,9 @@
   "devDependencies": {
     "@sqlite.org/sqlite-wasm": "catalog:",
     "@sqliteai/sqlite-vector": "catalog:",
-    "@types/better-sqlite3": "^9.6.0",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
-    "@workglow/util": "workspace:*",
-    "better-sqlite3": "catalog:"
+    "@workglow/util": "workspace:*"
   },
   "files": [
     "dist",

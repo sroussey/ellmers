@@ -141,7 +141,7 @@ import { InMemoryKvStorage, SqliteTabularStorage } from "@workglow/storage";
 
 ### SQLite setup (`@workglow/storage/sqlite`)
 
-Before you open SQLite with a **file path** or construct **`new Sqlite.Database(...)`**, call **`await Sqlite.init()`** once per runtime (Node.js, Bun, or browser). Export is available from **`workglow`** and **`@workglow/storage/sqlite`**. The call is idempotent. On the browser it loads the SQLite WASM build; on Node.js it loads `better-sqlite3`; on Bun it resolves `bun:sqlite`.
+Before you open SQLite with a **file path** or construct **`new Sqlite.Database(...)`**, call **`await Sqlite.init()`** once per runtime (Node.js, Bun, or browser). Export is available from **`workglow`** and **`@workglow/storage/sqlite`**. The call is idempotent. On the browser it loads the SQLite WASM build; on Node.js it loads the built-in `node:sqlite`; on Bun it resolves `bun:sqlite`.
 
 ## Storage Types
 

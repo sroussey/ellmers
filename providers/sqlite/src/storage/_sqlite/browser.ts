@@ -104,7 +104,7 @@ class BrowserStatement<
 }
 
 /**
- * better-sqlite3 / {@link Sqlite.Database}–shaped wrapper around sqlite-wasm {@link WasmDatabase}.
+ * {@link Sqlite.Database}–shaped wrapper around sqlite-wasm {@link WasmDatabase}.
  */
 export class BrowserDatabase implements SqliteApi.Database {
   private readonly inner: WasmDatabase;
@@ -130,7 +130,7 @@ export class BrowserDatabase implements SqliteApi.Database {
   }
 
   /**
-   * Same contract as better-sqlite3 / Bun: returns a function that runs `fn` inside a single
+   * Same contract as the Node and Bun drivers: returns a function that runs `fn` inside a single
    * SQL transaction (BEGIN → COMMIT or ROLLBACK).
    */
   transaction<T extends unknown[]>(fn: (...args: T) => void): (...args: T) => void {
