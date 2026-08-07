@@ -51,6 +51,7 @@ dataset, tasks                        (KnowledgeBase, documents, chunks; utility
     ↓
 ai                                    (AI task base classes, model registry, provider helpers)
     ↓
+bootstrap                             (installs every built-in default onto a service registry)
 providers/*                           (concrete provider implementations: anthropic, openai, gemini, ollama, ...)
     ↓
 test                                  (integration tests across all packages)
@@ -332,6 +333,16 @@ chat-vs-prompt). Schema invariants (e.g. `TextGenerationTask` requires
 ### `@workglow/tasks` — utility tasks
 
 Pre-built tasks: `InputTask`, `OutputTask`, `LambdaTask`, `DelayTask`, `FetchUrlTask`, `JavaScriptTask`, `JsonTask`, `MergeTask`, `SplitTask`, `ArrayTask`, MCP tasks, scalar/vector math tasks. Register all via `registerCommonTasks()`.
+
+### `@workglow/bootstrap` — default registration
+
+Nothing self-registers at import time, so a runtime has to install the defaults before any task runs. This package is that seam, and **the implementation lives here** — `packages/workglow/src/bootstrap.ts` is now a pure `export * from "@workglow/bootstrap"` re-export shim. Add a new default registration in `packages/bootstrap/src/bootstrap/registerAllDefaults.ts`; editing the shim does nothing.
+
+- `bootstrapWorkglow(opts?)` — installs defaults onto the global registry, idempotent. The normal application entry point.
+- `createOrchestrationContext(opts?)` — a fresh, disposable registry backed by its own container (tests, multi-tenant servers, embedded use).
+- `registerAllDefaults(registry)` — the 14 `register*Defaults` calls in dependency order. The registry parameter is **required**: the function mutates whichever container it is handed, so the target is stated at the call site rather than silently defaulting to the global one.
+
+`vitest.setup.ts` calls `bootstrapWorkglow()` by source path — the isolated linker keeps workspace packages out of the repo root's `node_modules`, so neither `@workglow/bootstrap` nor `@workglow/util` resolves from there.
 
 ## Testing patterns
 
