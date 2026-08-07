@@ -178,7 +178,7 @@
         "types": "./dist/worker-browser.d.ts",
         "import": "./dist/worker-browser.js"
       },
-      "types": "./dist/worker-browser.d.ts",
+      "types": "./dist/worker-node.d.ts",
       "import": "./dist/worker-node.js"
     },
     "./bootstrap": {
