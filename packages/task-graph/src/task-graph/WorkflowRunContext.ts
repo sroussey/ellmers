@@ -21,14 +21,38 @@
 export class WorkflowRunContext {
   readonly abortController: AbortController;
   unsubStreaming?: () => void;
+  private detachSignal?: () => void;
 
   constructor() {
     this.abortController = new AbortController();
   }
 
-  /** Releases the streaming subscription if one is held. Idempotent. */
+  /**
+   * Bridges a caller-supplied per-run signal onto this run's controller, so the
+   * run is cancelled by either source and the graph still sees ONE signal.
+   *
+   * A removable listener rather than `AbortSignal.any([own, caller])`: the
+   * composite that `any` mints is retained by its sources until it is collected
+   * (measurably ~1.7 KB per composite on Node 22 even after a forced GC), and a
+   * long-lived caller signal — a trigger's, say — would collect one per fire.
+   * The listener installed here is detached by {@link dispose} at run end, so
+   * nothing accumulates however many runs a driver starts.
+   */
+  linkSignal(signal: AbortSignal): void {
+    if (signal.aborted) {
+      this.abortController.abort(signal.reason);
+      return;
+    }
+    const onAbort = (): void => this.abortController.abort(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    this.detachSignal = () => signal.removeEventListener("abort", onAbort);
+  }
+
+  /** Releases the streaming subscription and the caller-signal bridge. Idempotent. */
   dispose(): void {
     this.unsubStreaming?.();
     this.unsubStreaming = undefined;
+    this.detachSignal?.();
+    this.detachSignal = undefined;
   }
 }

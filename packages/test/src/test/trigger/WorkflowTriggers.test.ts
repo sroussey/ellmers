@@ -4,10 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { CachePolicy } from "@workglow/task-graph";
+import type { CachePolicy, IExecuteContext } from "@workglow/task-graph";
 import { Task, Workflow } from "@workglow/task-graph";
 import type { ITriggerListenerHandle } from "@workglow/triggers";
 import {
+  CronTrigger,
+  CronUnsatisfiableError,
   getWorkflowTriggers,
   IntervalTrigger,
   PollingTrigger,
@@ -24,9 +26,30 @@ const PERIOD = 100;
 type RecorderInput = { label: string };
 type RecorderOutput = { recorded: string };
 
+interface Gate {
+  readonly promise: Promise<void>;
+  readonly open: () => void;
+}
+
+function createGate(): Gate {
+  let open: () => void = () => {};
+  const promise = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { promise, open };
+}
+
 /** Records every execution so a test can assert what each trigger fire ran with. */
 const executions: string[] = [];
 let failNextRuns = 0;
+/**
+ * When set, every execution parks on this gate until it opens or its run's
+ * signal aborts — which is how a test observes WHICH in-flight run a trigger's
+ * `stop()` cancelled.
+ */
+let holdGate: Gate | undefined;
+const completed: string[] = [];
+const abortedRuns: string[] = [];
 
 class RecorderTask extends Task<RecorderInput, RecorderOutput> {
   public static override type = "TriggerRecorderTask";
@@ -52,12 +75,28 @@ class RecorderTask extends Task<RecorderInput, RecorderOutput> {
     } as const satisfies DataPortSchema;
   }
 
-  override async execute(input: RecorderInput): Promise<RecorderOutput> {
+  override async execute(input: RecorderInput, context: IExecuteContext): Promise<RecorderOutput> {
     executions.push(input.label);
     if (failNextRuns > 0) {
       failNextRuns -= 1;
       throw new Error(`run failed for ${input.label}`);
     }
+    const gate = holdGate;
+    if (gate) {
+      await new Promise<void>((resolve) => {
+        const done = (): void => {
+          context.signal.removeEventListener("abort", done);
+          resolve();
+        };
+        context.signal.addEventListener("abort", done, { once: true });
+        void gate.promise.then(done);
+      });
+      if (context.signal.aborted) {
+        abortedRuns.push(input.label);
+        throw new Error(`aborted ${input.label}`);
+      }
+    }
+    completed.push(input.label);
     return { recorded: input.label };
   }
 }
@@ -69,6 +108,9 @@ function createWorkflow(): Workflow {
 describe("Workflow trigger bindings", () => {
   beforeEach(() => {
     executions.length = 0;
+    completed.length = 0;
+    abortedRuns.length = 0;
+    holdGate = undefined;
     failNextRuns = 0;
     vi.useFakeTimers();
     vi.setSystemTime(START);
@@ -282,6 +324,107 @@ describe("Workflow trigger bindings", () => {
     expect(trigger.running).toBe(false);
     await advanceFakeTimers(PERIOD * 3);
     expect(executions).toHaveLength(1);
+  });
+
+  test("a trigger whose start() throws leaves no started triggers and no handle", async () => {
+    const workflow = createWorkflow();
+    const healthy = new IntervalTrigger({ intervalMs: PERIOD, id: "healthy" });
+    // Parses fine; February has no 30th, so it fails on the first schedule.
+    const doomed = new CronTrigger({ expression: "0 0 30 2 *", id: "doomed" });
+    workflow.trigger(healthy, { input: () => ({ label: "healthy" }) });
+    workflow.trigger(doomed);
+
+    await expect(workflow.listen()).rejects.toBeInstanceOf(CronUnsatisfiableError);
+
+    expect(healthy.running).toBe(false);
+    await advanceFakeTimers(PERIOD * 3);
+    expect(executions).toEqual([]);
+
+    // No handle was registered, so the workflow is still bindable/listenable.
+    expect(() => workflow.trigger(new IntervalTrigger({ intervalMs: PERIOD }))).not.toThrow();
+  });
+
+  test("stopping a trigger cancels the run that trigger started", async () => {
+    // The trigger's signal is forwarded as `runConfig.signal`, so it cancels
+    // exactly the run this fire started — rather than `workflow.abort()`, which
+    // trips the workflow's single current-run controller and would cancel
+    // whichever run happens to be current, no matter who started it.
+    const workflow = createWorkflow();
+    const trigger = new IntervalTrigger({ intervalMs: PERIOD, id: "owner" });
+    workflow.trigger(trigger, { input: () => ({ label: "owned" }) });
+
+    const handle = await workflow.listen();
+    const gate = createGate();
+    holdGate = gate;
+
+    await advanceFakeTimers(PERIOD);
+    expect(executions).toEqual(["owned"]);
+    expect(abortedRuns).toEqual([]);
+
+    const stopping = trigger.stop();
+    await flushAsyncWork();
+    expect(abortedRuns).toEqual(["owned"]);
+    expect(completed).toEqual([]);
+
+    holdGate = undefined;
+    gate.open();
+    await stopping;
+
+    // The cancellation is the expected path, not an error to report.
+    expect(trigger.running).toBe(false);
+    await handle.stop();
+  });
+
+  test("a second trigger keeps running when the first one is stopped", async () => {
+    const workflow = createWorkflow();
+    const first = new IntervalTrigger({ intervalMs: PERIOD * 4, id: "first" });
+    const second = new IntervalTrigger({ intervalMs: PERIOD, id: "second" });
+    workflow.trigger(first, { input: () => ({ label: "first" }) });
+    workflow.trigger(second, { input: () => ({ label: "second" }) });
+
+    const handle = await workflow.listen();
+    await advanceFakeTimers(PERIOD * 4);
+    expect(executions).toContain("first");
+    expect(executions.filter((label) => label === "second")).toHaveLength(4);
+
+    await first.stop();
+    executions.length = 0;
+
+    await advanceFakeTimers(PERIOD * 4);
+    expect(executions).not.toContain("first");
+    expect(executions.filter((label) => label === "second")).toHaveLength(4);
+    expect(second.running).toBe(true);
+
+    await handle.stop();
+  });
+
+  test("a caller signal abort releases the handle so the workflow can listen again", async () => {
+    const workflow = createWorkflow();
+    workflow.trigger(new IntervalTrigger({ intervalMs: PERIOD }), {
+      input: () => ({ label: "before" }),
+    });
+    const controller = new AbortController();
+
+    await workflow.listen({ signal: controller.signal });
+    await advanceFakeTimers(PERIOD);
+    expect(executions).toEqual(["before"]);
+
+    controller.abort();
+    await flushAsyncWork();
+
+    // The handle must be gone, or binding stays locked and listen() keeps
+    // handing back a stale handle whose triggers are all dead.
+    expect(() =>
+      workflow.trigger(new IntervalTrigger({ intervalMs: PERIOD }), {
+        input: () => ({ label: "after" }),
+      })
+    ).not.toThrow();
+
+    const handle = await workflow.listen();
+    await advanceFakeTimers(PERIOD);
+    expect(executions).toContain("after");
+
+    await handle.stop();
   });
 
   test("a fire with no input mapping runs the workflow with its declared defaults", async () => {
