@@ -239,8 +239,25 @@ Shared cloud-provider helpers (base classes, registration, model search, OpenAI-
 **Streaming convention exception (structured generation):** Run-fns serving
 `["text.generation", "json-mode"]` MUST populate `finish.data.object` with the
 parsed final object. The `StructuredGenerationTask` consumer reads the parsed
-object from finish.data and re-validates it against the output schema; this
-avoids requiring a JSON streaming parser in the consumer layer.
+object from finish.data and re-validates it against the output schema: it needs
+one definitive final object to validate and to drive its retry loop, which a
+sequence of partial deltas cannot supply.
+
+Do **not** accumulate the JSON text to produce it. Feed the deltas to
+`createPartialJsonStream()` (`@workglow/util/worker`, or `/schema` off-worker):
+`push(chunk)` is O(chunk) and returns the partial object to emit as an
+`object-delta`, and `finish()` returns the value for `finish.data.object`.
+Re-parsing a growing buffer on every delta is O(n²) and blocks the worker
+thread. Use the `skipPreamble` option for providers that emit prose, a
+`<think>` block, or a code fence ahead of the JSON.
+
+`push()` returns the parser's **live** root, which later pushes mutate — that
+aliasing is what keeps it linear. It is safe for the `object-delta` path
+(`StreamEventAccumulator` / `StreamProcessor` use replace semantics for
+non-array object-deltas, and events are structured-cloned across the worker
+hop), but a consumer that retains an earlier delta in-process will see it
+change; call `snapshot()` for a detached copy. One-shot repair of an
+already-accumulated buffer stays on `parsePartialJson`.
 
 **Capability collision:** When two task types share the same `requires` set
 (e.g. `AiChatTask` and `TextGenerationTask` both require `["text.generation"]`),

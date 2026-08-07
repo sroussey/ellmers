@@ -12,7 +12,7 @@ import type {
 import { PermanentJobError } from "@workglow/job-queue";
 import type { JsonSchema } from "@workglow/util/schema";
 import { compileSchema } from "@workglow/util/schema";
-import { parsePartialJson } from "@workglow/util/worker";
+import { createPartialJsonStream } from "@workglow/util/worker";
 
 import {
   createDownloadMonitor,
@@ -85,7 +85,7 @@ export const WebBrowser_StructuredGeneration: AiProviderRunFn<
       omitResponseConstraintInput: true,
     });
 
-    let accumulatedJson = "";
+    let json = createPartialJsonStream();
     let previousSnapshot = "";
     const reader = stream.getReader();
     try {
@@ -93,15 +93,16 @@ export const WebBrowser_StructuredGeneration: AiProviderRunFn<
         const { done, value } = await reader.read();
         if (done) break;
         // Chrome's streaming surface emits progressive full-text snapshots,
-        // not deltas. Diff against the previous snapshot so the accumulated
-        // JSON grows monotonically; on the (rare) replacement case, reset.
+        // not deltas. Feed the parser only the newly-appended tail; on the
+        // (rare) replacement case, restart it on the replacement text.
+        let partial: Record<string, unknown> | undefined;
         if (value.startsWith(previousSnapshot)) {
-          accumulatedJson += value.slice(previousSnapshot.length);
+          partial = json.push(value.slice(previousSnapshot.length));
         } else {
-          accumulatedJson = value;
+          json = createPartialJsonStream();
+          partial = json.push(value);
         }
         previousSnapshot = value;
-        const partial = parsePartialJson(accumulatedJson);
         if (partial !== undefined) {
           emit({ type: "object-delta", port: "object", objectDelta: partial });
         }
@@ -110,15 +111,9 @@ export const WebBrowser_StructuredGeneration: AiProviderRunFn<
       reader.releaseLock();
     }
 
-    let finalObject: Record<string, unknown>;
-    try {
-      finalObject = JSON.parse(accumulatedJson) as Record<string, unknown>;
-    } catch {
-      finalObject = (parsePartialJson(accumulatedJson) ?? {}) as Record<string, unknown>;
-    }
     emit({
       type: "finish",
-      data: { object: finalObject } as StructuredGenerationTaskOutput,
+      data: { object: json.finish() } as StructuredGenerationTaskOutput,
     });
   } finally {
     try {

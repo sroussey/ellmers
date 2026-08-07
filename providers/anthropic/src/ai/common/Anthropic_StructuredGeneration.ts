@@ -9,7 +9,7 @@ import type {
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
-import { parsePartialJson } from "@workglow/util/worker";
+import { createPartialJsonStream } from "@workglow/util/worker";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
@@ -20,12 +20,12 @@ import { createAnthropicUsageCollector } from "./Anthropic_Usage";
  *
  * Anthropic implements structured generation via tool-use under the hood:
  * a synthetic `structured_output` tool forces the model to emit JSON conforming
- * to the output schema. We accumulate the `input_json_delta` stream events and
- * yield `object-delta` for consumers that want incremental updates. The final
- * `finish` event carries the parsed object in `finish.data.object` per the
- * documented streaming-convention exception for structured generation (CLAUDE.md
- * lines 201-205): the `StructuredGenerationTask` consumer reads the parsed
- * object from `finish.data` directly instead of accumulating deltas.
+ * to the output schema. The `input_json_delta` stream events are fed to an
+ * incremental parser and yielded as `object-delta` for consumers that want
+ * progressive updates. The final `finish` event carries the parsed object in
+ * `finish.data.object` per the streaming-convention exception for structured
+ * generation: it is the definitive object `StructuredGenerationTask` validates
+ * against the schema and retries on.
  */
 export const Anthropic_StructuredGeneration_Stream: AiProviderRunFn<
   StructuredGenerationTaskInput,
@@ -54,32 +54,22 @@ export const Anthropic_StructuredGeneration_Stream: AiProviderRunFn<
     { signal }
   );
 
-  let accumulatedJson = "";
+  const json = createPartialJsonStream();
   const usageCollector = createAnthropicUsageCollector();
   for await (const event of stream) {
     usageCollector.observe(event);
     maybeEmitAnthropicRefusal(event, emit);
     if (event.type === "content_block_delta" && event.delta.type === "input_json_delta") {
-      accumulatedJson += event.delta.partial_json;
-      const partial = parsePartialJson(accumulatedJson);
+      const partial = json.push(event.delta.partial_json);
       if (partial !== undefined) {
         emit({ type: "object-delta", port: "object", objectDelta: partial });
       }
     }
   }
 
-  let finalObject: Record<string, unknown>;
-  try {
-    finalObject = JSON.parse(accumulatedJson);
-  } catch {
-    finalObject = parsePartialJson(accumulatedJson) ?? {};
-  }
-  // Exception: structured generation MUST populate finish.data.object so the
-  // StructuredGenerationTask consumer can read the parsed object without a
-  // JSON streaming parser. See CLAUDE.md streaming-convention-exception note.
   emit({
     type: "finish",
-    data: { object: finalObject } as StructuredGenerationTaskOutput,
+    data: { object: json.finish() } as StructuredGenerationTaskOutput,
     usage: usageCollector.result(),
   });
 };

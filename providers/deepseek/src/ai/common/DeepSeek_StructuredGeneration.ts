@@ -11,7 +11,7 @@ import type {
   Usage,
 } from "@workglow/ai";
 import { OPENAI_STREAM_USAGE_OPTIONS } from "@workglow/ai/provider-utils";
-import { parsePartialJson } from "@workglow/util/worker";
+import { createPartialJsonStream } from "@workglow/util/worker";
 import {
   assertNotTruncatedByReasoning,
   getClient,
@@ -75,16 +75,20 @@ export const DeepSeek_StructuredGeneration_Stream: AiProviderRunFn<
     { signal }
   );
 
-  let accumulatedJson = "";
+  const json = createPartialJsonStream();
   let refusal = "";
   let finishReason: string | null | undefined;
   let usage: Usage | undefined;
+  // The reasoning-exhaustion guard below only distinguishes "no content at all"
+  // from "some content", so retaining one delta answers it without re-growing a
+  // copy of the whole document.
+  let anyContent = "";
   for await (const chunk of stream) {
     usage = mapDeepSeekUsage(chunk.usage) ?? usage;
     const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
-      accumulatedJson += delta;
-      const partial = parsePartialJson(accumulatedJson);
+      if (anyContent === "") anyContent = delta;
+      const partial = json.push(delta);
       if (partial !== undefined) {
         emit({ type: "object-delta", port: "object", objectDelta: partial });
       }
@@ -97,17 +101,11 @@ export const DeepSeek_StructuredGeneration_Stream: AiProviderRunFn<
     emit({ type: "refusal", refusal });
   }
 
-  assertNotTruncatedByReasoning(finishReason, accumulatedJson, input.maxTokens);
+  assertNotTruncatedByReasoning(finishReason, anyContent, input.maxTokens);
 
-  let finalObject: Record<string, unknown>;
-  try {
-    finalObject = JSON.parse(accumulatedJson);
-  } catch {
-    finalObject = parsePartialJson(accumulatedJson) ?? {};
-  }
   emit({
     type: "finish",
-    data: { object: finalObject } as StructuredGenerationTaskOutput,
+    data: { object: json.finish() } as StructuredGenerationTaskOutput,
     usage,
   });
 };

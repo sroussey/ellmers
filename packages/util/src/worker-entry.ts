@@ -28,6 +28,7 @@ export * from "./worker/WorkerServerBase";
 export * from "./worker/WorkerManager";
 export * from "./worker/scrubStack";
 
+export * from "./json-schema/PartialJsonStream";
 export * from "./json-schema/parsePartialJson";
 
 export type { DataPortSchemaObject } from "./json-schema/DataPortSchema";
