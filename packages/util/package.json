@@ -97,10 +97,6 @@
         "types": "./dist/test-browser.d.ts",
         "import": "./dist/test-browser.js"
       },
-      "bun": {
-        "types": "./dist/test-node.d.ts",
-        "import": "./dist/test-node.js"
-      },
       "types": "./dist/test-node.d.ts",
       "import": "./dist/test-node.js"
     },
