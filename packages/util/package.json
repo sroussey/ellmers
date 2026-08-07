@@ -82,10 +82,6 @@
         "types": "./dist/media-browser.d.ts",
         "import": "./dist/media-browser.js"
       },
-      "bun": {
-        "types": "./dist/media-node.d.ts",
-        "import": "./dist/media-node.js"
-      },
       "types": "./dist/media-node.d.ts",
       "import": "./dist/media-node.js"
     },
@@ -97,10 +93,6 @@
       "browser": {
         "types": "./dist/compress-browser.d.ts",
         "import": "./dist/compress-browser.js"
-      },
-      "bun": {
-        "types": "./dist/compress-node.d.ts",
-        "import": "./dist/compress-node.js"
       },
       "types": "./dist/compress-node.d.ts",
       "import": "./dist/compress-node.js"

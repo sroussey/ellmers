@@ -14,8 +14,8 @@
  *      returns the pre-resolved IP — this prevents a second DNS lookup at
  *      connect time and defeats DNS rebinding (TOCTOU).
  *
- * Registered at module load from `packages/tasks/src/node.ts` and
- * `packages/tasks/src/bun.ts` via `registerSafeFetch`.
+ * Registered at module load from `packages/tasks/src/node.ts` via
+ * `registerSafeFetch`.
  */
 
 import { SECURITY_LIMITS } from "@workglow/util";

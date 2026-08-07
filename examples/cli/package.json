@@ -33,7 +33,6 @@
   ],
   "exports": {
     ".": {
-      "bun": "./dist/lib.js",
       "types": "./dist/lib.d.ts",
       "import": "./dist/lib.js"
     }

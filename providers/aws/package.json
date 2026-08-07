@@ -34,10 +34,6 @@
         "types": "./dist/job-queue/browser.d.ts",
         "import": "./dist/job-queue/browser.js"
       },
-      "bun": {
-        "types": "./dist/job-queue/node.d.ts",
-        "import": "./dist/job-queue/node.js"
-      },
       "types": "./dist/job-queue/node.d.ts",
       "import": "./dist/job-queue/node.js"
     }
