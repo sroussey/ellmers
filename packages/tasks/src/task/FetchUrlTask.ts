@@ -27,6 +27,7 @@ import {
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { safeFetch } from "../util/SafeFetch";
 import { classifyUrl, urlResourcePattern } from "../util/UrlClassifier";
+import { applyCredentialToHeaders } from "./FetchUrlCredentials";
 import {
   createFetchUrlAbortedError,
   createFetchUrlHttpError,
@@ -81,7 +82,23 @@ const inputSchema = {
       format: "credential",
       title: "Credential Key",
       description:
-        "Key to look up in the credential store. The resolved value is sent as a Bearer token in the Authorization header.",
+        "Key to look up in the credential store. The resolved secret is placed on the request according to credential_scheme. Incompatible with the queued path, which would persist the secret.",
+      "x-ui-hidden": true,
+    },
+    credential_scheme: {
+      enum: ["bearer", "basic", "header", "none"],
+      title: "Credential Scheme",
+      description:
+        "How the resolved credential is sent. 'bearer' and 'basic' use the Authorization header ('basic' expects an already base64-encoded user:pass); 'header' uses credential_header; 'none' resolves but sends nothing.",
+      default: "bearer",
+      "x-ui-hidden": true,
+    },
+    credential_header: {
+      type: "string",
+      title: "Credential Header",
+      description:
+        "Header name used when credential_scheme is 'header'. Must be a bare header token (letters, digits, hyphens).",
+      default: "Authorization",
       "x-ui-hidden": true,
     },
   },
@@ -480,25 +497,49 @@ export class FetchUrlTask<
   /**
    * Executes the fetch task, either directly or via a job queue depending on
    * the `queue` config/input. Credential resolution is handled by the input
-   * resolver system — credential_key arrives already resolved.
+   * resolver system — credential_key arrives already resolved to the secret.
+   *
+   * Invariant: a resolved secret never leaves this method. Job queues persist
+   * their payloads durably (SQLite/Postgres/SQS), so the secret is only ever
+   * placed on the in-process request headers of the inline path, and the
+   * queued path refuses to run at all when a credential is present.
    */
   override async execute(
     input: FetchUrlTaskInput,
     executeContext: IExecuteContext
   ): Promise<Output> {
-    // Apply credential as Authorization header and strip it from the payload
-    // so the secret is not persisted to queue storage.
     const credential = input.credential_key;
-    let jobInput: FetchUrlTaskInput = input;
-    if (credential) {
-      const { credential_key: _omit, ...rest } = input;
-      jobInput = {
-        ...rest,
-        headers: { ...input.headers, Authorization: `Bearer ${credential}` },
-      };
+    const queuePref = this.config.queue ?? false;
+
+    // Refuse rather than silently downgrading to the inline path: a downgrade
+    // would quietly drop the queue's rate limiting, which is the reason the
+    // caller asked for a queue in the first place.
+    if (credential && queuePref !== false) {
+      throw new TaskConfigurationError(
+        "FetchUrlTask: credential_key cannot be combined with the queued path (config.queue), " +
+          "because queued job payloads are persisted to durable storage. Remove config.queue to " +
+          "run inline, or have the queue worker supply the credential itself."
+      );
     }
 
-    const queuePref = this.config.queue ?? false;
+    // Strip the credential ports unconditionally — after input resolution
+    // credential_key holds the secret itself, not the reference id, so it must
+    // never survive as a data port. The scheme decides where (or whether) the
+    // secret is placed; the job only ever sees the resulting headers.
+    const {
+      credential_key: _omitCredential,
+      credential_scheme: _omitScheme,
+      credential_header: _omitHeader,
+      ...rest
+    } = input;
+    const headers = applyCredentialToHeaders({
+      headers: input.headers,
+      credential,
+      scheme: input.credential_scheme,
+      headerName: input.credential_header,
+    });
+    const jobInput: FetchUrlTaskInput = headers ? { ...rest, headers } : rest;
+
     let cleanup: () => void = () => {};
 
     try {
