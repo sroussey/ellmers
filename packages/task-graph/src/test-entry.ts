@@ -21,3 +21,22 @@
  */
 
 export { InMemoryTaskOutputRepository } from "./testing/InMemoryTaskOutputRepository";
+
+/**
+ * Conformance suite for {@link TaskOutputRepository}. An adapter supplies a
+ * factory and inherits every behavioural assertion, so a new backend is a
+ * ~15-line shim in its own package rather than an edit to someone else's tests.
+ */
+export { runTaskOutputRepositoryContract } from "./testing/taskOutputRepositoryContract";
+
+/**
+ * Conformance suite for a STREAMING task-output repository (JSON rows plus port
+ * payloads as ordered blob chunks). Extracted from three per-backend suites that
+ * were ~95% identical; adapters supply only their ref scheme and how to build a
+ * sibling instance.
+ */
+export { runStreamingTaskOutputRepositoryContract } from "./testing/streamingTaskOutputRepositoryContract";
+export type {
+  StreamingRepositoryUnderTest,
+  StreamingTaskOutputRepositoryContractOptions,
+} from "./testing/streamingTaskOutputRepositoryContract";

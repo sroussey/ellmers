@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mock = vi.fn;
 
-export function runGenericTaskOutputRepositoryTests(
+export function runTaskOutputRepositoryContract(
   createRepository: () => Promise<TaskOutputRepository>
 ) {
   let repository: TaskOutputRepository;
