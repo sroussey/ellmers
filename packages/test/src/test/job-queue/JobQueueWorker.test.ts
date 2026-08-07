@@ -19,8 +19,8 @@ import {
   wrapQueueStorage,
 } from "@workglow/job-queue";
 import { DEFAULT_LIMITS, setLogger, sleep, uuid4 } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 interface TI {
   readonly taskType?: string;

@@ -5,9 +5,9 @@
  */
 
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe } from "vitest";
 import { InMemoryTaskGraphRepository } from "../../binding/InMemoryTaskGraphRepository";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import { runGenericTaskGraphRepositoryTests } from "./genericTaskGraphRepositoryTests";
 
 describe("InMemoryTaskGraphRepository", () => {

@@ -6,9 +6,9 @@
 
 import { Sqlite } from "@workglow/sqlite/storage";
 import { setLogger, uuid4 } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe } from "vitest";
 import { SqliteTaskGraphRepository } from "../../binding/SqliteTaskGraphRepository";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import { runGenericTaskGraphRepositoryTests } from "./genericTaskGraphRepositoryTests";
 
 describe("SqliteTaskGraphRepository", async () => {

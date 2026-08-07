@@ -9,8 +9,8 @@ import {
   DirectedGraph,
   NodeDoesntExistError,
 } from "@workglow/util/graph";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import { edgeIdentity, nodeIdentity } from "./graph.test";
 
 /***

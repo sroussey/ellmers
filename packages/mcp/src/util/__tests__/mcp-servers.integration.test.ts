@@ -24,8 +24,8 @@ import {
   McpToolCallTask,
 } from "@workglow/mcp/tasks";
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, test } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 /** Assert task run result to expected output type (workaround for generic inference in test.each) */
 function asListOutput<T>(v: unknown): T {

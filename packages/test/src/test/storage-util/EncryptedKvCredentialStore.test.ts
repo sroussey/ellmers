@@ -10,8 +10,8 @@ import {
   InMemoryKvStorage,
 } from "@workglow/storage";
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("EncryptedKvCredentialStore", () => {
   let logger = getTestingLogger();

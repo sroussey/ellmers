@@ -11,8 +11,8 @@ import {
   hammingSimilarity,
   jaccardSimilarity,
 } from "@workglow/util/schema";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, test } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("VectorSimilarityUtils", () => {
   let logger = getTestingLogger();

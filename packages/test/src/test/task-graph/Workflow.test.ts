@@ -52,7 +52,7 @@ import {
   WildcardPassthroughTask,
 } from "../task/TestTasks";
 // Import for module-augmentation side effects that register vector test tasks
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 import "../task/TestTasks";
 
 const spyOn = vi.spyOn;

@@ -12,8 +12,8 @@ import {
 } from "@workglow/mcp/tasks";
 import { mcpClientFactory } from "@workglow/mcp/util";
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 function fn() {
   const calls: unknown[][] = [];

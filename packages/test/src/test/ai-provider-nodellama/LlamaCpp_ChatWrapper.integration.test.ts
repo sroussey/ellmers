@@ -24,7 +24,7 @@ import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph
 import { setLogger } from "@workglow/util";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 
 // ========================================================================
 // Tool model definitions (same as LlamaCpp_Generic)

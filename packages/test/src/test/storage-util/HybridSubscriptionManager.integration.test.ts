@@ -7,8 +7,8 @@
 import type { ChangePayloadFactory } from "@workglow/storage";
 import { HybridSubscriptionManager } from "@workglow/storage";
 import { setLogger, sleep } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 interface TestItem {
   readonly id: string;

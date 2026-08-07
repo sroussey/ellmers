@@ -16,8 +16,8 @@ import {
   TaskStatus,
 } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   FailingTask,
   LongRunningTask,

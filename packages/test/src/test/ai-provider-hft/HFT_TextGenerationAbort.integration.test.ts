@@ -22,7 +22,7 @@ import { getTaskQueueRegistry, setTaskQueueRegistry, TaskStatus } from "@workglo
 import { setLogger, sleep } from "@workglow/util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 
 const MODEL_ID = "onnx:Xenova/LaMini-Flan-T5-783M:q8";
 

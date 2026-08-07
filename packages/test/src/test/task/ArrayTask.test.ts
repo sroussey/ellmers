@@ -16,8 +16,8 @@ import { ArrayTask } from "@workglow/tasks";
 import type { ConvertAllToOptionalArray } from "@workglow/util";
 import { setLogger } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, test, vi } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 const spyOn = vi.spyOn;
 

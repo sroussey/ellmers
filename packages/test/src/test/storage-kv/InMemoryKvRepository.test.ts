@@ -6,8 +6,8 @@
 
 import { InMemoryKvStorage } from "@workglow/storage";
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import { runGenericKvRepositoryTests } from "./genericKvRepositoryTests";
 
 describe("InMemoryKvStorage", () => {

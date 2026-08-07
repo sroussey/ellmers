@@ -6,8 +6,8 @@
 
 import { setLogger } from "@workglow/util";
 import { inner, magnitude, normalize, normalizeNumberArray } from "@workglow/util/schema";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, test } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("VectorUtils", () => {
   let logger = getTestingLogger();

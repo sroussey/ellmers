@@ -5,12 +5,12 @@
  */
 
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FsFolderTaskOutputRepository } from "../../binding/FsFolderTaskOutputRepository";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 async function* once(bytes: Uint8Array): AsyncIterable<Uint8Array> {
   yield bytes;

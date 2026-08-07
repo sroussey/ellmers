@@ -11,7 +11,7 @@ import { setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 
 /**
  * Atomicity contract for the IndexedDB tabular `putBulk`:

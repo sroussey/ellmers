@@ -4,8 +4,8 @@
 
 import { serialize, setLogger } from "@workglow/util";
 import { Graph, NodeAlreadyExistsError, NodeDoesntExistError } from "@workglow/util/graph";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 // Simple synchronous hash (FNV-1a 32-bit) for strings / bytes.
 // Non-cryptographic, use only for IDs / maps / cache keys etc.

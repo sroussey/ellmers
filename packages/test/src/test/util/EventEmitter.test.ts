@@ -5,8 +5,8 @@
  */
 
 import { EventEmitter, setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 const mock = vi.fn;
 

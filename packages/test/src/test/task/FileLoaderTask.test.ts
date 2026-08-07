@@ -6,8 +6,8 @@
 
 import { FileLoaderTask, registerSafeFetch, type SafeFetchFn } from "@workglow/tasks";
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 const mock = vi.fn;
 
@@ -509,7 +509,7 @@ layout: docs
 
 import { Button } from './Button';
 import { setLogger } from "@workglow/util";
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 
 # Component Page
 

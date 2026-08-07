@@ -62,10 +62,10 @@ function showHelp(sections: readonly string[]): void {
 
 Kinds:    ${KNOWN_KINDS.join(", ")} (default: all)
 Sections: ${sections.join(", ")}
-Runners:  ${KNOWN_RUNNERS.join(", ")} (default: both)
+Runners:  ${KNOWN_RUNNERS.join(", ")} (default: vitest; pass 'bun' to use Bun instead)
 
 Options:
-  --all             Run full suite (bun + vitest, no filters, very slow)
+  --all             Run the full suite with no kind/section filter (very slow)
   --check-sections  Verify every test file is reachable by section+kind selection
   --dry-run         Print runner commands without executing them
   --help            Show this usage message
@@ -74,7 +74,7 @@ Examples:
   bun scripts/test.ts --all                 # Run all tests
   bun scripts/test.ts unit                  # Run only unit tests
   bun scripts/test.ts storage unit          # Run only unit tests in storage dirs
-  bun scripts/test.ts vitest --all          # Run only tests using vitest
+  bun scripts/test.ts bun storage unit      # Run storage unit tests under Bun
 `);
 }
 
@@ -168,8 +168,14 @@ if (!runAll && filteredArgs.length === 0) {
   process.exit(0);
 }
 
-const bunOnly = filteredArgs.includes("bun");
-const vitestOnly = filteredArgs.includes("vitest");
+// Bun is OFF unless asked for. It is a supported runner that occasionally
+// surfaces real runtime differences, but running it alongside vitest by default
+// doubles every run to re-verify vitest's own semantics on a second runtime.
+// Ask for it explicitly (`bun scripts/test.ts bun unit`) or let the scheduled
+// parity workflow do it.
+const wantsBun = filteredArgs.includes("bun");
+const bunOnly = wantsBun;
+const vitestOnly = !wantsBun;
 const kinds: Kind[] = [];
 const sections: string[] = [];
 const unknown: string[] = [];

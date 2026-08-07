@@ -31,7 +31,7 @@ import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { Container, ServiceRegistry, setLogger } from "@workglow/util";
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 import { DoubleToResultTask, TestGraphAsTask, TestTaskWithDefaults } from "./TestTasks";
 
 // Register test tasks in the global registry (needed for toJSON serialization)

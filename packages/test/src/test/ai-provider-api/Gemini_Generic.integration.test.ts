@@ -14,7 +14,7 @@ import { registerGeminiInline } from "@workglow/google-gemini/ai-runtime";
 import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 
 const RUN = !!process.env.GOOGLE_API_KEY || !!process.env.GEMINI_API_KEY;

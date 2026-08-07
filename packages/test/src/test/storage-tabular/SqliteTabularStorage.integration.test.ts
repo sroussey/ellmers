@@ -8,8 +8,8 @@ import { Sqlite, SqliteTabularStorage } from "@workglow/sqlite/storage";
 import { ConnectionReentryError, StorageValidationError } from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, it, vi } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   runTabularStorageContract,
   VectorItemPrimaryKeyNames,

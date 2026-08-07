@@ -19,7 +19,7 @@ import { setLogger, sleep } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, test } from "vitest";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 import {
   AddToSumTask,
   DoubleToResultTask as DoubleTask,

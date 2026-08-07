@@ -18,8 +18,8 @@ import {
   setLogger,
 } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("InputCompactor", () => {
   const logger = getTestingLogger();

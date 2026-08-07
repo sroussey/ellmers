@@ -33,8 +33,8 @@ import {
 } from "@workglow/task-graph";
 import { Container, ServiceRegistry, setLogger } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
+import { getTestingLogger } from "@workglow/util/test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 // ========================================================================
 // Test Tasks

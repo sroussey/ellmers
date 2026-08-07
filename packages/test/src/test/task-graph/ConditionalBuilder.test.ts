@@ -9,7 +9,7 @@ import { setLogger } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 import { DoubleToDoubledTask, HalveTask } from "../task/TestTasks";
 
 /** Echoes its `value` input back out, used to drive a conditional's predicate from upstream. */

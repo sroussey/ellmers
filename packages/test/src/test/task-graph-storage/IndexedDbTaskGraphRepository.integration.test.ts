@@ -5,10 +5,10 @@
  */
 
 import { setLogger, uuid4 } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import "fake-indexeddb/auto";
 import { describe } from "vitest";
 import { IndexedDbTaskGraphRepository } from "../../binding/IndexedDbTaskGraphRepository";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import { runGenericTaskGraphRepositoryTests } from "./genericTaskGraphRepositoryTests";
 
 describe("IndexedDbTaskGraphRepository", () => {

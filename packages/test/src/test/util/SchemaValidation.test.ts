@@ -11,8 +11,8 @@ import {
   validateFormatAnnotations,
   validateSchema,
 } from "@workglow/util/schema";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("SchemaValidation", () => {
   const logger = getTestingLogger();

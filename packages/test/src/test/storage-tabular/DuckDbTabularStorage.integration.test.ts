@@ -7,11 +7,11 @@
 import { DuckDbTabularStorage } from "@workglow/duckdb/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
+import { getTestingLogger } from "@workglow/util/test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   runTabularStorageContract,
   VectorItemPrimaryKeyNames,

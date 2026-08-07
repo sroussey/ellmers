@@ -5,12 +5,12 @@
  */
 
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FsFolderTaskOutputRepository } from "../../binding/FsFolderTaskOutputRepository";
-import { getTestingLogger } from "../../binding/TestingLogger";
 // Re-use the package surface for `makeCacheRef` so the legacy-compat test can
 // synthesize a ref pointing at a file the test placed on disk directly.
 import { makeCacheRef } from "@workglow/task-graph";

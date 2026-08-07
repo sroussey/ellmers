@@ -6,8 +6,8 @@
 
 import { setLogger } from "@workglow/util";
 import { compress, decompress } from "@workglow/util/compress";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("Compression", () => {
   let logger = getTestingLogger();

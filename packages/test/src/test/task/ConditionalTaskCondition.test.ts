@@ -7,8 +7,8 @@
 import type { UIConditionConfig } from "@workglow/task-graph";
 import { ConditionalTask } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 // ============================================================================
 // ConditionalTask with serialized conditionConfig

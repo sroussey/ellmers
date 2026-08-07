@@ -13,7 +13,7 @@ import type { DataPortSchema } from "@workglow/util/schema";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { setLogger } from "@workglow/util";
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 import {
   EmbeddingConsumerTask,
   EmbeddingModelProviderTask,

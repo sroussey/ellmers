@@ -6,10 +6,10 @@
 
 import type { TaskInput, TaskOutput } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { rmSync } from "node:fs";
 import { beforeEach, describe, expect, it } from "vitest";
 import { FsFolderTaskOutputRepository } from "../../binding/FsFolderTaskOutputRepository";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("FsFolderTaskOutputRepository", () => {
   let logger = getTestingLogger();

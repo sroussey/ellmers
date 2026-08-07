@@ -7,8 +7,8 @@
 import { TaskStatus } from "@workglow/task-graph";
 import { TemplateTask } from "@workglow/tasks";
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("TemplateTask", () => {
   const logger = getTestingLogger();

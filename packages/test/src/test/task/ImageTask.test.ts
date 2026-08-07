@@ -30,8 +30,8 @@ import {
   type ImageValue,
   type RawPixelBuffer,
 } from "@workglow/util/media";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, test } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 // ---------------------------------------------------------------------------
 // Helpers — build ImageValue inputs and read back CpuImage pixel buffers.

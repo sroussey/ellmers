@@ -6,8 +6,8 @@
 
 import { Dataflow, serialGraph, TaskGraph, TaskStatus } from "@workglow/task-graph";
 import { Container, ServiceRegistry, setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import { TestIOTask } from "../task/TestTasks";
 
 describe("TaskGraph", () => {

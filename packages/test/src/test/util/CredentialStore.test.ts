@@ -14,8 +14,8 @@ import {
   setGlobalCredentialStore,
   setLogger,
 } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("CredentialStore", () => {
   let logger = getTestingLogger();

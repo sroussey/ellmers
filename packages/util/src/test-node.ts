@@ -21,3 +21,13 @@ export const resetGpuDeviceForTests: () => void = _utilMediaInternal.resetGpuDev
 
 /** Empties the texture pool so pooled textures do not leak across tests. */
 export const resetTexturePoolForTests: () => void = _utilMediaInternal.resetTexturePoolForTests;
+
+/**
+ * Logger for tests: quiet by default, console when `WORKGLOW_TEST_LOG`,
+ * `LOGGER_LEVEL`, `DEV`, or GitHub Actions debug is set.
+ *
+ * Unlike the reset hooks above this is stateless with respect to the package's
+ * own modules — it constructs loggers from the public entry rather than mutating
+ * anything inside it — so it can live in this bundle outright.
+ */
+export { getTestingLogger, setTestingLogger } from "./testing/TestingLogger";

@@ -8,9 +8,9 @@ import type { CachePolicy, IExecuteContext, IRunConfig, StreamEvent } from "@wor
 import { Task, TaskStatus, getOutputStreamMode, isTaskStreamable } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, it } from "vitest";
 import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 // ============================================================================
 // Test Tasks

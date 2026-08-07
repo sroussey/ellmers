@@ -4,8 +4,8 @@
 
 import { setLogger } from "@workglow/util";
 import { DirectedAcyclicGraph, DirectedGraph, Graph } from "@workglow/util/graph";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import { edgeIdentity } from "./graph.test";
 
 describe("The Readme", () => {

@@ -24,8 +24,8 @@ import {
 } from "@workglow/ai";
 import type { StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
 import { makeFingerprint, setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 const mock = vi.fn;
 

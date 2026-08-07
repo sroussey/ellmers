@@ -25,8 +25,8 @@ import {
   wrapQueueStorage,
 } from "@workglow/job-queue";
 import { setLogger, sleep, uuid4 } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import { runGenericJobQueueTests } from "./genericJobQueueTests";
 
 describe("InMemoryJobQueue", () => {

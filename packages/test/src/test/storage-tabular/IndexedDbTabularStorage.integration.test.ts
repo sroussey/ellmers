@@ -10,7 +10,7 @@ import type { DataPortSchemaObject, FromSchema } from "@workglow/util/schema";
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 import {
   runTabularStorageContract,
   VectorItemPrimaryKeyNames,
