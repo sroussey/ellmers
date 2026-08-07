@@ -81,7 +81,6 @@ export type {
 } from "./media/sharpImage.server";
 export type { ApplyParams, WebGpuImage } from "./media/webGpuImage.browser";
 
-import { _resetFilterRegistryForTests } from "./media/filterRegistry";
 import { registerGpuImageFactory as _registerGpuImageFactory } from "./media/gpuImage";
 import type { ImageValue as _ImageValue } from "./media/imageValue";
 import { SharpImage as _SharpImage } from "./media/sharpImage.server";
@@ -93,7 +92,6 @@ _registerGpuImageFactory("from", (value: _ImageValue) => _SharpImage.from(value)
  * @internal Symbols exported only for use by `@workglow/test`. Not part of the stable public API.
  */
 export const _testOnly = {
-  _resetFilterRegistryForTests,
   resetGpuDeviceForTests: (): void => {},
   resetTexturePoolForTests,
 } as const;

@@ -49,8 +49,3 @@ export function applyFilter<P>(image: GpuImage, filter: string, params: P): GpuI
 export function hasFilterOp(backend: GpuImageBackend, filter: string): boolean {
   return getRegistry().has(key(backend, filter));
 }
-
-/** @internal — test affordance only. */
-export function _resetFilterRegistryForTests(): void {
-  getRegistry().clear();
-}

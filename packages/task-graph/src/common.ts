@@ -62,9 +62,5 @@ export * from "./storage/TaskOutputRepository";
 export * from "./storage/TaskOutputStorageSchema";
 export * from "./storage/TaskOutputTabularRepository";
 
-export {
-  _resetPortCodecsForTests,
-  getPortCodec,
-  registerPortCodec,
-} from "./storage/PortCodecRegistry";
+export { getPortCodec, registerPortCodec } from "./storage/PortCodecRegistry";
 export type { PortCodec } from "./storage/PortCodecRegistry";

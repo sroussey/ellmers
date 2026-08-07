@@ -36,6 +36,19 @@ jobs:
       - name: Typecheck budget guard
         run: bun run typecheck:budget
 
+  test-discovery:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun i
+      # Fails if any test file is unreachable by section+kind selection. Every
+      # other job passes a kind, so an unreachable file silently never runs.
+      - name: Test discovery guard
+        run: bun scripts/test.ts --check-sections
+
   build:
     runs-on: ubuntu-latest
     steps:

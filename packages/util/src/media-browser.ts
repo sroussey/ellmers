@@ -94,7 +94,6 @@ async function _preferGpu(value: _ImageValue) {
 
 _registerGpuImageFactory("from", _preferGpu);
 
-import { _resetFilterRegistryForTests } from "./media/filterRegistry";
 import { resetGpuDeviceForTests } from "./media/gpuDevice.browser";
 import { resetTexturePoolForTests } from "./media/texturePool.browser";
 
@@ -102,7 +101,6 @@ import { resetTexturePoolForTests } from "./media/texturePool.browser";
  * @internal Symbols exported only for use by `@workglow/test`. Not part of the stable public API.
  */
 export const _testOnly = {
-  _resetFilterRegistryForTests,
   resetGpuDeviceForTests,
   resetTexturePoolForTests,
 } as const;
