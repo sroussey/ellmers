@@ -2,15 +2,21 @@
   "extends": "../../tsconfig.json",
   "include": ["src/**/*"],
   "files": ["./src/browser.ts", "./src/node.ts"],
-  "exclude": ["dist", "node_modules"],
+  "exclude": ["dist", "node_modules", "src/**/__tests__/**"],
   "compilerOptions": {
     "composite": true,
     "outDir": "./dist",
     "rootDir": "./src"
   },
   "references": [
-    { "path": "../util" },
-    { "path": "../storage" },
-    { "path": "../job-queue" }
+    {
+      "path": "../util"
+    },
+    {
+      "path": "../storage"
+    },
+    {
+      "path": "../job-queue"
+    }
   ]
 }
