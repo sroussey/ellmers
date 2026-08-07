@@ -220,6 +220,7 @@
     "@workglow/sqlite": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/task-graph": "workspace:*",
+    "@workglow/triggers": "workspace:*",
     "@workglow/browser-control": "workspace:*",
     "@workglow/javascript": "workspace:*",
     "@workglow/mcp": "workspace:*",

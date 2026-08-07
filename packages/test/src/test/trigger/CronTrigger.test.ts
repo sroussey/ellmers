@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CronExpressionError, CronTrigger } from "@workglow/triggers";
+import { CronExpressionError, CronTrigger, CronUnsatisfiableError } from "@workglow/triggers";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { advanceFakeTimers, flushAsyncWork } from "../helpers/advanceFakeTimers";
@@ -182,6 +182,39 @@ describe("CronTrigger", () => {
     await advanceFakeTimers(3 * MINUTE);
     expect(fires).toBe(3);
 
+    await trigger.stop();
+  });
+
+  test("a start() that cannot compute a first fire leaves the trigger stopped", async () => {
+    // `0 0 30 2 *` parses fine — February simply never has a 30th — so the
+    // failure surfaces on the FIRST schedule, which is where `start()` must
+    // leave the trigger untouched rather than half-live.
+    useFakeClock(Date.UTC(2026, 2, 10, 12, 0, 0));
+    const trigger = new CronTrigger({ expression: "0 0 30 2 *" });
+    let fires = 0;
+    const handler = (): void => {
+      fires += 1;
+    };
+
+    expect(() => trigger.start(handler)).toThrow(CronUnsatisfiableError);
+    expect(trigger.running).toBe(false);
+    // A trigger left reporting `running` would swallow every later start() as a
+    // no-op; this one must still report the real failure.
+    expect(() => trigger.start(handler)).toThrow(CronUnsatisfiableError);
+
+    await advanceFakeTimers(DAY);
+    expect(fires).toBe(0);
+
+    // A valid trigger started afterwards schedules normally.
+    const healthy = new CronTrigger({ expression: "* * * * *" });
+    let healthyFires = 0;
+    healthy.start(() => {
+      healthyFires += 1;
+    });
+    await advanceFakeTimers(2 * MINUTE);
+    expect(healthyFires).toBe(2);
+
+    await healthy.stop();
     await trigger.stop();
   });
 

@@ -11,11 +11,11 @@ npm install @workglow/triggers
 
 ## Triggers
 
-| Trigger           | Fires                                                    |
-| ----------------- | -------------------------------------------------------- |
-| `IntervalTrigger` | every `intervalMs`, starting one full period after `start()` |
+| Trigger           | Fires                                                         |
+| ----------------- | ------------------------------------------------------------- |
+| `IntervalTrigger` | every `intervalMs`, starting one full period after `start()`  |
 | `PollingTrigger`  | only when a poll result is interesting (non-empty by default) |
-| `CronTrigger`     | on the UTC instants matching a 5-field cron expression   |
+| `CronTrigger`     | on the UTC instants matching a 5-field cron expression        |
 
 ```ts
 import { CronTrigger, IntervalTrigger, PollingTrigger } from "@workglow/triggers";
@@ -38,25 +38,30 @@ import { Workflow } from "@workglow/task-graph";
 const workflow = new Workflow().addTask(MyTask);
 
 workflow.trigger(new IntervalTrigger({ intervalMs: 60_000 }));
-workflow.trigger(
-  new PollingTrigger({ intervalMs: 5_000, poll: () => fetchPendingIds() }),
-  { input: (context) => ({ ids: context.payload }) }
-);
+workflow.trigger(new PollingTrigger({ intervalMs: 5_000, poll: () => fetchPendingIds() }), {
+  input: (context) => ({ ids: context.payload }),
+});
 
 await using handle = await workflow.listen();
 ```
 
 `listen()` **resolves as soon as the triggers are scheduled — it does not block
-until the process is interrupted.** Keeping the process alive is the host
-application's job. Stop with `handle.stop()`, `workflow.stopListening()`, or by
-letting an `await using` scope exit.
+until the process is interrupted.** It does not, however, leave the process free
+to exit: a scheduled `setTimeout` is a live handle, so under Node or Bun a
+started trigger keeps the process alive until it is stopped. A CLI or a test
+that forgets `stop()` therefore hangs. Pass `unrefTimer: true` to any trigger
+whose schedule should not by itself hold the process open. Stop with
+`handle.stop()`, `workflow.stopListening()`, or by letting an `await using`
+scope exit.
 
 ## Behavior worth knowing
 
 - **Abort** — `stop()` aborts the signal handed to handlers and resolves only
-  once in-flight handlers settle. A caller signal passed to `start()` is linked
-  with `AbortSignal.any`. Under the workflow bindings, stopping also aborts the
-  in-flight workflow run.
+  once in-flight handlers settle; concurrent `stop()` calls join the same drain.
+  A caller signal passed to `start()` is linked with `AbortSignal.any`. Under
+  the workflow bindings, stopping a trigger aborts only the workflow runs THAT
+  trigger started — the signal is forwarded as `runConfig.signal`, so a second
+  trigger bound to the same workflow keeps running.
 - **Overlap** — `overlap: "skip" | "queue" | "concurrent"`, default `"skip"`. A
   tick arriving while the previous handler runs is dropped (and emits `skip`); a
   trigger is a clock, not a work queue, so a slow handler cannot grow a backlog.
@@ -66,7 +71,10 @@ letting an `await using` scope exit.
   not from when its handler finished, so handler duration never accumulates.
   Waits longer than a timer's ~24.8-day ceiling are chunked.
 - **Cron** — 5 fields, **UTC only**, supporting `*`, `N`, `a,b`, `a-b`, `*/n`,
-  and `a-b/n`. Day-of-month and day-of-week use standard OR semantics when both
-  are restricted. Macros (`@daily`), names (`MON`), and `L`/`W`/`#` are rejected
-  rather than guessed at.
+  and `a-b/n`. Day-of-month and day-of-week use standard OR semantics only when
+  NEITHER field begins with `*`: `0 0 1 * 1` is "the 1st **or** any Monday",
+  while `0 0 */2 * 1` is "every other day **and** a Monday" — Vixie cron's
+  leading-`*` rule, so a crontab line ported here means what it meant there.
+  Macros (`@daily`), names (`MON`), and `L`/`W`/`#` are rejected rather than
+  guessed at.
 - **Delivery** — in-process and at most once. Nothing survives a restart.

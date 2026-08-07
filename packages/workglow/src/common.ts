@@ -16,6 +16,10 @@ export * from "@workglow/postgres/job-queue";
 export * from "@workglow/duckdb/storage";
 export * from "@workglow/storage";
 export * from "@workglow/task-graph";
+// After task-graph: this package patches `Workflow.prototype` with
+// `.trigger()` / `.listen()`, so the meta-package must pull it in for a
+// consumer importing only `workglow` to get those methods at all.
+export * from "@workglow/triggers";
 export * from "@workglow/browser-control/task";
 export * from "@workglow/javascript/task";
 export * from "@workglow/mcp/tasks";
