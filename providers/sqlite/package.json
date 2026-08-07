@@ -15,19 +15,17 @@
   "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
-    "watch-js": "concurrently -c 'auto' -n 'storage-br,storage-n,storage-bu,jq-br,jq-n' 'bun run watch-storage-browser' 'bun run watch-storage-node' 'bun run watch-storage-bun' 'bun run watch-jq-browser' 'bun run watch-jq-node'",
+    "watch-js": "concurrently -c 'auto' -n 'storage-br,storage-n,jq-br,jq-n' 'bun run watch-storage-browser' 'bun run watch-storage-node' 'bun run watch-jq-browser' 'bun run watch-jq-node'",
     "watch-storage-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/browser.ts",
     "watch-storage-node": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/node.ts",
-    "watch-storage-bun": "bun build --watch --no-clear-screen --target=bun --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/bun.ts",
     "watch-jq-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/browser.ts",
     "watch-jq-node": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/node.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "bun run build-js && bun run build-types",
-    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'storage-br,storage-n,storage-bu,jq-br,jq-n' 'bun run build-storage-browser' 'bun run build-storage-node' 'bun run build-storage-bun' 'bun run build-jq-browser' 'bun run build-jq-node'",
+    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'storage-br,storage-n,jq-br,jq-n' 'bun run build-storage-browser' 'bun run build-storage-node' 'bun run build-jq-browser' 'bun run build-jq-node'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-storage-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/browser.ts",
     "build-storage-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/node.ts",
-    "build-storage-bun": "bun build --target=bun --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/bun.ts",
     "build-jq-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/browser.ts",
     "build-jq-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/node.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
@@ -39,10 +37,6 @@
       "browser": {
         "types": "./dist/storage/browser.d.ts",
         "import": "./dist/storage/browser.js"
-      },
-      "bun": {
-        "types": "./dist/storage/bun.d.ts",
-        "import": "./dist/storage/bun.js"
       },
       "types": "./dist/storage/node.d.ts",
       "import": "./dist/storage/node.js"
