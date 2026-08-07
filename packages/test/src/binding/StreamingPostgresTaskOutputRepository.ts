@@ -22,8 +22,7 @@ import { TabularStreamingTaskOutputRepository } from "./TabularStreamingTaskOutp
 
 /**
  * Durable, server-side (PostgreSQL) streaming task-output repository. JSON rows
- * via {@link PostgresTabularStorage} (same as the non-streaming
- * `PostgresTaskOutputRepository`); streamed port payloads as ordered `bytea`
+ * via {@link PostgresTabularStorage}; streamed port payloads as ordered `bytea`
  * chunk rows in sibling tables via {@link TabularBlobChunkStore}. Streaming
  * behavior lives in {@link TabularStreamingTaskOutputRepository}.
  */
