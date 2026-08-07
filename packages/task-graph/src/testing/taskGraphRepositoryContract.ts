@@ -2,6 +2,11 @@
  * @license
  * Copyright 2025 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
+ *
+ * `./TestTasks` is imported relatively, unlike the engine symbols above it.
+ * Both files ship inside the `./test` bundle, so there is no second copy for a
+ * relative import to diverge from — and reaching it as
+ * `@workglow/task-graph/test` would make that entry import itself.
  */
 
 import type { TaskGraphRepository } from "@workglow/task-graph";
@@ -11,9 +16,6 @@ import {
   TaskGraphTabularRepository,
   TaskRegistry,
 } from "@workglow/task-graph";
-// Sibling under `testing/`, so relative is correct here: this code is unique to
-// the `./test` bundle and has no counterpart in the main bundle to diverge from.
-// Reaching it by package specifier would make this entry import itself.
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { TestIOTask } from "./TestTasks";
 

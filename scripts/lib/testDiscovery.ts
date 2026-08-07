@@ -186,6 +186,46 @@ export function listSections(files: readonly TestFile[]): string[] {
   return [...new Set(files.map((f) => f.section))].sort();
 }
 
+/** A vitest project: one workspace (or tooling directory) that holds tests. */
+export interface TestProject {
+  /** `--project` name — the package's directory name (`task-graph`, `scripts`). */
+  readonly name: string;
+  /** Project root, relative to the repo root (`packages/task-graph`). */
+  readonly dir: string;
+}
+
+/**
+ * The vitest projects, DERIVED from where tests actually are rather than
+ * enumerated. A hand-written project list would drift exactly the way the
+ * section table did — silently dropping a directory from every run — and here
+ * the consequence is worse: a file under no project root is not merely
+ * unselectable, it never runs at all.
+ *
+ * A file directly under an {@link EXTRA_TEST_DIRS} entry projects to that
+ * directory; anything else projects to its workspace (`packages/<pkg>`).
+ */
+export function listTestProjects(files: readonly TestFile[]): TestProject[] {
+  const byDir = new Map<string, string>();
+  for (const f of files) {
+    const dir = projectDirOf(f.path);
+    if (dir !== undefined) byDir.set(dir, dir.split("/").pop() ?? dir);
+  }
+  return [...byDir.entries()]
+    .map(([dir, name]) => ({ name, dir }))
+    .sort((a, b) => a.dir.localeCompare(b.dir));
+}
+
+/** The project directory a test file belongs to, or `undefined` if none covers it. */
+export function projectDirOf(filePath: string): string | undefined {
+  const rel = filePath.startsWith(ROOT + "/") ? filePath.slice(ROOT.length + 1) : filePath;
+  const parts = rel.split("/");
+  if ((EXTRA_TEST_DIRS as readonly string[]).includes(parts[0])) return parts[0];
+  if ((PACKAGE_GROUPS as readonly string[]).includes(parts[0]) && parts.length > 1) {
+    return `${parts[0]}/${parts[1]}`;
+  }
+  return undefined;
+}
+
 export function matchesKind(filePath: string, kinds: readonly Kind[]): boolean {
   if (kinds.length === 0) return true;
   const base = filePath.split("/").pop() ?? filePath;

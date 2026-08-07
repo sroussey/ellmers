@@ -1,7 +1,9 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": [
-    "tsconfig.json"
+    "tsconfig.json",
+    "vitest.config.ts",
+    "vitest.setup.ts"
   ],
   "tasks": {
     "build-js": {
@@ -60,6 +62,18 @@
         "dist/**/*.js",
         "dist/**/*.js.map"
       ]
+    },
+    "test": {
+      "dependsOn": [
+        "^build-types",
+        "^build-js"
+      ],
+      "inputs": [
+        "src/**",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "outputs": []
     },
     "dev": {
       "persistent": true,

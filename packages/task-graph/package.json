@@ -26,7 +26,8 @@
     "build-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "build-test": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/test-entry.ts"
+    "build-test": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/test-entry.ts",
+    "test": "vitest run --config ../../vitest.config.ts --project task-graph"
   },
   "exports": {
     ".": {

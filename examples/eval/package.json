@@ -21,7 +21,7 @@
     "build-js": "bun build --target=bun --packages=external --outdir ./dist ./src/workglow-eval.ts",
     "build-js-worker-hft": "bun build --target=node --packages=external --outdir ./dist ./src/worker_hft.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "test": "vitest run",
+    "test": "vitest run --config ../../vitest.config.ts --project eval",
     "test:watch": "vitest",
     "build-js-worker-llamacpp": "bun build --target=node --packages=external --outdir ./dist ./src/worker_llamacpp.ts"
   },

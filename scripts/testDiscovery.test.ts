@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   discoverTestFiles,
@@ -11,7 +13,9 @@ import {
   findUnreachable,
   KNOWN_KINDS,
   listSections,
+  listTestProjects,
   matchesKind,
+  PACKAGE_GROUPS,
   ROOT,
   SECTION_GROUPS,
 } from "./lib/testDiscovery";
@@ -60,6 +64,42 @@ describe("test discovery", () => {
     // The previous runner selected zero of these, so they never ran in CI.
     const inPackage = files.filter((f) => !f.path.includes("/packages/test/src/"));
     expect(inPackage.length).toBeGreaterThan(0);
+  });
+
+  it("runs every discovered test file under some project root in the real config", async () => {
+    // Vitest only runs files beneath a project root. A file outside every root
+    // does not fail, does not warn, and does not appear in any count — it simply
+    // stops running, which is strictly worse than being unselectable.
+    //
+    // This reads the ACTUAL vitest.config.ts rather than re-deriving the roots.
+    // Comparing `listTestProjects()` against `projectDirOf()` would be vacuous —
+    // both walk the same structure, so it could never fail. The failure that can
+    // really happen is the config drifting away from discovery, which is only
+    // visible from the config itself.
+    const mod = await import("../vitest.config.ts");
+    const roots: string[] = (mod.default.test?.projects ?? []).map(
+      (p: { test: { root: string } }) => p.test.root
+    );
+    expect(roots.length).toBeGreaterThan(0);
+    const uncovered = files
+      .filter((f) => !roots.some((r) => f.path === r || f.path.startsWith(r + "/")))
+      .map((f) => f.path.replace(ROOT + "/", ""));
+    expect(uncovered).toEqual([]);
+  });
+
+  it("gives every workspace that holds tests a `test` script for Turbo to run", () => {
+    // `turbo run test` invokes each workspace's own `test` script. A workspace
+    // with tests but no script is not an error to Turbo — it reports the task
+    // successful and runs nothing, so `--changed` would report green while
+    // skipping the package entirely.
+    const missing = listTestProjects(files)
+      .filter((p) => PACKAGE_GROUPS.some((g) => p.dir.startsWith(g + "/")))
+      .filter((p) => {
+        const pkg = JSON.parse(readFileSync(join(ROOT, p.dir, "package.json"), "utf8"));
+        return typeof pkg.scripts?.test !== "string";
+      })
+      .map((p) => p.dir);
+    expect(missing).toEqual([]);
   });
 
   it("maps every grouped directory to a section that still exists", () => {

@@ -301,9 +301,34 @@ class TestTask extends Task<TestInput, TestOutput> {
 
 ```sh
 bun scripts/test.ts [--all] [kinds...] [sections...] [runners...] [options]
+bun scripts/test.ts --changed [base]   # only packages affected since base (default origin/main)
 ```
 
 When making code changes, run the tests on that section only, and pass vitest only. Otherwise tests are very slow. For example, if you are making changes to the McpServer, run `bun scripts/test.ts mcp vitest`.
+
+Sections are **discovered**, never enumerated — every directory holding tests maps to a
+section, and `--check-sections` fails if any test file is unreachable by section+kind
+selection. Note that `packages/test/src/test/task-graph*/` belongs to section `graph`,
+not `task-graph`; `task-graph` selects the package's own co-located `__tests__`.
+
+`--changed` delegates package selection to Turbo (`turbo run test --filter=...[base]`),
+so a change also runs the tests of everything that depends on it. Only workspaces with a
+`test` script participate; tooling tests outside any workspace (`scripts/`) are not
+covered by that mode — run them with `bun scripts/test.ts scripts`.
+
+### Vitest projects
+
+The root `vitest.config.ts` defines one **project** per workspace that holds tests, and
+the project list is derived from the same discovery the runner uses rather than written
+out by hand. `vitest run --project task-graph` runs just that package; each package's own
+`test` script is `vitest run --config ../../vitest.config.ts --project <name>`, which is
+what Turbo invokes.
+
+Anything path-shaped in the shared project options must be **absolute** — project roots
+differ, so a relative `setupFiles` or `typecheck.tsconfig` would resolve against each
+package and silently fail to load. `testDiscovery.test.ts` reads the real config and
+fails if any discovered test file falls outside every project root: such a file does not
+error or warn, it simply stops running.
 
 ### Developing without building
 

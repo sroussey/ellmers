@@ -66,6 +66,8 @@ Runners:  ${KNOWN_RUNNERS.join(", ")} (default: vitest; pass 'bun' to use Bun in
 
 Options:
   --all             Run the full suite with no kind/section filter (very slow)
+  --changed [base]  Run only packages affected by changes vs base (default origin/main),
+                    via Turbo. Delegates package selection to the dependency graph.
   --check-sections  Verify every test file is reachable by section+kind selection
   --dry-run         Print runner commands without executing them
   --help            Show this usage message
@@ -75,6 +77,7 @@ Examples:
   bun scripts/test.ts unit                  # Run only unit tests
   bun scripts/test.ts storage unit          # Run only unit tests in storage dirs
   bun scripts/test.ts bun storage unit      # Run storage unit tests under Bun
+  bun scripts/test.ts --changed             # Only packages affected since origin/main
 `);
 }
 
@@ -116,8 +119,23 @@ function buildVitestArgs(files: string[]): string[] {
   return args;
 }
 
-async function spawnRunner(args: string[], label: string): Promise<number> {
-  const proc = Bun.spawn(args, { cwd: ROOT, stdio: ["inherit", "inherit", "inherit"] });
+/**
+ * `preselected` says this script has already applied the kind filter and is
+ * handing vitest an explicit file list, so the config's default tier exclude
+ * must be turned off — it would drop integration files the caller named
+ * outright. The Turbo path passes no files and therefore keeps the gate on,
+ * which is what makes `turbo run test` mean "unit tier".
+ */
+async function spawnRunner(
+  args: string[],
+  label: string,
+  opts: { preselected: boolean } = { preselected: true }
+): Promise<number> {
+  const proc = Bun.spawn(args, {
+    cwd: ROOT,
+    stdio: ["inherit", "inherit", "inherit"],
+    env: opts.preselected ? { ...process.env, WORKGLOW_TEST_TIER: "all" } : process.env,
+  });
   const exitCode = await proc.exited;
   if (exitCode !== 0) console.error(`${label} failed with exit code ${exitCode}`);
   return exitCode;
@@ -161,6 +179,33 @@ if (rawArgs.includes("--check-sections")) {
 
 const runAll = rawArgs.includes("--all");
 const dryRun = rawArgs.includes("--dry-run");
+
+/**
+ * `--changed [base]` — run only the packages a change can reach.
+ *
+ * Package selection is delegated to Turbo rather than reimplemented here: it
+ * already knows the workspace dependency graph, so `...[base]` means "packages
+ * changed since base, plus everything that depends on them" — the transitive
+ * half is the part a hand-rolled diff would get wrong.
+ *
+ * Only workspaces with a `test` script participate. Tooling tests that live
+ * outside any workspace (`scripts/`) are NOT covered by this mode; run them
+ * with `bun scripts/test.ts scripts`.
+ */
+const changedIdx = rawArgs.indexOf("--changed");
+if (changedIdx !== -1) {
+  const next = rawArgs[changedIdx + 1];
+  const base = next !== undefined && !next.startsWith("-") ? next : "origin/main";
+  const args = ["npx", "turbo", "run", "test", `--filter=...[${base}]`];
+  console.log(`\nRunning tests for packages affected since ${base}\n`);
+  if (dryRun) {
+    console.log(JSON.stringify(args));
+    process.exit(0);
+  }
+  process.exit(await spawnRunner(args, "Turbo test", { preselected: false }));
+}
+
+// `--changed` exits above, so only the plain flags need stripping here.
 const filteredArgs = rawArgs.filter((a) => a !== "--all" && a !== "--dry-run");
 
 if (!runAll && filteredArgs.length === 0) {

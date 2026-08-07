@@ -49,7 +49,8 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "build-test": "concurrently -c 'auto' -n 'test-browser,test-node' 'bun run build-test-browser' 'bun run build-test-node'",
     "build-test-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/test-browser.ts",
-    "build-test-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/test-node.ts"
+    "build-test-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/test-node.ts",
+    "test": "vitest run --config ../../vitest.config.ts --project util"
   },
   "exports": {
     ".": {
