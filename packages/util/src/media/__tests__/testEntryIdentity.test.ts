@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { _utilMediaInternal } from "@workglow/util/media";
+import { resetGpuDeviceForTests, resetTexturePoolForTests } from "@workglow/util/test";
 import { describe, expect, it } from "vitest";
-import { _internal } from "../../media-node";
-import { resetGpuDeviceForTests, resetTexturePoolForTests } from "../../test-node";
 
 /**
  * The `./test` entry must resolve to the SAME module instance as the package's
@@ -18,11 +18,15 @@ import { resetGpuDeviceForTests, resetTexturePoolForTests } from "../../test-nod
  * looking like a flaky test. Reaching the symbols through the public entry keeps
  * them external and shared. These assertions fail the moment someone "simplifies"
  * the test entry into a direct import.
+ *
+ * Both sides are imported by PACKAGE SPECIFIER on purpose, because that is what
+ * a consumer does. Importing one side relatively compares source against `dist`
+ * and fails in dist mode for a reason that says nothing about the packaging.
  */
 describe("@workglow/util/test entry", () => {
   it("re-exports the same function objects as the package's own bag", () => {
-    expect(resetGpuDeviceForTests).toBe(_internal.resetGpuDeviceForTests);
-    expect(resetTexturePoolForTests).toBe(_internal.resetTexturePoolForTests);
+    expect(resetGpuDeviceForTests).toBe(_utilMediaInternal.resetGpuDeviceForTests);
+    expect(resetTexturePoolForTests).toBe(_utilMediaInternal.resetTexturePoolForTests);
   });
 
   it("exposes callable reset hooks", () => {

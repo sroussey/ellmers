@@ -14,7 +14,7 @@ import {
   matchesKind,
   ROOT,
   SECTION_GROUPS,
-} from "../../../../../scripts/lib/testDiscovery";
+} from "./lib/testDiscovery";
 
 /**
  * Guards the runner's file selection.

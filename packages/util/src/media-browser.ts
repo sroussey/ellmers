@@ -103,7 +103,7 @@ import { resetTexturePoolForTests } from "./media/texturePool.browser";
  * instance — a separate bundle would get its own copy of the registries these
  * reset. Do not import this directly; import `@workglow/util/test`.
  */
-export const _internal = {
+export const _utilMediaInternal = {
   resetGpuDeviceForTests,
   resetTexturePoolForTests,
 } as const;

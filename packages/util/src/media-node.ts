@@ -94,7 +94,7 @@ _registerGpuImageFactory("from", (value: _ImageValue) => _SharpImage.from(value)
  * instance — a separate bundle would get its own copy of the registries these
  * reset. Do not import this directly; import `@workglow/util/test`.
  */
-export const _internal = {
+export const _utilMediaInternal = {
   resetGpuDeviceForTests: (): void => {},
   resetTexturePoolForTests,
 } as const;

@@ -14,10 +14,10 @@
  * instance the code under test uses.
  */
 
-import { _internal } from "@workglow/util/media";
+import { _utilMediaInternal } from "@workglow/util/media";
 
 /** Drops the cached GPU device so the next request re-acquires one. */
-export const resetGpuDeviceForTests: () => void = _internal.resetGpuDeviceForTests;
+export const resetGpuDeviceForTests: () => void = _utilMediaInternal.resetGpuDeviceForTests;
 
 /** Empties the texture pool so pooled textures do not leak across tests. */
-export const resetTexturePoolForTests: () => void = _internal.resetTexturePoolForTests;
+export const resetTexturePoolForTests: () => void = _utilMediaInternal.resetTexturePoolForTests;

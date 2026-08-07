@@ -13,13 +13,13 @@
  * class than the one subclasses extend, breaking every `instanceof`.
  */
 
-import { _internal } from "@workglow/ai";
+import { _aiInternal } from "@workglow/ai";
 
 /**
  * Base class for vision tasks. Exposed for tests that assert the task hierarchy;
  * not part of the supported API surface.
  */
-export const AiVisionTask = _internal.AiVisionTask;
+export const AiVisionTask = _aiInternal.AiVisionTask;
 
 /** Empties the checkpoint registry so cached prefixes do not leak across tests. */
-export const clearCheckpoints: () => void = _internal.clearCheckpointsForTesting;
+export const clearCheckpoints: () => void = _aiInternal.clearCheckpointsForTesting;

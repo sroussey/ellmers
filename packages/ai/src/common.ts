@@ -20,7 +20,7 @@ export * from "./errors/ImageGenerationErrors";
 export * from "./provider/AiProvider";
 export * from "./provider/AiProviderRegistry";
 // Explicit rather than `export *`: `clearCheckpointsForTesting` lives in this
-// module and must NOT reach the public entry. It is routed through `_internal`
+// module and must NOT reach the public entry. It is routed through `_aiInternal`
 // below and surfaced by the `./test` entry instead.
 export {
   checkpointModelKey,
@@ -45,7 +45,7 @@ import { AiVisionTask } from "./task/base/AiVisionTask";
  * instance — a separate bundle would get its own checkpoint registry, and a reset
  * there would clear a map nothing else reads. Import `@workglow/ai/test` instead.
  */
-export const _internal = {
+export const _aiInternal = {
   AiVisionTask,
   clearCheckpointsForTesting,
 } as const;
