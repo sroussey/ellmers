@@ -15,9 +15,6 @@ import {
   TaskGraphTimeoutError,
   TaskStatus,
 } from "@workglow/task-graph";
-import { setLogger, sleep } from "@workglow/util";
-import { getTestingLogger } from "@workglow/util/test";
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   FailingTask,
   LongRunningTask,
@@ -25,7 +22,10 @@ import {
   TestDoubleTask,
   TestIOTask,
   TestSquareTask,
-} from "../task/TestTasks";
+} from "@workglow/task-graph/test";
+import { setLogger, sleep } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const spyOn = vi.spyOn;
 

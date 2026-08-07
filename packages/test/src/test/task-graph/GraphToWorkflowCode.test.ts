@@ -12,9 +12,6 @@ import {
   TaskGraph,
   Workflow,
 } from "@workglow/task-graph";
-import { deepEqual, setLogger } from "@workglow/util";
-import { getTestingLogger } from "@workglow/util/test";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   AddToSumTask,
   DoubleToResultTask as DoubleTask,
@@ -23,9 +20,11 @@ import {
   TestInputTask,
   TestOutputTask,
   TestSimpleTask,
-} from "../task/TestTasks";
+} from "@workglow/task-graph/test";
+import { deepEqual, setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 // Import to register workflow prototype methods
-import "../task/TestTasks";
 
 // Import to register RAG and pipeline workflow prototype methods (side-effect imports)
 import { registerAiTasks } from "@workglow/ai";

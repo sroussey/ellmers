@@ -11,8 +11,8 @@ import {
   TaskGraphTabularRepository,
   TaskRegistry,
 } from "@workglow/task-graph";
+import { TestIOTask } from "@workglow/task-graph/test";
 import { afterEach, beforeEach, expect, it } from "vitest";
-import { TestIOTask } from "../task/TestTasks";
 
 export function runGenericTaskGraphRepositoryTests(
   createRepository: () => Promise<TaskGraphRepository>

@@ -5,10 +5,10 @@
  */
 
 import { Workflow } from "@workglow/task-graph";
+import { RefineTask } from "@workglow/task-graph/test";
 import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, it } from "vitest";
-import { RefineTask } from "./TestTasks";
 
 // ============================================================================
 // WhileTask with serialized whileConfig (conditionField/operator/value)

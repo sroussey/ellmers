@@ -5,10 +5,10 @@
  */
 
 import { Dataflow, serialGraph, TaskGraph, TaskStatus } from "@workglow/task-graph";
+import { TestIOTask } from "@workglow/task-graph/test";
 import { Container, ServiceRegistry, setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { TestIOTask } from "../task/TestTasks";
 
 describe("TaskGraph", () => {
   let logger = getTestingLogger();

@@ -30,9 +30,13 @@ import { LambdaTask } from "@workglow/tasks";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
+import {
+  DoubleToResultTask,
+  TestGraphAsTask,
+  TestTaskWithDefaults,
+} from "@workglow/task-graph/test";
 import { Container, ServiceRegistry, setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
-import { DoubleToResultTask, TestGraphAsTask, TestTaskWithDefaults } from "./TestTasks";
 
 // Register test tasks in the global registry (needed for toJSON serialization)
 TaskRegistry.registerTask(DoubleToResultTask);

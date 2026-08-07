@@ -18,7 +18,6 @@ import { Container, ServiceRegistry, setLogger, sleep } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { getTestingLogger } from "@workglow/util/test";
 import {
   GraphAsTask_ComputeTask,
   GraphAsTask_InputTask,
@@ -28,7 +27,8 @@ import {
   GraphAsTask_TaskC,
   TestGraphAsTask_AB,
   TestGraphAsTask_Value,
-} from "./TestTasks";
+} from "@workglow/task-graph/test";
+import { getTestingLogger } from "@workglow/util/test";
 
 describe("GraphAsTask Dynamic Schema", () => {
   let logger = getTestingLogger();

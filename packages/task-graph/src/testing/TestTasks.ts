@@ -2,6 +2,18 @@
  * @license
  * Copyright 2025 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
+ *
+ * The shared cast of fake tasks the task-graph suites act on.
+ *
+ * Importing this module is NOT side-effect free: its tail patches
+ * `Workflow.prototype` with fluent builder methods (`.testSimple()`, `.refine()`,
+ * …) and declares them through a `declare module "@workglow/task-graph"`
+ * augmentation. That is why `Workflow` and `CreateWorkflow` below are imported
+ * by PACKAGE SPECIFIER and must stay that way. `./test` is built as its own
+ * `--packages=external` bundle; a relative import would inline a second
+ * `Workflow` class here, and the patch would land on that copy while every test
+ * builds workflows from the real one — `.testSimple is not a function`, from a
+ * file that looks like it only defines classes.
  */
 
 import type {

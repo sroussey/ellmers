@@ -13,15 +13,15 @@ import {
 } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
-import { setLogger } from "@workglow/util";
-import { getTestingLogger } from "@workglow/util/test";
 import {
   DoubleToResultTask,
   GraphAsTask_TaskA,
   GraphAsTask_TaskB,
   GraphAsTask_TaskC,
   TestGraphAsTask,
-} from "./TestTasks";
+} from "@workglow/task-graph/test";
+import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 
 // Register test tasks
 TaskRegistry.registerTask(DoubleToResultTask);

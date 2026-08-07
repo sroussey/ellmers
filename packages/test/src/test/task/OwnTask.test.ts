@@ -2,9 +2,9 @@ import type { IExecuteContext, TaskOutput } from "@workglow/task-graph";
 import { Task, TaskGraph, Workflow } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
+import { TaskCreatorTask } from "@workglow/task-graph/test";
 import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
-import { TaskCreatorTask } from "./TestTasks";
 
 class SimpleTask extends Task {
   public static override readonly type = "SimpleOwnedTask";

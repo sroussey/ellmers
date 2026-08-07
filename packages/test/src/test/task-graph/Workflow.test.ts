@@ -25,6 +25,16 @@ import {
   WorkflowError,
 } from "@workglow/task-graph";
 import {
+  LongRunningTask,
+  NumberTask,
+  NumberToStringTask,
+  StringTask,
+  TestInputTask,
+  TestOutputTask,
+  TestSimpleTask,
+  WildcardPassthroughTask,
+} from "@workglow/task-graph/test";
+import {
   InputTask,
   OutputTask,
   ScalarAddTask,
@@ -41,19 +51,8 @@ import {
 } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  LongRunningTask,
-  NumberTask,
-  NumberToStringTask,
-  StringTask,
-  TestInputTask,
-  TestOutputTask,
-  TestSimpleTask,
-  WildcardPassthroughTask,
-} from "../task/TestTasks";
 // Import for module-augmentation side effects that register vector test tasks
 import { getTestingLogger } from "@workglow/util/test";
-import "../task/TestTasks";
 
 const spyOn = vi.spyOn;
 

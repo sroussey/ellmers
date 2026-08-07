@@ -5,11 +5,11 @@
  */
 
 import { Dataflow, TaskGraph, Workflow } from "@workglow/task-graph";
+import { ProcessItemTask, RefineTask } from "@workglow/task-graph/test";
 import { setLogger } from "@workglow/util";
 import { CycleError } from "@workglow/util/graph";
 import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, it } from "vitest";
-import { ProcessItemTask, RefineTask } from "../task/TestTasks";
 
 describe("Subgraph cycle guard", () => {
   setLogger(getTestingLogger());

@@ -23,6 +23,14 @@
 export { InMemoryTaskOutputRepository } from "./testing/InMemoryTaskOutputRepository";
 
 /**
+ * The shared cast of fake tasks the task-graph suites act on. Re-exported as a
+ * whole: importing it also patches `Workflow.prototype` with the fluent builder
+ * methods it declares, so consumers get the classes and the builder surface from
+ * one import.
+ */
+export * from "./testing/TestTasks";
+
+/**
  * Conformance suite for {@link TaskOutputRepository}. An adapter supplies a
  * factory and inherits every behavioural assertion, so a new backend is a
  * ~15-line shim in its own package rather than an edit to someone else's tests.
