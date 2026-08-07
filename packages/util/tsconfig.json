@@ -14,7 +14,9 @@
     "./src/media-browser.ts",
     "./src/media-node.ts",
     "./src/compress-browser.ts",
-    "./src/compress-node.ts"
+    "./src/compress-node.ts",
+    "./src/test-browser.ts",
+    "./src/test-node.ts"
   ],
   "exclude": ["dist", "node_modules"],
   "compilerOptions": {

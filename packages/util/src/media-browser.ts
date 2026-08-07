@@ -98,9 +98,12 @@ import { resetGpuDeviceForTests } from "./media/gpuDevice.browser";
 import { resetTexturePoolForTests } from "./media/texturePool.browser";
 
 /**
- * @internal Symbols exported only for use by `@workglow/test`. Not part of the stable public API.
+ * @internal Plumbing for the `@workglow/util/test` entry, which is the documented
+ * surface. It must be reachable from this bundle so both entries share one module
+ * instance — a separate bundle would get its own copy of the registries these
+ * reset. Do not import this directly; import `@workglow/util/test`.
  */
-export const _testOnly = {
+export const _internal = {
   resetGpuDeviceForTests,
   resetTexturePoolForTests,
 } as const;
