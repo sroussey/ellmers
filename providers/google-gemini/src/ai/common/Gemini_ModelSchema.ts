@@ -47,6 +47,13 @@ export const GeminiModelSchema = {
           description: "Task type hint for embedding models.",
           default: null,
         },
+        seed: {
+          type: "number",
+          description:
+            "RNG seed passed to Gemini sampling. Omit for non-reproducible generation; " +
+            "set for reproducible generation. Matches the local providers' `seed` " +
+            "(node-llama-cpp, transformers.js), which name the same knob.",
+        },
         thinking_budget: {
           type: "number",
           description:

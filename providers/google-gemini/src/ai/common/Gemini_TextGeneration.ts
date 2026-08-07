@@ -13,7 +13,12 @@ import { getLogger } from "@workglow/util/worker";
 import { buildGeminiPrefixedContents } from "./Gemini_CacheCheckpoint";
 import { generateGeminiStreamWithCacheFallback } from "./Gemini_CachedContentFallback";
 import { evictIfStaleGeminiCachedContent, getGeminiCachedContent } from "./Gemini_CacheStore";
-import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemini_Client";
+import {
+  createGeminiClient,
+  getGeminiSeed,
+  getModelName,
+  resolveThinkingConfig,
+} from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
 import { buildGeminiContents } from "./Gemini_ToolCalling";
@@ -25,6 +30,7 @@ interface GeminiGenerationConfig {
   topP?: number;
   frequencyPenalty?: number;
   presencePenalty?: number;
+  seed?: number;
 }
 
 /**
@@ -32,13 +38,20 @@ interface GeminiGenerationConfig {
  * setting fields that are defined so callers that omit a param keep the
  * provider's default (matching the OpenAI/Anthropic adapters).
  */
-function buildGenerationConfig(input: TextGenerationTaskInput): GeminiGenerationConfig {
+function buildGenerationConfig(
+  input: TextGenerationTaskInput,
+  model?: GeminiModelConfig
+): GeminiGenerationConfig {
   const config: GeminiGenerationConfig = {};
   if (input.maxTokens !== undefined) config.maxOutputTokens = input.maxTokens;
   if (input.temperature !== undefined) config.temperature = input.temperature;
   if (input.topP !== undefined) config.topP = input.topP;
   if (input.frequencyPenalty !== undefined) config.frequencyPenalty = input.frequencyPenalty;
   if (input.presencePenalty !== undefined) config.presencePenalty = input.presencePenalty;
+  // Sampling seed is model config rather than task input, matching the local
+  // providers (node-llama-cpp / transformers.js) which expose the same knob.
+  const seed = getGeminiSeed(model);
+  if (seed !== undefined) config.seed = seed;
   return config;
 }
 
@@ -137,7 +150,7 @@ export const Gemini_TextGeneration_Stream: AiProviderRunFn<
           abortSignal: signal ?? undefined,
           systemInstruction: undefined,
           cachedContent: cachedEntry!.name,
-          ...buildGenerationConfig(input),
+          ...buildGenerationConfig(input, model),
           maxOutputTokens,
           thinkingConfig,
         },
@@ -170,7 +183,7 @@ export const Gemini_TextGeneration_Stream: AiProviderRunFn<
         config: {
           abortSignal: signal ?? undefined,
           systemInstruction,
-          ...buildGenerationConfig(input),
+          ...buildGenerationConfig(input, model),
           maxOutputTokens,
           thinkingConfig,
         },

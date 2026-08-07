@@ -116,6 +116,22 @@ export function getThinkingBudget(model: GeminiModelConfig | undefined): number 
 }
 
 /**
+ * Sampling seed for reproducible generation, from `provider_config.seed`.
+ * Returns `undefined` when unset so the request omits the field entirely and
+ * the model keeps its own (non-reproducible) sampling — matching how the other
+ * optional sampling params are handled.
+ *
+ * Gemini is the only cloud provider here that exposes a seed at all: the OpenAI
+ * Responses API rejects one outright (`400 Unknown parameter: 'seed'`) and
+ * Anthropic has none, so aside from the local providers this is the single
+ * lever for reproducible cloud extraction.
+ */
+export function getGeminiSeed(model: GeminiModelConfig | undefined): number | undefined {
+  const seed = model?.provider_config?.seed;
+  return typeof seed === "number" ? seed : undefined;
+}
+
+/**
  * Resolves the thinking-related request fields consistently across run-fns.
  * Gemini counts thinking tokens against `maxOutputTokens`, so a positive budget
  * is added on top of the caller's cap to leave room for the visible answer.

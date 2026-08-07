@@ -20,7 +20,12 @@ import {
 } from "./Gemini_CacheCheckpoint";
 import { generateGeminiStreamWithCacheFallback } from "./Gemini_CachedContentFallback";
 import { evictIfStaleGeminiCachedContent, getGeminiCachedContent } from "./Gemini_CacheStore";
-import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemini_Client";
+import {
+  createGeminiClient,
+  getGeminiSeed,
+  getModelName,
+  resolveThinkingConfig,
+} from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
 import { mapGeminiUsage } from "./Gemini_Usage";
@@ -190,6 +195,7 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
       systemInstruction: undefined,
       maxOutputTokens,
       temperature: input.temperature,
+      seed: getGeminiSeed(model),
       cachedContent: cachedEntry!.name,
       thinkingConfig,
     },
@@ -209,6 +215,7 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
         systemInstruction,
         maxOutputTokens,
         temperature: input.temperature,
+        seed: getGeminiSeed(model),
         tools: [{ functionDeclarations }],
         toolConfig: toolConfig as any,
         thinkingConfig,

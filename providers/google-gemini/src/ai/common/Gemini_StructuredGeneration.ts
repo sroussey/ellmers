@@ -10,7 +10,12 @@ import type {
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
 import { createPartialJsonStream } from "@workglow/util/worker";
-import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemini_Client";
+import {
+  createGeminiClient,
+  getGeminiSeed,
+  getModelName,
+  resolveThinkingConfig,
+} from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
 import { sanitizeSchemaForGemini } from "./Gemini_Schema";
@@ -67,6 +72,7 @@ export const Gemini_StructuredGeneration_Stream: AiProviderRunFn<
       responseSchema: sanitizedSchema as any,
       maxOutputTokens,
       temperature: input.temperature,
+      seed: getGeminiSeed(model),
       thinkingConfig,
     },
   });
