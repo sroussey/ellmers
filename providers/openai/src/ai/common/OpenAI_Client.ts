@@ -158,10 +158,19 @@ export function resolvePromptCacheKey(
 
 /**
  * Applies the per-request Responses fields common to every OpenAI text run-fn:
- * the model's `reasoning` config (when set) and a stable `prompt_cache_key`.
- * Mutates and returns `params` so callers can inline it into the create call.
- * Call this last, after model/instructions/tools are populated, so the cache
- * key sees the full prefix.
+ * the model's `reasoning` config and a stable `prompt_cache_key`. Mutates and
+ * returns `params` so callers can inline it into the create call. Call this
+ * last, after model/instructions/tools/temperature are populated, so the cache
+ * key sees the full prefix and the reasoning default can see the temperature.
+ *
+ * When the caller pinned a `temperature` but expressed no reasoning preference,
+ * reasoning is forced off. The two are not independently selectable on the
+ * reasoning families: `gpt-5.6-luna` answers `temperature` alone with
+ * `400 Unsupported parameter: 'temperature' is not supported with this model`,
+ * yet accepts `{reasoning: {effort: "none"}, temperature: 0}`. A caller asking
+ * for a specific temperature is asking for controlled sampling, so honouring
+ * that request — rather than failing it — is the useful reading. An explicit
+ * `reasoning` in the model config always wins.
  */
 export function finalizeResponsesRequest(
   model: OpenAiModelConfig | undefined,
@@ -169,6 +178,7 @@ export function finalizeResponsesRequest(
 ): Record<string, unknown> {
   const reasoning = getReasoningConfig(model);
   if (reasoning !== undefined) params.reasoning = reasoning;
+  else if (params.temperature !== undefined) params.reasoning = { effort: "none" };
   params.prompt_cache_key = resolvePromptCacheKey(model, params);
   return params;
 }

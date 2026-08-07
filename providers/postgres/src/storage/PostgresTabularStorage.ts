@@ -66,6 +66,43 @@ function assertPositiveInt(value: number | undefined, label: string): void {
   }
 }
 
+const pad = (n: number, width = 2): string => String(n).padStart(width, "0");
+
+/**
+ * Renders a Date the driver produced for a TIMESTAMP / DATE column back into
+ * the string its schema declares.
+ *
+ * Read from LOCAL components on purpose. `TIMESTAMP WITHOUT TIME ZONE` keeps
+ * the wall-clock it was given and drops any offset, so writing the usual
+ * `new Date().toISOString()` stores the UTC wall-clock; the driver then parses
+ * that back in the session's local zone. `toISOString()` here would re-apply
+ * the offset and shift the value (7 hours, in America/Los_Angeles). Rebuilding
+ * from local components recovers the exact wall-clock stored, so the value
+ * round-trips unchanged in any zone.
+ */
+export function dateToSchemaString(value: Date, format: string | undefined): string {
+  if (format === "date") {
+    // A DATE column always denotes a midnight, but drivers disagree on WHICH
+    // midnight: node-postgres parses `2026-04-02` into local midnight, while
+    // PGlite yields UTC midnight. Reading the wrong frame shifts the day by
+    // one. Outside UTC only one frame can land exactly on 00:00:00.000, so
+    // whichever does is the one the driver used; in UTC both agree.
+    const isUtcMidnight =
+      value.getUTCHours() === 0 &&
+      value.getUTCMinutes() === 0 &&
+      value.getUTCSeconds() === 0 &&
+      value.getUTCMilliseconds() === 0;
+    return isUtcMidnight
+      ? `${value.getUTCFullYear()}-${pad(value.getUTCMonth() + 1)}-${pad(value.getUTCDate())}`
+      : `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+  }
+  const ymd = `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+  const time =
+    `${pad(value.getHours())}:${pad(value.getMinutes())}:${pad(value.getSeconds())}` +
+    `.${pad(value.getMilliseconds(), 3)}`;
+  return `${ymd}T${time}Z`;
+}
+
 /**
  * A PostgreSQL-based tabular repository implementation that extends BaseSqlTabularStorage.
  * This class provides persistent storage for data in a PostgreSQL database,
@@ -460,6 +497,23 @@ export class PostgresTabularStorage<
           const parsed = Number(value);
           if (!isNaN(parsed)) return parsed as Entity[keyof Entity];
         }
+      }
+
+      // Handle string columns PostgreSQL hands back as Date objects. A
+      // `format: "date-time"` property maps to TIMESTAMP and `format: "date"`
+      // to DATE, and the driver hydrates both into a JS Date — but the schema
+      // declares `type: "string"`, so consumers get a value their own schema
+      // says is impossible. It fails loudly on anything string-shaped
+      // (`.localeCompare` on a sort key) and silently everywhere else. SQLite
+      // stores these as TEXT and returns strings, so the divergence is
+      // invisible until a Postgres deployment sorts a history table.
+      // Same shape as the numeric coercion above: restore the declared type.
+      if (
+        typeof actualType !== "boolean" &&
+        actualType.type === "string" &&
+        value instanceof Date
+      ) {
+        return dateToSchemaString(value, actualType.format) as Entity[keyof Entity];
       }
     }
     return super.sqlToJsValue(column, value);
