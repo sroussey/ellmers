@@ -65,6 +65,12 @@ scope exit.
 - **Overlap** — `overlap: "skip" | "queue" | "concurrent"`, default `"skip"`. A
   tick arriving while the previous handler runs is dropped (and emits `skip`); a
   trigger is a clock, not a work queue, so a slow handler cannot grow a backlog.
+  The policy governs handler INVOCATION. A handler bound to a workflow still
+  serializes at the workflow — one `Workflow` owns one task graph, and a graph
+  cannot run re-entrantly — so `"concurrent"` plus a workflow binding degrades
+  to queue semantics, bounded by the binding's `maxPendingFires` (default `1`).
+  A fire past that bound is dropped and reported on `error`. When queueing is
+  what you want, ask for it: `overlap: "queue"` with `maxQueuedFires`.
 - **Errors** — a handler rejection never stops the loop. It is emitted on
   `error` as the real `Error` and logged through `getLogger()`.
 - **Drift** — each tick is scheduled from the previous tick's scheduled instant,
