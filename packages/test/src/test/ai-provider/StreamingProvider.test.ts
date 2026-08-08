@@ -27,8 +27,8 @@ import {
   TaskQueueRegistry,
 } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 const MOCK_PROVIDER = "mock-streaming-provider";
 const TEXT_GENERATION: readonly Capability[] = ["text.generation"];

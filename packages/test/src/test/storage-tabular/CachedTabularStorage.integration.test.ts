@@ -6,8 +6,8 @@
 
 import { CachedTabularStorage, InMemoryTabularStorage } from "@workglow/storage";
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   runTabularStorageContract,
   VectorItemPrimaryKeyNames,

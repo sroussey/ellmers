@@ -19,7 +19,6 @@ import { setLogger, sleep } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, test } from "vitest";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   AddToSumTask,
   DoubleToResultTask as DoubleTask,
@@ -27,7 +26,8 @@ import {
   RefineTask,
   TestIteratorTask,
   TextEmbeddingTask,
-} from "./TestTasks";
+} from "@workglow/task-graph/test";
+import { getTestingLogger } from "@workglow/util/test";
 
 interface ArrayInput extends TaskInput {
   items: number[];

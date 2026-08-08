@@ -2,11 +2,21 @@
   "extends": "../../tsconfig.json",
   "include": ["src/common.ts", "src/common-server.ts", "src/compat.ts", "src/*/**/*"],
   "files": ["./src/browser.ts", "./src/node.ts"],
-  "exclude": ["dist", "node_modules"],
+  "exclude": ["dist", "node_modules", "src/**/__tests__/**", "src/**/*.test.ts"],
   "compilerOptions": {
     "composite": true,
     "outDir": "./dist",
     "rootDir": "./src"
   },
-  "references": [{ "path": "../util" }, { "path": "../storage" }, { "path": "../task-graph" }]
+  "references": [
+    {
+      "path": "../util"
+    },
+    {
+      "path": "../storage"
+    },
+    {
+      "path": "../task-graph"
+    }
+  ]
 }

@@ -7,8 +7,8 @@
 import { TaskGraph, Workflow } from "@workglow/task-graph";
 import { lambda, LambdaTask } from "@workglow/tasks";
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, test } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("LambdaTask", () => {
   let logger = getTestingLogger();

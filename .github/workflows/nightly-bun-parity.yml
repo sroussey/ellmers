@@ -1,0 +1,55 @@
+name: Nightly Bun runtime parity
+
+# Bun is a supported local runner and occasionally surfaces bugs vitest does not,
+# but it is not worth gating every PR on: running the whole suite under Bun spends
+# most of its time re-verifying vitest's own semantics on a second runner.
+#
+# So it runs on a schedule instead, and on demand via workflow_dispatch — the
+# latter matters as much as the cron, because it makes "run Bun now, without a
+# local checkout" a first-class action.
+#
+# Failures here are informational. They never block a merge. Triage note: a
+# Bun-only failure in a file using `vi.*` may be a gap in Bun's vitest
+# compatibility shim rather than a product bug — pin such a file to vitest or
+# rewrite it off the mocking API, but do not change product code to satisfy the
+# shim.
+
+permissions:
+  contents: read
+
+on:
+  schedule:
+    - cron: "43 6 * * *"
+  workflow_dispatch:
+
+env:
+  CI: "true"
+  DO_NOT_TRACK: "1"
+  TURBO_TELEMETRY_DISABLED: "1"
+
+jobs:
+  bun-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [unit, integration]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun i
+      - run: bun run build
+      # Excluded on purpose: the live tier (model downloads, paid APIs) belongs
+      # to its own schedule, and `browser` needs Playwright binaries this job
+      # does not install. Everything else is covered by subtraction, so a new
+      # section joins this run without anyone remembering to add it.
+      - name: Run ${{ matrix.kind }} tests under Bun
+        env:
+          WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
+        run: bun scripts/test.ts bun ${{ matrix.kind }} --except rag,browser,provider-hft,provider-nodellama,provider-api,provider-cactus

@@ -6,8 +6,8 @@
 
 import { InMemoryQueueStorage } from "@workglow/job-queue";
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import { runGenericPrefixedQueueStorageTests } from "./genericPrefixedQueueStorageTests";
 import { runGenericQueueStorageSubscriptionTests } from "./genericQueueStorageSubscriptionTests";
 

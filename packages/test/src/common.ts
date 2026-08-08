@@ -6,5 +6,8 @@
 
 // organize-imports-ignore
 
-export * from "./binding/InMemoryTaskGraphRepository";
-export * from "./binding/InMemoryTaskOutputRepository";
+// Intentionally empty. The runtime-agnostic bindings that used to live here —
+// InMemoryTaskOutputRepository, InMemoryTaskGraphRepository — now ship from
+// `@workglow/task-graph/test`, which is where their base classes live. This
+// file remains the browser/node split point for anything that cannot.
+export {};

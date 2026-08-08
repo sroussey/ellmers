@@ -28,8 +28,8 @@ import {
   TaskQueueRegistry,
 } from "@workglow/task-graph";
 import { ResourceScope, setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import { report, snap } from "../../binding/testTiming";
 
 const MOCK_PROVIDER = "mock-phase-provider";

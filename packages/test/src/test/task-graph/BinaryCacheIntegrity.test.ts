@@ -14,14 +14,13 @@ import {
   TaskGraph,
   TaskGraphRunner,
 } from "@workglow/task-graph";
+import { InMemoryTaskOutputRepository, StreamingMemoryRepo } from "@workglow/task-graph/test";
 import { Container, ServiceRegistry, sleep } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
-import { StreamingMemoryRepo } from "../../binding/StreamingMemoryRepo";
 
 async function blobBytes(value: unknown): Promise<number[]> {
   expect(value).toBeInstanceOf(Blob);

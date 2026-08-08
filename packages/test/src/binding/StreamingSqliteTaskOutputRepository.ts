@@ -11,6 +11,7 @@ import {
   TaskOutputPrimaryKeyNames,
   TaskOutputSchema,
 } from "@workglow/task-graph";
+import { TabularStreamingTaskOutputRepository } from "@workglow/task-graph/test";
 import {
   BlobChunkPrimaryKeyNames,
   BlobChunkSchema,
@@ -18,7 +19,6 @@ import {
   BlobManifestSchema,
   TabularBlobChunkStore,
 } from "./TabularBlobChunkStore";
-import { TabularStreamingTaskOutputRepository } from "./TabularStreamingTaskOutputRepository";
 
 /**
  * Durable, embedded (SQLite) streaming task-output repository. JSON rows via

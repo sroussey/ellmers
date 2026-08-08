@@ -7,8 +7,8 @@
 import { SharedInMemoryTabularStorage } from "@workglow/storage";
 import { DEFAULT_LIMITS, setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   runTabularStorageContract,
   VectorItemPrimaryKeyNames,

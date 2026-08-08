@@ -7,8 +7,8 @@
 import type { SectionNode } from "@workglow/knowledge-base";
 import { NodeKind, StructuralParser } from "@workglow/knowledge-base";
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 import { report, snap } from "../../binding/testTiming";
 

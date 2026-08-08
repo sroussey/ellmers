@@ -27,8 +27,8 @@ import {
 import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 import { isImageValue } from "@workglow/util/media";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 // Test image (1x1 pixel red PNG, base64 encoded)
 const TEST_IMAGE_BASE64 =

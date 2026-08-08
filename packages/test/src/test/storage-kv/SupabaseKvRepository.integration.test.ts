@@ -7,8 +7,8 @@
 import { DefaultKeyValueKey, DefaultKeyValueSchema } from "@workglow/storage";
 import { SupabaseKvStorage, SupabaseTabularStorage } from "@workglow/supabase/storage";
 import { setLogger, uuid4 } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterAll, describe } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import { createSupabaseMockClient } from "../helpers/SupabaseMockClient";
 import { runGenericKvRepositoryTests } from "./genericKvRepositoryTests";
 

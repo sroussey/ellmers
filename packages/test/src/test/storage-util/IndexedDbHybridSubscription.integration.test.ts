@@ -7,9 +7,9 @@
 import { IndexedDbQueueStorage } from "@workglow/indexeddb/job-queue";
 import { IndexedDbTabularStorage } from "@workglow/indexeddb/storage";
 import { setLogger, sleep, uuid4 } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 /**
  * Integration tests for HybridSubscriptionManager with IndexedDB implementations

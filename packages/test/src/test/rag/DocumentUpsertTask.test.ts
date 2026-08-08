@@ -9,8 +9,8 @@ import { documentUpsert } from "@workglow/ai";
 import type { DocumentMetadata, KnowledgeBase } from "@workglow/knowledge-base";
 import { createKnowledgeBase, StructuralParser } from "@workglow/knowledge-base";
 import { setLogger, uuid4 } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 import { report, snap } from "../../binding/testTiming";
 

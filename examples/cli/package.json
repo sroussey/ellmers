@@ -23,7 +23,7 @@
     "build-js-worker-hft": "bun build --target=node --packages=external --outdir ./dist ./src/worker_hft.ts",
     "build-lib": "bun build --target=bun --packages=external --outdir ./dist ./src/lib.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "test": "vitest run",
+    "test": "vitest run --config ../../vitest.config.ts --project cli",
     "test:watch": "vitest"
   },
   "bin": "./dist/workglow.js",

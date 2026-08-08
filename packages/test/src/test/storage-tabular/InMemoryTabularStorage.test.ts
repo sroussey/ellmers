@@ -12,8 +12,8 @@ import {
 } from "@workglow/storage";
 import { setLogger } from "@workglow/util";
 import type { FromSchema } from "@workglow/util/schema";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   runTabularStorageContract,
   VectorItemPrimaryKeyNames,

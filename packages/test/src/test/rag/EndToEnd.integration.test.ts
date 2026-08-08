@@ -42,7 +42,7 @@ import { join } from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 export { FileLoaderTask } from "@workglow/tasks";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 import { registerHuggingfaceLocalModels } from "../../samples/ONNXModelSamples";
 
 import { report, snap } from "../../binding/testTiming";

@@ -33,8 +33,8 @@ import {
   TaskQueueRegistry,
 } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 // Constants for testing
 const TEST_PROVIDER = "test-provider";

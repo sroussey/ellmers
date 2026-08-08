@@ -33,8 +33,8 @@ import {
   type SafeFetchOptions,
 } from "@workglow/tasks";
 import { Container, ServiceRegistry, setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 const ok = (): Response =>
   new Response(JSON.stringify({ ok: true }), {

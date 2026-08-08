@@ -7,8 +7,7 @@
 import { registerBuiltInTransforms, Workflow } from "@workglow/task-graph";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import "../task/TestTasks";
-import { TestSimpleTask } from "../task/TestTasks";
+import { TestSimpleTask } from "@workglow/task-graph/test";
 
 describe("Workflow .rename accepts { transforms }", () => {
   beforeAll(() => registerBuiltInTransforms());

@@ -87,7 +87,8 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const workspaces = await findWorkspaces();
+  // `false`: stub every workspace, including private ones (aws, cloudflare).
+  const workspaces = await findWorkspaces(false);
   console.log(`Switching ${workspaces.length} workspaces to ${mode} mode\n`);
 
   if (mode === "source") {

@@ -16,10 +16,10 @@
 
 import type { CacheRef } from "@workglow/task-graph";
 import { CACHE_REGISTRY, DefaultCacheRegistry, makeCacheRef, Task } from "@workglow/task-graph";
+import { StreamingMemoryRepo } from "@workglow/task-graph/test";
 import { Container, ServiceRegistry } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { beforeEach, describe, expect, it } from "vitest";
-import { StreamingMemoryRepo } from "../../binding/StreamingMemoryRepo";
 
 class CountingRepo extends StreamingMemoryRepo {
   public byRefReads = 0;

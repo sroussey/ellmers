@@ -29,8 +29,8 @@ import {
 } from "@workglow/node-llama-cpp/ai-runtime";
 import { getTaskQueueRegistry, setTaskQueueRegistry, Workflow } from "@workglow/task-graph";
 import { ResourceScope, setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import { report, snap } from "../../binding/testTiming";
 
 // ========================================================================

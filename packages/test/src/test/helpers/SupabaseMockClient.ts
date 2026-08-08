@@ -9,7 +9,7 @@ import { vector } from "@electric-sql/pglite-pgvector";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { setLogger } from "@workglow/util";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 
 export interface IClosableSupabaseClient extends SupabaseClient {
   readonly close: () => Promise<void>;

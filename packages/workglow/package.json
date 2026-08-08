@@ -21,8 +21,7 @@
     "build-js": "bun run build.ts",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "test": "bun test"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "exports": {
     ".": {

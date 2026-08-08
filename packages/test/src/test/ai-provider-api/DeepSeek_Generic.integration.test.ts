@@ -14,7 +14,7 @@ import { registerDeepSeekInline } from "@workglow/deepseek/ai-runtime";
 import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 
 const RUN = !!process.env.DEEPSEEK_API_KEY;

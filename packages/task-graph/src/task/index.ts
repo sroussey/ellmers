@@ -36,6 +36,10 @@ export * from "./TaskTypes";
 export * from "./GraphAsTask";
 export * from "./GraphAsTaskRunner";
 
+// Side-effecting: registers the pipe-function wrapper factory with Conversions.
+// Must be reached whenever `ensureTask` can be, i.e. from this barrel.
+import "./PipeFunctionTask";
+
 export * from "./FallbackTask";
 export * from "./FallbackTaskRunner";
 export * from "./IteratorTask";
