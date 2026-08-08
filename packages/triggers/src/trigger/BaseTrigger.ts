@@ -140,16 +140,19 @@ export abstract class BaseTrigger implements ITrigger {
    *   stopped, with nothing scheduled and no listener attached.
    */
   public start(handler: TriggerHandler, options: TriggerStartOptions = {}): void {
+    // Validated before anything else: a non-function handler otherwise starts a
+    // trigger that reports `running` and emits a TypeError on `error` once per
+    // period forever, with no way to tell it apart from a failing handler.
+    if (typeof handler !== "function") {
+      throw new TriggerConfigurationError(
+        `start() requires a handler function, received ${typeof handler}.`
+      );
+    }
     // Starting twice is a no-op rather than an error, so a start/start/stop
     // sequence leaves no orphaned timer behind.
     if (this.running) return;
     // An already-aborted caller signal means "do not schedule anything".
     if (options.signal?.aborted) return;
-
-    // Compute first, mutate second. Setting `_run` before a computation that can
-    // throw would leave the trigger reporting `running` with no timer, and every
-    // later `start()` would be a silent no-op forever.
-    const firstFireAt = this.computeNextFireTime(Date.now());
 
     const controller = new AbortController();
     const run: TriggerRun = {
@@ -166,6 +169,12 @@ export abstract class BaseTrigger implements ITrigger {
       removeExternalAbort: undefined,
       stopping: undefined,
     };
+
+    // The run is built first so the hook has one to key its state off, but it is
+    // published to `this._run` only after the computation that can throw. Setting
+    // `_run` first would leave the trigger reporting `running` with no timer, and
+    // every later `start()` would be a silent no-op forever.
+    const firstFireAt = this.computeNextFireTime(Date.now(), run);
     this._run = run;
 
     if (options.signal) {
@@ -218,8 +227,12 @@ export abstract class BaseTrigger implements ITrigger {
    * Absolute instant (ms since epoch) of the tick following `fromMs`. Must be
    * strictly greater than `fromMs` so a computation landing exactly on a
    * boundary advances instead of firing the same tick forever.
+   *
+   * The run whose schedule is being computed is passed explicitly, so a subclass
+   * whose next instant depends on per-generation state (see `PollingTrigger`'s
+   * error backoff) keys that state off the run rather than off `this`.
    */
-  protected abstract computeNextFireTime(fromMs: number): number;
+  protected abstract computeNextFireTime(fromMs: number, run: TriggerRun): number;
 
   /**
    * Runs one tick. The default invokes the handler with no payload; a subclass
@@ -245,14 +258,10 @@ export abstract class BaseTrigger implements ITrigger {
     await run.handler(context);
   }
 
-  /**
-   * Called once a run has stopped and every handler it started has settled, so
-   * a subclass can release per-generation state (see `PollingTrigger`).
-   *
-   * NOT called when a newer `start()` has already taken over: that run owns the
-   * subclass state now, and resetting it here would corrupt it.
-   */
-  protected onRunStopped(): void {}
+  /** The run installed by the latest {@link start}, or `undefined` when stopped and drained. */
+  protected get currentRun(): TriggerRun | undefined {
+    return this._run;
+  }
 
   private async releaseWhenIdle(run: TriggerRun): Promise<void> {
     // A loop, not a single `allSettled`: a chain draining queued ticks may still
@@ -261,12 +270,9 @@ export abstract class BaseTrigger implements ITrigger {
       await Promise.allSettled([...run.pending]);
     }
 
-    // A `start()` during the drain installed a newer run; releasing subclass
-    // state or clearing `_run` here would strand it.
-    if (this._run === run) {
-      this._run = undefined;
-      this.onRunStopped();
-    }
+    // A `start()` during the drain installed a newer run; clearing `_run` here
+    // would strand it.
+    if (this._run === run) this._run = undefined;
     this.safeEmit("stop");
   }
 
@@ -295,7 +301,7 @@ export abstract class BaseTrigger implements ITrigger {
   private onTick(run: TriggerRun, scheduledAt: number): void {
     let nextFireAt: number;
     try {
-      nextFireAt = this.computeNextFireTime(scheduledAt);
+      nextFireAt = this.computeNextFireTime(scheduledAt, run);
     } catch (error) {
       // Nothing can be scheduled, so there is no half-live state worth keeping:
       // report and shut down rather than leave a trigger that reports `running`
@@ -324,7 +330,15 @@ export abstract class BaseTrigger implements ITrigger {
       return;
     }
 
-    const chain = this.runTickChain(run, scheduledAt);
+    // The microtask hop is load-bearing, not ceremony. Called directly,
+    // `runTickChain` runs its whole synchronous prefix — the `fire` emit and the
+    // handler's own synchronous head — BEFORE `run.pending.add` below, so a
+    // `stop()` begun from a `fire` listener (or by the handler itself) would see
+    // an empty `pending`, drain instantly, and resolve while that handler was
+    // still running. Deferring by one microtask puts all of `runTickChain`
+    // behind the registration. The schedule is unaffected: the next tick was
+    // already scheduled in `onTick` before this call.
+    const chain = Promise.resolve().then(() => this.runTickChain(run, scheduledAt));
     run.pending.add(chain);
     // `catch` before `finally`: `runTickChain` reports handler errors itself,
     // but an `error` LISTENER that throws rejects the chain, and a bare

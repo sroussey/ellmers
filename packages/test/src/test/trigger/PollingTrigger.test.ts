@@ -17,6 +17,19 @@ import { advanceFakeTimers } from "../helpers/advanceFakeTimers";
 const START = Date.UTC(2026, 0, 1, 0, 0, 0);
 const PERIOD = 100;
 
+interface Gate {
+  readonly promise: Promise<void>;
+  readonly open: () => void;
+}
+
+function createGate(): Gate {
+  let open: () => void = () => {};
+  const promise = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { promise, open };
+}
+
 describe("PollingTrigger", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -249,6 +262,51 @@ describe("PollingTrigger", () => {
     expect(payloads).toEqual(["steady", "steady"]);
     expect(polls).toBe(3);
 
+    await trigger.stop();
+  });
+
+  test("a restart while stop() is still draining also resets the baseline", async () => {
+    // The awaited restart above is the easy half. A stop() that is NOT awaited
+    // hands the trigger to the new run while the old one is still draining, and
+    // per-run state that lives on the trigger would carry the old baseline into
+    // it — leaving a firesOnChange poller that never fires again.
+    let polls = 0;
+    const gate = createGate();
+    const trigger = new PollingTrigger<string>({
+      intervalMs: PERIOD,
+      poll: () => {
+        polls += 1;
+        return "steady";
+      },
+      shouldFire: firesOnChange,
+    });
+
+    const firstPayloads: unknown[] = [];
+    trigger.start(async (context) => {
+      firstPayloads.push(context.payload);
+      await gate.promise;
+    });
+
+    await advanceFakeTimers(PERIOD);
+    expect(firstPayloads).toEqual(["steady"]);
+    expect(trigger.lastResult).toBe("steady");
+
+    // NOT awaited: the gated handler keeps the old run draining.
+    const stopping = trigger.stop();
+    const secondPayloads: unknown[] = [];
+    trigger.start((context) => {
+      secondPayloads.push(context.payload);
+    });
+
+    expect(trigger.lastResult).toBeUndefined();
+    expect(trigger.consecutiveFailures).toBe(0);
+
+    await advanceFakeTimers(PERIOD);
+    expect(secondPayloads).toEqual(["steady"]);
+    expect(polls).toBe(2);
+
+    gate.open();
+    await stopping;
     await trigger.stop();
   });
 
