@@ -48,7 +48,14 @@ describe("InMemoryTabularStorage", () => {
       new InMemoryTabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>(
         SearchSchema,
         SearchPrimaryKeyNames,
-        ["category", ["category", "subcategory"], ["subcategory", "category"], "value"]
+        [
+          "category",
+          ["category", "subcategory"],
+          ["subcategory", "category"],
+          "value",
+          "tag",
+          ["category", "tag"],
+        ]
       ),
     async () =>
       new InMemoryTabularStorage<typeof AllTypesSchema, typeof AllTypesPrimaryKeyNames>(

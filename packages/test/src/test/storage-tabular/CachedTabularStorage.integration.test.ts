@@ -50,13 +50,22 @@ describe("CachedTabularStorage", () => {
           ["category", "subcategory"],
           ["subcategory", "category"],
           "value",
+          "tag",
+          ["category", "tag"],
         ]);
         return new CachedTabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>(
           durable,
           undefined,
           SearchSchema,
           SearchPrimaryKeyNames,
-          ["category", ["category", "subcategory"], ["subcategory", "category"], "value"]
+          [
+            "category",
+            ["category", "subcategory"],
+            ["subcategory", "category"],
+            "value",
+            "tag",
+            ["category", "tag"],
+          ]
         );
       }
     );

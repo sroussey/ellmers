@@ -75,7 +75,14 @@ describe("FsFolderTabularStorage", () => {
           testDir,
           SearchSchema,
           SearchPrimaryKeyNames,
-          ["category", ["category", "subcategory"], ["subcategory", "category"], "value"]
+          [
+            "category",
+            ["category", "subcategory"],
+            ["subcategory", "category"],
+            "value",
+            "tag",
+            ["category", "tag"],
+          ]
         );
       } catch (error) {
         expect(error).toBeDefined();
