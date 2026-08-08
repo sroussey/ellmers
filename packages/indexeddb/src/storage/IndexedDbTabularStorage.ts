@@ -29,6 +29,7 @@ import {
   normalizeCriterion,
   pickCoveringIndex,
   safeEmit,
+  StorageUnsupportedError,
   type ITabularMigration,
   type ITabularMigrationApplier,
 } from "@workglow/storage";
@@ -36,6 +37,7 @@ import { createServiceToken, deepEqual, makeFingerprint, uuid4 } from "@workglow
 import type {
   DataPortSchemaObject,
   FromSchema,
+  JsonSchema,
   TypedArraySchemaOptions,
 } from "@workglow/util/schema";
 import type { ExpectedIndexDefinition, MigrationOptions } from "./IndexedDbTable";
@@ -114,10 +116,11 @@ export class IndexedDbTabularStorage<
   };
   /**
    * Indexes safe for cursor-based narrowing. An IDB index excludes records
-   * whose keyPath has any undefined component, so iterating an index can miss
-   * records when an indexed column is optional in the schema. Native
+   * whose keyPath has any undefined component, and equally any null one (null
+   * is not a valid key), so iterating an index can miss records when an indexed
+   * column is optional in the schema or its type admits null. Native
    * `count(range)` and cursor scans are only correct over indexes whose every
-   * column is required. Computed lazily on first use.
+   * column is required and non-nullable. Computed lazily on first use.
    */
   private cursorSafeIndexes: Array<Array<keyof Entity>> | undefined;
 
@@ -690,20 +693,27 @@ export class IndexedDbTabularStorage<
 
   /**
    * Returns the subset of configured indexes safe to use for cursor-based
-   * narrowing — those whose every column is required by the schema. IDB
-   * excludes records with undefined keyPath components from indexes, so
-   * iterating an index would silently miss records when any indexed column
-   * is optional.
+   * narrowing — those whose every column is required by the schema AND cannot
+   * hold null. IDB excludes a record from an index when the keyPath component
+   * is undefined, and equally when it is null (null is not a valid key), so
+   * iterating an index would silently miss records for either shape.
+   *
+   * A required-but-nullable column is the second case: legal here, impossible
+   * in SQL (a required column is emitted `NOT NULL`), and invisible to the
+   * caller because the scan returns fewer rows rather than failing.
    */
   private getCursorSafeIndexes(): Array<Array<keyof Entity>> {
     if (this.cursorSafeIndexes) return this.cursorSafeIndexes;
     const required = new Set(this.schema.required ?? []);
+    const properties = this.schema.properties as Record<string, JsonSchema | undefined>;
     // Unique tuples are materialized as real IDB indexes (see `performSetup`)
     // under the same `cols.join("_")` name the planner derives, so they can
     // narrow scans exactly like regular indexes. The base class guarantees no
     // tuple appears in both lists, so the union has no duplicate.
     this.cursorSafeIndexes = [...this.indexes, ...this.uniqueIndexes].filter((columns) =>
-      columns.every((column) => required.has(String(column)))
+      columns.every(
+        (column) => required.has(String(column)) && !schemaAdmitsNull(properties[String(column)])
+      )
     );
     return this.cursorSafeIndexes;
   }
@@ -883,7 +893,11 @@ export class IndexedDbTabularStorage<
 
       // `=` and `!=` carry their own null semantics (see the matches* helpers);
       // every ordering operator is UNKNOWN against null, so the row is excluded.
-      if (operator !== "=" && operator !== "!=" && (recordValue === null || recordValue === undefined)) {
+      if (
+        operator !== "=" &&
+        operator !== "!=" &&
+        (recordValue === null || recordValue === undefined)
+      ) {
         return false;
       }
 
@@ -1057,8 +1071,17 @@ export class IndexedDbTabularStorage<
     // returning undefined sends it to the in-cursor filter instead.
     if (isSearchInCondition(criterion)) return undefined;
     if (isSearchCondition(criterion)) {
-      return criterion.operator === "=" ? (criterion.value as Entity[keyof Entity]) : undefined;
+      if (criterion.operator !== "=") return undefined;
+      // `null` is not a valid IDB key, so `IDBKeyRange.only`/`bound` would throw
+      // a DataError on it. No range could serve the criterion anyway: IDB omits
+      // a record from an index entirely when its indexed value is null, so the
+      // rows being asked for are not in the index to be scanned. Report the
+      // criterion as unusable for narrowing and let `matchesEqualityCriterion`
+      // in the cursor filter decide it.
+      if (criterion.value === null) return undefined;
+      return criterion.value as Entity[keyof Entity];
     }
+    if (criterion === null) return undefined;
     return criterion as Entity[keyof Entity];
   }
 
@@ -1241,6 +1264,13 @@ export class IndexedDbTabularStorage<
    *
    * Throws {@link CoveringIndexMissingError} when no registered index can serve
    * the request (i.e. the index does not cover all select + orderBy columns).
+   *
+   * A `null` equality criterion on a column of the chosen index is rejected with
+   * {@link StorageUnsupportedError}. IndexedDB omits a record from an index when
+   * its indexed value is null, so those rows exist in no index and a projection
+   * reading values out of `cursor.key` can never produce them — the request
+   * would return silently-empty results rather than the matching rows. Use
+   * {@link query}, which reads whole records and filters them in the cursor.
    */
   override async queryIndex<K extends keyof Entity & string>(
     criteria: SearchCriteria<Entity>,
@@ -1266,6 +1296,21 @@ export class IndexedDbTabularStorage<
       primaryKeyColumns: this.primaryKeyColumns().map(String),
     });
 
+    for (const col of picked.keyPath) {
+      const criterion = (criteria as Record<string, unknown>)[col];
+      const isNullEquality = isSearchCondition(criterion)
+        ? criterion.operator === "=" && criterion.value === null
+        : criterion === null;
+      if (isNullEquality) {
+        throw new StorageUnsupportedError(
+          `A null equality criterion on indexed column "${col}" (IndexedDB omits ` +
+            `null-valued records from an index, so an index scan can never reach ` +
+            `them — use query() instead)`,
+          "IndexedDbTabularStorage"
+        );
+      }
+    }
+
     const db = await this.getDb();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(this.table, "readonly");
@@ -1284,8 +1329,12 @@ export class IndexedDbTabularStorage<
         if (isSearchInCondition(c)) break;
         if (isSearchCondition(c)) {
           if (c.operator !== "=") break;
+          // Defense in depth: the guard above already rejected a null equality
+          // on a key-path column, and `null` is not a valid IDB key.
+          if (c.value === null) break;
           prefix.push(c.value);
         } else {
+          if (c === null) break;
           prefix.push(c);
         }
       }
@@ -1447,6 +1496,23 @@ export class IndexedDbTabularStorage<
 }
 
 /**
+ * Whether a column's schema admits `null`, in any of the spellings JSON Schema
+ * offers for it. Mirrors the nullability test the SQL backends use to decide
+ * between `NULL` and `NOT NULL`.
+ */
+function schemaAdmitsNull(typeDef: JsonSchema | undefined): boolean {
+  if (typeDef === undefined) return false;
+  if (typeof typeDef === "boolean") return typeDef;
+  if (typeDef.type === "null") return true;
+  if (Array.isArray(typeDef.type)) return typeDef.type.includes("null");
+  const branches = typeDef.anyOf ?? typeDef.oneOf;
+  if (Array.isArray(branches)) {
+    return branches.some((branch) => typeof branch !== "boolean" && branch.type === "null");
+  }
+  return false;
+}
+
+/**
  * Compare two values using a SearchOperator. Used by queryIndex to evaluate
  * non-equality criteria that cannot be expressed as an IDBKeyRange prefix.
  */
@@ -1455,7 +1521,8 @@ function compareWithOperator(a: unknown, op: SearchOperator, b: unknown): boolea
   const bv = b as string | number;
   switch (op) {
     case "=":
-      return av === bv;
+      // Same rule `matchesCriteria` applies, so the two agree on every input.
+      return matchesEqualityCriterion(av, bv);
     case "!=":
       return matchesInequalityCriterion(av, bv);
     case "<":
