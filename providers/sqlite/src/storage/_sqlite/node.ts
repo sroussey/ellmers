@@ -23,12 +23,84 @@ type NodeStatementSync = ReturnType<NodeDatabaseSync["prepare"]>;
 export interface NodeSqliteOptions {
   readonly open?: boolean;
   readonly readOnly?: boolean;
+  /**
+   * Enforce `REFERENCES` constraints. Defaults to `false`.
+   *
+   * `node:sqlite` defaults this to `true`, but SQLite itself — and both drivers
+   * this one replaces — leave foreign keys off. Schemas written under that
+   * default legitimately hold rows whose references no longer resolve, and
+   * delete orders that were legal when they ran, so enforcement stays opt-in:
+   * turn it on per database once its data and write order satisfy it.
+   */
   readonly enableForeignKeyConstraints?: boolean;
   readonly enableDoubleQuotedStringLiterals?: boolean;
   /** Defaults to `true` so `loadExtension` works, matching better-sqlite3. */
   readonly allowExtension?: boolean;
   /** `busy_timeout` in ms. Defaults to {@link SQLITE_BUSY_TIMEOUT_MS}. */
   readonly timeout?: number;
+}
+
+/** Keys {@link NodeSqliteOptions} forwards to `DatabaseSync`. */
+const ALLOWED_OPTIONS: ReadonlySet<string> = new Set([
+  "open",
+  "readOnly",
+  "enableForeignKeyConstraints",
+  "enableDoubleQuotedStringLiterals",
+  "allowExtension",
+  "timeout",
+]);
+
+/**
+ * better-sqlite3 option names `node:sqlite` renamed or does not have.
+ *
+ * `DatabaseSync` ignores unknown constructor keys, so a leftover
+ * `readonly: true` would open the database read-**write** and a
+ * `fileMustExist: true` would create the missing file — both silently.
+ * better-sqlite3 threw on a misspelled option; the seam keeps that, adding the
+ * migration guidance.
+ */
+const LEGACY_OPTIONS: Readonly<Record<string, string>> = {
+  readonly: "use `readOnly`",
+  fileMustExist: "no node:sqlite equivalent; check the file exists before opening",
+  verbose: "no node:sqlite equivalent",
+  nativeBinding: "no node:sqlite equivalent",
+};
+
+function assertKnownOptions(options: NodeSqliteOptions | undefined): void {
+  if (options === undefined) return;
+  for (const key of Object.keys(options)) {
+    const guidance = LEGACY_OPTIONS[key];
+    if (guidance !== undefined) {
+      throw new TypeError(`Unsupported better-sqlite3 option "${key}": ${guidance}.`);
+    }
+    if (!ALLOWED_OPTIONS.has(key)) {
+      throw new TypeError(
+        `Unknown SQLite option "${key}". Supported options: ${[...ALLOWED_OPTIONS].join(", ")}.`
+      );
+    }
+  }
+}
+
+/**
+ * Rejects an async {@link SqliteApi.Database.transaction} body.
+ *
+ * The wrapper commits as soon as `fn` returns, so an `async` body would commit
+ * at its first `await` and a later throw could not roll anything back —
+ * better-sqlite3 refused such a body outright and callers here still rely on
+ * that rejection. The returned promise is given a no-op `catch` first: the
+ * body's own eventual rejection is nobody's to handle once its transaction is
+ * gone, and left alone it would surface as an unhandled rejection on top of
+ * this `TypeError`.
+ */
+function assertSyncTransactionBody(result: unknown): void {
+  if (
+    result != null &&
+    (typeof result === "object" || typeof result === "function") &&
+    typeof (result as { then?: unknown }).then === "function"
+  ) {
+    void Promise.resolve(result).catch(() => {});
+    throw new TypeError("Transaction function cannot return a promise");
+  }
 }
 
 let sqliteModule: NodeSqliteModule | undefined;
@@ -150,19 +222,24 @@ function narrowBigInt(value: bigint): number | bigint {
 }
 
 /**
- * Narrows the BigInt cells of a result row in place.
+ * Copies a result row onto a plain object, narrowing its BigInt cells.
  *
- * Rows are null-prototype objects, so `for…in` walks own columns only, and only
- * INTEGER columns arrive as BigInt — REAL, TEXT and BLOB are untouched.
+ * `node:sqlite` builds rows with `Object.create(null)`, and those rows are
+ * handed straight back to callers as entities — where a missing prototype makes
+ * `row.hasOwnProperty(...)` throw and `toStrictEqual` fail against the plain
+ * objects every other storage backend returns. Copying restores
+ * `Object.prototype` and lets the storage layer keep mutating its result. Only
+ * INTEGER columns arrive as BigInt; REAL, TEXT and BLOB pass through.
  */
 function narrowRow(row: unknown): unknown {
   if (row === null || typeof row !== "object") return row;
   const record = row as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
   for (const column in record) {
     const value = record[column];
-    if (typeof value === "bigint") record[column] = narrowBigInt(value);
+    out[column] = typeof value === "bigint" ? narrowBigInt(value) : value;
   }
-  return row;
+  return out;
 }
 
 /**
@@ -223,28 +300,23 @@ class NodeSqliteStatement<
 
   all(...params: unknown[]): Result[] {
     try {
-      const rows = this.#stmt.all(...(toBindable(params) as never[])) as Result[];
-      for (const row of rows) narrowRow(row);
-      return rows;
+      const rows = this.#stmt.all(...(toBindable(params) as never[]));
+      return rows.map(narrowRow) as Result[];
     } catch (err) {
       rethrow(err);
     }
   }
 
   /**
-   * `node:sqlite` has no explicit statement finalizer — a `StatementSync` is
-   * released when it is garbage collected or when its database closes. Disposed
-   * explicitly when the running Node exposes `Symbol.dispose` on statements.
+   * No-op on every `node:sqlite` shipping today: there is no explicit statement
+   * finalizer, and `StatementSync` carries no `Symbol.dispose` either, so a
+   * `StatementSync` is released only on GC or when its database closes. The
+   * optional call stays so a runtime that adds disposal starts using it.
    */
   finalize(): void {
     (this.#stmt as unknown as Partial<Disposable>)[Symbol.dispose]?.();
   }
 }
-
-/** Statements that open a transaction when `exec`'d. */
-const BEGIN_RE = /^\s*BEGIN(?:\s+(?:DEFERRED|IMMEDIATE|EXCLUSIVE))?(?:\s+TRANSACTION)?\s*$/i;
-/** Statements that close the outermost transaction when `exec`'d. */
-const END_RE = /^\s*(?:COMMIT|END|ROLLBACK)(?:\s+TRANSACTION)?\s*$/i;
 
 /**
  * `node:sqlite` database wrapped as {@link SqliteApi.Database} (bindings-first
@@ -255,13 +327,14 @@ const END_RE = /^\s*(?:COMMIT|END|ROLLBACK)(?:\s+TRANSACTION)?\s*$/i;
  */
 export class NodeSqliteDatabase implements SqliteApi.Database {
   readonly #inner: NodeDatabaseSync;
-  /** Depth of transactions opened by {@link transaction}. */
-  #txDepth = 0;
-  /** Whether a caller opened a transaction by `exec`ing BEGIN directly. */
-  #execTx = false;
+  /**
+   * Monotonic savepoint counter. Never reused, so a name can never collide with
+   * a savepoint left open by a failed RELEASE.
+   */
   #savepointSeq = 0;
 
   constructor(filename?: string, options?: NodeSqliteOptions) {
+    assertKnownOptions(options);
     const { DatabaseSync } = assertLoaded();
     const resolved = filename ?? ":memory:";
     try {
@@ -271,6 +344,9 @@ export class NodeSqliteDatabase implements SqliteApi.Database {
         // sqlite-vector extension in SqliteAiVectorStorage depends on it).
         allowExtension: true,
         ...options,
+        // node:sqlite turns foreign keys on; SQLite's own default (and every
+        // driver these databases were written under) leaves them off.
+        enableForeignKeyConstraints: options?.enableForeignKeyConstraints ?? false,
         // node:sqlite defaults busy_timeout to 0, so a contended write fails
         // immediately with SQLITE_BUSY instead of waiting for the lock.
         timeout: options?.timeout ?? SQLITE_BUSY_TIMEOUT_MS,
@@ -278,34 +354,30 @@ export class NodeSqliteDatabase implements SqliteApi.Database {
     } catch (err) {
       rethrow(err);
     }
+    if (typeof this.#inner.isTransaction !== "boolean") {
+      throw new Error(
+        "node:sqlite is too old: DatabaseSync.isTransaction is required by @workglow/sqlite/storage."
+      );
+    }
     // WAL gives readers and writers concurrency across the several connections
     // that open the same DB file. It needs a real file — skip in-memory dbs,
     // where journal_mode stays "memory".
     if (resolved !== ":memory:" && options?.open !== false) {
-      this.#inner.exec("PRAGMA journal_mode = WAL");
+      this.#exec("PRAGMA journal_mode = WAL");
     }
   }
 
-  /** True when any transaction — `exec`'d or {@link transaction}-opened — is open. */
-  get #inTransaction(): boolean {
-    return this.#txDepth > 0 || this.#execTx;
-  }
-
-  exec(sql: string): void {
+  /** Runs `sql`, translating the SQLite error code on failure. */
+  #exec(sql: string): void {
     try {
       this.#inner.exec(sql);
     } catch (err) {
       rethrow(err);
     }
-    // Track transaction control issued outside `transaction()` (the migration
-    // runner and the bulk-put paths BEGIN/COMMIT by hand) so a `transaction()`
-    // nested inside one opens a SAVEPOINT rather than an illegal nested BEGIN.
-    if (BEGIN_RE.test(sql)) {
-      this.#execTx = true;
-    } else if (END_RE.test(sql)) {
-      this.#execTx = false;
-      this.#txDepth = 0;
-    }
+  }
+
+  exec(sql: string): void {
+    this.#exec(sql);
   }
 
   prepare<BindParameters extends unknown[] | Record<string, unknown> = unknown[], Result = unknown>(
@@ -322,55 +394,52 @@ export class NodeSqliteDatabase implements SqliteApi.Database {
    * Same contract as better-sqlite3's `transaction()`: returns a function that
    * runs `fn` inside a single SQL transaction. A call nested inside an open
    * transaction uses a SAVEPOINT, matching better-sqlite3.
+   *
+   * Nesting is decided by SQLite's own `isTransaction`, so a transaction any
+   * caller opened — through this method, through `exec("BEGIN;")`, or through a
+   * prepared `BEGIN` — is seen, and a failed COMMIT cannot leave the driver
+   * believing in a transaction the database has already ended.
    */
   transaction<T extends unknown[]>(fn: (...args: T) => void): (...args: T) => void {
     return (...args: T) => {
-      if (this.#inTransaction) {
+      if (this.#inner.isTransaction) {
         this.#runInSavepoint(fn, args);
         return;
       }
-      this.#inner.exec("BEGIN");
-      this.#txDepth = 1;
+      this.#exec("BEGIN");
       try {
-        fn(...args);
-        this.#inner.exec("COMMIT");
+        assertSyncTransactionBody(fn(...args));
+        this.#exec("COMMIT");
       } catch (err) {
         try {
-          this.#inner.exec("ROLLBACK");
+          if (this.#inner.isTransaction) this.#exec("ROLLBACK");
         } catch {
           // prefer the original error if rollback fails
         }
         rethrow(err);
-      } finally {
-        this.#txDepth = 0;
       }
     };
   }
 
   #runInSavepoint<T extends unknown[]>(fn: (...args: T) => void, args: T): void {
     const name = `_workglow_sp_${this.#savepointSeq++}`;
-    this.#inner.exec(`SAVEPOINT ${name}`);
-    this.#txDepth++;
+    this.#exec(`SAVEPOINT ${name}`);
     try {
-      fn(...args);
-      this.#inner.exec(`RELEASE ${name}`);
+      assertSyncTransactionBody(fn(...args));
+      this.#exec(`RELEASE ${name}`);
     } catch (err) {
       try {
-        this.#inner.exec(`ROLLBACK TO ${name}`);
-        this.#inner.exec(`RELEASE ${name}`);
+        this.#exec(`ROLLBACK TO ${name}`);
+        this.#exec(`RELEASE ${name}`);
       } catch {
         // prefer the original error if the savepoint unwind fails
       }
       rethrow(err);
-    } finally {
-      this.#txDepth--;
     }
   }
 
   close(): void {
     this.#inner.close();
-    this.#txDepth = 0;
-    this.#execTx = false;
   }
 
   loadExtension(path: string, entryPoint?: string): void {

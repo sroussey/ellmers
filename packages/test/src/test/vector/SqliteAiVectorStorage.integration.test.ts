@@ -14,17 +14,24 @@ import { getTestingLogger } from "../../binding/TestingLogger";
 const _require = createRequire(import.meta.url);
 
 let sqliteVectorAvailable = false;
+let extensionPath: string | undefined;
 try {
   // Use CJS require so the platform-specific sub-package resolves correctly in ESM contexts
   const mod = _require("@sqliteai/sqlite-vector");
+  extensionPath = mod.getExtensionPath() as string;
+} catch {
+  // No prebuilt sqlite-vector binary for this platform — the suite skips.
+}
+if (extensionPath !== undefined) {
+  // Resolving the package but failing to load it means the driver's extension
+  // support is broken, not that the platform lacks a binary. Skipping there
+  // would hide the regression behind a green suite, so let it throw.
   await Sqlite.init();
   const db = new Sqlite.Database(":memory:");
-  db.loadExtension(mod.getExtensionPath());
+  db.loadExtension(extensionPath);
   db.exec("SELECT vector_version()");
   db.close();
   sqliteVectorAvailable = true;
-} catch {
-  // sqlite-vector extension not available
 }
 
 const VectorSchema = {

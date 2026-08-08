@@ -37,9 +37,10 @@ export namespace SqliteApi {
     get(...params: unknown[]): Result | undefined;
     all(...params: unknown[]): Result[];
     /**
-     * Releases the statement where the driver supports it. `node:sqlite` has no
-     * explicit finalizer — statements are released on GC or when the database
-     * closes — so the Node driver disposes only when the runtime offers it.
+     * Releases the statement where the driver supports it. On `node:sqlite`
+     * this is a no-op today: there is no explicit finalizer and `StatementSync`
+     * exposes no `Symbol.dispose`, so statements are released only on GC or
+     * when the database closes. Only the browser (WASM) driver frees eagerly.
      */
     finalize(): void;
   }

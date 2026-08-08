@@ -547,3 +547,45 @@ describe("SqliteTabularStorage shared-connection safety", () => {
     expect(await a.get({ name: "n3", type: "x" })).toBeDefined();
   });
 });
+
+describe("SqliteTabularStorage entity prototypes", () => {
+  const row = {
+    id: "p1",
+    category: "a",
+    subcategory: "x",
+    value: 1,
+    createdAt: "2025-01-01T00:00:00Z",
+    updatedAt: "2025-01-01T00:00:00Z",
+  };
+
+  async function makeStorage(table: string) {
+    const storage = new SqliteTabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>(
+      ":memory:",
+      table,
+      SearchSchema,
+      SearchPrimaryKeyNames
+    );
+    await storage.setupDatabase();
+    return storage;
+  }
+
+  it("returns get() entities as plain objects", async () => {
+    const storage = await makeStorage(`proto_get_${uuid4().replace(/-/g, "_")}`);
+    await storage.put(row);
+    const got = await storage.get({ id: "p1" });
+    // The driver hands back null-prototype rows; anything that reaches a caller
+    // has to look like the plain objects every other backend returns.
+    expect(Object.getPrototypeOf(got)).toBe(Object.prototype);
+    expect(got).toStrictEqual({ ...row, kind: null });
+    storage.destroy();
+  });
+
+  it("returns updateWhere() entities as plain objects", async () => {
+    const storage = await makeStorage(`proto_update_${uuid4().replace(/-/g, "_")}`);
+    await storage.put(row);
+    const updated = await storage.updateWhere({ id: "p1" }, { value: 42 });
+    expect(Object.getPrototypeOf(updated)).toBe(Object.prototype);
+    expect(updated).toStrictEqual({ ...row, kind: null, value: 42 });
+    storage.destroy();
+  });
+});
