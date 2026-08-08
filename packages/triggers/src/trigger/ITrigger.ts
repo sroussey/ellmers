@@ -26,6 +26,13 @@ export type TriggerKind = (typeof TRIGGER_KINDS)[keyof typeof TRIGGER_KINDS];
  *   bounded by `maxQueuedFires`. Ticks past that bound behave like `skip`.
  * - `concurrent` — the handler is invoked immediately regardless of what is
  *   still in flight. Overlap becomes the handler's problem.
+ *
+ * The policy governs HANDLER INVOCATION only. A handler bound to a workflow
+ * (`workflow.trigger(...)`) still serializes at the workflow, because one
+ * `Workflow` owns one task graph and a graph cannot run re-entrantly — so
+ * `concurrent` there degrades to queue semantics bounded by
+ * `maxPendingFires`. Prefer `"queue"` with `maxQueuedFires` when queueing is
+ * what you actually want.
  */
 export const OVERLAP_POLICIES = ["skip", "queue", "concurrent"] as const;
 

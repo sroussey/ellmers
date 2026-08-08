@@ -50,6 +50,9 @@ let failNextRuns = 0;
 let holdGate: Gate | undefined;
 const completed: string[] = [];
 const abortedRuns: string[] = [];
+/** Highest number of executions ever in flight at once. */
+let peakConcurrency = 0;
+let inFlight = 0;
 
 class RecorderTask extends Task<RecorderInput, RecorderOutput> {
   public static override type = "TriggerRecorderTask";
@@ -77,32 +80,49 @@ class RecorderTask extends Task<RecorderInput, RecorderOutput> {
 
   override async execute(input: RecorderInput, context: IExecuteContext): Promise<RecorderOutput> {
     executions.push(input.label);
-    if (failNextRuns > 0) {
-      failNextRuns -= 1;
-      throw new Error(`run failed for ${input.label}`);
-    }
-    const gate = holdGate;
-    if (gate) {
-      await new Promise<void>((resolve) => {
-        const done = (): void => {
-          context.signal.removeEventListener("abort", done);
-          resolve();
-        };
-        context.signal.addEventListener("abort", done, { once: true });
-        void gate.promise.then(done);
-      });
-      if (context.signal.aborted) {
-        abortedRuns.push(input.label);
-        throw new Error(`aborted ${input.label}`);
+    inFlight += 1;
+    peakConcurrency = Math.max(peakConcurrency, inFlight);
+    try {
+      if (failNextRuns > 0) {
+        failNextRuns -= 1;
+        throw new Error(`run failed for ${input.label}`);
       }
+      const gate = holdGate;
+      if (gate) {
+        await new Promise<void>((resolve) => {
+          const done = (): void => {
+            context.signal.removeEventListener("abort", done);
+            resolve();
+          };
+          context.signal.addEventListener("abort", done, { once: true });
+          void gate.promise.then(done);
+        });
+        if (context.signal.aborted) {
+          abortedRuns.push(input.label);
+          throw new Error(`aborted ${input.label}`);
+        }
+      }
+      completed.push(input.label);
+      return { recorded: input.label };
+    } finally {
+      inFlight -= 1;
     }
-    completed.push(input.label);
-    return { recorded: input.label };
   }
 }
 
 function createWorkflow(): Workflow {
   return new Workflow().addTask(RecorderTask, { label: "default" });
+}
+
+/**
+ * Flushes microtasks until `predicate` holds. Serialized runs hand off to each
+ * other over several microtask turns, and advancing the clock instead would
+ * deliver more fires — which is exactly what these tests are counting.
+ */
+async function drainUntil(predicate: () => boolean): Promise<void> {
+  for (let pass = 0; pass < 50 && !predicate(); pass += 1) {
+    await flushAsyncWork();
+  }
 }
 
 describe("Workflow trigger bindings", () => {
@@ -112,6 +132,8 @@ describe("Workflow trigger bindings", () => {
     abortedRuns.length = 0;
     holdGate = undefined;
     failNextRuns = 0;
+    peakConcurrency = 0;
+    inFlight = 0;
     vi.useFakeTimers();
     vi.setSystemTime(START);
   });
@@ -212,6 +234,75 @@ describe("Workflow trigger bindings", () => {
 
     expect(executions.filter((label) => label === "fast")).toHaveLength(2);
     expect(executions.filter((label) => label === "slow")).toHaveLength(1);
+
+    await handle.stop();
+  });
+
+  test("genuinely overlapping fires run one at a time instead of colliding", async () => {
+    // `overlap: "concurrent"` invokes the handler on every tick regardless of
+    // what is in flight, so with a handler slower than the period the fires
+    // really do overlap. One Workflow owns one TaskGraph, which refuses to be
+    // run re-entrantly, so an unserialized second fire is lost to a
+    // "Graph is already running" error on the trigger's `error` event.
+    const workflow = createWorkflow();
+    const trigger = new IntervalTrigger({ intervalMs: PERIOD, overlap: "concurrent" });
+    const errors: Error[] = [];
+    trigger.on("error", (error) => errors.push(error));
+    workflow.trigger(trigger, {
+      input: (context) => ({ label: `fire@${context.scheduledAt - START}` }),
+      maxPendingFires: 5,
+    });
+
+    const gate = createGate();
+    holdGate = gate;
+    const handle = await workflow.listen();
+
+    await advanceFakeTimers(PERIOD * 3);
+    // Three fires dispatched; only the first is executing.
+    expect(executions).toEqual(["fire@100"]);
+    expect(peakConcurrency).toBe(1);
+
+    holdGate = undefined;
+    gate.open();
+    await drainUntil(() => completed.length >= 3);
+
+    expect(executions).toEqual(["fire@100", "fire@200", "fire@300"]);
+    expect(completed).toEqual(["fire@100", "fire@200", "fire@300"]);
+    // Strictly sequential: no run ever started while another was executing.
+    expect(peakConcurrency).toBe(1);
+    expect(errors).toEqual([]);
+
+    await handle.stop();
+  });
+
+  test("a fire past maxPendingFires is dropped and reported on the error event", async () => {
+    const workflow = createWorkflow();
+    const trigger = new IntervalTrigger({ intervalMs: PERIOD, overlap: "concurrent" });
+    const errors: Error[] = [];
+    trigger.on("error", (error) => errors.push(error));
+    workflow.trigger(trigger, {
+      input: (context) => ({ label: `fire@${context.scheduledAt - START}` }),
+      maxPendingFires: 1,
+    });
+
+    const gate = createGate();
+    holdGate = gate;
+    const handle = await workflow.listen();
+
+    await advanceFakeTimers(PERIOD * 3);
+    // fire@100 is running and fire@200 is waiting, so fire@300 exceeds the bound.
+    expect(executions).toEqual(["fire@100"]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toBeInstanceOf(WorkflowTriggerError);
+    expect(errors[0]?.message).toContain("maxPendingFires");
+
+    holdGate = undefined;
+    gate.open();
+    await drainUntil(() => completed.length >= 2);
+
+    // The dropped fire never runs; the bounded one still does.
+    expect(executions).toEqual(["fire@100", "fire@200"]);
+    expect(errors).toHaveLength(1);
 
     await handle.stop();
   });

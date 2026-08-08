@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TriggerOptions } from "./BaseTrigger";
+import type { TriggerOptions, TriggerRun } from "./BaseTrigger";
 import { BaseTrigger } from "./BaseTrigger";
 import { assertValidIntervalMs, nextFixedIntervalFireTime } from "./fixedInterval";
 import { TRIGGER_KINDS } from "./ITrigger";
@@ -34,7 +34,7 @@ export class IntervalTrigger extends BaseTrigger {
     this.intervalMs = assertValidIntervalMs(options.intervalMs);
   }
 
-  protected computeNextFireTime(fromMs: number): number {
+  protected computeNextFireTime(fromMs: number, _run: TriggerRun): number {
     return nextFixedIntervalFireTime(fromMs, this.intervalMs);
   }
 }
