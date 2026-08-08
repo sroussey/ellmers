@@ -812,7 +812,15 @@ export class SupabaseTabularStorage<
     }
     if (this.matchesNoRow(criteria)) return;
 
-    let query = this.client.from(this.table).delete();
+    // `any` for the same reason as `applyCriteriaToFilter`: the
+    // `PostgrestFilterBuilder` generics are deep enough to be a type-level
+    // hazard. Here it is the null-handling ternaries below that make it bite —
+    // each one yields a UNION of two builder instantiations, which is then
+    // assigned back into this loop variable, so every later `.eq()`/`.neq()`
+    // resolves against a union that compounds each pass. Left typed, this one
+    // function accounted for 63k of the package's 92k instantiations (3.2x its
+    // budget); as `any` the package sits at 29k.
+    let query: any = this.client.from(this.table).delete();
 
     for (const column of criteriaKeys) {
       if (!(column in this.schema.properties)) {
