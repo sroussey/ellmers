@@ -612,14 +612,28 @@ describe("HttpTabularProxyStorage — generic contract (CompoundSchema/SearchSch
     const backing = new InMemoryTabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>(
       SearchSchema,
       SearchPrimaryKeyNames,
-      ["category", ["category", "subcategory"], ["subcategory", "category"], "value"]
+      [
+        "category",
+        ["category", "subcategory"],
+        ["subcategory", "category"],
+        "value",
+        "tag",
+        ["category", "tag"],
+      ]
     );
     return new HttpTabularProxyStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>({
       fetch: makeFakeServer(backing as never),
       table: "search",
       schema: SearchSchema,
       primaryKey: SearchPrimaryKeyNames,
-      indexes: ["category", ["category", "subcategory"], ["subcategory", "category"], "value"],
+      indexes: [
+        "category",
+        ["category", "subcategory"],
+        ["subcategory", "category"],
+        "value",
+        "tag",
+        ["category", "tag"],
+      ],
     });
   };
   const makeAllTypes = async () => {

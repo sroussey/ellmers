@@ -44,6 +44,12 @@ export const SearchSchema = {
     category: { type: "string" },
     subcategory: { type: "string" },
     kind: { type: "string" },
+    // Indexed and optional, so a null criterion on it exercises the index
+    // planner on every backend. `kind` stays deliberately unindexed — two tests
+    // below rely on that to cover the no-covering-index and partial-narrowing
+    // paths. Keep `tag` out of `required`: a required column is emitted
+    // `NOT NULL` in SQL, which would reject every existing `put`.
+    tag: { type: "string" },
     value: { type: "number" },
     createdAt: { type: "string", format: "date-time" },
     updatedAt: { type: "string", format: "date-time" },
@@ -379,6 +385,47 @@ export function runGenericTabularStorageTests(
         // The non-null side must keep working unchanged.
         const setMatches = await searchableRepo.query({ kind: "premium" } as never);
         expect(setMatches?.map((r) => r.id)).toEqual(["set-kind"]);
+      });
+
+      it("matches NULL on an indexed column with a null criterion", async () => {
+        // The same rule as above, but on a column the backend has an index for.
+        // That is the path the previous test never reached: it used `kind`,
+        // which is in no index, so every backend answered it with a scan and
+        // the cross-backend claim went untested against an index planner.
+        const now = new Date().toISOString();
+        await searchableRepo.put({
+          id: "no-tag",
+          category: "electronics",
+          subcategory: "phones",
+          value: 100,
+          createdAt: now,
+          updatedAt: now,
+        });
+        await searchableRepo.put({
+          id: "with-tag",
+          category: "electronics",
+          subcategory: "phones",
+          tag: "a",
+          value: 200,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        const nullMatches = await searchableRepo.query({ tag: null } as never);
+        expect(nullMatches?.map((r) => r.id)).toEqual(["no-tag"]);
+
+        // Compound-index prefix shape: a non-null leading column plus a null
+        // one, which is what a "look up by tuple, else create" repo issues.
+        const compound = await searchableRepo.query({
+          category: "electronics",
+          tag: null,
+        } as never);
+        expect(compound?.map((r) => r.id)).toEqual(["no-tag"]);
+
+        expect(await searchableRepo.count({ tag: null } as never)).toBe(1);
+
+        const setMatches = await searchableRepo.query({ tag: "a" } as never);
+        expect(setMatches?.map((r) => r.id)).toEqual(["with-tag"]);
       });
 
       it("supports != , including its null form", async () => {

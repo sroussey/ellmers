@@ -46,7 +46,14 @@ describe("SupabaseTabularStorage", () => {
         `supabase_test_${uuid4().replace(/-/g, "_")}`,
         SearchSchema,
         SearchPrimaryKeyNames,
-        ["category", ["category", "subcategory"], ["subcategory", "category"], "value"]
+        [
+          "category",
+          ["category", "subcategory"],
+          ["subcategory", "category"],
+          "value",
+          "tag",
+          ["category", "tag"],
+        ]
       ),
     async () => {
       const repo = new SupabaseTabularStorage<
