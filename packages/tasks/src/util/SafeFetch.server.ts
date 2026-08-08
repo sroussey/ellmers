@@ -26,7 +26,12 @@ import {
   FetchUrlErrorCode,
   isFetchUrlJobError,
 } from "../task/FetchUrlJobError";
-import { registerSafeFetch, type SafeFetchFn, type SafeFetchOptions } from "./SafeFetch";
+import {
+  createSafeFetchRedirectError,
+  registerSafeFetch,
+  type SafeFetchFn,
+  type SafeFetchOptions,
+} from "./SafeFetch";
 import { classifyIpLiteral, classifyUrl, urlMatchesScope } from "./UrlClassifier";
 
 const MAX_REDIRECT_HOPS = SECURITY_LIMITS.safeFetchMaxRedirectHops;
@@ -229,9 +234,7 @@ export const serverSafeFetch: SafeFetchFn = async (url, options) => {
 
     if (requestedRedirectMode === "error") {
       closeAgent(dispatcher);
-      throw new TypeError(
-        `Fetch for ${currentUrl} failed because redirect mode was set to 'error'.`
-      );
+      throw createSafeFetchRedirectError(currentUrl, response.status);
     }
 
     const location = response.headers.get("location");
