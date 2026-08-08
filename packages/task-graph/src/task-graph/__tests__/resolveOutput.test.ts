@@ -192,4 +192,53 @@ describe("resolveOutput", () => {
     expect(out.target instanceof URL).toBe(true);
     expect(resolver).not.toHaveBeenCalled();
   });
+
+  describe("deep values", () => {
+    /** A left-spine chain `{child:{child:…{bottom}}}`, `width` scalars per level. */
+    const chain = (
+      depth: number,
+      bottom: Record<string, unknown>,
+      width = 0
+    ): Record<string, unknown> => {
+      let node = bottom;
+      for (let i = 0; i < depth; i++) {
+        const next: Record<string, unknown> = { child: node };
+        for (let k = 0; k < width; k++) next[`f${k}`] = `v${k}`;
+        node = next;
+      }
+      return node;
+    };
+
+    it("scans a 50k-deep ref-free value without overflowing the stack", async () => {
+      // The pre-scan recursed once per level, so a deeply nested model output
+      // raised a RangeError out of cache resolution instead of answering "no
+      // refs here". Identity is still preserved: nothing needed resolving, and
+      // the walker is never entered.
+      const resolver = vi.fn<CacheRefResolver>();
+      const input = chain(50_000, { leaf: "bottom" });
+      const out = await resolveOutput(input, resolver);
+      expect(out).toBe(input);
+      expect(resolver).not.toHaveBeenCalled();
+    });
+
+    it("resolves a ref under a deep chain without re-scanning each level", async () => {
+      // A per-container pre-scan inside the walk re-read each node's whole
+      // subtree, making resolution O(n·depth). The bound is loose enough that
+      // only an algorithmic regression trips it: ~590ms before, ~30ms after.
+      const depth = 400;
+      const blob = new Blob([new Uint8Array([1])]);
+      const input = chain(depth, { payload: ref("cache://deep") as unknown as Blob }, 100);
+      const started = performance.now();
+      const out = (await resolveOutput(input, fakeResolver({ "cache://deep": blob }))) as Record<
+        string,
+        unknown
+      >;
+      const elapsed = performance.now() - started;
+
+      let cursor: Record<string, unknown> = out;
+      for (let i = 0; i < depth; i++) cursor = cursor.child as Record<string, unknown>;
+      expect(cursor.payload).toBe(blob);
+      expect(elapsed).toBeLessThan(250);
+    });
+  });
 });

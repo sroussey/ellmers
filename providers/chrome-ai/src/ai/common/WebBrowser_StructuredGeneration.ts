@@ -113,7 +113,7 @@ export const WebBrowser_StructuredGeneration: AiProviderRunFn<
 
     emit({
       type: "finish",
-      data: { object: json.finish() } as StructuredGenerationTaskOutput,
+      data: { object: json.finishObject() } as StructuredGenerationTaskOutput,
     });
   } finally {
     try {
