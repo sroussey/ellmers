@@ -45,6 +45,20 @@ export interface PollErrorBackoff {
   readonly maxMs: number;
 }
 
+/**
+ * Change-detection baseline and failure streak for ONE run.
+ *
+ * Both belong to a single `start()`: a restart is a fresh observation window,
+ * and a `firesOnChange` trigger comparing against the previous run's baseline
+ * would swallow the first change after it. Keying them off the run object makes
+ * that structural — a run that ends unnoticed (because a newer `start()` took
+ * over while it was still draining) cannot leave its baseline behind.
+ */
+interface PollRunState<Result> {
+  previous: Result | undefined;
+  failures: number;
+}
+
 export interface PollingTriggerOptions<Result> extends TriggerOptions {
   /** Period between polls, in milliseconds. Must be a positive integer. */
   readonly intervalMs: number;
@@ -82,8 +96,7 @@ export class PollingTrigger<Result = unknown> extends BaseTrigger {
   private readonly _poll: (signal: AbortSignal) => Result | Promise<Result>;
   private readonly _shouldFire: PollResultPredicate<Result>;
   private readonly _errorBackoff: PollErrorBackoff | undefined;
-  private _previous: Result | undefined;
-  private _consecutiveFailures = 0;
+  private readonly _runState = new WeakMap<TriggerRun, PollRunState<Result>>();
 
   constructor(options: PollingTriggerOptions<Result>) {
     super(options);
@@ -98,22 +111,28 @@ export class PollingTrigger<Result = unknown> extends BaseTrigger {
       : undefined;
   }
 
-  /** Most recent successfully polled result, or `undefined` before the first poll. */
+  /**
+   * Most recent result successfully polled by the CURRENT run, or `undefined`
+   * before its first poll and while the trigger is stopped.
+   */
   public get lastResult(): Result | undefined {
-    return this._previous;
+    const run = this.currentRun;
+    return run ? this._runState.get(run)?.previous : undefined;
   }
 
-  /** Consecutive poll failures since the last poll that did not throw. */
+  /** Consecutive poll failures of the current run since its last poll that did not throw. */
   public get consecutiveFailures(): number {
-    return this._consecutiveFailures;
+    const run = this.currentRun;
+    return (run ? this._runState.get(run)?.failures : 0) ?? 0;
   }
 
-  protected computeNextFireTime(fromMs: number): number {
+  protected computeNextFireTime(fromMs: number, run: TriggerRun): number {
     const backoff = this._errorBackoff;
-    if (backoff && this._consecutiveFailures > 0) {
+    const failures = this.stateFor(run).failures;
+    if (backoff && failures > 0) {
       // The next tick was already scheduled when the failing one started, so the
       // backoff takes effect from the tick AFTER the first failure.
-      const exponent = Math.min(this._consecutiveFailures - 1, 31);
+      const exponent = Math.min(failures - 1, 31);
       const delay = Math.min(backoff.maxMs, backoff.initialMs * 2 ** exponent);
       return fromMs + delay;
     }
@@ -122,20 +141,21 @@ export class PollingTrigger<Result = unknown> extends BaseTrigger {
 
   protected override async runTick(scheduledAt: number, run: TriggerRun): Promise<void> {
     const signal = run.signal;
+    const state = this.stateFor(run);
     let result: Result;
     try {
       result = await this._poll(signal);
     } catch (error) {
-      this._consecutiveFailures += 1;
+      state.failures += 1;
       throw error;
     }
-    this._consecutiveFailures = 0;
+    state.failures = 0;
     // Bail before recording the result: an aborted tick never fires, so keeping
     // its value as the baseline would make the NEXT `firesOnChange` comparison
     // see no change and swallow the very update this tick observed.
     if (signal.aborted) return;
-    const previous = this._previous;
-    this._previous = result;
+    const previous = state.previous;
+    state.previous = result;
     if (!this._shouldFire(result, previous)) return;
     await this.invokeHandler(run, {
       triggerId: this.id,
@@ -145,14 +165,12 @@ export class PollingTrigger<Result = unknown> extends BaseTrigger {
     });
   }
 
-  /**
-   * The baseline and the failure streak belong to ONE run: a restart is a fresh
-   * observation window, and a `firesOnChange` trigger comparing against a
-   * baseline from the previous run would swallow the first change after it.
-   */
-  protected override onRunStopped(): void {
-    this._previous = undefined;
-    this._consecutiveFailures = 0;
+  private stateFor(run: TriggerRun): PollRunState<Result> {
+    const existing = this._runState.get(run);
+    if (existing) return existing;
+    const created: PollRunState<Result> = { previous: undefined, failures: 0 };
+    this._runState.set(run, created);
+    return created;
   }
 }
 

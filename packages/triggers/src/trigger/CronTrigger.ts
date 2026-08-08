@@ -6,7 +6,7 @@
 
 import type { CronSchedule } from "../cron/CronSchedule";
 import { nextCronFireTime, parseCronExpression } from "../cron/CronSchedule";
-import type { TriggerOptions } from "./BaseTrigger";
+import type { TriggerOptions, TriggerRun } from "./BaseTrigger";
 import { BaseTrigger } from "./BaseTrigger";
 import { TRIGGER_KINDS } from "./ITrigger";
 
@@ -45,7 +45,7 @@ export class CronTrigger extends BaseTrigger {
     return this.schedule.expression;
   }
 
-  protected computeNextFireTime(fromMs: number): number {
+  protected computeNextFireTime(fromMs: number, _run: TriggerRun): number {
     // Anchoring on the later of the tick's own instant and now means a host
     // that stalled past several cron instants resumes at the next FUTURE one
     // instead of replaying the missed ones back to back.

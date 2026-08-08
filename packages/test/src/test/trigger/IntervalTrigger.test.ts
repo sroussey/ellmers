@@ -45,6 +45,13 @@ describe("IntervalTrigger", () => {
     );
   });
 
+  test("rejects a handler that is not a function", () => {
+    const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+    expect(() => trigger.start(undefined as never)).toThrow(TriggerConfigurationError);
+    // Nothing was touched: no timer, and the trigger is still startable.
+    expect(trigger.running).toBe(false);
+  });
+
   test("rejects an unknown overlap policy", () => {
     expect(() => new IntervalTrigger({ intervalMs: PERIOD, overlap: "whenever" as never })).toThrow(
       TriggerConfigurationError
@@ -277,6 +284,26 @@ describe("IntervalTrigger", () => {
         () => new IntervalTrigger({ intervalMs: PERIOD, overlap: "queue", maxQueuedFires: 0 })
       ).toThrow(TriggerConfigurationError);
     });
+  });
+
+  test("a period past the host timer ceiling is served in chunks", async () => {
+    // A delay over 2^31-1 ms overflows a host timer and fires IMMEDIATELY, so
+    // an unchunked wait would turn a very long period into a hot loop.
+    const maxTimerDelay = 2_147_483_647;
+    const intervalMs = 2 ** 31 + PERIOD;
+    const trigger = new IntervalTrigger({ intervalMs });
+    const fires: number[] = [];
+    trigger.start((context) => {
+      fires.push(context.scheduledAt);
+    });
+
+    await advanceFakeTimers(maxTimerDelay);
+    expect(fires).toEqual([]);
+
+    await advanceFakeTimers(intervalMs - maxTimerDelay);
+    expect(fires).toEqual([START + intervalMs]);
+
+    await trigger.stop();
   });
 
   test("unrefTimer unrefs the scheduled timer without changing the schedule", async () => {
@@ -542,6 +569,45 @@ describe("IntervalTrigger", () => {
 
       expect(settled).toBe(true);
       expect(resolved).toHaveLength(2);
+    });
+
+    test("stop() called from a fire listener still waits for the handler", async () => {
+      // `trigger.once("fire", () => trigger.stop())` is the ordinary idiom for
+      // "run once". The fire emit and the handler's synchronous head run inside
+      // the tick chain, so a stop() begun there must still see that chain as
+      // pending — otherwise it drains an empty set and resolves while the
+      // handler is running, which is the opposite of what stop() promises.
+      const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+      const order: string[] = [];
+      trigger.on("stop", () => order.push("stop-event"));
+
+      let stopping: Promise<void> | undefined;
+      trigger.once("fire", () => {
+        stopping = trigger.stop();
+      });
+      trigger.start(async () => {
+        order.push("handler-start");
+        await new Promise<void>((resolve) => setTimeout(resolve, PERIOD / 2));
+        order.push("handler-end");
+      });
+
+      await advanceFakeTimers(PERIOD);
+      expect(order).toEqual(["handler-start"]);
+      expect(stopping).toBeDefined();
+
+      let stopResolved = false;
+      void stopping!.then(() => {
+        stopResolved = true;
+      });
+      await flushAsyncWork();
+      expect(stopResolved).toBe(false);
+
+      // Let the handler's own timer run out.
+      await advanceFakeTimers(PERIOD);
+      await stopping;
+
+      expect(order).toEqual(["handler-start", "handler-end", "stop-event"]);
+      expect(trigger.running).toBe(false);
     });
 
     test("an already-aborted caller signal schedules nothing", async () => {
