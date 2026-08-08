@@ -24,6 +24,17 @@ export interface WorkflowTriggerOptions {
     | undefined;
   /** Run configuration forwarded to {@link Workflow.run} on every fire. */
   readonly runConfig?: WorkflowRunConfig | undefined;
+  /**
+   * How many fires may wait for the workflow's current run before one is
+   * dropped. Defaults to `1`.
+   *
+   * One `Workflow` owns one task graph, which can only be running once, so
+   * fires against a workflow are run one at a time no matter what overlap
+   * policy the trigger uses. This is the bound on that backlog: a fire arriving
+   * past it is dropped and reported on the trigger's `error` event rather than
+   * queued forever behind a handler that cannot keep up.
+   */
+  readonly maxPendingFires?: number | undefined;
 }
 
 /** Options for {@link Workflow.listen}. */
@@ -50,10 +61,19 @@ interface TriggerBinding {
   readonly options: WorkflowTriggerOptions;
 }
 
+/** Backlog bound applied when a binding does not set {@link WorkflowTriggerOptions.maxPendingFires}. */
+const DEFAULT_MAX_PENDING_FIRES = 1;
+
 // Prototype methods cannot reach Workflow's private fields, so bindings live
 // beside the instance. A WeakMap keeps a discarded workflow collectable.
 const workflowBindings = new WeakMap<Workflow, TriggerBinding[]>();
 const workflowHandles = new WeakMap<Workflow, ITriggerListenerHandle>();
+/**
+ * Tail of the serialized run chain per workflow, and the number of fires
+ * waiting on it. See {@link runWorkflowForFire}.
+ */
+const workflowRunChains = new WeakMap<Workflow, Promise<void>>();
+const workflowPendingFires = new WeakMap<Workflow, number>();
 
 /** The triggers bound to `workflow` via {@link Workflow.trigger}, in binding order. */
 export function getWorkflowTriggers(workflow: Workflow): readonly ITrigger[] {
@@ -65,8 +85,12 @@ declare module "@workglow/task-graph" {
     /**
      * Binds a trigger to this workflow. Bindings accumulate; nothing is
      * scheduled until {@link Workflow.listen} is called.
+     *
+     * Returns `this`, not `Workflow`: a declared return type would collapse a
+     * `Workflow<Input, Output>` to the default `Workflow<DataPorts, DataPorts>`
+     * on the first chained call and lose both port types.
      */
-    trigger(trigger: ITrigger, options?: WorkflowTriggerOptions): Workflow;
+    trigger(trigger: ITrigger, options?: WorkflowTriggerOptions): this;
 
     /**
      * Starts every bound trigger and RESOLVES IMMEDIATELY — it does not block
@@ -183,24 +207,72 @@ Workflow.prototype.stopListening = async function (this: Workflow): Promise<void
   await workflowHandles.get(this)?.stop();
 };
 
+/**
+ * Runs the workflow for one fire, serialized against every other fire on the
+ * SAME workflow.
+ *
+ * A `Workflow` owns exactly one `TaskGraph`, and a graph refuses to be run
+ * re-entrantly, so two fires landing on one workflow at once — two triggers
+ * whose periods share a boundary, or one trigger with `overlap: "concurrent"`
+ * and a handler slower than its period — would lose the second fire to a
+ * "Graph is already running" error. Deriving a fresh graph per fire is not an
+ * option: `TaskGraph` has no clone, `toJSON` cannot carry closures, attached
+ * caches, or user-attached task listeners, and a copy would break the identity
+ * the trigger bindings and `workflow.abort()` are keyed on.
+ */
 async function runWorkflowForFire(
   workflow: Workflow,
   binding: TriggerBinding,
   context: ITriggerFireContext
 ): Promise<void> {
   const input = binding.options.input ? await binding.options.input(context) : {};
+  const predecessor = workflowRunChains.get(workflow);
 
-  // Forward the trigger's signal into the run itself rather than calling
-  // `workflow.abort()`: that aborts the workflow's CURRENT run, which — with
-  // two triggers bound to one workflow — is whichever run started last, so
-  // stopping trigger A would cancel trigger B's in-flight run and leave A's own
-  // older run going. A per-run signal cancels exactly the run this fire started.
-  try {
+  if (predecessor !== undefined) {
+    const limit = binding.options.maxPendingFires ?? DEFAULT_MAX_PENDING_FIRES;
+    const waiting = workflowPendingFires.get(workflow) ?? 0;
+    if (waiting >= limit) {
+      // Thrown rather than dropped in silence: this is the one place the old
+      // "Graph is already running" failure was observable, and a backlog the
+      // workflow cannot work off is worth reporting on the `error` event.
+      throw new WorkflowTriggerError(
+        `Dropped a trigger fire scheduled for ${new Date(context.scheduledAt).toISOString()}: ` +
+          `${waiting} fire(s) are already waiting for this workflow's run to finish ` +
+          `(maxPendingFires: ${limit}).`
+      );
+    }
+    workflowPendingFires.set(workflow, waiting + 1);
+  }
+
+  const chain = (async (): Promise<void> => {
+    if (predecessor !== undefined) {
+      // `catch`, not a bare await: a fire whose run rejected must not take the
+      // fires queued behind it down with it.
+      await predecessor.catch(() => {});
+      workflowPendingFires.set(workflow, (workflowPendingFires.get(workflow) ?? 1) - 1);
+      // The wait can outlast the trigger. A fire that queued behind a slow run
+      // must not start a new one after `stop()`.
+      if (context.signal.aborted) return;
+    }
+    // Forward the trigger's signal into the run itself rather than calling
+    // `workflow.abort()`: that aborts the workflow's CURRENT run, which — with
+    // two triggers bound to one workflow — is whichever run started last, so
+    // stopping trigger A would cancel trigger B's in-flight run and leave A's own
+    // older run going. A per-run signal cancels exactly the run this fire started.
     await workflow.run(input, { ...binding.options.runConfig, signal: context.signal });
+  })();
+
+  workflowRunChains.set(workflow, chain);
+
+  try {
+    await chain;
   } catch (error) {
     // A run cancelled by our own stop() is the expected path, not a failure to
     // report on the trigger's `error` event.
     if (context.signal.aborted) return;
     throw error;
+  } finally {
+    // Identity check: a later fire may already have claimed the tail.
+    if (workflowRunChains.get(workflow) === chain) workflowRunChains.delete(workflow);
   }
 }
