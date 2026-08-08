@@ -1,3 +1,5 @@
+# `bun-version: canary` matches `engines.bun` / `packageManager`: no tagged Bun
+# release carries `node:sqlite` yet, which @workglow/sqlite/storage requires.
 name: Nightly type-drift guard
 permissions:
   contents: read
@@ -19,7 +21,7 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: canary
       - run: bun i
       - name: Build type declarations
         run: bun run build:types
