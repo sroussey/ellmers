@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { aggregateResults } from "../report/aggregate";
+import { aggregateResults, sumUsageColumns } from "../report/aggregate";
 import type { EvalResultRecord } from "../storage";
 
 function result(partial: Partial<EvalResultRecord> & { model: string }): EvalResultRecord {
@@ -72,5 +72,39 @@ describe("aggregateResults", () => {
     const [report] = aggregateResults("similarity", results);
     expect(report.pearson).toBeCloseTo(1, 6);
     expect(report.spearman).toBeCloseTo(1, 6);
+  });
+});
+
+describe("sumUsageColumns", () => {
+  it("skips a null column while summing reported zeros and real numbers together", () => {
+    const rows: EvalResultRecord[] = [
+      result({ model: "m", row_index: 0, cached_tokens: null, input_tokens: 100 }),
+      result({ model: "m", row_index: 1, cached_tokens: 0, input_tokens: 200 }),
+      result({ model: "m", row_index: 2, cached_tokens: 7, input_tokens: 300 }),
+    ];
+    const totals = sumUsageColumns(rows);
+    // Row 0's null is skipped entirely — only row 1's reported 0 and row 2's 7 count.
+    expect(totals.cachedTokens).toBe(7);
+    expect(totals.inputTokens).toBe(600);
+  });
+
+  it("counts a reported zero as real data rather than treating it as absence", () => {
+    const rows: EvalResultRecord[] = [
+      result({ model: "m", row_index: 0, cached_tokens: null }),
+      result({ model: "m", row_index: 1, cached_tokens: 0 }),
+    ];
+    // If the sum treated 0 as falsy/absent, the total would stay undefined
+    // even though one row explicitly reported "cached nothing".
+    expect(sumUsageColumns(rows).cachedTokens).toBe(0);
+  });
+
+  it("returns undefined, not 0, when every row is null for a column", () => {
+    const rows: EvalResultRecord[] = [
+      result({ model: "m", row_index: 0, cached_tokens: null }),
+      result({ model: "m", row_index: 1, cached_tokens: null }),
+    ];
+    // If null were coalesced to 0 before summing, this would read as a real
+    // total of 0 ("cached nothing") instead of "never reported".
+    expect(sumUsageColumns(rows).cachedTokens).toBeUndefined();
   });
 });
