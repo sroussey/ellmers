@@ -90,7 +90,45 @@ describe("Gemini session disposal", () => {
     );
 
     expect(runtime.getGeminiCachedContent("checkpoint-2")).toBeUndefined();
-    expect(events).toEqual([{ type: "finish", data: {} }]);
+    expect(events).toHaveLength(1);
+    const [event] = events as [{ type: string; data: { tokens?: number; lifetimeMs?: number } }];
+    expect(event.type).toBe("finish");
+    // No tokens were recorded on the fixture entry, but a real dispose still
+    // reports the elapsed lifetime — the run-fn's `finish` payload is the
+    // released SessionDisposalResult, not the discarded `{}` it used to be.
+    expect(event.data.tokens).toBeUndefined();
+    expect(event.data.lifetimeMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("disposeSession returns the released SessionDisposalResult through the registered session.dispose run-fn", async () => {
+    const registry = new AiProviderRegistry();
+    setAiProviderRegistry(registry);
+
+    const provider = new GoogleGeminiQueuedProvider(GEMINI_RUN_FNS);
+    await provider.register({});
+
+    const createdAtMs = Date.now() - 2_000;
+    runtime.setGeminiCachedContent("checkpoint-queued", {
+      name: "cachedContents/checkpoint-queued",
+      model: {
+        model_id: "gemini-2.5-flash",
+        provider: "GOOGLE_GEMINI",
+        provider_config: { model_name: "gemini-2.5-flash" },
+      },
+      systemPrompt: undefined,
+      tokens: 1500,
+      createdAtMs,
+    });
+
+    const released = await provider.disposeSession("checkpoint-queued");
+
+    // This is the confirmed defect this test guards: disposeSession used to
+    // dispatch through a `noopEmit` and unconditionally return `undefined`, so
+    // a queued-mode dispose reported nothing even though the run-fn (and the
+    // cache delete it performs) already knows the released tokens/lifetime.
+    expect(released?.tokens).toBe(1500);
+    expect(released?.lifetimeMs).toBeGreaterThanOrEqual(2_000);
+    expect(runtime.getGeminiCachedContent("checkpoint-queued")).toBeUndefined();
   });
 });
 
