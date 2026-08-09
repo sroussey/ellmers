@@ -93,12 +93,30 @@ export const ModelRecordSchema = {
  */
 export interface ModelPricing {
   readonly currency: string;
-  readonly input?: number;
-  readonly output?: number;
-  readonly cached?: number;
-  readonly cacheWrite?: number;
-  readonly cacheStoragePerHour?: number;
+  readonly input: number | undefined;
+  readonly output: number | undefined;
+  readonly cached: number | undefined;
+  readonly cacheWrite: number | undefined;
+  readonly cacheStoragePerHour: number | undefined;
 }
+
+/**
+ * Rebinds a `pricing` property inferred from `FromSchema` to the hand-written
+ * {@link ModelPricing}.
+ *
+ * The `pricing` sub-schema's `required` list names only `currency` (every
+ * rate is caller-declared and may be unreported), so `FromSchema` derives the
+ * other rates as optional keys -- faithful to the JSON schema, where "not
+ * required" means the key may be absent. A required key of `number |
+ * undefined` never accepts an optional key, so a bare provider config/record
+ * type built by spreading `ModelConfigSchema`/`ModelRecordSchema` properties
+ * can't structurally satisfy {@link ModelConfig} / {@link ModelRecord}'s
+ * `pricing` field. Provider schema modules apply this to their derived type
+ * instead.
+ */
+export type WithModelPricing<T> = Omit<T, "pricing"> & {
+  readonly pricing?: ModelPricing | undefined;
+};
 
 export type ModelConfig = {
   [x: string]: unknown;

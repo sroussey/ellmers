@@ -9,7 +9,14 @@ import type { ModelConfig, ModelPricing } from "../ModelSchema";
 import { ModelConfigSchema, ModelRecordSchema } from "../ModelSchema";
 
 describe("model pricing", () => {
-  it("is declarable on a model config", () => {
+  it("is present in the schema, requires currency, but is never required itself", () => {
+    const pricingSchema = ModelConfigSchema.properties.pricing;
+    expect(pricingSchema).toBeDefined();
+    expect(pricingSchema.required).toEqual(["currency"]);
+    expect(ModelRecordSchema.required).not.toContain("pricing");
+  });
+
+  it("round-trips an explicit rate card through a model config", () => {
     const pricing: ModelPricing = {
       currency: "USD",
       input: 3,
@@ -23,11 +30,13 @@ describe("model pricing", () => {
       provider_config: {},
       pricing,
     };
-    expect(model.pricing?.input).toBe(3);
-  });
-
-  it("is present in the schema but never required", () => {
-    expect(ModelConfigSchema.properties.pricing).toBeDefined();
-    expect(ModelRecordSchema.required).not.toContain("pricing");
+    expect(model.pricing).toEqual({
+      currency: "USD",
+      input: 3,
+      output: 15,
+      cached: 0.3,
+      cacheWrite: 3.75,
+      cacheStoragePerHour: undefined,
+    });
   });
 });

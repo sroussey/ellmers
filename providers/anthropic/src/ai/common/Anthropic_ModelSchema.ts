@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { WithModelPricing } from "@workglow/ai/worker";
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
 import type { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
 import { ANTHROPIC, ANTHROPIC_DEFAULT_MAX_TOKENS } from "./Anthropic_Constants";
@@ -73,7 +74,7 @@ export const AnthropicModelRecordSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type AnthropicModelRecord = FromSchema<typeof AnthropicModelRecordSchema>;
+export type AnthropicModelRecord = WithModelPricing<FromSchema<typeof AnthropicModelRecordSchema>>;
 
 export const AnthropicModelConfigSchema = {
   type: "object",
@@ -85,4 +86,4 @@ export const AnthropicModelConfigSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type AnthropicModelConfig = FromSchema<typeof AnthropicModelConfigSchema>;
+export type AnthropicModelConfig = WithModelPricing<FromSchema<typeof AnthropicModelConfigSchema>>;

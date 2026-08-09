@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { WithModelPricing } from "@workglow/ai/worker";
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
 import type { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
 import { LLAMACPP_DEFAULT_MODELS_DIR, LOCAL_LLAMACPP } from "./LlamaCpp_Constants";
@@ -78,7 +79,7 @@ export const LlamaCppModelRecordSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type LlamaCppModelRecord = FromSchema<typeof LlamaCppModelRecordSchema>;
+export type LlamaCppModelRecord = WithModelPricing<FromSchema<typeof LlamaCppModelRecordSchema>>;
 
 export const LlamaCppModelConfigSchema = {
   type: "object",
@@ -90,4 +91,4 @@ export const LlamaCppModelConfigSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type LlamaCppModelConfig = FromSchema<typeof LlamaCppModelConfigSchema>;
+export type LlamaCppModelConfig = WithModelPricing<FromSchema<typeof LlamaCppModelConfigSchema>>;

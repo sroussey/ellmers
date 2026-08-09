@@ -34,7 +34,8 @@ export type ModelEventParameters<Event extends ModelEvents> = EventParameters<
 export class ModelRepository {
   protected readonly modelTabularRepository: ITabularStorage<
     typeof ModelRecordSchema,
-    typeof ModelPrimaryKeyNames
+    typeof ModelPrimaryKeyNames,
+    ModelRecord
   >;
   constructor(
     modelTabularRepository: ITabularStorage<

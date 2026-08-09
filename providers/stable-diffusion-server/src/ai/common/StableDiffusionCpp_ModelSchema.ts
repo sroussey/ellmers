@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { WithModelPricing } from "@workglow/ai/worker";
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
 import type { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
 import { LOCAL_STABLE_DIFFUSION_CPP } from "./StableDiffusionCpp_Constants";
@@ -67,7 +68,9 @@ export const StableDiffusionCppModelRecordSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type StableDiffusionCppModelRecord = FromSchema<typeof StableDiffusionCppModelRecordSchema>;
+export type StableDiffusionCppModelRecord = WithModelPricing<
+  FromSchema<typeof StableDiffusionCppModelRecordSchema>
+>;
 
 export const StableDiffusionCppModelConfigSchema = {
   type: "object",
@@ -79,4 +82,6 @@ export const StableDiffusionCppModelConfigSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type StableDiffusionCppModelConfig = FromSchema<typeof StableDiffusionCppModelConfigSchema>;
+export type StableDiffusionCppModelConfig = WithModelPricing<
+  FromSchema<typeof StableDiffusionCppModelConfigSchema>
+>;

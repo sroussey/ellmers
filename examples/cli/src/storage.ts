@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ModelRecord } from "@workglow/ai";
 import { ModelPrimaryKeyNames, ModelRecordSchema, ModelRepository } from "@workglow/ai";
 import { mcpServerConfigSchema } from "@workglow/mcp/util";
 import { FsFolderTabularStorage } from "@workglow/storage";
@@ -27,11 +28,11 @@ export const McpServerRecordSchema = {
 export const McpServerPrimaryKeyNames = ["name"] as const;
 
 export function createModelRepository(config: CliConfig): ModelRepository {
-  const storage = new FsFolderTabularStorage(
-    config.directories.models,
-    ModelRecordSchema,
-    ModelPrimaryKeyNames
-  );
+  const storage = new FsFolderTabularStorage<
+    typeof ModelRecordSchema,
+    typeof ModelPrimaryKeyNames,
+    ModelRecord
+  >(config.directories.models, ModelRecordSchema, ModelPrimaryKeyNames);
   return new ModelRepository(storage);
 }
 
