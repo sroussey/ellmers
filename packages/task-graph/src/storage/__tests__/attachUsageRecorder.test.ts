@@ -35,8 +35,8 @@ describe("attachUsageRecorder", () => {
     const rows = (await storage.getAll()) ?? [];
     expect(rows).toHaveLength(1);
     expect(rows[0].output).toBe(9);
-    expect(rows[0].task_id).toBe("t1");
-    expect(rows[0].run_id).toBe("run-1");
+    expect(rows[0].taskId).toBe("t1");
+    expect(rows[0].runId).toBe("run-1");
   });
 
   it("stores an unreported counter as null, never 0", async () => {
@@ -52,7 +52,7 @@ describe("attachUsageRecorder", () => {
     // The zero-vs-absent rule has to survive into the database or it was never
     // really enforced.
     expect(rows[0].cached).toBe(null);
-    expect(rows[0].cache_write).toBe(null);
+    expect(rows[0].cacheWrite).toBe(null);
   });
 
   it("gives a task that executes twice two rows", async () => {

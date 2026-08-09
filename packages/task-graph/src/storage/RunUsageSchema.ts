@@ -7,7 +7,7 @@
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 
 export type RunUsagePrimaryKey = {
-  run_id: string;
+  runId: string;
   sequence: number;
 };
 
@@ -25,23 +25,23 @@ export type RunUsagePrimaryKey = {
 export const RunUsageSchema = {
   type: "object",
   properties: {
-    run_id: { type: "string" },
+    runId: { type: "string" },
     sequence: { type: "integer" },
-    task_id: { type: "string" },
-    task_type: { type: ["string", "null"] },
-    model_id: { type: ["string", "null"] },
+    taskId: { type: "string" },
+    taskType: { type: ["string", "null"] },
+    modelId: { type: ["string", "null"] },
     input: { type: ["integer", "null"] },
     output: { type: ["integer", "null"] },
     cached: { type: ["integer", "null"] },
-    cache_write: { type: ["integer", "null"] },
+    cacheWrite: { type: ["integer", "null"] },
     reasoning: { type: ["integer", "null"] },
     total: { type: ["integer", "null"] },
     extra: { type: ["string", "null"] },
     currency: { type: ["string", "null"] },
     cost: { type: ["number", "null"] },
-    created_at: { type: "string", format: "date-time" },
+    createdAt: { type: "string", format: "date-time" },
   },
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export const RunUsagePrimaryKeyNames = ["run_id", "sequence"] as const;
+export const RunUsagePrimaryKeyNames = ["runId", "sequence"] as const;

@@ -41,21 +41,21 @@ export function attachUsageRecorder(
   const off = aggregator.onRetire((row) => {
     const write = storage
       .put({
-        run_id: options.runId,
+        runId: options.runId,
         sequence: sequence++,
-        task_id: row.taskId,
-        task_type: null,
-        model_id: row.modelId ?? null,
+        taskId: row.taskId,
+        taskType: null,
+        modelId: row.modelId ?? null,
         input: row.usage.input ?? null,
         output: row.usage.output ?? null,
         cached: row.usage.cached ?? null,
-        cache_write: row.usage.cacheWrite ?? null,
+        cacheWrite: row.usage.cacheWrite ?? null,
         reasoning: row.usage.reasoning ?? null,
         total: row.usage.total ?? null,
         extra: row.usage.extra ? JSON.stringify(row.usage.extra) : null,
         currency: null,
         cost: null,
-        created_at: clock(),
+        createdAt: clock(),
       })
       .catch((err: unknown) => {
         // Losing a telemetry row must not fail the run that produced it.
