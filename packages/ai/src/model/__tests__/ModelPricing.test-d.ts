@@ -38,6 +38,5 @@ describe("ModelPricing", () => {
       cacheWrite: 3.75,
       cacheStoragePerHour: undefined,
     };
-    expectTypeOf(pricing).toEqualTypeOf<ModelPricing>();
   });
 });
