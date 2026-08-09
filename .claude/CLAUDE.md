@@ -235,6 +235,20 @@ Shared cloud-provider helpers (base classes, registration, model search, OpenAI-
 
 **Streaming convention:** Provider stream functions (`AiProviderStreamFn`) must **not** accumulate output. They yield incremental `text-delta` / `object-delta` events and a final `finish` event with `{} as Output`. The consumer (`StreamingAiTask` / `TaskRunner`) is responsible for accumulating deltas into the final output. This separation keeps providers stateless and avoids double-buffering. Do **not** change finish events to include accumulated data.
 
+**Streaming convention (decode feedback):** deltas do not drive progress —
+`StreamProcessor` translates only `phase` events into `updateProgress`, and
+`StreamingAiTask` emits exactly one `Generating` phase, latched on the first
+delta. A slow model therefore renders as a single static line for its entire
+run unless the run-fn says otherwise. Local providers must emit a periodic
+`phase` heartbeat while decoding; the HFT provider gets this from
+`createDecodeHeartbeat` (`HFT_Streaming.ts`), wired inside
+`createStreamingTextStreamer` so a new streaming run-fn cannot ship without it.
+Put the token count in the phase **message**, not in `progress`: a consumer that
+owns its own percentage (a sweep reporting `done/total`) discards a subtask's
+number and keeps only the text. Report a count rather than a percentage —
+generation stops at an end token, not at `max_new_tokens`, so any fraction of
+the cap stalls near an arbitrary value and then jumps, which reads as a hang.
+
 **Streaming convention exception (one-shot run-fns):** Run-fns that do not stream incremental deltas — typically meta-ops (`provider.model-info`, `provider.model-search`, `model.count-tokens`, `model.unload`, `model.download`), embeddings (`text.embedding`, `image.embedding`), and one-shot vision/classification (`image.classification`, `image.segmentation`, etc.) — MUST emit a single `finish` event whose `data` is the full `Output`. The `collectStream(...)` consumer in `@workglow/ai/capability` returns `finish.data` directly in this mode, so the payload is the result. Do not also yield deltas in this pattern — `collectStream` rejects streams mixing deltas with a one-shot finish.
 
 **Streaming convention exception (structured generation):** Run-fns serving

@@ -225,7 +225,8 @@ async function generateTurn(
         accumulated += text;
         onDelta(text);
       },
-      TextStreamer
+      TextStreamer,
+      emit
     );
   } else {
     // Non-streaming path: use progress-reporting text streamer and accumulate

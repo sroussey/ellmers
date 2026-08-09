@@ -87,7 +87,8 @@ export const HFT_StructuredGeneration: AiProviderRunFn<
         }
         emit({ type: "text-delta", port: "text", textDelta: delta });
       },
-      TextStreamer
+      TextStreamer,
+      emit
     );
     const stopping_criteria = new InterruptableStoppingCriteria();
     if (signal) {
