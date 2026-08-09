@@ -38,10 +38,16 @@ export async function loadTransformersSDK(): Promise<TransformersSDKModule> {
       _transformersSdk = mod;
       return mod;
     })
-    .catch(() => {
+    .catch((err: unknown) => {
       _loadPromise = undefined;
+      // Preserve the underlying failure — a missing package is only one cause.
+      // Linked `bun link` setups often fail here on a sharp/libvips mismatch
+      // (e.g. format.jp2k) which this wrapper used to hide.
+      const detail = err instanceof Error ? err.message : String(err);
       throw new Error(
-        "@huggingface/transformers is required for HuggingFace Transformers tasks. Install it with: bun add @huggingface/transformers"
+        `@huggingface/transformers failed to load (${detail}). ` +
+          `Install it in the app package (bun add @huggingface/transformers). ` +
+          `If it is already installed, check for conflicting sharp / @img/sharp-* versions after bun link.`
       );
     });
   return _loadPromise;
