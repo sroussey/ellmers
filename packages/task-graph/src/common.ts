@@ -61,6 +61,8 @@ export * from "./storage/RunPrivateTaskOutputSchema";
 export * from "./storage/TaskOutputRepository";
 export * from "./storage/TaskOutputStorageSchema";
 export * from "./storage/TaskOutputTabularRepository";
+export * from "./storage/attachUsageRecorder";
+export * from "./storage/RunUsageSchema";
 
 export { getPortCodec, registerPortCodec } from "./storage/PortCodecRegistry";
 export type { PortCodec } from "./storage/PortCodecRegistry";

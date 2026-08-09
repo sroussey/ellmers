@@ -15,7 +15,8 @@
     "analyze": "ANALYZE=1 vite build",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview --port 3800"
+    "preview": "vite preview --port 3800",
+    "test": "vitest run --config ../../vitest.config.ts --project web"
   },
   "dependencies": {
     "@codemirror/lang-json": "^6.0.2",
@@ -51,6 +52,7 @@
     "@vitejs/plugin-react": "^6.0.5",
     "@tailwindcss/vite": "^4.3.3",
     "tailwindcss": "^4.3.3",
+    "jsdom": "^25.0.1",
     "rollup-plugin-visualizer": "^7.0.1",
     "vite": "^8.2.1",
     "vite-plugin-wasm": "^3.6.0"

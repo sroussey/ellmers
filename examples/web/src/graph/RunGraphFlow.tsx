@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Dataflow, TaskGraph, TaskGraphEvents } from "@workglow/task-graph";
+import type { Dataflow, TaskGraph, TaskGraphEvents, Usage } from "@workglow/task-graph";
 import type { Edge, EdgeTypes, Node, NodeTypes } from "@xyflow/react";
 import { Controls, ReactFlow, useEdgesState, useNodesState, useReactFlow } from "@xyflow/react";
 import type { Dispatch, SetStateAction } from "react";
@@ -218,6 +218,20 @@ export const RunGraphFlow: React.FC<{
       return () => unsubscribes.forEach((unsub) => unsub());
     }
   }, [graph, buildNodesFromTasks, setNodes, updateEdgeStatus]);
+
+  useEffect(() => {
+    const onTaskUsage = (taskId: unknown, usage: Usage): void => {
+      setNodes((nodes) =>
+        nodes.map((node) =>
+          node.id === String(taskId) ? { ...node, data: { ...node.data, usage } } : node
+        )
+      );
+    };
+    const unsub = graph.subscribe("task_usage", onTaskUsage);
+    return () => {
+      unsub();
+    };
+  }, [graph, setNodes]);
 
   useEffect(() => {
     if (nodes.length > 0) {
