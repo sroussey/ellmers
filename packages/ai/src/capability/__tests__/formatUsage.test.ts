@@ -48,9 +48,23 @@ describe("formatUsage", () => {
       usage({ input: 10, output: 20, cached: 30, cacheWrite: 40, reasoning: 5, total: 100 }),
       "detailed"
     );
+    expect(text).toContain("cached 30");
     expect(text).toContain("cache-write 40");
     expect(text).toContain("reasoning 5");
     expect(text).toContain("total 100");
+  });
+
+  it("drops the inline cached figure in cumulative mode", () => {
+    // The web panel shows a running total, so it carries both directions but
+    // not the per-call cache split the cli renders inline. Without this the two
+    // levels could be swapped, or made identical, with nothing failing.
+    const reported = usage({ input: 1240, output: 318, cached: 1100 });
+    expect(formatUsage(reported, "cumulative")).toBe("↑1,240 ↓318");
+    expect(formatUsage(reported, "directional")).toBe("↑1,240 (1,100 cached) ↓318");
+  });
+
+  it("renders a stated all-zero usage as cached at every detail level", () => {
+    expect(formatUsage(CACHE_HIT_USAGE, "cumulative")).toBe("cached");
   });
 
   it("omits unreported counters rather than printing zeros", () => {
@@ -74,6 +88,12 @@ describe("formatCost", () => {
   it("renders a complete estimate plainly", () => {
     expect(formatCost({ currency: "USD", amount: 0.0142, unpriced: [], stated: false })).toBe(
       "$0.0142"
+    );
+  });
+
+  it("names a non-USD currency instead of assuming a dollar sign", () => {
+    expect(formatCost({ currency: "EUR", amount: 0.0142, unpriced: [], stated: false })).toBe(
+      "EUR 0.0142"
     );
   });
 });
