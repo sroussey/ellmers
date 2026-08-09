@@ -23,6 +23,7 @@ export function DefaultTaskRow({ task, line, iterationSlots }: TaskRowProps): Re
   const sortedSlots = iterationSlots ? sortIterationSlotsForDisplay(iterationSlots) : [];
   const subtasks = useSubtaskRows(task);
   const usage = useTaskUsage(task);
+  const usageLine = formatUsage(usage, "directional");
   return (
     <Box key={line.id} flexDirection="column">
       <TaskStatusProgressRow
@@ -31,9 +32,7 @@ export function DefaultTaskRow({ task, line, iterationSlots }: TaskRowProps): Re
         message={line.message}
         barProgress={line.progress ?? 0}
       />
-      {formatUsage(usage, "directional") ? (
-        <Text dimColor> {formatUsage(usage, "directional")}</Text>
-      ) : null}
+      {usageLine ? <Text dimColor> {usageLine}</Text> : null}
       {sortedSlots.map((slot: IterationSlotRow) => (
         <Box key={`${line.id}-iter-${slot.index}`} flexDirection="column" paddingLeft={2}>
           <TaskStatusProgressRow

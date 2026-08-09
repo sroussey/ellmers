@@ -18,6 +18,7 @@ import { TaskStatusProgressRow } from "./components/TaskStatusProgressRow";
 import { HumanInteractionHost } from "./HumanInteractionHost";
 import { isRedundantSubgraph, SubtaskRows } from "./rows/SubtaskRows";
 import { useSubtaskRows } from "./rows/useSubtaskRows";
+import { useTaskUsage } from "./rows/useTaskUsage";
 import { cliTaskLabel } from "./taskGraphCliSubscriptions";
 
 interface TaskRunAppProps {
@@ -84,6 +85,8 @@ export function TaskRunApp({
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [runUsage, setRunUsage] = useState<Usage | undefined>(undefined);
   const subtasks = useSubtaskRows(task);
+  const usage = useTaskUsage(task);
+  const usageLine = formatUsage(usage, "directional");
 
   useEffect(() => {
     const graph = task.subGraph;
@@ -195,6 +198,7 @@ export function TaskRunApp({
             spinnerFrame={batch.spin}
             progressBarWidth={isModelDownloadTask ? DOWNLOAD_PROGRESS_BAR_WIDTH : undefined}
           />
+          {usageLine ? <Text dimColor> {usageLine}</Text> : null}
           {showFileDownloadList && (
             <Box paddingLeft={2} flexDirection="column">
               {downloadFiles.map((f) => (

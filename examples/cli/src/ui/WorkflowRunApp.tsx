@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskGraph } from "@workglow/task-graph";
+import { formatUsage } from "@workglow/ai";
+import type { TaskGraph, Usage } from "@workglow/task-graph";
 import { Box, Text } from "ink";
 import React, { useEffect, useState } from "react";
 import { sortCliTaskLinesForDisplay, startGraphTaskPoll } from "./cliTaskUi";
@@ -44,6 +45,7 @@ export function WorkflowRunApp({
   const [taskInfos, setTaskInfos] = useState<Map<string, CliTaskLine>>(new Map());
   const [overallProgress, setOverallProgress] = useState<number | undefined>(undefined);
   const [iterationSlots, setIterationSlots] = useState<Map<string, IterationSlotRow[]>>(new Map());
+  const [runUsage, setRunUsage] = useState<Usage | undefined>(graph.runUsage);
   useEffect(() => {
     const unsub = subscribeTaskGraphForCli(
       graph,
@@ -52,6 +54,9 @@ export function WorkflowRunApp({
       setOverallProgress,
       setIterationSlots
     );
+    const onUsage = (total: Usage): void => setRunUsage(total);
+    graph.subscribe("graph_usage", onUsage);
+
     const stopPoll = startGraphTaskPoll(graph, setTaskInfos);
 
     const runPromise = runExecutor ? runExecutor() : graph.run(input, config);
@@ -60,11 +65,13 @@ export function WorkflowRunApp({
     return () => {
       stopPoll();
       unsub();
+      graph.off("graph_usage", onUsage);
     };
   }, [graph, onComplete, onError, runExecutor, input, config]);
 
   const order = new Map(graph.getTasks().map((t, i) => [String(t.id), i]));
   const orderedTasks = sortCliTaskLinesForDisplay(Array.from(taskInfos.values()), order);
+  const runUsageLine = formatUsage(runUsage, "directional");
 
   return (
     <HumanInteractionHost>
@@ -98,6 +105,7 @@ export function WorkflowRunApp({
               />
             );
           })}
+          {runUsageLine ? <Text>{`Tokens ${runUsageLine}`}</Text> : null}
         </Box>
       </Box>
     </HumanInteractionHost>
