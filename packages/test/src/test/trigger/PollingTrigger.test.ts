@@ -370,6 +370,47 @@ describe("PollingTrigger", () => {
 
       await trigger.stop();
     });
+
+    test("a host that slept through a backed-off gap does not replay the backlog", async () => {
+      // The backed-off target is measured from the previous tick's instant, so a
+      // host suspended across several gaps leaves it far in the past. Unclamped,
+      // every one of those stale targets is already due and the loop replays the
+      // whole backlog as a burst of setTimeout(0) ticks.
+      let polls = 0;
+      const trigger = new PollingTrigger<number>({
+        intervalMs: PERIOD,
+        poll: () => {
+          polls += 1;
+          throw new Error("dependency down");
+        },
+        errorBackoff: { initialMs: PERIOD * 2, maxMs: PERIOD * 2 },
+      });
+      trigger.on("error", () => {});
+      let skips = 0;
+      trigger.on("skip", () => {
+        skips += 1;
+      });
+      trigger.start(() => {});
+
+      // Ticks at P and 2P; the tick after those is armed for START + 4P.
+      await advanceFakeTimers(PERIOD * 2);
+      expect(polls).toBe(2);
+
+      // The host freezes for 10s. Sinon shifts every pending callAt by the same
+      // delta, so the timer keeps its 200ms of MONOTONIC delay while the wall
+      // clock jumps 10s past the target it was armed for.
+      vi.setSystemTime(START + PERIOD * 2 + 10_000);
+      await advanceFakeTimers(PERIOD * 2);
+      // A replayed backlog arrives as zero-delay ticks, which fake timers space a
+      // millisecond apart, so give it a whole period to show itself. The clamped
+      // loop has nothing due until START + 10_600.
+      await advanceFakeTimers(PERIOD);
+
+      expect(polls).toBe(3);
+      expect(skips).toBe(0);
+
+      await trigger.stop();
+    });
   });
 
   test("stop() halts polling", async () => {

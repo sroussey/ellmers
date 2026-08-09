@@ -6,7 +6,11 @@
 
 import type { TriggerOptions, TriggerRun } from "./BaseTrigger";
 import { BaseTrigger } from "./BaseTrigger";
-import { assertValidIntervalMs, nextFixedIntervalFireTime } from "./fixedInterval";
+import {
+  assertValidIntervalMs,
+  nextBackoffFireTime,
+  nextFixedIntervalFireTime,
+} from "./fixedInterval";
 import { TRIGGER_KINDS } from "./ITrigger";
 import { TriggerConfigurationError } from "./TriggerError";
 
@@ -134,7 +138,7 @@ export class PollingTrigger<Result = unknown> extends BaseTrigger {
       // backoff takes effect from the tick AFTER the first failure.
       const exponent = Math.min(failures - 1, 31);
       const delay = Math.min(backoff.maxMs, backoff.initialMs * 2 ** exponent);
-      return fromMs + delay;
+      return nextBackoffFireTime(fromMs, delay);
     }
     return nextFixedIntervalFireTime(fromMs, this.intervalMs);
   }

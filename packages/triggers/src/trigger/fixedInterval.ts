@@ -22,6 +22,21 @@ export function nextFixedIntervalFireTime(fromMs: number, intervalMs: number): n
   return next + missedPeriods * intervalMs;
 }
 
+/**
+ * The next fire time after a backoff `delayMs`, measured from the PREVIOUS tick's
+ * scheduled instant, clamped to `(now, now + delayMs]` exactly as
+ * {@link nextFixedIntervalFireTime} clamps to `(now, now + intervalMs]`.
+ *
+ * An anchor the host slept past would otherwise land in the past and be replayed
+ * as a burst of `setTimeout(0)` ticks; one left in the FUTURE by a backward clock
+ * step would stall the loop for the size of the step.
+ */
+export function nextBackoffFireTime(fromMs: number, delayMs: number): number {
+  const target = fromMs + delayMs;
+  const now = Date.now();
+  return target > now ? Math.min(target, now + delayMs) : now + delayMs;
+}
+
 /** Validates a period shared by the fixed-interval triggers. */
 export function assertValidIntervalMs(intervalMs: number): number {
   if (!Number.isInteger(intervalMs) || intervalMs <= 0) {
