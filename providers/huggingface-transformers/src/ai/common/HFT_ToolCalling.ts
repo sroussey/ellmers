@@ -436,7 +436,8 @@ export const HFT_ToolCalling: AiProviderRunFn<
         fullText += text;
         filter.feed(text);
       },
-      TextStreamer
+      TextStreamer,
+      emit
     );
     const stopping_criteria = new InterruptableStoppingCriteria();
     if (signal) {

@@ -25,9 +25,12 @@ describe("resolveHftPipelineDevice", () => {
     expect(resolveHftPipelineDevice(undefined)).toBeUndefined();
   });
 
-  it("strips browser-only devices on the server", () => {
-    expect(resolveHftPipelineDevice("webgpu")).toBeUndefined();
+  it("strips wasm on the server but passes webgpu through", () => {
+    // `wasm` has no server-side execution provider at all, so it is stripped to
+    // the CPU default. `webgpu` is forwarded: onnxruntime-node can serve it, and
+    // a local model run on a GPU box is the reason to ask for it.
     expect(resolveHftPipelineDevice("wasm")).toBeUndefined();
+    expect(resolveHftPipelineDevice("webgpu")).toBe("webgpu");
   });
 
   it("defaults auto to WebGPU in the browser", () => {

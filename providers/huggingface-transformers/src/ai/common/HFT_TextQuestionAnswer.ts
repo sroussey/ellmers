@@ -38,7 +38,8 @@ export const HFT_TextQuestionAnswer: AiProviderRunFn<
     const streamer = createStreamingTextStreamer(
       generateAnswer.tokenizer,
       (text) => emit({ type: "text-delta", port: "text", textDelta: text }),
-      TextStreamer
+      TextStreamer,
+      emit
     );
     const stopping_criteria = new InterruptableStoppingCriteria();
     if (signal) {

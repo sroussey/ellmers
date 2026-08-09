@@ -26,7 +26,8 @@ export const HFT_TextRewriter: AiProviderRunFn<
     const streamer = createStreamingTextStreamer(
       generateText.tokenizer,
       (text) => emit({ type: "text-delta", port: "text", textDelta: text }),
-      TextStreamer
+      TextStreamer,
+      emit
     );
     const stopping_criteria = new InterruptableStoppingCriteria();
     if (signal) {
