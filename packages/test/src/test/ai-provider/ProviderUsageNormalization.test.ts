@@ -176,8 +176,8 @@ usageNormalizationBlock({
         totalTokenCount: 665,
       },
       expected: {
-        input: 500,
-        output: 120,
+        input: 100,
+        output: 165,
         cached: 400,
         cacheWrite: undefined,
         reasoning: 45,
