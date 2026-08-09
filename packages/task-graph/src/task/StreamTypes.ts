@@ -75,12 +75,30 @@ export type StreamSnapshot<Output = Record<string, any>> = {
  * you about caching are different facts, and collapsing them to `0` silently
  * understates spend.
  *
+ * **Field relationships.** Counters are disjoint where the provider bills them
+ * at different rates; a counter sharing a rate with its parent is a labelled
+ * subset of it.
+ *
  * - `input` / `output` — prompt and completion tokens.
- * - `cached` — input tokens served from a provider-side prompt cache (read).
- * - `cacheWrite` — input tokens written into that cache.
- * - `reasoning` — output tokens spent on hidden reasoning, when reported separately.
+ * - `cached` — prompt tokens served from a provider-side cache (read).
+ * - `cacheWrite` — prompt tokens written into that cache.
+ * - `input`, `cached` and `cacheWrite` are **disjoint**: `input` is the portion
+ *   billed at the base input rate and never includes cache reads or writes, so
+ *   `input + cached + cacheWrite` is the full prompt. Providers reporting a
+ *   grand total plus a breakdown line are normalized by subtraction.
+ * - `reasoning` — output tokens spent on hidden reasoning, when reported
+ *   separately. **`output` includes `reasoning`**: no provider charges a
+ *   distinct reasoning rate, so it is a visibility breakdown of `output`, not a
+ *   sibling of it. Providers reporting them disjointly are normalized by
+ *   addition.
  * - `total` — the provider's own total, when it reports one. Never synthesized.
+ *   When present it satisfies `input + cached + cacheWrite + output === total`.
  * - `extra` — provider-specific counters that have no normalized slot.
+ *
+ * **Subtract only what the provider stated.** When `cached` is unreported,
+ * `input` remains the provider's stated prompt total and `cached` stays
+ * `undefined`; the disjointness invariant holds vacuously under uncertainty
+ * rather than being enforced by a guess.
  */
 export interface Usage {
   readonly input: number | undefined;

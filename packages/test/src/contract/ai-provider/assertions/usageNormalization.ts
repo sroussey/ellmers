@@ -79,6 +79,29 @@ export function assertUsageShape(usage: Usage): void {
   }
 }
 
+/**
+ * Assert the field relationships every provider's mapper must produce.
+ *
+ * The sum check only runs when the provider states a `total` — it is the
+ * provider's own arithmetic, so it is the one place the normalization can be
+ * checked against an external authority rather than against itself.
+ */
+export function assertUsageDisjointness(usage: Usage): void {
+  if (usage.reasoning !== undefined && usage.output !== undefined) {
+    expect(
+      usage.reasoning <= usage.output,
+      `reasoning (${usage.reasoning}) is a subset of output (${usage.output})`
+    ).toBe(true);
+  }
+  if (usage.total === undefined) return;
+  const parts = [usage.input, usage.cached, usage.cacheWrite, usage.output];
+  if (parts.every((part) => part === undefined)) return;
+  const sum = parts.reduce<number>((acc, part) => acc + (part ?? 0), 0);
+  expect(sum, `input + cached + cacheWrite + output must equal the provider's stated total`).toBe(
+    usage.total
+  );
+}
+
 export function usageNormalizationBlock(opts: UsageNormalizationOpts): void {
   describe(`${opts.provider} usage normalization contract`, () => {
     it("reports nothing when the provider sent no usage payload", () => {
@@ -118,6 +141,15 @@ export function usageNormalizationBlock(opts: UsageNormalizationOpts): void {
       }
       const sparse = opts.mapUsage(opts.sparseFrame);
       if (sparse) assertUsageShape(sparse);
+    });
+
+    it("keeps input/cached/cacheWrite disjoint and reasoning inside output", () => {
+      for (const testCase of opts.cases) {
+        const usage = opts.mapUsage(testCase.frame);
+        if (usage) assertUsageDisjointness(usage);
+      }
+      const sparse = opts.mapUsage(opts.sparseFrame);
+      if (sparse) assertUsageDisjointness(sparse);
     });
 
     for (const testCase of opts.cases) {
