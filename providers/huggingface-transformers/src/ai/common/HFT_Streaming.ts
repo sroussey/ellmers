@@ -45,8 +45,8 @@ function emitPrefillOnFirstPut(
 export interface DecodeUsageReporter {
   /** The prompt reached the model: its length is the input token count. */
   readonly onPrompt: (tokens: number) => void;
-  /** One decoded piece arrived. */
-  readonly onToken: () => void;
+  /** `count` generated tokens arrived. */
+  readonly onToken: (count: number) => void;
   /** Emit the final total, ignoring the throttle. */
   readonly flush: () => void;
 }
@@ -105,8 +105,8 @@ export function createDecodeUsageReporter(
       input = tokens;
       send(now());
     },
-    onToken: (): void => {
-      output++;
+    onToken: (count: number): void => {
+      output += count;
       const at = now();
       if (lastEmit !== undefined && at - lastEmit < intervalMs) return;
       send(at);
@@ -142,11 +142,14 @@ export function createStreamingTextStreamer(
   const streamer = new textStreamer(tokenizer, {
     skip_prompt: true,
     decode_kwargs: { skip_special_tokens: true },
+    // Counted from the token callback, not from `callback_function`: the text
+    // callback only fires once the decoded text completes a word (the streamer
+    // slices to the last space and skips empty strings), so counting it would
+    // report roughly a word count -- a large undercount for subword
+    // tokenization, and a number the model never stated. This hook fires once
+    // per generated token batch, after the prompt is skipped.
+    token_callback_function: (tokens: bigint[]) => usage.onToken(tokens.length),
     callback_function: (text: string) => {
-      // Counted before the caller's own handling so a piece the caller drops
-      // still advances the count, and so a throw in `onText` cannot silently
-      // stop the reporting while generation continues.
-      usage.onToken();
       onText(text);
     },
   });

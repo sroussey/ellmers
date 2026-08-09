@@ -27,7 +27,7 @@ function harness(intervalMs = 250) {
     decode(count: number, ms: number) {
       for (let i = 0; i < count; i++) {
         clock += ms;
-        reporter.onToken();
+        reporter.onToken(1);
       }
     },
   };
@@ -87,19 +87,40 @@ describe("createDecodeUsageReporter", () => {
   });
 });
 
+/**
+ * Mimics `@huggingface/transformers`'s TextStreamer closely enough to matter:
+ * `token_callback_function` fires for every generated token, while
+ * `callback_function` fires only when the decoded text completes a word (the
+ * real one slices to `lastIndexOf(" ") + 1` and skips empty strings). A count
+ * driven by the text callback therefore counts words, not tokens.
+ */
 class FakeTextStreamer {
   readonly puts: bigint[][][] = [];
   ended = false;
+  private promptSeen = false;
 
   constructor(
     _tokenizer: unknown,
     readonly options: {
       callback_function?: ((text: string) => void) | undefined;
+      token_callback_function?: ((tokens: bigint[]) => void) | undefined;
+      skip_prompt?: boolean | undefined;
     }
   ) {}
 
   put(value: bigint[][]): void {
     this.puts.push(value);
+    if (!this.promptSeen) {
+      this.promptSeen = true;
+      if (this.options.skip_prompt) return;
+    }
+    this.options.token_callback_function?.(value[0]!);
+  }
+
+  /** Decode one generated token whose piece may or may not complete a word. */
+  decode(piece: string): void {
+    this.put([[1n]]);
+    if (piece.endsWith(" ")) this.options.callback_function?.(piece);
   }
 
   end(): void {
@@ -139,16 +160,21 @@ describe("HFT streaming streamer reports usage", () => {
     ]);
   });
 
-  it("counts decoded pieces as output and flushes the total when generation ends", () => {
+  it("counts generated tokens as output, not the text callbacks they flush in", () => {
     const { events, streamer } = build();
     streamer.put([[1n, 2n]]);
-    streamer.options.callback_function?.("a");
-    streamer.options.callback_function?.("b");
+    // Three tokens forming one word: the streamer only flushes text once, at
+    // the space. Counting text callbacks would report 1 for 3 generated tokens
+    // -- roughly a word count, which is a large systematic undercount for
+    // subword tokenization and is not a number the model ever stated.
+    streamer.decode("Trans");
+    streamer.decode("form");
+    streamer.decode("ers ");
     streamer.end();
 
     const last = events.filter((e): e is StreamUsage => e.type === "usage").at(-1)!;
     expect(last.usage.input).toBe(2);
-    expect(last.usage.output).toBe(2);
+    expect(last.usage.output).toBe(3);
     expect(streamer.ended).toBe(true);
   });
 });

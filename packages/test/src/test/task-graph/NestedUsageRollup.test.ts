@@ -52,6 +52,41 @@ class SpendingTask extends Task<Record<string, never>, { text: string }> {
   }
 }
 
+/** Reports a mid-stream snapshot before its final total, like a real provider. */
+class StreamingSpendingTask extends Task<Record<string, never>, { text: string }> {
+  static override readonly type = "NestedStreamingSpendingTask";
+  static override readonly category = "Test";
+  static override readonly title = "Nested streaming spending task";
+  static override readonly description = "Reports a mid-stream snapshot then a final total.";
+  static override readonly cacheable = false;
+
+  static override inputSchema(): DataPortSchema {
+    return { type: "object", properties: {}, additionalProperties: false } as const;
+  }
+
+  static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { text: { type: "string", "x-stream": "append" } },
+      required: ["text"],
+      additionalProperties: false,
+    } as const;
+  }
+
+  override async execute(): Promise<{ text: string }> {
+    return { text: "" };
+  }
+
+  async *executeStream(
+    _input: Record<string, never>,
+    _context: IExecuteContext
+  ): AsyncGenerator<StreamEvent> {
+    yield { type: "usage", usage: usage(40, 2) };
+    yield { type: "text-delta", port: "text", textDelta: "hi" };
+    yield { type: "finish", data: {} as Record<string, never>, usage: usage(40, 6) };
+  }
+}
+
 describe("nested task spend reaches the run total", () => {
   it("rolls a subgraph task's usage up into the parent graph's run total", async () => {
     const inner = new TaskGraph();
@@ -79,5 +114,22 @@ describe("nested task spend reaches the run total", () => {
     await new TaskGraphRunner(outer).runGraph();
 
     expect(outer.runUsage).toEqual(usage(80, 12));
+  });
+
+  it("counts a nested task's mid-stream snapshot once, not once per hop", async () => {
+    const inner = new TaskGraph();
+    inner.addTask(new StreamingSpendingTask({ id: "inner-1" }));
+
+    const outer = new TaskGraph();
+    outer.addTask(new GraphAsTask({ id: "compound", subGraph: inner }));
+
+    await new TaskGraphRunner(outer).runGraph();
+
+    // The subgraph bridge already forwards the child's usage to the parent,
+    // attributed to the child. A compound that also re-yields it as its own
+    // stream event has the parent count the same spend twice, under two task
+    // ids -- and the second bucket holds whichever snapshot happened to be
+    // live when the child finished, so the inflation is not even stable.
+    expect(outer.runUsage).toEqual(usage(40, 6));
   });
 });
