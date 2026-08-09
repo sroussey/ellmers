@@ -45,6 +45,11 @@ export class GraphUsageAggregator {
   private retired: Usage | undefined;
   private readonly retireListeners = new Set<(row: RetiredUsage) => void>();
 
+  /**
+   * The run's aggregate so far. A `0` here means at least one contributor
+   * stated `0`, not that all did — see {@link mergeUsage}. Per-execution rows
+   * keep that distinction; this total cannot.
+   */
   get total(): Usage | undefined {
     let running = this.retired;
     for (const models of this.live.values()) {

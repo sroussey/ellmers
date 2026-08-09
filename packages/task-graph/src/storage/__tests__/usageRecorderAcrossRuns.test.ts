@@ -92,4 +92,26 @@ describe("attachUsageRecorder across a run", () => {
 
     expect(await storage.getAll()).toHaveLength(2);
   });
+
+  it("does not emit more graph_usage per run as the graph is re-run", async () => {
+    const count = async (runs: number): Promise<number> => {
+      const graph = new TaskGraph();
+      graph.addTask(new SpendingTask({ id: "t1" }));
+      const runner = new TaskGraphRunner(graph);
+      for (let i = 1; i < runs; i++) await runner.runGraph();
+
+      let emissions = 0;
+      const off = graph.subscribe("graph_usage", () => {
+        emissions++;
+      });
+      await runner.runGraph();
+      off();
+      return emissions;
+    };
+
+    // The aggregator now survives a run so external subscribers keep receiving,
+    // which means the runner's own listeners must be detached rather than left
+    // to stack up. A leak shows as the final run emitting more than the first.
+    expect(await count(4)).toBe(await count(1));
+  });
 });

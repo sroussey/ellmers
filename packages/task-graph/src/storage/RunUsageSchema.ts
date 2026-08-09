@@ -7,8 +7,8 @@
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 
 export type RunUsagePrimaryKey = {
-  runId: string;
-  sequence: number;
+  readonly runId: string;
+  readonly sequence: number;
 };
 
 /**

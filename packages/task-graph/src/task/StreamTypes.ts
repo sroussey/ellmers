@@ -233,6 +233,14 @@ function mergeUsageExtra(
  * or a structured-generation task's validation retries — into one {@link Usage}.
  * Field-wise addition that preserves `undefined` (see {@link Usage}), so a
  * provider that reports nothing never fabricates zeros for the caller's cost math.
+ *
+ * The preservation is per-pair, not transitive: a counter one side states as `0`
+ * and the other leaves unreported merges to `0`, because there is no third value
+ * meaning "partly unknown". So in an aggregate a `0` means *at least one*
+ * contributor stated `0` — not that every contributor did. A single cache hit is
+ * enough to trigger it, since {@link CACHE_HIT_USAGE} states `0` on every
+ * counter. Read per-execution rows, not the aggregate, when the distinction
+ * between "billed nothing" and "never reported" has to survive.
  */
 export function mergeUsage(a: Usage | undefined, b: Usage | undefined): Usage | undefined {
   if (!a) return b;

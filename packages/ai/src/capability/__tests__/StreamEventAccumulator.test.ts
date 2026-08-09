@@ -301,6 +301,18 @@ describe("usage snapshots", () => {
 
     expect((acc.materialize() as Record<string, unknown>).usage).toEqual(usage(50, 4));
   });
+
+  it("replaces rather than sums consecutive snapshots when finish reports no usage", () => {
+    const acc = new StreamEventAccumulator();
+    acc.observe({ type: "usage", usage: usage(100, 2) });
+    acc.observe({ type: "usage", usage: usage(100, 7) });
+    acc.observe({ type: "finish", data: {} });
+
+    // Snapshots are cumulative, so the second supersedes the first. Neither of
+    // the cases above can catch a summing bug: one has a single snapshot, and
+    // the other's finish carries its own usage that overwrites the result.
+    expect((acc.materialize() as Record<string, unknown>).usage).toEqual(usage(100, 7));
+  });
 });
 
 describe("mergeUsage", () => {

@@ -786,7 +786,7 @@ export class TaskGraphRunner {
     this.offGraphUsageSubscriptions?.();
     this.graph.usageAggregator.reset();
     this.graph.runUsage = undefined;
-    this.graph.usageAggregator.onRetire(() => {
+    const offRetire = this.graph.usageAggregator.onRetire(() => {
       const total = this.graph.usageAggregator.total;
       if (total) this.graph.emit("graph_usage", total);
     });
@@ -802,6 +802,7 @@ export class TaskGraphRunner {
     this.offGraphUsageSubscriptions = () => {
       offTaskUsage();
       offTaskComplete();
+      offRetire();
     };
 
     try {
@@ -893,6 +894,23 @@ export class TaskGraphRunner {
     }
   }
 
+  /**
+   * Retire what is still live, freeze the run total, and detach this run's
+   * listeners.
+   *
+   * Detaching here rather than at the next run's start matters because the
+   * aggregator now outlives a run: a `task_usage` arriving after the total is
+   * frozen would otherwise still fold in and emit a `graph_usage` contradicting
+   * `graph.runUsage`. Order is load-bearing — the sweep's retirements must fire
+   * the listener before it goes.
+   */
+  protected settleRunUsage(): void {
+    this.graph.usageAggregator.sweep();
+    this.graph.runUsage = this.graph.usageAggregator.total;
+    this.offGraphUsageSubscriptions?.();
+    this.offGraphUsageSubscriptions = undefined;
+  }
+
   protected async handleComplete(): Promise<void> {
     this.clearGraphTimeout();
     const ctx = this.currentCtx;
@@ -909,8 +927,7 @@ export class TaskGraphRunner {
       this.baseRegistryForRun = undefined;
     }
 
-    this.graph.usageAggregator.sweep();
-    this.graph.runUsage = this.graph.usageAggregator.total;
+    this.settleRunUsage();
 
     this.graph.emit("complete");
   }
@@ -957,8 +974,7 @@ export class TaskGraphRunner {
       this.baseRegistryForRun = undefined;
     }
 
-    this.graph.usageAggregator.sweep();
-    this.graph.runUsage = this.graph.usageAggregator.total;
+    this.settleRunUsage();
 
     this.graph.emit("error", error);
   }
@@ -1003,8 +1019,7 @@ export class TaskGraphRunner {
       this.baseRegistryForRun = undefined;
     }
 
-    this.graph.usageAggregator.sweep();
-    this.graph.runUsage = this.graph.usageAggregator.total;
+    this.settleRunUsage();
 
     this.graph.emit("abort");
   }
