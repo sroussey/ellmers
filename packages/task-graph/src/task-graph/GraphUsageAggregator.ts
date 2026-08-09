@@ -14,11 +14,15 @@ export interface RetiredUsage {
   readonly usage: Usage;
 }
 
-/** Stands in for an unnamed model so every such report shares one bucket. */
-const UNNAMED_MODEL = " unnamed";
+/**
+ * Stands in for an unnamed model so every such report shares one bucket.
+ * A Symbol, not a string, so it can never collide with a real model id.
+ */
+const UNNAMED_MODEL = Symbol.for("workglow.usage.unnamedModel");
 
-const bucketKey = (taskId: string, modelId: string | undefined): string =>
-  `${taskId} ${modelId ?? UNNAMED_MODEL}`;
+type ModelKey = string | typeof UNNAMED_MODEL;
+
+const modelKey = (modelId: string | undefined): ModelKey => modelId ?? UNNAMED_MODEL;
 
 /**
  * Folds per-task token totals into one run total.
@@ -29,17 +33,23 @@ const bucketKey = (taskId: string, modelId: string | undefined): string =>
  * that runs more than once per run (While / Fallback / GraphAsTask reuse stable
  * ids across iterations) contribute every iteration instead of only its last.
  *
- * Buckets are keyed by task **and model**, so a task spanning two models reports
- * two totals rather than one blend, and per-model rollups need no second pass.
+ * Buckets are keyed by task **and model**, nested (task -> model -> usage) so a
+ * task id or model id containing arbitrary characters (including whitespace —
+ * `TaskConfig.id` is typed `unknown`, not restricted to a safe string shape)
+ * can never collide with a different task/model pair the way a composed string
+ * key would. A task spanning two models reports two totals rather than one
+ * blend, and per-model rollups need no second pass.
  */
 export class GraphUsageAggregator {
-  private readonly live = new Map<string, RetiredUsage>();
+  private readonly live = new Map<string, Map<ModelKey, RetiredUsage>>();
   private retired: Usage | undefined;
   private readonly retireListeners = new Set<(row: RetiredUsage) => void>();
 
   get total(): Usage | undefined {
     let running = this.retired;
-    for (const row of this.live.values()) running = mergeUsage(running, row.usage);
+    for (const models of this.live.values()) {
+      for (const row of models.values()) running = mergeUsage(running, row.usage);
+    }
     return running;
   }
 
@@ -50,31 +60,41 @@ export class GraphUsageAggregator {
   }
 
   observe(taskId: string, usage: Usage, modelId: string | undefined): void {
-    const key = bucketKey(taskId, modelId);
-    const existing = this.live.get(key);
+    const key = modelKey(modelId);
+    const existing = this.live.get(taskId)?.get(key);
     // A cumulative total never shrinks within one execution, so a smaller one
     // means a fresh execution started without a completion signal (a failed
     // Fallback alternative being retried).
-    if (existing && isSmaller(usage, existing.usage)) this.retireBucket(key);
-    this.live.set(key, { taskId, modelId, usage });
+    if (existing && isSmaller(usage, existing.usage)) this.retireBucket(taskId, key);
+    // Re-resolve after a possible retire above — retiring the last bucket for
+    // a task drops its now-empty inner map from `live`, so the map fetched
+    // before that call may no longer be the one `live` holds.
+    let models = this.live.get(taskId);
+    if (!models) {
+      models = new Map<ModelKey, RetiredUsage>();
+      this.live.set(taskId, models);
+    }
+    models.set(key, { taskId, modelId, usage });
   }
 
   /** Retire every live bucket for a task (all of its models). */
   retire(taskId: string): void {
-    for (const key of [...this.live.keys()]) {
-      if (this.live.get(key)?.taskId === taskId) this.retireBucket(key);
-    }
+    const models = this.live.get(taskId);
+    if (!models) return;
+    for (const key of [...models.keys()]) this.retireBucket(taskId, key);
   }
 
   /** Retire everything still live — call once at run end. */
   sweep(): void {
-    for (const key of [...this.live.keys()]) this.retireBucket(key);
+    for (const taskId of [...this.live.keys()]) this.retire(taskId);
   }
 
-  private retireBucket(key: string): void {
-    const row = this.live.get(key);
-    if (!row) return;
-    this.live.delete(key);
+  private retireBucket(taskId: string, key: ModelKey): void {
+    const models = this.live.get(taskId);
+    const row = models?.get(key);
+    if (!models || !row) return;
+    models.delete(key);
+    if (models.size === 0) this.live.delete(taskId);
     this.retired = mergeUsage(this.retired, row.usage);
     for (const cb of this.retireListeners) cb(row);
   }

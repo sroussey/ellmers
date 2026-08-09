@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { Usage } from "../../task/StreamTypes";
+import type { RetiredUsage } from "../GraphUsageAggregator";
 import { GraphUsageAggregator } from "../GraphUsageAggregator";
 
 const usage = (input: number, output: number): Usage => ({
@@ -86,5 +87,24 @@ describe("GraphUsageAggregator", () => {
 
     expect(rows).toEqual(["t1"]);
     expect(agg.total).toEqual(usage(10, 4));
+  });
+
+  it("does not collide task/model pairs whose composed strings would clash", () => {
+    const agg = new GraphUsageAggregator();
+    const rows: RetiredUsage[] = [];
+    agg.onRetire((row) => rows.push(row));
+
+    // A composed `${taskId} ${modelId}` string key would render both of
+    // these as the identical "foo bar baz" bucket.
+    agg.observe("foo bar", usage(10, 1), "baz");
+    agg.observe("foo", usage(100, 20), "bar baz");
+
+    expect(agg.total).toEqual(usage(110, 21));
+
+    agg.sweep();
+
+    expect(rows).toHaveLength(2);
+    expect(rows).toContainEqual({ taskId: "foo bar", modelId: "baz", usage: usage(10, 1) });
+    expect(rows).toContainEqual({ taskId: "foo", modelId: "bar baz", usage: usage(100, 20) });
   });
 });
