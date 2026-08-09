@@ -6,6 +6,7 @@
 
 import type { IExecuteContext, StreamEvent, Usage } from "@workglow/task-graph";
 import { Task, USAGE_OUTPUT_KEY } from "@workglow/task-graph";
+import { sleep } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 
@@ -55,6 +56,36 @@ class ScriptedStreamTask extends Task<{ script: string }, { text: string }> {
   }
 }
 
+/** Replays its script, then throws instead of ever reaching a `finish` event. */
+class ThrowingStreamTask extends ScriptedStreamTask {
+  static override readonly type = "ThrowingStreamTask";
+
+  override async *executeStream(
+    _input: { script: string },
+    _context: IExecuteContext
+  ): AsyncGenerator<StreamEvent> {
+    for (const event of this.events_) yield event;
+    throw new Error("stream failed");
+  }
+}
+
+/** Replays its script, then waits so the test can abort mid-stream instead of finishing. */
+class AbortableStreamTask extends ScriptedStreamTask {
+  static override readonly type = "AbortableStreamTask";
+
+  override async *executeStream(
+    _input: { script: string },
+    context: IExecuteContext
+  ): AsyncGenerator<StreamEvent> {
+    for (const event of this.events_) yield event;
+    await sleep(100);
+    if (context.signal.aborted) {
+      return;
+    }
+    yield { type: "finish", data: {} as Record<string, never> };
+  }
+}
+
 describe("StreamProcessor usage folding", () => {
   it("does not double-count a snapshot that finish then summarizes", async () => {
     const task = new ScriptedStreamTask({ defaults: { script: "x" } });
@@ -69,6 +100,9 @@ describe("StreamProcessor usage folding", () => {
 
     // 100/9 from finish alone — NOT 300/18 from adding the snapshots too.
     expect(output[USAGE_OUTPUT_KEY]).toEqual(usage(100, 9));
+    // task.runUsage is the field abort/error paths rely on — assert it directly,
+    // not only the output key the happy path also writes.
+    expect(task.runUsage).toEqual(usage(100, 9));
   });
 
   it("promotes the last snapshot when finish reports no usage", async () => {
@@ -95,5 +129,45 @@ describe("StreamProcessor usage folding", () => {
     const output = (await task.run()) as Record<string, unknown>;
 
     expect(output[USAGE_OUTPUT_KEY]).toEqual(usage(30, 8));
+  });
+
+  it("keeps task.runUsage after the stream throws before a finish event", async () => {
+    const task = new ThrowingStreamTask({ defaults: { script: "x" } });
+    task.events_ = [{ type: "usage", usage: usage(120, 8) }];
+
+    await expect(task.run()).rejects.toThrow("stream failed");
+
+    // The thrown error skips the post-loop USAGE_OUTPUT_KEY write entirely —
+    // task.runUsage (set live by publishRunning() in case "usage") is the only
+    // thing that still reports what was spent.
+    expect(task.runUsage).toEqual(usage(120, 8));
+  });
+
+  it("keeps task.runUsage after the stream is aborted mid-flight", async () => {
+    const task = new AbortableStreamTask({ defaults: { script: "x" } });
+    task.events_ = [{ type: "usage", usage: usage(75, 3) }];
+
+    const runPromise = task.run({ script: "x" });
+    await sleep(30);
+    task.abort();
+
+    await expect(runPromise).rejects.toThrow();
+
+    // Same reasoning as the thrown-stream case: TaskAbortedError is thrown
+    // after the try/catch/finally block, before USAGE_OUTPUT_KEY is written,
+    // so task.runUsage is what carries the spend across the abort.
+    expect(task.runUsage).toEqual(usage(75, 3));
+  });
+
+  it("promotes a live snapshot into the output when the stream ends with no finish event", async () => {
+    const task = new ScriptedStreamTask({ defaults: { script: "x" } });
+    task.events_ = [{ type: "usage", usage: usage(85, 6) }];
+
+    const output = (await task.run()) as Record<string, unknown>;
+
+    // No finish, no throw, no abort — this is the narrow case the `finally`
+    // promotion (liveUsage -> settledUsage) exists for.
+    expect(output[USAGE_OUTPUT_KEY]).toEqual(usage(85, 6));
+    expect(task.runUsage).toEqual(usage(85, 6));
   });
 });
