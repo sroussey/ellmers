@@ -4,9 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
+import { CacheCoordinator } from "../CacheCoordinator";
 import type { Usage } from "../StreamTypes";
 import { CACHE_HIT_USAGE, mergeUsage } from "../StreamTypes";
+import { Task } from "../Task";
+import { TaskRegistry } from "../TaskRegistry";
+import { TaskRunContext } from "../TaskRunContext";
 
 describe("cache-hit usage", () => {
   it("states zero for every counter and leaves extra unreported", () => {
@@ -44,5 +49,100 @@ describe("cache-hit usage", () => {
     // the cache hit genuinely states 0 for them. That is honest, and harmless:
     // 0 is the right answer for a replayed output.
     expect(merged?.cached).toBe(0);
+  });
+});
+
+// ============================================================================
+// Integration: CacheCoordinator.lookup() driving a real task, asserting the
+// observable effects a unit test on CACHE_HIT_USAGE / mergeUsage alone cannot
+// reach — task.runUsage and the emitted "usage" event.
+// ============================================================================
+
+type CacheableInput = { q: string };
+type CacheableOutput = { result: string };
+
+class UsageCacheableTask extends Task<CacheableInput, CacheableOutput> {
+  static readonly type = "UsageCacheableTask";
+  static readonly category = "Test";
+  static readonly cacheable = true;
+  static readonly title = "Usage cacheable";
+  static readonly description = "Cacheable task fixture for cache-hit usage integration tests.";
+
+  static inputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { q: { type: "string" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+
+  static outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { result: { type: "string" } },
+      required: ["result"],
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+
+  async execute(input: CacheableInput): Promise<CacheableOutput> {
+    return { result: input.q };
+  }
+}
+
+class FakeCacheRepo {
+  private readonly store = new Map<string, unknown>();
+
+  async getOutput(type: string, input: unknown): Promise<unknown> {
+    return this.store.get(`${type}::${JSON.stringify(input)}`);
+  }
+
+  async saveOutput(type: string, input: unknown, output: unknown): Promise<void> {
+    this.store.set(`${type}::${JSON.stringify(input)}`, output);
+  }
+}
+
+describe("cache-hit usage emit, driven through CacheCoordinator.lookup()", () => {
+  it("sets task.runUsage and delivers a usage event to subscribers on a real cache hit", async () => {
+    TaskRegistry.registerTask(UsageCacheableTask);
+    const task = new UsageCacheableTask();
+    const cache = new FakeCacheRepo() as any;
+    await cache.saveOutput("UsageCacheableTask", { q: "hello" }, { result: "cached!" });
+
+    const cc = new CacheCoordinator<CacheableInput, CacheableOutput>(task);
+    const ctx = new TaskRunContext();
+
+    const seen: Usage[] = [];
+    task.subscribe("usage", (u: Usage) => seen.push(u));
+
+    const result = await cc.lookup({ q: "hello" }, cache, { kind: "deterministic" }, false, ctx);
+
+    expect(result).toEqual({ result: "cached!" });
+    expect(task.runUsage).toEqual(CACHE_HIT_USAGE);
+    expect(seen).toEqual([CACHE_HIT_USAGE]);
+  });
+
+  it("does not touch runUsage or publish a usage event on a cache miss", async () => {
+    TaskRegistry.registerTask(UsageCacheableTask);
+    const task = new UsageCacheableTask();
+    const cache = new FakeCacheRepo() as any; // left empty: nothing saved for this key
+
+    const cc = new CacheCoordinator<CacheableInput, CacheableOutput>(task);
+    const ctx = new TaskRunContext();
+
+    const seen: Usage[] = [];
+    task.subscribe("usage", (u: Usage) => seen.push(u));
+
+    const result = await cc.lookup(
+      { q: "not-cached" },
+      cache,
+      { kind: "deterministic" },
+      false,
+      ctx
+    );
+
+    expect(result).toBeUndefined();
+    expect(task.runUsage).toBeUndefined();
+    expect(seen).toEqual([]);
   });
 });
