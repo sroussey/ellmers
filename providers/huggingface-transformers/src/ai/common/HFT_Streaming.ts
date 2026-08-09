@@ -11,6 +11,28 @@ import type { StreamPhase } from "@workglow/task-graph";
 const HEARTBEAT_INTERVAL_MS = 250;
 
 /**
+ * Emit the prefill phase when Transformers.js hands the prompt to its
+ * streamer. For decoder-only generation, `generate()` does this immediately
+ * before the first model forward, so it excludes provider/model preparation
+ * while still covering the complete prompt evaluation wait. Encoder-decoder
+ * models may run their separate encoder before this callback.
+ */
+function emitPrefillOnFirstPut(
+  streamer: { put(value: bigint[][]): void },
+  emit: (event: StreamPhase) => void
+): void {
+  const put = streamer.put.bind(streamer);
+  let promptPending = true;
+  streamer.put = (value: bigint[][]): void => {
+    if (promptPending) {
+      promptPending = false;
+      emit({ type: "phase", message: "Prefilling", progress: undefined });
+    }
+    put(value);
+  };
+}
+
+/**
  * Decode heartbeat: a `phase` event carrying the running token count, emitted
  * at most every {@link HEARTBEAT_INTERVAL_MS} while the model generates.
  *
@@ -83,7 +105,7 @@ export function createStreamingTextStreamer(
   emit: (event: StreamPhase) => void
 ) {
   const heartbeat = createDecodeHeartbeat(emit);
-  return new textStreamer(tokenizer, {
+  const streamer = new textStreamer(tokenizer, {
     skip_prompt: true,
     decode_kwargs: { skip_special_tokens: true },
     callback_function: (text: string) => {
@@ -94,15 +116,17 @@ export function createStreamingTextStreamer(
       onText(text);
     },
   });
+  emitPrefillOnFirstPut(streamer, emit);
+  return streamer;
 }
 
 export function createTextStreamer(
   tokenizer: any,
-  updateProgress: (progress: number, message?: string, details?: any) => void,
+  updateProgress: (progress: number | undefined, message?: string, details?: any) => void,
   textStreamer: typeof TextStreamer
 ) {
   let count = 0;
-  return new textStreamer(tokenizer, {
+  const streamer = new textStreamer(tokenizer, {
     skip_prompt: true,
     decode_kwargs: { skip_special_tokens: true },
     callback_function: (text: string) => {
@@ -112,4 +136,6 @@ export function createTextStreamer(
       updateProgress(progress, "Generating", { text, progress });
     },
   });
+  emitPrefillOnFirstPut(streamer, (event) => updateProgress(event.progress, event.message));
+  return streamer;
 }

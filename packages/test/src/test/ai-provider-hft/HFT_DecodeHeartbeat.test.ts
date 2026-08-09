@@ -4,7 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createDecodeHeartbeat } from "@workglow/huggingface-transformers/ai-runtime";
+import {
+  createDecodeHeartbeat,
+  createStreamingTextStreamer,
+  createTextStreamer,
+} from "@workglow/huggingface-transformers/ai-runtime";
 import type { StreamPhase } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
@@ -89,5 +93,56 @@ describe("createDecodeHeartbeat", () => {
 
     expect(events).toHaveLength(1);
     expect(events[0]!.message).toBe("Replying 2 tok");
+  });
+});
+
+class FakeTextStreamer {
+  readonly puts: bigint[][][] = [];
+
+  constructor(
+    _tokenizer: unknown,
+    readonly options: {
+      callback_function?: ((text: string) => void) | undefined;
+    }
+  ) {}
+
+  put(value: bigint[][]): void {
+    this.puts.push(value);
+  }
+
+  end(): void {}
+}
+
+describe("HFT streamer prefill phase", () => {
+  it("emits Prefilling exactly when the prompt reaches the streaming streamer", () => {
+    const events: StreamPhase[] = [];
+    const streamer = createStreamingTextStreamer(
+      {},
+      () => {},
+      FakeTextStreamer as any,
+      (event) => events.push(event)
+    ) as unknown as FakeTextStreamer;
+
+    expect(events).toEqual([]);
+    streamer.put([[1n, 2n]]);
+    expect(events).toEqual([{ type: "phase", message: "Prefilling", progress: undefined }]);
+
+    streamer.put([[3n]]);
+    expect(events).toHaveLength(1);
+    expect(streamer.puts).toEqual([[[1n, 2n]], [[3n]]]);
+  });
+
+  it("also emits Prefilling for the non-streaming progress streamer", () => {
+    const updates: Array<{ progress: number | undefined; message: string | undefined }> = [];
+    const streamer = createTextStreamer(
+      {},
+      (progress, message) => updates.push({ progress, message }),
+      FakeTextStreamer as any
+    ) as unknown as FakeTextStreamer;
+
+    streamer.put([[1n, 2n]]);
+    streamer.put([[3n]]);
+
+    expect(updates).toEqual([{ progress: undefined, message: "Prefilling" }]);
   });
 });
