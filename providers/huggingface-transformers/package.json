@@ -35,10 +35,8 @@
       "import": "./dist/ai-runtime.js"
     }
   },
-  "dependencies": {
-    "@huggingface/transformers": "catalog:"
-  },
   "peerDependencies": {
+    "@huggingface/transformers": "^catalog:",
     "@workglow/ai": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
@@ -46,6 +44,9 @@
     "@workglow/util": "workspace:*"
   },
   "peerDependenciesMeta": {
+    "@huggingface/transformers": {
+      "optional": false
+    },
     "@workglow/ai": {
       "optional": false
     },
@@ -63,6 +64,7 @@
     }
   },
   "devDependencies": {
+    "@huggingface/transformers": "catalog:",
     "@workglow/ai": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
