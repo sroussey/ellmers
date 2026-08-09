@@ -148,7 +148,7 @@ export class TaskGraph implements ITaskGraph {
   /** Optional output cache to use for this task graph */
   public outputCache?: TaskOutputRepository;
 
-  /** This run's token aggregator. Replaced at the start of each run. */
+  /** This run's token aggregator. Reset — not replaced — at the start of each run, so a subscriber attached beforehand keeps receiving. */
   usageAggregator: GraphUsageAggregator = new GraphUsageAggregator();
 
   /** Final run token total, set at run end. */

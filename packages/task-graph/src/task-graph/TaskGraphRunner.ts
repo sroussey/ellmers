@@ -29,7 +29,6 @@ import type { TaskInput, TaskOutput } from "../task/TaskTypes";
 import { TaskStatus } from "../task/TaskTypes";
 import { EdgeMaterializer } from "./EdgeMaterializer";
 import { computeGraphEntitlements } from "./GraphEntitlementUtils";
-import { GraphUsageAggregator } from "./GraphUsageAggregator";
 import { RunContext } from "./RunContext";
 import { RunScheduler } from "./RunScheduler";
 import { StreamPump } from "./StreamPump";
@@ -785,7 +784,7 @@ export class TaskGraphRunner {
     // Tear down the previous run's graph-level usage subscriptions (if this
     // graph instance is being re-run) before installing a fresh aggregator.
     this.offGraphUsageSubscriptions?.();
-    this.graph.usageAggregator = new GraphUsageAggregator();
+    this.graph.usageAggregator.reset();
     this.graph.runUsage = undefined;
     this.graph.usageAggregator.onRetire(() => {
       const total = this.graph.usageAggregator.total;

@@ -59,6 +59,19 @@ export class GraphUsageAggregator {
     return () => this.retireListeners.delete(cb);
   }
 
+  /**
+   * Clear every bucket and total for a fresh run, keeping subscribers attached.
+   *
+   * A run must start from zero, but replacing the instance to get there strands
+   * anyone who subscribed beforehand — and a caller can only reach the
+   * aggregator before starting a run, so that is every external subscriber.
+   * They would then record nothing and raise nothing.
+   */
+  reset(): void {
+    this.live.clear();
+    this.retired = undefined;
+  }
+
   observe(taskId: string, usage: Usage, modelId: string | undefined): void {
     const key = modelKey(modelId);
     const existing = this.live.get(taskId)?.get(key);
