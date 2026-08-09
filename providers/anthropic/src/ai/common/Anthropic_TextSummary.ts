@@ -5,6 +5,7 @@
  */
 
 import type { AiProviderRunFn, TextSummaryTaskInput, TextSummaryTaskOutput } from "@workglow/ai";
+import { createUsageSnapshotEmitter } from "@workglow/ai/provider-utils";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
@@ -29,8 +30,10 @@ export const Anthropic_TextSummary_Stream: AiProviderRunFn<
   );
 
   const usageCollector = createAnthropicUsageCollector();
+  const snapshotUsage = createUsageSnapshotEmitter(emit);
   for await (const event of stream) {
     usageCollector.observe(event);
+    snapshotUsage(usageCollector.result());
     maybeEmitAnthropicRefusal(event, emit);
     if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
       emit({ type: "text-delta", port: "text", textDelta: event.delta.text });

@@ -12,6 +12,7 @@ import type {
   ToolCallingTaskOutput,
   ToolDefinition,
 } from "@workglow/ai";
+import { createUsageSnapshotEmitter } from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
 import { parsePartialJson } from "@workglow/util/worker";
 import {
@@ -203,8 +204,10 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
     filterValidToolCalls(toolCallsInStreamOrder(), toolDefinitions);
 
   const usageCollector = createAnthropicUsageCollector();
+  const snapshotUsage = createUsageSnapshotEmitter(emit);
   for await (const event of stream) {
     usageCollector.observe(event);
+    snapshotUsage(usageCollector.result());
     maybeEmitAnthropicRefusal(event, emit);
     if (event.type === "content_block_start") {
       const block = event.content_block;

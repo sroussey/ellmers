@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Usage } from "@workglow/task-graph";
+import type { StreamUsage, Usage } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util";
 
 /**
@@ -172,3 +172,39 @@ export function mapOpenAIResponsesUsage(raw: unknown): Usage | undefined {
 export const OPENAI_STREAM_USAGE_OPTIONS = {
   stream_options: { include_usage: true },
 } as const;
+
+/**
+ * Wrap a run-fn's `emit` so cumulative usage can be reported mid-stream without
+ * flooding the consumer.
+ *
+ * Call the returned function with the collector's current result after each
+ * provider frame. It emits only when a counter actually moved, which matters for
+ * providers that restate cumulative usage on every chunk — without the gate a
+ * long generation would emit one event per token.
+ *
+ * What it emits is a **cumulative snapshot of the current call**, never a delta:
+ * consumers replace their in-flight value rather than accumulating, so a dropped
+ * event costs nothing and a repeated one double-counts nothing.
+ */
+export function createUsageSnapshotEmitter(
+  emit: (event: StreamUsage) => void
+): (usage: Usage | undefined) => void {
+  let last: Usage | undefined;
+  return (usage: Usage | undefined): void => {
+    if (!usage) return;
+    if (last && !usageChanged(last, usage)) return;
+    last = usage;
+    emit({ type: "usage", usage });
+  };
+}
+
+function usageChanged(a: Usage, b: Usage): boolean {
+  return (
+    a.input !== b.input ||
+    a.output !== b.output ||
+    a.cached !== b.cached ||
+    a.cacheWrite !== b.cacheWrite ||
+    a.reasoning !== b.reasoning ||
+    a.total !== b.total
+  );
+}

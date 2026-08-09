@@ -9,6 +9,7 @@ import type {
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
 } from "@workglow/ai";
+import { createUsageSnapshotEmitter } from "@workglow/ai/provider-utils";
 import { getLogger } from "@workglow/util/worker";
 import {
   annotateLastBlock,
@@ -104,8 +105,10 @@ export const Anthropic_TextGeneration_Stream: AiProviderRunFn<
     );
 
     const usageCollector = createAnthropicUsageCollector();
+    const snapshotUsage = createUsageSnapshotEmitter(emit);
     for await (const event of stream) {
       usageCollector.observe(event);
+      snapshotUsage(usageCollector.result());
       const e = event as {
         type: string;
         delta?: { type?: string; text?: string };
