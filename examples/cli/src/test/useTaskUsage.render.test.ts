@@ -30,11 +30,10 @@ function sleep(ms: number): Promise<void> {
  * missed mount would pass while guarding nothing. Timing out throws, which
  * fails the run loudly instead.
  */
-async function waitForRowSubscription(task: Task<never, never>): Promise<void> {
-  const events = (task as unknown as { events: { listenerCount: (e: string) => number } }).events;
+async function waitForRowSubscription(task: ITask): Promise<void> {
   const deadline = Date.now() + 4000;
   while (Date.now() < deadline) {
-    if (events.listenerCount("usage") >= 2) return;
+    if (task.events.listenerCount("usage") >= 2) return;
     await sleep(10);
   }
   throw new Error("no row subscribed to the task's usage event");

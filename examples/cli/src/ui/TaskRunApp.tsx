@@ -84,6 +84,7 @@ export function TaskRunApp({
   const [streamText, setStreamText] = useState("");
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [runUsage, setRunUsage] = useState<Usage | undefined>(undefined);
+  const runUsageLine = formatUsage(runUsage, "directional");
   const subtasks = useSubtaskRows(task);
   const usage = useTaskUsage(task);
   const usageLine = formatUsage(usage, "directional");
@@ -225,9 +226,7 @@ export function TaskRunApp({
               variant="chrome"
             />
           )}
-          {formatUsage(runUsage, "directional") ? (
-            <Text>{`Tokens ${formatUsage(runUsage, "directional")}`}</Text>
-          ) : null}
+          {runUsageLine ? <Text>{`Tokens ${runUsageLine}`}</Text> : null}
         </Box>
       </Box>
     </HumanInteractionHost>
