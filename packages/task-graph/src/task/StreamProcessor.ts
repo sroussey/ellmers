@@ -5,6 +5,7 @@
  */
 
 import type { ResourceScope, ServiceRegistry } from "@workglow/util";
+import { getLogger } from "@workglow/util";
 import type { CacheRef } from "../cache/CacheRef";
 import type { StreamPortCodec } from "../cache/streamCodec";
 import { getStreamPortCodec } from "../cache/streamCodec";
@@ -203,7 +204,13 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
     const runningUsage = (): Usage | undefined => mergeUsage(settledUsage, liveUsage);
     const publishRunning = (): void => {
       const running = runningUsage();
-      if (running) this.task.runUsage = running;
+      if (!running) return;
+      this.task.runUsage = running;
+      try {
+        this.task.emit("usage", running, this.task.runUsageModelId);
+      } catch (err) {
+        getLogger().error("usage listener threw", { taskId: this.task.id, error: err });
+      }
     };
 
     this.task.emit("stream_start");
