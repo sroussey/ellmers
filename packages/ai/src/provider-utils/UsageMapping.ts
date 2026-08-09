@@ -144,6 +144,16 @@ interface OpenAIResponsesUsagePayload {
  * Responses shape names its fields differently from chat completions
  * (`input_tokens` rather than `prompt_tokens`) and nests cache reads/writes
  * under `input_tokens_details`.
+ *
+ * Both nested counters are portions **of** `input_tokens`, not additions to it,
+ * which is what makes subtracting them the right way to recover the base-rate
+ * bucket. Measured against the live API: a cold call reports
+ * `input_tokens: 11239, cache_write_tokens: 11236`, and the warm call that
+ * follows reports the same `input_tokens: 11239` with `cached_tokens: 11236` —
+ * the counters move while the prompt total does not, and `total_tokens` stays
+ * `input_tokens + output_tokens` throughout. Were they siblings, subtracting
+ * would under-report the prompt by the size of the cache hit on every cached
+ * call.
  */
 export function mapOpenAIResponsesUsage(raw: unknown): Usage | undefined {
   if (!raw || typeof raw !== "object") return undefined;
