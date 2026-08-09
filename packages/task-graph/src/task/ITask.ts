@@ -17,7 +17,7 @@ import type { ITaskGraph } from "../task-graph/ITaskGraph";
 import type { IWorkflow } from "../task-graph/IWorkflow";
 import type { TaskGraph } from "../task-graph/TaskGraph";
 import type { CompoundMergeStrategy } from "../task-graph/TaskGraphRunner";
-import type { StreamEvent } from "./StreamTypes";
+import type { StreamEvent, Usage } from "./StreamTypes";
 import type { TaskEntitlements } from "./TaskEntitlements";
 import type { TaskError } from "./TaskError";
 import type {
@@ -361,6 +361,14 @@ export interface ITaskIO<Input extends TaskInput> {
   defaults: Record<string, any>;
   runInputData: Record<string, any>;
   runOutputData: Record<string, any>;
+  /**
+   * Running token total for the current execution; `undefined` until a model
+   * reports. Cumulative and monotonic within one execution.
+   */
+  runUsage: Usage | undefined;
+
+  /** Model id behind {@link ITask.runUsage}, when the provider named one. */
+  runUsageModelId: string | undefined;
   runConfig: Partial<IRunConfig>;
 
   inputSchema(): DataPortSchema; // gets local access for static inputSchema property

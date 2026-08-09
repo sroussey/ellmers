@@ -12,6 +12,7 @@ import type { CachePolicy } from "../cache/CachePolicy";
 import { DATAFLOW_ALL_PORTS } from "../task-graph/Dataflow";
 import { TaskGraph } from "../task-graph/TaskGraph";
 import type { IExecuteContext, IExecutePreviewContext, IRunConfig, ITask } from "./ITask";
+import type { Usage } from "./StreamTypes";
 import { collectCacheVersion, isDeterministicId, resolveCachePolicy } from "./TaskCacheOps";
 import { smartClone, stripSymbols } from "./TaskCloneOps";
 import { EMPTY_ENTITLEMENTS, type TaskEntitlements } from "./TaskEntitlements";
@@ -361,6 +362,9 @@ export class Task<
    * This is the result of the task execution.
    */
   runOutputData: Record<string, any> = {};
+
+  runUsage: Usage | undefined = undefined;
+  runUsageModelId: string | undefined = undefined;
 
   // ========================================================================
   // Task state properties

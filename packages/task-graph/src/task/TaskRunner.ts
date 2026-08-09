@@ -996,6 +996,8 @@ export class TaskRunner<
     this.task.startedAt = new Date();
     this.task.progress = 0;
     this.task.status = TaskStatus.PROCESSING;
+    this.task.runUsage = undefined;
+    this.task.runUsageModelId = undefined;
 
     // Build per-run context (handles abortController + parentSignal wiring)
     const ctx = new TaskRunContext(config.signal);
