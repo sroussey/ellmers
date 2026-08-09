@@ -19,17 +19,26 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * The row for a task mounts only after {@link WorkflowRunApp}'s own effect has
- * populated its task-info map and the child row component has committed its
- * `useTaskUsage` subscription — one render cycle after the graph starts
- * running. Emitting immediately would race that mount and the row would
- * silently miss the event (indistinguishable, in a single-emission test, from
- * a passing "replace" implementation that simply never accumulated). Waiting
- * this long before the first emission — confirmed empirically against this
- * suite's Ink test harness — is what makes the two-snapshot test below able
- * to actually fail on an accumulate bug rather than pass by accident.
+ * Blocks until a rendered row has actually subscribed to this task's `usage`
+ * event.
+ *
+ * A task always carries one `usage` listener while it runs — the scheduler's
+ * bridge to the graph total — so a second listener is a mounted row. Gating on
+ * that rather than sleeping a fixed interval is what keeps the two-snapshot
+ * test honest: a row that mounts after the first emission sees only the second,
+ * and renders the same thing whether the hook replaces or accumulates, so a
+ * missed mount would pass while guarding nothing. Timing out throws, which
+ * fails the run loudly instead.
  */
-const SETTLE_FOR_ROW_MOUNT_MS = 300;
+async function waitForRowSubscription(task: Task<never, never>): Promise<void> {
+  const events = (task as unknown as { events: { listenerCount: (e: string) => number } }).events;
+  const deadline = Date.now() + 4000;
+  while (Date.now() < deadline) {
+    if (events.listenerCount("usage") >= 2) return;
+    await sleep(10);
+  }
+  throw new Error("no row subscribed to the task's usage event");
+}
 
 /** Reports one usage snapshot, then completes. */
 class SingleUsageTask extends Task<Record<string, never>, Record<string, never>> {
@@ -43,7 +52,7 @@ class SingleUsageTask extends Task<Record<string, never>, Record<string, never>>
     return SCHEMA;
   }
   override async execute(_input: Record<string, never>, _context: IExecuteContext) {
-    await sleep(SETTLE_FOR_ROW_MOUNT_MS);
+    await waitForRowSubscription(this as never);
     const usage: Usage = {
       input: 250,
       output: 75,
@@ -71,7 +80,7 @@ class TwoSnapshotUsageTask extends Task<Record<string, never>, Record<string, ne
     return SCHEMA;
   }
   override async execute(_input: Record<string, never>, _context: IExecuteContext) {
-    await sleep(SETTLE_FOR_ROW_MOUNT_MS);
+    await waitForRowSubscription(this as never);
     const first: Usage = {
       input: 100,
       output: 100,
@@ -82,7 +91,6 @@ class TwoSnapshotUsageTask extends Task<Record<string, never>, Record<string, ne
       extra: undefined,
     };
     this.emit("usage", first, undefined);
-    await sleep(SETTLE_FOR_ROW_MOUNT_MS);
     const second: Usage = {
       input: 100,
       output: 140,
@@ -110,7 +118,7 @@ class NoUsageTask extends Task<Record<string, never>, Record<string, never>> {
     return SCHEMA;
   }
   override async execute(_input: Record<string, never>, _context: IExecuteContext) {
-    await sleep(SETTLE_FOR_ROW_MOUNT_MS);
+    await waitForRowSubscription(this as never);
     return {};
   }
 }
