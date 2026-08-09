@@ -95,7 +95,7 @@ function findOpenAiRunFn(capability: string): AiProviderRunFn {
 }
 
 /**
- * Wiring coverage for Task 16: the checkpoint warm-up run-fns must map the
+ * Wiring coverage: the checkpoint warm-up run-fns must map the
  * real client response's usage payload onto the emitted `finish` event
  * (not merely prove the pure mapper functions are correct in isolation), and
  * must do so without disturbing the `checkpoint` handle `finish.data` already
