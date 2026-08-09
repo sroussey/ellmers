@@ -59,7 +59,7 @@
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/util": "workspace:*",
-    "vitest": "^4.1.10"
+    "vitest": "catalog:"
   },
   "peerDependenciesMeta": {
     "@workglow/job-queue": {

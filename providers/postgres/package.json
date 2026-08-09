@@ -86,7 +86,7 @@
     }
   },
   "devDependencies": {
-    "@types/pg": "^8.20.4",
+    "@types/pg": "catalog:",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/util": "workspace:*"

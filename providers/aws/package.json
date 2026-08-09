@@ -38,7 +38,7 @@
     }
   },
   "peerDependencies": {
-    "@aws-sdk/client-sqs": "^3.1105.0",
+    "@aws-sdk/client-sqs": "catalog:",
     "@workglow/job-queue": "workspace:*",
     "@workglow/util": "workspace:*"
   },
@@ -54,8 +54,8 @@
     }
   },
   "devDependencies": {
-    "@aws-sdk/client-sqs": "^3.1105.0",
-    "aws-sdk-client-mock": "^4.0.0",
+    "@aws-sdk/client-sqs": "catalog:",
+    "aws-sdk-client-mock": "catalog:",
     "@workglow/job-queue": "workspace:*",
     "@workglow/util": "workspace:*"
   },
