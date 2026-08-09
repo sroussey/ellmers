@@ -224,7 +224,7 @@ usageNormalizationBlock({
   zeroFrame: { prompt_tokens: 0, completion_tokens: 0 },
   cases: [
     {
-      name: "the cache hit/miss split, hits as cached and misses in extra",
+      name: "the cache hit/miss split, misses as input and hits as cached",
       frame: {
         prompt_tokens: 90,
         completion_tokens: 30,
@@ -233,13 +233,13 @@ usageNormalizationBlock({
         prompt_cache_miss_tokens: 20,
       },
       expected: {
-        input: 90,
+        input: 20,
         output: 30,
         cached: 70,
         cacheWrite: undefined,
         reasoning: undefined,
         total: 120,
-        extra: { promptCacheMissTokens: 20 },
+        extra: undefined,
       },
     },
   ],
