@@ -117,6 +117,24 @@ export interface Usage {
 export const USAGE_OUTPUT_KEY = "usage";
 
 /**
+ * The token cost of replaying a cached task output: verifiably nothing.
+ *
+ * A *stated* zero, not an unknown — which is what distinguishes "this cost you
+ * nothing because it was cached" from "no model ran here" (`undefined`). `extra`
+ * stays unreported because a bag that may hold a model id or service tier has no
+ * meaningful zero.
+ */
+export const CACHE_HIT_USAGE: Usage = {
+  input: 0,
+  output: 0,
+  cached: 0,
+  cacheWrite: 0,
+  reasoning: 0,
+  total: 0,
+  extra: undefined,
+};
+
+/**
  * Signals that the stream has finished. In append mode, the runner
  * accumulates text-delta chunks into the append port (determined by
  * the output schema's `x-stream: "append"` annotation); `data` may
