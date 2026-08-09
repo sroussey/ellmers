@@ -398,6 +398,82 @@ describe("Webhook notification tasks", () => {
       expect(error.cause).toBeUndefined();
     });
 
+    // Echo endpoints (webhook.site, RequestBin) reply 200 with the request
+    // line, so a success body can carry the whole webhook URL straight into
+    // the `response` port — which is task output, persisted and pipeable.
+    test("a success body echoing the webhook URL is redacted", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(new Response(`Received POST ${WEBHOOK_URL}`, { status: 200 }))
+      );
+
+      const result = await webhookNotify({ url: WEBHOOK_URL, payload: {} });
+
+      expect(result.response).not.toContain("SECRETTOKEN");
+      // The origin stays as the useful diagnostic.
+      expect(result.response).toContain("https://example.com");
+    });
+
+    // An endpoint routinely echoes only PART of the URL, which the literal
+    // full-URL match never sees. Express answers an unknown route with the
+    // PATH and no origin, and Slack sets `includeBodyInError`, so this 404
+    // body reaches the error message verbatim.
+    test("a failure body echoing only the URL path is redacted", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response("Cannot POST /services/T00000000/B00000000/SECRETTOKEN", {
+            status: 404,
+            statusText: "Not Found",
+          })
+        )
+      );
+
+      const error = (await slackNotify({ url: SLACK_URL, text: "hi" }).catch(
+        (e: unknown) => e
+      )) as PermanentJobError;
+
+      expect(error.message).not.toContain("SECRETTOKEN");
+      expect(error.message).not.toContain("/services/");
+      expect(String(error.stack)).not.toContain("SECRETTOKEN");
+      expect(String(error.stack)).not.toContain("/services/");
+      expect(formatErrorChainForDiagnostics(error)).not.toContain("SECRETTOKEN");
+      expect(formatErrorChainForDiagnostics(error)).not.toContain("/services/");
+    });
+
+    test("a failure body quoting the token alone is redacted", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response("token SECRETTOKEN rejected", { status: 403, statusText: "Forbidden" })
+        )
+      );
+
+      const error = (await slackNotify({ url: SLACK_URL, text: "hi" }).catch(
+        (e: unknown) => e
+      )) as PermanentJobError;
+
+      expect(error.message).not.toContain("SECRETTOKEN");
+      // The surrounding diagnostic survives; only the token is removed.
+      expect(error.message).toContain("rejected");
+    });
+
+    // The guard against over-redaction. `webhooks` is a real path segment of
+    // every Discord webhook URL and is exactly 8 characters, so a length floor
+    // alone would delete the word from ordinary prose. All-lowercase-alphabetic
+    // runs are words, not tokens.
+    test("an ordinary word that happens to be a path segment survives", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response("invalid webhooks payload", { status: 400, statusText: "Bad Request" })
+        )
+      );
+
+      const error = (await discordNotify({ url: DISCORD_URL, content: "hi" }).catch(
+        (e: unknown) => e
+      )) as PermanentJobError;
+
+      expect(error.message).toContain("invalid webhooks payload");
+      expect(error.message).not.toContain("SECRETTOKEN");
+    });
+
     test("the webhook URL is absent from every output schema", () => {
       for (const taskClass of [WebhookNotifyTask, SlackNotifyTask, DiscordNotifyTask]) {
         const schema = taskClass.outputSchema();
@@ -473,29 +549,68 @@ describe("Webhook notification tasks", () => {
       expect(requiresPrivate(task)).toBe(false);
     });
 
-    test("a private URL requires network:private", () => {
+    // The destination is not knowable at entitlement-evaluation time — the
+    // enforcer runs before the credential resolver — so the requirement is
+    // driven by the DECLARATION, not by grading a URL that may be a decoy.
+    test("a private URL alone declares no network:private", () => {
       const task = new WebhookNotifyTask();
       task.runInputData = { url: "http://127.0.0.1:9200/ingest", payload: {} } as any;
+      expect(requiresPrivate(task)).toBe(false);
+    });
+
+    test("a private URL with allow_private_destination requires network:private", () => {
+      const task = new WebhookNotifyTask();
+      task.runInputData = {
+        url: "http://127.0.0.1:9200/ingest",
+        payload: {},
+        allow_private_destination: true,
+      } as any;
       expect(requiresPrivate(task)).toBe(true);
     });
 
-    // Regression: the credential OVERRIDES `url` at execute time, so grading
-    // entitlements on a public-looking `url` while the request actually goes
-    // to whatever the credential holds is an entitlement bypass.
-    test("a credential key forces network:private even beside a public url", () => {
+    // Inverted: a credential key no longer forces an unscoped private grant on
+    // every instance that uses the store. Execute-time enforcement against the
+    // URL actually resolved is what keeps that safe.
+    test("a credential key alone requires no network:private", () => {
       const task = new WebhookNotifyTask();
       task.runInputData = {
         url: WEBHOOK_URL,
         payload: {},
         url_credential_key: "internal-hook",
       } as any;
-      expect(requiresPrivate(task)).toBe(true);
+      expect(requiresPrivate(task)).toBe(false);
     });
 
-    test("an absent url still fails closed", () => {
+    test("an absent url alone requires no network:private", () => {
       const task = new WebhookNotifyTask();
       task.runInputData = { payload: {} } as any;
-      expect(requiresPrivate(task)).toBe(true);
+      expect(requiresPrivate(task)).toBe(false);
+    });
+
+    test("a declared private destination is scoped to the url port", () => {
+      const task = new WebhookNotifyTask();
+      task.runInputData = {
+        url: "http://127.0.0.1:9200/ingest",
+        payload: {},
+        allow_private_destination: true,
+      } as any;
+      const granted = task.entitlements().entitlements.find((e) => e.id === "network:private");
+      expect(granted?.resources).toEqual(["http://127.0.0.1:9200/*"]);
+    });
+
+    // With a credential key the URL is genuinely unknown here, so the grant
+    // cannot be scoped and says so rather than pretending otherwise.
+    test("a declared private destination behind a credential key is unscoped", () => {
+      const task = new WebhookNotifyTask();
+      task.runInputData = {
+        url: WEBHOOK_URL,
+        payload: {},
+        url_credential_key: "internal-hook",
+        allow_private_destination: true,
+      } as any;
+      const granted = task.entitlements().entitlements.find((e) => e.id === "network:private");
+      expect(granted).toBeDefined();
+      expect(granted!.resources).toBeUndefined();
     });
 
     // `optional: true` entitlements are skipped outright by evaluatePolicy, so
@@ -575,6 +690,82 @@ describe("Webhook notification tasks", () => {
       const body = lastCall().options.body as string;
       expect(body).toContain("<https://x/|y>");
       expect(body).toContain("<@U1>");
+    });
+
+    // `blocks` is as reachable from a pipe or a model as `text` is, so leaving
+    // it unescaped left the whole neutering one field away from being bypassed.
+    test("Slack neutralizes broadcasts inside blocks", async () => {
+      await slackNotify({
+        url: SLACK_URL,
+        text: "ok",
+        blocks: [{ type: "section", text: { type: "mrkdwn", text: "<!channel> down" } }],
+      });
+
+      const body = lastCall().options.body as string;
+      expect(body).toContain("&lt;!channel>");
+      expect(body).not.toContain("<!channel>");
+    });
+
+    test("Slack neutralizes broadcasts nested in fields and elements", async () => {
+      await slackNotify({
+        url: SLACK_URL,
+        text: "ok",
+        blocks: [
+          { type: "section", fields: [{ type: "mrkdwn", text: "<!here> a" }] },
+          { type: "context", elements: [{ type: "mrkdwn", text: "<!subteam^S1> b" }] },
+        ],
+      });
+
+      const body = lastCall().options.body as string;
+      for (const form of ["<!here>", "<!subteam^S1>"]) {
+        expect(body).not.toContain(form);
+      }
+      expect(body).toContain("&lt;!here>");
+      expect(body).toContain("&lt;!subteam^S1>");
+    });
+
+    test("Slack leaves links and single-user mentions inside blocks intact", async () => {
+      await slackNotify({
+        url: SLACK_URL,
+        text: "ok",
+        blocks: [{ type: "section", text: { type: "mrkdwn", text: "<https://x/|y> <@U1>" } }],
+      });
+
+      const body = lastCall().options.body as string;
+      expect(body).toContain("<https://x/|y>");
+      expect(body).toContain("<@U1>");
+    });
+
+    test("allow_mentions leaves blocks verbatim", async () => {
+      await slackNotify({
+        url: SLACK_URL,
+        text: "ok",
+        blocks: [{ type: "section", text: { type: "mrkdwn", text: "<!channel> down" } }],
+        allow_mentions: true,
+      });
+
+      const body = lastCall().options.body as string;
+      expect(body).toContain("<!channel>");
+      expect(body).not.toContain("&lt;!");
+    });
+
+    // A cycle is infinitely deep, so the depth cap terminates it. The failure
+    // must be permanent (no retry can fix a caller-authored cycle) and must
+    // happen before anything is sent.
+    test("a self-referential blocks structure is a permanent configuration error", async () => {
+      const block: Record<string, unknown> = { type: "section" };
+      block.self = block;
+
+      const error = await slackNotify({
+        url: SLACK_URL,
+        text: "ok",
+        blocks: [block] as never,
+      }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(PermanentJobError);
+      expect(error).not.toBeInstanceOf(RetryableJobError);
+      expect((error as PermanentJobError).code).toBe(FetchUrlErrorCode.CONFIGURATION);
+      expect(mockFetch.mock.calls.length).toBe(0);
     });
 
     test("Slack honors allow_mentions", async () => {
@@ -699,11 +890,54 @@ describe("Webhook notification tasks", () => {
       const result = await webhookNotify({
         url: "http://169.254.169.254/latest/meta-data/",
         payload: { ping: true },
+        allow_private_destination: true,
       });
 
       expect(result.response).toBe("");
       expect(JSON.stringify(result)).not.toContain("AKIA");
       expect(result.status).toBe(200);
+    });
+
+    test("refuses a private destination that was not declared", async () => {
+      const error = (await webhookNotify({
+        url: "http://169.254.169.254/latest/meta-data/",
+        payload: { ping: true },
+      }).catch((e: unknown) => e)) as PermanentJobError;
+
+      expect(error).toBeInstanceOf(PermanentJobError);
+      expect(error).not.toBeInstanceOf(RetryableJobError);
+      expect(error.code).toBe(FetchUrlErrorCode.PRIVATE_DENIED);
+      expect(error.message).toContain("allow_private_destination");
+      expect(mockFetch.mock.calls.length).toBe(0);
+    });
+
+    // The declaration is checked against the URL actually resolved, which is
+    // the only place a credential-backed destination can be graded at all: the
+    // entitlement enforcer runs before the credential resolver does.
+    test("a credential resolving to a private URL is refused at execute time", async () => {
+      const store = getGlobalCredentialStore();
+      await store.put("internal-hook", "http://127.0.0.1:9200/x");
+      const error = (await webhookNotify({
+        payload: {},
+        url_credential_key: "internal-hook",
+      })
+        .catch((e: unknown) => e)
+        .finally(() => store.delete("internal-hook"))) as PermanentJobError;
+
+      expect(error).toBeInstanceOf(PermanentJobError);
+      expect(error.code).toBe(FetchUrlErrorCode.PRIVATE_DENIED);
+      expect(mockFetch.mock.calls.length).toBe(0);
+    });
+
+    test("the refusal does not echo the webhook token", async () => {
+      const error = (await slackNotify({
+        url: "http://127.0.0.1:9200/services/T00000000/B00000000/SECRETTOKEN",
+        text: "hi",
+      }).catch((e: unknown) => e)) as PermanentJobError & { url?: string };
+
+      expect(error.code).toBe(FetchUrlErrorCode.PRIVATE_DENIED);
+      expect(error.message).not.toContain("SECRETTOKEN");
+      expect(error.url).not.toContain("SECRETTOKEN");
     });
 
     test("still echoes a public destination's body", async () => {
@@ -733,6 +967,32 @@ describe("Webhook notification tasks", () => {
       expect((error as PermanentJobError).message).toContain("absolute http(s) URL");
       expect((error as PermanentJobError).message).not.toContain("abc123");
       expect(mockFetch.mock.calls.length).toBe(0);
+    });
+
+    // A configured key that the store cannot answer used to fall through to
+    // the `url` port and post anyway, reporting success. That silently sends
+    // the notification somewhere other than where the operator configured it,
+    // and hides an unlocked-store / wrong-key misconfiguration entirely.
+    test("a configured credential key the store cannot answer fails closed", async () => {
+      const error = await webhookNotify({
+        url: WEBHOOK_URL,
+        payload: {},
+        url_credential_key: "absent-key",
+      }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(PermanentJobError);
+      expect((error as PermanentJobError).code).toBe(FetchUrlErrorCode.CONFIGURATION);
+      expect((error as PermanentJobError).message).toContain("url_credential_key");
+      expect(mockFetch.mock.calls.length).toBe(0);
+    });
+
+    // The discriminator is "the port is present", not "the value is empty", so
+    // it must not fire for a task that never configured a credential at all.
+    test("an unconfigured credential key leaves the plain url working", async () => {
+      const result = await webhookNotify({ url: WEBHOOK_URL, payload: {} });
+
+      expect(result.success).toBe(true);
+      expect(lastCall().url).toBe(WEBHOOK_URL);
     });
 
     test("a non-http scheme is rejected before any request is made", async () => {
@@ -880,9 +1140,11 @@ describe("Webhook notification tasks", () => {
         Promise.resolve(new Response(ES_BODY, { status: 400, statusText: "Bad Request" }))
       );
 
-      const error = (await slackNotify({ url: PRIVATE_URL, text: "x" }).catch(
-        (e: unknown) => e
-      )) as PermanentJobError & { httpStatus?: number };
+      const error = (await slackNotify({
+        url: PRIVATE_URL,
+        text: "x",
+        allow_private_destination: true,
+      }).catch((e: unknown) => e)) as PermanentJobError & { httpStatus?: number };
 
       expect(error.message).not.toContain("parsing_exception");
       expect(error.message).not.toContain("cluster secrets index");
@@ -896,9 +1158,11 @@ describe("Webhook notification tasks", () => {
         Promise.resolve(new Response(ES_BODY, { status: 400, statusText: "Bad Request" }))
       );
 
-      const error = (await discordNotify({ url: PRIVATE_URL, content: "x" }).catch(
-        (e: unknown) => e
-      )) as PermanentJobError;
+      const error = (await discordNotify({
+        url: PRIVATE_URL,
+        content: "x",
+        allow_private_destination: true,
+      }).catch((e: unknown) => e)) as PermanentJobError;
 
       expect(error.message).not.toContain("parsing_exception");
       expect(error.message).toContain("400");
@@ -921,7 +1185,11 @@ describe("Webhook notification tasks", () => {
       const readerSpy = vi.spyOn(response.body!, "getReader");
       mockFetch.mockImplementation(() => Promise.resolve(response));
 
-      const result = await webhookNotify({ url: PRIVATE_URL, payload: {} });
+      const result = await webhookNotify({
+        url: PRIVATE_URL,
+        payload: {},
+        allow_private_destination: true,
+      });
 
       expect(result.response).toBe("");
       expect(readerSpy).not.toHaveBeenCalled();

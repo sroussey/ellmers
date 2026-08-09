@@ -11,6 +11,7 @@ import type {
   TaskEntitlements,
 } from "@workglow/task-graph";
 import { CreateWorkflow, Task, Workflow } from "@workglow/task-graph";
+import { SECURITY_LIMITS } from "@workglow/util";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import {
   compactPayload,
@@ -19,6 +20,7 @@ import {
   webhookBaseEntitlements,
   webhookPrivateEntitlements,
 } from "../util/WebhookPost";
+import { createFetchUrlJobError, FetchUrlErrorCode } from "./FetchUrlJobError";
 
 const inputSchema = {
   type: "object",
@@ -39,7 +41,8 @@ const inputSchema = {
       type: "array",
       items: { type: "object", additionalProperties: true },
       title: "Blocks",
-      description: "Slack Block Kit blocks",
+      description:
+        "Slack Block Kit blocks. Channel-wide broadcasts are neutralized in every string inside the structure, the same as 'text', unless 'allow_mentions' is set.",
     },
     username: {
       type: "string",
@@ -56,7 +59,7 @@ const inputSchema = {
       default: false,
       title: "Allow Mentions",
       description:
-        "Send 'text' unmodified. By default channel-wide broadcasts (<!channel>, <!here>, <!everyone>, <!subteam^ID>) are neutralized so piped or model-generated text cannot notify a whole workspace.",
+        "Send 'text' and 'blocks' unmodified. By default channel-wide broadcasts (<!channel>, <!here>, <!everyone>, <!subteam^ID>) are neutralized in both so piped or model-generated content cannot notify a whole workspace.",
     },
     timeout: {
       type: "number",
@@ -65,6 +68,13 @@ const inputSchema = {
       title: "Timeout",
       description:
         "Request timeout in milliseconds. There is no 'wait forever' setting: a black-holed endpoint would pin the task until the caller aborts.",
+    },
+    allow_private_destination: {
+      type: "boolean",
+      default: false,
+      title: "Allow Private Destination",
+      description:
+        "Permit posting to a private/internal/loopback destination. Requires the `network:private` entitlement.",
     },
     url_credential_key: {
       type: "string",
@@ -118,6 +128,46 @@ export function neutralizeSlackBroadcasts(text: string): string {
 }
 
 /**
+ * Applies {@link neutralizeSlackBroadcasts} to every string inside a Block Kit
+ * structure, so `text` and `blocks` share one escape rule rather than two.
+ *
+ * EVERY string leaf is escaped, not just the ones that render as message body.
+ * `<!` is a broadcast sigil wherever Slack finds it and has no legitimate
+ * occurrence in a `type`, `block_id`, `action_id` or URL field, so escaping all
+ * of them is complete and side-effect-free — it covers `fields[]`,
+ * `elements[]`, accessories and header/context blocks without enumerating them,
+ * and cannot miss a block shape Slack adds later.
+ *
+ * New structures are returned; the input may be edge-owned and is never
+ * mutated. Depth is capped rather than cycle-tracked: a cycle is infinitely
+ * deep, so the cap terminates it, and the permanent configuration error that
+ * results is exactly what a cyclic payload already produces a moment later when
+ * the request body is serialized.
+ */
+export function neutralizeSlackBroadcastsDeep(value: unknown, depth: number = 0): unknown {
+  if (depth > SECURITY_LIMITS.slackBlocksMaxDepth) {
+    throw createFetchUrlJobError(
+      FetchUrlErrorCode.CONFIGURATION,
+      `SlackNotifyTask: 'blocks' nests deeper than ${SECURITY_LIMITS.slackBlocksMaxDepth} levels or contains a cycle.`
+    );
+  }
+  if (typeof value === "string") {
+    return neutralizeSlackBroadcasts(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => neutralizeSlackBroadcastsDeep(entry, depth + 1));
+  }
+  if (typeof value === "object" && value !== null) {
+    const escaped: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      escaped[key] = neutralizeSlackBroadcastsDeep(entry, depth + 1);
+    }
+    return escaped;
+  }
+  return value;
+}
+
+/**
  * Posts a message to a Slack incoming webhook.
  *
  * Slack answers `200` with the body `ok` on success and a 4xx with a short
@@ -145,7 +195,8 @@ export class SlackNotifyTask<
     return webhookPrivateEntitlements(
       SlackNotifyTask.entitlements(),
       this.runInputData?.url,
-      this.runInputData?.url_credential_key
+      this.runInputData?.url_credential_key,
+      this.runInputData?.allow_private_destination
     );
   }
 
@@ -158,16 +209,18 @@ export class SlackNotifyTask<
   }
 
   override async execute(input: Input, context: IExecuteContext): Promise<Output> {
-    const url = resolveWebhookUrl(input.url, input.url_credential_key, "SlackNotifyTask");
+    const url = resolveWebhookUrl(
+      input.url,
+      input.url_credential_key,
+      Object.hasOwn(input, "url_credential_key"),
+      "SlackNotifyTask"
+    );
     const allowMentions = input.allow_mentions === true;
     const result = await postWebhookJson({
       url,
       payload: compactPayload({
-        // `blocks` is a caller-authored structure rather than a piped string,
-        // so it is passed through unchanged — a broadcast written inside a
-        // block is NOT neutralized.
-        text: allowMentions ? input.text : neutralizeSlackBroadcasts(input.text),
-        blocks: input.blocks,
+        text: allowMentions ? input.text : (neutralizeSlackBroadcastsDeep(input.text) as string),
+        blocks: allowMentions ? input.blocks : neutralizeSlackBroadcastsDeep(input.blocks),
         username: input.username,
         icon_emoji: input.icon_emoji,
         link_names: allowMentions ? undefined : false,
@@ -178,6 +231,7 @@ export class SlackNotifyTask<
       readSuccessBody: false,
       includeBodyInError: true,
       retryAfterFromJsonBody: false,
+      allowPrivateDestination: input.allow_private_destination === true,
       label: "Slack webhook",
     });
     return { success: true, status: result.status } as Output;
