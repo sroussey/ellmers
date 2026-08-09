@@ -11,7 +11,6 @@ import type {
   AiSessionContext,
   ChatMessage,
 } from "@workglow/ai";
-import type { StreamPhase } from "@workglow/task-graph";
 import { renderHftPrefixPrompt } from "./HFT_CacheCheckpoint";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import {
@@ -24,6 +23,7 @@ import {
   snapshotHftSession,
   withHftPipelineInUse,
 } from "./HFT_Pipeline";
+import type { HftStreamEmit } from "./HFT_Streaming";
 import { createStreamingTextStreamer, createTextStreamer } from "./HFT_Streaming";
 import { buildHFTMessages, mapHFTTools } from "./HFT_ToolCalling";
 
@@ -52,7 +52,7 @@ async function generateTurn(
   input: AiChatProviderInput,
   model: HfTransformersOnnxModelConfig,
   sessionContext: AiSessionContext | undefined,
-  emit: (event: StreamPhase) => void,
+  emit: HftStreamEmit,
   signal: AbortSignal | undefined,
   onDelta: ((text: string) => void) | undefined
 ): Promise<string> {

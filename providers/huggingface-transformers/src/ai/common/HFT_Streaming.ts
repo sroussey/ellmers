@@ -5,10 +5,13 @@
  */
 
 import type { TextStreamer } from "@huggingface/transformers";
-import type { StreamPhase } from "@workglow/task-graph";
+import type { StreamPhase, StreamUsage, Usage } from "@workglow/task-graph";
 
-/** How often {@link createDecodeHeartbeat} may emit, in milliseconds. */
-const HEARTBEAT_INTERVAL_MS = 250;
+/** How often {@link createDecodeUsageReporter} may emit, in milliseconds. */
+const USAGE_INTERVAL_MS = 250;
+
+/** Emits both the stage label and the token snapshots. */
+export type HftStreamEmit = (event: StreamPhase | StreamUsage) => void;
 
 /**
  * Emit the prefill phase when Transformers.js hands the prompt to its
@@ -19,7 +22,8 @@ const HEARTBEAT_INTERVAL_MS = 250;
  */
 function emitPrefillOnFirstPut(
   streamer: { put(value: bigint[][]): void },
-  emit: (event: StreamPhase) => void
+  emit: (event: StreamPhase) => void,
+  onPrompt?: (tokens: number) => void
 ): void {
   const put = streamer.put.bind(streamer);
   let promptPending = true;
@@ -27,63 +31,93 @@ function emitPrefillOnFirstPut(
     if (promptPending) {
       promptPending = false;
       emit({ type: "phase", message: "Prefilling", progress: undefined });
+      // The first put IS the prompt, so its length is the input token count --
+      // the one moment a local model can state its prompt cost, and the reason
+      // input shows up before a single token has been generated.
+      const tokens = value[0]?.length;
+      if (typeof tokens === "number") onPrompt?.(tokens);
     }
     put(value);
   };
 }
 
+/** Reports what a local generation has spent so far. */
+export interface DecodeUsageReporter {
+  /** The prompt reached the model: its length is the input token count. */
+  readonly onPrompt: (tokens: number) => void;
+  /** One decoded piece arrived. */
+  readonly onToken: () => void;
+  /** Emit the final total, ignoring the throttle. */
+  readonly flush: () => void;
+}
+
 /**
- * Decode heartbeat: a `phase` event carrying the running token count, emitted
- * at most every {@link HEARTBEAT_INTERVAL_MS} while the model generates.
+ * Reports a local model's token spend as {@link StreamUsage} snapshots, the
+ * same channel every cloud provider reports through — so a local run shows its
+ * counts wherever a cloud run does, with no per-provider special case.
  *
- * Deltas do not drive progress. `StreamProcessor` translates only `phase`
- * events into `updateProgress`, and `StreamingAiTask` emits exactly one
- * `Generating` phase, latched on the first delta — so a local model decoding
- * for minutes renders as one static line for the whole run even though a token
- * is arriving every few hundred milliseconds.
+ * Snapshots are **cumulative**: each one restates the call's running total, so
+ * a consumer replaces rather than accumulates and a dropped event costs
+ * nothing. They are throttled to {@link USAGE_INTERVAL_MS} because a local model
+ * decodes hundreds of tokens and an event per token would flood the consumer.
  *
- * The count rides in the **message**, not in `progress`: a consumer that owns
- * its own percentage discards a subtask's number, so a numeric-only heartbeat
- * would be invisible in exactly the sweeps where the wait is longest. It is
- * also a count rather than a percentage because generation stops at an end
- * token, not at `max_new_tokens` — any fraction of the token cap would stall
- * near an arbitrary value and then jump, which reads as a hang.
+ * Every decoded piece counts, including pieces a caller filters out of its own
+ * output (a `<think>` block, tool markup): those are generated tokens, and a
+ * count that froze while the model chewed through reasoning would understate
+ * the real spend.
  *
- * The returned function is called once per decoded token piece, including
- * pieces a caller filters out of its own output (a `<think>` block, tool
- * markup): those are decode work too, and a count that froze while the model
- * chewed through reasoning tokens would report a hang that is not happening.
+ * A local model bills nothing, so `cached` / `cacheWrite` stay `undefined`
+ * rather than a stated `0` — the provider reports no caching, which is not the
+ * same as reporting that it cached nothing.
  */
-export function createDecodeHeartbeat(
-  emit: (event: StreamPhase) => void,
+export function createDecodeUsageReporter(
+  emit: (event: StreamUsage) => void,
   options: {
-    label?: string;
     intervalMs?: number;
     now?: () => number;
   } = {}
-): () => void {
-  const label = options.label ?? "Generating";
-  const intervalMs = options.intervalMs ?? HEARTBEAT_INTERVAL_MS;
+): DecodeUsageReporter {
+  const intervalMs = options.intervalMs ?? USAGE_INTERVAL_MS;
   const now = options.now ?? Date.now;
-  let count = 0;
-  // Anchored at the first token rather than at construction: the streamer is
-  // built before prompt formatting and pipeline warm-up, so anchoring here
-  // would spend the whole first interval before a token ever arrived and fire
-  // a heartbeat immediately on token one.
+  let input: number | undefined;
+  let output = 0;
   let lastEmit: number | undefined;
-  return () => {
-    count++;
-    const at = now();
-    if (lastEmit === undefined) {
-      // Leading edge suppressed: `StreamingAiTask` emits its own `Generating`
-      // on this same first delta, so a heartbeat racing it would either be
-      // overwritten or relabel the row twice at t=0.
-      lastEmit = at;
-      return;
-    }
-    if (at - lastEmit < intervalMs) return;
+  let lastEmitted: number | undefined;
+
+  const snapshot = (): Usage => ({
+    input,
+    output,
+    cached: undefined,
+    cacheWrite: undefined,
+    reasoning: undefined,
+    total: undefined,
+    extra: undefined,
+  });
+
+  const send = (at: number): void => {
     lastEmit = at;
-    emit({ type: "phase", message: `${label} ${count} tok`, progress: undefined });
+    lastEmitted = output;
+    emit({ type: "usage", usage: snapshot() });
+  };
+
+  return {
+    onPrompt: (tokens: number): void => {
+      input = tokens;
+      send(now());
+    },
+    onToken: (): void => {
+      output++;
+      const at = now();
+      if (lastEmit !== undefined && at - lastEmit < intervalMs) return;
+      send(at);
+    },
+    flush: (): void => {
+      // Nothing generated and no prompt seen: there is no spend to report, and
+      // an all-undefined snapshot would claim a call happened that did not.
+      if (output === 0 && input === undefined) return;
+      if (lastEmitted === output) return;
+      send(now());
+    },
   };
 }
 
@@ -93,30 +127,37 @@ export function createDecodeHeartbeat(
  * `model.generate(...)`, so `onText` can call `emit` directly — no queue
  * is needed between the SDK and the consumer.
  *
- * `emit` is taken (and the heartbeat wired) here rather than left to each
- * run-fn so that no streaming run-fn can ship without decode feedback: the
- * silence is invisible in tests and only shows up as a minutes-long static
- * line against a slow local model.
+ * `emit` is taken (and the usage reporter wired) here rather than left to each
+ * run-fn so that no streaming run-fn can ship without reporting its spend: the
+ * silence is invisible in tests and only shows up as a run whose token counts
+ * never appear.
  */
 export function createStreamingTextStreamer(
   tokenizer: any,
   onText: (text: string) => void,
   textStreamer: typeof TextStreamer,
-  emit: (event: StreamPhase) => void
+  emit: HftStreamEmit
 ) {
-  const heartbeat = createDecodeHeartbeat(emit);
+  const usage = createDecodeUsageReporter(emit);
   const streamer = new textStreamer(tokenizer, {
     skip_prompt: true,
     decode_kwargs: { skip_special_tokens: true },
     callback_function: (text: string) => {
       // Counted before the caller's own handling so a piece the caller drops
       // still advances the count, and so a throw in `onText` cannot silently
-      // stop the heartbeat while generation continues.
-      heartbeat();
+      // stop the reporting while generation continues.
+      usage.onToken();
       onText(text);
     },
   });
-  emitPrefillOnFirstPut(streamer, emit);
+  emitPrefillOnFirstPut(streamer, emit, usage.onPrompt);
+  // The throttle can swallow the last tokens, so the final total is flushed
+  // when generation ends rather than left reporting a stale count.
+  const end = streamer.end.bind(streamer);
+  streamer.end = (): void => {
+    usage.flush();
+    end();
+  };
   return streamer;
 }
 
