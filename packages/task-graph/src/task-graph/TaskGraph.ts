@@ -9,7 +9,7 @@ import { EventEmitter, uuid4 } from "@workglow/util";
 import { DirectedAcyclicGraph } from "@workglow/util/graph";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ITask } from "../task/ITask";
-import type { StreamEvent } from "../task/StreamTypes";
+import type { StreamEvent, Usage } from "../task/StreamTypes";
 import type { TaskEntitlements } from "../task/TaskEntitlements";
 import type { JsonTaskItem, TaskGraphJson, TaskGraphJsonOptions } from "../task/TaskJSON";
 import type { TaskIdType, TaskInput, TaskOutput, TaskStatus } from "../task/TaskTypes";
@@ -19,6 +19,7 @@ import type { DataflowIdType } from "./Dataflow";
 import { Dataflow, DataflowArrow } from "./Dataflow";
 import { computeGraphEntitlements } from "./GraphEntitlementUtils";
 import { addBoundaryNodesToDependencyJson, addBoundaryNodesToGraphJson } from "./GraphSchemaUtils";
+import { GraphUsageAggregator } from "./GraphUsageAggregator";
 import type { ITaskGraph } from "./ITaskGraph";
 import type {
   GraphEventDagEvents,
@@ -146,6 +147,12 @@ interface TaskGraphConstructorConfig {
 export class TaskGraph implements ITaskGraph {
   /** Optional output cache to use for this task graph */
   public outputCache?: TaskOutputRepository;
+
+  /** This run's token aggregator. Replaced at the start of each run. */
+  usageAggregator: GraphUsageAggregator = new GraphUsageAggregator();
+
+  /** Final run token total, set at run end. */
+  runUsage: Usage | undefined = undefined;
 
   constructor({ outputCache, dag }: TaskGraphConstructorConfig = {}) {
     this.outputCache = outputCache;

@@ -5,10 +5,11 @@
  */
 
 import type { ITask } from "../task/ITask";
-import type { StreamEvent } from "../task/StreamTypes";
+import type { StreamEvent, Usage } from "../task/StreamTypes";
 import type { JsonTaskItem, TaskGraphJson, TaskGraphJsonOptions } from "../task/TaskJSON";
 import type { TaskIdType, TaskInput, TaskOutput, TaskStatus } from "../task/TaskTypes";
 import type { Dataflow, DataflowIdType } from "./Dataflow";
+import type { GraphUsageAggregator } from "./GraphUsageAggregator";
 import type { TaskGraphRunConfig } from "./TaskGraph";
 import type { TaskGraphEventListener, TaskGraphEvents } from "./TaskGraphEvents";
 import type {
@@ -20,6 +21,13 @@ import type {
 
 export interface ITaskGraph {
   get runner(): TaskGraphRunner;
+  /**
+   * The run's token aggregator, readable by a consumer that wants to attach a
+   * recorder or read per-model totals.
+   */
+  usageAggregator: GraphUsageAggregator;
+  /** The final run token total, readable after the run. */
+  runUsage: Usage | undefined;
   run<ExecuteOutput extends TaskOutput>(
     input?: TaskInput,
     config?: TaskGraphRunConfig

@@ -29,6 +29,7 @@ import type { TaskInput, TaskOutput } from "../task/TaskTypes";
 import { TaskStatus } from "../task/TaskTypes";
 import { EdgeMaterializer } from "./EdgeMaterializer";
 import { computeGraphEntitlements } from "./GraphEntitlementUtils";
+import { GraphUsageAggregator } from "./GraphUsageAggregator";
 import { RunContext } from "./RunContext";
 import { RunScheduler } from "./RunScheduler";
 import { StreamPump } from "./StreamPump";
@@ -158,6 +159,15 @@ export class TaskGraphRunner {
    */
   protected currentRunPrivate?: RunPrivateCacheRepo;
   protected baseRegistryForRun?: ServiceRegistry;
+
+  /**
+   * Unsubscribes the current run's graph-level `task_usage` / `task_complete`
+   * listeners feeding {@link TaskGraph.usageAggregator}. The graph's event
+   * emitter outlives a single run, so handleStart tears down the previous
+   * run's pair before installing a fresh one — otherwise re-running the same
+   * graph instance would accumulate one duplicate listener pair per run.
+   */
+  protected offGraphUsageSubscriptions?: () => void;
 
   /**
    * Registry to restore after a preview run completes. Captured in
@@ -772,6 +782,29 @@ export class TaskGraphRunner {
     this.processScheduler.reset();
     // (in-progress maps + failedTaskErrors start empty on a fresh RunContext)
 
+    // Tear down the previous run's graph-level usage subscriptions (if this
+    // graph instance is being re-run) before installing a fresh aggregator.
+    this.offGraphUsageSubscriptions?.();
+    this.graph.usageAggregator = new GraphUsageAggregator();
+    this.graph.runUsage = undefined;
+    this.graph.usageAggregator.onRetire(() => {
+      const total = this.graph.usageAggregator.total;
+      if (total) this.graph.emit("graph_usage", total);
+    });
+
+    const offTaskUsage = this.graph.subscribe("task_usage", (taskId, usage, modelId) => {
+      this.graph.usageAggregator.observe(String(taskId), usage, modelId);
+      const total = this.graph.usageAggregator.total;
+      if (total) this.graph.emit("graph_usage", total);
+    });
+    const offTaskComplete = this.graph.subscribe("task_complete", (taskId) => {
+      this.graph.usageAggregator.retire(String(taskId));
+    });
+    this.offGraphUsageSubscriptions = () => {
+      offTaskUsage();
+      offTaskComplete();
+    };
+
     try {
       if (config?.maxTasks !== undefined && config.maxTasks > 0) {
         const taskCount = this.graph.getTasks().length;
@@ -877,6 +910,9 @@ export class TaskGraphRunner {
       this.baseRegistryForRun = undefined;
     }
 
+    this.graph.usageAggregator.sweep();
+    this.graph.runUsage = this.graph.usageAggregator.total;
+
     this.graph.emit("complete");
   }
 
@@ -922,6 +958,9 @@ export class TaskGraphRunner {
       this.baseRegistryForRun = undefined;
     }
 
+    this.graph.usageAggregator.sweep();
+    this.graph.runUsage = this.graph.usageAggregator.total;
+
     this.graph.emit("error", error);
   }
 
@@ -964,6 +1003,9 @@ export class TaskGraphRunner {
       this.registry = this.baseRegistryForRun;
       this.baseRegistryForRun = undefined;
     }
+
+    this.graph.usageAggregator.sweep();
+    this.graph.runUsage = this.graph.usageAggregator.total;
 
     this.graph.emit("abort");
   }

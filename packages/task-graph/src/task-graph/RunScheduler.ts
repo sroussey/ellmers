@@ -7,6 +7,7 @@
 import { getLogger } from "@workglow/util";
 import { ConditionalTask } from "../task/ConditionalTask";
 import type { ITask } from "../task/ITask";
+import type { Usage } from "../task/StreamTypes";
 import { TaskError, TaskFailedError, TaskGraphTimeoutError } from "../task/TaskError";
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
 import { TaskStatus } from "../task/TaskTypes";
@@ -285,6 +286,13 @@ export class RunScheduler {
               }
             }
           );
+          const offUsage = task.subscribe("usage", (usage: Usage, modelId: string | undefined) => {
+            try {
+              this.graph.emit("task_usage", task.id, usage, modelId);
+            } catch (err) {
+              getLogger().error("task_usage listener threw", { taskId: task.id, error: err });
+            }
+          });
           try {
             // Root tasks (no incoming dataflows) receive the graph run input so e.g.
             // InputTask can seed the graph. Downstream tasks rely only on dataflow
@@ -317,6 +325,7 @@ export class RunScheduler {
             }
           } finally {
             offProgress();
+            offUsage();
             // IMPORTANT: Push status to edges BEFORE notifying scheduler
             // This ensures dataflow statuses (including DISABLED) are set
             // before the scheduler checks which tasks are ready.

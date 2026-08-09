@@ -5,7 +5,7 @@
  */
 
 import type { EventParameters } from "@workglow/util";
-import type { StreamEvent } from "../task/StreamTypes";
+import type { StreamEvent, Usage } from "../task/StreamTypes";
 import type { TaskEntitlements } from "../task/TaskEntitlements";
 import type { TaskIdType } from "../task/TaskTypes";
 import type { DataflowIdType } from "./Dataflow";
@@ -53,6 +53,15 @@ export type TaskGraphStatusListeners = {
     message?: string,
     ...args: any[]
   ) => void;
+  /**
+   * Fired with a single task's running token total whenever it changes —
+   * including tasks nested in subgraphs, which bridge it up. Cumulative per task
+   * execution, so consumers replace rather than accumulate.
+   */
+  task_usage: (taskId: TaskIdType, usage: Usage, modelId: string | undefined) => void;
+
+  /** Fired with the run's aggregate token total whenever any task's changes. */
+  graph_usage: (total: Usage) => void;
   /** Fired when the aggregated entitlements of the graph change */
   entitlementChange: (entitlements: TaskEntitlements) => void;
 };
