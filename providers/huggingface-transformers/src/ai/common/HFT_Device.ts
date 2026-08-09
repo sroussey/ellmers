@@ -31,6 +31,6 @@ export function resolveHftPipelineDevice(raw: string | undefined): string | unde
   // execution provider instead of probing CUDA (which throws when the CUDA
   // shared libraries are absent, e.g. CPU-only CI runners). "wasm"/"webgpu" are
   // browser-only and stripped here as well.
-  if (!raw || raw === "auto" || raw === "wasm" || raw === "webgpu") return undefined;
+  if (!raw || raw === "auto" || raw === "wasm" ) return undefined;
   return raw;
 }
