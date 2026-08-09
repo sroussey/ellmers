@@ -15,9 +15,15 @@ export type EvalKind = "classify" | "similarity" | "extract";
 const GGUF_PREFIX = "gguf:";
 
 /**
- * Published per-million-token rates, maintained here rather than in the library:
- * a comparison harness is where a human keeps a rate card current and where a
- * stale entry is visible, instead of every downstream consumer inheriting it.
+ * Per-million-token rate card, maintained here rather than in the library: a
+ * comparison harness is where a human keeps rates current and where a stale
+ * entry is visible, instead of every downstream consumer inheriting it.
+ *
+ * These figures are hand-entered and are NOT fetched from any provider, so
+ * check them against each vendor's own pricing page before trusting a cost
+ * column — several entries here have not been verified against a live rate.
+ * A model with no entry is left `undefined` so `estimateCost` reports nothing
+ * rather than a wrong number.
  */
 const ANTHROPIC_PRICING: Record<string, ModelPricing | undefined> = {
   "claude-haiku-4-5": {
