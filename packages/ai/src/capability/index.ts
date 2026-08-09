@@ -10,6 +10,7 @@ export * from "./accumulatingEmit";
 export * from "./AiEmit";
 export * from "./Capabilities";
 export * from "./collectStream";
+export * from "./CostEstimate";
 export * from "./emitQueue";
 export * from "./StreamEventAccumulator";
 export * from "./StreamEvents";
