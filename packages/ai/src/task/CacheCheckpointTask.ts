@@ -203,18 +203,25 @@ export class CacheCheckpointTask extends AiTask<
 
     if (context.resourceScope) {
       context.resourceScope.register(`ai:session:${id}`, async () => {
-        const released = await registry.disposeSession(providerName, id);
-        const entry = getCheckpoint(id);
-        const tokens = released?.tokens ?? entry?.tokens;
-        const usage = cacheStorageUsage(tokens, released?.lifetimeMs ?? 0);
-        if (usage) {
-          try {
-            this.emit("usage", usage, entry?.modelId);
-          } catch (err) {
-            getLogger().error("usage listener threw", { taskId: this.id, error: err });
+        try {
+          const released = await registry.disposeSession(providerName, id);
+          const entry = getCheckpoint(id);
+          const tokens = released?.tokens ?? entry?.tokens;
+          const usage = cacheStorageUsage(tokens, released?.lifetimeMs ?? 0);
+          if (usage) {
+            try {
+              this.emit("usage", usage, entry?.modelId);
+            } catch (err) {
+              getLogger().error("usage listener threw", { taskId: this.id, error: err });
+            }
           }
+        } finally {
+          // The provider released the session before it reported anything, so a
+          // failed dispose must still drop the registry entry — otherwise a
+          // throw here strands the checkpoint in the module-global map for the
+          // life of the process.
+          deleteCheckpoint(id);
         }
-        deleteCheckpoint(id);
       });
     }
 

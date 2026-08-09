@@ -8,6 +8,7 @@ import type { Capability, ModelRecord, SessionDisposalResult } from "@workglow/a
 import { accumulatingEmit, AiProvider, getAiProviderRegistry } from "@workglow/ai";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
 import type { TaskInput } from "@workglow/task-graph";
+import { getLogger } from "@workglow/util/worker";
 import { deleteGeminiCachedContent } from "./common/Gemini_CacheStore";
 import { geminiWorkerRunFnSpecs, inferGeminiCapabilities } from "./common/Gemini_Capabilities";
 import { GOOGLE_GEMINI } from "./common/Gemini_Constants";
@@ -60,7 +61,17 @@ export class GoogleGeminiQueuedProvider extends createCloudProviderClass<GeminiM
       await disposeFn({} as TaskInput, undefined, AbortSignal.timeout(30_000), emit, undefined, {
         sessionId,
       });
-      const released = result();
+      let released: unknown;
+      try {
+        released = result();
+      } catch (err) {
+        // The run-fn already deleted the cache; a missing or malformed `finish`
+        // only costs the telemetry read, so report nothing rather than failing
+        // teardown. Dispatch failures still propagate — those may mean the
+        // delete never happened.
+        getLogger().warn("Gemini session dispose reported no result", { sessionId, error: err });
+        return undefined;
+      }
       return isSessionDisposalResult(released) ? released : undefined;
     }
 
