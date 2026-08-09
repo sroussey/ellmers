@@ -108,7 +108,10 @@ describe("Gemini session disposal", () => {
     await provider.register({});
 
     const createdAtMs = Date.now() - 2_000;
-    runtime.setGeminiCachedContent("checkpoint-queued", {
+    // Seed through the ai barrel, not ai-runtime: the two subpaths are separate
+    // bundles outside source mode, so each owns its own cache map. The run-fns
+    // under test come from the ai bundle and must see the entry this writes.
+    _testOnly.setGeminiCachedContent("checkpoint-queued", {
       name: "cachedContents/checkpoint-queued",
       model: {
         model_id: "gemini-2.5-flash",
@@ -128,7 +131,7 @@ describe("Gemini session disposal", () => {
     // cache delete it performs) already knows the released tokens/lifetime.
     expect(released?.tokens).toBe(1500);
     expect(released?.lifetimeMs).toBeGreaterThanOrEqual(2_000);
-    expect(runtime.getGeminiCachedContent("checkpoint-queued")).toBeUndefined();
+    expect(_testOnly.getGeminiCachedContent("checkpoint-queued")).toBeUndefined();
   });
 });
 
