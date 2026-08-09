@@ -30,13 +30,19 @@ describe("ModelPricing", () => {
   });
 
   it("rejects a rate card that omits a rate", () => {
+    // Passed as an argument rather than assigned to a named const: the
+    // parameter supplies the same contextual type, so the omission is still an
+    // error, without leaving a binding nothing reads. An `as ModelPricing`
+    // assertion would NOT do — assertions permit a missing property, which
+    // makes the directive below unused and the check vacuous.
+    const acceptsPricing = (_pricing: ModelPricing): void => {};
     // @ts-expect-error `output` must be stated explicitly (as `undefined` if unreported).
-    const pricing: ModelPricing = {
+    acceptsPricing({
       currency: "USD",
       input: 3,
       cached: 0.3,
       cacheWrite: 3.75,
       cacheStoragePerHour: undefined,
-    };
+    });
   });
 });
