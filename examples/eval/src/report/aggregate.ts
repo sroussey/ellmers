@@ -128,3 +128,33 @@ function extractionCountsFor(
   }
   return counts;
 }
+
+/**
+ * Sum a model's token spend across a run's result rows.
+ *
+ * A null column means the provider reported nothing for that row, so it is
+ * skipped rather than counted as 0 — a model that never reports caching must not
+ * end up looking like one that cached nothing.
+ */
+export function sumUsageColumns(rows: readonly EvalResultRecord[]): {
+  inputTokens: number | undefined;
+  outputTokens: number | undefined;
+  cachedTokens: number | undefined;
+  cost: number | undefined;
+} {
+  const sum = (pick: (row: EvalResultRecord) => number | null | undefined): number | undefined => {
+    let total: number | undefined;
+    for (const row of rows) {
+      const value = pick(row);
+      if (value === null || value === undefined) continue;
+      total = (total ?? 0) + value;
+    }
+    return total;
+  };
+  return {
+    inputTokens: sum((r) => r.input_tokens),
+    outputTokens: sum((r) => r.output_tokens),
+    cachedTokens: sum((r) => r.cached_tokens),
+    cost: sum((r) => r.cost),
+  };
+}

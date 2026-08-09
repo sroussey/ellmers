@@ -5,9 +5,11 @@
  */
 
 import type { ModelConfig } from "@workglow/ai";
-import { Workflow } from "@workglow/task-graph";
+import type { Usage } from "@workglow/task-graph";
+import { USAGE_OUTPUT_KEY, Workflow } from "@workglow/task-graph";
 import type { ExtractedRow } from "../score/extraction";
 import { fenceText } from "./prompt";
+import { runWithStreamChunks } from "./streamSubscribe";
 import type { ColumnOptions, DatasetContext, RowExecutor } from "./types";
 
 const DEFAULT_INSTRUCTION = "Extract every entity mentioned in the text.";
@@ -131,7 +133,7 @@ export function makeExtractExecutor(
     ? buildItemsSchema(explicitFields, options.keyField)
     : undefined;
 
-  return async (row) => {
+  return async (row, onStreamChunk) => {
     const text = String(row[options.textColumn] ?? "");
     const expectedRows = parseExpectedRows(row[options.expectedColumn], options.expectedColumn);
     const fields =
@@ -146,13 +148,17 @@ export function makeExtractExecutor(
       temperature: 0,
       maxTokens: 2048,
     });
-    const result = (await workflow.run()) as { object?: { items?: unknown } };
-    const items = Array.isArray(result.object?.items)
-      ? (result.object.items as ExtractedRow[])
+    const output = await runWithStreamChunks<{
+      object?: { items?: unknown };
+      [USAGE_OUTPUT_KEY]?: Usage;
+    }>(workflow, onStreamChunk);
+    const items = Array.isArray(output.object?.items)
+      ? (output.object.items as ExtractedRow[])
       : [];
     return {
       expected: JSON.stringify(expectedRows),
       predicted: JSON.stringify(items),
+      usage: output[USAGE_OUTPUT_KEY],
     };
   };
 }

@@ -4,12 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { StreamEvent } from "@workglow/task-graph";
 import type { Command } from "commander";
 import { runSweep } from "../evals/runner";
 import type { ColumnOptions, DatasetContext } from "../evals/types";
 import type { LabelNames } from "../hf/types";
 import type { EvalKind } from "../models";
-import { parseModelList } from "../models";
+import { parseModelList, resolveModelConfig } from "../models";
+import { LiveTally } from "../report/liveTally";
 import type { EvalStores } from "../storage";
 import { formatError, parseIntFlag } from "../util";
 import { printReport } from "./report";
@@ -50,6 +52,7 @@ interface RunFlags {
   readonly fields?: string | undefined;
   readonly instruction?: string | undefined;
   readonly format: string;
+  readonly stream: boolean;
 }
 
 export function registerRunCommand(
@@ -66,7 +69,8 @@ export function registerRunCommand(
       .option("--models <list>", `comma-separated model ids (default: ${DEFAULT_MODELS[kind]})`)
       .option("--limit <n>", "cap the number of stored rows to run")
       .option("--text-column <name>", `input text column (default: ${DEFAULT_TEXT_COLUMN[kind]})`)
-      .option("--format <fmt>", "report output: table or json", "table");
+      .option("--format <fmt>", "report output: table or json", "table")
+      .option("--stream", "render in-flight generation text for the current row", false);
     if (kind === "classify") {
       command
         .option("--label-column <name>", "gold label column (default: label)")
@@ -157,6 +161,12 @@ async function runEval(kind: EvalKind, flags: RunFlags, stores: EvalStores): Pro
     `running ${kind} over ${limited.length} rows of ${flags.dataset} [${flags.split}] ` +
       `with ${models.length} model(s)`
   );
+  const tally = new LiveTally((id) => resolveModelConfig(id, kind).pricing, Date.now());
+  const onStreamChunk: ((event: StreamEvent) => void) | undefined = flags.stream
+    ? (event) => {
+        if (event.type === "text-delta") process.stderr.write(event.textDelta);
+      }
+    : undefined;
   const runId = await runSweep(stores, limited, {
     kind,
     dataset: flags.dataset,
@@ -164,9 +174,11 @@ async function runEval(kind: EvalKind, flags: RunFlags, stores: EvalStores): Pro
     models,
     columns,
     context,
-    onProgress: (done, total, model, ok) => {
-      console.error(`[${done}/${total}] ${model} ${ok ? "ok" : "FAIL"}`);
+    onProgress: (done, total, model, ok, usage) => {
+      tally.record(model, ok, usage);
+      process.stderr.write(`${tally.render(done, total, Date.now())}\n`);
     },
+    onStreamChunk,
   });
 
   console.error(`run ${runId} complete\n`);
