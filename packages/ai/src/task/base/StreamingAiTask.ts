@@ -97,6 +97,8 @@ export class StreamingAiTask<
     // Strict gating: mirrors AiTask.execute — both paths must check before dispatch.
     this.gateOrThrow(model);
 
+    this.runUsageModelId = model.model_id;
+
     const jobInput = await this.getJobInput(input);
     const strategy = getAiProviderRegistry().getStrategy(model);
 

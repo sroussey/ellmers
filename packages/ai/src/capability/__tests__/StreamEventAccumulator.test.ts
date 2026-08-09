@@ -274,6 +274,35 @@ describe("StreamEventAccumulator", () => {
   });
 });
 
+describe("usage snapshots", () => {
+  const usage = (input: number | undefined, output: number | undefined) => ({
+    input,
+    output,
+    cached: undefined,
+    cacheWrite: undefined,
+    reasoning: undefined,
+    total: undefined,
+    extra: undefined,
+  });
+
+  it("lets finish supersede the snapshots it summarizes", () => {
+    const acc = new StreamEventAccumulator();
+    acc.observe({ type: "usage", usage: usage(100, 2) });
+    acc.observe({ type: "usage", usage: usage(100, 7) });
+    acc.observe({ type: "finish", data: {}, usage: usage(100, 9) });
+
+    expect((acc.materialize() as Record<string, unknown>).usage).toEqual(usage(100, 9));
+  });
+
+  it("promotes the last snapshot when finish reports no usage", () => {
+    const acc = new StreamEventAccumulator();
+    acc.observe({ type: "usage", usage: usage(50, 4) });
+    acc.observe({ type: "finish", data: {} });
+
+    expect((acc.materialize() as Record<string, unknown>).usage).toEqual(usage(50, 4));
+  });
+});
+
 describe("mergeUsage", () => {
   it("returns undefined when neither side reported usage", () => {
     expect(mergeUsage(undefined, undefined)).toBeUndefined();
