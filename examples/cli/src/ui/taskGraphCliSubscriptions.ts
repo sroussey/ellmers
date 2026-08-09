@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ITask, TaskGraph, TaskIdType, TaskStatus } from "@workglow/task-graph";
+import type { ITask, TaskGraph, TaskIdType, TaskStatus, Usage } from "@workglow/task-graph";
 import type { Dispatch, SetStateAction } from "react";
 
 export interface CliTaskLine {
@@ -16,6 +16,8 @@ export interface CliTaskLine {
   status: string;
   progress?: number;
   message?: string;
+  /** Running token total; retained after completion, unlike streamed text. */
+  usage?: Usage;
 }
 
 export interface CliLogLine {
@@ -110,12 +112,24 @@ function registerTaskListeners(
     });
   };
 
+  const onUsage = (usage: Usage): void => {
+    setTaskInfos((prev) => {
+      const info = prev.get(taskId);
+      if (!info) return prev;
+      const next = new Map(prev);
+      next.set(taskId, { ...info, usage });
+      return next;
+    });
+  };
+
   task.events.on("status", onStatus);
   task.events.on("progress", onProgress);
+  task.events.on("usage", onUsage);
 
   return () => {
     task.events.off("status", onStatus);
     task.events.off("progress", onProgress);
+    task.events.off("usage", onUsage);
   };
 }
 

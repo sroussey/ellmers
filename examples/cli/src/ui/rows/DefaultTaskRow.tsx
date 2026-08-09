@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Box } from "ink";
+import { formatUsage } from "@workglow/ai";
+import { Box, Text } from "ink";
 import React from "react";
 import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
 import {
@@ -16,10 +17,12 @@ import {
 import type { TaskRowProps } from "./pickRenderer";
 import { isRedundantSubgraph, SubtaskRows } from "./SubtaskRows";
 import { useSubtaskRows } from "./useSubtaskRows";
+import { useTaskUsage } from "./useTaskUsage";
 
 export function DefaultTaskRow({ task, line, iterationSlots }: TaskRowProps): React.ReactElement {
   const sortedSlots = iterationSlots ? sortIterationSlotsForDisplay(iterationSlots) : [];
   const subtasks = useSubtaskRows(task);
+  const usage = useTaskUsage(task);
   return (
     <Box key={line.id} flexDirection="column">
       <TaskStatusProgressRow
@@ -28,6 +31,9 @@ export function DefaultTaskRow({ task, line, iterationSlots }: TaskRowProps): Re
         message={line.message}
         barProgress={line.progress ?? 0}
       />
+      {formatUsage(usage, "directional") ? (
+        <Text dimColor> {formatUsage(usage, "directional")}</Text>
+      ) : null}
       {sortedSlots.map((slot: IterationSlotRow) => (
         <Box key={`${line.id}-iter-${slot.index}`} flexDirection="column" paddingLeft={2}>
           <TaskStatusProgressRow

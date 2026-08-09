@@ -5,11 +5,13 @@
  */
 
 import type { ChatMessage, ContentBlock } from "@workglow/ai";
+import { formatUsage } from "@workglow/ai";
 import type { ITask, StreamEvent } from "@workglow/task-graph";
 import { Box, Text } from "ink";
 import React, { useEffect, useState, useSyncExternalStore } from "react";
 import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
 import type { TaskRowProps } from "./pickRenderer";
+import { useTaskUsage } from "./useTaskUsage";
 
 const HISTORY_TAIL = 6;
 
@@ -74,6 +76,8 @@ export function ChatTaskRow({ task, line }: TaskRowProps): React.ReactElement {
   // previous turn's assistant message just landed, or a new user turn has
   // started), and on stream_end.
   const [streamText, setStreamText] = useState("");
+  const usage = useTaskUsage(task);
+  const usageLine = formatUsage(usage, "directional");
 
   useEffect(() => {
     const onChunk = (event: StreamEvent): void => {
@@ -99,34 +103,43 @@ export function ChatTaskRow({ task, line }: TaskRowProps): React.ReactElement {
 
   if (status === "PENDING") {
     return (
-      <TaskStatusProgressRow
-        label={line.label}
-        status={status}
-        message={line.message}
-        barProgress={0}
-      />
+      <Box flexDirection="column">
+        <TaskStatusProgressRow
+          label={line.label}
+          status={status}
+          message={line.message}
+          barProgress={0}
+        />
+        {usageLine ? <Text dimColor> {usageLine}</Text> : null}
+      </Box>
     );
   }
 
   if (status === "COMPLETED") {
     return (
-      <TaskStatusProgressRow
-        label={line.label}
-        status={status}
-        message={`${messages.length} messages`}
-        barProgress={100}
-      />
+      <Box flexDirection="column">
+        <TaskStatusProgressRow
+          label={line.label}
+          status={status}
+          message={`${messages.length} messages`}
+          barProgress={100}
+        />
+        {usageLine ? <Text dimColor> {usageLine}</Text> : null}
+      </Box>
     );
   }
 
   if (status === "FAILED") {
     return (
-      <TaskStatusProgressRow
-        label={line.label}
-        status={status}
-        message={line.message ?? "failed"}
-        barProgress={line.progress ?? 0}
-      />
+      <Box flexDirection="column">
+        <TaskStatusProgressRow
+          label={line.label}
+          status={status}
+          message={line.message ?? "failed"}
+          barProgress={line.progress ?? 0}
+        />
+        {usageLine ? <Text dimColor> {usageLine}</Text> : null}
+      </Box>
     );
   }
 
@@ -142,6 +155,7 @@ export function ChatTaskRow({ task, line }: TaskRowProps): React.ReactElement {
         message={line.message}
         barProgress={line.progress ?? 0}
       />
+      {usageLine ? <Text dimColor> {usageLine}</Text> : null}
       <Box
         flexDirection="column"
         marginLeft={2}

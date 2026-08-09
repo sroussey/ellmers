@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IRunConfig, ITask } from "@workglow/task-graph";
+import { formatUsage } from "@workglow/ai";
+import type { IRunConfig, ITask, Usage } from "@workglow/task-graph";
 import { Box, Static, Text } from "ink";
 import path from "node:path";
 import React, { useEffect, useRef, useState } from "react";
@@ -81,7 +82,17 @@ export function TaskRunApp({
   const [downloadFiles, setDownloadFiles] = useState<TaskFileProgressRow[]>([]);
   const [streamText, setStreamText] = useState("");
   const [logs, setLogs] = useState<LogLine[]>([]);
+  const [runUsage, setRunUsage] = useState<Usage | undefined>(undefined);
   const subtasks = useSubtaskRows(task);
+
+  useEffect(() => {
+    const graph = task.subGraph;
+    const onUsage = (total: Usage): void => setRunUsage(total);
+    graph.subscribe("graph_usage", onUsage);
+    return () => {
+      graph.off("graph_usage", onUsage);
+    };
+  }, [task]);
 
   const showFileDownloadList = downloadFiles.length > 0;
   /** One header row + optional file list — avoids a pre-files row (default bar width) then a second row after `files` appears. */
@@ -210,6 +221,9 @@ export function TaskRunApp({
               variant="chrome"
             />
           )}
+          {formatUsage(runUsage, "directional") ? (
+            <Text>{`Tokens ${formatUsage(runUsage, "directional")}`}</Text>
+          ) : null}
         </Box>
       </Box>
     </HumanInteractionHost>
