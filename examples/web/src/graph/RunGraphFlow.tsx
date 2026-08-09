@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Dataflow, TaskGraph, TaskGraphEvents, Usage } from "@workglow/task-graph";
+import type { Dataflow, TaskGraph, TaskGraphEvents } from "@workglow/task-graph";
 import type { Edge, EdgeTypes, Node, NodeTypes } from "@xyflow/react";
 import { Controls, ReactFlow, useEdgesState, useNodesState, useReactFlow } from "@xyflow/react";
 import type { Dispatch, SetStateAction } from "react";
@@ -12,6 +12,7 @@ import React, { useCallback, useEffect, useRef } from "react";
 import { computeLayout, GraphPipelineCenteredLayout, GraphPipelineLayout } from "../layout";
 import type { DataflowEdgeData } from "./DataflowEdge";
 import { DataflowEdge } from "./DataflowEdge";
+import { nodeUsage } from "./nodeUsage";
 import type { TaskNodeData } from "./TaskNode";
 import { TaskNode } from "./TaskNode";
 import { updateNode } from "./util";
@@ -220,16 +221,23 @@ export const RunGraphFlow: React.FC<{
   }, [graph, buildNodesFromTasks, setNodes, updateEdgeStatus]);
 
   useEffect(() => {
-    const onTaskUsage = (taskId: unknown, usage: Usage): void => {
+    // Read the rollup rather than folding `task_usage` here: the event carries
+    // one (task, model) slice, so keying nodes by task id alone would show
+    // whichever model reported last for a task spanning two of them.
+    const syncUsage = (): void => {
+      const byTask = graph.usageAggregator.byTask();
       setNodes((nodes) =>
-        nodes.map((node) =>
-          node.id === String(taskId) ? { ...node, data: { ...node.data, usage } } : node
-        )
+        nodes.map((node) => {
+          const usage = nodeUsage(node.data.task, byTask);
+          return usage === node.data.usage ? node : { ...node, data: { ...node.data, usage } };
+        })
       );
     };
-    const unsub = graph.subscribe("task_usage", onTaskUsage);
+    const unsubTask = graph.subscribe("task_usage", syncUsage);
+    const unsubGraph = graph.subscribe("graph_usage", syncUsage);
     return () => {
-      unsub();
+      unsubTask();
+      unsubGraph();
     };
   }, [graph, setNodes]);
 

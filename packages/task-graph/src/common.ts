@@ -14,6 +14,7 @@ export * from "./task-graph/Dataflow";
 export * from "./task-graph/DataflowEvents";
 
 export * from "./task-graph/GraphEntitlementUtils";
+export * from "./task-graph/GraphUsageAggregator";
 export * from "./task-graph/GraphFormatScanner";
 export * from "./task-graph/GraphSchemaUtils";
 export * from "./task-graph/ITaskGraph";

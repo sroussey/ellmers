@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import type { Usage } from "../../task/StreamTypes";
 import type { RetiredUsage } from "../GraphUsageAggregator";
-import { GraphUsageAggregator } from "../GraphUsageAggregator";
+import { GraphUsageAggregator, UNNAMED_MODEL } from "../GraphUsageAggregator";
 
 const usage = (input: number, output: number): Usage => ({
   input,
@@ -87,6 +87,68 @@ describe("GraphUsageAggregator", () => {
 
     expect(rows).toEqual(["t1"]);
     expect(agg.total).toEqual(usage(10, 4));
+  });
+
+  describe("rollups", () => {
+    it("folds the model axis so a two-model task reports one total", () => {
+      const agg = new GraphUsageAggregator();
+      agg.observe("t1", usage(10, 1), "embed");
+      agg.observe("t1", usage(20, 2), "generate");
+
+      expect(agg.byTask().get("t1")).toEqual(usage(30, 3));
+    });
+
+    it("folds the task axis so two tasks on one model report one total", () => {
+      const agg = new GraphUsageAggregator();
+      agg.observe("t1", usage(10, 1), "m");
+      agg.observe("t2", usage(20, 2), "m");
+
+      expect(agg.byModel().get("m")).toEqual(usage(30, 3));
+    });
+
+    it("keeps each rollup summing to the run total", () => {
+      const agg = new GraphUsageAggregator();
+      agg.observe("t1", usage(10, 1), "embed");
+      agg.observe("t1", usage(20, 2), "generate");
+      agg.observe("t2", usage(5, 3), "generate");
+      agg.retire("t1");
+
+      const sum = (rows: Iterable<Usage>): Usage =>
+        [...rows].reduce((a, b) => usage(a.input! + b.input!, a.output! + b.output!), usage(0, 0));
+
+      expect(sum(agg.byTask().values())).toEqual(agg.total);
+      expect(sum(agg.byModel().values())).toEqual(agg.total);
+    });
+
+    it("counts every iteration of a task that executes more than once", () => {
+      const agg = new GraphUsageAggregator();
+      agg.observe("loop", usage(10, 1), "m");
+      agg.retire("loop");
+      agg.observe("loop", usage(10, 1), "m");
+
+      expect(agg.byTask().get("loop")).toEqual(usage(20, 2));
+      expect(agg.byModel().get("m")).toEqual(usage(20, 2));
+    });
+
+    it("keeps an unnamed model out of the bucket of one literally named 'unnamed'", () => {
+      const agg = new GraphUsageAggregator();
+      agg.observe("t1", usage(10, 1), undefined);
+      agg.observe("t2", usage(20, 2), "unnamed");
+      agg.retire("t1");
+
+      expect(agg.byModel().get(UNNAMED_MODEL)).toEqual(usage(10, 1));
+      expect(agg.byModel().get("unnamed")).toEqual(usage(20, 2));
+    });
+
+    it("clears both rollups for a fresh run", () => {
+      const agg = new GraphUsageAggregator();
+      agg.observe("t1", usage(10, 1), "m");
+      agg.sweep();
+      agg.reset();
+
+      expect([...agg.byTask()]).toEqual([]);
+      expect([...agg.byModel()]).toEqual([]);
+    });
   });
 
   it("does not collide task/model pairs whose composed strings would clash", () => {

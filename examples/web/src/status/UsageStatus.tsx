@@ -5,27 +5,35 @@
  */
 
 import { formatUsage } from "@workglow/ai";
-import type { ITaskGraph, Usage } from "@workglow/task-graph";
+import type { ITaskGraph, ModelKey, Usage } from "@workglow/task-graph";
+import { UNNAMED_MODEL } from "@workglow/task-graph";
 import { useEffect, useState } from "react";
+
+/** Label for reports whose provider named no model. */
+const UNNAMED_LABEL = "(unnamed model)";
+
+const modelLabel = (key: ModelKey): string => (key === UNNAMED_MODEL ? UNNAMED_LABEL : key);
 
 /**
  * The run's cumulative token total, plus a per-model split.
  *
- * The run total is the headline here — per-node detail lives on the nodes. The
- * per-model breakdown falls out of the graph's own (task, model) keying, so a
- * task spanning an embedding and a generation model reports both.
+ * The run total is the headline here — per-node detail lives on the nodes.
+ * Both figures are read off the graph's aggregator rather than folded from
+ * `task_usage` events: an event carries one (task, model) slice, so keying by
+ * model alone would show only the last task to use each model and the rows
+ * would not sum to the total printed above them.
  */
 export function UsageStatus({ graph }: { graph: ITaskGraph }) {
   const [total, setTotal] = useState<Usage | undefined>(undefined);
-  const [byModel, setByModel] = useState<ReadonlyMap<string, Usage>>(new Map());
+  const [byModel, setByModel] = useState<ReadonlyMap<ModelKey, Usage>>(new Map());
 
   useEffect(() => {
-    const onGraph = (next: Usage): void => setTotal(next);
-    const onTask = (_id: unknown, usage: Usage, modelId: string | undefined): void => {
-      setByModel((prev) => new Map(prev).set(modelId ?? "unnamed", usage));
+    const sync = (): void => {
+      setTotal(graph.usageAggregator.total);
+      setByModel(graph.usageAggregator.byModel());
     };
-    const unsubGraph = graph.subscribe("graph_usage", onGraph);
-    const unsubTask = graph.subscribe("task_usage", onTask);
+    const unsubGraph = graph.subscribe("graph_usage", sync);
+    const unsubTask = graph.subscribe("task_usage", sync);
     return () => {
       unsubGraph();
       unsubTask();
@@ -39,9 +47,9 @@ export function UsageStatus({ graph }: { graph: ITaskGraph }) {
     <div className="usage-status">
       <div className="usage-status-total">{text}</div>
       <ul>
-        {[...byModel].map(([modelId, usage]) => (
-          <li key={modelId}>
-            {modelId}: {formatUsage(usage, "cumulative")}
+        {[...byModel].map(([key, usage]) => (
+          <li key={modelLabel(key)}>
+            {modelLabel(key)}: {formatUsage(usage, "cumulative")}
           </li>
         ))}
       </ul>

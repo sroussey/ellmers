@@ -58,6 +58,23 @@ class UsageTaskB extends Task<Record<string, never>, Record<string, never>> {
   }
 }
 
+/** A second task on the SAME model as {@link UsageTaskA}. */
+class SameModelTask extends Task<Record<string, never>, Record<string, never>> {
+  static override readonly type = "SameModelTask";
+  static override readonly category = "Test";
+  static override readonly cacheable = false;
+  static override inputSchema(): never {
+    return SCHEMA;
+  }
+  static override outputSchema(): never {
+    return SCHEMA;
+  }
+  override async execute(_input: Record<string, never>, _context: IExecuteContext) {
+    this.emit("usage", usage(7, 3), "model-a");
+    return {};
+  }
+}
+
 /** Never reports usage at all. */
 class NoUsageTask extends Task<Record<string, never>, Record<string, never>> {
   static override readonly type = "NoUsageTask";
@@ -112,6 +129,28 @@ describe("UsageStatus (the run-total panel actually rendered by the web example)
     expect(totalText).toBe("↑130 ↓70");
     expect(totalText).not.toContain("230");
     expect(totalText).not.toContain("120");
+  });
+
+  it("sums two tasks sharing one model into a single per-model row", async () => {
+    const workflow = new Workflow();
+    workflow.parallel([new UsageTaskA(), new SameModelTask(), new UsageTaskB()]);
+
+    act(() => {
+      root = createRoot(container);
+      root.render(createElement(UsageStatus, { graph: workflow.graph }));
+    });
+
+    await act(async () => {
+      await workflow.run({});
+    });
+
+    const rows = [...container.querySelectorAll("li")].map((li) => li.textContent);
+    // Keying the breakdown by model while storing one task's snapshot lets the
+    // later task overwrite the earlier one, so model-a would read "↑7 ↓3" and
+    // the rows would no longer sum to the total printed above them.
+    expect(rows).toContain("model-a: ↑107 ↓53");
+    expect(rows).toContain("model-b: ↑30 ↓20");
+    expect(container.querySelector(".usage-status-total")?.textContent).toBe("↑137 ↓73");
   });
 
   it("renders no token text at all for a run that reported no usage", async () => {

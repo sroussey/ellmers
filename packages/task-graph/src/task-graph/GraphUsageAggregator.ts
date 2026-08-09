@@ -18,9 +18,9 @@ export interface RetiredUsage {
  * Stands in for an unnamed model so every such report shares one bucket.
  * A Symbol, not a string, so it can never collide with a real model id.
  */
-const UNNAMED_MODEL = Symbol.for("workglow.usage.unnamedModel");
+export const UNNAMED_MODEL = Symbol.for("workglow.usage.unnamedModel");
 
-type ModelKey = string | typeof UNNAMED_MODEL;
+export type ModelKey = string | typeof UNNAMED_MODEL;
 
 const modelKey = (modelId: string | undefined): ModelKey => modelId ?? UNNAMED_MODEL;
 
@@ -43,6 +43,8 @@ const modelKey = (modelId: string | undefined): ModelKey => modelId ?? UNNAMED_M
 export class GraphUsageAggregator {
   private readonly live = new Map<string, Map<ModelKey, RetiredUsage>>();
   private retired: Usage | undefined;
+  private readonly retiredByTask = new Map<string, Usage>();
+  private readonly retiredByModel = new Map<ModelKey, Usage>();
   private readonly retireListeners = new Set<(row: RetiredUsage) => void>();
 
   /**
@@ -56,6 +58,39 @@ export class GraphUsageAggregator {
       for (const row of models.values()) running = mergeUsage(running, row.usage);
     }
     return running;
+  }
+
+  /**
+   * The run's total so far per task, across every model that task used and
+   * every time it executed. A display keyed by task must fold the model axis
+   * itself — a task spanning an embedding and a generation model holds two
+   * live buckets, and showing whichever reported last is not its spend.
+   */
+  byTask(): ReadonlyMap<string, Usage> {
+    const out = new Map(this.retiredByTask);
+    for (const [taskId, models] of this.live) {
+      let running = out.get(taskId);
+      for (const row of models.values()) running = mergeUsage(running, row.usage);
+      if (running) out.set(taskId, running);
+    }
+    return out;
+  }
+
+  /**
+   * The run's total so far per model, across every task that used it. The
+   * mirror of {@link byTask}: a display keyed by model must fold the task
+   * axis, or two tasks sharing one model report only the later one and the
+   * per-model rows no longer sum to {@link total}.
+   */
+  byModel(): ReadonlyMap<ModelKey, Usage> {
+    const out = new Map(this.retiredByModel);
+    for (const models of this.live.values()) {
+      for (const [key, row] of models) {
+        const merged = mergeUsage(out.get(key), row.usage);
+        if (merged) out.set(key, merged);
+      }
+    }
+    return out;
   }
 
   /** Subscribe to executions as they finish. Returns an unsubscribe. */
@@ -75,6 +110,8 @@ export class GraphUsageAggregator {
   reset(): void {
     this.live.clear();
     this.retired = undefined;
+    this.retiredByTask.clear();
+    this.retiredByModel.clear();
   }
 
   observe(taskId: string, usage: Usage, modelId: string | undefined): void {
@@ -114,6 +151,11 @@ export class GraphUsageAggregator {
     models.delete(key);
     if (models.size === 0) this.live.delete(taskId);
     this.retired = mergeUsage(this.retired, row.usage);
+    this.retiredByTask.set(
+      taskId,
+      mergeUsage(this.retiredByTask.get(taskId), row.usage) ?? row.usage
+    );
+    this.retiredByModel.set(key, mergeUsage(this.retiredByModel.get(key), row.usage) ?? row.usage);
     for (const cb of this.retireListeners) cb(row);
   }
 }
