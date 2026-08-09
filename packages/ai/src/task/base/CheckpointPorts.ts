@@ -214,6 +214,10 @@ export async function finalizeEmittedCheckpoint(opts: {
       tools: opts.tools,
       messages: [...opts.tailMessages, ...(opts.assistantMessage ? [opts.assistantMessage] : [])],
     }),
+    createdAtMs: Date.now(),
+    tokens: undefined,
+    ownerTaskId: undefined,
+    modelId: model.model_id,
     ...(resolved.parentId ? { parentId: resolved.parentId } : {}),
   });
   if (resolved.session.supersedeParent && resolved.parentId) {

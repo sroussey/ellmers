@@ -4,16 +4,25 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { CachePolicy, IExecuteContext, IRunConfig, TaskConfig } from "@workglow/task-graph";
+import type {
+  CachePolicy,
+  IExecuteContext,
+  IRunConfig,
+  TaskConfig,
+  Usage,
+} from "@workglow/task-graph";
 import { CreateWorkflow, TaskConfigurationError, Workflow } from "@workglow/task-graph";
+import { getLogger } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import { CACHE_STORAGE_TOKEN_HOURS_KEY } from "../capability/CostEstimate";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import type { CheckpointEntry, CheckpointPrefix } from "../provider/CheckpointRegistry";
 import {
   deleteCheckpoint,
+  getCheckpoint,
   registerCheckpoint,
   requireCheckpointModelKey,
 } from "../provider/CheckpointRegistry";
@@ -97,6 +106,30 @@ export type CacheCheckpointTaskOutput = { checkpoint: string };
 export type CacheCheckpointTaskConfig = TaskConfig<CacheCheckpointTaskInput>;
 
 /**
+ * Token-hours a provider-side cache accrued between creation and disposal.
+ *
+ * Providers that bill an explicit cache charge for storage, not for the write,
+ * so the cost is a function of wall-clock lifetime and is only final at
+ * disposal. Reported through `extra` because it is a provider-specific counter
+ * with no normalized token slot.
+ */
+export function cacheStorageUsage(
+  tokens: number | undefined,
+  lifetimeMs: number
+): Usage | undefined {
+  if (tokens === undefined || lifetimeMs <= 0) return undefined;
+  return {
+    input: undefined,
+    output: undefined,
+    cached: undefined,
+    cacheWrite: undefined,
+    reasoning: undefined,
+    total: undefined,
+    extra: { [CACHE_STORAGE_TOKEN_HOURS_KEY]: (tokens * lifetimeMs) / 3_600_000 },
+  };
+}
+
+/**
  * Eagerly warms a prompt-prefix cache (provider prompt caching or local KV
  * state) and outputs an opaque checkpoint handle other AI tasks can start
  * from. The handle doubles as a provider session id. Lifecycle: the handle
@@ -161,12 +194,26 @@ export class CacheCheckpointTask extends AiTask<
       provider: providerName,
       modelKey,
       prefix,
+      createdAtMs: Date.now(),
+      tokens: undefined,
+      ownerTaskId: this.id as string,
+      modelId: model.model_id,
       ...(input.checkpoint ? { parentId: input.checkpoint } : {}),
     });
 
     if (context.resourceScope) {
       context.resourceScope.register(`ai:session:${id}`, async () => {
-        await registry.disposeSession(providerName, id);
+        const released = await registry.disposeSession(providerName, id);
+        const entry = getCheckpoint(id);
+        const tokens = released?.tokens ?? entry?.tokens;
+        const usage = cacheStorageUsage(tokens, released?.lifetimeMs ?? 0);
+        if (usage) {
+          try {
+            this.emit("usage", usage, entry?.modelId);
+          } catch (err) {
+            getLogger().error("usage listener threw", { taskId: this.id, error: err });
+          }
+        }
         deleteCheckpoint(id);
       });
     }

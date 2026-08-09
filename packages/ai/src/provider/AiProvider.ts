@@ -8,7 +8,11 @@ import type { WorkerServerBase as WorkerServer } from "@workglow/util/worker";
 import { globalServiceRegistry, WORKER_MANAGER } from "@workglow/util/worker";
 import type { Capability } from "../capability/Capabilities";
 import type { ModelConfig, ModelRecord } from "../model/ModelSchema";
-import type { AiProviderPreviewRunFn, AiProviderRunFnRegistration } from "./AiProviderRegistry";
+import type {
+  AiProviderPreviewRunFn,
+  AiProviderRunFnRegistration,
+  SessionDisposalResult,
+} from "./AiProviderRegistry";
 import { getAiProviderRegistry, workerKeyForServes } from "./AiProviderRegistry";
 
 /**
@@ -346,8 +350,13 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
    * disposed. Checkpoint supersede disposes a parent session directly while the
    * run's ResourceScope disposer for the same id still fires at run end, so a
    * second call for a gone id is expected (guard on your session map lookup).
+   *
+   * Returns what was released when the provider bills for storage (e.g.
+   * Gemini's server-side cache, priced by token-hours only known at
+   * disposal); providers with nothing to report return `undefined` or
+   * nothing at all — the base no-op does the latter.
    */
-  async disposeSession(_sessionId: string): Promise<void> {}
+  async disposeSession(_sessionId: string): Promise<SessionDisposalResult | undefined | void> {}
 
   /**
    * Called at the end of {@link register} after registry wiring.

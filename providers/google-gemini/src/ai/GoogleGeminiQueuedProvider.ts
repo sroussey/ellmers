@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Capability, ModelRecord } from "@workglow/ai";
+import type { Capability, ModelRecord, SessionDisposalResult } from "@workglow/ai";
 import { AiProvider, getAiProviderRegistry, noopEmit } from "@workglow/ai";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
 import type { TaskInput } from "@workglow/task-graph";
@@ -34,9 +34,12 @@ export class GoogleGeminiQueuedProvider extends createCloudProviderClass<GeminiM
     return geminiWorkerRunFnSpecs();
   }
 
-  override async disposeSession(sessionId: string): Promise<void> {
+  override async disposeSession(sessionId: string): Promise<SessionDisposalResult | undefined> {
     const disposeFn = getAiProviderRegistry().getRunFnFor(this.name, ["session.dispose"]);
     if (disposeFn) {
+      // The worker-side run-fn deletes the cache in the runtime that owns it,
+      // but a Promise+emit run-fn carries no return channel back to the
+      // caller, so a worker-dispatched dispose has nothing to report here.
       await disposeFn(
         {} as TaskInput,
         undefined,
@@ -45,10 +48,10 @@ export class GoogleGeminiQueuedProvider extends createCloudProviderClass<GeminiM
         undefined,
         { sessionId }
       );
-      return;
+      return undefined;
     }
 
     // An unregistered inline provider still owns its cache in this runtime.
-    await deleteGeminiCachedContent(sessionId);
+    return await deleteGeminiCachedContent(sessionId);
   }
 }

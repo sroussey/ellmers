@@ -49,6 +49,20 @@ export interface AiSessionContext {
 }
 
 /**
+ * What a session disposal released, when the provider can state it. Gemini's
+ * server-side CachedContent bills storage by token-hours — a cost that is only
+ * known once the entry's token count and lifetime are both final, i.e. at
+ * disposal. Providers with nothing to report (most of them: local KV sessions,
+ * providers with no server-side cache) resolve `undefined`.
+ */
+export interface SessionDisposalResult {
+  /** Prefix tokens the provider reported writing, when it stated one. */
+  readonly tokens: number | undefined;
+  /** Wall-clock time the released resource was held, in milliseconds. */
+  readonly lifetimeMs: number;
+}
+
+/**
  * Type for the preview run function for AiTask.executePreview().
  * Computes a fast preview from input alone -- no prior output needed.
  * No `signal` or `update_progress` -- preview execution is lightweight and synchronous-ish.
@@ -222,12 +236,17 @@ export class AiProviderRegistry {
    * Disposes a session on the named provider. Silently ignores unknown providers.
    * @param providerName - The provider that owns the session
    * @param sessionId - The session ID to dispose
+   * @returns What the provider released (tokens/lifetime), for providers that
+   *   bill storage and can only state the charge at disposal; `undefined` for
+   *   an unknown provider or one with nothing to report.
    */
-  async disposeSession(providerName: string, sessionId: string): Promise<void> {
+  async disposeSession(
+    providerName: string,
+    sessionId: string
+  ): Promise<SessionDisposalResult | undefined> {
     const provider = this.providers.get(providerName);
-    if (provider) {
-      await provider.disposeSession(sessionId);
-    }
+    if (!provider) return undefined;
+    return (await provider.disposeSession(sessionId)) ?? undefined;
   }
 
   /**

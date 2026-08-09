@@ -16,6 +16,7 @@ import {
   AiChatTask,
   AiProvider,
   AiProviderRegistry,
+  CACHE_STORAGE_TOKEN_HOURS_KEY,
   CAPABILITIES,
   CacheCheckpointTask,
   TextGenerationTask,
@@ -30,7 +31,7 @@ import {
   setAiProviderRegistry,
 } from "@workglow/ai";
 import { clearCheckpoints as clearCheckpointsForTesting } from "@workglow/ai/test";
-import type { IExecuteContext, StreamEvent, TaskOutput } from "@workglow/task-graph";
+import type { IExecuteContext, StreamEvent, TaskOutput, Usage } from "@workglow/task-graph";
 import { Container, HUMAN_CONNECTOR, ResourceScope, ServiceRegistry } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -53,6 +54,10 @@ describe("CheckpointRegistry", () => {
       tools: [{ name: "a", description: "A", inputSchema: { type: "object" } }],
       messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
     },
+    createdAtMs: Date.now(),
+    tokens: undefined,
+    ownerTaskId: undefined,
+    modelId: undefined,
   };
 
   it("registers and retrieves an entry", () => {
@@ -265,10 +270,112 @@ describe("CacheCheckpointTask", () => {
       provider: "OTHER_PROVIDER",
       modelKey: "",
       prefix: {},
+      createdAtMs: Date.now(),
+      tokens: undefined,
+      ownerTaskId: undefined,
+      modelId: undefined,
     });
     await expect(
       cacheCheckpoint({ model: checkpointModel(), checkpoint: "foreign" })
     ).rejects.toThrow(/provider/i);
+  });
+});
+
+describe("CacheCheckpointTask storage-cost emission at disposal", () => {
+  // A provider whose disposal reports what a billed server-side cache
+  // released (Gemini's shape): tokens held, and for how long.
+  class BillingCheckpointProvider extends CheckpointTestProvider {
+    override async disposeSession(_sessionId: string): Promise<{
+      tokens: number | undefined;
+      lifetimeMs: number;
+    }> {
+      return { tokens: 500_000, lifetimeMs: 3_600_000 };
+    }
+  }
+
+  const billingWarmupFn: AiProviderRunFn = async (
+    _input,
+    _model,
+    _signal,
+    emit,
+    _schema,
+    session
+  ) => {
+    emit({
+      type: "finish",
+      data: { checkpoint: session?.sessionId ?? "" },
+    } as unknown as StreamEvent<TaskOutput>);
+  };
+
+  afterEach(() => {
+    setAiProviderRegistry(new AiProviderRegistry());
+  });
+
+  it("emits a cacheStorageTokenHours usage event sized from the disposed tokens and lifetime", async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    const provider = new BillingCheckpointProvider([
+      { serves: CACHE_CHECKPOINT as Capability[], runFn: billingWarmupFn },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+
+    const scope = new ResourceScope();
+    const task = new CacheCheckpointTask();
+    const usageEvents: { usage: Usage; modelId: string | undefined }[] = [];
+    task.on("usage", (usage, modelId) => usageEvents.push({ usage, modelId }));
+
+    await task.run({ model: checkpointModel(), systemPrompt: "sys" }, { resourceScope: scope });
+    // The charge is not known until the cache is actually released.
+    expect(usageEvents).toHaveLength(0);
+
+    await scope.runComplete();
+
+    expect(usageEvents).toHaveLength(1);
+    // 500,000 tokens held for 3,600,000ms (1 hour) = 500,000 token-hours.
+    expect(usageEvents[0].usage.extra?.[CACHE_STORAGE_TOKEN_HOURS_KEY]).toBeCloseTo(500_000, 6);
+    expect(usageEvents[0].modelId).toBe(checkpointModel().model_id);
+  });
+
+  it("emits nothing when the provider reports no tokens at disposal", async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    const provider = new CheckpointTestProvider([
+      { serves: CACHE_CHECKPOINT as Capability[], runFn: billingWarmupFn },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+
+    const scope = new ResourceScope();
+    const task = new CacheCheckpointTask();
+    const usageEvents: unknown[] = [];
+    task.on("usage", (usage) => usageEvents.push(usage));
+
+    await task.run({ model: checkpointModel(), systemPrompt: "sys" }, { resourceScope: scope });
+    await scope.runComplete();
+
+    expect(usageEvents).toHaveLength(0);
+  });
+
+  it("a throwing usage listener does not prevent the checkpoint from being released", async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    const provider = new BillingCheckpointProvider([
+      { serves: CACHE_CHECKPOINT as Capability[], runFn: billingWarmupFn },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+
+    const scope = new ResourceScope();
+    const task = new CacheCheckpointTask();
+    task.on("usage", () => {
+      throw new Error("listener exploded");
+    });
+
+    const out = await task.run(
+      { model: checkpointModel(), systemPrompt: "sys" },
+      { resourceScope: scope }
+    );
+    expect(getCheckpoint(out!.checkpoint)).toBeDefined();
+
+    // The disposer must complete (and the registry entry must still be
+    // removed) even though the usage listener threw.
+    await expect(scope.runComplete()).resolves.not.toThrow();
+    expect(getCheckpoint(out!.checkpoint)).toBeUndefined();
   });
 });
 
@@ -312,6 +419,10 @@ describe("ToolCallingTask checkpoint ports", () => {
       provider: CKPT_PROVIDER,
       modelKey: "test:ckpt-model:v1",
       prefix: { systemPrompt: "sys", tools: [aTool], messages: [] },
+      createdAtMs: Date.now(),
+      tokens: undefined,
+      ownerTaskId: undefined,
+      modelId: undefined,
     });
     const task = new ToolCallingTask();
     await task.run({ model: toolModel(), prompt: "hi", tools: [aTool], checkpoint: "ckpt-parent" });
@@ -325,6 +436,10 @@ describe("ToolCallingTask checkpoint ports", () => {
       provider: CKPT_PROVIDER,
       modelKey: "test:ckpt-model:v1",
       prefix: { systemPrompt: "sys", tools: [aTool], messages: [] },
+      createdAtMs: Date.now(),
+      tokens: undefined,
+      ownerTaskId: undefined,
+      modelId: undefined,
     });
     const scope = new ResourceScope();
     const task = new ToolCallingTask();
@@ -356,6 +471,10 @@ describe("ToolCallingTask checkpoint ports", () => {
       provider: CKPT_PROVIDER,
       modelKey: "test:ckpt-model:v1",
       prefix: { systemPrompt: "sys", tools: [aTool], messages: [] },
+      createdAtMs: Date.now(),
+      tokens: undefined,
+      ownerTaskId: undefined,
+      modelId: undefined,
     });
     const scope = new ResourceScope();
     const task = new ToolCallingTask();
@@ -433,6 +552,10 @@ describe("TextGenerationTask checkpoint ports", () => {
       provider: CKPT_PROVIDER,
       modelKey: "test:ckpt-model:v1",
       prefix: { systemPrompt: "sys", messages: [] },
+      createdAtMs: Date.now(),
+      tokens: undefined,
+      ownerTaskId: undefined,
+      modelId: undefined,
     });
     const scope = new ResourceScope();
     const task = new TextGenerationTask();
@@ -633,6 +756,10 @@ describe("AiChatTask checkpoint consumption", () => {
       provider: CKPT_PROVIDER,
       modelKey: "test:ckpt-model:v1",
       prefix: { systemPrompt: "sys", messages: [] },
+      createdAtMs: Date.now(),
+      tokens: undefined,
+      ownerTaskId: undefined,
+      modelId: undefined,
     });
     const input = {
       model: checkpointModel(),
@@ -714,6 +841,10 @@ describe("model-key fail-closed (L2)", () => {
       provider: CKPT_PROVIDER,
       modelKey: "test:model:v1",
       prefix: { systemPrompt: "sys" },
+      createdAtMs: Date.now(),
+      tokens: undefined,
+      ownerTaskId: undefined,
+      modelId: undefined,
     });
     const task = new TextGenerationTask();
     await expect(
@@ -731,6 +862,10 @@ describe("model-key fail-closed (L2)", () => {
       provider: CKPT_PROVIDER,
       modelKey: "",
       prefix: { systemPrompt: "sys" },
+      createdAtMs: Date.now(),
+      tokens: undefined,
+      ownerTaskId: undefined,
+      modelId: undefined,
     });
     const task = new TextGenerationTask();
     await expect(
@@ -758,6 +893,10 @@ describe("model-key fail-closed (L2)", () => {
       provider: CKPT_PROVIDER,
       modelKey: "modelA",
       prefix: {},
+      createdAtMs: Date.now(),
+      tokens: undefined,
+      ownerTaskId: undefined,
+      modelId: undefined,
     });
     const modelB: ModelConfig = {
       ...checkpointModel(),
