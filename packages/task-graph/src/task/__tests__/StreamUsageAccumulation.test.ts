@@ -22,7 +22,7 @@ const usage = (input: number | undefined, output: number | undefined): Usage => 
 
 /** Replays a fixed event script so the processor's folding can be asserted. */
 class ScriptedStreamTask extends Task<{ script: string }, { text: string }> {
-  static override readonly type = "ScriptedStreamTask";
+  static override readonly type: string = "ScriptedStreamTask";
   static override readonly category = "Test";
   static override readonly title = "Scripted stream";
   static override readonly description = "Replays a fixed stream event script.";

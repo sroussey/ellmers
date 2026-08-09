@@ -62,13 +62,14 @@ type CacheableInput = { q: string };
 type CacheableOutput = { result: string };
 
 class UsageCacheableTask extends Task<CacheableInput, CacheableOutput> {
-  static readonly type = "UsageCacheableTask";
-  static readonly category = "Test";
-  static readonly cacheable = true;
-  static readonly title = "Usage cacheable";
-  static readonly description = "Cacheable task fixture for cache-hit usage integration tests.";
+  static override readonly type = "UsageCacheableTask";
+  static override readonly category = "Test";
+  static override readonly cacheable = true;
+  static override readonly title = "Usage cacheable";
+  static override readonly description =
+    "Cacheable task fixture for cache-hit usage integration tests.";
 
-  static inputSchema(): DataPortSchema {
+  static override inputSchema(): DataPortSchema {
     return {
       type: "object",
       properties: { q: { type: "string" } },
@@ -76,7 +77,7 @@ class UsageCacheableTask extends Task<CacheableInput, CacheableOutput> {
     } as const satisfies DataPortSchema;
   }
 
-  static outputSchema(): DataPortSchema {
+  static override outputSchema(): DataPortSchema {
     return {
       type: "object",
       properties: { result: { type: "string" } },
@@ -85,7 +86,7 @@ class UsageCacheableTask extends Task<CacheableInput, CacheableOutput> {
     } as const satisfies DataPortSchema;
   }
 
-  async execute(input: CacheableInput): Promise<CacheableOutput> {
+  override async execute(input: CacheableInput): Promise<CacheableOutput> {
     return { result: input.q };
   }
 }

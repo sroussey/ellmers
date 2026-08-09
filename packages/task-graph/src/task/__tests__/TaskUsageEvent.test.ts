@@ -21,13 +21,13 @@ const usage = (input: number, output: number): Usage => ({
 });
 
 class UsageStreamTask extends Task<{ go: string }, { text: string }> {
-  static readonly type = "UsageStreamTask";
-  static readonly category = "Test";
-  static readonly title = "Usage stream";
-  static readonly description = "Emits usage snapshots then finishes.";
-  static readonly cacheable = false;
+  static override readonly type: string = "UsageStreamTask";
+  static override readonly category = "Test";
+  static override readonly title = "Usage stream";
+  static override readonly description = "Emits usage snapshots then finishes.";
+  static override readonly cacheable = false;
 
-  static inputSchema(): DataPortSchema {
+  static override inputSchema(): DataPortSchema {
     return {
       type: "object",
       properties: { go: { type: "string" } },
@@ -35,7 +35,7 @@ class UsageStreamTask extends Task<{ go: string }, { text: string }> {
     } as const satisfies DataPortSchema;
   }
 
-  static outputSchema(): DataPortSchema {
+  static override outputSchema(): DataPortSchema {
     return {
       type: "object",
       properties: { text: { type: "string", "x-stream": "append" } },
@@ -44,7 +44,7 @@ class UsageStreamTask extends Task<{ go: string }, { text: string }> {
     } as const satisfies DataPortSchema;
   }
 
-  async execute(): Promise<{ text: string }> {
+  override async execute(): Promise<{ text: string }> {
     return { text: "" };
   }
 
@@ -73,8 +73,8 @@ describe("the task-level usage event", () => {
 
   it("leaves runUsage undefined when no model reported", async () => {
     class SilentTask extends UsageStreamTask {
-      static readonly type = "SilentTask";
-      async *executeStream(): AsyncGenerator<StreamEvent> {
+      static override readonly type = "SilentTask";
+      override async *executeStream(): AsyncGenerator<StreamEvent> {
         yield { type: "text-delta", port: "text", textDelta: "hi" };
         yield { type: "finish", data: {} as Record<string, never> };
       }

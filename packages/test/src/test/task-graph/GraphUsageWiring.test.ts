@@ -44,7 +44,7 @@ class UsageEmittingTask extends Task<Record<string, never>, { text: string }> {
     } as const satisfies DataPortSchema;
   }
 
-  async execute(): Promise<{ text: string }> {
+  override async execute(): Promise<{ text: string }> {
     return { text: "" };
   }
 
