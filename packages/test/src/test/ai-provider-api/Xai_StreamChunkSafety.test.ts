@@ -179,7 +179,7 @@ describe("xAI streaming run-fns tolerate SDK chunks without choices/delta", () =
       const finish = events.at(-1);
       expect(finish.type).toBe("finish");
       expect(finish.usage).toEqual({
-        input: 31,
+        input: 19,
         output: 7,
         cached: 12,
         cacheWrite: undefined,
