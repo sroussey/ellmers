@@ -52,7 +52,7 @@ usageNormalizationBlock({
         completion_tokens_details: { reasoning_tokens: 10 },
       },
       expected: {
-        input: 100,
+        input: 40,
         output: 25,
         cached: 60,
         cacheWrite: undefined,
@@ -99,7 +99,7 @@ usageNormalizationBlock({
         output_tokens_details: { reasoning_tokens: 18 },
       },
       expected: {
-        input: 200,
+        input: 40,
         output: 50,
         cached: 128,
         cacheWrite: 32,

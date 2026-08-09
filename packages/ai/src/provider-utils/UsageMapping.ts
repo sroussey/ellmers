@@ -5,6 +5,7 @@
  */
 
 import type { Usage } from "@workglow/task-graph";
+import { getLogger } from "@workglow/util";
 
 /**
  * Shared normalization from a provider's own token-accounting payload into the
@@ -59,6 +60,34 @@ export function usageExtra(
   return Object.keys(extra).length > 0 ? extra : undefined;
 }
 
+/**
+ * Normalize a provider that reports the whole prompt plus a breakdown line into
+ * the disjoint `input` bucket: the portion billed at the base input rate.
+ *
+ * Subtracts only the breakdown counters the provider actually stated, so an
+ * unreported one leaves `input` as the stated prompt total rather than guessing.
+ * A negative result means the provider contradicted itself (`cached > prompt`,
+ * which its own API defines as impossible), so it clamps to 0 and warns — that
+ * is a contract violation worth surfacing, not absorbing.
+ */
+function disjointInput(
+  provider: string,
+  prompt: number | undefined,
+  ...breakdown: readonly (number | undefined)[]
+): number | undefined {
+  if (prompt === undefined) return undefined;
+  const subtracted = breakdown.reduce<number>((acc, part) => acc + (part ?? 0), 0);
+  const remainder = prompt - subtracted;
+  if (remainder < 0) {
+    getLogger().warn(
+      `${provider} reported cache counters exceeding its prompt total; clamping input to 0`,
+      { prompt, subtracted }
+    );
+    return 0;
+  }
+  return remainder;
+}
+
 /** Raw usage payload on an OpenAI-compatible chat-completions terminal chunk. */
 interface OpenAIChatUsagePayload {
   readonly prompt_tokens?: unknown;
@@ -84,7 +113,11 @@ export function mapOpenAIChatUsage(raw: unknown): Usage | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const payload = raw as OpenAIChatUsagePayload;
   return usageOrUndefined({
-    input: toUsageCount(payload.prompt_tokens),
+    input: disjointInput(
+      "OpenAI-compatible chat completions",
+      toUsageCount(payload.prompt_tokens),
+      toUsageCount(payload.prompt_tokens_details?.cached_tokens)
+    ),
     output: toUsageCount(payload.completion_tokens),
     cached: toUsageCount(payload.prompt_tokens_details?.cached_tokens),
     cacheWrite: undefined,
@@ -116,7 +149,12 @@ export function mapOpenAIResponsesUsage(raw: unknown): Usage | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const payload = raw as OpenAIResponsesUsagePayload;
   return usageOrUndefined({
-    input: toUsageCount(payload.input_tokens),
+    input: disjointInput(
+      "OpenAI Responses",
+      toUsageCount(payload.input_tokens),
+      toUsageCount(payload.input_tokens_details?.cached_tokens),
+      toUsageCount(payload.input_tokens_details?.cache_write_tokens)
+    ),
     output: toUsageCount(payload.output_tokens),
     cached: toUsageCount(payload.input_tokens_details?.cached_tokens),
     cacheWrite: toUsageCount(payload.input_tokens_details?.cache_write_tokens),
