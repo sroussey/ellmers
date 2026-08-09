@@ -35,6 +35,10 @@ export class CronTrigger extends BaseTrigger {
   public readonly kind = TRIGGER_KINDS.cron;
   public readonly schedule: CronSchedule;
 
+  // A cron instant is an appointment on the wall clock, not a period: a clock
+  // corrected backwards means it has not arrived yet.
+  protected override readonly clockDomain = "wall" as const;
+
   constructor(options: CronTriggerOptions) {
     super(options);
     this.schedule = parseCronExpression(options.expression);
