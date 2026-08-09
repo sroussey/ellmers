@@ -12,6 +12,7 @@ export * from "./Capabilities";
 export * from "./collectStream";
 export * from "./CostEstimate";
 export * from "./emitQueue";
+export * from "./formatUsage";
 export * from "./StreamEventAccumulator";
 export * from "./StreamEvents";
 export * from "./UsageTelemetry";
