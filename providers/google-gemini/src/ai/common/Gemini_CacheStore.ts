@@ -33,6 +33,12 @@ export interface GeminiCachedContentEntry {
    */
   readonly canonicalTools: string | undefined;
   /**
+   * Prefix token count from the warm-up's `CachedContent.usageMetadata`, used
+   * to compute the storage token-hours charge at disposal time. `undefined`
+   * when the creation response carried no usable count.
+   */
+  readonly tokens: number | undefined;
+  /**
    * Wall-clock timestamp (ms since epoch) recorded when the entry was inserted,
    * used by the proactive stale check so consumers can evict an entry before
    * the server-side TTL burns them into a NOT_FOUND.
@@ -57,12 +63,17 @@ export function getGeminiCachedContent(id: string): GeminiCachedContentEntry | u
 
 export function setGeminiCachedContent(
   id: string,
-  entry: Omit<GeminiCachedContentEntry, "createdAtMs" | "canonicalTools"> &
-    Partial<Pick<GeminiCachedContentEntry, "createdAtMs" | "canonicalTools">>
+  entry: Omit<GeminiCachedContentEntry, "createdAtMs" | "canonicalTools" | "tokens"> &
+    Partial<Pick<GeminiCachedContentEntry, "createdAtMs" | "canonicalTools" | "tokens">>
 ): void {
   _preSetHook?.(id);
   const createdAtMs = entry.createdAtMs ?? Date.now();
-  geminiCachedContents.set(id, { ...entry, canonicalTools: entry.canonicalTools, createdAtMs });
+  geminiCachedContents.set(id, {
+    ...entry,
+    canonicalTools: entry.canonicalTools,
+    tokens: entry.tokens,
+    createdAtMs,
+  });
 }
 
 /**
@@ -123,17 +134,29 @@ export function deleteGeminiCachedContentLocal(id: string): void {
 
 /**
  * Best-effort delete of a checkpoint's server-side CachedContent. Idempotent —
- * unknown ids are a no-op, and API failures are swallowed (the cache's TTL is
- * the backstop; it stops billing when it expires).
+ * unknown ids are a no-op. Returns the entry's token count and how long it
+ * lived, which is what the storage charge is computed from; `undefined` when
+ * there was nothing to delete.
+ *
+ * A delete failure is warned rather than swallowed: the TTL still stops billing,
+ * but a delete API that is failing for every checkpoint means paying full TTL
+ * rent on all of them, and one silent catch per call hides that entirely.
  */
-export async function deleteGeminiCachedContent(id: string): Promise<void> {
+export async function deleteGeminiCachedContent(
+  id: string
+): Promise<{ tokens: number | undefined; lifetimeMs: number } | undefined> {
   const entry = geminiCachedContents.get(id);
-  if (!entry) return;
+  if (!entry) return undefined;
   geminiCachedContents.delete(id);
+  const lifetimeMs = Date.now() - entry.createdAtMs;
   try {
     const ai = await createGeminiClient(entry.model);
     await ai.caches.delete({ name: entry.name });
-  } catch {
-    // TTL expiry cleans up server-side; nothing actionable here.
+  } catch (err) {
+    getLogger().warn("Gemini cached content delete failed; falling back to TTL expiry", {
+      name: entry.name,
+      error: err,
+    });
   }
+  return { tokens: entry.tokens, lifetimeMs };
 }

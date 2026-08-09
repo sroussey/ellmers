@@ -222,6 +222,94 @@ describe("Gemini cache warm-up degrades on the real too-small message", () => {
   });
 });
 
+describe("Gemini cache.checkpoint warm-up reports write usage", () => {
+  const warmupPrefix = {
+    systemPrompt: "sys",
+    messages: [{ role: "user" as const, content: [{ type: "text" as const, text: "hi" }] }],
+  };
+
+  it("emits cacheWrite from the CachedContent usageMetadata and records it on the entry", async () => {
+    installGeminiClient({
+      cachesCreate: async () => ({
+        name: "cachedContents/usage-warm",
+        usageMetadata: { totalTokenCount: 12345 },
+      }),
+    });
+    const runFn = findGeminiRunFn("cache.checkpoint");
+    const events: Array<Record<string, unknown>> = [];
+    await runFn(
+      { model: "gemini-test" } as CacheCheckpointTaskInput,
+      testModel,
+      new AbortController().signal,
+      (event) => events.push(event as Record<string, unknown>),
+      undefined,
+      { sessionId: "usage-warm", prefix: warmupPrefix }
+    );
+    expect(events).toEqual([
+      {
+        type: "finish",
+        data: { checkpoint: "usage-warm" },
+        usage: {
+          input: undefined,
+          output: undefined,
+          cached: undefined,
+          cacheWrite: 12345,
+          reasoning: undefined,
+          total: undefined,
+          extra: undefined,
+        },
+      },
+    ]);
+    expect(getGeminiCachedContent("usage-warm")?.tokens).toBe(12345);
+  });
+
+  it("reports no usage — and stores no token count — when the create response carries none", async () => {
+    installGeminiClient({
+      cachesCreate: async () => ({ name: "cachedContents/no-usage" }),
+    });
+    const runFn = findGeminiRunFn("cache.checkpoint");
+    const events: Array<Record<string, unknown>> = [];
+    await runFn(
+      { model: "gemini-test" } as CacheCheckpointTaskInput,
+      testModel,
+      new AbortController().signal,
+      (event) => events.push(event as Record<string, unknown>),
+      undefined,
+      { sessionId: "no-usage", prefix: warmupPrefix }
+    );
+    expect(events).toEqual([{ type: "finish", data: { checkpoint: "no-usage" } }]);
+    expect(events[0]).not.toHaveProperty("usage");
+    expect(getGeminiCachedContent("no-usage")?.tokens).toBeUndefined();
+  });
+
+  it("reports no usage when the warm-up degrades to inline replay", async () => {
+    installGeminiClient({
+      cachesCreate: async () => {
+        throw Object.assign(
+          new Error("Cached content is too small. total_token_count=7, min_total_token_count=4096"),
+          { status: 400 }
+        );
+      },
+    });
+    const runFn = findGeminiRunFn("cache.checkpoint");
+    const events: Array<Record<string, unknown>> = [];
+    await runFn(
+      { model: "gemini-test" } as CacheCheckpointTaskInput,
+      testModel,
+      new AbortController().signal,
+      (event) => events.push(event as Record<string, unknown>),
+      undefined,
+      { sessionId: "usage-degrade", prefix: warmupPrefix }
+    );
+    // A degraded warm-up creates no entry, so there is nothing to bill —
+    // asserting no `usage` key (not merely an undefined-valued one) is what
+    // catches a fabricated cacheWrite on this path.
+    expect(events).toEqual([{ type: "finish", data: { checkpoint: "usage-degrade" } }]);
+    expect(events[0]).not.toHaveProperty("usage");
+    expect(getGeminiCachedContent("usage-degrade")).toBeUndefined();
+  });
+});
+
 describe("Gemini text.generation refuses a tools-warmed CachedContent", () => {
   it("falls back to inline replay when the prefix carries tools", async () => {
     const checkpointId = "tools-warmed-text";
