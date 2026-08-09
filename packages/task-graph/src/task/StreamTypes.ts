@@ -157,6 +157,26 @@ export type StreamRefusal = {
 };
 
 /**
+ * Token accounting reported *while* a request is still streaming.
+ *
+ * `usage` is a **cumulative snapshot of the current model call**, not a delta —
+ * every provider that reports mid-stream restates running totals, and cumulative
+ * is what composes with the last-wins consumption in StreamProcessor. Consumers
+ * replace their in-flight value with each snapshot and never merge them, or the
+ * same tokens are counted once per event.
+ *
+ * A run-fn that emits these MUST still emit a `finish` whose `usage` is the
+ * complete total for the call; `finish` supersedes the snapshots it summarizes.
+ *
+ * Metadata, not data: it never flips the task to STREAMING, is not accumulated
+ * into dataflow, and never appears in a `finish` payload.
+ */
+export type StreamUsage = {
+  type: "usage";
+  usage: Usage;
+};
+
+/**
  * Reserved output-port name that refusal text is accumulated into. Not a
  * declared task port — kept out of dataflow like `__cv` (cache versioning).
  */
@@ -246,6 +266,7 @@ export type StreamEvent<Output = Record<string, any>> =
   | StreamFinish<Output>
   | StreamError
   | StreamRefusal
+  | StreamUsage
   | StreamPhase;
 
 // ========================================================================
