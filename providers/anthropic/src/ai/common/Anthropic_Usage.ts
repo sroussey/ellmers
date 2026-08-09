@@ -36,6 +36,30 @@ interface AnthropicUsagePayload {
   readonly output_tokens_details?: { readonly thinking_tokens?: unknown } | null;
 }
 
+/**
+ * Map one Anthropic usage payload into {@link Usage}.
+ *
+ * Anthropic already reports the three prompt buckets disjointly — `input_tokens`
+ * excludes both cache reads and cache writes — so nothing is subtracted here.
+ * Used directly for non-streaming calls (a checkpoint warm-up) and per frame by
+ * {@link createAnthropicUsageCollector} for streams.
+ */
+export function mapAnthropicUsage(raw: unknown): Usage | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const payload = raw as AnthropicUsagePayload;
+  return usageOrUndefined({
+    input: toUsageCount(payload.input_tokens),
+    output: toUsageCount(payload.output_tokens),
+    cached: toUsageCount(payload.cache_read_input_tokens),
+    cacheWrite: toUsageCount(payload.cache_creation_input_tokens),
+    reasoning: toUsageCount(payload.output_tokens_details?.thinking_tokens),
+    // Anthropic states no total of its own; synthesizing one from the parts
+    // would misreport cache-discounted input as if it were billed in full.
+    total: undefined,
+    extra: undefined,
+  });
+}
+
 export function createAnthropicUsageCollector(): IAnthropicUsageCollector {
   let input: number | undefined;
   let output: number | undefined;
@@ -44,13 +68,13 @@ export function createAnthropicUsageCollector(): IAnthropicUsageCollector {
   let reasoning: number | undefined;
 
   const absorb = (raw: unknown): void => {
-    if (!raw || typeof raw !== "object") return;
-    const payload = raw as AnthropicUsagePayload;
-    input = toUsageCount(payload.input_tokens) ?? input;
-    output = toUsageCount(payload.output_tokens) ?? output;
-    cached = toUsageCount(payload.cache_read_input_tokens) ?? cached;
-    cacheWrite = toUsageCount(payload.cache_creation_input_tokens) ?? cacheWrite;
-    reasoning = toUsageCount(payload.output_tokens_details?.thinking_tokens) ?? reasoning;
+    const mapped = mapAnthropicUsage(raw);
+    if (!mapped) return;
+    input = mapped.input ?? input;
+    output = mapped.output ?? output;
+    cached = mapped.cached ?? cached;
+    cacheWrite = mapped.cacheWrite ?? cacheWrite;
+    reasoning = mapped.reasoning ?? reasoning;
   };
 
   return {

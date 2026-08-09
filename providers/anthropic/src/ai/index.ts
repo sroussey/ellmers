@@ -21,7 +21,7 @@ import {
   anthropicAcceptsSamplingParams,
   applyAnthropicSamplingParams,
 } from "./common/Anthropic_RequestParams";
-import { createAnthropicUsageCollector } from "./common/Anthropic_Usage";
+import { createAnthropicUsageCollector, mapAnthropicUsage } from "./common/Anthropic_Usage";
 
 /**
  * @internal Symbols exported only for use by `@workglow/test`. Not part of the stable public API.
@@ -35,4 +35,5 @@ export const _testOnly = {
   applyAnthropicSamplingParams,
   setAnthropicClientForTests: clientTestOnly.setAnthropicClientForTests,
   createAnthropicUsageCollector,
+  mapAnthropicUsage,
 } as const;
