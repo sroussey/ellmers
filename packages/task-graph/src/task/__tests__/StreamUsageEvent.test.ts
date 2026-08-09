@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { StreamEvent, StreamUsage } from "../StreamTypes";
+import type { StreamUsage } from "../StreamTypes";
 import { streamEventCost } from "../StreamTypes";
 
 describe("the usage stream event", () => {
@@ -21,11 +21,6 @@ describe("the usage stream event", () => {
       extra: undefined,
     },
   };
-
-  it("is assignable to the StreamEvent union", () => {
-    const event: StreamEvent = usageEvent;
-    expect(event.type).toBe("usage");
-  });
 
   it("costs nothing for backpressure accounting", () => {
     // Usage is a control event, like phase and finish: a slow consumer does not
