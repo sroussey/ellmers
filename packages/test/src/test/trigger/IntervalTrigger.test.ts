@@ -306,6 +306,52 @@ describe("IntervalTrigger", () => {
     await trigger.stop();
   });
 
+  test("a backward clock step does not stall the loop", async () => {
+    // A fixed-interval period is measured by the host timer, not by the wall
+    // clock, so an NTP correction backwards must not turn one 60s period into a
+    // 31-minute silence. Both assertions are load-bearing: re-arming the pending
+    // tick alone would fire once and then go quiet for the size of the step,
+    // because the next target is still computed off the pre-step anchor.
+    const trigger = new IntervalTrigger({ intervalMs: 60_000 });
+    let fires = 0;
+    trigger.start(() => {
+      fires += 1;
+    });
+
+    await advanceFakeTimers(30_000);
+    // Sinon shifts every pending callAt by the same delta, so 30s of monotonic
+    // delay remains on a timer whose target is now 30 minutes in the future.
+    vi.setSystemTime(Date.now() - 1_800_000);
+    await advanceFakeTimers(30_000);
+    await advanceFakeTimers(0);
+    expect(fires).toBe(1);
+
+    await advanceFakeTimers(60_000);
+    expect(fires).toBe(2);
+
+    await trigger.stop();
+  });
+
+  test("a host timer that fires a hair early still waits for its instant", async () => {
+    // Hosts do fire a timer a millisecond early. That shortfall is jitter, not a
+    // clock step, so the tick is re-armed for the remainder rather than fired.
+    const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+    let fires = 0;
+    trigger.start(() => {
+      fires += 1;
+    });
+
+    await advanceFakeTimers(PERIOD - 1);
+    vi.setSystemTime(Date.now() - 1);
+    await advanceFakeTimers(1);
+    expect(fires).toBe(0);
+
+    await advanceFakeTimers(1);
+    expect(fires).toBe(1);
+
+    await trigger.stop();
+  });
+
   test("unrefTimer unrefs the scheduled timer without changing the schedule", async () => {
     // A running trigger otherwise keeps a Node process alive; the opt-out must
     // not change when it fires.

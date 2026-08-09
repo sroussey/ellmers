@@ -153,6 +153,32 @@ describe("CronTrigger", () => {
     await trigger.stop();
   });
 
+  test("a backward clock step delays a cron fire rather than misfiring it", async () => {
+    // A cron expression names a calendar instant, so a clock corrected backwards
+    // means the appointment has NOT arrived yet and the trigger must wait the
+    // correction out. This is the guard that the interval triggers' "an expiry
+    // is a fire whatever the clock reads" rule is never applied here too.
+    useFakeClock(Date.UTC(2026, 2, 10, 12, 0, 0));
+    const trigger = new CronTrigger({ expression: "*/5 * * * *" });
+    let fires = 0;
+    trigger.start(() => {
+      fires += 1;
+    });
+
+    await advanceFakeTimers(2 * MINUTE);
+    // Clock steps back 10 minutes; 3 minutes of monotonic delay remain.
+    vi.setSystemTime(Date.now() - 10 * MINUTE);
+    await advanceFakeTimers(3 * MINUTE);
+    await advanceFakeTimers(0);
+    expect(fires).toBe(0);
+
+    // The clock reaches 12:05 for real.
+    await advanceFakeTimers(10 * MINUTE);
+    expect(fires).toBe(1);
+
+    await trigger.stop();
+  });
+
   test("stop() halts further fires", async () => {
     useFakeClock(Date.UTC(2026, 2, 10, 12, 0, 0));
     const trigger = new CronTrigger({ expression: "* * * * *" });

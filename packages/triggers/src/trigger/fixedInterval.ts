@@ -17,7 +17,10 @@ import { TriggerConfigurationError } from "./TriggerError";
 export function nextFixedIntervalFireTime(fromMs: number, intervalMs: number): number {
   const next = fromMs + intervalMs;
   const now = Date.now();
-  if (next > now) return next;
+  // A backward clock step leaves the phase anchor arbitrarily far in the future. A
+  // period trigger must still fire every `intervalMs`, so re-anchor instead of
+  // waiting the jump out; the phase it loses was a wall-clock artifact anyway.
+  if (next > now) return Math.min(next, now + intervalMs);
   const missedPeriods = Math.floor((now - next) / intervalMs) + 1;
   return next + missedPeriods * intervalMs;
 }

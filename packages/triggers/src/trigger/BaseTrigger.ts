@@ -25,6 +25,13 @@ import { TriggerConfigurationError } from "./TriggerError";
  */
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
+/**
+ * Largest shortfall at timer expiry still attributable to a host firing a timer a
+ * hair early. Anything larger, on a wait we did not truncate, means the wall clock
+ * moved backwards under a monotonic timer.
+ */
+const EARLY_TIMER_TOLERANCE_MS = 50;
+
 /** Options common to every built-in trigger. */
 export interface TriggerOptions {
   /** Stable id; a UUID is generated when omitted. */
@@ -95,6 +102,21 @@ export abstract class BaseTrigger implements ITrigger {
   protected readonly overlap: OverlapPolicy;
   protected readonly maxQueuedFires: number;
   protected readonly unrefTimer: boolean;
+
+  /**
+   * How the instants from {@link computeNextFireTime} are meant to be read.
+   *
+   * `"wall"` — a calendar appointment (`CronTrigger`). A timer that expires before
+   * the clock reaches it has not reached the appointment: re-arm for the
+   * remainder, which is what makes a backward NTP correction DELAY the fire rather
+   * than misfire it.
+   *
+   * `"period"` — a bookkeeping anchor for "every N ms" (`IntervalTrigger`,
+   * `PollingTrigger`). The timer, not the clock, measures the period, so an expiry
+   * is a fire whatever the clock reads; re-arming on a backward step would stall
+   * the trigger for the size of the step.
+   */
+  protected readonly clockDomain: "wall" | "period" = "period";
 
   /** The current run, or `undefined` when the trigger is stopped and drained. */
   private _run: TriggerRun | undefined;
@@ -278,12 +300,20 @@ export abstract class BaseTrigger implements ITrigger {
 
   private scheduleAt(run: TriggerRun, targetMs: number): void {
     const remaining = Math.max(0, targetMs - Date.now());
+    // Decided HERE, while the wall clock is still trustworthy. Re-deciding it at
+    // expiry from `Date.now() < targetMs` cannot tell a chunk apart from a
+    // backward clock step, and serves the step as a wait of the same size.
+    const truncated = remaining > MAX_TIMER_DELAY_MS;
     const timer = setTimeout(
       () => {
         run.timer = undefined;
         if (!run.active) return;
         // A chunked wait (or an early host timer) lands before the target.
-        if (Date.now() < targetMs) {
+        const shortfall = targetMs - Date.now();
+        if (
+          shortfall > 0 &&
+          (truncated || this.clockDomain === "wall" || shortfall <= EARLY_TIMER_TOLERANCE_MS)
+        ) {
           this.scheduleAt(run, targetMs);
           return;
         }
