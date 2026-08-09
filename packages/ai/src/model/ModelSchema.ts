@@ -38,6 +38,21 @@ export const ModelConfigSchema = {
       default: {},
     },
     metadata: { type: "object", default: {}, "x-ui-hidden": true },
+    pricing: {
+      type: "object",
+      description: "Per-million-token rates. Declared by the caller; the library ships none.",
+      properties: {
+        currency: { type: "string", default: "USD" },
+        input: { type: "number" },
+        output: { type: "number" },
+        cached: { type: "number" },
+        cacheWrite: { type: "number" },
+        cacheStoragePerHour: { type: "number" },
+      },
+      required: ["currency"],
+      additionalProperties: false,
+      "x-ui-hidden": true,
+    },
   },
   required: ["provider", "provider_config"],
   format: "model",
@@ -65,6 +80,26 @@ export const ModelRecordSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
+/**
+ * Per-million-token rates for one model, declared by the caller.
+ *
+ * Rates are per 1,000,000 tokens because that is how providers publish them, so
+ * a rate card transcribes without arithmetic. There is deliberately no
+ * `reasoning` rate: no provider charges one, and `output` already contains
+ * reasoning tokens, so pricing them separately would double-charge.
+ *
+ * `cacheStoragePerHour` prices a provider-side cache billed by token-hours
+ * (Gemini CachedContent) rather than by a one-off write.
+ */
+export interface ModelPricing {
+  readonly currency: string;
+  readonly input?: number;
+  readonly output?: number;
+  readonly cached?: number;
+  readonly cacheWrite?: number;
+  readonly cacheStoragePerHour?: number;
+}
+
 export type ModelConfig = {
   [x: string]: unknown;
   title?: string | undefined;
@@ -72,6 +107,7 @@ export type ModelConfig = {
   model_id?: string | undefined;
   capabilities?: string[] | undefined;
   metadata?: { [x: string]: unknown } | undefined;
+  pricing?: ModelPricing | undefined;
   provider: string;
   provider_config: {
     [x: string]: unknown;
@@ -85,6 +121,7 @@ export type ModelRecord = {
   description: string;
   model_id: string;
   capabilities: string[];
+  pricing?: ModelPricing | undefined;
   provider: string;
   provider_config: {
     [x: string]: unknown;
