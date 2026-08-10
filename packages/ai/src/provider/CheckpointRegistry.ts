@@ -28,12 +28,6 @@ export interface CheckpointEntry {
   readonly modelKey: string;
   readonly prefix: CheckpointPrefix;
   readonly parentId?: string | undefined;
-  /** When the warm-up created this checkpoint; the storage-charge start. */
-  readonly createdAtMs: number;
-  /** Prefix tokens the provider reported writing, when it stated one. */
-  readonly tokens: number | undefined;
-  /** Task that created it, so a late storage charge can be attributed. */
-  readonly ownerTaskId: string | undefined;
   /** Model the charge is priced against. */
   readonly modelId: string | undefined;
 }
