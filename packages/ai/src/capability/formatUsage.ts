@@ -9,8 +9,8 @@ import type { CostEstimate } from "./CostEstimate";
 
 /**
  * How much of a {@link Usage} to render. All three levels obey the same
- * underlying rule — unreported renders as nothing, a stated all-zero renders as
- * "cached" — and differ only in breadth.
+ * underlying rules — unreported renders as nothing, a stated all-zero renders as
+ * "cached", and `↑` is always the whole prompt — and differ only in breadth.
  */
 export type UsageDetail = "directional" | "cumulative" | "detailed";
 
@@ -27,11 +27,27 @@ function hasAnyCounter(usage: Usage): boolean {
   return COUNTER_FIELDS.some((field) => usage[field] !== undefined);
 }
 
+/**
+ * The whole prompt. `input`, `cached` and `cacheWrite` are disjoint slices of
+ * it, so the base-rate bucket alone is not the figure the `↑` arrow claims to
+ * be: a warm cache-checkpoint call reports nearly its entire prompt under
+ * `cached` and would render `↑3` for an 11k-token prompt.
+ *
+ * Sums only the counters the provider stated, so a prompt no counter reported
+ * stays unreported rather than becoming a synthesized `0`.
+ */
+function promptTotal(usage: Usage): number | undefined {
+  const slices = [usage.input, usage.cached, usage.cacheWrite];
+  if (slices.every((slice) => slice === undefined)) return undefined;
+  return slices.reduce<number>((sum, slice) => sum + (slice ?? 0), 0);
+}
+
 export function formatUsage(usage: Usage | undefined, detail: UsageDetail): string {
   if (!usage || !hasAnyCounter(usage)) return "";
   if (isStatedZero(usage)) return "cached";
 
-  const up = usage.input === undefined ? "" : `↑${group(usage.input)}`;
+  const prompt = promptTotal(usage);
+  const up = prompt === undefined ? "" : `↑${group(prompt)}`;
   const down = usage.output === undefined ? "" : `↓${group(usage.output)}`;
 
   if (detail === "cumulative") return [up, down].filter(Boolean).join(" ");

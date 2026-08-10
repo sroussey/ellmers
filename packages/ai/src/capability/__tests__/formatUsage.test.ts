@@ -38,8 +38,10 @@ describe("formatUsage", () => {
   });
 
   it("shows cached inline only when the provider reported it", () => {
+    // The arrow is the whole prompt, so the parenthetical reads as the portion
+    // of it that was served from cache: 2,340 up, of which 1,100 were reads.
     expect(formatUsage(usage({ input: 1240, output: 318, cached: 1100 }), "directional")).toBe(
-      "↑1,240 (1,100 cached) ↓318"
+      "↑2,340 (1,100 cached) ↓318"
     );
   });
 
@@ -59,8 +61,23 @@ describe("formatUsage", () => {
     // not the per-call cache split the cli renders inline. Without this the two
     // levels could be swapped, or made identical, with nothing failing.
     const reported = usage({ input: 1240, output: 318, cached: 1100 });
-    expect(formatUsage(reported, "cumulative")).toBe("↑1,240 ↓318");
-    expect(formatUsage(reported, "directional")).toBe("↑1,240 (1,100 cached) ↓318");
+    expect(formatUsage(reported, "cumulative")).toBe("↑2,340 ↓318");
+    expect(formatUsage(reported, "directional")).toBe("↑2,340 (1,100 cached) ↓318");
+  });
+
+  it("counts the whole prompt in the arrow, not just the base-rate slice", () => {
+    // input/cached/cacheWrite are disjoint slices of one prompt, so the arrow
+    // has to sum them. These are the counts a warm cache-checkpoint call
+    // actually reports; billing only the base-rate slice renders ↑3.
+    const warm = usage({ input: 3, output: 318, cached: 11_000, cacheWrite: 236 });
+    expect(formatUsage(warm, "cumulative")).toBe("↑11,239 ↓318");
+    expect(formatUsage(warm, "directional")).toBe("↑11,239 (11,000 cached) ↓318");
+  });
+
+  it("leaves an unreported prompt unreported rather than summing to zero", () => {
+    // No prompt counter stated at all is not a 0-token prompt.
+    expect(formatUsage(usage({ output: 318 }), "cumulative")).toBe("↓318");
+    expect(formatUsage(usage({ output: 318 }), "directional")).toBe("↓318");
   });
 
   it("renders a stated all-zero usage as cached at every detail level", () => {
