@@ -52,8 +52,38 @@ const ANTHROPIC_PRICING: Record<string, ModelPricing | undefined> = {
   },
 };
 
-/** OpenAI's prompt cache is automatic (no separate write charge to price). */
+/**
+ * OpenAI's prompt cache is automatic (no separate write charge to price).
+ *
+ * The 5.6 family is priced per variant — `sol` / `terra` / `luna` — and OpenAI
+ * publishes no rate for a bare `gpt-5.6`, so that id stays unpriced rather than
+ * borrowing a sibling's number.
+ */
 const OPENAI_PRICING: Record<string, ModelPricing | undefined> = {
+  "gpt-5.6-sol": {
+    currency: "USD",
+    input: 5,
+    output: 30,
+    cached: 0.5,
+    cacheWrite: undefined,
+    cacheStoragePerHour: undefined,
+  },
+  "gpt-5.6-terra": {
+    currency: "USD",
+    input: 2,
+    output: 12,
+    cached: 0.2,
+    cacheWrite: undefined,
+    cacheStoragePerHour: undefined,
+  },
+  "gpt-5.6-luna": {
+    currency: "USD",
+    input: 0.2,
+    output: 1.2,
+    cached: 0.02,
+    cacheWrite: undefined,
+    cacheStoragePerHour: undefined,
+  },
   "gpt-5.5": {
     currency: "USD",
     input: 5,
@@ -185,7 +215,7 @@ export function resolveModelConfig(id: string, kind: EvalKind): ModelConfig {
   if (/^claude-/.test(id)) {
     return {
       provider: "ANTHROPIC",
-      provider_config: { model_name: id, max_tokens: 1024 },
+      provider_config: { model_name: id },
       pricing: ANTHROPIC_PRICING[id],
     };
   }
