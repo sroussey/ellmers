@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { Usage } from "@workglow/task-graph";
 import { TaskConfigurationError } from "@workglow/task-graph";
 import type { ModelConfig } from "../model/ModelSchema";
 import type { ChatMessage } from "../task/ChatMessage";
@@ -37,7 +38,19 @@ export interface CheckpointEntry {
   readonly modelId: string | undefined;
 }
 
+/**
+ * Where a checkpoint's disposal-time storage charge is reported.
+ *
+ * Held beside the entry rather than passed to each disposal site, because a
+ * checkpoint is usually disposed by a task other than the one that minted it —
+ * a chained emit supersedes its parent inline, and the run's `ResourceScope`
+ * disposes whatever is left at run end. Keying the sink to the checkpoint id
+ * makes the charge reach the minter from any of those sites.
+ */
+export type CheckpointUsageSink = (usage: Usage, modelId: string | undefined) => void;
+
 const checkpoints = new Map<string, CheckpointEntry>();
+const usageSinks = new Map<string, CheckpointUsageSink>();
 
 export function registerCheckpoint(id: string, entry: CheckpointEntry): void {
   checkpoints.set(id, entry);
@@ -48,12 +61,26 @@ export function getCheckpoint(id: string): CheckpointEntry | undefined {
 }
 
 export function deleteCheckpoint(id: string): boolean {
+  usageSinks.delete(id);
   return checkpoints.delete(id);
+}
+
+/**
+ * Attribute a checkpoint's eventual storage charge to `sink`. Registered by the
+ * task that mints the checkpoint; consumed by {@link disposeCheckpoint}.
+ */
+export function setCheckpointUsageSink(id: string, sink: CheckpointUsageSink): void {
+  usageSinks.set(id, sink);
+}
+
+export function getCheckpointUsageSink(id: string): CheckpointUsageSink | undefined {
+  return usageSinks.get(id);
 }
 
 /** @internal Test-only reset. */
 export function clearCheckpointsForTesting(): void {
   checkpoints.clear();
+  usageSinks.clear();
 }
 
 /** Model identity string used for checkpoint/model mismatch checks. */

@@ -377,6 +377,91 @@ describe("CacheCheckpointTask storage-cost emission at disposal", () => {
     await expect(scope.runComplete()).resolves.not.toThrow();
     expect(getCheckpoint(out!.checkpoint)).toBeUndefined();
   });
+
+  it("charges a superseded parent to the task that minted it, not to whoever disposed it", async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    const provider = new BillingCheckpointProvider([
+      { serves: CACHE_CHECKPOINT as Capability[], runFn: billingWarmupFn },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+
+    const scope = new ResourceScope();
+
+    const parentTask = new CacheCheckpointTask();
+    const parentUsage: Usage[] = [];
+    parentTask.on("usage", (usage) => parentUsage.push(usage));
+    const parent = await parentTask.run(
+      { model: checkpointModel(), systemPrompt: "sys" },
+      { resourceScope: scope }
+    );
+
+    const childTask = new CacheCheckpointTask();
+    const childUsage: Usage[] = [];
+    childTask.on("usage", (usage) => childUsage.push(usage));
+    await childTask.run(
+      {
+        model: checkpointModel(),
+        checkpoint: parent!.checkpoint,
+        messages: [{ role: "user", content: [{ type: "text", text: "tail" }] }],
+      },
+      { resourceScope: scope }
+    );
+
+    // The child's warm-up superseded and disposed the parent inline. That is a
+    // different task from the parent's own scope disposer, and the charge must
+    // still land on the parent — a chain used to report only its last link.
+    expect(parentUsage).toHaveLength(1);
+    expect(parentUsage[0].extra?.[CACHE_STORAGE_TOKEN_HOURS_KEY]).toBeCloseTo(500_000, 6);
+    expect(childUsage).toHaveLength(0);
+
+    await scope.runComplete();
+
+    // The child is charged once, at run end, for its own lifetime.
+    expect(parentUsage).toHaveLength(1);
+    expect(childUsage).toHaveLength(1);
+    expect(childUsage[0].extra?.[CACHE_STORAGE_TOKEN_HOURS_KEY]).toBeCloseTo(500_000, 6);
+  });
+
+  it("charges every link of a three-checkpoint chain exactly once", async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    const provider = new BillingCheckpointProvider([
+      { serves: CACHE_CHECKPOINT as Capability[], runFn: billingWarmupFn },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+
+    const scope = new ResourceScope();
+    const charges: number[][] = [];
+    let handle: string | undefined;
+
+    for (let link = 0; link < 3; link++) {
+      const task = new CacheCheckpointTask();
+      const seen: number[] = [];
+      charges.push(seen);
+      task.on("usage", (usage) => {
+        const hours = usage.extra?.[CACHE_STORAGE_TOKEN_HOURS_KEY];
+        if (typeof hours === "number") seen.push(hours);
+      });
+      const out = await task.run(
+        {
+          model: checkpointModel(),
+          ...(handle ? { checkpoint: handle } : { systemPrompt: "sys" }),
+          messages: [{ role: "user", content: [{ type: "text", text: `turn ${link}` }] }],
+        },
+        { resourceScope: scope }
+      );
+      handle = out!.checkpoint;
+    }
+
+    // Each superseded parent is charged when its successor disposes it, not
+    // deferred to run end — the survivor is the only one still outstanding.
+    expect(charges.map((c) => c.length)).toEqual([1, 1, 0]);
+
+    await scope.runComplete();
+
+    // Three checkpoints, three charges — one each, none double-counted.
+    expect(charges.map((c) => c.length)).toEqual([1, 1, 1]);
+    for (const seen of charges) expect(seen[0]).toBeCloseTo(500_000, 6);
+  });
 });
 
 describe("ToolCallingTask checkpoint ports", () => {

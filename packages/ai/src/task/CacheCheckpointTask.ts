@@ -4,27 +4,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  CachePolicy,
-  IExecuteContext,
-  IRunConfig,
-  TaskConfig,
-  Usage,
-} from "@workglow/task-graph";
+import type { CachePolicy, IExecuteContext, IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, TaskConfigurationError, Workflow } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
-import { CACHE_STORAGE_TOKEN_HOURS_KEY } from "../capability/CostEstimate";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
+import { disposeCheckpoint } from "../provider/CheckpointDisposal";
 import type { CheckpointEntry, CheckpointPrefix } from "../provider/CheckpointRegistry";
 import {
-  deleteCheckpoint,
-  getCheckpoint,
   registerCheckpoint,
   requireCheckpointModelKey,
+  setCheckpointUsageSink,
 } from "../provider/CheckpointRegistry";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
@@ -106,30 +99,6 @@ export type CacheCheckpointTaskOutput = { checkpoint: string };
 export type CacheCheckpointTaskConfig = TaskConfig<CacheCheckpointTaskInput>;
 
 /**
- * Token-hours a provider-side cache accrued between creation and disposal.
- *
- * Providers that bill an explicit cache charge for storage, not for the write,
- * so the cost is a function of wall-clock lifetime and is only final at
- * disposal. Reported through `extra` because it is a provider-specific counter
- * with no normalized token slot.
- */
-export function cacheStorageUsage(
-  tokens: number | undefined,
-  lifetimeMs: number
-): Usage | undefined {
-  if (tokens === undefined || lifetimeMs <= 0) return undefined;
-  return {
-    input: undefined,
-    output: undefined,
-    cached: undefined,
-    cacheWrite: undefined,
-    reasoning: undefined,
-    total: undefined,
-    extra: { [CACHE_STORAGE_TOKEN_HOURS_KEY]: (tokens * lifetimeMs) / 3_600_000 },
-  };
-}
-
-/**
  * Eagerly warms a prompt-prefix cache (provider prompt caching or local KV
  * state) and outputs an opaque checkpoint handle other AI tasks can start
  * from. The handle doubles as a provider session id. Lifecycle: the handle
@@ -201,27 +170,20 @@ export class CacheCheckpointTask extends AiTask<
       ...(input.checkpoint ? { parentId: input.checkpoint } : {}),
     });
 
+    // Attribute this checkpoint's eventual storage charge to this task, whoever
+    // ends up disposing it — a chained emit supersedes and disposes it inline,
+    // which is not this disposer.
+    setCheckpointUsageSink(id, (usage, modelId) => {
+      try {
+        this.emit("usage", usage, modelId);
+      } catch (err) {
+        getLogger().error("usage listener threw", { taskId: this.id, error: err });
+      }
+    });
+
     if (context.resourceScope) {
       context.resourceScope.register(`ai:session:${id}`, async () => {
-        try {
-          const released = await registry.disposeSession(providerName, id);
-          const entry = getCheckpoint(id);
-          const tokens = released?.tokens ?? entry?.tokens;
-          const usage = cacheStorageUsage(tokens, released?.lifetimeMs ?? 0);
-          if (usage) {
-            try {
-              this.emit("usage", usage, entry?.modelId);
-            } catch (err) {
-              getLogger().error("usage listener threw", { taskId: this.id, error: err });
-            }
-          }
-        } finally {
-          // The provider released the session before it reported anything, so a
-          // failed dispose must still drop the registry entry — otherwise a
-          // throw here strands the checkpoint in the module-global map for the
-          // life of the process.
-          deleteCheckpoint(id);
-        }
+        await disposeCheckpoint(id, providerName);
       });
     }
 
@@ -250,13 +212,12 @@ export class CacheCheckpointTask extends AiTask<
     if (this._parentId && !input.keepParent) {
       const model = input.model as ModelConfig;
       try {
-        await getAiProviderRegistry().disposeSession(model.provider, this._parentId);
+        await disposeCheckpoint(this._parentId, model.provider);
       } catch {
         // Best-effort: a parent-dispose failure (worker restarted, transport
         // error) must not fail a warm-up that already succeeded. The parent's
         // scope disposer retries at run end and dispose is idempotent.
       }
-      deleteCheckpoint(this._parentId);
     }
 
     // prepareCheckpoint either threw or set the id; a silent empty-string

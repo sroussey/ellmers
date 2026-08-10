@@ -13,13 +13,15 @@ import type {
 } from "@workglow/task-graph";
 import { mergeUsage, TaskConfigSchema, USAGE_OUTPUT_KEY } from "@workglow/task-graph";
 import type { IHumanRequest } from "@workglow/util";
-import { DEFAULT_LIMITS, resolveHumanConnector } from "@workglow/util";
+import { DEFAULT_LIMITS, getLogger, resolveHumanConnector } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 import { recordUsageTelemetry } from "../capability/UsageTelemetry";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
+import { disposeCheckpoint } from "../provider/CheckpointDisposal";
+import { setCheckpointUsageSink } from "../provider/CheckpointRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { runChatTurn } from "./base/chatTurn";
 import type { ResolvedCheckpoint } from "./base/CheckpointPorts";
@@ -345,8 +347,15 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
 
     if (context.resourceScope && this._sessionId) {
       const sessionId = this._sessionId;
+      setCheckpointUsageSink(sessionId, (usage, modelId) => {
+        try {
+          this.emit("usage", usage, modelId);
+        } catch (err) {
+          getLogger().error("usage listener threw", { taskId: this.id, error: err });
+        }
+      });
       context.resourceScope.register(`ai:session:${sessionId}`, async () => {
-        await getAiProviderRegistry().disposeSession(model.provider, sessionId);
+        await disposeCheckpoint(sessionId, model.provider);
       });
     }
 

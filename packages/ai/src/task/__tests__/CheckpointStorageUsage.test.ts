@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import { CACHE_STORAGE_TOKEN_HOURS_KEY } from "../../capability/CostEstimate";
-import { cacheStorageUsage } from "../CacheCheckpointTask";
+import { cacheStorageUsage } from "../../provider/CheckpointDisposal";
 
 describe("cacheStorageUsage", () => {
   it("converts tokens held for a duration into token-hours", () => {

@@ -12,12 +12,13 @@ import type {
   TaskConfig,
 } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
+import { getLogger } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
-import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
-import { deleteCheckpoint } from "../provider/CheckpointRegistry";
+import { disposeCheckpoint } from "../provider/CheckpointDisposal";
+import type { CheckpointUsageSink } from "../provider/CheckpointRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
 import type { ResolvedCheckpoint } from "./base/CheckpointPorts";
 import {
@@ -185,9 +186,19 @@ export class TextGenerationTask extends StreamingAiTask<
     if (!emitId) return;
     const providerName = model.provider;
     context.resourceScope.register(`ai:session:${emitId}`, async () => {
-      await getAiProviderRegistry().disposeSession(providerName, emitId);
-      deleteCheckpoint(emitId);
+      await disposeCheckpoint(emitId, providerName);
     });
+  }
+
+  /** Reports an emitted checkpoint's disposal-time storage charge as this task's usage. */
+  private storageChargeSink(): CheckpointUsageSink {
+    return (usage, modelId) => {
+      try {
+        this.emit("usage", usage, modelId);
+      } catch (err) {
+        getLogger().error("usage listener threw", { taskId: this.id, error: err });
+      }
+    };
   }
 
   private async finalizeCheckpoint(input: TextGenerationTaskInput, text: string): Promise<void> {
@@ -200,6 +211,7 @@ export class TextGenerationTask extends StreamingAiTask<
       assistantMessage: text ? { role: "assistant", content: [{ type: "text", text }] } : undefined,
       systemPrompt: undefined,
       tools: undefined,
+      onStorageCharge: this.storageChargeSink(),
     });
   }
 
@@ -216,7 +228,7 @@ export class TextGenerationTask extends StreamingAiTask<
     const model = input.model as ModelConfig;
     if (!model || typeof model !== "object") return;
     try {
-      await getAiProviderRegistry().disposeSession(model.provider, emitId);
+      await disposeCheckpoint(emitId, model.provider);
     } catch {
       // Best-effort cleanup: a dispose failure must not mask the original error.
     }

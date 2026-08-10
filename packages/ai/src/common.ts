@@ -26,10 +26,17 @@ export {
   checkpointModelKey,
   deleteCheckpoint,
   getCheckpoint,
+  getCheckpointUsageSink,
   registerCheckpoint,
   requireCheckpointModelKey,
+  setCheckpointUsageSink,
 } from "./provider/CheckpointRegistry";
-export type { CheckpointEntry, CheckpointPrefix } from "./provider/CheckpointRegistry";
+export type {
+  CheckpointEntry,
+  CheckpointPrefix,
+  CheckpointUsageSink,
+} from "./provider/CheckpointRegistry";
+export { cacheStorageUsage, disposeCheckpoint } from "./provider/CheckpointDisposal";
 export * from "./provider/QueuedAiProvider";
 
 export * from "./capability";
