@@ -9,6 +9,7 @@ import {
   isNonEmptyPollResult,
   PollingTrigger,
   TriggerConfigurationError,
+  TriggerPollTimeoutError,
 } from "@workglow/triggers";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -481,6 +482,175 @@ describe("PollingTrigger", () => {
       expect(skips).toBe(0);
 
       await trigger.stop();
+    });
+  });
+
+  describe("pollTimeoutMs", () => {
+    // Deliberately not a multiple of PERIOD, so a deadline lands between ticks
+    // and the assertions do not depend on same-instant timer ordering.
+    const POLL_TIMEOUT = 250;
+
+    test("rejects an invalid pollTimeoutMs", () => {
+      expect(
+        () => new PollingTrigger({ intervalMs: PERIOD, poll: () => 1, pollTimeoutMs: 0 })
+      ).toThrow(TriggerConfigurationError);
+      expect(
+        () => new PollingTrigger({ intervalMs: PERIOD, poll: () => 1, pollTimeoutMs: 1.5 })
+      ).toThrow(TriggerConfigurationError);
+    });
+
+    test("a hung poll wedges the trigger when no timeout is configured", async () => {
+      // The default is unchanged, deliberately: a deadline nobody asked for
+      // would break a legitimately slow poll on upgrade. A hang is not a throw,
+      // so nothing reaches `error` and every later tick is dropped instead.
+      const trigger = new PollingTrigger<string>({
+        intervalMs: PERIOD,
+        poll: () => new Promise<string>(() => {}),
+      });
+      const errors: Error[] = [];
+      const payloads: unknown[] = [];
+      let skips = 0;
+      trigger.on("error", (error) => errors.push(error));
+      trigger.on("skip", () => {
+        skips += 1;
+      });
+      trigger.start((context) => {
+        payloads.push(context.payload);
+      });
+
+      await advanceFakeTimers(PERIOD * 5);
+
+      expect(errors).toEqual([]);
+      expect(skips).toBe(4);
+      expect(payloads).toEqual([]);
+      expect(trigger.running).toBe(true);
+
+      // Not stopped: `stop()` awaits the in-flight tick, and that tick is the
+      // pending poll — the same wedge, seen from the other side.
+    });
+
+    test("pollTimeoutMs fails a hung poll and the loop keeps going", async () => {
+      let polls = 0;
+      const trigger = new PollingTrigger<string>({
+        intervalMs: PERIOD,
+        pollTimeoutMs: POLL_TIMEOUT,
+        poll: () => {
+          polls += 1;
+          if (polls === 1) return new Promise<string>(() => {});
+          return "ok";
+        },
+      });
+      const errors: Error[] = [];
+      trigger.on("error", (error) => errors.push(error));
+      const payloads: unknown[] = [];
+      trigger.start((context) => {
+        payloads.push(context.payload);
+      });
+
+      // Poll 1 starts at START + PERIOD; its deadline is START + 350.
+      await advanceFakeTimers(PERIOD * 3);
+      expect(errors).toEqual([]);
+      expect(payloads).toEqual([]);
+
+      // 350 -> the deadline fires; 400 -> the next tick polls a healthy source.
+      await advanceFakeTimers(PERIOD);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toBeInstanceOf(TriggerPollTimeoutError);
+      expect(payloads).toEqual(["ok"]);
+      expect(trigger.running).toBe(true);
+
+      await trigger.stop();
+    });
+
+    test("the deadline aborts the signal handed to the poll", async () => {
+      let observed: AbortSignal | undefined;
+      const trigger = new PollingTrigger<string>({
+        intervalMs: PERIOD,
+        pollTimeoutMs: POLL_TIMEOUT,
+        poll: (signal) => {
+          observed ??= signal;
+          return new Promise<string>((_resolve, reject) => {
+            signal.addEventListener("abort", () => reject(new Error("poll aborted")), {
+              once: true,
+            });
+          });
+        },
+      });
+      const errors: Error[] = [];
+      trigger.on("error", (error) => errors.push(error));
+      trigger.start(() => {});
+
+      await advanceFakeTimers(PERIOD * 4);
+
+      expect(observed?.aborted).toBe(true);
+      expect(observed?.reason).toBeInstanceOf(TriggerPollTimeoutError);
+      // The tick fails with the TIMEOUT, not with the poll's own abort error:
+      // a cooperative poll rejects synchronously on abort and would otherwise
+      // win the race with its own error, hiding why the tick failed.
+      expect(errors[0]).toBeInstanceOf(TriggerPollTimeoutError);
+
+      await trigger.stop();
+    });
+
+    test("stop() aborts an in-flight poll's signal when a timeout is configured", async () => {
+      let observed: AbortSignal | undefined;
+      const trigger = new PollingTrigger<string>({
+        intervalMs: PERIOD,
+        pollTimeoutMs: PERIOD * 10,
+        poll: (signal) => {
+          observed ??= signal;
+          return new Promise<string>((_resolve, reject) => {
+            signal.addEventListener("abort", () => reject(new Error("poll aborted")), {
+              once: true,
+            });
+          });
+        },
+      });
+      trigger.on("error", () => {});
+      trigger.start(() => {});
+
+      await advanceFakeTimers(PERIOD);
+      expect(observed?.aborted).toBe(false);
+
+      const stopping = trigger.stop();
+      // Synchronous, through the run controller the per-poll controller follows.
+      expect(observed?.aborted).toBe(true);
+
+      await stopping;
+      expect(trigger.running).toBe(false);
+      // The deadline timer was cleared rather than left to fire on a dead run.
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    test("a timed-out poll drives errorBackoff", async () => {
+      let polls = 0;
+      const trigger = new PollingTrigger<string>({
+        intervalMs: PERIOD,
+        pollTimeoutMs: POLL_TIMEOUT,
+        errorBackoff: { initialMs: PERIOD * 4, maxMs: PERIOD * 4 },
+        poll: () => {
+          polls += 1;
+          return new Promise<string>(() => {});
+        },
+      });
+      trigger.on("error", () => {});
+      trigger.start(() => {});
+
+      // The first deadline fires at START + 350: a timeout is a POLL failure.
+      await advanceFakeTimers(PERIOD * 4);
+      expect(trigger.consecutiveFailures).toBeGreaterThanOrEqual(1);
+
+      const polled = polls;
+      await advanceFakeTimers(PERIOD * 20);
+      // At the full rate that window is 20 polls; backed off it is a handful.
+      expect(polls - polled).toBeLessThan(10);
+
+      // This poll ignores its signal, so its DEADLINE is what releases the
+      // drain — which is also how a timeout bounds `stop()` on a hung poll.
+      const stopping = trigger.stop();
+      await advanceFakeTimers(POLL_TIMEOUT);
+      await stopping;
+      expect(trigger.running).toBe(false);
     });
   });
 
