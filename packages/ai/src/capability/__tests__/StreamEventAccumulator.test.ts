@@ -274,6 +274,47 @@ describe("StreamEventAccumulator", () => {
   });
 });
 
+describe("usage snapshots", () => {
+  const usage = (input: number | undefined, output: number | undefined) => ({
+    input,
+    output,
+    cached: undefined,
+    cacheWrite: undefined,
+    reasoning: undefined,
+    total: undefined,
+    extra: undefined,
+  });
+
+  it("lets finish supersede the snapshots it summarizes", () => {
+    const acc = new StreamEventAccumulator();
+    acc.observe({ type: "usage", usage: usage(100, 2) });
+    acc.observe({ type: "usage", usage: usage(100, 7) });
+    acc.observe({ type: "finish", data: {}, usage: usage(100, 9) });
+
+    expect((acc.materialize() as Record<string, unknown>).usage).toEqual(usage(100, 9));
+  });
+
+  it("promotes the last snapshot when finish reports no usage", () => {
+    const acc = new StreamEventAccumulator();
+    acc.observe({ type: "usage", usage: usage(50, 4) });
+    acc.observe({ type: "finish", data: {} });
+
+    expect((acc.materialize() as Record<string, unknown>).usage).toEqual(usage(50, 4));
+  });
+
+  it("replaces rather than sums consecutive snapshots when finish reports no usage", () => {
+    const acc = new StreamEventAccumulator();
+    acc.observe({ type: "usage", usage: usage(100, 2) });
+    acc.observe({ type: "usage", usage: usage(100, 7) });
+    acc.observe({ type: "finish", data: {} });
+
+    // Snapshots are cumulative, so the second supersedes the first. Neither of
+    // the cases above can catch a summing bug: one has a single snapshot, and
+    // the other's finish carries its own usage that overwrites the result.
+    expect((acc.materialize() as Record<string, unknown>).usage).toEqual(usage(100, 7));
+  });
+});
+
 describe("mergeUsage", () => {
   it("returns undefined when neither side reported usage", () => {
     expect(mergeUsage(undefined, undefined)).toBeUndefined();

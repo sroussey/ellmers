@@ -19,8 +19,9 @@ import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
-import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
-import { checkpointModelKey, deleteCheckpoint } from "../provider/CheckpointRegistry";
+import { disposeCheckpoint } from "../provider/CheckpointDisposal";
+import type { CheckpointUsageSink } from "../provider/CheckpointRegistry";
+import { checkpointModelKey } from "../provider/CheckpointRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
 import type { ResolvedCheckpoint } from "./base/CheckpointPorts";
 import {
@@ -421,17 +422,24 @@ export class ToolCallingTask extends StreamingAiTask<
     const sessionId = this._computedSessionId;
     if (sessionId) {
       context.resourceScope.register(`ai:session:${sessionId}`, async () => {
-        await getAiProviderRegistry().disposeSession(providerName, sessionId);
+        await disposeCheckpoint(sessionId, providerName);
       });
     }
 
     const emitId = this._resolvedCheckpoint?.emitCheckpointId;
     if (emitId) {
       context.resourceScope.register(`ai:session:${emitId}`, async () => {
-        await getAiProviderRegistry().disposeSession(providerName, emitId);
-        deleteCheckpoint(emitId);
+        await disposeCheckpoint(emitId, providerName);
       });
     }
+  }
+
+  /**
+   * Reports an emitted checkpoint's disposal-time storage charge as this
+   * task's usage, and through it into the run total.
+   */
+  private storageChargeSink(): CheckpointUsageSink {
+    return (usage, modelId) => this.chargeLateUsage(usage, modelId);
   }
 
   private async finalizeCheckpoint(
@@ -461,6 +469,7 @@ export class ToolCallingTask extends StreamingAiTask<
         assistantContent.length > 0 ? { role: "assistant", content: assistantContent } : undefined,
       systemPrompt: input.systemPrompt,
       tools: input.tools,
+      onStorageCharge: this.storageChargeSink(),
     });
   }
 
@@ -477,7 +486,7 @@ export class ToolCallingTask extends StreamingAiTask<
     const model = input.model as ModelConfig;
     if (!model || typeof model !== "object") return;
     try {
-      await getAiProviderRegistry().disposeSession(model.provider, emitId);
+      await disposeCheckpoint(emitId, model.provider);
     } catch {
       // Best-effort cleanup: a dispose failure must not mask the original error.
     }

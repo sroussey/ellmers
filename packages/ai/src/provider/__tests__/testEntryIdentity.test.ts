@@ -30,6 +30,7 @@ describe("@workglow/ai/test entry", () => {
       provider: "test",
       modelKey: "",
       prefix: { messages: [] },
+      modelId: undefined,
     });
     expect(getCheckpoint("identity-probe")).toBeDefined();
     clearCheckpoints();

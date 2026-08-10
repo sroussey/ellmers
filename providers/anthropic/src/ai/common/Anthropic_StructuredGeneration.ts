@@ -9,6 +9,7 @@ import type {
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
+import { createUsageSnapshotEmitter } from "@workglow/ai/provider-utils";
 import { createPartialJsonStream } from "@workglow/util/worker";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
@@ -56,8 +57,10 @@ export const Anthropic_StructuredGeneration_Stream: AiProviderRunFn<
 
   const json = createPartialJsonStream();
   const usageCollector = createAnthropicUsageCollector();
+  const snapshotUsage = createUsageSnapshotEmitter(emit);
   for await (const event of stream) {
     usageCollector.observe(event);
+    snapshotUsage(usageCollector.result());
     maybeEmitAnthropicRefusal(event, emit);
     if (event.type === "content_block_delta" && event.delta.type === "input_json_delta") {
       const partial = json.push(event.delta.partial_json);

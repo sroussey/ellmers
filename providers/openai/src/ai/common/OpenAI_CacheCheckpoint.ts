@@ -12,7 +12,11 @@ import type {
   ChatMessage,
   ToolDefinition,
 } from "@workglow/ai";
-import { buildResponsesInput, buildResponsesTools } from "@workglow/ai/provider-utils";
+import {
+  buildResponsesInput,
+  buildResponsesTools,
+  mapOpenAIResponsesUsage,
+} from "@workglow/ai/provider-utils";
 import { promptToTailMessages, toOpenAIMessages } from "@workglow/ai/worker";
 import { finalizeResponsesRequest, getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
@@ -104,8 +108,14 @@ export const OpenAI_CacheCheckpoint_Stream: AiProviderRunFn<
   }
   finalizeResponsesRequest(model, params);
 
-  await (client.responses.create as (p: unknown, o: unknown) => Promise<unknown>)(params, {
-    signal,
+  const response = await (client.responses.create as (p: unknown, o: unknown) => Promise<unknown>)(
+    params,
+    { signal }
+  );
+  const usage = mapOpenAIResponsesUsage((response as { usage?: unknown } | undefined)?.usage);
+  emit({
+    type: "finish",
+    data: { checkpoint: session?.sessionId ?? "" },
+    ...(usage ? { usage } : {}),
   });
-  emit({ type: "finish", data: { checkpoint: session?.sessionId ?? "" } });
 };

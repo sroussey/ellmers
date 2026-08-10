@@ -5,9 +5,11 @@
  */
 
 import type { ModelConfig } from "@workglow/ai";
-import { Workflow } from "@workglow/task-graph";
+import type { Usage } from "@workglow/task-graph";
+import { USAGE_OUTPUT_KEY, Workflow } from "@workglow/task-graph";
 import type { TypedArray } from "@workglow/util/schema";
 import { cosineSimilarity } from "@workglow/util/schema";
+import { runWithStreamChunks } from "./streamSubscribe";
 import type { ColumnOptions, DatasetContext, RowExecutor } from "./types";
 
 /**
@@ -30,13 +32,16 @@ export function makeSimilarityExecutor(
     }
   }
 
-  return async (row) => {
+  return async (row, onStreamChunk) => {
     const a = String(row[options.textColumn] ?? "");
     const b = String(row[options.pairColumn] ?? "");
     const workflow = new Workflow();
     workflow.textEmbedding({ model, text: [a, b] });
-    const result = (await workflow.run()) as { vector: TypedArray | TypedArray[] };
-    const vectors = Array.isArray(result.vector) ? result.vector : [result.vector];
+    const output = await runWithStreamChunks<{
+      vector: TypedArray | TypedArray[];
+      [USAGE_OUTPUT_KEY]?: Usage;
+    }>(workflow, onStreamChunk);
+    const vectors = Array.isArray(output.vector) ? output.vector : [output.vector];
     if (vectors.length < 2) {
       throw new Error(`expected 2 embeddings, got ${vectors.length}`);
     }
@@ -51,6 +56,7 @@ export function makeSimilarityExecutor(
     return {
       expectedValue: gold,
       predictedValue: cosineSimilarity(vectors[0], vectors[1]),
+      usage: output[USAGE_OUTPUT_KEY],
     };
   };
 }

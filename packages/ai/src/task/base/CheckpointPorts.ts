@@ -8,13 +8,18 @@ import { TaskConfigurationError } from "@workglow/task-graph";
 import type { ModelConfig } from "../../model/ModelSchema";
 import type { AiSessionContext } from "../../provider/AiProviderRegistry";
 import { getAiProviderRegistry } from "../../provider/AiProviderRegistry";
-import type { CheckpointEntry, CheckpointPrefix } from "../../provider/CheckpointRegistry";
+import { disposeCheckpoint } from "../../provider/CheckpointDisposal";
+import type {
+  CheckpointEntry,
+  CheckpointPrefix,
+  CheckpointUsageSink,
+} from "../../provider/CheckpointRegistry";
 import {
   checkpointModelKey,
-  deleteCheckpoint,
   getCheckpoint,
   registerCheckpoint,
   requireCheckpointModelKey,
+  setCheckpointUsageSink,
 } from "../../provider/CheckpointRegistry";
 import type { ChatMessage, ContentBlock } from "../ChatMessage";
 import type { ToolDefinition } from "../ToolCallingUtils";
@@ -203,6 +208,12 @@ export async function finalizeEmittedCheckpoint(opts: {
   readonly assistantMessage: ChatMessage | undefined;
   readonly systemPrompt: string | undefined;
   readonly tools: readonly ToolDefinition[] | undefined;
+  /**
+   * Where the emitted checkpoint's disposal-time storage charge is reported.
+   * Pass `undefined` only from a caller with no usage channel — the charge is
+   * then computed and dropped, which is what every emit site did before.
+   */
+  readonly onStorageCharge: CheckpointUsageSink | undefined;
 }): Promise<void> {
   const { model, resolved } = opts;
   if (!resolved.emitCheckpointId) return;
@@ -214,16 +225,21 @@ export async function finalizeEmittedCheckpoint(opts: {
       tools: opts.tools,
       messages: [...opts.tailMessages, ...(opts.assistantMessage ? [opts.assistantMessage] : [])],
     }),
+    modelId: model.model_id,
     ...(resolved.parentId ? { parentId: resolved.parentId } : {}),
   });
+  if (opts.onStorageCharge) {
+    setCheckpointUsageSink(resolved.emitCheckpointId, opts.onStorageCharge);
+  }
   if (resolved.session.supersedeParent && resolved.parentId) {
     try {
-      await getAiProviderRegistry().disposeSession(model.provider, resolved.parentId);
+      // Routes the parent's charge to whoever minted it — the parent lived
+      // longest, so it is the larger of the two.
+      await disposeCheckpoint(resolved.parentId, model.provider);
     } catch {
       // Best-effort: a parent-dispose failure (worker restarted, transport
       // error) must not fail a task whose generation already succeeded. The
       // parent's scope disposer retries at run end and dispose is idempotent.
     }
-    deleteCheckpoint(resolved.parentId);
   }
 }

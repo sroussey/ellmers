@@ -9,6 +9,7 @@ import type {
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
+import { createUsageSnapshotEmitter } from "@workglow/ai/provider-utils";
 import { createPartialJsonStream } from "@workglow/util/worker";
 import {
   createGeminiClient,
@@ -80,8 +81,10 @@ export const Gemini_StructuredGeneration_Stream: AiProviderRunFn<
   const json = createPartialJsonStream();
   let refusalCategory: string | undefined;
   let lastUsageMetadata: unknown;
+  const snapshotUsage = createUsageSnapshotEmitter(emit);
   for await (const chunk of result) {
     lastUsageMetadata = chunk.usageMetadata ?? lastUsageMetadata;
+    snapshotUsage(mapGeminiUsage(lastUsageMetadata));
     // `chunk.text` concatenates the answer text (thought parts are excluded).
     const text = chunk.text;
     if (text) {

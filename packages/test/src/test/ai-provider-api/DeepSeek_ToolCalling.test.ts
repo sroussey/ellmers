@@ -63,8 +63,9 @@ describe("assertToolChoiceHonored", () => {
 
 /**
  * DeepSeek is OpenAI-shaped but splits the prompt into cache hit/miss counters
- * of its own. The hit count is the cache-read figure; the miss count is what
- * makes its cache-miss-priced cost reconstructable, so it rides in `extra`.
+ * of its own. The hit count maps to the disjoint `cached` bucket, and the miss
+ * count IS the disjoint base-rate `input` — both map directly onto normalized
+ * slots rather than riding in `extra`.
  */
 describe("DeepSeek usage from the terminal include_usage frame", () => {
   const { DEEPSEEK_RUN_FNS } = _testOnly;
@@ -136,13 +137,13 @@ describe("DeepSeek usage from the terminal include_usage frame", () => {
 
     expect(finish.type).toBe("finish");
     expect(finish.usage).toEqual({
-      input: 88,
+      input: 24,
       output: 21,
       cached: 64,
       cacheWrite: undefined,
       reasoning: undefined,
       total: 109,
-      extra: { promptCacheMissTokens: 24 },
+      extra: undefined,
     });
   });
 

@@ -475,7 +475,7 @@ describe("accumulateOpenAIResponsesStream usage", () => {
       },
     ]);
     expect(usage).toEqual({
-      input: 120,
+      input: 40,
       output: 34,
       cached: 64,
       cacheWrite: 16,

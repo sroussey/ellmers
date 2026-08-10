@@ -8,6 +8,7 @@ import { registerAiTasks } from "@workglow/ai";
 import { registerHuggingFaceTransformers } from "@workglow/huggingface-transformers/ai";
 import type { JsonTaskItem } from "@workglow/task-graph";
 import {
+  attachUsageRecorder,
   CACHE_REGISTRY,
   DefaultCacheRegistry,
   getTaskQueueRegistry,
@@ -17,7 +18,7 @@ import {
 } from "@workglow/task-graph";
 import { JsonTask, registerCommonTasks } from "@workglow/tasks";
 import { registerTensorFlowMediaPipe } from "@workglow/tf-mediapipe/ai";
-import { Container, ServiceRegistry } from "@workglow/util";
+import { Container, ServiceRegistry, uuid4 } from "@workglow/util";
 import { ReactFlowProvider } from "@xyflow/react";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./Resize";
@@ -29,7 +30,12 @@ import {
 import { GraphStoreStatus } from "./status/GraphStoreStatus";
 import { OutputRepositoryStatus } from "./status/OutputRepositoryStatus";
 import { QueuesStatus } from "./status/QueueStatus";
-import { IndexedDbTaskGraphRepository, IndexedDbTaskOutputRepository } from "./storage";
+import { UsageStatus } from "./status/UsageStatus";
+import {
+  IndexedDbTaskGraphRepository,
+  IndexedDbTaskOutputRepository,
+  runUsageStorage,
+} from "./storage";
 
 // Task registrations must run before this module's top-level await loads the
 // saved graph from IndexedDB — `createGraphFromGraphJSON` looks task classes
@@ -153,6 +159,10 @@ const setupWorkflow = async () => {
   const run = workflow.run.bind(workflow);
   workflow.run = async () => {
     console.log("Running task graph...");
+    const runId = uuid4();
+    const detachUsage = attachUsageRecorder(workflow.graph.usageAggregator, runUsageStorage, {
+      runId,
+    });
     try {
       const result = await run({}, { registry: cacheServices });
       console.log("Task graph complete.", workflow);
@@ -160,6 +170,11 @@ const setupWorkflow = async () => {
     } catch (error: any) {
       console.error("Task graph error:", error.message, error.errors, error);
       throw error;
+    } finally {
+      // Awaited after run() resolves: run() owns the ResourceScope, so it has
+      // already disposed the run's checkpoints and their storage charges have
+      // been recorded by the time we detach.
+      await detachUsage();
     }
   };
 
@@ -298,6 +313,8 @@ export const App = () => {
             />
             <hr className="my-2 border-[#777]" />
             <GraphStoreStatus repository={taskGraphRepo} />
+            <hr className="my-2 border-[#777]" />
+            <UsageStatus graph={graph} />
           </ResizablePanel>
         </ResizablePanelGroup>
       </ResizablePanel>

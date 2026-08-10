@@ -235,6 +235,35 @@ Shared cloud-provider helpers (base classes, registration, model search, OpenAI-
 
 **Streaming convention:** Provider stream functions (`AiProviderStreamFn`) must **not** accumulate output. They yield incremental `text-delta` / `object-delta` events and a final `finish` event with `{} as Output`. The consumer (`StreamingAiTask` / `TaskRunner`) is responsible for accumulating deltas into the final output. This separation keeps providers stateless and avoids double-buffering. Do **not** change finish events to include accumulated data.
 
+**Streaming convention (decode feedback):** deltas do not drive progress —
+`StreamProcessor` translates only `phase` events into `updateProgress`, and
+`StreamingAiTask` emits exactly one `Generating` phase, latched on the first
+delta. A slow model would therefore render as a single static line for its
+entire run unless the run-fn says otherwise.
+
+Local providers report that progress the same way every cloud provider does:
+as `usage` events carrying a **cumulative** {@link Usage} snapshot, so a local
+run's token counts appear wherever a cloud run's do with no per-provider
+special case. The HFT provider gets this from `createDecodeUsageReporter`
+(`HFT_Streaming.ts`), wired inside `createStreamingTextStreamer` so a new
+streaming run-fn cannot ship without it. Three things that path gets right and
+a naive one does not:
+
+- the prompt's own length is the `input` count, read from the first `put` —
+  the one moment a local model can state its prompt cost, which is why `↑`
+  appears before a single token is generated;
+- snapshots are throttled (250 ms), because a local model decodes hundreds of
+  tokens and an event per token floods the consumer — and the final total is
+  flushed when generation ends, so the throttle cannot swallow the last tokens
+  and leave a stale count;
+- `cached` / `cacheWrite` stay `undefined`, not a stated `0`. A local provider
+  reports no caching, which is not the same as reporting that it cached nothing.
+
+Do **not** put token counts in a `phase` message. A count in prose is invisible
+to cost math, cannot be aggregated, and renders twice once the row also shows
+the real usage. Reserve `phase` for the stage label (`Prefilling`), which says
+*where* the run is rather than *what it has spent*.
+
 **Streaming convention exception (one-shot run-fns):** Run-fns that do not stream incremental deltas — typically meta-ops (`provider.model-info`, `provider.model-search`, `model.count-tokens`, `model.unload`, `model.download`), embeddings (`text.embedding`, `image.embedding`), and one-shot vision/classification (`image.classification`, `image.segmentation`, etc.) — MUST emit a single `finish` event whose `data` is the full `Output`. The `collectStream(...)` consumer in `@workglow/ai/capability` returns `finish.data` directly in this mode, so the payload is the result. Do not also yield deltas in this pattern — `collectStream` rejects streams mixing deltas with a one-shot finish.
 
 **Streaming convention exception (structured generation):** Run-fns serving

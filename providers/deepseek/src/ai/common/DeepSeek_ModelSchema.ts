@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { WithModelPricing } from "@workglow/ai/worker";
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
 import type { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
 import { DEEPSEEK } from "./DeepSeek_Constants";
@@ -67,7 +68,7 @@ export const DeepSeekModelRecordSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type DeepSeekModelRecord = FromSchema<typeof DeepSeekModelRecordSchema>;
+export type DeepSeekModelRecord = WithModelPricing<FromSchema<typeof DeepSeekModelRecordSchema>>;
 
 export const DeepSeekModelConfigSchema = {
   type: "object",
@@ -79,4 +80,4 @@ export const DeepSeekModelConfigSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type DeepSeekModelConfig = FromSchema<typeof DeepSeekModelConfigSchema>;
+export type DeepSeekModelConfig = WithModelPricing<FromSchema<typeof DeepSeekModelConfigSchema>>;

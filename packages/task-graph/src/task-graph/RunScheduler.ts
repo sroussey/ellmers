@@ -5,8 +5,9 @@
  */
 
 import { getLogger } from "@workglow/util";
-import { ConditionalTask } from "../task/ConditionalTask";
+import type { ConditionalTask } from "../task/ConditionalTask";
 import type { ITask } from "../task/ITask";
+import type { Usage } from "../task/StreamTypes";
 import { TaskError, TaskFailedError, TaskGraphTimeoutError } from "../task/TaskError";
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
 import { TaskStatus } from "../task/TaskTypes";
@@ -16,6 +17,15 @@ import type { TaskGraph, TaskGraphRunConfig } from "./TaskGraph";
 import type { GraphResultArray, GraphSingleTaskResult, TaskGraphRunner } from "./TaskGraphRunner";
 import { taskPrototypeHasOwnExecute } from "./TaskGraphRunner";
 import type { ITaskGraphScheduler } from "./TaskGraphScheduler";
+
+/**
+ * Branch-routing check that avoids importing {@link ConditionalTask} as a value.
+ * A value import here closes a module cycle back to `Task`, which leaves `Task`
+ * undefined for any module that enters the cycle at `Task` itself.
+ */
+function isConditionalTask(node: ITask): node is ConditionalTask {
+  return (node.constructor as { isConditionalTask?: boolean }).isConditionalTask === true;
+}
 
 /**
  * Key used to record a scheduler-iterator-level failure in
@@ -64,7 +74,7 @@ export class RunScheduler {
     const effectiveStatus = status ?? node.status;
 
     // Check if this is a ConditionalTask with selective branching
-    if (node instanceof ConditionalTask && effectiveStatus === TaskStatus.COMPLETED) {
+    if (isConditionalTask(node) && effectiveStatus === TaskStatus.COMPLETED) {
       // Build a map of output port -> branch ID for lookup
       const branches = node.config.branches ?? [];
       const portToBranch = new Map<string, string>();
@@ -285,6 +295,13 @@ export class RunScheduler {
               }
             }
           );
+          const offUsage = task.subscribe("usage", (usage: Usage, modelId: string | undefined) => {
+            try {
+              this.graph.emit("task_usage", task.id, usage, modelId);
+            } catch (err) {
+              getLogger().error("task_usage listener threw", { taskId: task.id, error: err });
+            }
+          });
           try {
             // Root tasks (no incoming dataflows) receive the graph run input so e.g.
             // InputTask can seed the graph. Downstream tasks rely only on dataflow
@@ -317,6 +334,7 @@ export class RunScheduler {
             }
           } finally {
             offProgress();
+            offUsage();
             // IMPORTANT: Push status to edges BEFORE notifying scheduler
             // This ensures dataflow statuses (including DISABLED) are set
             // before the scheduler checks which tasks are ready.

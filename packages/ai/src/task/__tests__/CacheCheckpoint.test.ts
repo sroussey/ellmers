@@ -16,6 +16,7 @@ import {
   AiChatTask,
   AiProvider,
   AiProviderRegistry,
+  CACHE_STORAGE_TOKEN_HOURS_KEY,
   CAPABILITIES,
   CacheCheckpointTask,
   TextGenerationTask,
@@ -30,7 +31,8 @@ import {
   setAiProviderRegistry,
 } from "@workglow/ai";
 import { clearCheckpoints as clearCheckpointsForTesting } from "@workglow/ai/test";
-import type { IExecuteContext, StreamEvent, TaskOutput } from "@workglow/task-graph";
+import type { IExecuteContext, StreamEvent, TaskOutput, Usage } from "@workglow/task-graph";
+import { TaskGraph, TaskGraphRunner } from "@workglow/task-graph";
 import { Container, HUMAN_CONNECTOR, ResourceScope, ServiceRegistry } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -53,6 +55,7 @@ describe("CheckpointRegistry", () => {
       tools: [{ name: "a", description: "A", inputSchema: { type: "object" } }],
       messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
     },
+    modelId: undefined,
   };
 
   it("registers and retrieves an entry", () => {
@@ -265,10 +268,249 @@ describe("CacheCheckpointTask", () => {
       provider: "OTHER_PROVIDER",
       modelKey: "",
       prefix: {},
+      modelId: undefined,
     });
     await expect(
       cacheCheckpoint({ model: checkpointModel(), checkpoint: "foreign" })
     ).rejects.toThrow(/provider/i);
+  });
+});
+
+describe("CacheCheckpointTask storage-cost emission at disposal", () => {
+  // A provider whose disposal reports what a billed server-side cache
+  // released (Gemini's shape): tokens held, and for how long.
+  class BillingCheckpointProvider extends CheckpointTestProvider {
+    override async disposeSession(_sessionId: string): Promise<{
+      tokens: number | undefined;
+      lifetimeMs: number;
+    }> {
+      return { tokens: 500_000, lifetimeMs: 3_600_000 };
+    }
+  }
+
+  const billingWarmupFn: AiProviderRunFn = async (
+    _input,
+    _model,
+    _signal,
+    emit,
+    _schema,
+    session
+  ) => {
+    emit({
+      type: "finish",
+      data: { checkpoint: session?.sessionId ?? "" },
+    } as unknown as StreamEvent<TaskOutput>);
+  };
+
+  afterEach(() => {
+    setAiProviderRegistry(new AiProviderRegistry());
+  });
+
+  it("emits a cacheStorageTokenHours usage event sized from the disposed tokens and lifetime", async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    const provider = new BillingCheckpointProvider([
+      { serves: CACHE_CHECKPOINT as Capability[], runFn: billingWarmupFn },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+
+    const scope = new ResourceScope();
+    const task = new CacheCheckpointTask();
+    const usageEvents: { usage: Usage; modelId: string | undefined }[] = [];
+    task.on("usage", (usage, modelId) => usageEvents.push({ usage, modelId }));
+
+    await task.run({ model: checkpointModel(), systemPrompt: "sys" }, { resourceScope: scope });
+    // The charge is not known until the cache is actually released.
+    expect(usageEvents).toHaveLength(0);
+
+    await scope.runComplete();
+
+    expect(usageEvents).toHaveLength(1);
+    // 500,000 tokens held for 3,600,000ms (1 hour) = 500,000 token-hours.
+    expect(usageEvents[0].usage.extra?.[CACHE_STORAGE_TOKEN_HOURS_KEY]).toBeCloseTo(500_000, 6);
+    expect(usageEvents[0].modelId).toBe(checkpointModel().model_id);
+  });
+
+  it("emits nothing when the provider reports no tokens at disposal", async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    const provider = new CheckpointTestProvider([
+      { serves: CACHE_CHECKPOINT as Capability[], runFn: billingWarmupFn },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+
+    const scope = new ResourceScope();
+    const task = new CacheCheckpointTask();
+    const usageEvents: unknown[] = [];
+    task.on("usage", (usage) => usageEvents.push(usage));
+
+    await task.run({ model: checkpointModel(), systemPrompt: "sys" }, { resourceScope: scope });
+    await scope.runComplete();
+
+    expect(usageEvents).toHaveLength(0);
+  });
+
+  it("a throwing usage listener does not prevent the checkpoint from being released", async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    const provider = new BillingCheckpointProvider([
+      { serves: CACHE_CHECKPOINT as Capability[], runFn: billingWarmupFn },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+
+    const scope = new ResourceScope();
+    const task = new CacheCheckpointTask();
+    task.on("usage", () => {
+      throw new Error("listener exploded");
+    });
+
+    const out = await task.run(
+      { model: checkpointModel(), systemPrompt: "sys" },
+      { resourceScope: scope }
+    );
+    expect(getCheckpoint(out!.checkpoint)).toBeDefined();
+
+    // The disposer must complete (and the registry entry must still be
+    // removed) even though the usage listener threw.
+    await expect(scope.runComplete()).resolves.not.toThrow();
+    expect(getCheckpoint(out!.checkpoint)).toBeUndefined();
+  });
+
+  it("charges a superseded parent to the task that minted it, not to whoever disposed it", async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    const provider = new BillingCheckpointProvider([
+      { serves: CACHE_CHECKPOINT as Capability[], runFn: billingWarmupFn },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+
+    const scope = new ResourceScope();
+
+    const parentTask = new CacheCheckpointTask();
+    const parentUsage: Usage[] = [];
+    parentTask.on("usage", (usage) => parentUsage.push(usage));
+    const parent = await parentTask.run(
+      { model: checkpointModel(), systemPrompt: "sys" },
+      { resourceScope: scope }
+    );
+
+    const childTask = new CacheCheckpointTask();
+    const childUsage: Usage[] = [];
+    childTask.on("usage", (usage) => childUsage.push(usage));
+    await childTask.run(
+      {
+        model: checkpointModel(),
+        checkpoint: parent!.checkpoint,
+        messages: [{ role: "user", content: [{ type: "text", text: "tail" }] }],
+      },
+      { resourceScope: scope }
+    );
+
+    // The child's warm-up superseded and disposed the parent inline. That is a
+    // different task from the parent's own scope disposer, and the charge must
+    // still land on the parent — a chain used to report only its last link.
+    expect(parentUsage).toHaveLength(1);
+    expect(parentUsage[0].extra?.[CACHE_STORAGE_TOKEN_HOURS_KEY]).toBeCloseTo(500_000, 6);
+    expect(childUsage).toHaveLength(0);
+
+    await scope.runComplete();
+
+    // The child is charged once, at run end, for its own lifetime.
+    expect(parentUsage).toHaveLength(1);
+    expect(childUsage).toHaveLength(1);
+    expect(childUsage[0].extra?.[CACHE_STORAGE_TOKEN_HOURS_KEY]).toBeCloseTo(500_000, 6);
+  });
+
+  it("charges every link of a three-checkpoint chain exactly once", async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    const provider = new BillingCheckpointProvider([
+      { serves: CACHE_CHECKPOINT as Capability[], runFn: billingWarmupFn },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+
+    const scope = new ResourceScope();
+    const charges: number[][] = [];
+    let handle: string | undefined;
+
+    for (let link = 0; link < 3; link++) {
+      const task = new CacheCheckpointTask();
+      const seen: number[] = [];
+      charges.push(seen);
+      task.on("usage", (usage) => {
+        const hours = usage.extra?.[CACHE_STORAGE_TOKEN_HOURS_KEY];
+        if (typeof hours === "number") seen.push(hours);
+      });
+      const out = await task.run(
+        {
+          model: checkpointModel(),
+          ...(handle ? { checkpoint: handle } : { systemPrompt: "sys" }),
+          messages: [{ role: "user", content: [{ type: "text", text: `turn ${link}` }] }],
+        },
+        { resourceScope: scope }
+      );
+      handle = out!.checkpoint;
+    }
+
+    // Each superseded parent is charged when its successor disposes it, not
+    // deferred to run end — the survivor is the only one still outstanding.
+    expect(charges.map((c) => c.length)).toEqual([1, 1, 0]);
+
+    await scope.runComplete();
+
+    // Three checkpoints, three charges — one each, none double-counted.
+    expect(charges.map((c) => c.length)).toEqual([1, 1, 1]);
+    for (const seen of charges) expect(seen[0]).toBeCloseTo(500_000, 6);
+  });
+});
+
+describe("CacheCheckpointTask storage cost inside a graph", () => {
+  // Same shape as the standalone suite above: disposal reports what a billed
+  // server-side cache released.
+  class BillingCheckpointProvider extends CheckpointTestProvider {
+    override async disposeSession(_sessionId: string): Promise<{
+      tokens: number | undefined;
+      lifetimeMs: number;
+    }> {
+      return { tokens: 500_000, lifetimeMs: 3_600_000 };
+    }
+  }
+
+  const billingWarmupFn: AiProviderRunFn = async (
+    _input,
+    _model,
+    _signal,
+    emit,
+    _schema,
+    session
+  ) => {
+    emit({
+      type: "finish",
+      data: { checkpoint: session?.sessionId ?? "" },
+    } as unknown as StreamEvent<TaskOutput>);
+  };
+
+  afterEach(() => {
+    setAiProviderRegistry(new AiProviderRegistry());
+  });
+
+  it("charges the run total for a checkpoint disposed at run end", async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    const provider = new BillingCheckpointProvider([
+      { serves: CACHE_CHECKPOINT as Capability[], runFn: billingWarmupFn },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+
+    const graph = new TaskGraph();
+    graph.addTask(
+      new CacheCheckpointTask({
+        id: "warm",
+        defaults: { model: checkpointModel(), systemPrompt: "sys" },
+      })
+    );
+
+    // runGraph owns the ResourceScope, so it disposes the checkpoint — and
+    // therefore learns its storage charge — after the run's usage has settled.
+    await new TaskGraphRunner(graph).runGraph();
+
+    expect(graph.runUsage?.extra?.[CACHE_STORAGE_TOKEN_HOURS_KEY]).toBeCloseTo(500_000, 6);
+    const byModel = graph.usageAggregator.byModel().get(checkpointModel().model_id!);
+    expect(byModel?.extra?.[CACHE_STORAGE_TOKEN_HOURS_KEY]).toBeCloseTo(500_000, 6);
   });
 });
 
@@ -312,6 +554,7 @@ describe("ToolCallingTask checkpoint ports", () => {
       provider: CKPT_PROVIDER,
       modelKey: "test:ckpt-model:v1",
       prefix: { systemPrompt: "sys", tools: [aTool], messages: [] },
+      modelId: undefined,
     });
     const task = new ToolCallingTask();
     await task.run({ model: toolModel(), prompt: "hi", tools: [aTool], checkpoint: "ckpt-parent" });
@@ -325,6 +568,7 @@ describe("ToolCallingTask checkpoint ports", () => {
       provider: CKPT_PROVIDER,
       modelKey: "test:ckpt-model:v1",
       prefix: { systemPrompt: "sys", tools: [aTool], messages: [] },
+      modelId: undefined,
     });
     const scope = new ResourceScope();
     const task = new ToolCallingTask();
@@ -356,6 +600,7 @@ describe("ToolCallingTask checkpoint ports", () => {
       provider: CKPT_PROVIDER,
       modelKey: "test:ckpt-model:v1",
       prefix: { systemPrompt: "sys", tools: [aTool], messages: [] },
+      modelId: undefined,
     });
     const scope = new ResourceScope();
     const task = new ToolCallingTask();
@@ -433,6 +678,7 @@ describe("TextGenerationTask checkpoint ports", () => {
       provider: CKPT_PROVIDER,
       modelKey: "test:ckpt-model:v1",
       prefix: { systemPrompt: "sys", messages: [] },
+      modelId: undefined,
     });
     const scope = new ResourceScope();
     const task = new TextGenerationTask();
@@ -633,6 +879,7 @@ describe("AiChatTask checkpoint consumption", () => {
       provider: CKPT_PROVIDER,
       modelKey: "test:ckpt-model:v1",
       prefix: { systemPrompt: "sys", messages: [] },
+      modelId: undefined,
     });
     const input = {
       model: checkpointModel(),
@@ -714,6 +961,7 @@ describe("model-key fail-closed (L2)", () => {
       provider: CKPT_PROVIDER,
       modelKey: "test:model:v1",
       prefix: { systemPrompt: "sys" },
+      modelId: undefined,
     });
     const task = new TextGenerationTask();
     await expect(
@@ -731,6 +979,7 @@ describe("model-key fail-closed (L2)", () => {
       provider: CKPT_PROVIDER,
       modelKey: "",
       prefix: { systemPrompt: "sys" },
+      modelId: undefined,
     });
     const task = new TextGenerationTask();
     await expect(
@@ -758,6 +1007,7 @@ describe("model-key fail-closed (L2)", () => {
       provider: CKPT_PROVIDER,
       modelKey: "modelA",
       prefix: {},
+      modelId: undefined,
     });
     const modelB: ModelConfig = {
       ...checkpointModel(),

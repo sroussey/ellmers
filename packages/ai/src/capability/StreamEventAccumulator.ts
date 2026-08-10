@@ -60,7 +60,10 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
   private finishData: T | undefined;
   private refusalText = "";
   private refusalCategory: string | undefined;
-  private usage: Usage | undefined;
+  // Mirrors StreamProcessor: `usage` events are cumulative snapshots of the
+  // in-flight call, so they replace; `finish` states the call total and settles.
+  private settledUsage: Usage | undefined;
+  private liveUsage: Usage | undefined;
   /**
    * The `type` of the most recent observed event. Surfaced in the
    * no-finish materialise error so operators can see what the stream
@@ -122,6 +125,9 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
       case "error":
         this.lastEventType = "error";
         throw (event as { error: unknown }).error;
+      case "usage":
+        this.liveUsage = (event as Extract<StreamEvent, { type: "usage" }>).usage;
+        return;
       case "finish":
         this.observeFinish(event as Extract<StreamEvent<T>, { type: "finish" }>);
         return;
@@ -133,7 +139,8 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
     this.finishData = event.data;
     // Merged rather than replaced: a consumer driving several finishes through
     // one accumulator (a tool-calling loop) is billed for every turn.
-    this.usage = mergeUsage(this.usage, event.usage);
+    this.settledUsage = mergeUsage(this.settledUsage, event.usage ?? this.liveUsage);
+    this.liveUsage = undefined;
     this.lastEventType = "finish";
   }
 
@@ -201,12 +208,13 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
    * present-and-empty.
    */
   private applyUsage(output: T): T {
-    if (!this.usage) return output;
+    const usage = mergeUsage(this.settledUsage, this.liveUsage);
+    if (!usage) return output;
     const base = (output !== null && typeof output === "object" ? output : {}) as Record<
       string,
       unknown
     >;
-    return { ...base, [USAGE_OUTPUT_KEY]: this.usage } as unknown as T;
+    return { ...base, [USAGE_OUTPUT_KEY]: usage } as unknown as T;
   }
 
   /**

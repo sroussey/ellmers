@@ -17,7 +17,7 @@ import type { ITaskGraph } from "../task-graph/ITaskGraph";
 import type { IWorkflow } from "../task-graph/IWorkflow";
 import type { TaskGraph } from "../task-graph/TaskGraph";
 import type { CompoundMergeStrategy } from "../task-graph/TaskGraphRunner";
-import type { StreamEvent } from "./StreamTypes";
+import type { StreamEvent, Usage } from "./StreamTypes";
 import type { TaskEntitlements } from "./TaskEntitlements";
 import type { TaskError } from "./TaskError";
 import type {
@@ -284,6 +284,14 @@ export interface IRunConfig {
   disposeStrategy?: IDisposeStrategy;
 
   /**
+   * Where a charge that settles after a task finished (provider cache storage,
+   * billed at disposal) is added to the run total. Threaded like
+   * `resourceScope`: a nested run inherits the outer run's sink, so a charge
+   * from a subgraph task reaches the root run's aggregator.
+   */
+  lateUsageSink?: (taskId: string, usage: Usage, modelId: string | undefined) => void;
+
+  /**
    * When true, check entitlements via the registered IEntitlementEnforcer
    * before graph execution begins. Throws TaskEntitlementError if denied.
    * Default: false (entitlements are declarative only, not enforced by the engine).
@@ -355,12 +363,26 @@ export interface ITaskLifecycle<
   get runner(): TaskRunner<Input, Output, Config>;
   abort(): void;
   disable(): Promise<void>;
+
+  /**
+   * Report a charge that settles after this task finished. Folded into the
+   * task total and the run total; see {@link IRunConfig.lateUsageSink}.
+   */
+  chargeLateUsage(usage: Usage, modelId: string | undefined): void;
 }
 
 export interface ITaskIO<Input extends TaskInput> {
   defaults: Record<string, any>;
   runInputData: Record<string, any>;
   runOutputData: Record<string, any>;
+  /**
+   * Running token total for the current execution; `undefined` until a model
+   * reports. Cumulative and monotonic within one execution.
+   */
+  runUsage: Usage | undefined;
+
+  /** Model id behind {@link ITask.runUsage}, when the provider named one. */
+  runUsageModelId: string | undefined;
   runConfig: Partial<IRunConfig>;
 
   inputSchema(): DataPortSchema; // gets local access for static inputSchema property

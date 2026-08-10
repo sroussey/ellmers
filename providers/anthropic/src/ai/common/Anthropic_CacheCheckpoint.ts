@@ -16,6 +16,7 @@ import { buildToolDescription } from "@workglow/ai/worker";
 import { getClient, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { buildAnthropicMessages } from "./Anthropic_ToolCalling";
+import { mapAnthropicUsage } from "./Anthropic_Usage";
 
 /**
  * Maps workglow tool definitions onto Anthropic `tools` entries. The warm-up
@@ -163,8 +164,14 @@ export const Anthropic_CacheCheckpoint_Stream: AiProviderRunFn<
   const prefix = session?.prefix ?? {};
   const client = await getClient(model);
   const params = buildAnthropicCheckpointParams(prefix, getModelName(model));
-  await (client.messages.create as (p: unknown, o: unknown) => Promise<unknown>)(params, {
-    signal,
+  const response = await (client.messages.create as (p: unknown, o: unknown) => Promise<unknown>)(
+    params,
+    { signal }
+  );
+  const usage = mapAnthropicUsage((response as { usage?: unknown } | undefined)?.usage);
+  emit({
+    type: "finish",
+    data: { checkpoint: session?.sessionId ?? "" },
+    ...(usage ? { usage } : {}),
   });
-  emit({ type: "finish", data: { checkpoint: session?.sessionId ?? "" } });
 };

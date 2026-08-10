@@ -20,6 +20,8 @@ import { recordUsageTelemetry } from "../capability/UsageTelemetry";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
+import { disposeCheckpoint } from "../provider/CheckpointDisposal";
+import { setCheckpointUsageSink } from "../provider/CheckpointRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { runChatTurn } from "./base/chatTurn";
 import type { ResolvedCheckpoint } from "./base/CheckpointPorts";
@@ -317,6 +319,10 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
     // must gate here to match the contract AiTask.execute and
     // StreamingAiTask.executeStream both enforce.
     this.gateOrThrow(model);
+    // Set here rather than inherited: this override never calls
+    // super.executeStream, and StreamProcessor reads this field when it emits
+    // `usage`, so leaving it unset files the whole conversation under no model.
+    this.runUsageModelId = model.model_id;
 
     const connector = resolveHumanConnector(context);
 
@@ -345,8 +351,9 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
 
     if (context.resourceScope && this._sessionId) {
       const sessionId = this._sessionId;
+      setCheckpointUsageSink(sessionId, (usage, modelId) => this.chargeLateUsage(usage, modelId));
       context.resourceScope.register(`ai:session:${sessionId}`, async () => {
-        await getAiProviderRegistry().disposeSession(model.provider, sessionId);
+        await disposeCheckpoint(sessionId, model.provider);
       });
     }
 

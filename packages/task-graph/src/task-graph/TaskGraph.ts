@@ -8,8 +8,8 @@ import type { IDisposeStrategy, ResourceScope, ServiceRegistry } from "@workglow
 import { EventEmitter, uuid4 } from "@workglow/util";
 import { DirectedAcyclicGraph } from "@workglow/util/graph";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
-import type { ITask } from "../task/ITask";
-import type { StreamEvent } from "../task/StreamTypes";
+import type { IRunConfig, ITask } from "../task/ITask";
+import type { StreamEvent, Usage } from "../task/StreamTypes";
 import type { TaskEntitlements } from "../task/TaskEntitlements";
 import type { JsonTaskItem, TaskGraphJson, TaskGraphJsonOptions } from "../task/TaskJSON";
 import type { TaskIdType, TaskInput, TaskOutput, TaskStatus } from "../task/TaskTypes";
@@ -19,6 +19,7 @@ import type { DataflowIdType } from "./Dataflow";
 import { Dataflow, DataflowArrow } from "./Dataflow";
 import { computeGraphEntitlements } from "./GraphEntitlementUtils";
 import { addBoundaryNodesToDependencyJson, addBoundaryNodesToGraphJson } from "./GraphSchemaUtils";
+import { GraphUsageAggregator } from "./GraphUsageAggregator";
 import type { ITaskGraph } from "./ITaskGraph";
 import type {
   GraphEventDagEvents,
@@ -104,6 +105,9 @@ export interface TaskGraphRunConfig {
   /** Same semantics as on {@link IRunConfig}. */
   disposeStrategy?: IDisposeStrategy;
 
+  /** Same semantics as on {@link IRunConfig}. */
+  lateUsageSink?: IRunConfig["lateUsageSink"];
+
   /**
    * Stable identifier for this logical run. When provided, the graph runner
    * wraps the `private` cache slot in a {@link RunPrivateCacheRepo} keyed by
@@ -146,6 +150,12 @@ interface TaskGraphConstructorConfig {
 export class TaskGraph implements ITaskGraph {
   /** Optional output cache to use for this task graph */
   public outputCache?: TaskOutputRepository;
+
+  /** This run's token aggregator. Reset — not replaced — at the start of each run, so a subscriber attached beforehand keeps receiving. */
+  usageAggregator: GraphUsageAggregator = new GraphUsageAggregator();
+
+  /** Final run token total, set at run end. */
+  runUsage: Usage | undefined = undefined;
 
   constructor({ outputCache, dag }: TaskGraphConstructorConfig = {}) {
     this.outputCache = outputCache;

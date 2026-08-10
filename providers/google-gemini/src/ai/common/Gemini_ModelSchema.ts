@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { WithModelPricing } from "@workglow/ai/worker";
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
 import type { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
 import { GOOGLE_GEMINI } from "./Gemini_Constants";
@@ -81,7 +82,7 @@ export const GeminiModelRecordSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type GeminiModelRecord = FromSchema<typeof GeminiModelRecordSchema>;
+export type GeminiModelRecord = WithModelPricing<FromSchema<typeof GeminiModelRecordSchema>>;
 
 export const GeminiModelConfigSchema = {
   type: "object",
@@ -93,4 +94,4 @@ export const GeminiModelConfigSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type GeminiModelConfig = FromSchema<typeof GeminiModelConfigSchema>;
+export type GeminiModelConfig = WithModelPricing<FromSchema<typeof GeminiModelConfigSchema>>;

@@ -12,6 +12,7 @@ import type {
   CheckpointPrefix,
   ToolDefinition,
 } from "@workglow/ai";
+import { toUsageCount } from "@workglow/ai/provider-utils";
 import { buildToolDescription, promptToTailMessages } from "@workglow/ai/worker";
 import { getLogger } from "@workglow/util/worker";
 import { setGeminiCachedContent } from "./Gemini_CacheStore";
@@ -310,6 +311,7 @@ export const Gemini_CacheCheckpoint_Stream: AiProviderRunFn<
   // failure (e.g. a bookkeeping throw from `setGeminiCachedContent`) can still
   // cleanup the server-side entry it just minted.
   let createdName: string | undefined;
+  let cachedTokens: number | undefined;
   try {
     signal?.throwIfAborted?.();
     const cached = await ai.caches.create({
@@ -323,11 +325,16 @@ export const Gemini_CacheCheckpoint_Stream: AiProviderRunFn<
         ttl: GEMINI_CACHE_TTL,
       },
     } as Parameters<typeof ai.caches.create>[0]);
+    cachedTokens = toUsageCount(
+      (cached as { usageMetadata?: { totalTokenCount?: unknown } } | undefined)?.usageMetadata
+        ?.totalTokenCount
+    );
     createdName = cached?.name ?? undefined;
     if (cached?.name) {
       setGeminiCachedContent(checkpointId, {
         name: cached.name,
         model: model!,
+        tokens: cachedTokens,
         systemPrompt: prefix.systemPrompt,
         canonicalTools:
           prefix.tools && prefix.tools.length > 0
@@ -351,5 +358,21 @@ export const Gemini_CacheCheckpoint_Stream: AiProviderRunFn<
       }`
     );
   }
-  emit({ type: "finish", data: { checkpoint: checkpointId } });
+  const usage =
+    cachedTokens === undefined
+      ? undefined
+      : {
+          input: undefined,
+          output: undefined,
+          cached: undefined,
+          cacheWrite: cachedTokens,
+          reasoning: undefined,
+          total: undefined,
+          extra: undefined,
+        };
+  emit({
+    type: "finish",
+    data: { checkpoint: checkpointId },
+    ...(usage ? { usage } : {}),
+  });
 };

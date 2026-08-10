@@ -30,7 +30,8 @@ export const HFT_TextTranslation: AiProviderRunFn<
     const streamer = createStreamingTextStreamer(
       translate.tokenizer,
       (text) => emit({ type: "text-delta", port: "text", textDelta: text }),
-      TextStreamer
+      TextStreamer,
+      emit
     );
     const stopping_criteria = new InterruptableStoppingCriteria();
     if (signal) {

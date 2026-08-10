@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IRunConfig, ITask } from "@workglow/task-graph";
+import { formatUsage } from "@workglow/ai";
+import type { IRunConfig, ITask, Usage } from "@workglow/task-graph";
 import { Box, Static, Text } from "ink";
 import path from "node:path";
 import React, { useEffect, useRef, useState } from "react";
@@ -17,6 +18,7 @@ import { TaskStatusProgressRow } from "./components/TaskStatusProgressRow";
 import { HumanInteractionHost } from "./HumanInteractionHost";
 import { isRedundantSubgraph, SubtaskRows } from "./rows/SubtaskRows";
 import { useSubtaskRows } from "./rows/useSubtaskRows";
+import { useTaskUsage } from "./rows/useTaskUsage";
 import { cliTaskLabel } from "./taskGraphCliSubscriptions";
 
 interface TaskRunAppProps {
@@ -81,7 +83,20 @@ export function TaskRunApp({
   const [downloadFiles, setDownloadFiles] = useState<TaskFileProgressRow[]>([]);
   const [streamText, setStreamText] = useState("");
   const [logs, setLogs] = useState<LogLine[]>([]);
+  const [runUsage, setRunUsage] = useState<Usage | undefined>(undefined);
+  const runUsageLine = formatUsage(runUsage, "directional");
   const subtasks = useSubtaskRows(task);
+  const usage = useTaskUsage(task);
+  const usageLine = formatUsage(usage, "directional");
+
+  useEffect(() => {
+    const graph = task.subGraph;
+    const onUsage = (total: Usage): void => setRunUsage(total);
+    graph.subscribe("graph_usage", onUsage);
+    return () => {
+      graph.off("graph_usage", onUsage);
+    };
+  }, [task]);
 
   const showFileDownloadList = downloadFiles.length > 0;
   /** One header row + optional file list — avoids a pre-files row (default bar width) then a second row after `files` appears. */
@@ -184,6 +199,7 @@ export function TaskRunApp({
             spinnerFrame={batch.spin}
             progressBarWidth={isModelDownloadTask ? DOWNLOAD_PROGRESS_BAR_WIDTH : undefined}
           />
+          {usageLine ? <Text dimColor> {usageLine}</Text> : null}
           {showFileDownloadList && (
             <Box paddingLeft={2} flexDirection="column">
               {downloadFiles.map((f) => (
@@ -210,6 +226,7 @@ export function TaskRunApp({
               variant="chrome"
             />
           )}
+          {runUsageLine ? <Text>{`Tokens ${runUsageLine}`}</Text> : null}
         </Box>
       </Box>
     </HumanInteractionHost>

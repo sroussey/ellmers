@@ -23,9 +23,9 @@ const BRIDGE_DEPTH = Symbol.for("@workglow/task-graph/SubGraphEventBridge.depth"
 const warnedParents = new WeakSet<TaskGraph>();
 
 /**
- * Forward a subgraph's per-task events (task_complete, task_progress, and the
- * task_stream_* trio) up to the parent graph, so tasks nested inside a compound
- * task (GraphAsTask / FallbackTask / WhileTask / ...) surface as individual
+ * Forward a subgraph's per-task events (task_complete, task_progress, task_usage,
+ * and the task_stream_* trio) up to the parent graph, so tasks nested inside a
+ * compound task (GraphAsTask / FallbackTask / WhileTask / ...) surface as individual
  * task events on the top-level run stream — used by consumers for live previews
  * and progress. Bubbles recursively: a nested compound forwards its own
  * subgraph to its parent, which forwards onward.
@@ -103,6 +103,9 @@ export function bridgeSubGraphTaskEvents(
     ),
     subGraph.subscribe("task_stream_end", (id, out) =>
       parentGraph.emit("task_stream_end", id, out)
+    ),
+    subGraph.subscribe("task_usage", (id, usage, modelId) =>
+      parentGraph.emit("task_usage", id, usage, modelId)
     ),
   ];
   return () => {

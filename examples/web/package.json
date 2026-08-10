@@ -15,7 +15,8 @@
     "analyze": "ANALYZE=1 vite build",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview --port 3800"
+    "preview": "vite preview --port 3800",
+    "test": "vitest run --config ../../vitest.config.ts --project web"
   },
   "dependencies": {
     "@codemirror/lang-json": "^6.0.2",
@@ -39,18 +40,19 @@
     "@uiw/react-codemirror": "^4.25.11",
     "@xyflow/react": "^12.11.2",
     "clsx": "^2.1.1",
-    "react": "^19.2.8",
+    "react": "catalog:",
     "react-dom": "^19.2.8",
     "react-icons": "^5.7.0",
     "react-resizable-panels": "^4.12.2",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
-    "@types/react": "^19.2.18",
+    "@types/react": "catalog:",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
     "@tailwindcss/vite": "^4.3.3",
     "tailwindcss": "^4.3.3",
+    "jsdom": "^25.0.1",
     "rollup-plugin-visualizer": "^7.0.1",
     "vite": "^8.2.1",
     "vite-plugin-wasm": "^3.6.0"

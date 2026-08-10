@@ -26,16 +26,16 @@
     "test-concurrently": "bash -c 'cmds=(); for d in ./src/test/*/; do cmds+=(\"cd $d && bun test\"); done; concurrently \"${cmds[@]}\"'"
   },
   "devDependencies": {
-    "@aws-sdk/client-sqs": "^3.1105.0",
-    "@cloudflare/workers-types": "^5.20260804.1",
+    "@aws-sdk/client-sqs": "catalog:",
+    "@cloudflare/workers-types": "catalog:",
     "@duckdb/node-api": "catalog:",
     "@electric-sql/pglite": "catalog:",
     "@electric-sql/pglite-pgvector": "catalog:",
     "@modelcontextprotocol/sdk": "catalog:",
     "@sqliteai/sqlite-vector": "catalog:",
     "@supabase/supabase-js": "catalog:",
-    "@types/dom-chromium-ai": "^0.0.17",
-    "@types/pg": "^8.20.4",
+    "@types/dom-chromium-ai": "catalog:",
+    "@types/pg": "catalog:",
     "@workglow/ai": "workspace:*",
     "@workglow/anthropic": "workspace:*",
     "@workglow/aws": "workspace:*",
@@ -72,12 +72,12 @@
     "@workglow/tf-mediapipe": "workspace:*",
     "@workglow/util": "workspace:*",
     "@workglow/xai": "workspace:*",
-    "aws-sdk-client-mock": "^4.0.0",
-    "fake-indexeddb": "^6.2.4",
-    "miniflare": "^5.20260801.0-alpha",
+    "aws-sdk-client-mock": "catalog:",
+    "fake-indexeddb": "catalog:",
+    "miniflare": "^5.20260801.1-alpha",
     "node-llama-cpp": "catalog:",
     "pg": "catalog:",
     "playwright": "catalog:",
-    "vitest": "^4.1.10"
+    "vitest": "catalog:"
   }
 }

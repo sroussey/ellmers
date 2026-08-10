@@ -5,6 +5,7 @@
  */
 
 import type { AiProviderRunFn, TextRewriterTaskInput, TextRewriterTaskOutput } from "@workglow/ai";
+import { createUsageSnapshotEmitter } from "@workglow/ai/provider-utils";
 import { createGeminiClient, getModelName } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
@@ -28,8 +29,10 @@ export const Gemini_TextRewriter_Stream: AiProviderRunFn<
 
   let refusalCategory: string | undefined;
   let lastUsageMetadata: unknown;
+  const snapshotUsage = createUsageSnapshotEmitter(emit);
   for await (const chunk of result) {
     lastUsageMetadata = chunk.usageMetadata ?? lastUsageMetadata;
+    snapshotUsage(mapGeminiUsage(lastUsageMetadata));
     const text = chunk.text;
     if (text) {
       emit({ type: "text-delta", port: "text", textDelta: text });

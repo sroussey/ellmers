@@ -29,8 +29,13 @@ export function resolveHftPipelineDevice(raw: string | undefined): string | unde
 
   // On the server, resolve to undefined so onnxruntime-node defaults to the CPU
   // execution provider instead of probing CUDA (which throws when the CUDA
-  // shared libraries are absent, e.g. CPU-only CI runners). "wasm"/"webgpu" are
-  // browser-only and stripped here as well.
-  if (!raw || raw === "auto" || raw === "wasm" || raw === "webgpu") return undefined;
+  // shared libraries are absent, e.g. CPU-only CI runners). "wasm" has no
+  // server-side execution provider and is stripped here as well.
+  //
+  // "webgpu" is deliberately NOT stripped: onnxruntime-node can serve it, and a
+  // local model on a GPU box is the reason to ask for it. It is passed through
+  // unconditionally, so a host without a usable WebGPU adapter fails at pipeline
+  // creation rather than degrading to CPU.
+  if (!raw || raw === "auto" || raw === "wasm") return undefined;
   return raw;
 }
