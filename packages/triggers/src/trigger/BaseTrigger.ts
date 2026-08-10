@@ -75,6 +75,8 @@ export interface TriggerRun {
   timer: ReturnType<typeof setTimeout> | undefined;
   /** Handler invocations currently in flight. */
   inFlight: number;
+  /** Length of the current contiguous run of skipped ticks; 0 when not skipping. */
+  skipStreak: number;
   /** False from the moment `stop()` is entered; nothing new is scheduled after. */
   active: boolean;
   /** Detaches the caller-signal abort listener, when one was registered. */
@@ -187,6 +189,7 @@ export abstract class BaseTrigger implements ITrigger {
       pending: new Set(),
       timer: undefined,
       inFlight: 0,
+      skipStreak: 0,
       active: true,
       removeExternalAbort: undefined,
       stopping: undefined,
@@ -229,6 +232,7 @@ export abstract class BaseTrigger implements ITrigger {
     if (run.stopping) return run.stopping;
 
     run.active = false;
+    this.flushSkipStreak(run);
     if (run.timer !== undefined) {
       clearTimeout(run.timer);
       run.timer = undefined;
@@ -349,18 +353,15 @@ export abstract class BaseTrigger implements ITrigger {
   private dispatch(run: TriggerRun, scheduledAt: number): void {
     if (this.overlap !== "concurrent" && (run.inFlight > 0 || run.queued.length > 0)) {
       if (this.overlap === "queue" && run.queued.length < this.maxQueuedFires) {
+        this.flushSkipStreak(run);
         run.queued.push(scheduledAt);
         return;
       }
       this.safeEmit("skip", scheduledAt);
-      getLogger().warn("Trigger fire skipped; previous handler still running", {
-        triggerId: this.id,
-        kind: this.kind,
-        scheduledAt,
-        overlap: this.overlap,
-      });
+      this.noteSkip(run, scheduledAt);
       return;
     }
+    this.flushSkipStreak(run);
 
     // The microtask hop is load-bearing, not ceremony. Called directly,
     // `runTickChain` runs its whole synchronous prefix — the `fire` emit and the
@@ -378,6 +379,35 @@ export abstract class BaseTrigger implements ITrigger {
     // crashing a Node host whose only fault was a noisy listener. `stop()`
     // still awaits `chain` itself through `allSettled`.
     void chain.catch(() => {}).finally(() => run.pending.delete(chain));
+  }
+
+  /**
+   * Logs the FIRST skip of a contiguous run only. A handler wedged against a
+   * 1s period otherwise writes 3,600 identical warnings an hour, indefinitely;
+   * the count is reported once by {@link flushSkipStreak} when the run ends.
+   */
+  private noteSkip(run: TriggerRun, scheduledAt: number): void {
+    run.skipStreak += 1;
+    if (run.skipStreak > 1) return;
+    getLogger().warn("Trigger fire skipped; previous handler still running", {
+      triggerId: this.id,
+      kind: this.kind,
+      scheduledAt,
+      overlap: this.overlap,
+    });
+  }
+
+  /** Reports how long a contiguous run of skips lasted, once it ends. */
+  private flushSkipStreak(run: TriggerRun): void {
+    const skipped = run.skipStreak;
+    run.skipStreak = 0;
+    // A lone skip already logged everything there is to say.
+    if (skipped < 2) return;
+    getLogger().warn("Trigger fire skips ended", {
+      triggerId: this.id,
+      kind: this.kind,
+      skipped,
+    });
   }
 
   /**
