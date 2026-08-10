@@ -259,6 +259,15 @@ a naive one does not:
 - `cached` / `cacheWrite` stay `undefined`, not a stated `0`. A local provider
   reports no caching, which is not the same as reporting that it cached nothing.
 
+OpenAI-compatible chat completions (OpenRouter, DeepSeek, xAI, …) only attach
+billed usage to the **final** empty-choices chunk. Those run-fns emit
+provisional mid-stream snapshots via `createEstimatedOutputUsageReporter`
+(`provider-utils/UsageMapping.ts`): `onPrompt(text)` estimates ↑
+(`ceil(chars / 4)`) as soon as the request is known, then `onText` grows ↓
+from content deltas — so the CLI counter moves during TTFB and decode alike.
+`finish.usage` still carries the provider's billed totals and supersedes the
+estimate; do not use the provisional figures for cost math.
+
 Do **not** put token counts in a `phase` message. A count in prose is invisible
 to cost math, cannot be aggregated, and renders twice once the row also shows
 the real usage. Reserve `phase` for the stage label (`Prefilling`), which says

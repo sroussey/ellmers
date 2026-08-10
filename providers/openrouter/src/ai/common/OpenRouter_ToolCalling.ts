@@ -66,7 +66,13 @@ export const OpenRouter_ToolCalling_Stream: AiProviderRunFn<
       }
       emit(event);
     },
-    mapOpenRouterUsage
+    mapOpenRouterUsage,
+    {
+      promptText: messages
+        .map((m) => (typeof m.content === "string" ? m.content : ""))
+        .filter(Boolean)
+        .join("\n"),
+    }
   );
   emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput, usage });
 };

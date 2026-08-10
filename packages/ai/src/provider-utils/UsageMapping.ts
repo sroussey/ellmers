@@ -208,6 +208,122 @@ export function createUsageSnapshotEmitter(
   };
 }
 
+/** How often {@link createEstimatedOutputUsageReporter} may emit, in milliseconds. */
+const ESTIMATED_USAGE_INTERVAL_MS = 250;
+
+/**
+ * Approximate characters per token for OpenAI-shaped streams that only report
+ * billed usage on the terminal chunk (OpenRouter, DeepSeek, xAI chat
+ * completions). Matches the heuristic in those providers' `count-tokens` run-fns
+ * — good enough for a live ↑↓ counter, not for billing.
+ */
+const CHARS_PER_TOKEN_ESTIMATE = 4;
+
+/**
+ * Heuristic token estimate used for provisional mid-stream usage and for
+ * providers with no dedicated count endpoint (`ceil(chars / 4)`).
+ */
+export function estimateTokenCount(text: string): number {
+  if (!text) return 0;
+  return Math.ceil(text.length / CHARS_PER_TOKEN_ESTIMATE);
+}
+
+/** Reports provisional prompt + output token spend for OpenAI-shaped streams. */
+export interface EstimatedOutputUsageReporter {
+  /**
+   * The request prompt is known: estimate its size and emit ↑ immediately
+   * (output still 0), mirroring a local model's `onPrompt`.
+   */
+  readonly onPrompt: (text: string) => void;
+  /** A content delta arrived; grow the provisional output count. */
+  readonly onText: (text: string) => void;
+  /** Emit the final estimate, ignoring the throttle. */
+  readonly flush: () => void;
+}
+
+/**
+ * Emit provisional mid-stream {@link Usage} snapshots for providers whose API
+ * only attaches billed usage to the **final** chunk (OpenAI-compatible chat
+ * completions with `include_usage`).
+ *
+ * Anthropic / Gemini restate cumulative usage throughout the stream, and local
+ * models count real decode tokens — those paths use
+ * {@link createUsageSnapshotEmitter} / a decode reporter. Chat-completions
+ * shape has nothing until the empty-choices trailer, so without this the CLI
+ * row stays on a static "Generating" with no ↑↓ for the whole call.
+ *
+ * Call {@link EstimatedOutputUsageReporter.onPrompt} with the request text as
+ * soon as the stream is opened so ↑ appears before the first delta (same
+ * moment a local model can state its prompt cost). Then feed content deltas to
+ * {@link EstimatedOutputUsageReporter.onText}. Estimates use
+ * {@link estimateTokenCount}, throttled like a local decode reporter. The
+ * run-fn's `finish.usage` still carries the provider's billed totals and
+ * supersedes these snapshots — do not use the provisional figures for cost math.
+ */
+export function createEstimatedOutputUsageReporter(
+  emit: (event: StreamUsage) => void,
+  options: {
+    intervalMs?: number;
+    now?: () => number;
+  } = {}
+): EstimatedOutputUsageReporter {
+  const intervalMs = options.intervalMs ?? ESTIMATED_USAGE_INTERVAL_MS;
+  const now = options.now ?? Date.now;
+  let input: number | undefined;
+  let outputChars = 0;
+  let lastEmit: number | undefined;
+  let lastEmitted: { input: number | undefined; output: number } | undefined;
+
+  const outputFromChars = (): number =>
+    outputChars === 0 ? 0 : Math.ceil(outputChars / CHARS_PER_TOKEN_ESTIMATE);
+
+  const snapshot = (): Usage => ({
+    input,
+    output: outputFromChars(),
+    cached: undefined,
+    cacheWrite: undefined,
+    reasoning: undefined,
+    total: undefined,
+    extra: undefined,
+  });
+
+  const send = (at: number): void => {
+    const usage = snapshot();
+    lastEmit = at;
+    lastEmitted = { input: usage.input, output: usage.output ?? 0 };
+    emit({ type: "usage", usage });
+  };
+
+  return {
+    onPrompt: (text: string): void => {
+      input = estimateTokenCount(text);
+      // Emit even for an empty prompt so ↑0 is distinguishable from "unknown"
+      // only when the caller actually invoked onPrompt — a zero-length prompt
+      // still means the request carried no text.
+      send(now());
+    },
+    onText: (text: string): void => {
+      if (!text) return;
+      outputChars += text.length;
+      const at = now();
+      if (lastEmit !== undefined && at - lastEmit < intervalMs) return;
+      send(at);
+    },
+    flush: (): void => {
+      if (input === undefined && outputChars === 0) return;
+      const next = { input, output: outputFromChars() };
+      if (
+        lastEmitted &&
+        lastEmitted.input === next.input &&
+        lastEmitted.output === next.output
+      ) {
+        return;
+      }
+      send(now());
+    },
+  };
+}
+
 function usageChanged(a: Usage, b: Usage): boolean {
   return (
     a.input !== b.input ||

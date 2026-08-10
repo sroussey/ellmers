@@ -10,7 +10,11 @@ import type {
   StructuredGenerationTaskOutput,
   Usage,
 } from "@workglow/ai";
-import { isStrictCompatibleSchema, OPENAI_STREAM_USAGE_OPTIONS } from "@workglow/ai/provider-utils";
+import {
+  createEstimatedOutputUsageReporter,
+  isStrictCompatibleSchema,
+  OPENAI_STREAM_USAGE_OPTIONS,
+} from "@workglow/ai/provider-utils";
 import { createPartialJsonStream } from "@workglow/util/worker";
 import { getClient, getModelName } from "./OpenRouter_Client";
 import type { OpenRouterModelConfig } from "./OpenRouter_ModelSchema";
@@ -45,6 +49,13 @@ export const OpenRouter_StructuredGeneration_Stream: AiProviderRunFn<
       }
     : { type: "json_object" as never };
 
+  // OpenRouter only attaches billed usage to the final empty-choices chunk, so
+  // without a provisional estimate the CLI row stays on a static "Generating"
+  // for the whole call. Emit ↑ before the request so it appears during TTFB;
+  // finish.usage below still carries the provider total.
+  const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+  provisionalUsage.onPrompt(input.prompt);
+
   const stream = await client.chat.completions.create(
     {
       model: modelName,
@@ -66,6 +77,7 @@ export const OpenRouter_StructuredGeneration_Stream: AiProviderRunFn<
     usage = mapOpenRouterUsage(chunk.usage) ?? usage;
     const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
+      provisionalUsage.onText(delta);
       const partial = json.push(delta);
       if (partial !== undefined) {
         emit({ type: "object-delta", port: "object", objectDelta: partial });
@@ -73,6 +85,7 @@ export const OpenRouter_StructuredGeneration_Stream: AiProviderRunFn<
     }
     refusal += chunk.choices?.[0]?.delta?.refusal ?? "";
   }
+  provisionalUsage.flush();
 
   if (refusal) {
     emit({ type: "refusal", refusal });

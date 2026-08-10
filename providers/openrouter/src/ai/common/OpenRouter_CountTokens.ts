@@ -10,6 +10,7 @@ import type {
   CountTokensTaskInput,
   CountTokensTaskOutput,
 } from "@workglow/ai";
+import { estimateTokenCount } from "@workglow/ai/provider-utils";
 import type { OpenRouterModelConfig } from "./OpenRouter_ModelSchema";
 
 /**
@@ -18,8 +19,7 @@ import type { OpenRouterModelConfig } from "./OpenRouter_ModelSchema";
  * enough for UI budgeting without bundling a tokenizer.
  */
 function estimateTokens(input: CountTokensTaskInput): CountTokensTaskOutput {
-  const text = input.text ?? "";
-  return { count: Math.ceil(text.length / 4) };
+  return { count: estimateTokenCount(input.text ?? "") };
 }
 
 /** One-shot run-fn for `["model.count-tokens"]`. */

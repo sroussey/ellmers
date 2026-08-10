@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createUsageSnapshotEmitter } from "@workglow/ai/provider-utils";
+import {
+  createEstimatedOutputUsageReporter,
+  createUsageSnapshotEmitter,
+} from "@workglow/ai/provider-utils";
 import { _testOnly as anthropicTestOnly } from "@workglow/anthropic/ai";
 import type { StreamUsage, Usage } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
@@ -74,5 +77,70 @@ describe("Anthropic reports input before the first text delta", () => {
     expect(events).toHaveLength(1);
     expect(events[0].usage.input).toBe(1240);
     expect(events[0].usage.output).toBe(undefined);
+  });
+});
+
+describe("createEstimatedOutputUsageReporter", () => {
+  function harness(intervalMs = 250) {
+    const events: StreamUsage[] = [];
+    let clock = 1_000;
+    const reporter = createEstimatedOutputUsageReporter((event) => events.push(event), {
+      intervalMs,
+      now: () => clock,
+    });
+    return {
+      events,
+      reporter,
+      advance(ms: number) {
+        clock += ms;
+      },
+    };
+  }
+
+  it("reports the prompt size as input before a single token is decoded", () => {
+    const h = harness();
+    h.reporter.onPrompt("abcd".repeat(310)); // 1240 chars → 310 tokens
+
+    expect(h.events).toHaveLength(1);
+    expect(h.events[0]!.usage.input).toBe(310);
+    expect(h.events[0]!.usage.output).toBe(0);
+  });
+
+  it("estimates output tokens from streamed text (ceil chars/4)", () => {
+    const h = harness();
+    h.reporter.onPrompt("prompt");
+    h.advance(250);
+    h.reporter.onText("abcd"); // 4 chars → 1 token
+    expect(h.events.map((e) => e.usage)).toEqual([
+      expect.objectContaining({ input: 2, output: 0 }),
+      expect.objectContaining({ input: 2, output: 1 }),
+    ]);
+  });
+
+  it("throttles mid-stream snapshots and flushes the final total", () => {
+    const h = harness(250);
+    h.reporter.onPrompt("hi"); // ↑1, ↓0
+    h.advance(250);
+    h.reporter.onText("abcd"); // t=1250 → emit ↓1
+    h.advance(100);
+    h.reporter.onText("efgh"); // within throttle — held
+    expect(h.events.map((e) => e.usage.output)).toEqual([0, 1]);
+
+    h.advance(200);
+    h.reporter.onText("ijkl"); // → emit ceil(12/4)=3
+    expect(h.events.map((e) => e.usage.output)).toEqual([0, 1, 3]);
+
+    h.advance(50);
+    h.reporter.onText("mn"); // 14 chars → 4, within throttle
+    h.reporter.flush();
+    expect(h.events.map((e) => e.usage.output)).toEqual([0, 1, 3, 4]);
+    expect(h.events.every((e) => e.usage.input === 1)).toBe(true);
+  });
+
+  it("ignores empty deltas and does not flush when nothing arrived", () => {
+    const h = harness();
+    h.reporter.onText("");
+    h.reporter.flush();
+    expect(h.events).toEqual([]);
   });
 });

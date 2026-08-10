@@ -57,16 +57,22 @@ function hasRunConfig(i: unknown): i is { runConfig: Partial<IRunConfig> } {
   return i !== null && typeof i === "object" && "runConfig" in (i as object);
 }
 
+/**
+ * Minimal event surface {@link TaskRunner.own} bridges into the run-total sinks.
+ * Kept as its own interface so a `Taskish` union's incompatible `subscribe`
+ * overloads (Task vs TaskGraph) are not what we call after the type guard —
+ * `T & Guard` still leaves `.subscribe` as an uncallable method union.
+ */
+interface OwnUsageEventSource {
+  subscribe(
+    name: "usage",
+    fn: (usage: Usage, modelId: string | undefined) => void
+  ): () => void;
+  subscribe(name: "complete" | "error" | "abort", fn: (...args: never[]) => void): () => void;
+}
+
 /** Type guard for values that expose task lifecycle / usage events. */
-function hasUsageEvents(i: unknown): i is {
-  subscribe: {
-    (
-      name: "usage",
-      fn: (usage: Usage, modelId: string | undefined) => void
-    ): () => void;
-    (name: "complete" | "error" | "abort", fn: (...args: never[]) => void): () => void;
-  };
-} {
+function hasUsageEvents(i: unknown): i is OwnUsageEventSource {
   return (
     i !== null &&
     typeof i === "object" &&
@@ -972,6 +978,8 @@ export class TaskRunner<
     // graph/workflow the wrapper below is what the subgraph schedules — but
     // sec's pattern owns a Task and calls `task.run()` on that same value).
     if ((this.usageSink || this.usageRetireSink) && hasUsageEvents(i)) {
+      // Narrow off the Taskish generic — see OwnUsageEventSource.
+      const events: OwnUsageEventSource = i;
       const sink = this.usageSink;
       const retire = this.usageRetireSink;
       const childId = String(task.id);
@@ -980,16 +988,16 @@ export class TaskRunner<
       const offs: Array<() => void> = [];
       if (sink) {
         offs.push(
-          i.subscribe("usage", (usage: Usage, modelId: string | undefined) => {
+          events.subscribe("usage", (usage: Usage, modelId: string | undefined) => {
             sink(childId, usage, modelId);
           })
         );
       }
       if (retire) {
         const onDone = (): void => retire(childId);
-        offs.push(i.subscribe("complete", onDone));
-        offs.push(i.subscribe("error", onDone));
-        offs.push(i.subscribe("abort", onDone));
+        offs.push(events.subscribe("complete", onDone));
+        offs.push(events.subscribe("error", onDone));
+        offs.push(events.subscribe("abort", onDone));
       }
       if (trackable && offs.length > 0) {
         this.ownedUsageUnsubs.set(i, () => {
