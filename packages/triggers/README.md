@@ -32,7 +32,7 @@ await trigger.stop();
 ## Driving a workflow
 
 ```ts
-import "@workglow/triggers"; // patches Workflow.prototype
+import { IntervalTrigger, PollingTrigger } from "@workglow/triggers"; // also patches Workflow.prototype
 import { Workflow } from "@workglow/task-graph";
 
 const workflow = new Workflow().addTask(MyTask);
