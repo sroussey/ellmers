@@ -73,7 +73,7 @@ export async function disposeCheckpoint(
   const sink = getCheckpointUsageSink(id);
   try {
     const released = await getAiProviderRegistry().disposeSession(provider, id);
-    const usage = cacheStorageUsage(released?.tokens ?? entry?.tokens, released?.lifetimeMs ?? 0);
+    const usage = cacheStorageUsage(released?.tokens, released?.lifetimeMs ?? 0);
     if (usage && sink) {
       try {
         sink(usage, entry?.modelId);

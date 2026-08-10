@@ -163,9 +163,6 @@ export class CacheCheckpointTask extends AiTask<
       provider: providerName,
       modelKey,
       prefix,
-      createdAtMs: Date.now(),
-      tokens: undefined,
-      ownerTaskId: this.id as string,
       modelId: model.model_id,
       ...(input.checkpoint ? { parentId: input.checkpoint } : {}),
     });

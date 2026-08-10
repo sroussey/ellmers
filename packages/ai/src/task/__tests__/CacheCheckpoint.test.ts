@@ -54,9 +54,6 @@ describe("CheckpointRegistry", () => {
       tools: [{ name: "a", description: "A", inputSchema: { type: "object" } }],
       messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
     },
-    createdAtMs: Date.now(),
-    tokens: undefined,
-    ownerTaskId: undefined,
     modelId: undefined,
   };
 
@@ -270,9 +267,6 @@ describe("CacheCheckpointTask", () => {
       provider: "OTHER_PROVIDER",
       modelKey: "",
       prefix: {},
-      createdAtMs: Date.now(),
-      tokens: undefined,
-      ownerTaskId: undefined,
       modelId: undefined,
     });
     await expect(
@@ -504,9 +498,6 @@ describe("ToolCallingTask checkpoint ports", () => {
       provider: CKPT_PROVIDER,
       modelKey: "test:ckpt-model:v1",
       prefix: { systemPrompt: "sys", tools: [aTool], messages: [] },
-      createdAtMs: Date.now(),
-      tokens: undefined,
-      ownerTaskId: undefined,
       modelId: undefined,
     });
     const task = new ToolCallingTask();
@@ -521,9 +512,6 @@ describe("ToolCallingTask checkpoint ports", () => {
       provider: CKPT_PROVIDER,
       modelKey: "test:ckpt-model:v1",
       prefix: { systemPrompt: "sys", tools: [aTool], messages: [] },
-      createdAtMs: Date.now(),
-      tokens: undefined,
-      ownerTaskId: undefined,
       modelId: undefined,
     });
     const scope = new ResourceScope();
@@ -556,9 +544,6 @@ describe("ToolCallingTask checkpoint ports", () => {
       provider: CKPT_PROVIDER,
       modelKey: "test:ckpt-model:v1",
       prefix: { systemPrompt: "sys", tools: [aTool], messages: [] },
-      createdAtMs: Date.now(),
-      tokens: undefined,
-      ownerTaskId: undefined,
       modelId: undefined,
     });
     const scope = new ResourceScope();
@@ -637,9 +622,6 @@ describe("TextGenerationTask checkpoint ports", () => {
       provider: CKPT_PROVIDER,
       modelKey: "test:ckpt-model:v1",
       prefix: { systemPrompt: "sys", messages: [] },
-      createdAtMs: Date.now(),
-      tokens: undefined,
-      ownerTaskId: undefined,
       modelId: undefined,
     });
     const scope = new ResourceScope();
@@ -841,9 +823,6 @@ describe("AiChatTask checkpoint consumption", () => {
       provider: CKPT_PROVIDER,
       modelKey: "test:ckpt-model:v1",
       prefix: { systemPrompt: "sys", messages: [] },
-      createdAtMs: Date.now(),
-      tokens: undefined,
-      ownerTaskId: undefined,
       modelId: undefined,
     });
     const input = {
@@ -926,9 +905,6 @@ describe("model-key fail-closed (L2)", () => {
       provider: CKPT_PROVIDER,
       modelKey: "test:model:v1",
       prefix: { systemPrompt: "sys" },
-      createdAtMs: Date.now(),
-      tokens: undefined,
-      ownerTaskId: undefined,
       modelId: undefined,
     });
     const task = new TextGenerationTask();
@@ -947,9 +923,6 @@ describe("model-key fail-closed (L2)", () => {
       provider: CKPT_PROVIDER,
       modelKey: "",
       prefix: { systemPrompt: "sys" },
-      createdAtMs: Date.now(),
-      tokens: undefined,
-      ownerTaskId: undefined,
       modelId: undefined,
     });
     const task = new TextGenerationTask();
@@ -978,9 +951,6 @@ describe("model-key fail-closed (L2)", () => {
       provider: CKPT_PROVIDER,
       modelKey: "modelA",
       prefix: {},
-      createdAtMs: Date.now(),
-      tokens: undefined,
-      ownerTaskId: undefined,
       modelId: undefined,
     });
     const modelB: ModelConfig = {
