@@ -9,7 +9,7 @@ import { getLogger } from "@workglow/util";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import { BackpressureGate } from "../task/BackpressureGate";
 import type { ITask } from "../task/ITask";
-import type { StreamEvent, StreamMode } from "../task/StreamTypes";
+import type { StreamEvent, StreamMode, Usage } from "../task/StreamTypes";
 import {
   DEFAULT_BINARY_HIGH_WATER_BYTES,
   DEFAULT_STREAM_GATE_WATCHDOG_MS,
@@ -46,6 +46,8 @@ export interface StreamingRunOptions {
   readonly registry: ServiceRegistry;
   readonly outputCache: TaskOutputRepository | undefined;
   readonly resourceScope: ResourceScope | undefined;
+  /** Where a charge that settles after a task finished lands. */
+  readonly lateUsageSink?: (taskId: string, usage: Usage, modelId: string | undefined) => void;
   readonly accumulateLeafOutputs: boolean;
   /**
    * Opt-in to the no-accumulation passthrough path for this run. Off ⇒ every
@@ -334,6 +336,7 @@ export class StreamPump {
         updateProgress: options.updateProgress,
         registry: options.registry,
         resourceScope: options.resourceScope,
+        lateUsageSink: options.lateUsageSink,
         runId: options.runId,
         noAccumulation: options.noAccumulation,
         streamHighWaterBytes: options.streamHighWaterBytes,

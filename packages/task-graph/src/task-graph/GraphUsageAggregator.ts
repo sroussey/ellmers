@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { getLogger } from "@workglow/util";
 import type { Usage } from "../task/StreamTypes";
 import { mergeUsage } from "../task/StreamTypes";
 
@@ -144,6 +145,20 @@ export class GraphUsageAggregator {
     for (const taskId of [...this.live.keys()]) this.retire(taskId);
   }
 
+  /**
+   * Add a charge that settles after its execution finished — provider cache
+   * storage, billed at disposal. Merged into the retired totals rather than
+   * replacing a bucket: unlike a `usage` snapshot this is a delta, and the
+   * execution it belongs to was retired long before it arrived.
+   */
+  chargeLate(taskId: string, usage: Usage, modelId: string | undefined): void {
+    const key = modelKey(modelId);
+    this.retired = mergeUsage(this.retired, usage);
+    this.retiredByTask.set(taskId, mergeUsage(this.retiredByTask.get(taskId), usage) ?? usage);
+    this.retiredByModel.set(key, mergeUsage(this.retiredByModel.get(key), usage) ?? usage);
+    this.notifyRetire({ taskId, modelId, usage });
+  }
+
   private retireBucket(taskId: string, key: ModelKey): void {
     const models = this.live.get(taskId);
     const row = models?.get(key);
@@ -156,7 +171,21 @@ export class GraphUsageAggregator {
       mergeUsage(this.retiredByTask.get(taskId), row.usage) ?? row.usage
     );
     this.retiredByModel.set(key, mergeUsage(this.retiredByModel.get(key), row.usage) ?? row.usage);
-    for (const cb of this.retireListeners) cb(row);
+    this.notifyRetire(row);
+  }
+
+  /**
+   * A telemetry subscriber that throws must not take down the run that
+   * produced the numbers, nor starve the subscribers registered after it.
+   */
+  private notifyRetire(row: RetiredUsage): void {
+    for (const cb of this.retireListeners) {
+      try {
+        cb(row);
+      } catch (err) {
+        getLogger().error("usage retire listener threw", { taskId: row.taskId, error: err });
+      }
+    }
   }
 }
 

@@ -6,7 +6,6 @@
 
 import type { CachePolicy, IExecuteContext, IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, TaskConfigurationError, Workflow } from "@workglow/task-graph";
-import { getLogger } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
@@ -167,16 +166,10 @@ export class CacheCheckpointTask extends AiTask<
       ...(input.checkpoint ? { parentId: input.checkpoint } : {}),
     });
 
-    // Attribute this checkpoint's eventual storage charge to this task, whoever
-    // ends up disposing it — a chained emit supersedes and disposes it inline,
-    // which is not this disposer.
-    setCheckpointUsageSink(id, (usage, modelId) => {
-      try {
-        this.emit("usage", usage, modelId);
-      } catch (err) {
-        getLogger().error("usage listener threw", { taskId: this.id, error: err });
-      }
-    });
+    // Attribute this checkpoint's eventual storage charge to this task — and
+    // through it to the run total — whoever ends up disposing it: a chained
+    // emit supersedes and disposes it inline, which is not this disposer.
+    setCheckpointUsageSink(id, (usage, modelId) => this.chargeLateUsage(usage, modelId));
 
     if (context.resourceScope) {
       context.resourceScope.register(`ai:session:${id}`, async () => {

@@ -40,6 +40,11 @@ export interface CheckpointEntry {
  * a chained emit supersedes its parent inline, and the run's `ResourceScope`
  * disposes whatever is left at run end. Keying the sink to the checkpoint id
  * makes the charge reach the minter from any of those sites.
+ *
+ * Every implementation routes through the minting task's `chargeLateUsage`,
+ * which folds the charge into that task's total and into the run total. Run-end
+ * disposal happens after the run's usage has settled, so the charge is the one
+ * kind of spend that arrives late and still has to be counted.
  */
 export type CheckpointUsageSink = (usage: Usage, modelId: string | undefined) => void;
 

@@ -170,3 +170,90 @@ describe("GraphUsageAggregator", () => {
     expect(rows).toContainEqual({ taskId: "foo", modelId: "bar baz", usage: usage(100, 20) });
   });
 });
+
+/** A provider cache-storage charge: no counters, one `extra` figure. */
+const storageCharge = (tokenHours: number): Usage => ({
+  input: undefined,
+  output: undefined,
+  cached: undefined,
+  cacheWrite: undefined,
+  reasoning: undefined,
+  total: undefined,
+  extra: { cacheStorageTokenHours: tokenHours },
+});
+
+describe("chargeLate", () => {
+  it("adds a late charge to the run total instead of replacing a bucket", () => {
+    const agg = new GraphUsageAggregator();
+    agg.observe("t1", usage(100, 20), "m");
+    agg.retire("t1");
+
+    agg.chargeLate("t1", storageCharge(500_000), "m");
+
+    // A late charge is a delta against an execution that is already over, so
+    // it merges. Routing it through `observe` would replace the retired
+    // execution's real counters with a bucket that has none.
+    expect(agg.total?.input).toBe(100);
+    expect(agg.total?.output).toBe(20);
+    expect(agg.total?.extra?.cacheStorageTokenHours).toBe(500_000);
+  });
+
+  it("files a late charge under the same task and model buckets", () => {
+    const agg = new GraphUsageAggregator();
+    agg.observe("t1", usage(100, 20), "m");
+    agg.retire("t1");
+
+    agg.chargeLate("t1", storageCharge(500_000), "m");
+
+    const byTask = agg.byTask().get("t1");
+    expect(byTask?.input).toBe(100);
+    expect(byTask?.extra?.cacheStorageTokenHours).toBe(500_000);
+    const byModel = agg.byModel().get("m");
+    expect(byModel?.input).toBe(100);
+    expect(byModel?.extra?.cacheStorageTokenHours).toBe(500_000);
+  });
+
+  it("notifies retire subscribers so a recorder writes a row for it", () => {
+    const agg = new GraphUsageAggregator();
+    const rows: RetiredUsage[] = [];
+    agg.onRetire((row) => rows.push(row));
+
+    agg.chargeLate("t1", storageCharge(500_000), "m");
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.taskId).toBe("t1");
+    expect(rows[0]!.modelId).toBe("m");
+    expect(rows[0]!.usage.extra?.cacheStorageTokenHours).toBe(500_000);
+  });
+});
+
+describe("a throwing retire subscriber", () => {
+  it("does not fail the sweep when a listener throws", () => {
+    const agg = new GraphUsageAggregator();
+    const seen: RetiredUsage[] = [];
+    agg.onRetire(() => {
+      throw new Error("recorder blew up");
+    });
+    agg.onRetire((row) => seen.push(row));
+
+    agg.observe("t1", usage(10, 1), "m");
+
+    // One misbehaving telemetry subscriber must not take down the run that
+    // produced the numbers, nor starve the subscribers registered after it.
+    expect(() => agg.sweep()).not.toThrow();
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.taskId).toBe("t1");
+  });
+
+  it("does not fail a late charge when a listener throws", () => {
+    const agg = new GraphUsageAggregator();
+    const seen: RetiredUsage[] = [];
+    agg.onRetire(() => {
+      throw new Error("recorder blew up");
+    });
+    agg.onRetire((row) => seen.push(row));
+
+    expect(() => agg.chargeLate("t1", storageCharge(1), "m")).not.toThrow();
+    expect(seen).toHaveLength(1);
+  });
+});

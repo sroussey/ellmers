@@ -171,8 +171,9 @@ const setupWorkflow = async () => {
       console.error("Task graph error:", error.message, error.errors, error);
       throw error;
     } finally {
-      // Awaited so the last rows — including a checkpoint's storage charge,
-      // written during run-end scope disposal — are not lost to teardown.
+      // Awaited after run() resolves: run() owns the ResourceScope, so it has
+      // already disposed the run's checkpoints and their storage charges have
+      // been recorded by the time we detach.
       await detachUsage();
     }
   };

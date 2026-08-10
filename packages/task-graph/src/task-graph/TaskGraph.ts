@@ -8,7 +8,7 @@ import type { IDisposeStrategy, ResourceScope, ServiceRegistry } from "@workglow
 import { EventEmitter, uuid4 } from "@workglow/util";
 import { DirectedAcyclicGraph } from "@workglow/util/graph";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
-import type { ITask } from "../task/ITask";
+import type { IRunConfig, ITask } from "../task/ITask";
 import type { StreamEvent, Usage } from "../task/StreamTypes";
 import type { TaskEntitlements } from "../task/TaskEntitlements";
 import type { JsonTaskItem, TaskGraphJson, TaskGraphJsonOptions } from "../task/TaskJSON";
@@ -104,6 +104,9 @@ export interface TaskGraphRunConfig {
 
   /** Same semantics as on {@link IRunConfig}. */
   disposeStrategy?: IDisposeStrategy;
+
+  /** Same semantics as on {@link IRunConfig}. */
+  lateUsageSink?: IRunConfig["lateUsageSink"];
 
   /**
    * Stable identifier for this logical run. When provided, the graph runner
