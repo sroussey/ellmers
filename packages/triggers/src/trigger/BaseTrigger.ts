@@ -292,9 +292,11 @@ export abstract class BaseTrigger implements ITrigger {
       await Promise.allSettled([...run.pending]);
     }
 
-    // A `start()` during the drain installed a newer run; clearing `_run` here
-    // would strand it.
-    if (this._run === run) this._run = undefined;
+    // A `start()` during the drain installed a newer run. Clearing `_run` here
+    // would strand it, and emitting `stop` would report a trigger that is
+    // actively firing as stopped.
+    if (this._run !== run) return;
+    this._run = undefined;
     this.safeEmit("stop");
   }
 

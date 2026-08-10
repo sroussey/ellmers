@@ -67,7 +67,11 @@ export type TriggerHandler = (context: ITriggerFireContext) => void | Promise<vo
 export type TriggerEventListeners = {
   /** The trigger began scheduling. */
   start: () => void;
-  /** The trigger stopped and any in-flight handler has settled. */
+  /**
+   * The trigger stopped and any in-flight handler has settled. Not emitted for a
+   * generation superseded by a `start()` during an un-awaited `stop()` drain —
+   * the trigger is running again, and the newer generation reports its own stop.
+   */
   stop: () => void;
   /** A handler invocation is about to begin. */
   fire: (context: ITriggerFireContext) => void;
