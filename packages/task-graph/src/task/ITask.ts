@@ -292,6 +292,23 @@ export interface IRunConfig {
   lateUsageSink?: (taskId: string, usage: Usage, modelId: string | undefined) => void;
 
   /**
+   * Where a live cumulative usage snapshot from an owned child
+   * (`context.own` + `child.run()`) is published into the run total. Owned
+   * children are not scheduled by the graph runner, so their `usage` events
+   * never become `task_usage` unless this sink bridges them. Threaded like
+   * `lateUsageSink`: nested owns inherit the root run's sink.
+   */
+  usageSink?: (taskId: string, usage: Usage, modelId: string | undefined) => void;
+
+  /**
+   * Marks an owned child's execution finished so its live usage bucket is
+   * retired. Without this, a reused owned task (stable id, many `run()`s in
+   * one parent run — the sec extraction pattern) would replace its previous
+   * spend instead of accumulating. Threaded like {@link usageSink}.
+   */
+  usageRetireSink?: (taskId: string) => void;
+
+  /**
    * When true, check entitlements via the registered IEntitlementEnforcer
    * before graph execution begins. Throws TaskEntitlementError if denied.
    * Default: false (entitlements are declarative only, not enforced by the engine).

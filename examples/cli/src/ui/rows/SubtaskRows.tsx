@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { formatUsage } from "@workglow/ai";
 import type { ITask } from "@workglow/task-graph";
 import { Box, Text } from "ink";
 import React from "react";
@@ -16,6 +17,7 @@ import {
   sortIterationSlotsForDisplay,
 } from "../taskGraphCliSubscriptions";
 import { useSubtaskRows } from "./useSubtaskRows";
+import { useTaskUsage } from "./useTaskUsage";
 
 /**
  * A long-running task can own hundreds of subtasks (one generation per eval
@@ -73,8 +75,44 @@ function SubtaskRow({
   readonly iterationSlots: ReadonlyMap<string, IterationSlotRow[]>;
   readonly depth: number;
 }): React.ReactElement {
+  if (task === undefined) {
+    return (
+      <Box flexDirection="column">
+        <TaskStatusProgressRow
+          label={line.label}
+          status={line.status}
+          message={line.message}
+          barProgress={line.progress ?? 0}
+        />
+      </Box>
+    );
+  }
+  return (
+    <SubtaskStatusWithUsage
+      task={task}
+      line={line}
+      iterationSlots={iterationSlots}
+      depth={depth}
+    />
+  );
+}
+
+/** Status + token line for one owned child; isolated so `useTaskUsage` is legal. */
+function SubtaskStatusWithUsage({
+  task,
+  line,
+  iterationSlots,
+  depth,
+}: {
+  readonly task: ITask;
+  readonly line: CliTaskLine;
+  readonly iterationSlots: ReadonlyMap<string, IterationSlotRow[]>;
+  readonly depth: number;
+}): React.ReactElement {
   const slots = iterationSlots.get(line.id);
   const sortedSlots = slots ? sortIterationSlotsForDisplay(slots) : [];
+  const usage = useTaskUsage(task);
+  const usageLine = formatUsage(usage, "directional");
   return (
     <Box flexDirection="column">
       <TaskStatusProgressRow
@@ -83,6 +121,7 @@ function SubtaskRow({
         message={line.message}
         barProgress={line.progress ?? 0}
       />
+      {usageLine ? <Text dimColor> {usageLine}</Text> : null}
       {sortedSlots.map((slot) => (
         <Box key={`${line.id}-iter-${slot.index}`} flexDirection="column" paddingLeft={2}>
           <TaskStatusProgressRow
@@ -94,7 +133,7 @@ function SubtaskRow({
           />
         </Box>
       ))}
-      {task !== undefined && depth < MAX_SUBTASK_DEPTH && (
+      {depth < MAX_SUBTASK_DEPTH && (
         <NestedSubtaskRows task={task} parentType={line.type} depth={depth} />
       )}
     </Box>

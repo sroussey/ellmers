@@ -146,6 +146,81 @@ class LateChargingTask extends Task<Record<string, never>, { text: string }> {
   }
 }
 
+/**
+ * Owns a spending child and runs it via `child.run()` — the sec / embarc-data
+ * extraction pattern (`context.own` + `task.run`), not a GraphAsTask subgraph.
+ */
+class OwningSpendTask extends Task<Record<string, never>, Record<string, never>> {
+  static override readonly type = "OwningSpendTask";
+  static override readonly category = "Test";
+  static override readonly title = "Owning spend task";
+  static override readonly description = "Owns a child that reports usage, then runs it.";
+  static override readonly cacheable = false;
+
+  static override inputSchema(): DataPortSchema {
+    return { type: "object", properties: {}, additionalProperties: false } as const;
+  }
+
+  static override outputSchema(): DataPortSchema {
+    return { type: "object", properties: {}, additionalProperties: false } as const;
+  }
+
+  override async execute(
+    _input: Record<string, never>,
+    context: IExecuteContext
+  ): Promise<Record<string, never>> {
+    const child = context.own(new UsageEmittingTask({ id: "owned-child" }));
+    await child.run();
+    return {};
+  }
+}
+
+describe("owned child spend reaches the run total", () => {
+  it("folds context.own + child.run() usage into graph.runUsage and graph_usage", async () => {
+    const graph = new TaskGraph();
+    graph.addTask(new OwningSpendTask({ id: "owner" }));
+    const graphUsageEvents: Usage[] = [];
+    graph.subscribe("graph_usage", (total) => graphUsageEvents.push(total));
+
+    await new TaskGraphRunner(graph).runGraph();
+
+    // The child's StreamProcessor sets child.runUsage, but the graph scheduler
+    // never sees that task — only an own()-time bridge can publish task_usage.
+    expect(graph.runUsage).toEqual(usage(10, 5));
+    expect(graphUsageEvents.at(-1)).toEqual(usage(10, 5));
+  });
+
+  it("sums successive runs of a reused owned child rather than keeping only the last", async () => {
+    class ReusingOwner extends Task<Record<string, never>, Record<string, never>> {
+      static override readonly type = "ReusingOwner";
+      static override readonly category = "Test";
+      static override readonly cacheable = false;
+      static override inputSchema(): DataPortSchema {
+        return { type: "object", properties: {}, additionalProperties: false } as const;
+      }
+      static override outputSchema(): DataPortSchema {
+        return { type: "object", properties: {}, additionalProperties: false } as const;
+      }
+      override async execute(
+        _input: Record<string, never>,
+        context: IExecuteContext
+      ): Promise<Record<string, never>> {
+        // Same child instance, two runs — the sec extraction reuse pattern.
+        const child = context.own(new UsageEmittingTask({ id: "owned-child" }));
+        await child.run();
+        await child.run();
+        return {};
+      }
+    }
+
+    const graph = new TaskGraph();
+    graph.addTask(new ReusingOwner({ id: "owner" }));
+    await new TaskGraphRunner(graph).runGraph();
+
+    expect(graph.runUsage).toEqual(usage(20, 10));
+  });
+});
+
 describe("a charge that settles after the run", () => {
   it("adds a disposal-time charge to graph.runUsage and graph_usage", async () => {
     const graph = new TaskGraph();

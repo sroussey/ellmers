@@ -57,6 +57,23 @@ function hasRunConfig(i: unknown): i is { runConfig: Partial<IRunConfig> } {
   return i !== null && typeof i === "object" && "runConfig" in (i as object);
 }
 
+/** Type guard for values that expose task lifecycle / usage events. */
+function hasUsageEvents(i: unknown): i is {
+  subscribe: {
+    (
+      name: "usage",
+      fn: (usage: Usage, modelId: string | undefined) => void
+    ): () => void;
+    (name: "complete" | "error" | "abort", fn: (...args: never[]) => void): () => void;
+  };
+} {
+  return (
+    i !== null &&
+    typeof i === "object" &&
+    typeof (i as { subscribe?: unknown }).subscribe === "function"
+  );
+}
+
 /**
  * Whether `own` can record a value's wrapper against it. Everything `Taskish`
  * admits is WeakMap-keyable — a pipe function included, which `typeof === "object"`
@@ -148,6 +165,27 @@ export class TaskRunner<
    * the run; the next `handleStart` overwrites it.
    */
   protected lateUsageSink?: (taskId: string, usage: Usage, modelId: string | undefined) => void;
+
+  /**
+   * Where an owned child's live cumulative usage snapshot is published into
+   * the run total. Stamped onto owned children so nested `own()` chains still
+   * reach the root; the parent also subscribes at `own()` time so a direct
+   * child's `usage` events fire the sink without waiting for the child to
+   * re-stamp anything.
+   */
+  protected usageSink?: (taskId: string, usage: Usage, modelId: string | undefined) => void;
+
+  /**
+   * Retires an owned child's live usage bucket when that child finishes. See
+   * {@link IRunConfig.usageRetireSink}.
+   */
+  protected usageRetireSink?: (taskId: string) => void;
+
+  /**
+   * Teardowns for `usage` subscriptions installed by {@link own}. Cleared in
+   * `run()`'s `finally` and individually by {@link disown}.
+   */
+  private readonly ownedUsageUnsubs = new Map<object, () => void>();
 
   /**
    * True when `this.resourceScope` was auto-created by `run()` (caller did not
@@ -485,6 +523,8 @@ export class TaskRunner<
       }
       throw err;
     } finally {
+      for (const off of this.ownedUsageUnsubs.values()) off();
+      this.ownedUsageUnsubs.clear();
       if (ownsScope) {
         await effectiveConfig.resourceScope!.runComplete();
         this.resourceScope = undefined;
@@ -829,13 +869,20 @@ export class TaskRunner<
    */
   public get streamRunOptions(): Pick<
     IRunConfig,
-    "noAccumulation" | "streamHighWaterBytes" | "streamGateWatchdogMs" | "lateUsageSink"
+    | "noAccumulation"
+    | "streamHighWaterBytes"
+    | "streamGateWatchdogMs"
+    | "lateUsageSink"
+    | "usageSink"
+    | "usageRetireSink"
   > {
     return {
       noAccumulation: this.noAccumulation,
       streamHighWaterBytes: this.streamHighWaterBytes,
       streamGateWatchdogMs: this.streamGateWatchdogMs,
       lateUsageSink: this.lateUsageSink,
+      usageSink: this.usageSink,
+      usageRetireSink: this.usageRetireSink,
     };
   }
 
@@ -911,11 +958,44 @@ export class TaskRunner<
         // lifetime to leak, and an owned child's own `task.run()` needs it to
         // reach the run total.
         lateUsageSink: this.lateUsageSink,
+        usageSink: this.usageSink,
+        usageRetireSink: this.usageRetireSink,
       };
       if (!this.ownsResourceScope) {
         stamp.resourceScope = this.resourceScope;
       }
       Object.assign(i.runConfig, stamp);
+    }
+    // Owned children run via `child.run()`, not the graph scheduler, so their
+    // `usage` events never become `task_usage` unless we bridge them here.
+    // Subscribe on the value the caller runs (`i` for a plain task; for a
+    // graph/workflow the wrapper below is what the subgraph schedules — but
+    // sec's pattern owns a Task and calls `task.run()` on that same value).
+    if ((this.usageSink || this.usageRetireSink) && hasUsageEvents(i)) {
+      const sink = this.usageSink;
+      const retire = this.usageRetireSink;
+      const childId = String(task.id);
+      const previousOff = trackable ? this.ownedUsageUnsubs.get(i) : undefined;
+      previousOff?.();
+      const offs: Array<() => void> = [];
+      if (sink) {
+        offs.push(
+          i.subscribe("usage", (usage: Usage, modelId: string | undefined) => {
+            sink(childId, usage, modelId);
+          })
+        );
+      }
+      if (retire) {
+        const onDone = (): void => retire(childId);
+        offs.push(i.subscribe("complete", onDone));
+        offs.push(i.subscribe("error", onDone));
+        offs.push(i.subscribe("abort", onDone));
+      }
+      if (trackable && offs.length > 0) {
+        this.ownedUsageUnsubs.set(i, () => {
+          for (const off of offs) off();
+        });
+      }
     }
     // Notify listeners that the entitlement landscape may have changed.
     // For GraphAsTask this is also handled by the subGraph subscription, but
@@ -945,6 +1025,11 @@ export class TaskRunner<
     // Drop the record even when the wrapper is already gone (a subgraph reset
     // between runs), so the value can be owned again.
     this.ownedWrappers.delete(i);
+    const off = this.ownedUsageUnsubs.get(i);
+    if (off) {
+      off();
+      this.ownedUsageUnsubs.delete(i);
+    }
     if (!this.isStillOwned(wrapper)) return;
     this.task.subGraph.removeTask(wrapper.id);
     if ((this.task.constructor as typeof Task).hasDynamicEntitlements) {
@@ -1115,6 +1200,14 @@ export class TaskRunner<
 
     if (config.lateUsageSink) {
       this.lateUsageSink = config.lateUsageSink;
+    }
+
+    if (config.usageSink) {
+      this.usageSink = config.usageSink;
+    }
+
+    if (config.usageRetireSink) {
+      this.usageRetireSink = config.usageRetireSink;
     }
 
     // Notify the disposal strategy that a new run is starting. Inactivity

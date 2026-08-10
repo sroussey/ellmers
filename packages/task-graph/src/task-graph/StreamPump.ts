@@ -48,6 +48,10 @@ export interface StreamingRunOptions {
   readonly resourceScope: ResourceScope | undefined;
   /** Where a charge that settles after a task finished lands. */
   readonly lateUsageSink?: (taskId: string, usage: Usage, modelId: string | undefined) => void;
+  /** Where an owned child's live usage snapshot lands. */
+  readonly usageSink?: (taskId: string, usage: Usage, modelId: string | undefined) => void;
+  /** Where an owned child's finished execution is retired. */
+  readonly usageRetireSink?: (taskId: string) => void;
   readonly accumulateLeafOutputs: boolean;
   /**
    * Opt-in to the no-accumulation passthrough path for this run. Off ⇒ every
@@ -337,6 +341,8 @@ export class StreamPump {
         registry: options.registry,
         resourceScope: options.resourceScope,
         lateUsageSink: options.lateUsageSink,
+        usageSink: options.usageSink,
+        usageRetireSink: options.usageRetireSink,
         runId: options.runId,
         noAccumulation: options.noAccumulation,
         streamHighWaterBytes: options.streamHighWaterBytes,

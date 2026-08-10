@@ -143,6 +143,8 @@ export class TaskGraphRunner {
    * handleStart, inheriting an outer run's sink when this is a subgraph run.
    */
   protected lateUsageSink?: (taskId: string, usage: Usage, modelId: string | undefined) => void;
+  protected usageSink?: (taskId: string, usage: Usage, modelId: string | undefined) => void;
+  protected usageRetireSink?: (taskId: string) => void;
 
   /**
    * Per-run state. Set by handleStart, cleared by handleComplete/Error/Abort.
@@ -558,6 +560,8 @@ export class TaskGraphRunner {
         outputCache: this.outputCache,
         resourceScope: this.resourceScope,
         lateUsageSink: this.lateUsageSink,
+        usageSink: this.usageSink,
+        usageRetireSink: this.usageRetireSink,
         accumulateLeafOutputs: this.accumulateLeafOutputs,
         noAccumulation: this.noAccumulation,
         streamHighWaterBytes: this.streamHighWaterBytes,
@@ -591,6 +595,8 @@ export class TaskGraphRunner {
       registry: this.registry,
       resourceScope: this.resourceScope,
       lateUsageSink: this.lateUsageSink,
+      usageSink: this.usageSink,
+      usageRetireSink: this.usageRetireSink,
       runId: this.runId,
     });
 
@@ -673,6 +679,24 @@ export class TaskGraphRunner {
     this.lateUsageSink =
       config?.lateUsageSink ??
       ((taskId, usage, modelId) => this.graph.usageAggregator.chargeLate(taskId, usage, modelId));
+    // Owned children (`context.own` + `child.run()`) are not scheduled here, so
+    // their `usage` events never become `task_usage` unless a sink publishes
+    // them. Reuse the same event the scheduler emits for graph-hosted tasks so
+    // the aggregator / `graph_usage` path below stays the single observe site.
+    this.usageSink =
+      config?.usageSink ??
+      ((taskId, usage, modelId) => {
+        try {
+          this.graph.emit("task_usage", taskId, usage, modelId);
+        } catch (err) {
+          getLogger().error("usage sink threw", { taskId, error: err });
+        }
+      });
+    // Retire without emitting `task_complete`: that event has other listeners
+    // (CLI completion tracking, bridges) that should not see owned children as
+    // top-level graph tasks. The aggregator's retire is the whole contract.
+    this.usageRetireSink =
+      config?.usageRetireSink ?? ((taskId) => this.graph.usageAggregator.retire(String(taskId)));
     this.baseRegistryForRun = this.registry;
 
     // Store run identifier for per-task propagation.

@@ -108,6 +108,12 @@ export interface TaskGraphRunConfig {
   /** Same semantics as on {@link IRunConfig}. */
   lateUsageSink?: IRunConfig["lateUsageSink"];
 
+  /** Same semantics as on {@link IRunConfig}. */
+  usageSink?: IRunConfig["usageSink"];
+
+  /** Same semantics as on {@link IRunConfig}. */
+  usageRetireSink?: IRunConfig["usageRetireSink"];
+
   /**
    * Stable identifier for this logical run. When provided, the graph runner
    * wraps the `private` cache slot in a {@link RunPrivateCacheRepo} keyed by
