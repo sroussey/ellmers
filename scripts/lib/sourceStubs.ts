@@ -14,6 +14,12 @@
  *
  * Stubs are identified by {@link SOURCE_STUB_SENTINEL} in their first bytes, so
  * removal never deletes a real build artifact and no marker file is needed.
+ *
+ * Type stubs (`export * from "../src/browser"`) break under TypeScript project
+ * references: the consumer redirects `dist/*.d.ts` to `src`, so the stub's
+ * relative import resolves as a self-import and every export appears missing.
+ * Example apps therefore omit `references` and resolve packages via
+ * `node_modules` → stub → source.
  */
 
 import { existsSync } from "node:fs";

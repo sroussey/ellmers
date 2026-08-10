@@ -28,6 +28,17 @@ export default defineConfig({
   ].filter(Boolean),
   resolve: {
     mainFields: ["browser", "import", "module", "main"],
+    // Bun's isolated linker can leave multiple @codemirror/state copies in the
+    // graph; CodeMirror extensions use instanceof and break when mixed.
+    dedupe: [
+      "@codemirror/state",
+      "@codemirror/view",
+      "@codemirror/language",
+      "@codemirror/commands",
+      "@codemirror/autocomplete",
+      "@codemirror/lint",
+      "@codemirror/search",
+    ],
   },
   build: {
     target: "esnext",
@@ -111,6 +122,16 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ["tiktoken", "@huggingface/transformers"],
+    // Pre-bundle the shared CodeMirror core once so lang-json / react-codemirror /
+    // themes do not each inline a different @codemirror/state (instanceof break).
+    include: [
+      "@codemirror/state",
+      "@codemirror/view",
+      "@codemirror/language",
+      "@codemirror/lang-json",
+      "@uiw/react-codemirror",
+      "@uiw/codemirror-theme-vscode",
+    ],
     rolldownOptions: {
       target: "esnext",
     },
