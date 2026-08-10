@@ -5,6 +5,7 @@
  */
 
 import type { StreamEvent } from "@workglow/task-graph";
+import { createEstimatedOutputUsageReporter } from "@workglow/ai/provider-utils";
 import type {
   LlamaContext,
   LlamaContextSequence,
@@ -687,11 +688,21 @@ export async function getOrCreateEmbeddingContext(
   return context;
 }
 
+/**
+ * Drive a node-llama-cpp `prompt` that pushes text via `onTextChunk`, yielding
+ * `text-delta` events (and provisional `usage` snapshots) as they arrive.
+ *
+ * Pass `promptText` so ↑ appears before the first decode token — node-llama-cpp
+ * surfaces no billed usage on its prompt API, so the estimate is the only live
+ * counter the CLI can show. `finish` still carries no usage (absent, not zero).
+ */
 export async function* streamFromSession<T extends Record<string, unknown>>(
   promptFn: (onTextChunk: (chunk: string) => void) => Promise<string>,
-  signal: AbortSignal
+  signal: AbortSignal,
+  options: { readonly promptText?: string | undefined } = {}
 ): AsyncGenerator<StreamEvent<T>> {
   const queue: string[] = [];
+  const pendingUsage: StreamEvent<T>[] = [];
   let isComplete = false;
   let completionError: unknown;
   let resolveWait: (() => void) | null = null;
@@ -701,8 +712,17 @@ export async function* streamFromSession<T extends Record<string, unknown>>(
     resolveWait = null;
   };
 
+  const provisionalUsage = createEstimatedOutputUsageReporter((event) => {
+    pendingUsage.push(event as StreamEvent<T>);
+    notifyWaiter();
+  });
+  if (options.promptText !== undefined) {
+    provisionalUsage.onPrompt(options.promptText);
+  }
+
   const promptPromise = promptFn((chunk: string) => {
     queue.push(chunk);
+    provisionalUsage.onText(chunk);
     notifyWaiter();
   })
     .then(() => {
@@ -715,19 +735,24 @@ export async function* streamFromSession<T extends Record<string, unknown>>(
       notifyWaiter();
     });
 
+  const drain = function* (): Generator<StreamEvent<T>> {
+    while (pendingUsage.length > 0) {
+      yield pendingUsage.shift()!;
+    }
+    while (queue.length > 0) {
+      yield { type: "text-delta", port: "text", textDelta: queue.shift()! };
+    }
+  };
+
   try {
     while (true) {
-      while (queue.length > 0) {
-        yield { type: "text-delta", port: "text", textDelta: queue.shift()! };
-      }
+      yield* drain();
       if (isComplete) break;
       await new Promise<void>((r) => {
         resolveWait = r;
       });
     }
-    while (queue.length > 0) {
-      yield { type: "text-delta", port: "text", textDelta: queue.shift()! };
-    }
+    yield* drain();
   } finally {
     await promptPromise.catch(() => {});
   }
@@ -737,6 +762,10 @@ export async function* streamFromSession<T extends Record<string, unknown>>(
     throw completionError;
   }
 
+  provisionalUsage.flush();
+  yield* drain();
+  // No usage on finish: node-llama-cpp reports none. Mid-stream snapshots already
+  // settled via StreamProcessor's `event.usage ?? liveUsage` path.
   yield { type: "finish", data: {} as T };
 }
 

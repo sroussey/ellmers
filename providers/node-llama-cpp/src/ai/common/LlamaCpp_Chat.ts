@@ -11,6 +11,7 @@ import type {
   AiSessionContext,
   ChatMessage,
 } from "@workglow/ai";
+import { createEstimatedOutputUsageReporter } from "@workglow/ai/provider-utils";
 import { renderLlamaCppPrefixFunctions } from "./LlamaCpp_CacheCheckpoint";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
@@ -173,6 +174,11 @@ export const LlamaCpp_Chat_Stream: AiProviderRunFn<
     let done = false;
     let resolver: (() => void) | undefined;
 
+    // node-llama-cpp surfaces no token accounting on its prompt API; estimate
+    // ↑ from the turn text and ↓ from chunks so the CLI counter still moves.
+    const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+    provisionalUsage.onPrompt(userText);
+
     const promptPromise = session
       .prompt(userText, {
         signal,
@@ -181,6 +187,7 @@ export const LlamaCpp_Chat_Stream: AiProviderRunFn<
         ...(input.maxTokens !== undefined && { maxTokens: input.maxTokens }),
         onTextChunk: (chunk: string) => {
           queue.push(chunk);
+          provisionalUsage.onText(chunk);
           resolver?.();
         },
       })
@@ -207,9 +214,8 @@ export const LlamaCpp_Chat_Stream: AiProviderRunFn<
       }
     }
     await promptPromise;
-    // No `usage`: node-llama-cpp runs the model locally and surfaces no token
-    // accounting on its prompt API. Absent is the honest answer — a zero would
-    // read as "billed nothing" rather than "reported nothing".
+    provisionalUsage.flush();
+    // No usage on finish: mid-stream snapshots settle via liveUsage fallback.
     emit({ type: "finish", data: {} as AiChatProviderOutput });
   });
 };

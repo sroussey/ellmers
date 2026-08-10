@@ -9,6 +9,7 @@ import type {
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
+import { createEstimatedOutputUsageReporter } from "@workglow/ai/provider-utils";
 import { createPartialJsonStream } from "@workglow/util/worker";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
@@ -63,6 +64,9 @@ export const LlamaCpp_StructuredGeneration_Stream: AiProviderRunFn<
             resolveWait = null;
           };
 
+          const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+          provisionalUsage.onPrompt(input.prompt as string);
+
           const json = createPartialJsonStream();
           const promptPromise = session
             .prompt(input.prompt as string, {
@@ -71,6 +75,7 @@ export const LlamaCpp_StructuredGeneration_Stream: AiProviderRunFn<
               ...llamaCppSeedPromptSpread(model.provider_config),
               onTextChunk: (chunk: string) => {
                 queue.push(chunk);
+                provisionalUsage.onText(chunk);
                 notifyWaiter();
               },
               ...(input.temperature !== undefined && { temperature: input.temperature }),
@@ -119,6 +124,7 @@ export const LlamaCpp_StructuredGeneration_Stream: AiProviderRunFn<
             throw completionError;
           }
 
+          provisionalUsage.flush();
           emit({
             type: "finish",
             data: { object: json.finishObject() } as StructuredGenerationTaskOutput,

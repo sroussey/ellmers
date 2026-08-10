@@ -166,16 +166,20 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderRunFn<
         : undefined;
 
       try {
-        for await (const e of streamFromSession<TextGenerationTaskOutput>((onTextChunk) => {
-          return session.prompt(input.prompt, {
-            signal,
-            onTextChunk,
-            ...llamaCppSeedPromptSpread(model.provider_config),
-            ...(input.temperature !== undefined && { temperature: input.temperature }),
-            ...(input.maxTokens !== undefined && { maxTokens: input.maxTokens }),
-            ...(input.topP !== undefined && { topP: input.topP }),
-          });
-        }, signal)) {
+        for await (const e of streamFromSession<TextGenerationTaskOutput>(
+          (onTextChunk) => {
+            return session.prompt(input.prompt, {
+              signal,
+              onTextChunk,
+              ...llamaCppSeedPromptSpread(model.provider_config),
+              ...(input.temperature !== undefined && { temperature: input.temperature }),
+              ...(input.maxTokens !== undefined && { maxTokens: input.maxTokens }),
+              ...(input.topP !== undefined && { topP: input.topP }),
+            });
+          },
+          signal,
+          { promptText: input.prompt }
+        )) {
           emit(e);
         }
 
