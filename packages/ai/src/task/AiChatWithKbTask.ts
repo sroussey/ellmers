@@ -396,6 +396,10 @@ export class AiChatWithKbTask extends StreamingAiTask<
     // must gate here to match the contract AiTask.execute and
     // StreamingAiTask.executeStream both enforce.
     this.gateOrThrow(model);
+    // Set here rather than inherited: this override never calls
+    // super.executeStream, and StreamProcessor reads this field when it emits
+    // `usage`, so leaving it unset files the whole conversation under no model.
+    this.runUsageModelId = model.model_id;
 
     const connector = resolveHumanConnector(context);
 
