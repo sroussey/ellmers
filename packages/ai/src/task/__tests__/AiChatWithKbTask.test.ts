@@ -1350,3 +1350,83 @@ describe("AiChatWithKbTask — usage telemetry", () => {
     }
   });
 });
+
+describe("AiChatWithKbTask — usage model attribution", () => {
+  it("names the chat model, not the embedding model, on the task's run usage model id", async () => {
+    const fake = makeFakeKb({
+      id: "kb-usage-attribution",
+      label: "Attribution KB",
+      results: [
+        {
+          chunk_id: "c1",
+          doc_id: "d1",
+          score: 0.9,
+          metadata: { doc_title: "Doc 1", text: "chunk text", url: "/help/d1" },
+        } as any,
+      ],
+    });
+
+    const registry = getAiProviderRegistry();
+    registry.registerProvider(new FakeChatKbProvider());
+    registry.registerRunFn("fake-chat-kb", {
+      serves: ["text.embedding"],
+      runFn: async (_input, _model, _signal, emit) => {
+        emit({ type: "finish", data: { vector: new Float32Array([1, 0, 0]) } });
+      },
+    });
+    registry.registerRunFn("fake-chat-kb", {
+      serves: TEXT_GENERATION,
+      runFn: async (_input, _model, _signal, emit) => {
+        emit({ type: "text-delta", port: "text", textDelta: "answer" });
+        emit({ type: "finish", data: {} as any });
+      },
+    });
+
+    const model: ModelConfig = {
+      model_id: "chat-model",
+      title: "Chat",
+      description: "Chat",
+      provider: "fake-chat-kb",
+      capabilities: ["text.generation"],
+      provider_config: {},
+      metadata: {},
+    };
+    const embeddingModel: ModelConfig = {
+      model_id: "embedding-model",
+      title: "Embedding",
+      description: "Embedding",
+      provider: "fake-chat-kb",
+      capabilities: ["text.embedding"],
+      provider_config: {},
+      metadata: {},
+    };
+
+    try {
+      const connector = new FakeConnector([
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const context = mkContext(connector);
+      (context as any).resourceScope = new ResourceScope();
+      const task = new AiChatWithKbTask();
+      await accumulateKbChatStream(
+        task.executeStream(
+          {
+            model,
+            embeddingModel,
+            prompt: "tell me about doc 1",
+            knowledgeBaseIds: ["kb-usage-attribution"],
+            maxIterations: 2,
+          } as any,
+          context
+        )
+      );
+
+      // The generation spend belongs to the chat model. Attributing it to the
+      // embedding model (or to nothing) misfiles every token in byModel().
+      expect(task.runUsageModelId).toBe("chat-model");
+    } finally {
+      fake.unregister();
+      registry.unregisterProvider("fake-chat-kb");
+    }
+  });
+});

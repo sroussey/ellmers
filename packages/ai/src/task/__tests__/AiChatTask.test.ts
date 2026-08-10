@@ -877,3 +877,42 @@ describe("AiChatTask — usage telemetry", () => {
     }
   });
 });
+
+describe("AiChatTask — usage model attribution", () => {
+  it("names the chat model on the task's run usage model id", async () => {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _input,
+      _model,
+      _signal,
+      emit
+    ) => {
+      emit({ type: "text-delta", port: "text", textDelta: "ok" });
+      emit({ type: "finish", data: {} as any });
+    };
+    const unregister = registerFakeChatProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "hi",
+        systemPrompt: undefined,
+        maxTokens: undefined,
+        temperature: undefined,
+        maxIterations: 10,
+        messages: undefined,
+      };
+      const task = new AiChatTask({ defaults: input });
+
+      await accumulateChatStream(task.executeStream(input as any, mkContext(connector)));
+
+      // This is the field StreamProcessor.publishRunning passes as the `usage`
+      // event's modelId, which GraphUsageAggregator.byModel() keys on. Left
+      // unset, the whole conversation's spend files under no model at all.
+      expect(task.runUsageModelId).toBe("fake-model");
+    } finally {
+      unregister();
+    }
+  });
+});
