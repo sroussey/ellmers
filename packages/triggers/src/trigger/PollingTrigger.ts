@@ -33,6 +33,8 @@ export function isNonEmptyPollResult(result: unknown): boolean {
  * Ready-made {@link PollResultPredicate} for change detection: fires when the
  * result differs from the previously polled one by `Object.is`. Reference
  * equality, so supply your own predicate when polling freshly-built objects.
+ * A change whose handler throws is offered again on the next poll that still
+ * observes it.
  */
 export function firesOnChange<Result>(result: Result, previous: Result | undefined): boolean {
   return !Object.is(result, previous);
@@ -92,6 +94,11 @@ export interface PollingTriggerOptions<Result> extends TriggerOptions {
  * previous result is left unchanged so the next comparison is against the last
  * value actually observed. Pass `errorBackoff` to slow the loop down while a
  * dependency stays down instead of polling it at full rate.
+ *
+ * A handler that throws does not consume the change: the comparison baseline is
+ * restored, so the next poll observing the same value fires again. Delivery is
+ * therefore at-least-once and always carries the freshest poll result — nothing
+ * is queued.
  */
 export class PollingTrigger<Result = unknown> extends BaseTrigger {
   public readonly kind = TRIGGER_KINDS.polling;
@@ -116,8 +123,9 @@ export class PollingTrigger<Result = unknown> extends BaseTrigger {
   }
 
   /**
-   * Most recent result successfully polled by the CURRENT run, or `undefined`
-   * before its first poll and while the trigger is stopped.
+   * Change-detection baseline of the CURRENT run — the most recent successfully
+   * polled result whose delivery did not fail. `undefined` before the first poll
+   * and while the trigger is stopped.
    */
   public get lastResult(): Result | undefined {
     const run = this.currentRun;
@@ -161,12 +169,21 @@ export class PollingTrigger<Result = unknown> extends BaseTrigger {
     const previous = state.previous;
     state.previous = result;
     if (!this._shouldFire(result, previous)) return;
-    await this.invokeHandler(run, {
-      triggerId: this.id,
-      scheduledAt,
-      signal,
-      payload: result,
-    });
+    try {
+      await this.invokeHandler(run, {
+        triggerId: this.id,
+        scheduledAt,
+        signal,
+        payload: result,
+      });
+    } catch (error) {
+      // A failed delivery must not consume the change: restore the baseline so
+      // the next poll of the same value still counts as one. Skipped when a
+      // later tick already advanced it (`overlap: "concurrent"`), which would
+      // otherwise resurrect a value that has since been delivered.
+      if (Object.is(state.previous, result)) state.previous = previous;
+      throw error;
+    }
   }
 
   private stateFor(run: TriggerRun): PollRunState<Result> {
