@@ -10,7 +10,16 @@ import {
   PermanentJobError,
   RetryableJobError,
 } from "@workglow/job-queue";
-import { TaskRegistry, Workflow } from "@workglow/task-graph";
+import {
+  createPolicyEnforcer,
+  createProfilePolicy,
+  ENTITLEMENT_ENFORCER,
+  Entitlements,
+  TaskGraph,
+  TaskGraphRunner,
+  TaskRegistry,
+  Workflow,
+} from "@workglow/task-graph";
 import {
   createFetchUrlJobError,
   createSafeFetchRedirectError,
@@ -26,7 +35,12 @@ import {
   type SafeFetchFn,
   type SafeFetchOptions,
 } from "@workglow/tasks";
-import { getGlobalCredentialStore, SECURITY_LIMITS } from "@workglow/util";
+import {
+  Container,
+  getGlobalCredentialStore,
+  SECURITY_LIMITS,
+  ServiceRegistry,
+} from "@workglow/util";
 import { validateSchema } from "@workglow/util/schema";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -545,7 +559,11 @@ describe("Webhook notification tasks", () => {
 
     test("a public URL needs no network:private entitlement", () => {
       const task = new WebhookNotifyTask();
-      task.runInputData = { url: WEBHOOK_URL, payload: {} } as any;
+      task.runInputData = {
+        url: WEBHOOK_URL,
+        payload: {},
+        allow_private_destination: false,
+      } as any;
       expect(requiresPrivate(task)).toBe(false);
     });
 
@@ -554,7 +572,11 @@ describe("Webhook notification tasks", () => {
     // driven by the DECLARATION, not by grading a URL that may be a decoy.
     test("a private URL alone declares no network:private", () => {
       const task = new WebhookNotifyTask();
-      task.runInputData = { url: "http://127.0.0.1:9200/ingest", payload: {} } as any;
+      task.runInputData = {
+        url: "http://127.0.0.1:9200/ingest",
+        payload: {},
+        allow_private_destination: false,
+      } as any;
       expect(requiresPrivate(task)).toBe(false);
     });
 
@@ -577,13 +599,30 @@ describe("Webhook notification tasks", () => {
         url: WEBHOOK_URL,
         payload: {},
         url_credential_key: "internal-hook",
+        allow_private_destination: false,
       } as any;
       expect(requiresPrivate(task)).toBe(false);
     });
 
     test("an absent url alone requires no network:private", () => {
       const task = new WebhookNotifyTask();
-      task.runInputData = { payload: {} } as any;
+      task.runInputData = { payload: {}, allow_private_destination: false } as any;
+      expect(requiresPrivate(task)).toBe(false);
+    });
+
+    // An unset flag means "not yet knowable" — a root task's run-input lands
+    // after entitlements are evaluated — so the declaration fails closed.
+    test("an unset allow_private_destination declares network:private", () => {
+      const task = new WebhookNotifyTask();
+      task.runInputData = { url: WEBHOOK_URL, payload: {} } as any;
+      expect(requiresPrivate(task)).toBe(true);
+    });
+
+    // The UX guarantee: an ordinary instance carries the schema default, so a
+    // public Slack/Discord/webhook post never demands network:private. Deleting
+    // `default: false` from the schema would break this.
+    test("the schema default keeps an ordinary instance off network:private", () => {
+      const task = new WebhookNotifyTask({ defaults: { url: WEBHOOK_URL, payload: {} } });
       expect(requiresPrivate(task)).toBe(false);
     });
 
@@ -949,6 +988,66 @@ describe("Webhook notification tasks", () => {
     });
   });
 
+  // `allowPrivate` and `privateResourceScopes` are what the transport itself
+  // enforces against, so the arguments each task hands it are pinned here
+  // rather than being left implied by the outcome assertions above.
+  describe("safeFetch private-destination arguments", () => {
+    const PRIVATE_URL = "http://127.0.0.1:9200/ingest";
+
+    test("a public destination is fetched with allowPrivate false and no scopes", async () => {
+      await webhookNotify({ url: WEBHOOK_URL, payload: {} });
+
+      expect(lastCall().options.allowPrivate).toBe(false);
+      expect(lastCall().options.privateResourceScopes).toBeUndefined();
+    });
+
+    test("a declared private destination is scoped to its own origin", async () => {
+      await webhookNotify({
+        url: PRIVATE_URL,
+        payload: {},
+        allow_private_destination: true,
+      });
+
+      expect(lastCall().options.allowPrivate).toBe(true);
+      expect(lastCall().options.privateResourceScopes).toEqual(["http://127.0.0.1:9200/*"]);
+    });
+
+    // The DNS-rebinding invariant: the flag is a declaration about the
+    // destination, never a licence to widen the transport for a public
+    // hostname. A name that resolves into private space at connect time must
+    // still be refused there.
+    test("a public URL keeps allowPrivate false even when allow_private_destination is set", async () => {
+      await webhookNotify({
+        url: WEBHOOK_URL,
+        payload: {},
+        allow_private_destination: true,
+      });
+
+      expect(lastCall().options.allowPrivate).toBe(false);
+      expect(lastCall().options.privateResourceScopes).toBeUndefined();
+    });
+
+    test("Slack and Discord share the same transport arguments", async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(new Response(null, { status: 204 })));
+
+      await slackNotify({ url: PRIVATE_URL, text: "hi", allow_private_destination: true });
+      expect(lastCall().options.allowPrivate).toBe(true);
+      expect(lastCall().options.privateResourceScopes).toEqual(["http://127.0.0.1:9200/*"]);
+
+      await discordNotify({ url: PRIVATE_URL, content: "hi", allow_private_destination: true });
+      expect(lastCall().options.allowPrivate).toBe(true);
+      expect(lastCall().options.privateResourceScopes).toEqual(["http://127.0.0.1:9200/*"]);
+
+      await slackNotify({ url: SLACK_URL, text: "hi" });
+      expect(lastCall().options.allowPrivate).toBe(false);
+      expect(lastCall().options.privateResourceScopes).toBeUndefined();
+
+      await discordNotify({ url: DISCORD_URL, content: "hi" });
+      expect(lastCall().options.allowPrivate).toBe(false);
+      expect(lastCall().options.privateResourceScopes).toBeUndefined();
+    });
+  });
+
   describe("credential misconfiguration", () => {
     // Wiring a bearer token into `url_credential_key` is the likely mistake:
     // for these tasks the credential must BE the whole webhook URL.
@@ -1304,6 +1403,136 @@ describe("Webhook notification tasks", () => {
       expect(() => new SlackNotifyTask({ url: SLACK_URL, text: "hi" } as never)).toThrow();
       expect(() => new DiscordNotifyTask({ url: DISCORD_URL, content: "hi" } as never)).toThrow();
       expect(mockFetch.mock.calls.length).toBe(0);
+    });
+  });
+
+  describe("graph-root entitlement enforcement", () => {
+    const METADATA_URL = "http://169.254.169.254/latest/meta-data/";
+
+    /** Grants network:http and credential, but deliberately NOT network:private. */
+    function browserRegistry(): ServiceRegistry {
+      const registry = new ServiceRegistry(new Container());
+      registry.register(ENTITLEMENT_ENFORCER, () =>
+        createPolicyEnforcer(createProfilePolicy("browser"))
+      );
+      return registry;
+    }
+
+    beforeEach(() => {
+      registerCommonTasks();
+    });
+
+    // A root task's entitlements are graded BEFORE the graph run-input reaches
+    // it, so `allow_private_destination` supplied here was invisible to the
+    // enforcer. The grant, not the declaration, has to be what gates the post.
+    test("graph run-input cannot smuggle allow_private_destination past a denied network:private", async () => {
+      const graph = new TaskGraph();
+      graph.addTask(new WebhookNotifyTask({ id: "notify", defaults: { payload: { ping: true } } }));
+      const runner = new TaskGraphRunner(graph);
+
+      const error = await runner
+        .runGraph(
+          { url: METADATA_URL, allow_private_destination: true },
+          { registry: browserRegistry(), enforceEntitlements: true }
+        )
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(Error);
+      expect(String((error as Error).message)).toContain("network:private");
+      expect(String((error as Error).message)).not.toContain("/latest/meta-data");
+      expect(mockFetch.mock.calls.length).toBe(0);
+    });
+
+    // The fix is a gate, not a blanket refusal: the same run succeeds once the
+    // destination is actually granted.
+    test("a granted network:private scope permits the same run", async () => {
+      const browserPolicy = createProfilePolicy("browser");
+      const registry = new ServiceRegistry(new Container());
+      registry.register(ENTITLEMENT_ENFORCER, () =>
+        createPolicyEnforcer({
+          deny: browserPolicy.deny,
+          grant: [
+            ...browserPolicy.grant,
+            { id: Entitlements.NETWORK_PRIVATE, resources: ["http://169.254.169.254/*"] },
+          ],
+          ask: browserPolicy.ask,
+        })
+      );
+
+      const graph = new TaskGraph();
+      graph.addTask(new WebhookNotifyTask({ id: "notify", defaults: { payload: { ping: true } } }));
+      const runner = new TaskGraphRunner(graph);
+
+      await expect(
+        runner.runGraph(
+          { url: METADATA_URL, allow_private_destination: true },
+          { registry, enforceEntitlements: true }
+        )
+      ).resolves.toBeDefined();
+      expect(lastCall().url).toBe(METADATA_URL);
+    });
+
+    test("a grant scoped elsewhere does not cover the resolved destination", async () => {
+      const browserPolicy = createProfilePolicy("browser");
+      const registry = new ServiceRegistry(new Container());
+      registry.register(ENTITLEMENT_ENFORCER, () =>
+        createPolicyEnforcer({
+          deny: browserPolicy.deny,
+          grant: [
+            ...browserPolicy.grant,
+            { id: Entitlements.NETWORK_PRIVATE, resources: ["http://localhost:*"] },
+          ],
+          ask: browserPolicy.ask,
+        })
+      );
+
+      const graph = new TaskGraph();
+      graph.addTask(new WebhookNotifyTask({ id: "notify", defaults: { payload: {} } }));
+      const runner = new TaskGraphRunner(graph);
+
+      const error = await runner
+        .runGraph(
+          { url: "http://127.0.0.1:9200/ingest", allow_private_destination: true },
+          { registry, enforceEntitlements: true }
+        )
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(Error);
+      expect(mockFetch.mock.calls.length).toBe(0);
+    });
+
+    // Declaration-time enforcement can never reach this case: the entitlement
+    // enforcer runs before the credential resolver, so the URL does not exist
+    // yet when the declaration is graded.
+    test("a credential-resolved private URL is checked against the grant", async () => {
+      const registry = browserRegistry();
+      // The store is per-registry, so seed the one this run will resolve from.
+      const store = getGlobalCredentialStore(registry);
+      await store.put("internal-hook", "http://127.0.0.1:9200/x");
+
+      const error = (await new WebhookNotifyTask()
+        .run(
+          { payload: {}, url_credential_key: "internal-hook", allow_private_destination: true },
+          { registry }
+        )
+        .catch((e: unknown) => e)
+        .finally(() => store.delete("internal-hook"))) as PermanentJobError;
+
+      expect(error).toBeInstanceOf(PermanentJobError);
+      expect(error.code).toBe(FetchUrlErrorCode.PRIVATE_DENIED);
+      expect(mockFetch.mock.calls.length).toBe(0);
+    });
+
+    // The contract is opt-in: with no enforcer registered there is no policy to
+    // satisfy, so behaviour is unchanged.
+    test("no registered enforcer leaves a declared private post working", async () => {
+      const result = await new WebhookNotifyTask().run(
+        { url: "http://127.0.0.1:9200/ingest", payload: {}, allow_private_destination: true },
+        { registry: new ServiceRegistry(new Container()) }
+      );
+
+      expect(result.status).toBe(200);
+      expect(lastCall().url).toBe("http://127.0.0.1:9200/ingest");
     });
   });
 });
