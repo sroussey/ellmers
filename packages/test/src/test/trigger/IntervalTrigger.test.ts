@@ -6,6 +6,8 @@
 
 import type { ITriggerFireContext } from "@workglow/triggers";
 import { IntervalTrigger, TriggerConfigurationError } from "@workglow/triggers";
+import type { ILogger } from "@workglow/util";
+import { getLogger, setLogger } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { advanceFakeTimers, flushAsyncWork } from "../helpers/advanceFakeTimers";
@@ -24,6 +26,38 @@ function createGate(): Gate {
     open = resolve;
   });
   return { promise, open };
+}
+
+interface WarnRecord {
+  readonly message: string;
+  readonly meta: Record<string, unknown> | undefined;
+}
+
+/**
+ * Installs a logger that records `warn` calls; returns the sink and a restore fn.
+ * Built from scratch rather than spread from the installed logger, whose methods
+ * live on a class prototype and would be lost.
+ */
+function captureWarnings(): { warnings: WarnRecord[]; restore: () => void } {
+  const warnings: WarnRecord[] = [];
+  const previous = getLogger();
+  const noop = (): void => {};
+  const logger: ILogger = {
+    debug: noop,
+    info: noop,
+    warn: (message: string, meta?: Record<string, unknown>) => {
+      warnings.push({ message, meta });
+    },
+    error: noop,
+    fatal: noop,
+    child: () => logger,
+    time: noop,
+    timeEnd: noop,
+    group: noop,
+    groupEnd: noop,
+  };
+  setLogger(logger);
+  return { warnings, restore: () => setLogger(previous) };
 }
 
 describe("IntervalTrigger", () => {
@@ -283,6 +317,93 @@ describe("IntervalTrigger", () => {
       expect(
         () => new IntervalTrigger({ intervalMs: PERIOD, overlap: "queue", maxQueuedFires: 0 })
       ).toThrow(TriggerConfigurationError);
+    });
+  });
+
+  describe("skip logging", () => {
+    test("a contiguous run of skips logs once, then a count when it ends", async () => {
+      // A wedged handler at a 1s period would otherwise write 3,600 identical
+      // warnings an hour, forever.
+      const { warnings, restore } = captureWarnings();
+      try {
+        const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+        const gate = createGate();
+        const skips: number[] = [];
+        trigger.on("skip", (scheduledAt) => skips.push(scheduledAt));
+        trigger.start(async () => {
+          await gate.promise;
+        });
+
+        await advanceFakeTimers(PERIOD);
+        await advanceFakeTimers(PERIOD * 4);
+
+        // The EVENT still fires per dropped tick; only the log is collapsed.
+        expect(skips).toHaveLength(4);
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]?.message).toContain("skipped");
+
+        gate.open();
+        await flushAsyncWork();
+        await advanceFakeTimers(PERIOD);
+
+        expect(warnings).toHaveLength(2);
+        expect(warnings[1]?.meta?.skipped).toBe(4);
+
+        await trigger.stop();
+      } finally {
+        restore();
+      }
+    });
+
+    test("an isolated skip logs once and adds no summary", async () => {
+      // The ordinary intermittent case must not have its log volume doubled.
+      const { warnings, restore } = captureWarnings();
+      try {
+        const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+        const gate = createGate();
+        const skips: number[] = [];
+        trigger.on("skip", (scheduledAt) => skips.push(scheduledAt));
+        trigger.start(async () => {
+          await gate.promise;
+        });
+
+        await advanceFakeTimers(PERIOD * 2);
+        expect(skips).toHaveLength(1);
+
+        gate.open();
+        await flushAsyncWork();
+        await advanceFakeTimers(PERIOD);
+
+        expect(warnings).toHaveLength(1);
+
+        await trigger.stop();
+      } finally {
+        restore();
+      }
+    });
+
+    test("stopping mid-skip still reports the skip count", async () => {
+      const { warnings, restore } = captureWarnings();
+      try {
+        const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+        const gate = createGate();
+        const skips: number[] = [];
+        trigger.on("skip", (scheduledAt) => skips.push(scheduledAt));
+        trigger.start(async () => {
+          await gate.promise;
+        });
+
+        await advanceFakeTimers(PERIOD * 4);
+        expect(skips).toHaveLength(3);
+
+        const stopping = trigger.stop();
+        expect(warnings.map((warning) => warning.meta?.skipped)).toContain(3);
+
+        gate.open();
+        await stopping;
+      } finally {
+        restore();
+      }
     });
   });
 

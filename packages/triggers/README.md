@@ -70,7 +70,9 @@ scope exit.
   cannot run re-entrantly — so `"concurrent"` plus a workflow binding degrades
   to queue semantics, bounded by the binding's `maxPendingFires` (default `1`).
   A fire past that bound is dropped and reported on `error`. When queueing is
-  what you want, ask for it: `overlap: "queue"` with `maxQueuedFires`.
+  what you want, ask for it: `overlap: "queue"` with `maxQueuedFires`. A dropped
+  tick emits `skip` every time; the accompanying log is collapsed to the first
+  skip of a contiguous run plus a count when the run ends.
 - **Errors** — a handler rejection never stops the loop. It is emitted on
   `error` as the real `Error` and logged through `getLogger()`. A polling
   handler that throws does not consume the change: the baseline is restored and
