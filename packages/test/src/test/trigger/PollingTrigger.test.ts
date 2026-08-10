@@ -12,7 +12,7 @@ import {
 } from "@workglow/triggers";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { advanceFakeTimers } from "../helpers/advanceFakeTimers";
+import { advanceFakeTimers, flushAsyncWork } from "../helpers/advanceFakeTimers";
 
 const START = Date.UTC(2026, 0, 1, 0, 0, 0);
 const PERIOD = 100;
@@ -210,6 +210,77 @@ describe("PollingTrigger", () => {
     // Poll 3 returns the same value poll 1 did, so change detection stays quiet.
     expect(payloads).toEqual(["steady"]);
     expect(trigger.lastResult).toBe("steady");
+
+    await trigger.stop();
+  });
+
+  test("a failed handler does not consume the change", async () => {
+    // At-most-once here is silent data loss: the update the handler failed on is
+    // never offered again, because the baseline already moved past it.
+    const results = ["a", "b", "b", "b"];
+    let polls = 0;
+    let failNext = true;
+    const trigger = new PollingTrigger<string>({
+      intervalMs: PERIOD,
+      poll: () => results[polls++]!,
+      shouldFire: firesOnChange,
+    });
+    const errors: Error[] = [];
+    trigger.on("error", (error) => errors.push(error));
+
+    const payloads: string[] = [];
+    trigger.start((context) => {
+      payloads.push(context.payload as string);
+      if (context.payload === "b" && failNext) {
+        failNext = false;
+        throw new Error("sink down");
+      }
+    });
+
+    await advanceFakeTimers(PERIOD * 4);
+
+    // "b" is re-delivered on the next poll that still observes it, then settles.
+    expect(payloads).toEqual(["a", "b", "b"]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toBe("sink down");
+    expect(trigger.lastResult).toBe("b");
+
+    await trigger.stop();
+  });
+
+  test("a failed handler does not resurrect a value a later tick already delivered", async () => {
+    // Under `concurrent`, a slow failing tick settles AFTER a newer one advanced
+    // the baseline. Restoring unconditionally would re-deliver a value that has
+    // already been handled successfully.
+    const results = ["a", "b", "c", "c"];
+    let polls = 0;
+    const gate = createGate();
+    const trigger = new PollingTrigger<string>({
+      intervalMs: PERIOD,
+      overlap: "concurrent",
+      poll: () => results[polls++]!,
+      shouldFire: firesOnChange,
+    });
+    trigger.on("error", () => {});
+
+    const payloads: string[] = [];
+    trigger.start(async (context) => {
+      payloads.push(context.payload as string);
+      if (context.payload === "b") {
+        await gate.promise;
+        throw new Error("sink down");
+      }
+    });
+
+    await advanceFakeTimers(PERIOD * 3);
+    expect(payloads).toEqual(["a", "b", "c"]);
+
+    gate.open();
+    await flushAsyncWork();
+    await advanceFakeTimers(PERIOD);
+
+    expect(payloads).toEqual(["a", "b", "c"]);
+    expect(trigger.lastResult).toBe("c");
 
     await trigger.stop();
   });

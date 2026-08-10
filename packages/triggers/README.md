@@ -72,7 +72,11 @@ scope exit.
   A fire past that bound is dropped and reported on `error`. When queueing is
   what you want, ask for it: `overlap: "queue"` with `maxQueuedFires`.
 - **Errors** — a handler rejection never stops the loop. It is emitted on
-  `error` as the real `Error` and logged through `getLogger()`.
+  `error` as the real `Error` and logged through `getLogger()`. A polling
+  handler that throws does not consume the change: the baseline is restored and
+  the value is offered again on the next poll that still observes it
+  (at-least-once, always with the freshest result — retries are paced by the
+  poll period, not by `errorBackoff`, which counts POLL failures only).
 - **Drift** — each tick is scheduled from the previous tick's scheduled instant,
   not from when its handler finished, so handler duration never accumulates.
   Waits longer than a timer's ~24.8-day ceiling are chunked.
