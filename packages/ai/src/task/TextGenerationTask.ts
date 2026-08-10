@@ -12,7 +12,6 @@ import type {
   TaskConfig,
 } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import { getLogger } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
@@ -190,15 +189,12 @@ export class TextGenerationTask extends StreamingAiTask<
     });
   }
 
-  /** Reports an emitted checkpoint's disposal-time storage charge as this task's usage. */
+  /**
+   * Reports an emitted checkpoint's disposal-time storage charge as this
+   * task's usage, and through it into the run total.
+   */
   private storageChargeSink(): CheckpointUsageSink {
-    return (usage, modelId) => {
-      try {
-        this.emit("usage", usage, modelId);
-      } catch (err) {
-        getLogger().error("usage listener threw", { taskId: this.id, error: err });
-      }
-    };
+    return (usage, modelId) => this.chargeLateUsage(usage, modelId);
   }
 
   private async finalizeCheckpoint(input: TextGenerationTaskInput, text: string): Promise<void> {

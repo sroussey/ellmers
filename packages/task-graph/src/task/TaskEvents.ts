@@ -43,6 +43,10 @@ export type TaskEventListeners = {
    * the per-model-call stream event it is derived from — so consumers replace
    * rather than accumulate. `modelId` is the model that produced this update, or
    * `undefined` when the provider did not name one.
+   *
+   * A charge that settles after the task finished (provider cache storage,
+   * billed at disposal) re-emits the new cumulative total, so replace still
+   * holds.
    */
   usage: (usage: Usage, modelId: string | undefined) => void;
 

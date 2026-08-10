@@ -32,6 +32,7 @@ import {
 } from "@workglow/ai";
 import { clearCheckpoints as clearCheckpointsForTesting } from "@workglow/ai/test";
 import type { IExecuteContext, StreamEvent, TaskOutput, Usage } from "@workglow/task-graph";
+import { TaskGraph, TaskGraphRunner } from "@workglow/task-graph";
 import { Container, HUMAN_CONNECTOR, ResourceScope, ServiceRegistry } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -455,6 +456,61 @@ describe("CacheCheckpointTask storage-cost emission at disposal", () => {
     // Three checkpoints, three charges — one each, none double-counted.
     expect(charges.map((c) => c.length)).toEqual([1, 1, 1]);
     for (const seen of charges) expect(seen[0]).toBeCloseTo(500_000, 6);
+  });
+});
+
+describe("CacheCheckpointTask storage cost inside a graph", () => {
+  // Same shape as the standalone suite above: disposal reports what a billed
+  // server-side cache released.
+  class BillingCheckpointProvider extends CheckpointTestProvider {
+    override async disposeSession(_sessionId: string): Promise<{
+      tokens: number | undefined;
+      lifetimeMs: number;
+    }> {
+      return { tokens: 500_000, lifetimeMs: 3_600_000 };
+    }
+  }
+
+  const billingWarmupFn: AiProviderRunFn = async (
+    _input,
+    _model,
+    _signal,
+    emit,
+    _schema,
+    session
+  ) => {
+    emit({
+      type: "finish",
+      data: { checkpoint: session?.sessionId ?? "" },
+    } as unknown as StreamEvent<TaskOutput>);
+  };
+
+  afterEach(() => {
+    setAiProviderRegistry(new AiProviderRegistry());
+  });
+
+  it("charges the run total for a checkpoint disposed at run end", async () => {
+    setAiProviderRegistry(new AiProviderRegistry());
+    const provider = new BillingCheckpointProvider([
+      { serves: CACHE_CHECKPOINT as Capability[], runFn: billingWarmupFn },
+    ]);
+    await provider.register({ queue: { autoCreate: false } });
+
+    const graph = new TaskGraph();
+    graph.addTask(
+      new CacheCheckpointTask({
+        id: "warm",
+        defaults: { model: checkpointModel(), systemPrompt: "sys" },
+      })
+    );
+
+    // runGraph owns the ResourceScope, so it disposes the checkpoint — and
+    // therefore learns its storage charge — after the run's usage has settled.
+    await new TaskGraphRunner(graph).runGraph();
+
+    expect(graph.runUsage?.extra?.[CACHE_STORAGE_TOKEN_HOURS_KEY]).toBeCloseTo(500_000, 6);
+    const byModel = graph.usageAggregator.byModel().get(checkpointModel().model_id!);
+    expect(byModel?.extra?.[CACHE_STORAGE_TOKEN_HOURS_KEY]).toBeCloseTo(500_000, 6);
   });
 });
 

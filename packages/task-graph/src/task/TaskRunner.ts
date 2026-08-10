@@ -27,7 +27,7 @@ import type { IRunConfig, ITask } from "./ITask";
 import type { ITaskRunner } from "./ITaskRunner";
 import type { BinaryRefSink, StreamSink } from "./StreamProcessor";
 import { StreamProcessor } from "./StreamProcessor";
-import type { StreamEvent } from "./StreamTypes";
+import type { StreamEvent, Usage } from "./StreamTypes";
 import {
   getBinaryPortFormat,
   getOutputStreamMode,
@@ -141,6 +141,13 @@ export class TaskRunner<
   protected registry: ServiceRegistry = globalServiceRegistry;
 
   protected resourceScope?: ResourceScope;
+
+  /**
+   * Where a charge that settles after this run finished is reported. Not
+   * cleared in `run()`'s `finally` — the whole point is that it fires after
+   * the run; the next `handleStart` overwrites it.
+   */
+  protected lateUsageSink?: (taskId: string, usage: Usage, modelId: string | undefined) => void;
 
   /**
    * True when `this.resourceScope` was auto-created by `run()` (caller did not
@@ -798,21 +805,37 @@ export class TaskRunner<
     this.currentCtx?.abortController.abort();
   }
 
+  /** @internal Forwards a post-completion charge to the run's usage sink. */
+  public reportLateUsage(usage: Usage, modelId: string | undefined): void {
+    try {
+      this.lateUsageSink?.(String(this.task.id), usage, modelId);
+    } catch (err) {
+      getLogger().error("late usage sink threw", { taskId: this.task.id, error: err });
+    }
+  }
+
   /**
-   * Stream-pacing options retained from the current run's config (resolved in
+   * Run options retained from the current run's config (resolved in
    * handleStart), in the shape both `TaskGraphRunConfig` and {@link IRunConfig}
    * accept. Compound tasks spread this into their subgraph runs so nested
-   * graphs inherit the caller's passthrough opt-in, high-water mark, and
-   * watchdog.
+   * graphs inherit the caller's passthrough opt-in, high-water mark, watchdog,
+   * and late-usage sink.
+   *
+   * `lateUsageSink` rides here rather than being threaded per call site
+   * because every nested-run site already spreads this — including
+   * `GraphAsTask.executeStream`, which threads neither `registry` nor
+   * `resourceScope` and would otherwise leave a streaming subgraph's late
+   * charge in an inner aggregator the root run never reads.
    */
   public get streamRunOptions(): Pick<
     IRunConfig,
-    "noAccumulation" | "streamHighWaterBytes" | "streamGateWatchdogMs"
+    "noAccumulation" | "streamHighWaterBytes" | "streamGateWatchdogMs" | "lateUsageSink"
   > {
     return {
       noAccumulation: this.noAccumulation,
       streamHighWaterBytes: this.streamHighWaterBytes,
       streamGateWatchdogMs: this.streamGateWatchdogMs,
+      lateUsageSink: this.lateUsageSink,
     };
   }
 
@@ -884,6 +907,10 @@ export class TaskRunner<
       const stamp: Partial<IRunConfig> = {
         registry: this.registry,
         signal: this.currentCtx?.abortController.signal,
+        // Unconditional, unlike `resourceScope`: a sink has no disposal
+        // lifetime to leak, and an owned child's own `task.run()` needs it to
+        // reach the run total.
+        lateUsageSink: this.lateUsageSink,
       };
       if (!this.ownsResourceScope) {
         stamp.resourceScope = this.resourceScope;
@@ -1084,6 +1111,10 @@ export class TaskRunner<
 
     if (config.resourceScope) {
       this.resourceScope = config.resourceScope;
+    }
+
+    if (config.lateUsageSink) {
+      this.lateUsageSink = config.lateUsageSink;
     }
 
     // Notify the disposal strategy that a new run is starting. Inactivity

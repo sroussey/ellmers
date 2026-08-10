@@ -21,6 +21,7 @@ import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import { TASK_OUTPUT_REPOSITORY } from "../storage/TaskOutputRepository";
 import { ENTITLEMENT_ENFORCER, formatEntitlementDenial } from "../task/EntitlementEnforcer";
 import type { ITask } from "../task/ITask";
+import type { Usage } from "../task/StreamTypes";
 import { isTaskStreamable } from "../task/StreamTypes";
 import { Task } from "../task/Task";
 import type { TaskError } from "../task/TaskError";
@@ -138,6 +139,12 @@ export class TaskGraphRunner {
   protected resourceScope?: ResourceScope;
 
   /**
+   * Where a late charge from a task in this run lands. Installed by
+   * handleStart, inheriting an outer run's sink when this is a subgraph run.
+   */
+  protected lateUsageSink?: (taskId: string, usage: Usage, modelId: string | undefined) => void;
+
+  /**
    * Per-run state. Set by handleStart, cleared by handleComplete/Error/Abort.
    * The only mutable per-run state on the facade — exists so the public abort()
    * and disable() methods (which take no arguments) have something to act on.
@@ -160,13 +167,27 @@ export class TaskGraphRunner {
   protected baseRegistryForRun?: ServiceRegistry;
 
   /**
-   * Unsubscribes the current run's graph-level `task_usage` / `task_complete`
-   * listeners feeding {@link TaskGraph.usageAggregator}. The graph's event
-   * emitter outlives a single run, so handleStart tears down the previous
-   * run's pair before installing a fresh one — otherwise re-running the same
-   * graph instance would accumulate one duplicate listener pair per run.
+   * Unsubscribes everything the current run installed to feed
+   * {@link TaskGraph.usageAggregator}. The graph's event emitter outlives a
+   * single run, so handleStart tears down the previous run's set before
+   * installing a fresh one — otherwise re-running the same graph instance
+   * would accumulate one duplicate set per run.
+   *
+   * Wider than {@link offLiveUsageSubscriptions}: the aggregator's retire
+   * listener deliberately outlives the settle, so only the next run's start
+   * can detach it.
    */
   protected offGraphUsageSubscriptions?: () => void;
+
+  /**
+   * Unsubscribes just the `task_usage` / `task_complete` pair — the listeners
+   * that must not survive {@link settleRunUsage}, since a cumulative snapshot
+   * folding in after the freeze would contradict `graph.runUsage`.
+   */
+  protected offLiveUsageSubscriptions?: () => void;
+
+  /** True once {@link settleRunUsage} has frozen `graph.runUsage` for this run. */
+  protected runUsageSettled = false;
 
   /**
    * Registry to restore after a preview run completes. Captured in
@@ -536,6 +557,7 @@ export class TaskGraphRunner {
         registry: this.registry,
         outputCache: this.outputCache,
         resourceScope: this.resourceScope,
+        lateUsageSink: this.lateUsageSink,
         accumulateLeafOutputs: this.accumulateLeafOutputs,
         noAccumulation: this.noAccumulation,
         streamHighWaterBytes: this.streamHighWaterBytes,
@@ -568,6 +590,7 @@ export class TaskGraphRunner {
         await this.runScheduler.handleProgress(this.currentCtx!, task, progress, message, ...args),
       registry: this.registry,
       resourceScope: this.resourceScope,
+      lateUsageSink: this.lateUsageSink,
       runId: this.runId,
     });
 
@@ -644,6 +667,12 @@ export class TaskGraphRunner {
     if (config?.resourceScope !== undefined) {
       this.resourceScope = config.resourceScope;
     }
+    // Inherit the outer run's sink when one was passed (a subgraph run), so a
+    // nested task's late charge reaches the root run's aggregator rather than
+    // an inner aggregator whose run is already over.
+    this.lateUsageSink =
+      config?.lateUsageSink ??
+      ((taskId, usage, modelId) => this.graph.usageAggregator.chargeLate(taskId, usage, modelId));
     this.baseRegistryForRun = this.registry;
 
     // Store run identifier for per-task propagation.
@@ -784,11 +813,18 @@ export class TaskGraphRunner {
     // Tear down the previous run's graph-level usage subscriptions (if this
     // graph instance is being re-run) before installing a fresh aggregator.
     this.offGraphUsageSubscriptions?.();
+    this.offLiveUsageSubscriptions = undefined;
+    this.runUsageSettled = false;
     this.graph.usageAggregator.reset();
     this.graph.runUsage = undefined;
     const offRetire = this.graph.usageAggregator.onRetire(() => {
       const total = this.graph.usageAggregator.total;
-      if (total) this.graph.emit("graph_usage", total);
+      if (!total) return;
+      // A charge settled after the run (checkpoint storage, billed at
+      // disposal) still belongs to this run's total, so re-freeze rather than
+      // emit a `graph_usage` contradicting `graph.runUsage`.
+      if (this.runUsageSettled) this.graph.runUsage = total;
+      this.graph.emit("graph_usage", total);
     });
 
     const offTaskUsage = this.graph.subscribe("task_usage", (taskId, usage, modelId) => {
@@ -799,9 +835,13 @@ export class TaskGraphRunner {
     const offTaskComplete = this.graph.subscribe("task_complete", (taskId) => {
       this.graph.usageAggregator.retire(String(taskId));
     });
-    this.offGraphUsageSubscriptions = () => {
+    this.offLiveUsageSubscriptions = () => {
       offTaskUsage();
       offTaskComplete();
+    };
+    this.offGraphUsageSubscriptions = () => {
+      this.offLiveUsageSubscriptions?.();
+      this.offLiveUsageSubscriptions = undefined;
       offRetire();
     };
 
@@ -896,19 +936,22 @@ export class TaskGraphRunner {
 
   /**
    * Retire what is still live, freeze the run total, and detach this run's
-   * listeners.
+   * live listeners.
    *
-   * Detaching here rather than at the next run's start matters because the
-   * aggregator now outlives a run: a `task_usage` arriving after the total is
-   * frozen would otherwise still fold in and emit a `graph_usage` contradicting
-   * `graph.runUsage`. Order is load-bearing — the sweep's retirements must fire
-   * the listener before it goes.
+   * Only the `task_usage` / `task_complete` pair goes: a cumulative snapshot
+   * arriving after the freeze would fold in and emit a `graph_usage`
+   * contradicting `graph.runUsage`. The aggregator's retire listener stays,
+   * because a checkpoint's storage charge is only known when the run's
+   * ResourceScope disposes it — after this point — and it re-freezes
+   * `graph.runUsage` when it lands. Order is load-bearing: the sweep's
+   * retirements must fire the listener before the live pair goes.
    */
   protected settleRunUsage(): void {
     this.graph.usageAggregator.sweep();
     this.graph.runUsage = this.graph.usageAggregator.total;
-    this.offGraphUsageSubscriptions?.();
-    this.offGraphUsageSubscriptions = undefined;
+    this.offLiveUsageSubscriptions?.();
+    this.offLiveUsageSubscriptions = undefined;
+    this.runUsageSettled = true;
   }
 
   protected async handleComplete(): Promise<void> {

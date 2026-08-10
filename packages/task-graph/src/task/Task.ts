@@ -13,6 +13,7 @@ import { DATAFLOW_ALL_PORTS } from "../task-graph/Dataflow";
 import { TaskGraph } from "../task-graph/TaskGraph";
 import type { IExecuteContext, IExecutePreviewContext, IRunConfig, ITask } from "./ITask";
 import type { Usage } from "./StreamTypes";
+import { mergeUsage } from "./StreamTypes";
 import { collectCacheVersion, isDeterministicId, resolveCachePolicy } from "./TaskCacheOps";
 import { smartClone, stripSymbols } from "./TaskCloneOps";
 import { EMPTY_ENTITLEMENTS, type TaskEntitlements } from "./TaskEntitlements";
@@ -228,6 +229,33 @@ export class Task<
 
   public async disable(): Promise<void> {
     await this.runner.disable();
+  }
+
+  /**
+   * Report a charge that settles after this execution finished — provider
+   * cache storage, billed when the checkpoint is disposed. Folded into this
+   * task's total and forwarded to the run's sink.
+   */
+  public chargeLateUsage(usage: Usage, modelId: string | undefined): void {
+    // While this task is executing again, StreamProcessor owns runUsage and the
+    // graph is still observing this task's cumulative `usage` events; folding
+    // the charge in there as well as into the run total would count it twice.
+    const live = this.status === TaskStatus.PROCESSING || this.status === TaskStatus.STREAMING;
+    if (!live) {
+      const total = mergeUsage(this.runUsage, usage);
+      this.runUsage = total;
+      if (total) {
+        try {
+          // The merged cumulative total, not the bare charge: the `usage`
+          // contract is replace-not-accumulate, so a delta blanks every
+          // consumer's display.
+          this.emit("usage", total, modelId ?? this.runUsageModelId);
+        } catch (err) {
+          getLogger().error("usage listener threw", { taskId: this.id, error: err });
+        }
+      }
+    }
+    this.runner.reportLateUsage(usage, modelId);
   }
 
   // ========================================================================

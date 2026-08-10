@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import type { IExecuteContext } from "../ITask";
 import type { StreamEvent, Usage } from "../StreamTypes";
 import { Task } from "../Task";
+import { TaskStatus } from "../TaskTypes";
 
 const usage = (input: number, output: number): Usage => ({
   input,
@@ -85,5 +86,53 @@ describe("the task-level usage event", () => {
 
     // Not zero: nothing reported is a different fact from nothing spent.
     expect(task.runUsage).toBe(undefined);
+  });
+});
+
+/** A provider cache-storage charge: no counters, one `extra` figure. */
+const storageCharge: Usage = {
+  input: undefined,
+  output: undefined,
+  cached: undefined,
+  cacheWrite: undefined,
+  reasoning: undefined,
+  total: undefined,
+  extra: { cacheStorageTokenHours: 500_000 },
+};
+
+describe("a charge that settles after the task finished", () => {
+  it("emits the merged cumulative total for a late charge, not the bare delta", () => {
+    const task = new UsageStreamTask({});
+    task.runUsage = usage(100, 20);
+    const seen: Usage[] = [];
+    task.subscribe("usage", (u) => seen.push(u));
+
+    task.chargeLateUsage(storageCharge, "m");
+
+    // The `usage` contract is "cumulative, replace not accumulate". Emitting
+    // the bare delta makes every consumer that replaces (useTaskUsage) blank
+    // its display at exactly the moment the run ends.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.input).toBe(100);
+    expect(seen[0]!.output).toBe(20);
+    expect(seen[0]!.extra?.cacheStorageTokenHours).toBe(500_000);
+    expect(task.runUsage?.extra?.cacheStorageTokenHours).toBe(500_000);
+  });
+
+  it("skips the task-level emit while the task is executing again", () => {
+    const task = new UsageStreamTask({});
+    task.runUsage = usage(100, 20);
+    const seen: Usage[] = [];
+    task.subscribe("usage", (u) => seen.push(u));
+    task.status = TaskStatus.PROCESSING;
+
+    task.chargeLateUsage(storageCharge, "m");
+
+    // A loop that mints a checkpoint on iteration N and supersedes it on N+1
+    // disposes the parent mid-execution. StreamProcessor owns runUsage then,
+    // and the graph is still observing this task's cumulative snapshots, so
+    // folding the charge in here as well as into the run total counts twice.
+    expect(seen).toHaveLength(0);
+    expect(task.runUsage?.extra).toBe(undefined);
   });
 });

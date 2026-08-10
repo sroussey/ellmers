@@ -25,9 +25,11 @@ type RunUsageStorage = ITabularStorage<typeof RunUsageSchema, typeof RunUsagePri
  * snapshots still writes once. Nothing is recorded unless a caller attaches
  * this; the graph itself only emits.
  *
- * The returned detach awaits writes still in flight, so a caller that tears down
- * at run end does not lose the last rows. Attach it to the run's ResourceScope
- * ordering *after* checkpoint disposal, whose own late row is written then.
+ * The returned detach awaits writes still in flight, so a caller that tears
+ * down at run end does not lose the last rows. A checkpoint's storage charge is
+ * only known when the run's ResourceScope disposes it, so detach AFTER that
+ * disposal: `runGraph` awaits it before resolving when it owns the scope, but a
+ * caller-owned scope must be disposed by the caller first or its row is lost.
  */
 export function attachUsageRecorder(
   aggregator: GraphUsageAggregator,
