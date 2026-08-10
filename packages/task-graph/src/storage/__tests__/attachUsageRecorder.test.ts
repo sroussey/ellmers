@@ -55,6 +55,35 @@ describe("attachUsageRecorder", () => {
     expect(rows[0].cacheWrite).toBe(null);
   });
 
+  it("persists only columns a writer can fill", async () => {
+    const storage = new InMemoryTabularStorage(RunUsageSchema, RunUsagePrimaryKeyNames);
+    const aggregator = new GraphUsageAggregator();
+    const detach = attachUsageRecorder(aggregator, storage, { runId: "run-cols" });
+
+    aggregator.observe("t1", usage(10, 2), "m");
+    aggregator.retire("t1");
+    await detach();
+
+    const rows = (await storage.getAll()) ?? [];
+    // A column no writer can populate is a promise the schema cannot keep: a
+    // reader seeing `cost` in the table has every reason to expect a number in
+    // it eventually, and nothing in this package can ever supply one.
+    expect(Object.keys(rows[0]).sort()).toEqual([
+      "cacheWrite",
+      "cached",
+      "createdAt",
+      "extra",
+      "input",
+      "modelId",
+      "output",
+      "reasoning",
+      "runId",
+      "sequence",
+      "taskId",
+      "total",
+    ]);
+  });
+
   it("gives a task that executes twice two rows", async () => {
     const storage = new InMemoryTabularStorage(RunUsageSchema, RunUsagePrimaryKeyNames);
     const aggregator = new GraphUsageAggregator();

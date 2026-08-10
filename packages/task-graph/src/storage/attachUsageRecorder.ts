@@ -44,7 +44,6 @@ export function attachUsageRecorder(
         runId: options.runId,
         sequence: sequence++,
         taskId: row.taskId,
-        taskType: null,
         modelId: row.modelId ?? null,
         input: row.usage.input ?? null,
         output: row.usage.output ?? null,
@@ -53,8 +52,6 @@ export function attachUsageRecorder(
         reasoning: row.usage.reasoning ?? null,
         total: row.usage.total ?? null,
         extra: row.usage.extra ? JSON.stringify(row.usage.extra) : null,
-        currency: null,
-        cost: null,
         createdAt: clock(),
       })
       .catch((err: unknown) => {
