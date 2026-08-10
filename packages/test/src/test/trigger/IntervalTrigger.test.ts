@@ -515,6 +515,35 @@ describe("IntervalTrigger", () => {
       await trigger.stop();
     });
 
+    test("a restart during stop() does not emit stop while the trigger is running", async () => {
+      // An observer that sees `stop` while `running` is true concludes the
+      // trigger is dead and stops watching it — while it is actively firing.
+      const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+      const gate = createGate();
+      const runningAtStop: boolean[] = [];
+      trigger.on("stop", () => runningAtStop.push(trigger.running));
+
+      trigger.start(async () => {
+        await gate.promise;
+      });
+      await advanceFakeTimers(PERIOD);
+
+      // NOT awaited: the gated gen-1 handler keeps the old run draining.
+      const stopping = trigger.stop();
+      trigger.start(() => {});
+
+      gate.open();
+      await stopping;
+
+      // Gen 1 drained, but gen 2 owns the trigger.
+      expect(runningAtStop).toEqual([]);
+      expect(trigger.running).toBe(true);
+
+      // ...and the real stop still reports itself.
+      await trigger.stop();
+      expect(runningAtStop).toEqual([false]);
+    });
+
     test("a restart during stop() does not emit spurious skips (skip policy)", async () => {
       // The first generation's handler is still gated when the second starts.
       // Overlap state belongs to a RUN, not to the trigger: if the new
