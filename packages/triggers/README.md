@@ -77,6 +77,13 @@ scope exit.
   the value is offered again on the next poll that still observes it
   (at-least-once, always with the freshest result — retries are paced by the
   poll period, not by `errorBackoff`, which counts POLL failures only).
+- **Hung polls** — `poll` gets no deadline by default. Pass `pollTimeoutMs` to
+  bound one poll: exceeding it aborts the signal handed to `poll` and fails the
+  tick with a `TriggerPollTimeoutError`, which counts as a poll failure
+  (reported on `error`, and it drives `errorBackoff`). Without it, a `fetch`
+  against a black-holed host keeps the tick in flight forever, and under the
+  default `"skip"` policy every later tick is dropped — the trigger goes quiet
+  with nothing on `error`, because a hang is not a throw.
 - **Drift** — each tick is scheduled from the previous tick's scheduled instant,
   not from when its handler finished, so handler duration never accumulates.
   Waits longer than a timer's ~24.8-day ceiling are chunked.

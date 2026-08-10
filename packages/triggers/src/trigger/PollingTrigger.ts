@@ -12,7 +12,7 @@ import {
   nextFixedIntervalFireTime,
 } from "./fixedInterval";
 import { TRIGGER_KINDS } from "./ITrigger";
-import { TriggerConfigurationError } from "./TriggerError";
+import { TriggerConfigurationError, TriggerPollTimeoutError } from "./TriggerError";
 
 /** Decides whether a poll result should fire the handler. */
 export type PollResultPredicate<Result> = (result: Result, previous: Result | undefined) => boolean;
@@ -82,6 +82,20 @@ export interface PollingTriggerOptions<Result> extends TriggerOptions {
    * fares. The counter resets on the first poll that does not throw.
    */
   readonly errorBackoff?: PollErrorBackoff | undefined;
+  /**
+   * Deadline for one poll, in milliseconds. A positive integer.
+   *
+   * Omitted (the default) means NO deadline: a poll that hangs — a `fetch`
+   * against a black-holed host is the usual way — keeps the tick in flight
+   * forever, so under `overlap: "skip"` every later tick is dropped and the
+   * trigger goes quiet with no `error` to show for it. A hang is not a throw,
+   * so `errorBackoff` never engages either.
+   *
+   * When set, exceeding it aborts the signal handed to `poll` and fails the
+   * tick with a {@link TriggerPollTimeoutError}, which counts as a poll failure
+   * — it is reported on `error` and drives `errorBackoff` like any other.
+   */
+  readonly pollTimeoutMs?: number | undefined;
 }
 
 /**
@@ -107,6 +121,7 @@ export class PollingTrigger<Result = unknown> extends BaseTrigger {
   private readonly _poll: (signal: AbortSignal) => Result | Promise<Result>;
   private readonly _shouldFire: PollResultPredicate<Result>;
   private readonly _errorBackoff: PollErrorBackoff | undefined;
+  private readonly _pollTimeoutMs: number | undefined;
   private readonly _runState = new WeakMap<TriggerRun, PollRunState<Result>>();
 
   constructor(options: PollingTriggerOptions<Result>) {
@@ -120,6 +135,10 @@ export class PollingTrigger<Result = unknown> extends BaseTrigger {
     this._errorBackoff = options.errorBackoff
       ? assertValidErrorBackoff(options.errorBackoff)
       : undefined;
+    this._pollTimeoutMs =
+      options.pollTimeoutMs === undefined
+        ? undefined
+        : assertValidPollTimeoutMs(options.pollTimeoutMs);
   }
 
   /**
@@ -156,7 +175,7 @@ export class PollingTrigger<Result = unknown> extends BaseTrigger {
     const state = this.stateFor(run);
     let result: Result;
     try {
-      result = await this._poll(signal);
+      result = await this.pollOnce(run);
     } catch (error) {
       state.failures += 1;
       throw error;
@@ -186,6 +205,46 @@ export class PollingTrigger<Result = unknown> extends BaseTrigger {
     }
   }
 
+  /**
+   * Races `poll` against its deadline. The race is what makes the timeout
+   * effective: a poll that ignores its signal never settles, so aborting alone
+   * would leave the tick in flight forever.
+   */
+  private async pollOnce(run: TriggerRun): Promise<Result> {
+    const timeoutMs = this._pollTimeoutMs;
+    if (timeoutMs === undefined) return await this._poll(run.signal);
+
+    const controller = new AbortController();
+    const onRunAbort = (): void => controller.abort(run.signal.reason);
+    if (run.signal.aborted) controller.abort(run.signal.reason);
+    else run.signal.addEventListener("abort", onRunAbort, { once: true });
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const polled = Promise.resolve(this._poll(controller.signal));
+      // A poll that outlives the race still settles somewhere; without this the
+      // late rejection is an unhandledRejection that takes a Node host down.
+      polled.catch(() => {});
+      const deadline = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          const error = new TriggerPollTimeoutError(`Poll did not settle within ${timeoutMs}ms.`);
+          // Reject BEFORE aborting: a cooperative poll rejects synchronously on
+          // abort and would otherwise win the race with its own error, hiding
+          // the reason the tick failed.
+          reject(error);
+          controller.abort(error);
+        }, timeoutMs);
+        if (this.unrefTimer) {
+          (timer as unknown as { unref?: () => void }).unref?.();
+        }
+      });
+      return await Promise.race([polled, deadline]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      run.signal.removeEventListener("abort", onRunAbort);
+    }
+  }
+
   private stateFor(run: TriggerRun): PollRunState<Result> {
     const existing = this._runState.get(run);
     if (existing) return existing;
@@ -193,6 +252,15 @@ export class PollingTrigger<Result = unknown> extends BaseTrigger {
     this._runState.set(run, created);
     return created;
   }
+}
+
+function assertValidPollTimeoutMs(pollTimeoutMs: number): number {
+  if (!Number.isInteger(pollTimeoutMs) || pollTimeoutMs <= 0) {
+    throw new TriggerConfigurationError(
+      `pollTimeoutMs must be a positive integer, received ${String(pollTimeoutMs)}.`
+    );
+  }
+  return pollTimeoutMs;
 }
 
 function assertValidErrorBackoff(backoff: PollErrorBackoff): PollErrorBackoff {

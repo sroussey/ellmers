@@ -16,6 +16,11 @@ export class TriggerConfigurationError extends TriggerError {
   public static override type = "TriggerConfigurationError";
 }
 
+/** Raised when a {@link PollingTrigger}'s poll exceeds `pollTimeoutMs`. */
+export class TriggerPollTimeoutError extends TriggerError {
+  public static override type = "TriggerPollTimeoutError";
+}
+
 /** Raised when a cron expression cannot be parsed. */
 export class CronExpressionError extends TriggerError {
   public static override type = "CronExpressionError";
