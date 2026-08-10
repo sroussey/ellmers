@@ -4,6 +4,7 @@ import { configDefaults, defineConfig } from "vitest/config";
 // Extension is required: Vite's native config loader cannot resolve an
 // extensionless relative import here.
 import { discoverTestFiles, listTestProjects } from "./scripts/lib/testDiscovery.ts";
+import { workspaceSourcePlugin } from "./scripts/lib/workspaceSource.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const abs = (p: string): string => path.join(__dirname, p);
@@ -50,6 +51,24 @@ const shared = {
   exclude: [...configDefaults.exclude, ...tierExclude],
 };
 
+/**
+ * Which build of the workspace packages a vitest run exercises.
+ *
+ * `source` (the default) resolves every `@workglow/*` specifier to the
+ * package's `src`, so a cross-package suite runs the same files a co-located
+ * `__tests__` does. That is what makes coverage mean anything: with the
+ * bundles in play, `packages/test` exercises `packages/ai/dist/node.js` and
+ * v8 attributes every executed line there, leaving `packages/ai/src/**`
+ * reading as untested. It also collapses the two module identities a mixed
+ * package/relative import graph otherwise produces.
+ *
+ * `dist` restores the old behavior for the rare check that the built bundles
+ * themselves are wired correctly. Bundle integrity is not left unguarded by
+ * the default: the Bun runner resolves `exports` natively, so the nightly
+ * parity workflow still runs the whole suite against `dist`.
+ */
+const testsRunAgainstSource = (process.env.WORKGLOW_TEST_TARGET ?? "source") !== "dist";
+
 const discovered = discoverTestFiles();
 
 /**
@@ -72,6 +91,9 @@ const projects = listTestProjects(discovered).map((p) => {
     .filter((f) => f.runner === "bun" && f.path.startsWith(root + "/"))
     .map((f) => f.path.slice(root.length + 1));
   return {
+    // Projects are standalone Vite configs, so a root-level `plugins` entry
+    // would never reach them — the resolver has to be attached per project.
+    plugins: testsRunAgainstSource ? [workspaceSourcePlugin(__dirname)] : [],
     test: { ...shared, name: p.name, root, exclude: [...shared.exclude, ...bunOnly] },
   };
 });
@@ -83,7 +105,32 @@ export default defineConfig({
     coverage: {
       provider: "v8", // or 'istanbul'
       reporter: ["text", "json", "json-summary", "html"],
-      exclude: [...configDefaults.exclude, "packages/test/**"],
+      /**
+       * The denominator is every package's own `src`, stated explicitly. Left
+       * to vitest's default (files loaded during the run), a package's score
+       * silently omits the modules no test imports at all — the ones a coverage
+       * report exists to surface — and its file list changes with whichever
+       * section CI happened to run.
+       */
+      include: ["packages/*/src/**/*.{ts,tsx}", "providers/*/src/**/*.{ts,tsx}"],
+      exclude: [
+        ...configDefaults.exclude,
+        // Built output is never the unit of measure. Nothing should resolve
+        // here now that specifiers land on `src`, but a `use-source` stub or a
+        // stale bundle left in a working tree would otherwise be reported as a
+        // source file of its own.
+        "**/dist/**",
+        // The cross-package suite is the harness, not the subject.
+        "packages/test/**",
+        // Tests, fixtures and testing-only helpers: counting them inflates
+        // every package by the coverage of code that exists to be run.
+        "**/__tests__/**",
+        "**/*.test.*",
+        "**/*.test-d.ts",
+        "**/testing/**",
+        "**/*.d.ts",
+        "**/bench/**",
+      ],
     },
   },
 });

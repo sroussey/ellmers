@@ -387,6 +387,36 @@ package and silently fail to load. `testDiscovery.test.ts` reads the real config
 fails if any discovered test file falls outside every project root: such a file does not
 error or warn, it simply stops running.
 
+### Coverage
+
+Vitest resolves every `@workglow/*` specifier to the package's **source**, not its built
+bundle. `scripts/lib/workspaceSource.ts` is a per-project Vite plugin that lets normal
+resolution run first — so conditional `exports` still pick the node/browser/bun target —
+and rewrites only the RESULT, `<pkg>/dist/<entry>.js` → `<pkg>/src/<entry>.ts`. Every
+package, every subpath export, and every package added later is covered with no list to
+maintain, and unlike `use-source` it writes nothing into `dist`.
+
+This is what makes the numbers mean anything. `packages/test` reaches what it exercises by
+package specifier, so with bundles in play v8 attributes those executed lines to
+`packages/ai/dist/node.js` and `packages/ai/src/**` reads as barely covered — a package
+scores WORSE the more of its behavior lives behind its public entry point. Resolving to
+source also collapses the two module identities a mixed package/relative import graph
+otherwise produces.
+
+`WORKGLOW_TEST_TARGET=dist` restores the old behavior for a check that the built bundles
+themselves are wired correctly. Bundle integrity is not left unguarded by the default: the
+Bun runner resolves `exports` natively, so the nightly parity workflow runs the whole suite
+against `dist` either way.
+
+The coverage denominator is stated explicitly (`packages/*/src/**/*.{ts,tsx}`, same for
+`providers/`) rather than left to vitest's default of "files loaded during the run" — that
+default omits the modules no test imports at all, which are exactly the ones a coverage
+report exists to surface, and makes a package's file list depend on which section CI
+happened to run. `dist`, `packages/test`, `__tests__`, `testing/`, `bench/` and test files
+are excluded. `scripts/workspaceSource.test.ts` fails if any published runtime entry lacks
+a source counterpart: such an entry keeps resolving to its bundle, and the only symptom is
+one package's coverage collapsing back onto `dist/*`.
+
 ### Developing without building
 
 `bun run use-source` (or `./scripts/bunsrc-workspace.ts source`) makes every package resolve to its source files instead of its built files, so you can develop without rebuilding. It does **not** touch `package.json`: `exports` keeps pointing at `./dist/*`, and the script writes tiny re-export stubs into each package's (gitignored) `dist` folder — `dist/node.js` becomes `export * from "../src/node.ts"`, `dist/node.d.ts` the declaration equivalent. Source mode therefore leaves `git status` clean and there is nothing to revert before committing.
