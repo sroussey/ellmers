@@ -213,9 +213,9 @@ const ESTIMATED_USAGE_INTERVAL_MS = 250;
 
 /**
  * Approximate characters per token for OpenAI-shaped streams that only report
- * billed usage on the terminal chunk (OpenRouter, DeepSeek, xAI chat
- * completions). Matches the heuristic in those providers' `count-tokens` run-fns
- * — good enough for a live ↑↓ counter, not for billing.
+ * billed usage on the terminal chunk (OpenRouter, DeepSeek, xAI, Ollama, HF
+ * Inference, OpenAI Responses). Matches the heuristic in those providers'
+ * `count-tokens` run-fns — good enough for a live ↑↓ counter, not for billing.
  */
 const CHARS_PER_TOKEN_ESTIMATE = 4;
 

@@ -10,6 +10,7 @@ import type {
   StructuredGenerationTaskOutput,
   Usage,
 } from "@workglow/ai";
+import { createEstimatedOutputUsageReporter } from "@workglow/ai/provider-utils";
 import { createPartialJsonStream } from "@workglow/util/worker";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getOllamaModelName } from "./Ollama_ModelUtil";
@@ -42,6 +43,11 @@ export function createOllamaStructuredGenerationStream(
 
     const schema = input.outputSchema ?? outputSchema;
 
+    // Ollama only reports counts on the terminal `done: true` chunk; estimate ↑
+    // before the request so the CLI row shows spend during TTFB / prefill.
+    const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+    provisionalUsage.onPrompt(typeof input.prompt === "string" ? input.prompt : "");
+
     const stream = await client.chat({
       model: modelName,
       messages: [{ role: "user", content: input.prompt }],
@@ -64,12 +70,14 @@ export function createOllamaStructuredGenerationStream(
         usage = mapOllamaUsage(chunk) ?? usage;
         const delta = chunk.message.content;
         if (delta) {
+          provisionalUsage.onText(delta);
           const partial = json.push(delta);
           if (partial !== undefined) {
             emit({ type: "object-delta", port: "object", objectDelta: partial });
           }
         }
       }
+      provisionalUsage.flush();
     } finally {
       signal?.removeEventListener("abort", onAbort);
     }

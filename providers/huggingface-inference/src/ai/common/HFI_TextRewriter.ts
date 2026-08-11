@@ -5,6 +5,7 @@
  */
 
 import type { AiProviderRunFn, TextRewriterTaskInput, TextRewriterTaskOutput } from "@workglow/ai";
+import { createEstimatedOutputUsageReporter } from "@workglow/ai/provider-utils";
 import { getClient, getModelName, getProvider } from "./HFI_Client";
 import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 
@@ -16,6 +17,11 @@ export const HFI_TextRewriter_Stream: AiProviderRunFn<
   const client = await getClient(model);
   const modelName = getModelName(model);
   const provider = getProvider(model);
+
+  const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+  provisionalUsage.onPrompt(
+    `${typeof input.prompt === "string" ? input.prompt : ""}\n${typeof input.text === "string" ? input.text : ""}`
+  );
 
   const stream = client.chatCompletionStream(
     {
@@ -32,8 +38,10 @@ export const HFI_TextRewriter_Stream: AiProviderRunFn<
   for await (const chunk of stream) {
     const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
+      provisionalUsage.onText(delta);
       emit({ type: "text-delta", port: "text", textDelta: delta });
     }
   }
+  provisionalUsage.flush();
   emit({ type: "finish", data: {} as TextRewriterTaskOutput });
 };

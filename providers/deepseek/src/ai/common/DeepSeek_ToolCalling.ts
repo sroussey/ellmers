@@ -159,7 +159,13 @@ export const DeepSeek_ToolCalling_Stream: AiProviderRunFn<
       }
       emit(event);
     },
-    mapDeepSeekUsage
+    mapDeepSeekUsage,
+    {
+      promptText: messages
+        .map((m) => (typeof m.content === "string" ? m.content : ""))
+        .filter(Boolean)
+        .join("\n"),
+    }
   );
 
   if (isForcingToolChoice(input.toolChoice)) {

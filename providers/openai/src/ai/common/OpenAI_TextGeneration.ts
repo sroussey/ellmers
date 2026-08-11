@@ -13,6 +13,8 @@ import {
   accumulateOpenAIResponsesStream,
   buildResponsesInput,
   buildResponsesTools,
+  createEstimatedOutputUsageReporter,
+  promptTextForResponsesUsageEstimate,
 } from "@workglow/ai/provider-utils";
 import { toOpenAIMessages } from "@workglow/ai/worker";
 import { getLogger } from "@workglow/util/worker";
@@ -121,12 +123,19 @@ export const OpenAI_TextGeneration_Stream: AiProviderRunFn<
     }
     finalizeResponsesRequest(model, params);
 
+    // Responses only attaches billed usage to the terminal lifecycle event;
+    // estimate ↑ before the request so the CLI counter moves during TTFB.
+    const promptText = promptTextForResponsesUsageEstimate(params);
+    createEstimatedOutputUsageReporter(emit).onPrompt(promptText);
+
     const stream = await client.responses.create(
       { ...params, stream: true } as Parameters<typeof client.responses.create>[0],
       { signal }
     );
 
-    const usage = await accumulateOpenAIResponsesStream(stream as AsyncIterable<unknown>, emit);
+    const usage = await accumulateOpenAIResponsesStream(stream as AsyncIterable<unknown>, emit, {
+      promptText,
+    });
     emit({ type: "finish", data: {} as TextGenerationTaskOutput, usage });
   } finally {
     logger.timeEnd(timerLabel, { model: getModelName(model) });
