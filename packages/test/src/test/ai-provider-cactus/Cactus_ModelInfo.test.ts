@@ -38,7 +38,7 @@ describe("Cactus_ModelInfo", () => {
           metadata: {},
         },
         detail: "cached_status",
-      } as any,
+      },
       {
         model_id: "x",
         title: "x",
@@ -47,7 +47,7 @@ describe("Cactus_ModelInfo", () => {
         provider_config: { model_id: "needle-26m" },
         capabilities: ["tool-use"],
         metadata: {},
-      } as any,
+      },
       controller.signal,
       (ev) => {
         if (ev.type === "finish") data = ev.data as ModelInfoTaskOutput;

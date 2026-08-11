@@ -33,8 +33,7 @@ import type { Capability } from "../../capability/Capabilities";
 import { readUsage, recordUsageTelemetry } from "../../capability/UsageTelemetry";
 import type { AiJobInput } from "../../job/AiJob";
 import { AiJob } from "../../job/AiJob";
-import { MODEL_REPOSITORY } from "../../model/ModelRegistry";
-import type { ModelRepository } from "../../model/ModelRepository";
+import { getGlobalModelRepository } from "../../model/ModelRegistry";
 import type { ModelConfig } from "../../model/ModelSchema";
 import { getAiProviderRegistry } from "../../provider/AiProviderRegistry";
 
@@ -459,7 +458,7 @@ export class AiTask<
       (inputSchema.properties || {}) as Record<string, JsonSchema>
     ).filter(([, schema]) => modelSemanticFromPropertySchema(schema)?.startsWith("model:"));
     if (modelTaskProperties.length > 0) {
-      const modelRepo = registry.get<ModelRepository>(MODEL_REPOSITORY);
+      const modelRepo = getGlobalModelRepository(registry);
       const hostTaskClass = this.constructor as typeof AiTask;
 
       for (const [key, propertySchema] of modelTaskProperties) {

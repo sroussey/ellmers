@@ -18,7 +18,7 @@ import {
 } from "@workglow/task-graph";
 import { JsonTask, registerCommonTasks } from "@workglow/tasks";
 import { registerTensorFlowMediaPipe } from "@workglow/tf-mediapipe/ai";
-import { Container, ServiceRegistry, uuid4 } from "@workglow/util";
+import { globalServiceRegistry, ServiceRegistry, uuid4 } from "@workglow/util";
 import { ReactFlowProvider } from "@xyflow/react";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./Resize";
@@ -68,7 +68,13 @@ await queueRegistry.clearQueues();
 await queueRegistry.startQueues();
 const taskOutputCache = new IndexedDbTaskOutputRepository();
 const taskGraphRepo = new IndexedDbTaskGraphRepository();
-const cacheServices = new ServiceRegistry(new Container());
+// Child of the global registry so model.repository / ai.provider.registry /
+// resolvers (registered by @workglow/ai and the provider register*() calls
+// above) stay visible. A bare `new Container()` isolates the run from them
+// and TextClassificationTask.narrowInput fails with "Service not registered".
+const cacheServices = new ServiceRegistry(
+  globalServiceRegistry.container.createChildContainer()
+);
 cacheServices.registerInstance(
   CACHE_REGISTRY,
   new DefaultCacheRegistry({ deterministic: taskOutputCache })
