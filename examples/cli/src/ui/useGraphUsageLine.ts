@@ -22,6 +22,13 @@ function usageIsSpend(usage: Usage): boolean {
  * Wall-clock for the graph footer: earliest startedAt → latest completedAt, or
  * now while any started task is still open.
  */
+function taskIsOpen(task: { startedAt?: Date; completedAt?: Date }): boolean {
+  if (!task.startedAt) return false;
+  // A leftover completedAt from a prior run of a reused node is not a close.
+  if (!task.completedAt) return true;
+  return task.completedAt.getTime() < task.startedAt.getTime();
+}
+
 function graphDurationMs(graph: TaskGraph, nowMs: number): number | undefined {
   let earliest: number | undefined;
   let latest: number | undefined;
@@ -30,11 +37,11 @@ function graphDurationMs(graph: TaskGraph, nowMs: number): number | undefined {
     if (!task.startedAt) continue;
     const start = task.startedAt.getTime();
     if (earliest === undefined || start < earliest) earliest = start;
-    if (task.completedAt) {
+    if (taskIsOpen(task)) {
+      open = true;
+    } else if (task.completedAt) {
       const end = task.completedAt.getTime();
       if (latest === undefined || end > latest) latest = end;
-    } else {
-      open = true;
     }
   }
   if (earliest === undefined) return undefined;
@@ -43,7 +50,7 @@ function graphDurationMs(graph: TaskGraph, nowMs: number): number | undefined {
 
 function hasOpenStartedTask(graph: TaskGraph): boolean {
   for (const task of graph.getTasks()) {
-    if (task.startedAt && !task.completedAt) return true;
+    if (taskIsOpen(task)) return true;
   }
   return false;
 }

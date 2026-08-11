@@ -87,6 +87,32 @@ describe("the task-level usage event", () => {
     // Not zero: nothing reported is a different fact from nothing spent.
     expect(task.runUsage).toBe(undefined);
   });
+
+  it("clears completedAt when the same node is run again", async () => {
+    // Reused owned nodes (sec generationNodeFor across EXTRACTION_ATTEMPTS)
+    // must not keep the prior run's completedAt — CLI duration treats that as
+    // "already finished" and drops the live wall-clock.
+    class ProbeTask extends UsageStreamTask {
+      static override readonly type = "ProbeCompletedAtTask";
+      completedAtSeenDuringRun: Date | undefined = undefined;
+      override async *executeStream(
+        input: { go: string },
+        context: IExecuteContext
+      ): AsyncGenerator<StreamEvent> {
+        this.completedAtSeenDuringRun = this.completedAt;
+        yield* super.executeStream(input, context);
+      }
+    }
+    const task = new ProbeTask({});
+    await task.run();
+    expect(task.completedAt).toBeInstanceOf(Date);
+
+    await task.run();
+
+    expect(task.completedAtSeenDuringRun).toBeUndefined();
+    expect(task.status).toBe(TaskStatus.COMPLETED);
+    expect(task.completedAt).toBeInstanceOf(Date);
+  });
 });
 
 /** A provider cache-storage charge: no counters, one `extra` figure. */

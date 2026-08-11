@@ -1114,6 +1114,7 @@ export class TaskRunner<
     this.running = true;
 
     this.task.startedAt = new Date();
+    this.task.completedAt = undefined;
     this.task.progress = 0;
     this.task.status = TaskStatus.PROCESSING;
     this.task.runUsage = undefined;

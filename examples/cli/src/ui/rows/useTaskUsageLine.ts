@@ -6,6 +6,7 @@
 
 import { formatUsageWithCost } from "@workglow/ai";
 import type { ITask } from "@workglow/task-graph";
+import { TaskStatus } from "@workglow/task-graph";
 import { useEffect, useState } from "react";
 import { formatCliDuration } from "../formatCliDuration";
 import { useModelPricing } from "./useModelPricing";
@@ -13,13 +14,39 @@ import { useTaskUsage } from "./useTaskUsage";
 
 const TICK_MS = 250;
 
-function appendDuration(usageText: string, task: ITask, nowMs: number): string {
+function isRunningStatus(status: string): boolean {
+  return (
+    status === TaskStatus.PROCESSING ||
+    status === TaskStatus.STREAMING ||
+    status === TaskStatus.ABORTING
+  );
+}
+
+/**
+ * Wall-clock for a usage fragment. While the task is still running — or a
+ * leftover `completedAt` from a prior run of a reused node is older than the
+ * current `startedAt` — use `nowMs`. Otherwise freeze at `completedAt`.
+ */
+export function appendUsageDuration(usageText: string, task: ITask, nowMs: number): string {
   if (!usageText || usageText === "cached") return usageText;
   const started = task.startedAt;
   if (!started) return usageText;
-  const endMs = task.completedAt?.getTime() ?? nowMs;
-  const duration = formatCliDuration(endMs - started.getTime());
+  const completed = task.completedAt;
+  const staleCompletion =
+    completed !== undefined && completed.getTime() < started.getTime();
+  const live = isRunningStatus(task.status) || completed === undefined || staleCompletion;
+  const endMs = live ? nowMs : completed!.getTime();
+  const duration = formatCliDuration(Math.max(0, endMs - started.getTime()));
   return duration ? `${usageText} ${duration}` : usageText;
+}
+
+/** True when the usage line should keep ticking wall-clock. */
+export function usageLineNeedsTick(usageText: string, task: ITask): boolean {
+  if (!usageText || usageText === "cached" || !task.startedAt) return false;
+  const completed = task.completedAt;
+  const staleCompletion =
+    completed !== undefined && completed.getTime() < task.startedAt.getTime();
+  return isRunningStatus(task.status) || completed === undefined || staleCompletion;
 }
 
 /**
@@ -33,15 +60,17 @@ export function useTaskUsageLine(task: ITask): string {
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   const usageText = formatUsageWithCost(usage, "directional", pricing);
-  const needsTick = Boolean(
-    usageText && usageText !== "cached" && task.startedAt && !task.completedAt
-  );
+  const needsTick = usageLineNeedsTick(usageText, task);
 
   useEffect(() => {
     if (!needsTick) return;
+    // Refresh immediately: `nowMs` may still be the mount-time value, which is
+    // often before `startedAt` and would render as no duration until the first
+    // interval fire.
+    setNowMs(Date.now());
     const id = setInterval(() => setNowMs(Date.now()), TICK_MS);
     return () => clearInterval(id);
   }, [needsTick]);
 
-  return appendDuration(usageText, task, nowMs);
+  return appendUsageDuration(usageText, task, nowMs);
 }
