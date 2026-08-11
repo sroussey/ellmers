@@ -13,6 +13,7 @@ export * from "./common/Xai_ModelSearch";
 export * from "./registerXai";
 
 import { XAI_RUN_FN_SPECS } from "./common/Xai_Capabilities";
+import { _testOnly as clientTestOnly } from "./common/Xai_Client";
 import { XAI_RUN_FNS } from "./common/Xai_JobRunFns";
 import { XaiQueuedProvider } from "./XaiQueuedProvider";
 
@@ -23,4 +24,5 @@ export const _testOnly = {
   XaiQueuedProvider,
   XAI_RUN_FN_SPECS,
   XAI_RUN_FNS,
+  setXaiClientForTests: clientTestOnly.setXaiClientForTests,
 } as const;

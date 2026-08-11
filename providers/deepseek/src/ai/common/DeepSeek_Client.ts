@@ -51,7 +51,28 @@ interface ResolvedProviderConfig {
   readonly trustedBaseUrl?: boolean;
 }
 
+let _testClient: unknown;
+
+/**
+ * Override the client returned by {@link getClient} so runtime tests can
+ * exercise run-fns without a live SDK, API key, or network call. Pass
+ * `undefined` to restore normal SDK-backed creation.
+ */
+function setDeepSeekClientForTests(client: unknown): void {
+  _testClient = client;
+}
+
+/**
+ * @internal Symbols exported only for use by `@workglow/test`. Not part of the
+ * stable public API. Surfaced on the `ai-runtime` barrel (via `export *`) and
+ * merged into the `/ai` barrel's `_testOnly`.
+ */
+export const _testOnly = {
+  setDeepSeekClientForTests,
+} as const;
+
 export async function getClient(model: DeepSeekModelConfig | undefined) {
+  if (_testClient) return _testClient as InstanceType<OpenAIClientClass>;
   const OpenAI = await loadOpenAISDK();
   const config = model?.provider_config as ResolvedProviderConfig | undefined;
   const apiKey = resolveApiKey({
