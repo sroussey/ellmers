@@ -83,3 +83,31 @@ export function estimateCost(
   if (!priced) return undefined;
   return { currency: pricing.currency, amount, unpriced, stated: false };
 }
+
+/**
+ * Fold several {@link CostEstimate}s into one. Returns `undefined` when nothing
+ * was priced, or when the inputs disagree on currency (mixing units silently
+ * would invent a number).
+ *
+ * `unpriced` is the union across contributors; `stated` is true only when every
+ * contributor was provider-stated.
+ */
+export function sumCostEstimates(
+  estimates: readonly CostEstimate[]
+): CostEstimate | undefined {
+  if (estimates.length === 0) return undefined;
+  const currency = estimates[0]!.currency;
+  if (estimates.some((estimate) => estimate.currency !== currency)) return undefined;
+
+  let amount = 0;
+  let stated = true;
+  const unpriced: string[] = [];
+  for (const estimate of estimates) {
+    amount += estimate.amount;
+    stated = stated && estimate.stated;
+    for (const field of estimate.unpriced) {
+      if (!unpriced.includes(field)) unpriced.push(field);
+    }
+  }
+  return { currency, amount, unpriced, stated };
+}

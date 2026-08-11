@@ -7,7 +7,8 @@
 import type { Usage } from "@workglow/task-graph";
 import { CACHE_HIT_USAGE } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
-import { formatCost, formatUsage } from "../formatUsage";
+import { formatCost, formatUsage, formatUsageWithCost } from "../formatUsage";
+import type { ModelPricing } from "../../model/ModelSchema";
 
 const usage = (over: Partial<Usage>): Usage => ({
   input: undefined,
@@ -112,5 +113,48 @@ describe("formatCost", () => {
     expect(formatCost({ currency: "EUR", amount: 0.0142, unpriced: [], stated: false })).toBe(
       "EUR 0.0142"
     );
+  });
+
+  it("keeps sub-cent OpenRouter charges visible instead of rounding to $0.0000", () => {
+    expect(formatCost({ currency: "USD", amount: 0.000009774, unpriced: [], stated: true })).toBe(
+      "$0.0000098"
+    );
+  });
+});
+
+const pricing: ModelPricing = {
+  currency: "USD",
+  input: 3,
+  output: 15,
+  cached: 0.3,
+  cacheWrite: undefined,
+  cacheStoragePerHour: undefined,
+};
+
+describe("formatUsageWithCost", () => {
+  it("appends a priced figure when rates are known", () => {
+    expect(formatUsageWithCost(usage({ input: 1_000_000, output: 1_000_000 }), "directional", pricing)).toBe(
+      "↑1,000,000 ↓1,000,000 $18.0000"
+    );
+  });
+
+  it("stays tokens-only when nothing can be priced", () => {
+    expect(formatUsageWithCost(usage({ input: 100, output: 20 }), "directional", undefined)).toBe(
+      "↑100 ↓20"
+    );
+  });
+
+  it("keeps a cache-hit label free of a dollar amount", () => {
+    expect(formatUsageWithCost(CACHE_HIT_USAGE, "directional", pricing)).toBe("cached");
+  });
+
+  it("surfaces a provider-stated cost without a rate card", () => {
+    expect(
+      formatUsageWithCost(
+        usage({ input: 100, output: 20, extra: { cost: 0.00042 } }),
+        "directional",
+        undefined
+      )
+    ).toBe("↑100 ↓20 $0.0004");
   });
 });

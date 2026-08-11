@@ -5,7 +5,9 @@
  */
 
 import type { Usage } from "@workglow/task-graph";
+import type { ModelPricing } from "../model/ModelSchema";
 import type { CostEstimate } from "./CostEstimate";
+import { estimateCost } from "./CostEstimate";
 
 /**
  * How much of a {@link Usage} to render. All three levels obey the same
@@ -76,5 +78,36 @@ export function formatCost(estimate: CostEstimate | undefined): string {
   if (!estimate) return "";
   const symbol = estimate.currency === "USD" ? "$" : `${estimate.currency} `;
   const prefix = estimate.unpriced.length > 0 ? "~" : "";
-  return `${prefix}${symbol}${estimate.amount.toFixed(4)}`;
+  // Four decimals is the usual billable grain, but OpenRouter micro-costs
+  // (fractions of a cent on a short call) round to `$0.0000` at that width and
+  // look like a free run — stretch precision until the first significant digit
+  // shows, capped so a nano-dollar charge does not flood the row.
+  const amount = formatCostAmount(estimate.amount);
+  return `${prefix}${symbol}${amount}`;
+}
+
+function formatCostAmount(amount: number): string {
+  if (amount === 0) return "0.0000";
+  if (amount >= 0.0001) return amount.toFixed(4);
+  const digits = Math.min(8, Math.max(4, Math.ceil(-Math.log10(amount)) + 1));
+  return amount.toFixed(digits);
+}
+
+/**
+ * Token counts plus a cost figure when one can be priced.
+ *
+ * A replayed cache hit stays `"cached"` with no dollar amount — it cost
+ * nothing, and appending `$0.0000` would read as a priced run. Provider-stated
+ * costs (`usage.extra.cost`) surface even when `pricing` is absent; otherwise
+ * the rate card is required and an unpriceable spend stays tokens-only.
+ */
+export function formatUsageWithCost(
+  usage: Usage | undefined,
+  detail: UsageDetail,
+  pricing: ModelPricing | undefined
+): string {
+  const tokens = formatUsage(usage, detail);
+  if (!tokens || tokens === "cached") return tokens;
+  const cost = formatCost(estimateCost(usage!, pricing));
+  return cost ? `${tokens} ${cost}` : tokens;
 }

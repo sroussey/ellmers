@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { formatUsage } from "@workglow/ai";
 import type { ITask } from "@workglow/task-graph";
 import { Box, Text } from "ink";
 import React from "react";
@@ -17,7 +16,7 @@ import {
   sortIterationSlotsForDisplay,
 } from "../taskGraphCliSubscriptions";
 import { useSubtaskRows } from "./useSubtaskRows";
-import { useTaskUsage } from "./useTaskUsage";
+import { useTaskUsageLine } from "./useTaskUsageLine";
 
 /**
  * A long-running task can own hundreds of subtasks (one generation per eval
@@ -97,7 +96,7 @@ function SubtaskRow({
   );
 }
 
-/** Status + token line for one owned child; isolated so `useTaskUsage` is legal. */
+/** Status + token/cost line for one owned child; isolated so the usage hook is legal. */
 function SubtaskStatusWithUsage({
   task,
   line,
@@ -111,8 +110,7 @@ function SubtaskStatusWithUsage({
 }): React.ReactElement {
   const slots = iterationSlots.get(line.id);
   const sortedSlots = slots ? sortIterationSlotsForDisplay(slots) : [];
-  const usage = useTaskUsage(task);
-  const usageLine = formatUsage(usage, "directional");
+  const usageLine = useTaskUsageLine(task);
   return (
     <Box flexDirection="column">
       <TaskStatusProgressRow

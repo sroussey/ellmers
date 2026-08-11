@@ -7,7 +7,7 @@
 import type { Usage } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 import type { ModelPricing } from "../../model/ModelSchema";
-import { estimateCost } from "../CostEstimate";
+import { estimateCost, sumCostEstimates } from "../CostEstimate";
 
 const pricing: ModelPricing = {
   currency: "USD",
@@ -80,5 +80,33 @@ describe("estimateCost", () => {
     };
     const estimate = estimateCost(usage({ extra: { cacheStorageTokenHours: 2_000_000 } }), storage);
     expect(estimate?.amount).toBeCloseTo(2, 10);
+  });
+});
+
+describe("sumCostEstimates", () => {
+  it("returns undefined for an empty list", () => {
+    expect(sumCostEstimates([])).toBe(undefined);
+  });
+
+  it("sums amounts and unions unpriced fields", () => {
+    const sum = sumCostEstimates([
+      { currency: "USD", amount: 0.01, unpriced: ["cached"], stated: false },
+      { currency: "USD", amount: 0.02, unpriced: [], stated: true },
+    ]);
+    expect(sum).toEqual({
+      currency: "USD",
+      amount: 0.03,
+      unpriced: ["cached"],
+      stated: false,
+    });
+  });
+
+  it("refuses to mix currencies", () => {
+    expect(
+      sumCostEstimates([
+        { currency: "USD", amount: 0.01, unpriced: [], stated: true },
+        { currency: "EUR", amount: 0.02, unpriced: [], stated: true },
+      ])
+    ).toBe(undefined);
   });
 });

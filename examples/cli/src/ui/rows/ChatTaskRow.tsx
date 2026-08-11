@@ -5,13 +5,12 @@
  */
 
 import type { ChatMessage, ContentBlock } from "@workglow/ai";
-import { formatUsage } from "@workglow/ai";
 import type { ITask, StreamEvent } from "@workglow/task-graph";
 import { Box, Text } from "ink";
 import React, { useEffect, useState, useSyncExternalStore } from "react";
 import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
 import type { TaskRowProps } from "./pickRenderer";
-import { useTaskUsage } from "./useTaskUsage";
+import { useTaskUsageLine } from "./useTaskUsageLine";
 
 const HISTORY_TAIL = 6;
 
@@ -76,8 +75,7 @@ export function ChatTaskRow({ task, line }: TaskRowProps): React.ReactElement {
   // previous turn's assistant message just landed, or a new user turn has
   // started), and on stream_end.
   const [streamText, setStreamText] = useState("");
-  const usage = useTaskUsage(task);
-  const usageLine = formatUsage(usage, "directional");
+  const usageLine = useTaskUsageLine(task);
 
   useEffect(() => {
     const onChunk = (event: StreamEvent): void => {

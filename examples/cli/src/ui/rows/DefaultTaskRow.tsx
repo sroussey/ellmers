@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { formatUsage } from "@workglow/ai";
 import { Box, Text } from "ink";
 import React from "react";
 import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
@@ -17,13 +16,12 @@ import {
 import type { TaskRowProps } from "./pickRenderer";
 import { isRedundantSubgraph, SubtaskRows } from "./SubtaskRows";
 import { useSubtaskRows } from "./useSubtaskRows";
-import { useTaskUsage } from "./useTaskUsage";
+import { useTaskUsageLine } from "./useTaskUsageLine";
 
 export function DefaultTaskRow({ task, line, iterationSlots }: TaskRowProps): React.ReactElement {
   const sortedSlots = iterationSlots ? sortIterationSlotsForDisplay(iterationSlots) : [];
   const subtasks = useSubtaskRows(task);
-  const usage = useTaskUsage(task);
-  const usageLine = formatUsage(usage, "directional");
+  const usageLine = useTaskUsageLine(task);
   return (
     <Box key={line.id} flexDirection="column">
       <TaskStatusProgressRow

@@ -6,11 +6,17 @@
 
 import type { IExecuteContext, ITask, Usage } from "@workglow/task-graph";
 import { Task, Workflow } from "@workglow/task-graph";
+import {
+  getGlobalModelRepository,
+  InMemoryModelRepository,
+  setGlobalModelRepository,
+} from "@workglow/ai";
 import { render } from "ink";
 import { EventEmitter } from "node:events";
 import React from "react";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WorkflowRunApp } from "../ui/WorkflowRunApp";
+import { clearModelPricingCache } from "../ui/rows/lookupModelPricing";
 
 const SCHEMA = { type: "object", properties: {} } as never;
 
@@ -122,6 +128,35 @@ class NoUsageTask extends Task<Record<string, never>, Record<string, never>> {
   }
 }
 
+/** Reports usage under a named model so the row can look up a rate card. */
+class PricedUsageTask extends Task<Record<string, never>, Record<string, never>> {
+  static override readonly type = "PricedUsageTask";
+  static override readonly category = "Test";
+  static override readonly cacheable = false;
+  static override inputSchema(): never {
+    return SCHEMA;
+  }
+  static override outputSchema(): never {
+    return SCHEMA;
+  }
+  override async execute(_input: Record<string, never>, _context: IExecuteContext) {
+    await waitForRowSubscription(this as never);
+    this.runUsageModelId = "cli-test-priced-model";
+    const usage: Usage = {
+      input: 1_000_000,
+      output: 1_000_000,
+      cached: undefined,
+      cacheWrite: undefined,
+      reasoning: undefined,
+      total: undefined,
+      extra: undefined,
+    };
+    this.emit("usage", usage, "cli-test-priced-model");
+    await sleep(80);
+    return {};
+  }
+}
+
 /** Minimal stdout Ink will write frames to. */
 class CapturingStdout extends EventEmitter {
   readonly columns = 120;
@@ -185,11 +220,26 @@ function taskRowUsageLine(output: string, taskType: string): string {
 }
 
 describe("token usage on the rendered task row (WorkflowRunApp)", () => {
+  let originalRepo: ReturnType<typeof getGlobalModelRepository>;
+
+  beforeEach(() => {
+    originalRepo = getGlobalModelRepository();
+    setGlobalModelRepository(new InMemoryModelRepository());
+    clearModelPricingCache();
+  });
+
+  afterEach(() => {
+    setGlobalModelRepository(originalRepo);
+    clearModelPricingCache();
+  });
+
   it("displays the token counts once usage is reported", async () => {
     const output = await runWorkflowApp(new SingleUsageTask());
     const row = taskRowUsageLine(output, SingleUsageTask.type);
     expect(row).toContain("↑250");
     expect(row).toContain("↓75");
+    // Wall-clock is appended only when a token fragment already exists.
+    expect(row).toMatch(/\d+ms|\d+\.\d+s|\d+m(?:\s+\d+s)?|\d+h(?:\s+\d+m)?$/u);
   });
 
   // Mid-stream `usage` events are cumulative snapshots from the provider — the
@@ -208,5 +258,31 @@ describe("token usage on the rendered task row (WorkflowRunApp)", () => {
     const output = await runWorkflowApp(new NoUsageTask());
     const row = taskRowUsageLine(output, NoUsageTask.type);
     expect(row).toBe("");
+  });
+
+  it("appends a cost estimate when the model record carries pricing", async () => {
+    await getGlobalModelRepository().addModel({
+      model_id: "cli-test-priced-model",
+      title: "priced",
+      description: "test",
+      provider: "ANTHROPIC",
+      capabilities: ["text.generation"],
+      provider_config: { model_name: "cli-test-priced-model" },
+      metadata: {},
+      pricing: {
+        currency: "USD",
+        input: 3,
+        output: 15,
+        cached: undefined,
+        cacheWrite: undefined,
+        cacheStoragePerHour: undefined,
+      },
+    });
+    const output = await runWorkflowApp(new PricedUsageTask());
+    const row = taskRowUsageLine(output, PricedUsageTask.type);
+    expect(row).toContain("↑1,000,000");
+    expect(row).toContain("↓1,000,000");
+    expect(row).toContain("$18.0000");
+    expect(row).toMatch(/\$18\.0000\s+(?:\d+ms|\d+\.\d+s|\d+m(?:\s+\d+s)?|\d+h(?:\s+\d+m)?)$/u);
   });
 });

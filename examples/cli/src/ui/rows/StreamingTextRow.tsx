@@ -4,13 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { formatUsage } from "@workglow/ai";
 import { Box, Text } from "ink";
 import React from "react";
 import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
 import type { TaskRowProps } from "./pickRenderer";
 import { useTaskStreamText } from "./useTaskStreamText";
-import { useTaskUsage } from "./useTaskUsage";
+import { useTaskUsageLine } from "./useTaskUsageLine";
 
 const MAX_LINES = 8;
 
@@ -22,8 +21,7 @@ function tailLines(text: string, n: number): string {
 
 export function StreamingTextRow({ task, line }: TaskRowProps): React.ReactElement {
   const streamText = useTaskStreamText(task);
-  const usage = useTaskUsage(task);
-  const usageLine = formatUsage(usage, "directional");
+  const usageLine = useTaskUsageLine(task);
   const isActive = line.status === "PROCESSING";
   const showPanel = isActive && streamText.length > 0;
 
