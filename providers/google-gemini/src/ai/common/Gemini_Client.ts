@@ -5,8 +5,19 @@
  */
 
 import type { GoogleGenAI } from "@google/genai";
+import { isModelEffort, type ModelEffort } from "@workglow/ai";
 import { resolveApiKey } from "@workglow/ai/provider-utils";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
+
+/** Maps coarse {@link ModelEffort} to Gemini thinkingBudget tokens. */
+const EFFORT_TO_THINKING_BUDGET: Record<ModelEffort, number> = {
+  none: 0,
+  low: 512,
+  medium: 1024,
+  high: 2048,
+  extra: 4096,
+  ultra: 8192,
+};
 
 type GeminiSDKModule = typeof import("@google/genai");
 type GoogleGenAIConstructor = GeminiSDKModule["GoogleGenAI"];
@@ -106,13 +117,15 @@ export function getModelName(model: GeminiModelConfig | undefined): string {
 }
 
 /**
- * Reasoning-token budget for thinking models, sourced from the model's
- * `provider_config.thinking_budget`. Returns `undefined` when unset so callers
- * can decide whether to apply a task-specific default.
+ * Reasoning-token budget for thinking models. Native
+ * `provider_config.thinking_budget` wins; otherwise map `model.effort`.
+ * Returns `undefined` when neither is set so callers can omit thinkingConfig.
  */
 export function getThinkingBudget(model: GeminiModelConfig | undefined): number | undefined {
-  const budget = model?.provider_config?.thinking_budget;
-  return typeof budget === "number" ? budget : undefined;
+  const configured = model?.provider_config?.thinking_budget;
+  if (typeof configured === "number") return configured;
+  if (isModelEffort(model?.effort)) return EFFORT_TO_THINKING_BUDGET[model.effort];
+  return undefined;
 }
 
 /**
@@ -136,10 +149,8 @@ export function getGeminiSeed(model: GeminiModelConfig | undefined): number | un
  * Gemini counts thinking tokens against `maxOutputTokens`, so a positive budget
  * is added on top of the caller's cap to leave room for the visible answer.
  *
- * @param defaultBudget applied when the model has no configured budget. Pass a
- *   value for tasks that always need bounded reasoning (structured generation);
- *   omit it for tasks that should inherit the model's own default thinking
- *   (plain generation, tool calling) and only opt in when explicitly configured.
+ * @param defaultBudget applied when the model has no configured budget and no
+ *   `effort`. Prefer omitting it — structured generation no longer invents a pad.
  */
 export function resolveThinkingConfig(
   model: GeminiModelConfig | undefined,
