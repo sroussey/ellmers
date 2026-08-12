@@ -20,6 +20,7 @@ import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
 import { applyAnthropicSamplingParams } from "./Anthropic_RequestParams";
+import { applyAnthropicThinkingParams } from "./Anthropic_Thinking";
 import { buildAnthropicMessages } from "./Anthropic_ToolCalling";
 import { createAnthropicUsageCollector } from "./Anthropic_Usage";
 
@@ -74,6 +75,7 @@ export const Anthropic_TextGeneration_Stream: AiProviderRunFn<
       max_tokens: getMaxTokens(input, model),
     };
     applyAnthropicSamplingParams(params, input, model);
+    applyAnthropicThinkingParams(params, model);
 
     // Emit-only run (emitCheckpoint with no parent checkpoint): this request
     // is the cache write the emitted checkpoint's first consumer reads, so it

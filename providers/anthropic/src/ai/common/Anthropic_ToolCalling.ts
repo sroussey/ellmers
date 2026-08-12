@@ -26,6 +26,7 @@ import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
 import { applyAnthropicSamplingParams } from "./Anthropic_RequestParams";
+import { applyAnthropicThinkingParams } from "./Anthropic_Thinking";
 import { createAnthropicUsageCollector } from "./Anthropic_Usage";
 
 /**
@@ -145,6 +146,7 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
   };
 
   applyAnthropicSamplingParams(params, input, model);
+  applyAnthropicThinkingParams(params, model);
 
   if (input.systemPrompt) {
     params.system = input.systemPrompt;

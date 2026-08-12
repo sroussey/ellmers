@@ -14,6 +14,7 @@ import { createPartialJsonStream } from "@workglow/util/worker";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
+import { applyAnthropicThinkingParams } from "./Anthropic_Thinking";
 import { createAnthropicUsageCollector } from "./Anthropic_Usage";
 
 /**
@@ -38,22 +39,22 @@ export const Anthropic_StructuredGeneration_Stream: AiProviderRunFn<
 
   const schema = input.outputSchema ?? outputSchema;
 
-  const stream = client.messages.stream(
-    {
-      model: modelName,
-      messages: [{ role: "user", content: input.prompt as string }],
-      tools: [
-        {
-          name: "structured_output",
-          description: "Output structured data conforming to the schema",
-          input_schema: schema as any,
-        },
-      ],
-      tool_choice: { type: "tool" as const, name: "structured_output" },
-      max_tokens: getMaxTokens(input, model),
-    },
-    { signal }
-  );
+  const params: Record<string, unknown> = {
+    model: modelName,
+    messages: [{ role: "user", content: input.prompt as string }],
+    tools: [
+      {
+        name: "structured_output",
+        description: "Output structured data conforming to the schema",
+        input_schema: schema as any,
+      },
+    ],
+    tool_choice: { type: "tool" as const, name: "structured_output" },
+    max_tokens: getMaxTokens(input, model),
+  };
+  applyAnthropicThinkingParams(params, model);
+
+  const stream = client.messages.stream(params, { signal });
 
   const json = createPartialJsonStream();
   const usageCollector = createAnthropicUsageCollector();

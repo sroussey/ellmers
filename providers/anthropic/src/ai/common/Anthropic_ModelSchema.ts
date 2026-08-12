@@ -48,6 +48,27 @@ export const AnthropicModelSchema = {
           default: ANTHROPIC_DEFAULT_MAX_TOKENS,
           minimum: 1,
         },
+        thinking: {
+          type: "object",
+          description:
+            "Native Anthropic thinking block (`type: adaptive` or `enabled` + budget_tokens). " +
+            "Wins over model.effort when set.",
+          additionalProperties: true,
+          "x-ui-hidden": true,
+        },
+        output_config: {
+          type: "object",
+          description:
+            "Native Anthropic output_config (adaptive thinking effort). Wins over model.effort when effort is set.",
+          properties: {
+            effort: {
+              type: "string",
+              enum: ["low", "medium", "high", "xhigh", "max"],
+            },
+          },
+          additionalProperties: true,
+          "x-ui-hidden": true,
+        },
         sampling_params: {
           type: "string",
           enum: ["send", "omit"],

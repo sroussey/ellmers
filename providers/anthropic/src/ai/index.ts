@@ -21,6 +21,10 @@ import {
   anthropicAcceptsSamplingParams,
   applyAnthropicSamplingParams,
 } from "./common/Anthropic_RequestParams";
+import {
+  anthropicSupportsAdaptiveThinking,
+  buildAnthropicThinkingParams,
+} from "./common/Anthropic_Thinking";
 import { createAnthropicUsageCollector, mapAnthropicUsage } from "./common/Anthropic_Usage";
 
 /**
@@ -33,6 +37,8 @@ export const _testOnly = {
   maybeEmitAnthropicRefusal,
   anthropicAcceptsSamplingParams,
   applyAnthropicSamplingParams,
+  anthropicSupportsAdaptiveThinking,
+  buildAnthropicThinkingParams,
   setAnthropicClientForTests: clientTestOnly.setAnthropicClientForTests,
   createAnthropicUsageCollector,
   mapAnthropicUsage,
