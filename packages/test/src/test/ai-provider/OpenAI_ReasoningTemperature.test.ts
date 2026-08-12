@@ -44,4 +44,12 @@ describe("finalizeResponsesRequest reasoning/temperature coupling", () => {
     });
     expect(params.reasoning).toEqual({ effort: "high" });
   });
+
+  it("honours model.effort over the temperature auto-none default", () => {
+    const params = finalizeResponsesRequest(
+      { provider_config: { model_name: "gpt-5.6-luna" }, effort: "medium" } as never,
+      { model: "gpt-5.6-luna", temperature: 0 }
+    );
+    expect(params.reasoning).toEqual({ effort: "medium" });
+  });
 });

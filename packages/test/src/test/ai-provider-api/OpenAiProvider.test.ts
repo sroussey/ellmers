@@ -159,6 +159,23 @@ describe("getReasoningConfig", () => {
       )
     ).toEqual({ effort: "high" });
   });
+
+  it("maps model.effort when provider_config.reasoning is unset", () => {
+    const base = modelWithConfig({ model_name: "gpt-5.6-luna" });
+    expect(getReasoningConfig({ ...base, effort: "high" })).toEqual({ effort: "high" });
+    expect(getReasoningConfig({ ...base, effort: "extra" })).toEqual({ effort: "xhigh" });
+    expect(getReasoningConfig({ ...base, effort: "ultra" })).toEqual({ effort: "max" });
+    expect(getReasoningConfig({ ...base, effort: "none" })).toEqual({ effort: "none" });
+  });
+
+  it("lets provider_config.reasoning win over model.effort", () => {
+    expect(
+      getReasoningConfig({
+        ...modelWithConfig({ model_name: "gpt-5.6-luna", reasoning: { effort: "low" } }),
+        effort: "ultra",
+      })
+    ).toEqual({ effort: "low" });
+  });
 });
 
 describe("isStrictCompatibleSchema", () => {
