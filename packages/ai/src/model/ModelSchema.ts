@@ -5,6 +5,10 @@
  */
 
 import type { DataPortSchemaObject } from "@workglow/util/worker";
+import type { ModelEffort } from "./ModelEffort";
+
+export { isModelEffort, MODEL_EFFORTS } from "./ModelEffort";
+export type { ModelEffort } from "./ModelEffort";
 
 /**
  * A model configuration suitable for task/job inputs.
@@ -21,6 +25,12 @@ export const ModelConfigSchema = {
     title: { type: "string" },
     description: { type: "string", "x-ui-editor": "textarea" },
     provider: { type: "string" },
+    effort: {
+      type: "string",
+      enum: ["none", "low", "medium", "high", "extra", "ultra"],
+      description:
+        "Coarse thinking/reasoning dial. Native provider_config thinking knobs always win when set.",
+    },
     provider_config: {
       type: "object",
       properties: {
@@ -126,6 +136,7 @@ export type ModelConfig = {
   capabilities?: string[] | undefined;
   metadata?: { [x: string]: unknown } | undefined;
   pricing?: ModelPricing | undefined;
+  effort?: ModelEffort | undefined;
   provider: string;
   provider_config: {
     [x: string]: unknown;
@@ -140,6 +151,7 @@ export type ModelRecord = {
   model_id: string;
   capabilities: string[];
   pricing?: ModelPricing | undefined;
+  effort?: ModelEffort | undefined;
   provider: string;
   provider_config: {
     [x: string]: unknown;
