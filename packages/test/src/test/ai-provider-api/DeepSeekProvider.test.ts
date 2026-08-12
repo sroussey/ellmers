@@ -142,6 +142,32 @@ describe("resolveMaxTokens", () => {
     expect(resolveMaxTokens(nonThinking as never, 2048)).toBe(2048);
   });
 
+  it("maps model.effort when reasoning_allowance is unset", () => {
+    expect(resolveMaxTokens({ ...thinkingModel, effort: "none" } as never, 4096)).toBe(4096);
+    expect(resolveMaxTokens({ ...thinkingModel, effort: "low" } as never, 4096)).toBe(4096 + 4096);
+    expect(resolveMaxTokens({ ...thinkingModel, effort: "medium" } as never, 4096)).toBe(
+      4096 + 8192
+    );
+    expect(resolveMaxTokens({ ...thinkingModel, effort: "high" } as never, 4096)).toBe(
+      4096 + 16_384
+    );
+    expect(resolveMaxTokens({ ...thinkingModel, effort: "extra" } as never, 4096)).toBe(
+      4096 + 24_576
+    );
+    expect(resolveMaxTokens({ ...thinkingModel, effort: "ultra" } as never, 4096)).toBe(
+      4096 + 32_768
+    );
+  });
+
+  it("lets reasoning_allowance win over model.effort", () => {
+    const configured = {
+      ...thinkingModel,
+      effort: "ultra",
+      provider_config: { model_name: "deepseek-v4-flash", reasoning_allowance: 1000 },
+    };
+    expect(resolveMaxTokens(configured as never, 500)).toBe(1500);
+  });
+
   it("clamps a negative allowance rather than shrinking the answer budget", () => {
     const bogus = {
       ...thinkingModel,

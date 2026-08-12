@@ -4,8 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { isModelEffort, type ModelEffort } from "@workglow/ai";
 import { isBrowserLike, resolveApiKey, validateProviderBaseUrl } from "@workglow/ai/provider-utils";
 import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
+
+/** Maps coarse {@link ModelEffort} to DeepSeek reasoning token allowance. */
+const EFFORT_TO_REASONING_ALLOWANCE: Record<ModelEffort, number> = {
+  none: 0,
+  low: 4096,
+  medium: 8192,
+  high: 16_384,
+  extra: 24_576,
+  ultra: 32_768,
+};
 
 /**
  * Default base URL for the DeepSeek OpenAI-compatible API. DeepSeek serves the
@@ -119,7 +130,9 @@ export const DEEPSEEK_DEFAULT_REASONING_ALLOWANCE = 16_384;
 /**
  * Turns the caller's answer-token budget into DeepSeek's `max_tokens`. Thinking
  * models bill `reasoning_tokens` against the same budget, so the wire value has
- * to cover both. Undefined budget stays undefined, leaving DeepSeek's default.
+ * to cover both. Native `reasoning_allowance` wins over `model.effort`; when
+ * neither is set the shared default allowance applies. Undefined budget stays
+ * undefined, leaving DeepSeek's default.
  */
 export function resolveMaxTokens(
   model: DeepSeekModelConfig | undefined,
@@ -127,8 +140,14 @@ export function resolveMaxTokens(
 ): number | undefined {
   if (maxTokens === undefined) return undefined;
   const configured = model?.provider_config?.reasoning_allowance;
-  const allowance =
-    typeof configured === "number" ? configured : DEEPSEEK_DEFAULT_REASONING_ALLOWANCE;
+  let allowance: number;
+  if (typeof configured === "number") {
+    allowance = configured;
+  } else if (isModelEffort(model?.effort)) {
+    allowance = EFFORT_TO_REASONING_ALLOWANCE[model.effort];
+  } else {
+    allowance = DEEPSEEK_DEFAULT_REASONING_ALLOWANCE;
+  }
   return maxTokens + Math.max(0, allowance);
 }
 
