@@ -61,7 +61,10 @@ export const OpenRouterModelSchema = {
           type: "object",
           description: "Reasoning configuration (serialized to the request 'reasoning' field).",
           properties: {
-            effort: { type: "string", enum: ["low", "medium", "high"] },
+            effort: {
+              type: "string",
+              enum: ["none", "low", "medium", "high", "xhigh", "max"],
+            },
             max_tokens: { type: "number" },
             exclude: { type: "boolean" },
           },
