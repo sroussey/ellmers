@@ -4,11 +4,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TextGenerationTaskInput } from "@workglow/ai";
+import { isModelEffort, type ModelEffort, type TextGenerationTaskInput } from "@workglow/ai";
 import { toOpenAIMessages } from "@workglow/ai/worker";
 import type { OpenRouterProviderConfig } from "./OpenRouter_Client";
 import { getModelName } from "./OpenRouter_Client";
 import type { OpenRouterModelConfig } from "./OpenRouter_ModelSchema";
+
+/** Maps coarse {@link ModelEffort} onto OpenRouter's `reasoning` extras. */
+function mapEffortToOpenRouterReasoning(effort: ModelEffort): Record<string, unknown> {
+  if (effort === "none") return { effort: "none", exclude: true };
+  const mapped = effort === "extra" ? "xhigh" : effort === "ultra" ? "max" : effort;
+  return { effort: mapped };
+}
 
 interface UnifiedTextGenerationInput extends TextGenerationTaskInput {
   readonly messages?: readonly unknown[];
@@ -50,8 +57,9 @@ export function buildChatParams(
 }
 
 /**
- * Assemble OpenRouter-native request extras from `provider_config`: routing
- * preferences (`provider`), `reasoning`, and the web-search `plugins` entry.
+ * Assemble OpenRouter-native request extras: routing preferences (`provider`),
+ * `reasoning` (native `provider_config.reasoning` wins over `model.effort`),
+ * and the web-search `plugins` entry.
  */
 export function buildOpenRouterExtras(
   model: OpenRouterModelConfig | undefined
@@ -60,6 +68,9 @@ export function buildOpenRouterExtras(
   const extras: Record<string, unknown> = {};
   if (pc?.provider_routing) extras.provider = pc.provider_routing;
   if (pc?.reasoning) extras.reasoning = pc.reasoning;
+  else if (isModelEffort(model?.effort)) {
+    extras.reasoning = mapEffortToOpenRouterReasoning(model.effort);
+  }
   if (pc?.web_search) {
     extras.plugins = [pc.web_search === true ? { id: "web" } : { id: "web", ...pc.web_search }];
   }

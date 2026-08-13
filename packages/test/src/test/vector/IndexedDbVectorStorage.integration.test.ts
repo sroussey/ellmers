@@ -9,8 +9,8 @@ import "fake-indexeddb/auto";
 import { IndexedDbVectorStorage } from "@workglow/indexeddb/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 const VectorSchema = {
   type: "object",

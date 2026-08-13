@@ -4,12 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Sqlite, SqliteTabularStorage } from "@workglow/sqlite/storage";
+import type { Sqlite } from "@workglow/sqlite/storage";
+import { SqliteTabularStorage } from "@workglow/sqlite/storage";
 import {
   tabularTaskOutputStorage,
   TaskOutputPrimaryKeyNames,
   TaskOutputSchema,
 } from "@workglow/task-graph";
+import { TabularStreamingTaskOutputRepository } from "@workglow/task-graph/test";
 import {
   BlobChunkPrimaryKeyNames,
   BlobChunkSchema,
@@ -17,7 +19,6 @@ import {
   BlobManifestSchema,
   TabularBlobChunkStore,
 } from "./TabularBlobChunkStore";
-import { TabularStreamingTaskOutputRepository } from "./TabularStreamingTaskOutputRepository";
 
 /**
  * Durable, embedded (SQLite) streaming task-output repository. JSON rows via

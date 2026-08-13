@@ -12,8 +12,6 @@ import type { ServiceRegistry } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { setLogger } from "@workglow/util";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   EmbeddingConsumerTask,
   EmbeddingModelProviderTask,
@@ -22,7 +20,9 @@ import {
   PlainStringConsumerTask,
   PlainStringProviderTask,
   TextGenerationModelProviderTask,
-} from "../task/TestTasks";
+} from "@workglow/task-graph/test";
+import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 
 /**
  * Test model fixtures for embedding models

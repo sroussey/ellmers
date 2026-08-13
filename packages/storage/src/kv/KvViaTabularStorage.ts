@@ -7,7 +7,7 @@
 import { getLogger } from "@workglow/util";
 import { safeEmit } from "../events/safeEmit";
 import type { BaseTabularStorage } from "../tabular/BaseTabularStorage";
-import { DefaultKeyValueKey, DefaultKeyValueSchema } from "./IKvStorage";
+import type { DefaultKeyValueKey, DefaultKeyValueSchema } from "./IKvStorage";
 import { KvStorage } from "./KvStorage";
 
 /** Schema types that are stored as-is without JSON serialization. */

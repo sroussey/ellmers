@@ -4,9 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ITask, TaskStatus, type StreamEvent } from "@workglow/task-graph";
+import { formatUsage } from "@workglow/ai";
+import type { ITask, StreamEvent, Usage } from "@workglow/task-graph";
+import { TaskStatus } from "@workglow/task-graph";
 import { ArrayTask } from "@workglow/tasks";
-import { Node, NodeProps } from "@xyflow/react";
+import type { Node, NodeProps } from "@xyflow/react";
 import { useEffect, useRef, useState } from "react";
 import { FiCloud, FiCloudLightning } from "react-icons/fi";
 import { ProgressBar } from "../components/ProgressBar";
@@ -16,6 +18,8 @@ import { NodeHeader } from "./NodeHeader";
 
 export type TaskNodeData = {
   task: ITask;
+  /** This node's cumulative token total for the current run. */
+  usage?: Usage | undefined;
 };
 
 /**
@@ -188,6 +192,9 @@ export function TaskNode(props: NodeProps<Node<TaskNodeData, string>>) {
           description={data.task.config?.title || ""}
           status={status}
         />
+        {formatUsage(data.usage, "cumulative") ? (
+          <span className="task-node-usage">{formatUsage(data.usage, "cumulative")}</span>
+        ) : null}
         <TaskDataButtons task={data.task} />
         <ProgressBar
           progress={progress}

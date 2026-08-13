@@ -5,15 +5,11 @@
  */
 
 import { ChunkVectorUpsertTask } from "@workglow/ai";
-import type { ChunkRecord } from "@workglow/knowledge-base";
-import {
-  createKnowledgeBase,
-  KnowledgeBase,
-  registerKnowledgeBase,
-} from "@workglow/knowledge-base";
+import type { ChunkRecord, KnowledgeBase } from "@workglow/knowledge-base";
+import { createKnowledgeBase, registerKnowledgeBase } from "@workglow/knowledge-base";
 import { setLogger, uuid4 } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 import { report, snap } from "../../binding/testTiming";
 

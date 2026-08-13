@@ -4,20 +4,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type {
+  IExecuteContext,
+  IExecutePreviewContext,
+  TaskConfig,
+  TaskInput,
+  TaskOutput,
+} from "@workglow/task-graph";
 import {
   CreateWorkflow,
   DATAFLOW_ALL_PORTS,
-  IExecuteContext,
-  IExecutePreviewContext,
   Task,
-  TaskConfig,
   TaskConfigSchema,
   TaskConfigurationError,
-  TaskInput,
-  TaskOutput,
   Workflow,
 } from "@workglow/task-graph";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 
 export const lambdaTaskConfigSchema = {
   type: "object",

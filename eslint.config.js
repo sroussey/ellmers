@@ -49,6 +49,19 @@ export default defineConfig(
       "@typescript-eslint/no-unused-vars": "off",
       "@typescript-eslint/no-explicit-any": "off",
       "react/react-in-jsx-scope": "off",
+      // `disallowTypeAnnotations` must stay off: inline `import()` types are how
+      // optional peer dependencies are typed here (e.g. `typeof import("pg")`)
+      // without forcing a static import that would break consumers who have not
+      // installed the package. Turning it on flags those deliberate annotations,
+      // and they are not autofixable.
+      "@typescript-eslint/consistent-type-imports": [
+        "error",
+        {
+          prefer: "type-imports",
+          fixStyle: "separate-type-imports",
+          disallowTypeAnnotations: false,
+        },
+      ],
     },
   },
   {

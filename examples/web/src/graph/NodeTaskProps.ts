@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ITask, TaskStatus } from "@workglow/task-graph";
+import type { ITask, TaskStatus, Usage } from "@workglow/task-graph";
 
 // Common props for all node types
 export interface NodeTaskProps {
@@ -13,4 +13,6 @@ export interface NodeTaskProps {
   progress: number;
   statusColor: string;
   isConnectable?: boolean;
+  /** This node's cumulative token total for the current run. */
+  usage?: Usage | undefined;
 }

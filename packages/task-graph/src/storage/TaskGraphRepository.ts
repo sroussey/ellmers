@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createServiceToken, EventEmitter, EventParameters } from "@workglow/util";
-import { TaskGraph } from "../task-graph/TaskGraph";
+import type { EventParameters } from "@workglow/util";
+import { createServiceToken, EventEmitter } from "@workglow/util";
+import type { TaskGraph } from "../task-graph/TaskGraph";
 
 /**
  * Service token for TaskGraphRepository

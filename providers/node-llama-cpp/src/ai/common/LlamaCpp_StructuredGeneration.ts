@@ -9,7 +9,8 @@ import type {
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
-import { parsePartialJson } from "@workglow/util/worker";
+import { createEstimatedOutputUsageReporter } from "@workglow/ai/provider-utils";
+import { createPartialJsonStream } from "@workglow/util/worker";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
   createDisposableTextContext,
@@ -63,7 +64,10 @@ export const LlamaCpp_StructuredGeneration_Stream: AiProviderRunFn<
             resolveWait = null;
           };
 
-          let accumulatedText = "";
+          const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+          provisionalUsage.onPrompt(input.prompt as string);
+
+          const json = createPartialJsonStream();
           const promptPromise = session
             .prompt(input.prompt as string, {
               signal,
@@ -71,6 +75,7 @@ export const LlamaCpp_StructuredGeneration_Stream: AiProviderRunFn<
               ...llamaCppSeedPromptSpread(model.provider_config),
               onTextChunk: (chunk: string) => {
                 queue.push(chunk);
+                provisionalUsage.onText(chunk);
                 notifyWaiter();
               },
               ...(input.temperature !== undefined && { temperature: input.temperature }),
@@ -90,14 +95,9 @@ export const LlamaCpp_StructuredGeneration_Stream: AiProviderRunFn<
             while (true) {
               while (queue.length > 0) {
                 const chunk = queue.shift()!;
-                accumulatedText += chunk;
-                const partial = parsePartialJson(accumulatedText);
+                const partial = json.push(chunk);
                 if (partial !== undefined) {
-                  emit({
-                    type: "object-delta",
-                    port: "object",
-                    objectDelta: partial as Record<string, unknown>,
-                  });
+                  emit({ type: "object-delta", port: "object", objectDelta: partial });
                 }
               }
               if (isComplete) break;
@@ -107,14 +107,9 @@ export const LlamaCpp_StructuredGeneration_Stream: AiProviderRunFn<
             }
             while (queue.length > 0) {
               const chunk = queue.shift()!;
-              accumulatedText += chunk;
-              const partial = parsePartialJson(accumulatedText);
+              const partial = json.push(chunk);
               if (partial !== undefined) {
-                emit({
-                  type: "object-delta",
-                  port: "object",
-                  objectDelta: partial as Record<string, unknown>,
-                });
+                emit({ type: "object-delta", port: "object", objectDelta: partial });
               }
             }
           } finally {
@@ -129,14 +124,11 @@ export const LlamaCpp_StructuredGeneration_Stream: AiProviderRunFn<
             throw completionError;
           }
 
-          let finalObject: Record<string, unknown>;
-          try {
-            finalObject = JSON.parse(accumulatedText);
-          } catch {
-            finalObject = (parsePartialJson(accumulatedText) as Record<string, unknown>) ?? {};
-          }
-
-          emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
+          provisionalUsage.flush();
+          emit({
+            type: "finish",
+            data: { object: json.finishObject() } as StructuredGenerationTaskOutput,
+          });
         },
         { signal }
       );

@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ServiceRegistry } from "@workglow/util";
 import {
   createServiceToken,
   getLogger,
   globalServiceRegistry,
   registerInputCompactor,
   registerInputResolver,
-  ServiceRegistry,
 } from "@workglow/util";
 import { validateSchema } from "@workglow/util/schema";
 import type { ITaskConstructor } from "./ITask";

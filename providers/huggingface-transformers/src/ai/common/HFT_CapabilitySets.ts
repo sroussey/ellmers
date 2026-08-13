@@ -46,6 +46,8 @@ export const HFT_MODEL_DOWNLOAD_REMOVE = ["model.download-remove"] as const sati
 export const HFT_MODEL_DOWNLOAD = ["model.download"] as const satisfies Capability[];
 export const HFT_MODEL_SEARCH = ["model.search"] as const satisfies Capability[];
 export const HFT_MODEL_INFO = ["model.info"] as const satisfies Capability[];
+export const HFT_CACHE_CHECKPOINT = ["cache.checkpoint"] as const satisfies Capability[];
+export const HFT_SESSION_DISPOSE = ["session.dispose"] as const satisfies Capability[];
 
 /** Aggregated list — for `workerRunFnSpecs()` derivation. Order MUST match `HFT_RUN_FNS`. */
 export const HFT_CAPABILITY_SETS = [
@@ -73,4 +75,6 @@ export const HFT_CAPABILITY_SETS = [
   HFT_MODEL_DOWNLOAD,
   HFT_MODEL_SEARCH,
   HFT_MODEL_INFO,
+  HFT_CACHE_CHECKPOINT,
+  HFT_SESSION_DISPOSE,
 ] as const;

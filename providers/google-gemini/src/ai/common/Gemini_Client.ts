@@ -5,8 +5,19 @@
  */
 
 import type { GoogleGenAI } from "@google/genai";
+import { isModelEffort, type ModelEffort } from "@workglow/ai";
 import { resolveApiKey } from "@workglow/ai/provider-utils";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
+
+/** Maps coarse {@link ModelEffort} to Gemini thinkingBudget tokens. */
+const EFFORT_TO_THINKING_BUDGET: Record<ModelEffort, number> = {
+  none: 0,
+  low: 512,
+  medium: 1024,
+  high: 2048,
+  extra: 4096,
+  ultra: 8192,
+};
 
 type GeminiSDKModule = typeof import("@google/genai");
 type GoogleGenAIConstructor = GeminiSDKModule["GoogleGenAI"];
@@ -28,6 +39,34 @@ export async function loadGeminiSDK(): Promise<GoogleGenAIConstructor> {
 
 const _clientByKey = new Map<string, Promise<GoogleGenAI>>();
 
+let _testClient: GoogleGenAI | undefined;
+
+/**
+ * Override the client returned by {@link createGeminiClient} so runtime tests
+ * can capture the requests the Gemini run-fns build without a live SDK or
+ * network call. Pass `undefined` to restore normal SDK-backed creation. Also
+ * clears the per-key client cache so a previously memoized real client is not
+ * reused across the override boundary.
+ *
+ * This lives in the runtime module (not a `vi.mock` of `@google/genai`) so it
+ * works identically whether the provider resolves to `src` or the bundled
+ * `dist`, and is immune to duplicate `@google/genai` copies across the
+ * workspace defeating module-level mocks.
+ */
+function setGeminiClientForTests(client: GoogleGenAI | undefined): void {
+  _testClient = client;
+  _clientByKey.clear();
+}
+
+/**
+ * @internal Symbols exported only for use by `@workglow/test`. Not part of the
+ * stable public API. Surfaced on the `ai-runtime` barrel (via `export *`) and
+ * merged into the `/ai` barrel's `_testOnly`.
+ */
+export const _testOnly = {
+  setGeminiClientForTests,
+} as const;
+
 /**
  * Load the SDK and return a client bound to the resolved API key. The
  * `@google/genai` `GoogleGenAI` facade stands up auth wiring and several
@@ -38,6 +77,7 @@ const _clientByKey = new Map<string, Promise<GoogleGenAI>>();
  * the next call can retry.
  */
 export function createGeminiClient(model: GeminiModelConfig | undefined): Promise<GoogleGenAI> {
+  if (_testClient) return Promise.resolve(_testClient);
   const apiKey = getApiKey(model);
   let clientPromise = _clientByKey.get(apiKey);
   if (!clientPromise) {
@@ -77,13 +117,31 @@ export function getModelName(model: GeminiModelConfig | undefined): string {
 }
 
 /**
- * Reasoning-token budget for thinking models, sourced from the model's
- * `provider_config.thinking_budget`. Returns `undefined` when unset so callers
- * can decide whether to apply a task-specific default.
+ * Reasoning-token budget for thinking models. Native
+ * `provider_config.thinking_budget` wins; otherwise map `model.effort`.
+ * Returns `undefined` when neither is set so callers can omit thinkingConfig.
  */
 export function getThinkingBudget(model: GeminiModelConfig | undefined): number | undefined {
-  const budget = model?.provider_config?.thinking_budget;
-  return typeof budget === "number" ? budget : undefined;
+  const configured = model?.provider_config?.thinking_budget;
+  if (typeof configured === "number") return configured;
+  if (isModelEffort(model?.effort)) return EFFORT_TO_THINKING_BUDGET[model.effort];
+  return undefined;
+}
+
+/**
+ * Sampling seed for reproducible generation, from `provider_config.seed`.
+ * Returns `undefined` when unset so the request omits the field entirely and
+ * the model keeps its own (non-reproducible) sampling — matching how the other
+ * optional sampling params are handled.
+ *
+ * Gemini is the only cloud provider here that exposes a seed at all: the OpenAI
+ * Responses API rejects one outright (`400 Unknown parameter: 'seed'`) and
+ * Anthropic has none, so aside from the local providers this is the single
+ * lever for reproducible cloud extraction.
+ */
+export function getGeminiSeed(model: GeminiModelConfig | undefined): number | undefined {
+  const seed = model?.provider_config?.seed;
+  return typeof seed === "number" ? seed : undefined;
 }
 
 /**
@@ -91,10 +149,8 @@ export function getThinkingBudget(model: GeminiModelConfig | undefined): number 
  * Gemini counts thinking tokens against `maxOutputTokens`, so a positive budget
  * is added on top of the caller's cap to leave room for the visible answer.
  *
- * @param defaultBudget applied when the model has no configured budget. Pass a
- *   value for tasks that always need bounded reasoning (structured generation);
- *   omit it for tasks that should inherit the model's own default thinking
- *   (plain generation, tool calling) and only opt in when explicitly configured.
+ * @param defaultBudget applied when the model has no configured budget and no
+ *   `effort`. Prefer omitting it — structured generation no longer invents a pad.
  */
 export function resolveThinkingConfig(
   model: GeminiModelConfig | undefined,

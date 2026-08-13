@@ -14,11 +14,13 @@ import {
   accumulateOpenAIChatStream,
   buildOpenAITools,
   mapOpenAIToolChoice,
+  OPENAI_STREAM_USAGE_OPTIONS,
 } from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, toOpenAIMessages } from "@workglow/ai/worker";
 import { getClient, getModelName } from "./OpenRouter_Client";
 import type { OpenRouterModelConfig } from "./OpenRouter_ModelSchema";
 import { buildOpenRouterExtras } from "./OpenRouter_RequestParams";
+import { mapOpenRouterUsage } from "./OpenRouter_Usage";
 
 /**
  * Streaming run-fn for `["text.generation", "tool-use"]`. Forwards deltas via
@@ -47,19 +49,30 @@ export const OpenRouter_ToolCalling_Stream: AiProviderRunFn<
       tools,
       tool_choice: toolChoice,
       ...buildOpenRouterExtras(model),
+      ...OPENAI_STREAM_USAGE_OPTIONS,
     },
     { signal }
   );
 
-  await accumulateOpenAIChatStream(stream, (event) => {
-    if (event.type === "object-delta" && event.port === "toolCalls") {
-      const validated = filterValidToolCalls(event.objectDelta as ToolCalls, input.tools);
-      if (validated.length > 0) {
-        emit({ type: "object-delta", port: "toolCalls", objectDelta: validated });
+  const usage = await accumulateOpenAIChatStream(
+    stream,
+    (event) => {
+      if (event.type === "object-delta" && event.port === "toolCalls") {
+        const validated = filterValidToolCalls(event.objectDelta as ToolCalls, input.tools);
+        if (validated.length > 0) {
+          emit({ type: "object-delta", port: "toolCalls", objectDelta: validated });
+        }
+        return;
       }
-      return;
+      emit(event);
+    },
+    mapOpenRouterUsage,
+    {
+      promptText: messages
+        .map((m) => (typeof m.content === "string" ? m.content : ""))
+        .filter(Boolean)
+        .join("\n"),
     }
-    emit(event);
-  });
-  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
+  );
+  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput, usage });
 };

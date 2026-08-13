@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ITabularStorage, TabularChangePayload } from "@workglow/storage";
+import type { ITabularStorage, TabularChangePayload } from "@workglow/storage";
 import { sleep } from "@workglow/util";
-import { FromSchema } from "@workglow/util/schema";
+import type { FromSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { CompoundPrimaryKeyNames, CompoundSchema } from "./genericTabularStorageTests";
+import type { CompoundPrimaryKeyNames, CompoundSchema } from "./genericTabularStorageTests";
 
 /**
  * Generic tests for tabular repository subscription functionality

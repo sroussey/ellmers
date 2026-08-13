@@ -7,17 +7,18 @@
 import type { ServiceRegistry } from "@workglow/util";
 import { Dataflow } from "../task-graph/Dataflow";
 import { TaskGraph } from "../task-graph/TaskGraph";
-import { CompoundMergeStrategy } from "../task-graph/TaskGraphRunner";
+import type { CompoundMergeStrategy } from "../task-graph/TaskGraphRunner";
 import type { ITransformStep } from "../task-graph/TransformTypes";
 import { TaskConfigurationError, TaskJSONError } from "../task/TaskError";
 import { getTaskConstructors } from "../task/TaskRegistry";
-import { ConditionalTaskConfig } from "./ConditionalTask";
-import { GraphAsTask, GraphAsTaskConfig } from "./GraphAsTask";
-import { IteratorTaskConfig } from "./IteratorTask";
-import { MapTaskConfig } from "./MapTask";
-import { ReduceTaskConfig } from "./ReduceTask";
-import { TaskConfig, TaskInput } from "./TaskTypes";
-import { WhileTaskConfig } from "./WhileTask";
+import type { ConditionalTaskConfig } from "./ConditionalTask";
+import type { GraphAsTaskConfig } from "./GraphAsTask";
+import { GraphAsTask } from "./GraphAsTask";
+import type { IteratorTaskConfig } from "./IteratorTask";
+import type { MapTaskConfig } from "./MapTask";
+import type { ReduceTaskConfig } from "./ReduceTask";
+import type { TaskConfig, TaskInput } from "./TaskTypes";
+import type { WhileTaskConfig } from "./WhileTask";
 
 // ========================================================================
 // JSON Serialization Types
@@ -190,10 +191,13 @@ export const createTaskFromDependencyJSON = (
  *   lookup. When provided, task constructors are resolved from the registry's
  *   `TASK_CONSTRUCTORS` binding (if present); otherwise falls back to the global
  *   `TaskRegistry`. Omit to use the global registry.
- * @returns A new `TaskGraph` containing all tasks built from `jsonItems`.
+ * @returns A new `TaskGraph` containing all tasks built from `jsonItems`, with a
+ *   `Dataflow` wired for every `dependencies` entry (including inside recursed
+ *   `subtasks` graphs).
  * @throws {TaskJSONError} If any task item has missing/invalid required fields or an
  *   unregistered task type.
- * @throws {TaskConfigurationError} If `subtasks` are specified for a non-`GraphAsTask`.
+ * @throws {TaskConfigurationError} If `subtasks` are specified for a non-`GraphAsTask`,
+ *   or a `dependencies` entry names a task id that is not in the graph.
  */
 export const createGraphFromDependencyJSON = (
   jsonItems: JsonTaskItem[],
@@ -203,6 +207,19 @@ export const createGraphFromDependencyJSON = (
   const subGraph = new TaskGraph();
   for (const subitem of jsonItems) {
     subGraph.addTask(createTaskFromDependencyJSON(subitem, registry, options));
+  }
+  for (const item of jsonItems) {
+    if (!item.dependencies) continue;
+    for (const [input, dependency] of Object.entries(item.dependencies)) {
+      const dependencies = Array.isArray(dependency) ? dependency : [dependency];
+      for (const dep of dependencies) {
+        const sourceTask = subGraph.getTask(dep.id);
+        if (!sourceTask) {
+          throw new TaskConfigurationError(`Dependency id ${dep.id} not found`);
+        }
+        subGraph.addDataflow(new Dataflow(sourceTask.id, dep.output, item.id, input));
+      }
+    }
   }
   return subGraph;
 };

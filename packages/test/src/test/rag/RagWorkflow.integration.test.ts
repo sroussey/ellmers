@@ -16,20 +16,23 @@
  *    - Xenova/distilbert-base-uncased-distilled-squad (Question Answering)
  */
 
+import type {
+  ChunkRetrievalTaskOutput,
+  TextQuestionAnswerTaskOutput,
+  VectorStoreUpsertTaskOutput,
+} from "@workglow/ai";
 import {
   chunkRetrieval,
-  ChunkRetrievalTaskOutput,
   InMemoryModelRepository,
   setGlobalModelRepository,
   textQuestionAnswer,
-  TextQuestionAnswerTaskOutput,
-  VectorStoreUpsertTaskOutput,
 } from "@workglow/ai";
 import {
   clearPipelineCache,
   registerHuggingFaceTransformersInline,
 } from "@workglow/huggingface-transformers/ai-runtime";
-import { createKnowledgeBase, KnowledgeBase } from "@workglow/knowledge-base";
+import type { KnowledgeBase } from "@workglow/knowledge-base";
+import { createKnowledgeBase } from "@workglow/knowledge-base";
 import { getTaskQueueRegistry, setTaskQueueRegistry, Workflow } from "@workglow/task-graph";
 import { ResourceScope, setLogger } from "@workglow/util";
 import { readdirSync } from "fs";
@@ -37,7 +40,7 @@ import { join } from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 export { FileLoaderTask } from "@workglow/tasks";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 import { registerHuggingfaceLocalModels } from "../../samples/ONNXModelSamples";
 
 import { report, snap } from "../../binding/testTiming";

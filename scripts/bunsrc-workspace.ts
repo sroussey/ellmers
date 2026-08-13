@@ -1,65 +1,101 @@
 #!/usr/bin/env bun
+/**
+ * @license
+ * Copyright 2026 Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/**
+ * Switch every workspace between source and built code.
+ *
+ *   bun run use-source            # dist/* re-exports src/* (live source, no rebuild)
+ *   bun run use-dist              # remove stubs and rebuild
+ *   bun run use-dist --no-build   # remove stubs only
+ *
+ * `package.json` is never modified: source mode only writes into the gitignored
+ * `dist` folder, so `git status` stays clean in either mode.
+ */
 
 import { $ } from "bun";
+import { basename } from "node:path";
+import {
+  readPackageManifest,
+  removeSourceStubs,
+  stubSpecsFor,
+  writeSourceStubs,
+} from "./lib/sourceStubs";
 import { findWorkspaces } from "./lib/util";
 
-function toSource(exports: string): string {
-  return exports
-    .replace(/("types":\s*")\.\/dist\/([^"]+)\.d\.ts"/g, `$1./src/$2.ts"`)
-    .replace(
-      /("(?:import|bun|node|browser|module|react-native)":\s*")\.\/dist\/([^"]+)\.js"/g,
-      `$1./src/$2.ts"`
-    );
+async function useSource(workspaces: readonly string[]): Promise<void> {
+  let stubbed = 0;
+  let packages = 0;
+
+  for (const workspace of workspaces) {
+    const manifest = await readPackageManifest(workspace);
+    const specs = stubSpecsFor(manifest);
+    if (specs.length === 0) continue;
+
+    let written: string[];
+    try {
+      written = await writeSourceStubs(workspace, specs);
+    } catch (error) {
+      throw new Error(
+        `${manifest.name}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+    console.log(`  ${manifest.name}: ${written.length} stub(s)`);
+    stubbed += written.length;
+    packages += 1;
+  }
+
+  console.log(`\nWrote ${stubbed} stub(s) across ${packages} package(s). Imports now hit src/.`);
 }
 
-function toDist(exports: string): string {
-  return exports
-    .replace(/("types":\s*")\.\/src\/([^"]+)\.ts"/g, `$1./dist/$2.d.ts"`)
-    .replace(
-      /("(?:import|bun|node|browser|module|react-native)":\s*")\.\/src\/([^"]+)\.ts"/g,
-      `$1./dist/$2.js"`
-    );
-}
-
-async function updateExports(workspacePath: string, mode: "source" | "dist"): Promise<null> {
-  const exports = (await $`bun --cwd=${workspacePath} pm pkg get exports`.quiet()).text();
-  if (exports != "{}") {
-    const newExports = mode === "source" ? toSource(exports) : toDist(exports);
-    if (newExports != exports) {
-      console.log(`Updating exports for ${workspacePath}`);
-      await $`bun --cwd=${workspacePath} pm pkg set exports=${newExports} --json`;
+async function useDist(workspaces: readonly string[], build: boolean): Promise<void> {
+  let removed = 0;
+  for (const workspace of workspaces) {
+    const stubs = await removeSourceStubs(workspace);
+    if (stubs.length > 0) {
+      console.log(`  ${basename(workspace)}: removed ${stubs.length} stub(s)`);
+      removed += stubs.length;
     }
   }
-  return null;
+
+  if (removed === 0) {
+    console.log("\nNo stubs found — already in dist mode.");
+    return;
+  }
+  console.log(`\nRemoved ${removed} stub(s).`);
+
+  if (!build) {
+    console.log("Skipping rebuild (--no-build): dist is missing its entry files until you build.");
+    return;
+  }
+  console.log("Rebuilding packages...\n");
+  await $`bun run build:packages`;
 }
 
 async function main(): Promise<void> {
-  // Parse command line arguments
   const args = process.argv.slice(2);
-  if (args.length !== 1) {
-    console.error("Usage: bun run bunsrc-workspace.ts <source|dist>");
-    console.error("  source: Use source files (./src/*.ts)");
-    console.error("  dist:   Use built files (./dist/*.js)");
-    process.exit(1);
-  }
+  const build = !args.includes("--no-build");
+  const mode = args.find((arg) => !arg.startsWith("--"));
 
-  const mode = args[0];
   if (mode !== "source" && mode !== "dist") {
-    console.error("Error: Mode must be either 'source' or 'dist'");
-    console.error("Usage: bun run bunsrc-workspace.ts <source|dist>");
+    console.error("Usage: bun run bunsrc-workspace.ts <source|dist> [--no-build]");
+    console.error("  source: dist/* re-exports src/* (development)");
+    console.error("  dist:   remove stubs and rebuild (committed / published state)");
     process.exit(1);
   }
 
-  console.log(`Using ${mode} exports`);
+  // `false`: stub every workspace, including private ones (aws, cloudflare).
+  const workspaces = await findWorkspaces(false);
+  console.log(`Switching ${workspaces.length} workspaces to ${mode} mode\n`);
 
-  const workspaces = await findWorkspaces();
-  console.log(`Found ${workspaces.length} workspaces`);
-
-  for (const workspace of workspaces) {
-    await updateExports(workspace, mode);
+  if (mode === "source") {
+    await useSource(workspaces);
+  } else {
+    await useDist(workspaces, build);
   }
-
-  console.log(`\nChanging exports to ${mode} mode completed successfully`);
 }
 
 main().catch((error) => {

@@ -2,6 +2,7 @@
   "name": "workglow",
   "type": "module",
   "version": "0.3.38",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
@@ -20,8 +21,7 @@
     "build-js": "bun run build.ts",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "test": "bun test"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "exports": {
     ".": {
@@ -33,10 +33,6 @@
         "types": "./dist/browser.d.ts",
         "import": "./dist/browser.js"
       },
-      "bun": {
-        "types": "./dist/bun.d.ts",
-        "import": "./dist/bun.js"
-      },
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js"
     },
@@ -44,10 +40,6 @@
       "browser": {
         "types": "./dist/anthropic.d.ts",
         "import": "./dist/anthropic.browser.js"
-      },
-      "bun": {
-        "types": "./dist/anthropic.d.ts",
-        "import": "./dist/anthropic.bun.js"
       },
       "types": "./dist/anthropic.d.ts",
       "import": "./dist/anthropic.js"
@@ -61,10 +53,6 @@
         "types": "./dist/deepseek.d.ts",
         "import": "./dist/deepseek.browser.js"
       },
-      "bun": {
-        "types": "./dist/deepseek.d.ts",
-        "import": "./dist/deepseek.bun.js"
-      },
       "types": "./dist/deepseek.d.ts",
       "import": "./dist/deepseek.js"
     },
@@ -76,10 +64,6 @@
       "browser": {
         "types": "./dist/google-gemini.d.ts",
         "import": "./dist/google-gemini.browser.js"
-      },
-      "bun": {
-        "types": "./dist/google-gemini.d.ts",
-        "import": "./dist/google-gemini.bun.js"
       },
       "types": "./dist/google-gemini.d.ts",
       "import": "./dist/google-gemini.js"
@@ -93,10 +77,6 @@
         "types": "./dist/hf-inference.d.ts",
         "import": "./dist/hf-inference.browser.js"
       },
-      "bun": {
-        "types": "./dist/hf-inference.d.ts",
-        "import": "./dist/hf-inference.bun.js"
-      },
       "types": "./dist/hf-inference.d.ts",
       "import": "./dist/hf-inference.js"
     },
@@ -108,10 +88,6 @@
       "browser": {
         "types": "./dist/hf-transformers.d.ts",
         "import": "./dist/hf-transformers.browser.js"
-      },
-      "bun": {
-        "types": "./dist/hf-transformers.d.ts",
-        "import": "./dist/hf-transformers.bun.js"
       },
       "types": "./dist/hf-transformers.d.ts",
       "import": "./dist/hf-transformers.js"
@@ -125,10 +101,6 @@
         "types": "./dist/ollama.d.ts",
         "import": "./dist/ollama.browser.js"
       },
-      "bun": {
-        "types": "./dist/ollama.d.ts",
-        "import": "./dist/ollama.bun.js"
-      },
       "types": "./dist/ollama.d.ts",
       "import": "./dist/ollama.js"
     },
@@ -140,10 +112,6 @@
       "browser": {
         "types": "./dist/openai.d.ts",
         "import": "./dist/openai.browser.js"
-      },
-      "bun": {
-        "types": "./dist/openai.d.ts",
-        "import": "./dist/openai.bun.js"
       },
       "types": "./dist/openai.d.ts",
       "import": "./dist/openai.js"
@@ -157,10 +125,6 @@
         "types": "./dist/openrouter.d.ts",
         "import": "./dist/openrouter.browser.js"
       },
-      "bun": {
-        "types": "./dist/openrouter.d.ts",
-        "import": "./dist/openrouter.bun.js"
-      },
       "types": "./dist/openrouter.d.ts",
       "import": "./dist/openrouter.js"
     },
@@ -172,10 +136,6 @@
       "browser": {
         "types": "./dist/xai.d.ts",
         "import": "./dist/xai.browser.js"
-      },
-      "bun": {
-        "types": "./dist/xai.d.ts",
-        "import": "./dist/xai.bun.js"
       },
       "types": "./dist/xai.d.ts",
       "import": "./dist/xai.js"
@@ -217,11 +177,7 @@
         "types": "./dist/worker-browser.d.ts",
         "import": "./dist/worker-browser.js"
       },
-      "bun": {
-        "types": "./dist/worker-bun.d.ts",
-        "import": "./dist/worker-bun.js"
-      },
-      "types": "./dist/worker-browser.d.ts",
+      "types": "./dist/worker-node.d.ts",
       "import": "./dist/worker-node.js"
     },
     "./bootstrap": {

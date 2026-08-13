@@ -43,3 +43,23 @@ export function stackScrubRoots(): readonly string[] {
   }
   return [];
 }
+
+/**
+ * Rebuilds an `Error` from the structured-cloned payload of a worker `error`
+ * message. Defense-in-depth: a third-party worker that didn't go through our
+ * scrubbing postError may still ship absolute paths in `data.stack`, so the
+ * stack is re-scrubbed with the manager process's roots before the rehydrated
+ * Error is handed to the caller.
+ */
+export function rehydrateWorkerError(data: unknown): Error {
+  if (typeof data !== "object" || data === null) {
+    return new Error(String(data));
+  }
+  const payload = data as { message?: string; name?: string; stack?: string };
+  const scrubbedStack =
+    typeof payload.stack === "string" ? scrubStack(payload.stack, stackScrubRoots()) : undefined;
+  return Object.assign(new Error(payload.message ?? String(data)), {
+    name: payload.name ?? "Error",
+    ...(scrubbedStack !== undefined ? { stack: scrubbedStack } : {}),
+  });
+}

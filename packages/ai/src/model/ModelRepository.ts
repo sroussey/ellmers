@@ -4,12 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ITabularStorage } from "@workglow/storage";
-import { EventEmitter, EventParameters } from "@workglow/util";
+import type { ITabularStorage } from "@workglow/storage";
+import type { EventParameters } from "@workglow/util";
+import { EventEmitter } from "@workglow/util";
 import type { DataPortSchemaObject, SchemaNode } from "@workglow/util/schema";
 import { compileSchema } from "@workglow/util/schema";
 
-import { ModelPrimaryKeyNames, ModelRecord, ModelRecordSchema } from "./ModelSchema";
+import type { ModelPrimaryKeyNames, ModelRecord } from "./ModelSchema";
+import { ModelRecordSchema } from "./ModelSchema";
 
 export type ModelEventListeners = {
   model_added: (model: ModelRecord) => void;
@@ -32,7 +34,8 @@ export type ModelEventParameters<Event extends ModelEvents> = EventParameters<
 export class ModelRepository {
   protected readonly modelTabularRepository: ITabularStorage<
     typeof ModelRecordSchema,
-    typeof ModelPrimaryKeyNames
+    typeof ModelPrimaryKeyNames,
+    ModelRecord
   >;
   constructor(
     modelTabularRepository: ITabularStorage<

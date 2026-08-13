@@ -12,8 +12,8 @@ import {
 } from "@workglow/storage";
 import { setLogger } from "@workglow/util";
 import type { FromSchema } from "@workglow/util/schema";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   runTabularStorageContract,
   VectorItemPrimaryKeyNames,
@@ -48,7 +48,14 @@ describe("InMemoryTabularStorage", () => {
       new InMemoryTabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>(
         SearchSchema,
         SearchPrimaryKeyNames,
-        ["category", ["category", "subcategory"], ["subcategory", "category"], "value"]
+        [
+          "category",
+          ["category", "subcategory"],
+          ["subcategory", "category"],
+          "value",
+          "tag",
+          ["category", "tag"],
+        ]
       ),
     async () =>
       new InMemoryTabularStorage<typeof AllTypesSchema, typeof AllTypesPrimaryKeyNames>(

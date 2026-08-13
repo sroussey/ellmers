@@ -4,14 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, IExecuteContext, Task, TaskConfig, Workflow } from "@workglow/task-graph";
-import {
-  createTypedArrayFrom,
-  DataPortSchema,
-  FromSchema,
-  TypedArraySchema,
-  TypedArraySchemaOptions,
-} from "@workglow/util/schema";
+import type { IExecuteContext, TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Task, Workflow } from "@workglow/task-graph";
+import type { DataPortSchema, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
+import { createTypedArrayFrom, TypedArraySchema } from "@workglow/util/schema";
 
 const inputSchema = {
   type: "object",

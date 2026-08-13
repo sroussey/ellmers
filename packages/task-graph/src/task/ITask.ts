@@ -12,14 +12,14 @@ import type {
 } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import type { CachePolicy } from "../cache/CachePolicy";
-import { TaskOutputRepository } from "../storage/TaskOutputRepository";
-import { ITaskGraph } from "../task-graph/ITaskGraph";
-import { IWorkflow } from "../task-graph/IWorkflow";
+import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
+import type { ITaskGraph } from "../task-graph/ITaskGraph";
+import type { IWorkflow } from "../task-graph/IWorkflow";
 import type { TaskGraph } from "../task-graph/TaskGraph";
-import { CompoundMergeStrategy } from "../task-graph/TaskGraphRunner";
-import type { StreamEvent } from "./StreamTypes";
+import type { CompoundMergeStrategy } from "../task-graph/TaskGraphRunner";
+import type { StreamEvent, Usage } from "./StreamTypes";
 import type { TaskEntitlements } from "./TaskEntitlements";
-import { TaskError } from "./TaskError";
+import type { TaskError } from "./TaskError";
 import type {
   TaskEventListener,
   TaskEventListeners,
@@ -27,7 +27,7 @@ import type {
   TaskEvents,
 } from "./TaskEvents";
 import type { JsonTaskItem, TaskGraphItemJson, TaskGraphJsonOptions } from "./TaskJSON";
-import { TaskRunner } from "./TaskRunner";
+import type { TaskRunner } from "./TaskRunner";
 import type { TaskConfig, TaskInput, TaskOutput, TaskStatus } from "./TaskTypes";
 
 export interface IExecuteContext {
@@ -284,6 +284,31 @@ export interface IRunConfig {
   disposeStrategy?: IDisposeStrategy;
 
   /**
+   * Where a charge that settles after a task finished (provider cache storage,
+   * billed at disposal) is added to the run total. Threaded like
+   * `resourceScope`: a nested run inherits the outer run's sink, so a charge
+   * from a subgraph task reaches the root run's aggregator.
+   */
+  lateUsageSink?: (taskId: string, usage: Usage, modelId: string | undefined) => void;
+
+  /**
+   * Where a live cumulative usage snapshot from an owned child
+   * (`context.own` + `child.run()`) is published into the run total. Owned
+   * children are not scheduled by the graph runner, so their `usage` events
+   * never become `task_usage` unless this sink bridges them. Threaded like
+   * `lateUsageSink`: nested owns inherit the root run's sink.
+   */
+  usageSink?: (taskId: string, usage: Usage, modelId: string | undefined) => void;
+
+  /**
+   * Marks an owned child's execution finished so its live usage bucket is
+   * retired. Without this, a reused owned task (stable id, many `run()`s in
+   * one parent run — the sec extraction pattern) would replace its previous
+   * spend instead of accumulating. Threaded like {@link usageSink}.
+   */
+  usageRetireSink?: (taskId: string) => void;
+
+  /**
    * When true, check entitlements via the registered IEntitlementEnforcer
    * before graph execution begins. Throws TaskEntitlementError if denied.
    * Default: false (entitlements are declarative only, not enforced by the engine).
@@ -355,12 +380,26 @@ export interface ITaskLifecycle<
   get runner(): TaskRunner<Input, Output, Config>;
   abort(): void;
   disable(): Promise<void>;
+
+  /**
+   * Report a charge that settles after this task finished. Folded into the
+   * task total and the run total; see {@link IRunConfig.lateUsageSink}.
+   */
+  chargeLateUsage(usage: Usage, modelId: string | undefined): void;
 }
 
 export interface ITaskIO<Input extends TaskInput> {
   defaults: Record<string, any>;
   runInputData: Record<string, any>;
   runOutputData: Record<string, any>;
+  /**
+   * Running token total for the current execution; `undefined` until a model
+   * reports. Cumulative and monotonic within one execution.
+   */
+  runUsage: Usage | undefined;
+
+  /** Model id behind {@link ITask.runUsage}, when the provider named one. */
+  runUsageModelId: string | undefined;
   runConfig: Partial<IRunConfig>;
 
   inputSchema(): DataPortSchema; // gets local access for static inputSchema property

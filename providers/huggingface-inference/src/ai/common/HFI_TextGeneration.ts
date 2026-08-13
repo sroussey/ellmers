@@ -9,6 +9,7 @@ import type {
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
 } from "@workglow/ai";
+import { createEstimatedOutputUsageReporter } from "@workglow/ai/provider-utils";
 import { toOpenAIMessages } from "@workglow/ai/worker";
 import { getClient, getModelName, getProvider } from "./HFI_Client";
 import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
@@ -52,6 +53,16 @@ export const HFI_TextGeneration_Stream: AiProviderRunFn<
     typeof client.chatCompletionStream
   >[0]["messages"];
 
+  // HF Inference rarely reports mid-stream usage; estimate ↑ before the request
+  // and ↓ from deltas so the CLI counter still moves during the call.
+  const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+  provisionalUsage.onPrompt(
+    messages
+      .map((m) => (typeof m.content === "string" ? m.content : ""))
+      .filter(Boolean)
+      .join("\n")
+  );
+
   const stream = client.chatCompletionStream(
     {
       model: modelName,
@@ -68,8 +79,10 @@ export const HFI_TextGeneration_Stream: AiProviderRunFn<
   for await (const chunk of stream) {
     const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
+      provisionalUsage.onText(delta);
       emit({ type: "text-delta", port: "text", textDelta: delta });
     }
   }
+  provisionalUsage.flush();
   emit({ type: "finish", data: {} as TextGenerationTaskOutput });
 };

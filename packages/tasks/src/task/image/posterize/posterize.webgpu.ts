@@ -3,7 +3,8 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { registerFilterOp, VERTEX_PRELUDE, WebGpuImage } from "@workglow/util/media";
+import type { WebGpuImage } from "@workglow/util/media";
+import { registerFilterOp, VERTEX_PRELUDE } from "@workglow/util/media";
 import type { PosterizeParams } from "./posterize.cpu";
 
 const SHADER_SRC = `${VERTEX_PRELUDE}

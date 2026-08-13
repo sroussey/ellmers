@@ -157,10 +157,12 @@ describe("local backend provider stream contracts", () => {
       }
     );
 
-    expect(events).toEqual([
+    // Provisional mid-stream `usage` snapshots are expected (OpenAI-shaped
+    // streams only bill on the trailer); this contract is about termination.
+    expect(events.filter((e) => (e as { type?: string }).type === "text-delta")).toEqual([
       { type: "text-delta", port: "text", textDelta: "hello" },
-      { type: "finish", data: {} },
     ]);
+    expect(events.at(-1)).toMatchObject({ type: "finish", data: {} });
     expect(reader.releaseLock).toHaveBeenCalledTimes(1);
     expect(release).toHaveBeenCalledTimes(1);
   });

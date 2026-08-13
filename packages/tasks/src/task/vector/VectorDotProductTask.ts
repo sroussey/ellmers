@@ -4,14 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, IExecuteContext, Task, TaskConfig, Workflow } from "@workglow/task-graph";
-import {
+import type { IExecuteContext, TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Task, TaskInvalidInputError, Workflow } from "@workglow/task-graph";
+import type {
   DataPortSchema,
   FromSchema,
   TypedArray,
-  TypedArraySchema,
   TypedArraySchemaOptions,
 } from "@workglow/util/schema";
+import { TypedArraySchema } from "@workglow/util/schema";
 import { sumPrecise } from "../scalar/sumPrecise";
 
 const inputSchema = {
@@ -68,11 +69,11 @@ export class VectorDotProductTask<
   override async execute(input: Input, _context: IExecuteContext): Promise<Output> {
     const { vectors } = input as { vectors: TypedArray[] };
     if (vectors.length < 2) {
-      throw new Error("Exactly two vectors are required for dot product");
+      throw new TaskInvalidInputError("Exactly two vectors are required for dot product");
     }
     const [a, b] = vectors;
     if (a.length !== b.length) {
-      throw new Error("Vectors must have the same length");
+      throw new TaskInvalidInputError("Vectors must have the same length");
     }
     const products = Array.from({ length: a.length }, (_, i) => Number(a[i]) * Number(b[i]));
     return { result: sumPrecise(products) } as Output;

@@ -3,6 +3,7 @@
   "type": "module",
   "sideEffects": false,
   "version": "0.3.38",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
@@ -34,10 +35,8 @@
       "import": "./dist/ai-runtime.js"
     }
   },
-  "dependencies": {
-    "@huggingface/transformers": "catalog:"
-  },
   "peerDependencies": {
+    "@huggingface/transformers": "catalog:",
     "@workglow/ai": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
@@ -45,6 +44,9 @@
     "@workglow/util": "workspace:*"
   },
   "peerDependenciesMeta": {
+    "@huggingface/transformers": {
+      "optional": false
+    },
     "@workglow/ai": {
       "optional": false
     },
@@ -62,6 +64,7 @@
     }
   },
   "devDependencies": {
+    "@huggingface/transformers": "catalog:",
     "@workglow/ai": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",

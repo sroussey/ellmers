@@ -4,16 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { CachePolicy } from "@workglow/task-graph";
-import {
-  Entitlements,
+import type {
+  CachePolicy,
   IExecuteContext,
-  Task,
   TaskConfig,
-  TaskConfigSchema,
   TaskEntitlements,
 } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { Entitlements, Task, TaskConfigSchema } from "@workglow/task-graph";
+import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { BrowserSessionRegistry } from "../BrowserSessionRegistry";
 
 const browserUploadTaskConfigSchema = {

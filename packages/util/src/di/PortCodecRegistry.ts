@@ -38,8 +38,3 @@ export function getPortCodec(format: string): PortCodec | undefined {
   }
   return undefined;
 }
-
-/** @internal — test affordance only. */
-export function _resetPortCodecsForTests(): void {
-  codecs.clear();
-}

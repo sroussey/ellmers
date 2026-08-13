@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { HierarchicalChunkerTaskOutput } from "@workglow/ai";
-import { ChunkRecord } from "@workglow/knowledge-base";
+import type { HierarchicalChunkerTaskOutput } from "@workglow/ai";
+import type { ChunkRecord } from "@workglow/knowledge-base";
 import { Workflow } from "@workglow/task-graph";
 import { setLogger, uuid4 } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { beforeAll, describe, expect, it } from "vitest";
 import { registerTasks } from "../../binding/RegisterTasks";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 import { report, snap } from "../../binding/testTiming";
 

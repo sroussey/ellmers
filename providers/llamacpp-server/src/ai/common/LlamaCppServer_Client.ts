@@ -110,6 +110,12 @@ export interface IChatCompletionDelta {
   }>;
   readonly done?: boolean;
   readonly finishReason?: string;
+  /**
+   * Raw OpenAI-shape `usage` payload, present only on the terminal chunk when
+   * the request set `stream_options: { include_usage: true }`. Left unmapped
+   * here so the parser stays a transport concern; callers normalize it.
+   */
+  readonly usage?: unknown;
 }
 
 /**
@@ -157,6 +163,7 @@ export async function* readChatCompletionDeltas(
             };
             finish_reason?: string;
           }>;
+          usage?: unknown;
         };
         try {
           chunk = JSON.parse(data) as typeof chunk;
@@ -167,8 +174,16 @@ export async function* readChatCompletionDeltas(
         const contentDelta = choice?.delta?.content;
         const toolCallDeltas = choice?.delta?.tool_calls;
         const finishReason = choice?.finish_reason;
-        if (contentDelta !== undefined || toolCallDeltas !== undefined || finishReason) {
-          yield { contentDelta, toolCallDeltas, finishReason };
+        // The usage-bearing chunk carries an empty `choices` array, so it must
+        // be admitted on its own merit or the token counts are silently dropped.
+        const usage = chunk.usage ?? undefined;
+        if (
+          contentDelta !== undefined ||
+          toolCallDeltas !== undefined ||
+          finishReason ||
+          usage !== undefined
+        ) {
+          yield { contentDelta, toolCallDeltas, finishReason, usage };
         }
       }
     }

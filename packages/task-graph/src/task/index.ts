@@ -22,6 +22,9 @@ export * from "./MapTask";
 export * from "./ReduceTask";
 export * from "./StreamTypes";
 export * from "./Task";
+// The clone/strip helpers are a standalone seam now, not private Task methods,
+// so they are exported rather than reached through `(task as any)`.
+export * from "./TaskCloneOps";
 export * from "./TaskEntitlements";
 export * from "./TaskError";
 export * from "./TaskEvents";
@@ -32,6 +35,10 @@ export * from "./TaskTypes";
 
 export * from "./GraphAsTask";
 export * from "./GraphAsTaskRunner";
+
+// Side-effecting: registers the pipe-function wrapper factory with Conversions.
+// Must be reached whenever `ensureTask` can be, i.e. from this barrel.
+import "./PipeFunctionTask";
 
 export * from "./FallbackTask";
 export * from "./FallbackTaskRunner";

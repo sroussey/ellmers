@@ -5,7 +5,7 @@
  */
 
 import type { ITask } from "../task/ITask";
-import { Task } from "../task/Task";
+import type { Task } from "../task/Task";
 import type { TaskIdType } from "../task/TaskTypes";
 import { DATAFLOW_ALL_PORTS, DATAFLOW_ERROR_PORT } from "./Dataflow";
 import type { TaskGraph } from "./TaskGraph";

@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { WithModelPricing } from "@workglow/ai/worker";
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
-import { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
+import type { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
 import { XAI } from "./Xai_Constants";
 
 export const XaiModelSchema = {
@@ -60,7 +61,7 @@ export const XaiModelRecordSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type XaiModelRecord = FromSchema<typeof XaiModelRecordSchema>;
+export type XaiModelRecord = WithModelPricing<FromSchema<typeof XaiModelRecordSchema>>;
 
 export const XaiModelConfigSchema = {
   type: "object",
@@ -72,4 +73,4 @@ export const XaiModelConfigSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type XaiModelConfig = FromSchema<typeof XaiModelConfigSchema>;
+export type XaiModelConfig = WithModelPricing<FromSchema<typeof XaiModelConfigSchema>>;

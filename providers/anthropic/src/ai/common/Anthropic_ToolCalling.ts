@@ -12,12 +12,32 @@ import type {
   ToolCallingTaskOutput,
   ToolDefinition,
 } from "@workglow/ai";
-import { buildToolDescription, filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
+import { createUsageSnapshotEmitter } from "@workglow/ai/provider-utils";
+import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
 import { parsePartialJson } from "@workglow/util/worker";
+import {
+  annotateLastBlock,
+  annotateLastTool,
+  applyAnthropicPrefixReplay,
+  toAnthropicTools,
+  wrapSystemWithCacheControl,
+} from "./Anthropic_CacheCheckpoint";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
 import { applyAnthropicSamplingParams } from "./Anthropic_RequestParams";
+import { applyAnthropicThinkingParams } from "./Anthropic_Thinking";
+import { createAnthropicUsageCollector } from "./Anthropic_Usage";
+
+/**
+ * Anthropic rejects empty text blocks and empty content arrays on non-final
+ * messages, and hand-built or previously recorded checkpoint prefixes may
+ * still carry them: drop empty text blocks while converting, and skip any
+ * message whose content ends up empty.
+ */
+function isEmptyTextBlock(block: { type?: unknown; text?: unknown }): boolean {
+  return block.type === "text" && (block.text === undefined || block.text === "");
+}
 
 export function buildAnthropicMessages(
   messages: ReadonlyArray<ChatMessage> | undefined,
@@ -29,25 +49,31 @@ export function buildAnthropicMessages(
   const out: any[] = [];
   for (const msg of messages) {
     if (msg.role === "user") {
-      const blocks = msg.content.map((b) => {
-        if (b.type === "text") return { type: "text", text: b.text };
-        if (b.type === "image") {
-          return {
-            type: "image",
-            source: { type: "base64", media_type: b.mimeType, data: b.data },
-          };
-        }
-        return b;
-      });
+      const blocks = msg.content
+        .map((b) => {
+          if (b.type === "text") return { type: "text", text: b.text };
+          if (b.type === "image") {
+            return {
+              type: "image",
+              source: { type: "base64", media_type: b.mimeType, data: b.data },
+            };
+          }
+          return b;
+        })
+        .filter((b) => !isEmptyTextBlock(b));
+      if (blocks.length === 0) continue;
       out.push({ role: "user", content: blocks });
     } else if (msg.role === "assistant") {
-      const blocks = msg.content.map((b) => {
-        if (b.type === "text") return { type: "text", text: b.text };
-        if (b.type === "tool_use") {
-          return { type: "tool_use", id: b.id, name: b.name, input: b.input };
-        }
-        return b;
-      });
+      const blocks = msg.content
+        .map((b) => {
+          if (b.type === "text") return { type: "text", text: b.text };
+          if (b.type === "tool_use") {
+            return { type: "tool_use", id: b.id, name: b.name, input: b.input };
+          }
+          return b;
+        })
+        .filter((b) => !isEmptyTextBlock(b));
+      if (blocks.length === 0) continue;
       out.push({ role: "assistant", content: blocks });
     } else if (msg.role === "tool") {
       const blocks = msg.content
@@ -73,6 +99,7 @@ export function buildAnthropicMessages(
             ...(b.is_error ? { is_error: true } : {}),
           };
         });
+      if (blocks.length === 0) continue;
       out.push({ role: "user", content: blocks });
     } else if (msg.role === "system") {
       // System prompts are handled separately via params.system; skip here.
@@ -95,15 +122,18 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   AnthropicModelConfig
-> = async (input, model, signal, emit, _outputSchema, sessionId) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
+  const sessionId = sessionContext?.sessionId;
   const client = await getClient(model);
   const modelName = getModelName(model);
 
-  const tools = input.tools.map((t: ToolDefinition) => ({
-    name: t.name,
-    description: buildToolDescription(t),
-    input_schema: t.inputSchema as any,
-  }));
+  // The caller's tools win; a checkpoint consumer whose (schema-required)
+  // tools list is empty falls back to the prefix's, so replayed tool_use
+  // blocks stay declared and the request shares the warm-up's cached tool
+  // segment.
+  const toolDefinitions: readonly ToolDefinition[] =
+    input.tools.length > 0 ? input.tools : (sessionContext?.prefix?.tools ?? input.tools);
+  const tools = toAnthropicTools(toolDefinitions);
 
   const toolChoice = mapAnthropicToolChoice(input.toolChoice);
 
@@ -116,6 +146,7 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
   };
 
   applyAnthropicSamplingParams(params, input, model);
+  applyAnthropicThinkingParams(params, model);
 
   if (input.systemPrompt) {
     params.system = input.systemPrompt;
@@ -126,23 +157,32 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
     params.tool_choice = toolChoice;
   }
 
-  if (sessionId) {
-    // Add cache_control breakpoints for Anthropic prompt caching
-    if (params.system) {
-      params.system = [
-        {
-          type: "text",
-          text: params.system,
-          cache_control: { type: "ephemeral" },
-        },
-      ];
+  // Emit-only run (emitCheckpoint with no parent checkpoint): this request is
+  // the cache write the emitted checkpoint's first consumer reads, so it needs
+  // the plain-session-style breakpoints even without a sessionId.
+  const emitBoundary =
+    sessionContext?.emitCheckpointId !== undefined && sessionContext?.prefix === undefined;
+
+  if (sessionContext?.prefix) {
+    if (typeof params.system === "string") {
+      params.system = wrapSystemWithCacheControl(params.system);
     }
-    if (params.tools && params.tools.length > 0) {
-      const lastIdx = params.tools.length - 1;
-      params.tools[lastIdx] = {
-        ...params.tools[lastIdx],
-        cache_control: { type: "ephemeral" },
-      };
+    applyAnthropicPrefixReplay(params, sessionContext);
+    if (Array.isArray(params.tools)) {
+      annotateLastTool(params.tools);
+    }
+  } else if (sessionId || emitBoundary) {
+    // Plain session or emit-only run: breakpoints on system + last tool. An
+    // emit-only run also marks the final message so the emitted turn itself
+    // lands in the cache (a string prompt tail is lifted by annotateLastBlock).
+    if (typeof params.system === "string") {
+      params.system = wrapSystemWithCacheControl(params.system);
+    }
+    if (Array.isArray(params.tools)) {
+      annotateLastTool(params.tools);
+    }
+    if (emitBoundary && Array.isArray(params.messages) && params.messages.length > 0) {
+      annotateLastBlock(params.messages[params.messages.length - 1]);
     }
   }
 
@@ -156,15 +196,20 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
     [...toolCallsByBlockIndex.entries()].sort((a, b) => a[0] - b[0]).map(([, tc]) => tc);
 
   /**
-   * Defence-in-depth: drop tool calls whose name isn't in the declared tool
-   * set before yielding to the consumer. Anthropic's tool API normally
-   * respects `input.tools`, but a stray response from a model that
-   * hallucinates a function name would otherwise propagate to dispatch.
+   * Defence-in-depth: drop tool calls whose name isn't in the effective
+   * declared tool set (the caller's tools, or the prefix's on fallback)
+   * before yielding to the consumer. Anthropic's tool API normally respects
+   * the declarations, but a stray response from a model that hallucinates a
+   * function name would otherwise propagate to dispatch.
    */
   const validatedToolCallsInStreamOrder = (): ToolCall[] =>
-    filterValidToolCalls(toolCallsInStreamOrder(), input.tools);
+    filterValidToolCalls(toolCallsInStreamOrder(), toolDefinitions);
 
+  const usageCollector = createAnthropicUsageCollector();
+  const snapshotUsage = createUsageSnapshotEmitter(emit);
   for await (const event of stream) {
+    usageCollector.observe(event);
+    snapshotUsage(usageCollector.result());
     maybeEmitAnthropicRefusal(event, emit);
     if (event.type === "content_block_start") {
       const block = event.content_block;
@@ -233,5 +278,9 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
     }
   }
 
-  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
+  emit({
+    type: "finish",
+    data: { text: "", toolCalls: [] } as ToolCallingTaskOutput,
+    usage: usageCollector.result(),
+  });
 };

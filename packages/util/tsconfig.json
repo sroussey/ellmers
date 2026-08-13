@@ -6,14 +6,19 @@
     "./src/browser.ts",
     "./src/bun.ts",
     "./src/worker-entry.ts",
+    "./src/worker-bun.ts",
+    "./src/worker-browser.ts",
+    "./src/worker-node.ts",
     "./src/schema-entry.ts",
     "./src/graph-entry.ts",
     "./src/media-browser.ts",
     "./src/media-node.ts",
     "./src/compress-browser.ts",
-    "./src/compress-node.ts"
+    "./src/compress-node.ts",
+    "./src/test-browser.ts",
+    "./src/test-node.ts"
   ],
-  "exclude": ["dist", "node_modules"],
+  "exclude": ["dist", "node_modules", "src/**/__tests__/**", "src/**/*.test.ts"],
   "compilerOptions": {
     "composite": true,
     "outDir": "./dist",

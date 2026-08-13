@@ -4,9 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ITabularStorage } from "@workglow/storage";
-import type { DataPortSchemaObject, FromSchema } from "@workglow/util/schema";
-import { TypedArraySchemaOptions } from "@workglow/util/schema";
+import type { ITabularStorage } from "@workglow/storage";
+import type {
+  DataPortSchemaObject,
+  FromSchema,
+  TypedArraySchemaOptions,
+} from "@workglow/util/schema";
 
 export const DocumentStorageSchema = {
   type: "object",

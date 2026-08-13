@@ -10,12 +10,14 @@ import type {
   AiProviderRunFnRegistration,
 } from "@workglow/ai";
 import {
+  LLAMACPP_CACHE_CHECKPOINT,
   LLAMACPP_COUNT_TOKENS,
   LLAMACPP_JSON_MODE,
   LLAMACPP_MODEL_DOWNLOAD,
   LLAMACPP_MODEL_INFO,
   LLAMACPP_MODEL_SEARCH,
   LLAMACPP_MODEL_UNLOAD,
+  LLAMACPP_SESSION_DISPOSE,
   LLAMACPP_TEXT_EMBEDDING,
   LLAMACPP_TEXT_GENERATION,
   LLAMACPP_TEXT_REWRITER,
@@ -38,11 +40,13 @@ export {
   streamFromSession,
 } from "./LlamaCpp_Runtime";
 
+import { LlamaCpp_CacheCheckpoint_Stream } from "./LlamaCpp_CacheCheckpoint";
 import { LlamaCpp_Chat_Stream } from "./LlamaCpp_Chat";
 import { LlamaCpp_CountTokens, LlamaCpp_CountTokens_Preview } from "./LlamaCpp_CountTokens";
 import { LlamaCpp_Download } from "./LlamaCpp_Download";
 import { LlamaCpp_ModelInfo } from "./LlamaCpp_ModelInfo";
 import { LlamaCpp_ModelSearch } from "./LlamaCpp_ModelSearch";
+import { LlamaCpp_SessionDispose } from "./LlamaCpp_SessionDispose";
 import { LlamaCpp_StructuredGeneration_Stream } from "./LlamaCpp_StructuredGeneration";
 import { LlamaCpp_TextEmbedding } from "./LlamaCpp_TextEmbedding";
 import { LlamaCpp_TextGeneration_Stream } from "./LlamaCpp_TextGeneration";
@@ -64,7 +68,7 @@ const LlamaCpp_TextGeneration_Unified: AiProviderRunFn<any, any, LlamaCppModelCo
   signal,
   emit,
   outputSchema,
-  sessionId
+  sessionContext
 ) => {
   if (signal.aborted) {
     throw signal.reason ?? defaultAbortError();
@@ -72,9 +76,9 @@ const LlamaCpp_TextGeneration_Unified: AiProviderRunFn<any, any, LlamaCppModelCo
 
   const maybeMessages = (input as { messages?: unknown }).messages;
   if (Array.isArray(maybeMessages) && maybeMessages.length > 0) {
-    await LlamaCpp_Chat_Stream(input, model, signal, emit, outputSchema, sessionId);
+    await LlamaCpp_Chat_Stream(input, model, signal, emit, outputSchema, sessionContext);
   } else {
-    await LlamaCpp_TextGeneration_Stream(input, model, signal, emit, outputSchema, sessionId);
+    await LlamaCpp_TextGeneration_Stream(input, model, signal, emit, outputSchema, sessionContext);
   }
 };
 
@@ -94,6 +98,8 @@ export const LLAMACPP_RUN_FNS: readonly AiProviderRunFnRegistration<
   { serves: LLAMACPP_MODEL_DOWNLOAD, runFn: LlamaCpp_Download },
   { serves: LLAMACPP_MODEL_SEARCH, runFn: LlamaCpp_ModelSearch },
   { serves: LLAMACPP_MODEL_INFO, runFn: LlamaCpp_ModelInfo },
+  { serves: LLAMACPP_CACHE_CHECKPOINT, runFn: LlamaCpp_CacheCheckpoint_Stream },
+  { serves: LLAMACPP_SESSION_DISPOSE, runFn: LlamaCpp_SessionDispose },
 ];
 
 export const LLAMACPP_PREVIEW_TASKS: Record<

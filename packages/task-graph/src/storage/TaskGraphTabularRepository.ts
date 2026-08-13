@@ -6,8 +6,8 @@
 
 import type { BaseTabularStorage } from "@workglow/storage";
 import type { ServiceRegistry } from "@workglow/util";
-import { DataPortSchemaObject } from "@workglow/util/schema";
-import { TaskGraph } from "../task-graph/TaskGraph";
+import type { DataPortSchemaObject } from "@workglow/util/schema";
+import type { TaskGraph } from "../task-graph/TaskGraph";
 import { createGraphFromGraphJSON } from "../task/TaskJSON";
 import { TaskGraphRepository } from "./TaskGraphRepository";
 

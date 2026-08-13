@@ -20,6 +20,7 @@ import type { BinaryRefSink, StreamSink } from "./StreamProcessor";
 import type { StreamEvent } from "./StreamTypes";
 import {
   assertBinaryFormat,
+  CACHE_HIT_USAGE,
   foldObjectDelta,
   getPortStreamMode,
   getStreamingPorts,
@@ -164,6 +165,15 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     }
 
     ctx.telemetrySpan?.addEvent("workglow.task.cache_hit");
+
+    // A replayed output spent nothing. Stating that explicitly is what lets a UI
+    // show "cached" instead of an empty cell that means "no model ran".
+    this.task.runUsage = CACHE_HIT_USAGE;
+    try {
+      this.task.emit("usage", CACHE_HIT_USAGE, this.task.runUsageModelId);
+    } catch (err) {
+      getLogger().error("usage listener threw", { taskId: this.task.id, error: err });
+    }
 
     if (isStreamable) {
       // A corrupt stored stream or a backing that throws mid-resolution must

@@ -66,6 +66,7 @@ export function inferOpenAiCapabilities(model: CapabilityHints): readonly Capabi
       "text.summary",
       "tool-use",
       "json-mode",
+      "cache.checkpoint",
       "model.count-tokens",
       "model.info",
       "model.search",

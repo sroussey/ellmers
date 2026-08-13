@@ -43,52 +43,53 @@ console.log("console.log(Workflow.prototype):", Workflow.prototype);
 console.log(
   "To get started, type 'workflow.reset()' in the console. Then you can build a task graph using the workflow API, and it will be reflected in the web page. For example, here is how the page started: "
 );
+
+const g = `color: ${grey}; font-weight: normal;`;
+const y = `color: ${yellow}; font-weight: normal;`;
+const yb = `color: ${yellow}; font-weight: bold;`;
+const o = `color: ${orange}; font-weight: normal;`;
+
+// Each %c consumes exactly one following style arg — keep them paired.
 console.log(
-  `  %cworkflow = new Workflow();
-  workflow.%creset%c();
-  workflow.%ctextEmbedding%c({%cmodel%c: %c'onnx:Xenova/all-MiniLM-L6-v2:fp16'%c, %ctext%c: %c'The quick brown fox jumps over the lazy dog.'%c, %c%c%c%c });
-  workflow.%crename%c(%c'*'%c, %c'console'%c);
-  workflow.%cdebugLog%c({ %clevel%c: %c'info'%c });
-
-  console.log(JSON.stringify(workflow.toDependencyJSON({ withBoundaryNodes: false }),null,2));
-  `,
-  `color: ${grey}; font-weight: normal;`,
-  `color: ${yellow}; font-weight: normal;`,
-  `color: ${grey}; font-weight: normal;`,
-  `color: ${yellow}; font-weight: bold;`,
-  `color: ${grey}; font-weight: normal;`,
-  `color: ${yellow}; font-weight: normal;`,
-  `color: ${grey}; font-weight: normal;`,
-  `color: ${orange}; font-weight: normal;`,
-  `color: ${grey}; font-weight: normal;`,
-  `color: ${yellow}; font-weight: bold;`,
-  `color: ${grey}; font-weight: normal;`,
-  `color: ${yellow}; font-weight: normal;`,
-  `color: ${grey}; font-weight: normal;`,
-  `color: ${orange}; font-weight: normal;`,
-  `color: ${grey}; font-weight: normal;`,
-  `color: ${yellow}; font-weight: normal;`,
-  `color: ${grey}; font-weight: normal;`,
-  `color: ${orange}; font-weight: normal;`,
-  `color: ${grey}; font-weight: normal;`,
-  `color: ${orange}; font-weight: normal;`,
-  `color: ${grey}; font-weight: normal;`,
-
-  // rename
-  `color: ${yellow}; font-weight: normal;`,
-  "color: #ddd; font-weight: normal;",
-  `color: ${orange}; font-weight: normal;`,
-  `color: ${grey}; font-weight: normal;`,
-  `color: ${orange}; font-weight: normal;`,
-  `color: ${grey}; font-weight: normal;`,
-
-  // DebugLog
-  `color: ${yellow}; font-weight: bold;`,
-  `color: ${grey}; font-weight: normal;`,
-  `color: ${yellow}; font-weight: normal;`,
-  `color: ${grey}; font-weight: normal;`,
-  `color: ${orange}; font-weight: normal;`,
-  `color: ${grey}; font-weight: normal;`
+  [
+    `  %cworkflow = new Workflow();`,
+    `  workflow.%creset%c();`,
+    `  workflow.%ctextEmbedding%c({%cmodel%c: %c'onnx:Xenova/all-MiniLM-L6-v2:fp16'%c, %ctext%c: %c'The quick brown fox jumps over the lazy dog.'%c });`,
+    `  workflow.%crename%c(%c'*'%c, %c'console'%c);`,
+    `  workflow.%cdebugLog%c({ %clevel%c: %c'info'%c });`,
+    ``,
+    `  console.log(JSON.stringify(workflow.toDependencyJSON({ withBoundaryNodes: false }), null, 2));`,
+  ].join("\n"),
+  // workflow = ...
+  g,
+  // reset
+  y,
+  g,
+  // textEmbedding({ model: '...', text: '...' })
+  yb,
+  g,
+  y,
+  g,
+  o,
+  g,
+  yb,
+  g,
+  o,
+  g,
+  // rename('*', 'console')
+  y,
+  g,
+  o,
+  g,
+  o,
+  g,
+  // debugLog({ level: 'info' })
+  yb,
+  g,
+  y,
+  g,
+  o,
+  g
 );
 setTimeout(() => {
   console.log("console.log(workflow):", (window as any)["workflow"]);

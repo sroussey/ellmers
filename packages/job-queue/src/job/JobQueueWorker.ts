@@ -13,7 +13,7 @@ import {
   SpanStatusCode,
   uuid4,
 } from "@workglow/util";
-import { ILimiter } from "../limiter/ILimiter";
+import type { ILimiter } from "../limiter/ILimiter";
 import { NullLimiter } from "../limiter/NullLimiter";
 import type { IClaim } from "../queue-storage/IClaim";
 import type { IJobStore } from "../queue-storage/IJobStore";
@@ -21,7 +21,7 @@ import type { IMessageQueue } from "../queue-storage/IMessageQueue";
 import type { JobStorageFormat } from "../queue-storage/IQueueStorage";
 import { JobStatus } from "../queue-storage/IQueueStorage";
 import type { DeadLetter } from "./DeadLetter";
-import { Job, JobClass } from "./Job";
+import type { Job, JobClass } from "./Job";
 import {
   AbortSignalJobError,
   JobDisabledError,
@@ -42,6 +42,14 @@ import { storageToClass } from "./JobStorageConverters";
  * immediately so operators get a prompt signal.
  */
 const LOOP_ERROR_LOG_INTERVAL_MS = 5_000;
+
+/**
+ * First backoff step used when the idle peek says the head of the queue is
+ * already visible but the claim we just attempted came back empty. Doubles per
+ * consecutive occurrence, capped at the poll interval — see
+ * {@link JobQueueWorker.getIdleDelay}.
+ */
+const IDLE_READY_RETRY_BASE_MS = 5;
 
 /**
  * Events emitted by JobQueueWorker
@@ -182,6 +190,14 @@ export class JobQueueWorker<
    * to do — observed under load on IndexedDb.
    */
   private wakePending = false;
+
+  /**
+   * Consecutive idle iterations that found a ready (already-visible) job at the
+   * head of the queue without being able to claim it. Drives the backoff in
+   * {@link getIdleDelay}; reset whenever a claim succeeds or the queue is
+   * genuinely idle.
+   */
+  private readyRetryStreak = 0;
 
   /**
    * Promise for the running `processJobs` loop. Captured in {@link start} so
@@ -591,6 +607,8 @@ export class JobQueueWorker<
           continue;
         }
 
+        this.readyRetryStreak = 0;
+
         const { dispatched, limiterFull } = await this.processClaimsInternal(claims);
 
         if (!this.running) {
@@ -644,18 +662,37 @@ export class JobQueueWorker<
    * Determine how long to sleep when idle.
    *
    * Peeks at the earliest PENDING job: if it has a future `visible_at`,
-   * returns the time until it becomes ready (clamped to `pollIntervalMs`);
-   * otherwise returns `pollIntervalMs`.
+   * returns the time until it becomes ready (clamped to `pollIntervalMs`); an
+   * empty queue returns `pollIntervalMs`.
+   *
+   * A head job that is *already* visible means the claim attempt that just
+   * came back empty raced its `visible_at` deadline — the claim ran before the
+   * deadline and this peek resolved after it, which is routine when a
+   * short-deferred submit lands on a storage whose round trips are slower than
+   * the deferral. Sleeping the full poll interval there strands ready work for
+   * the whole interval (60s in the fast-wake tests), so retry promptly instead.
+   * The retry backs off exponentially per consecutive occurrence, up to the
+   * poll interval, so the pathological version of this — a head job that stays
+   * visible-but-unclaimable, e.g. under clock skew between the worker and the
+   * storage — degrades to plain polling rather than spinning on the backend.
    */
   private async getIdleDelay(): Promise<number> {
     try {
       const pending = await this.jobStore.peek(JobStatus.PENDING, 1);
-      if (pending.length > 0 && pending[0].visible_at) {
-        const delay = new Date(pending[0].visible_at).getTime() - Date.now();
+      if (pending.length > 0) {
+        const visibleAt = pending[0].visible_at;
+        const delay = visibleAt ? new Date(visibleAt).getTime() - Date.now() : 0;
         if (delay > 0) {
+          this.readyRetryStreak = 0;
           return Math.min(delay, this.pollIntervalMs);
         }
+        const step = IDLE_READY_RETRY_BASE_MS * 2 ** this.readyRetryStreak;
+        if (step < this.pollIntervalMs) {
+          this.readyRetryStreak++;
+        }
+        return Math.min(step, this.pollIntervalMs);
       }
+      this.readyRetryStreak = 0;
     } catch {
       // If peek fails, fall back to default
     }

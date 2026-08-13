@@ -2,6 +2,7 @@
   "name": "@workglow/storage",
   "type": "module",
   "version": "0.3.38",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
@@ -14,20 +15,18 @@
   "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
-    "watch-js": "concurrently -c 'auto' -n 'browser,node,bun' 'bun run watch-browser' 'bun run watch-node' 'bun run watch-bun'",
+    "watch-js": "concurrently -c 'auto' -n 'browser,node' 'bun run watch-browser' 'bun run watch-node'",
     "watch-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "watch-node": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
-    "watch-bun": "bun build --watch --no-clear-screen --target=bun --sourcemap=external --packages=external --outdir ./dist ./src/bun.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "bun run build-js && bun run build-types",
-    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'browser,node,bun' 'bun run build-browser' 'bun run build-node' 'bun run build-bun'",
+    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'browser,node' 'bun run build-browser' 'bun run build-node'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "build-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
-    "build-bun": "bun build --target=bun --sourcemap=external --packages=external --outdir ./dist ./src/bun.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "test": "bun test"
+    "test": "vitest run --config ../../vitest.config.ts --project storage"
   },
   "peerDependencies": {
     "@workglow/util": "workspace:*"
@@ -45,10 +44,6 @@
       "browser": {
         "types": "./dist/browser.d.ts",
         "import": "./dist/browser.js"
-      },
-      "bun": {
-        "types": "./dist/bun.d.ts",
-        "import": "./dist/bun.js"
       },
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js"

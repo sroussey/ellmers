@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Sqlite } from "@workglow/sqlite/storage";
+import type { Sqlite } from "@workglow/sqlite/storage";
 import type {
   IVectorStorage,
   VectorDistanceMetric,
@@ -13,6 +13,7 @@ import type {
 } from "@workglow/storage";
 import {
   assertVectorShape,
+  emitSimilaritySearch,
   getMetadataProperty,
   getVectorProperty,
   matchesFilter,
@@ -597,7 +598,7 @@ export class SqliteAiVectorStorage<
         }
 
         results.sort((a, b) => b.score - a.score);
-        return results.slice(0, topK);
+        return emitSimilaritySearch(this.events, query, results.slice(0, topK));
       }
 
       // No filter - use top-k mode for efficiency
@@ -630,7 +631,7 @@ export class SqliteAiVectorStorage<
         results.push({ ...entity, score } as Entity & { score: number });
       }
 
-      return results;
+      return emitSimilaritySearch(this.events, query, results);
     } catch (error) {
       // Fall back to in-memory similarity calculation if sqlite-vector fails
       console.warn("sqlite-vector query failed, falling back to in-memory search:", error);
@@ -664,6 +665,6 @@ export class SqliteAiVectorStorage<
     }
 
     results.sort((a, b) => b.score - a.score);
-    return results.slice(0, topK);
+    return emitSimilaritySearch(this.events, query, results.slice(0, topK));
   }
 }

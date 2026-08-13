@@ -9,12 +9,20 @@ import type {
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
 } from "@workglow/ai";
+import { createUsageSnapshotEmitter } from "@workglow/ai/provider-utils";
 import { getLogger } from "@workglow/util/worker";
+import {
+  annotateLastBlock,
+  applyAnthropicPrefixReplay,
+  wrapSystemWithCacheControl,
+} from "./Anthropic_CacheCheckpoint";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
 import { applyAnthropicSamplingParams } from "./Anthropic_RequestParams";
+import { applyAnthropicThinkingParams } from "./Anthropic_Thinking";
 import { buildAnthropicMessages } from "./Anthropic_ToolCalling";
+import { createAnthropicUsageCollector } from "./Anthropic_Usage";
 
 /**
  * Inputs that the unified `["text.generation"]` runFn handles. Both
@@ -43,7 +51,8 @@ export const Anthropic_TextGeneration_Stream: AiProviderRunFn<
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
   AnthropicModelConfig
-> = async (input, model, signal, emit, _outputSchema, sessionId) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
+  const sessionId = sessionContext?.sessionId;
   const logger = getLogger();
   const timerLabel = `anthropic:TextGeneration:${getModelName(model)}`;
   logger.time(timerLabel, { model: getModelName(model) });
@@ -66,28 +75,29 @@ export const Anthropic_TextGeneration_Stream: AiProviderRunFn<
       max_tokens: getMaxTokens(input, model),
     };
     applyAnthropicSamplingParams(params, input, model);
+    applyAnthropicThinkingParams(params, model);
+
+    // Emit-only run (emitCheckpoint with no parent checkpoint): this request
+    // is the cache write the emitted checkpoint's first consumer reads, so it
+    // needs the plain-session-style breakpoints even without a sessionId.
+    const emitBoundary =
+      sessionContext?.emitCheckpointId !== undefined && sessionContext?.prefix === undefined;
 
     if (unified.systemPrompt) {
-      params.system = sessionId
-        ? [
-            {
-              type: "text",
-              text: unified.systemPrompt,
-              cache_control: { type: "ephemeral" },
-            },
-          ]
-        : unified.systemPrompt;
+      params.system =
+        sessionId || emitBoundary
+          ? wrapSystemWithCacheControl(unified.systemPrompt)
+          : unified.systemPrompt;
     }
 
-    // Prompt caching: annotate the last user message block when sessionId is present.
-    if (sessionId && hasMessages && Array.isArray(messages) && messages.length > 0) {
-      const last = messages[messages.length - 1] as { content: unknown };
-      if (Array.isArray(last.content) && last.content.length > 0) {
-        const blocks = last.content as Array<Record<string, unknown>>;
-        blocks[blocks.length - 1] = {
-          ...blocks[blocks.length - 1],
-          cache_control: { type: "ephemeral" },
-        };
+    if (sessionContext?.prefix) {
+      applyAnthropicPrefixReplay(params, sessionContext);
+    } else if ((sessionId !== undefined && hasMessages) || emitBoundary) {
+      // Plain session: annotate the last message per turn. Emit-only run: mark
+      // the emit boundary (a string prompt tail is lifted into an annotated
+      // block by annotateLastBlock).
+      if (messages.length > 0) {
+        annotateLastBlock(messages[messages.length - 1] as { content: unknown });
       }
     }
 
@@ -96,7 +106,11 @@ export const Anthropic_TextGeneration_Stream: AiProviderRunFn<
       { signal }
     );
 
+    const usageCollector = createAnthropicUsageCollector();
+    const snapshotUsage = createUsageSnapshotEmitter(emit);
     for await (const event of stream) {
+      usageCollector.observe(event);
+      snapshotUsage(usageCollector.result());
       const e = event as {
         type: string;
         delta?: { type?: string; text?: string };
@@ -106,7 +120,11 @@ export const Anthropic_TextGeneration_Stream: AiProviderRunFn<
       }
       maybeEmitAnthropicRefusal(event, emit);
     }
-    emit({ type: "finish", data: {} as TextGenerationTaskOutput });
+    emit({
+      type: "finish",
+      data: {} as TextGenerationTaskOutput,
+      usage: usageCollector.result(),
+    });
   } finally {
     logger.timeEnd(timerLabel, { model: getModelName(model) });
   }

@@ -20,15 +20,15 @@ import {
 } from "./JobError";
 import { applyPersistedDiagnosticsToStack } from "./JobErrorDiagnostics";
 import { lookupErrorCodeReconstructor } from "./JobErrorRegistry";
-import {
+import type {
   JobProgressListener,
   JobQueueEventListener,
   JobQueueEventListeners,
   JobQueueEventParameters,
   JobQueueEvents,
   JobStreamListener,
-  type StreamChunkRow,
-  type StreamEventLike,
+  StreamChunkRow,
+  StreamEventLike,
 } from "./JobQueueEventListeners";
 import type { JobQueueServer } from "./JobQueueServer";
 import { storageToClass } from "./JobStorageConverters";
@@ -735,7 +735,7 @@ export class JobQueueClient<Input, Output> {
    * @internal
    */
   public handleJobError(jobId: unknown, error: string, errorCode?: string): void {
-    this.events.emit("job_error", this.queueName, jobId, error);
+    this.events.emit("job_error", this.queueName, jobId, error, errorCode);
 
     const promises = this.activeJobPromises.get(jobId);
     if (promises) {

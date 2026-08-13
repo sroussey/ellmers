@@ -15,7 +15,7 @@ import { AiProvider } from "@workglow/ai/worker";
 import { hftWorkerRunFnSpecs, inferHftCapabilities } from "./common/HFT_Capabilities";
 import { HF_TRANSFORMERS_ONNX } from "./common/HFT_Constants";
 import type { HfTransformersOnnxModelConfig } from "./common/HFT_ModelSchema";
-import { deleteHftSession } from "./common/HFT_Pipeline";
+import { disposeHftSessionViaRegistry } from "./common/HFT_SessionDispose";
 
 /**
  * AI provider for HuggingFace Transformers ONNX models.
@@ -51,6 +51,8 @@ export class HuggingFaceTransformersProvider extends AiProvider<HfTransformersOn
   }
 
   override async disposeSession(sessionId: string): Promise<void> {
-    deleteHftSession(sessionId);
+    // Worker-side registries hold no run-fns, so this resolves to the local
+    // map delete there; a registered runtime dispatches through the run-fn.
+    await disposeHftSessionViaRegistry(this.name, sessionId);
   }
 }

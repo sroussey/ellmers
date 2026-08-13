@@ -2,6 +2,7 @@
   "name": "@workglow/indexeddb",
   "type": "module",
   "version": "0.3.38",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
@@ -28,18 +29,13 @@
     "build-jq-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/browser.ts",
     "build-jq-node-bun": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/node.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "test": "bun test"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "exports": {
     "./storage": {
       "browser": {
         "types": "./dist/storage/browser.d.ts",
         "import": "./dist/storage/browser.js"
-      },
-      "bun": {
-        "types": "./dist/storage/node.d.ts",
-        "import": "./dist/storage/node.js"
       },
       "types": "./dist/storage/node.d.ts",
       "import": "./dist/storage/node.js"
@@ -48,10 +44,6 @@
       "browser": {
         "types": "./dist/job-queue/browser.d.ts",
         "import": "./dist/job-queue/browser.js"
-      },
-      "bun": {
-        "types": "./dist/job-queue/node.d.ts",
-        "import": "./dist/job-queue/node.js"
       },
       "types": "./dist/job-queue/node.d.ts",
       "import": "./dist/job-queue/node.js"
@@ -74,7 +66,7 @@
     }
   },
   "devDependencies": {
-    "fake-indexeddb": "^6.2.4",
+    "fake-indexeddb": "catalog:",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/util": "workspace:*"

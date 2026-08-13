@@ -2,6 +2,7 @@
   "name": "@workglow/postgres",
   "type": "module",
   "version": "0.3.38",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
@@ -32,18 +33,13 @@
     "build-text-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/text ./src/text/browser.ts",
     "build-text-node-bun": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/text ./src/text/node.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "test": "bun test"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "exports": {
     "./storage": {
       "browser": {
         "types": "./dist/storage/browser.d.ts",
         "import": "./dist/storage/browser.js"
-      },
-      "bun": {
-        "types": "./dist/storage/node.d.ts",
-        "import": "./dist/storage/node.js"
       },
       "types": "./dist/storage/node.d.ts",
       "import": "./dist/storage/node.js"
@@ -53,10 +49,6 @@
         "types": "./dist/job-queue/browser.d.ts",
         "import": "./dist/job-queue/browser.js"
       },
-      "bun": {
-        "types": "./dist/job-queue/node.d.ts",
-        "import": "./dist/job-queue/node.js"
-      },
       "types": "./dist/job-queue/node.d.ts",
       "import": "./dist/job-queue/node.js"
     },
@@ -64,10 +56,6 @@
       "browser": {
         "types": "./dist/text/browser.d.ts",
         "import": "./dist/text/browser.js"
-      },
-      "bun": {
-        "types": "./dist/text/node.d.ts",
-        "import": "./dist/text/node.js"
       },
       "types": "./dist/text/node.d.ts",
       "import": "./dist/text/node.js"
@@ -98,7 +86,7 @@
     }
   },
   "devDependencies": {
-    "@types/pg": "^8.20.3",
+    "@types/pg": "catalog:",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/util": "workspace:*"

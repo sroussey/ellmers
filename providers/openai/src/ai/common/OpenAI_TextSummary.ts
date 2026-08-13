@@ -5,7 +5,11 @@
  */
 
 import type { AiProviderRunFn, TextSummaryTaskInput, TextSummaryTaskOutput } from "@workglow/ai";
-import { accumulateOpenAIResponsesStream } from "@workglow/ai/provider-utils";
+import {
+  accumulateOpenAIResponsesStream,
+  createEstimatedOutputUsageReporter,
+  promptTextForResponsesUsageEstimate,
+} from "@workglow/ai/provider-utils";
 import { finalizeResponsesRequest, getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
@@ -27,11 +31,16 @@ export const OpenAI_TextSummary_Stream: AiProviderRunFn<
   };
   finalizeResponsesRequest(model, params);
 
+  const promptText = promptTextForResponsesUsageEstimate(params);
+  createEstimatedOutputUsageReporter(emit).onPrompt(promptText);
+
   const stream = await client.responses.create(
     { ...params, stream: true } as Parameters<typeof client.responses.create>[0],
     { signal }
   );
 
-  await accumulateOpenAIResponsesStream(stream as AsyncIterable<unknown>, emit);
-  emit({ type: "finish", data: {} as TextSummaryTaskOutput });
+  const usage = await accumulateOpenAIResponsesStream(stream as AsyncIterable<unknown>, emit, {
+    promptText,
+  });
+  emit({ type: "finish", data: {} as TextSummaryTaskOutput, usage });
 };

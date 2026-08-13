@@ -3,26 +3,24 @@
  * Copyright 2026 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
-import type { StreamEvent } from "@workglow/task-graph";
+import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import {
   CACHE_REGISTRY,
   DefaultCacheRegistry,
   FsFolderTaskOutputRepository,
-  IExecuteContext,
   isCacheRef,
   StreamPump,
   Task,
   TaskGraph,
   TaskGraphRunner,
 } from "@workglow/task-graph";
+import { InMemoryTaskOutputRepository, StreamingMemoryRepo } from "@workglow/task-graph/test";
 import { Container, ServiceRegistry, sleep } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
-import { StreamingMemoryRepo } from "../../binding/StreamingMemoryRepo";
 
 async function blobBytes(value: unknown): Promise<number[]> {
   expect(value).toBeInstanceOf(Blob);

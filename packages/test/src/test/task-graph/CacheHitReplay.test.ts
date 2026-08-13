@@ -3,26 +3,25 @@
  * Copyright 2026 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
-import type { CachePolicy, StreamEvent } from "@workglow/task-graph";
+import type { CachePolicy, IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import {
   CACHE_REGISTRY,
   Dataflow,
   DefaultCacheRegistry,
   FsFolderTaskOutputRepository,
-  IExecuteContext,
   isCacheRef,
   Task,
   TaskGraph,
   TaskGraphRunner,
   TaskStatus,
 } from "@workglow/task-graph";
+import { StreamingMemoryRepo } from "@workglow/task-graph/test";
 import { Container, ServiceRegistry, sleep } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { StreamingMemoryRepo } from "../../binding/StreamingMemoryRepo";
 
 type BinOut = { bytes: Blob | ArrayBuffer };
 type SinkInput = { bytes: Blob | ArrayBuffer };

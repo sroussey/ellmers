@@ -14,7 +14,7 @@ const RUN_SUPABASE_TESTS = process.env["RUN_SUPABASE_TESTS"] === "1";
 
 const client = createSupabaseMockClient();
 
-describe.skipIf(!RUN_SUPABASE_TESTS)("SupabaseJobStoreExtensions", () => {
+describe.skipIf(!RUN_SUPABASE_TESTS)("Supabase jobStore extensions (createSupabaseQueue)", () => {
   afterAll(async () => {
     await client.close();
   });

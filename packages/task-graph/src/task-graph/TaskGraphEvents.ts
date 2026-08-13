@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { EventParameters } from "@workglow/util";
-import type { StreamEvent } from "../task/StreamTypes";
+import type { EventParameters } from "@workglow/util";
+import type { StreamEvent, Usage } from "../task/StreamTypes";
 import type { TaskEntitlements } from "../task/TaskEntitlements";
-import { TaskIdType } from "../task/TaskTypes";
-import { DataflowIdType } from "./Dataflow";
+import type { TaskIdType } from "../task/TaskTypes";
+import type { DataflowIdType } from "./Dataflow";
 
 /**
  * Events that can be emitted by the TaskGraph
@@ -53,6 +53,15 @@ export type TaskGraphStatusListeners = {
     message?: string,
     ...args: any[]
   ) => void;
+  /**
+   * Fired with a single task's running token total whenever it changes —
+   * including tasks nested in subgraphs, which bridge it up. Cumulative per task
+   * execution, so consumers replace rather than accumulate.
+   */
+  task_usage: (taskId: TaskIdType, usage: Usage, modelId: string | undefined) => void;
+
+  /** Fired with the run's aggregate token total whenever any task's changes. */
+  graph_usage: (total: Usage) => void;
   /** Fired when the aggregated entitlements of the graph change */
   entitlementChange: (entitlements: TaskEntitlements) => void;
 };

@@ -6,14 +6,31 @@
 
 import { CreateWorkflow, getTaskConstructors, Workflow } from "@workglow/task-graph";
 
-import type { IExecuteContext, IRunConfig, StreamEvent, TaskConfig } from "@workglow/task-graph";
-import { makeFingerprint, ServiceRegistry } from "@workglow/util";
-import { DataPortSchema } from "@workglow/util/schema";
+import type {
+  CachePolicy,
+  IExecuteContext,
+  IRunConfig,
+  StreamEvent,
+  TaskConfig,
+} from "@workglow/task-graph";
+import type { ServiceRegistry } from "@workglow/util";
+import { makeFingerprint } from "@workglow/util";
+import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
-import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
+import { disposeCheckpoint } from "../provider/CheckpointDisposal";
+import type { CheckpointUsageSink } from "../provider/CheckpointRegistry";
+import { checkpointModelKey } from "../provider/CheckpointRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
+import type { ResolvedCheckpoint } from "./base/CheckpointPorts";
+import {
+  CheckpointInputProperties,
+  CheckpointOutputProperty,
+  finalizeEmittedCheckpoint,
+  promptToUserMessage,
+  resolveCheckpointSession,
+} from "./base/CheckpointPorts";
 import { StreamingAiTask } from "./base/StreamingAiTask";
 import type { ChatMessage } from "./ChatMessage";
 import { ChatMessageSchema } from "./ChatMessage";
@@ -213,6 +230,7 @@ export const ToolCallingInputSchema = {
       maximum: 2,
       "x-ui-group": "Configuration",
     },
+    ...CheckpointInputProperties,
   },
   required: ["model", "prompt", "tools"],
   additionalProperties: false,
@@ -234,6 +252,7 @@ export const ToolCallingOutputSchema = {
       description: "Tool calls requested by the model",
       "x-stream": "object",
     },
+    ...CheckpointOutputProperty,
   },
   required: ["text", "toolCalls"],
   additionalProperties: false,
@@ -280,8 +299,11 @@ export type ToolCallingTaskInput = Omit<
   "messages" | "tools"
 > & {
   readonly tools: ToolDefinition[];
-  readonly messages?: ReadonlyArray<ChatMessage>;
-  readonly sessionId?: string;
+  readonly messages?: ReadonlyArray<ChatMessage> | undefined;
+  readonly sessionId?: string | undefined;
+  readonly checkpoint?: string | undefined;
+  readonly emitCheckpoint?: boolean | undefined;
+  readonly keepParentCheckpoint?: boolean | undefined;
 };
 
 export type ToolCallingTaskOutput = {
@@ -292,6 +314,7 @@ export type ToolCallingTaskOutput = {
     input: { [x: string]: unknown };
     providerSignature?: string;
   }[];
+  checkpoint?: string | undefined;
 };
 export type ToolCallingTaskConfig = TaskConfig<ToolCallingTaskInput>;
 
@@ -318,45 +341,164 @@ export class ToolCallingTask extends StreamingAiTask<
   /** Session ID computed during getJobInput, used to register cleanup. */
   private _computedSessionId: string | undefined;
 
+  /** Resolved checkpoint ports (rewind/emit) when the task consumes/emits checkpoints. */
+  private _resolvedCheckpoint: ResolvedCheckpoint | undefined;
+
+  /**
+   * Checkpoint runs must never be output-cached: the emitted/consumed
+   * checkpoint ids are run-scoped registry handles, so a cache hit would
+   * replay an id whose session no longer exists.
+   */
+  public override getCachePolicy(inputs: ToolCallingTaskInput): CachePolicy {
+    if (inputs.checkpoint || inputs.emitCheckpoint) return { kind: "none" };
+    return super.getCachePolicy(inputs);
+  }
+
+  /**
+   * Clear per-run session state left by a prior run of a reused task instance:
+   * the resolved checkpoint and the auto-computed fingerprint session id (a
+   * checkpoint run skips the fingerprint path, so a stale id from an earlier
+   * run must not be re-registered on this run's scope). Done via a method (not
+   * inline assignments) so control-flow analysis does not narrow
+   * {@link _resolvedCheckpoint} to `undefined` for the rest of the caller —
+   * {@link getJobInput} repopulates it before it is read.
+   */
+  private resetResolvedCheckpoint(): void {
+    this._resolvedCheckpoint = undefined;
+    this._computedSessionId = undefined;
+  }
+
   /**
    * Override to auto-compute a prefix-rewind session ID from tools + systemPrompt
    * + runnerId when no explicit sessionId is provided. The runnerId scopes the
    * cache to the current graph run so it's cleaned up via ResourceScope.
+   *
+   * Explicit checkpoint ports (rewind/emit) take precedence over the
+   * auto-fingerprint session.
    */
   protected override async getJobInput(
     input: ToolCallingTaskInput
   ): Promise<AiJobInput<ToolCallingTaskInput>> {
     const jobInput = await super.getJobInput(input);
 
-    if (!jobInput.sessionId && input.tools && input.tools.length > 0) {
-      jobInput.sessionId = await makeFingerprint({
+    const model = input.model as ModelConfig;
+    if ((input.checkpoint || input.emitCheckpoint) && model && typeof model === "object") {
+      this._resolvedCheckpoint ??= resolveCheckpointSession(input, model, "ToolCallingTask");
+      if (this._resolvedCheckpoint) {
+        jobInput.session = this._resolvedCheckpoint.session;
+        return jobInput;
+      }
+    }
+
+    if (!jobInput.session?.sessionId && input.tools && input.tools.length > 0) {
+      // Model identity must be part of the fingerprint: the local providers'
+      // session maps are keyed by this id alone, so two models sharing a
+      // toolset would otherwise reuse each other's KV state.
+      const modelKey =
+        model && typeof model === "object"
+          ? `${model.provider}:${checkpointModelKey(model)}`
+          : String(input.model);
+      const sessionId = await makeFingerprint({
         tools: input.tools,
         systemPrompt: input.systemPrompt,
+        model: modelKey,
         runnerId: this.runConfig.runnerId,
       });
-      this._computedSessionId = jobInput.sessionId;
+      jobInput.session = { sessionId };
+      this._computedSessionId = sessionId;
     }
 
     return jobInput;
   }
 
   private registerSessionDispose(input: ToolCallingTaskInput, context: IExecuteContext): void {
-    const sessionId = this._computedSessionId;
-    if (!sessionId || !context.resourceScope) return;
+    if (!context.resourceScope) return;
 
     const model = input.model as ModelConfig;
     if (!model || typeof model !== "object") return;
 
     const providerName = model.provider;
-    context.resourceScope.register(`ai:session:${sessionId}`, async () => {
-      await getAiProviderRegistry().disposeSession(providerName, sessionId);
+
+    const sessionId = this._computedSessionId;
+    if (sessionId) {
+      context.resourceScope.register(`ai:session:${sessionId}`, async () => {
+        await disposeCheckpoint(sessionId, providerName);
+      });
+    }
+
+    const emitId = this._resolvedCheckpoint?.emitCheckpointId;
+    if (emitId) {
+      context.resourceScope.register(`ai:session:${emitId}`, async () => {
+        await disposeCheckpoint(emitId, providerName);
+      });
+    }
+  }
+
+  /**
+   * Reports an emitted checkpoint's disposal-time storage charge as this
+   * task's usage, and through it into the run total.
+   */
+  private storageChargeSink(): CheckpointUsageSink {
+    return (usage, modelId) => this.chargeLateUsage(usage, modelId);
+  }
+
+  private async finalizeCheckpoint(
+    input: ToolCallingTaskInput,
+    out: { text: string; toolCalls: ToolCallingTaskOutput["toolCalls"] }
+  ): Promise<void> {
+    const resolved = this._resolvedCheckpoint;
+    if (!resolved?.emitCheckpointId) return;
+    const model = input.model as ModelConfig;
+    const tailMessages: ChatMessage[] =
+      input.messages && input.messages.length > 0
+        ? [...input.messages]
+        : [promptToUserMessage(input.prompt)];
+    const assistantContent = [
+      ...(out.text ? ([{ type: "text", text: out.text }] as const) : []),
+      ...out.toolCalls.map(
+        (tc) => ({ type: "tool_use", id: tc.id, name: tc.name, input: tc.input }) as const
+      ),
+    ];
+    await finalizeEmittedCheckpoint({
+      model,
+      resolved,
+      tailMessages,
+      // A turn with no text and no valid tool calls records no assistant
+      // message — an empty one poisons the prefix for replay (Anthropic 400s).
+      assistantMessage:
+        assistantContent.length > 0 ? { role: "assistant", content: assistantContent } : undefined,
+      systemPrompt: input.systemPrompt,
+      tools: input.tools,
+      onStorageCharge: this.storageChargeSink(),
     });
+  }
+
+  /**
+   * Best-effort dispose of a minted-but-unfinalized emit checkpoint session.
+   * When the run fails before {@link finalizeCheckpoint} records the registry
+   * entry, only the provider session leaks (no checkpoint entry exists yet), so
+   * dispose it directly. Dispose errors are swallowed.
+   */
+  private async disposeUnfinalizedEmitSession(
+    input: ToolCallingTaskInput,
+    emitId: string
+  ): Promise<void> {
+    const model = input.model as ModelConfig;
+    if (!model || typeof model !== "object") return;
+    try {
+      await disposeCheckpoint(emitId, model.provider);
+    } catch {
+      // Best-effort cleanup: a dispose failure must not mask the original error.
+    }
   }
 
   override async execute(
     input: ToolCallingTaskInput,
     executeContext: IExecuteContext
   ): Promise<ToolCallingTaskOutput | undefined> {
+    // Reset any checkpoint resolved by a prior run of this reused instance so we
+    // don't re-emit a stale minted id or re-supersede an already-gone parent.
+    this.resetResolvedCheckpoint();
     // Register the session disposer BEFORE running so it still fires if
     // super.execute() throws or the stream aborts mid-iteration — the provider
     // may already have allocated the session on the first run-fn invocation.
@@ -364,19 +506,80 @@ export class ToolCallingTask extends StreamingAiTask<
     // so computing the session id up front and registering early is safe.
     await this.getJobInput(input);
     this.registerSessionDispose(input, executeContext);
-    return super.execute(input, executeContext);
+    const emitId = this._resolvedCheckpoint?.emitCheckpointId;
+    let output: ToolCallingTaskOutput | undefined;
+    try {
+      output = await super.execute(input, executeContext);
+    } catch (err) {
+      if (emitId) await this.disposeUnfinalizedEmitSession(input, emitId);
+      throw err;
+    }
+    if (output && emitId) {
+      await this.finalizeCheckpoint(input, output);
+      return { ...output, checkpoint: emitId };
+    }
+    return output;
   }
 
   override async *executeStream(
     input: ToolCallingTaskInput,
     context: IExecuteContext
   ): AsyncIterable<StreamEvent<ToolCallingTaskOutput>> {
+    // Reset any checkpoint resolved by a prior run of this reused instance so we
+    // don't re-emit a stale minted id or re-supersede an already-gone parent.
+    this.resetResolvedCheckpoint();
     // Register the session disposer BEFORE streaming for the same reason as
     // execute(): an abort or throw mid-stream must still leave the disposer
     // registered so disposeSession runs on scope teardown.
     await this.getJobInput(input);
     this.registerSessionDispose(input, context);
-    yield* super.executeStream(input, context);
+
+    const emitId = this._resolvedCheckpoint?.emitCheckpointId;
+    if (!emitId) {
+      yield* super.executeStream(input, context);
+      return;
+    }
+
+    let text = "";
+    let toolCalls: ToolCallingTaskOutput["toolCalls"] = [];
+    let finalized = false;
+    try {
+      for await (const event of super.executeStream(input, context)) {
+        if (event.type === "text-delta" && (event.port ?? "text") === "text") {
+          text += event.textDelta;
+        } else if (event.type === "object-delta" && event.port === "toolCalls") {
+          // Mirror StreamProcessor's canonical accumulation: array deltas are
+          // upserts by id (OpenAI-shaped providers emit one single-element
+          // array per tool call), non-array deltas replace.
+          const delta = event.objectDelta;
+          if (Array.isArray(delta)) {
+            const merged = [...toolCalls];
+            for (const item of delta as ToolCallingTaskOutput["toolCalls"]) {
+              const idx = item.id !== undefined ? merged.findIndex((e) => e.id === item.id) : -1;
+              if (idx >= 0) merged[idx] = item;
+              else merged.push(item);
+            }
+            toolCalls = merged;
+          } else {
+            toolCalls = delta as unknown as ToolCallingTaskOutput["toolCalls"];
+          }
+        }
+        if (event.type === "finish") {
+          await this.finalizeCheckpoint(input, { text, toolCalls });
+          finalized = true;
+          yield {
+            type: "text-delta",
+            port: "checkpoint",
+            textDelta: emitId,
+          } as StreamEvent<ToolCallingTaskOutput>;
+        }
+        yield event;
+      }
+    } finally {
+      // Stream error or abandonment before the finish event leaves the minted
+      // emit session allocated but never registered — dispose it.
+      if (!finalized) await this.disposeUnfinalizedEmitSession(input, emitId);
+    }
   }
 }
 

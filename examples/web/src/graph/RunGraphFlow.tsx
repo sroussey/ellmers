@@ -4,22 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Dataflow, TaskGraph, TaskGraphEvents } from "@workglow/task-graph";
-import {
-  Controls,
-  Edge,
-  EdgeTypes,
-  Node,
-  NodeTypes,
-  ReactFlow,
-  useEdgesState,
-  useNodesState,
-  useReactFlow,
-} from "@xyflow/react";
-import React, { Dispatch, SetStateAction, useCallback, useEffect, useRef } from "react";
+import type { Dataflow, TaskGraph, TaskGraphEvents } from "@workglow/task-graph";
+import type { Edge, EdgeTypes, Node, NodeTypes } from "@xyflow/react";
+import { Controls, ReactFlow, useEdgesState, useNodesState, useReactFlow } from "@xyflow/react";
+import type { Dispatch, SetStateAction } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { computeLayout, GraphPipelineCenteredLayout, GraphPipelineLayout } from "../layout";
-import { DataflowEdge, DataflowEdgeData } from "./DataflowEdge";
-import { TaskNode, TaskNodeData } from "./TaskNode";
+import type { DataflowEdgeData } from "./DataflowEdge";
+import { DataflowEdge } from "./DataflowEdge";
+import { nodeUsage } from "./nodeUsage";
+import type { TaskNodeData } from "./TaskNode";
+import { TaskNode } from "./TaskNode";
 import { updateNode } from "./util";
 
 import "@xyflow/react/dist/base.css";
@@ -224,6 +219,27 @@ export const RunGraphFlow: React.FC<{
       return () => unsubscribes.forEach((unsub) => unsub());
     }
   }, [graph, buildNodesFromTasks, setNodes, updateEdgeStatus]);
+
+  useEffect(() => {
+    // Read the rollup rather than folding `task_usage` here: the event carries
+    // one (task, model) slice, so keying nodes by task id alone would show
+    // whichever model reported last for a task spanning two of them.
+    const syncUsage = (): void => {
+      const byTask = graph.usageAggregator.byTask();
+      setNodes((nodes) =>
+        nodes.map((node) => {
+          const usage = nodeUsage(node.data.task, byTask);
+          return usage === node.data.usage ? node : { ...node, data: { ...node.data, usage } };
+        })
+      );
+    };
+    const unsubTask = graph.subscribe("task_usage", syncUsage);
+    const unsubGraph = graph.subscribe("graph_usage", syncUsage);
+    return () => {
+      unsubTask();
+      unsubGraph();
+    };
+  }, [graph, setNodes]);
 
   useEffect(() => {
     if (nodes.length > 0) {

@@ -8,6 +8,4 @@
 
 export * from "./SupabaseQueueStorage";
 export * from "./SupabaseRateLimiterStorage";
-export * from "./SupabaseMessageQueue";
-export * from "./SupabaseJobStore";
 export * from "./createSupabaseQueue";

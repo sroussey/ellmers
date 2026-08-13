@@ -2,6 +2,7 @@
   "name": "@workglow/browser-control",
   "type": "module",
   "version": "0.3.38",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
@@ -22,8 +23,7 @@
     "build-task": "bun build --sourcemap=external --packages=external --outdir ./dist ./src/task.ts",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "test": "bun test"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "exports": {
     "./task": {

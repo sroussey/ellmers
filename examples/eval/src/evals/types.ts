@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { StreamEvent, Usage } from "@workglow/task-graph";
 import type { DatasetRow, LabelNames } from "../hf/types";
 
 /** What one workflow execution produced for one dataset row. */
@@ -12,10 +13,20 @@ export interface RowPrediction {
   readonly predicted?: string | undefined;
   readonly expectedValue?: number | undefined;
   readonly predictedValue?: number | undefined;
+  readonly usage?: Usage | undefined;
 }
 
-/** Runs the eval workflow for a single dataset row against one model. */
-export type RowExecutor = (row: DatasetRow) => Promise<RowPrediction>;
+/**
+ * Runs the eval workflow for a single dataset row against one model.
+ *
+ * `onStreamChunk`, when passed, is subscribed to the row's underlying task for
+ * the life of the call only — `--stream` is the only caller that passes it, so
+ * an ordinary sweep never pays for the subscription.
+ */
+export type RowExecutor = (
+  row: DatasetRow,
+  onStreamChunk?: (event: StreamEvent) => void
+) => Promise<RowPrediction>;
 
 export interface ColumnOptions {
   readonly textColumn: string;

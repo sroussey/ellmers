@@ -9,7 +9,7 @@ import type {
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
-import { parsePartialJson } from "@workglow/util/worker";
+import { createPartialJsonStream, parsePartialJson } from "@workglow/util/worker";
 import { buildGenaiPrompt, resolveTfmpChatTemplate } from "./TFMP_ChatTemplate";
 import { generateGenaiResponse, getGenaiLlm, withGenaiLock } from "./TFMP_GenaiRuntime";
 import type { TFMPModelConfig } from "./TFMP_ModelSchema";
@@ -76,31 +76,21 @@ export const TFMP_StructuredGeneration: AiProviderRunFn<
     template
   );
 
-  let fullText = "";
-  let jsonStart = -1;
+  // The parser discards any prose or code fence ahead of the first '{', so the
+  // pieces stream straight in with no accumulated copy to re-scan.
+  const json = createPartialJsonStream({ skipPreamble: true });
 
   await withGenaiLock(model!.provider_config.model_path, async () => {
     const llm = await getGenaiLlm(model!, emit, signal);
     await generateGenaiResponse(llm, prompt, signal, (piece) => {
-      fullText += piece;
-      if (jsonStart === -1) {
-        jsonStart = fullText.indexOf("{");
-      }
-      if (jsonStart !== -1) {
-        const partial = parsePartialJson(fullText.slice(jsonStart));
-        if (partial !== undefined) {
-          emit({
-            type: "object-delta",
-            port: "object",
-            objectDelta: partial as Record<string, unknown>,
-          });
-          return;
-        }
+      const partial = json.push(piece);
+      if (partial !== undefined) {
+        emit({ type: "object-delta", port: "object", objectDelta: partial });
+        return;
       }
       emit({ type: "text-delta", port: "text", textDelta: piece });
     });
   });
 
-  const object = extractJsonFromText(fullText);
-  emit({ type: "finish", data: { object } as StructuredGenerationTaskOutput });
+  emit({ type: "finish", data: { object: json.finishObject() } as StructuredGenerationTaskOutput });
 };

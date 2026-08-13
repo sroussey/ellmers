@@ -4,7 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ModelConfig } from "@workglow/ai";
+import type { ModelConfig, ModelPricing } from "@workglow/ai";
+import { estimateCost } from "@workglow/ai";
+import type { StreamEvent, Usage } from "@workglow/task-graph";
 import type { DatasetRow } from "../hf/types";
 import type { EvalKind } from "../models";
 import { ensureEmbeddingDimensions, ensureModelDownloaded, resolveModelConfig } from "../models";
@@ -22,7 +24,45 @@ export interface SweepOptions {
   readonly columns: ColumnOptions;
   readonly context: DatasetContext;
   readonly onProgress?:
-    ((done: number, total: number, model: string, ok: boolean) => void) | undefined;
+    | ((done: number, total: number, model: string, ok: boolean, usage: Usage | undefined) => void)
+    | undefined;
+  /**
+   * Forwarded to each row's executor as its stream-chunk listener. Left
+   * undefined for an ordinary sweep, so nothing subscribes and a 500-row run
+   * pays nothing for it.
+   */
+  readonly onStreamChunk?: ((event: StreamEvent) => void) | undefined;
+}
+
+/**
+ * Map one run's token accounting onto the result row's columns.
+ *
+ * An unreported counter is stored as `null`, never `0` — the database has to
+ * keep the distinction the in-memory type protects, or a model that never
+ * mentions caching becomes indistinguishable from one that cached nothing.
+ */
+export function usageColumns(
+  usage: Usage | undefined,
+  pricing: ModelPricing | undefined
+): {
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cached_tokens: number | null;
+  cache_write_tokens: number | null;
+  total_tokens: number | null;
+  cost: number | null;
+  currency: string | null;
+} {
+  const estimate = usage ? estimateCost(usage, pricing) : undefined;
+  return {
+    input_tokens: usage?.input ?? null,
+    output_tokens: usage?.output ?? null,
+    cached_tokens: usage?.cached ?? null,
+    cache_write_tokens: usage?.cacheWrite ?? null,
+    total_tokens: usage?.total ?? null,
+    cost: estimate?.amount ?? null,
+    currency: estimate?.currency ?? null,
+  };
 }
 
 const EXECUTORS: Record<
@@ -80,10 +120,12 @@ export async function runSweep(
   for (const modelId of options.models) {
     let executor: RowExecutor | undefined;
     let setupError: string | undefined;
+    let modelPricing: ModelPricing | undefined;
     try {
       let config = resolveModelConfig(modelId, options.kind);
       if (options.kind === "similarity") config = await ensureEmbeddingDimensions(config);
       await ensureModelDownloaded(config);
+      modelPricing = config.pricing;
       executor = makeExecutor(options.kind, config, options.columns, options.context);
     } catch (err) {
       setupError = err instanceof Error ? err.message : String(err);
@@ -92,13 +134,15 @@ export async function runSweep(
     for (const { record, row, parseError } of parsedRows) {
       const t0 = performance.now();
       let outcome: SweepOutcome;
+      let outcomeUsage: Usage | undefined;
       if (!executor) {
         outcome = failedOutcome(setupError ?? "executor unavailable");
       } else if (!row) {
         outcome = failedOutcome(parseError ?? "invalid stored row");
       } else {
         try {
-          const prediction = await executor(row);
+          const prediction = await executor(row, options.onStreamChunk);
+          outcomeUsage = prediction.usage;
           outcome = {
             ok: 1,
             error: null,
@@ -117,10 +161,11 @@ export async function runSweep(
         model: modelId,
         row_index: record.row_index,
         latency_ms: Math.round(latency * 100) / 100,
+        ...usageColumns(outcomeUsage, modelPricing),
         ...outcome,
       });
       done++;
-      options.onProgress?.(done, total, modelId, outcome.ok === 1);
+      options.onProgress?.(done, total, modelId, outcome.ok === 1, outcomeUsage);
     }
   }
 

@@ -7,7 +7,7 @@
 import type { ImageValue } from "@workglow/util/media";
 import { describe, expect, it } from "vitest";
 import { CAPABILITIES, type Capability } from "../capability/Capabilities";
-import { AiTask } from "./base/AiTask";
+import type { AiTask } from "./base/AiTask";
 import type { ImageEmbeddingTaskInput } from "./ImageEmbeddingTask";
 import { registerAiTasks } from "./index";
 import { StructuredGenerationTask } from "./StructuredGenerationTask";

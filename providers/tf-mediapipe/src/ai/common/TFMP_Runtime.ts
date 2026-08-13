@@ -14,7 +14,7 @@ import {
 } from "./TFMP_Client";
 import type { TfmpDelegate } from "./TFMP_Delegate";
 import { resolveTfmpDelegate } from "./TFMP_Delegate";
-import { TFMPModelConfig } from "./TFMP_ModelSchema";
+import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 
 export interface TFMPWasmFileset {
   readonly wasmLoaderPath: string;

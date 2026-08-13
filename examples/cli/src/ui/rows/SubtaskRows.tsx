@@ -16,6 +16,7 @@ import {
   sortIterationSlotsForDisplay,
 } from "../taskGraphCliSubscriptions";
 import { useSubtaskRows } from "./useSubtaskRows";
+import { useTaskUsageLine } from "./useTaskUsageLine";
 
 /**
  * A long-running task can own hundreds of subtasks (one generation per eval
@@ -73,8 +74,43 @@ function SubtaskRow({
   readonly iterationSlots: ReadonlyMap<string, IterationSlotRow[]>;
   readonly depth: number;
 }): React.ReactElement {
+  if (task === undefined) {
+    return (
+      <Box flexDirection="column">
+        <TaskStatusProgressRow
+          label={line.label}
+          status={line.status}
+          message={line.message}
+          barProgress={line.progress ?? 0}
+        />
+      </Box>
+    );
+  }
+  return (
+    <SubtaskStatusWithUsage
+      task={task}
+      line={line}
+      iterationSlots={iterationSlots}
+      depth={depth}
+    />
+  );
+}
+
+/** Status + token/cost line for one owned child; isolated so the usage hook is legal. */
+function SubtaskStatusWithUsage({
+  task,
+  line,
+  iterationSlots,
+  depth,
+}: {
+  readonly task: ITask;
+  readonly line: CliTaskLine;
+  readonly iterationSlots: ReadonlyMap<string, IterationSlotRow[]>;
+  readonly depth: number;
+}): React.ReactElement {
   const slots = iterationSlots.get(line.id);
   const sortedSlots = slots ? sortIterationSlotsForDisplay(slots) : [];
+  const usageLine = useTaskUsageLine(task);
   return (
     <Box flexDirection="column">
       <TaskStatusProgressRow
@@ -83,6 +119,7 @@ function SubtaskRow({
         message={line.message}
         barProgress={line.progress ?? 0}
       />
+      {usageLine ? <Text dimColor> {usageLine}</Text> : null}
       {sortedSlots.map((slot) => (
         <Box key={`${line.id}-iter-${slot.index}`} flexDirection="column" paddingLeft={2}>
           <TaskStatusProgressRow
@@ -94,7 +131,7 @@ function SubtaskRow({
           />
         </Box>
       ))}
-      {task !== undefined && depth < MAX_SUBTASK_DEPTH && (
+      {depth < MAX_SUBTASK_DEPTH && (
         <NestedSubtaskRows task={task} parentType={line.type} depth={depth} />
       )}
     </Box>

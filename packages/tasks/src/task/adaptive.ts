@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateAdaptiveWorkflow, TaskConfig, Workflow } from "@workglow/task-graph";
+import type { TaskConfig } from "@workglow/task-graph";
+import { CreateAdaptiveWorkflow, Workflow } from "@workglow/task-graph";
 import { ScalarAddTask } from "./scalar/ScalarAddTask";
 import { ScalarDivideTask } from "./scalar/ScalarDivideTask";
 import { ScalarMultiplyTask } from "./scalar/ScalarMultiplyTask";

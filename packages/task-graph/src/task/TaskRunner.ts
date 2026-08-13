@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ServiceRegistry } from "@workglow/util";
 import {
   getLogger,
   getTelemetryProvider,
   globalServiceRegistry,
   ResourceScope,
-  ServiceRegistry,
   SpanStatusCode,
 } from "@workglow/util";
 import { isCacheRef, resolveReferenceThreshold } from "../cache/CacheRef";
@@ -24,10 +24,10 @@ import { ensureTask } from "../task-graph/Conversions";
 import { CacheCoordinator } from "./CacheCoordinator";
 import { resolveSchemaInputs, schemaHasFormatAnnotations } from "./InputResolver";
 import type { IRunConfig, ITask } from "./ITask";
-import { ITaskRunner } from "./ITaskRunner";
+import type { ITaskRunner } from "./ITaskRunner";
 import type { BinaryRefSink, StreamSink } from "./StreamProcessor";
 import { StreamProcessor } from "./StreamProcessor";
-import type { StreamEvent } from "./StreamTypes";
+import type { StreamEvent, Usage } from "./StreamTypes";
 import {
   getBinaryPortFormat,
   getOutputStreamMode,
@@ -47,13 +47,37 @@ import {
   TaskTimeoutError,
 } from "./TaskError";
 import { TaskRunContext } from "./TaskRunContext";
-import { TaskConfig, TaskInput, TaskOutput, TaskStatus } from "./TaskTypes";
+import type { TaskConfig, TaskInput, TaskOutput } from "./TaskTypes";
+import { TaskStatus } from "./TaskTypes";
 
 /**
  * Type guard that checks whether a value is an ITask-like object with a mutable `runConfig`.
  */
 function hasRunConfig(i: unknown): i is { runConfig: Partial<IRunConfig> } {
   return i !== null && typeof i === "object" && "runConfig" in (i as object);
+}
+
+/**
+ * Minimal event surface {@link TaskRunner.own} bridges into the run-total sinks.
+ * Kept as its own interface so a `Taskish` union's incompatible `subscribe`
+ * overloads (Task vs TaskGraph) are not what we call after the type guard —
+ * `T & Guard` still leaves `.subscribe` as an uncallable method union.
+ */
+interface OwnUsageEventSource {
+  subscribe(
+    name: "usage",
+    fn: (usage: Usage, modelId: string | undefined) => void
+  ): () => void;
+  subscribe(name: "complete" | "error" | "abort", fn: (...args: never[]) => void): () => void;
+}
+
+/** Type guard for values that expose task lifecycle / usage events. */
+function hasUsageEvents(i: unknown): i is OwnUsageEventSource {
+  return (
+    i !== null &&
+    typeof i === "object" &&
+    typeof (i as { subscribe?: unknown }).subscribe === "function"
+  );
 }
 
 /**
@@ -140,6 +164,34 @@ export class TaskRunner<
   protected registry: ServiceRegistry = globalServiceRegistry;
 
   protected resourceScope?: ResourceScope;
+
+  /**
+   * Where a charge that settles after this run finished is reported. Not
+   * cleared in `run()`'s `finally` — the whole point is that it fires after
+   * the run; the next `handleStart` overwrites it.
+   */
+  protected lateUsageSink?: (taskId: string, usage: Usage, modelId: string | undefined) => void;
+
+  /**
+   * Where an owned child's live cumulative usage snapshot is published into
+   * the run total. Stamped onto owned children so nested `own()` chains still
+   * reach the root; the parent also subscribes at `own()` time so a direct
+   * child's `usage` events fire the sink without waiting for the child to
+   * re-stamp anything.
+   */
+  protected usageSink?: (taskId: string, usage: Usage, modelId: string | undefined) => void;
+
+  /**
+   * Retires an owned child's live usage bucket when that child finishes. See
+   * {@link IRunConfig.usageRetireSink}.
+   */
+  protected usageRetireSink?: (taskId: string) => void;
+
+  /**
+   * Teardowns for `usage` subscriptions installed by {@link own}. Cleared in
+   * `run()`'s `finally` and individually by {@link disown}.
+   */
+  private readonly ownedUsageUnsubs = new Map<object, () => void>();
 
   /**
    * True when `this.resourceScope` was auto-created by `run()` (caller did not
@@ -477,6 +529,8 @@ export class TaskRunner<
       }
       throw err;
     } finally {
+      for (const off of this.ownedUsageUnsubs.values()) off();
+      this.ownedUsageUnsubs.clear();
       if (ownsScope) {
         await effectiveConfig.resourceScope!.runComplete();
         this.resourceScope = undefined;
@@ -797,21 +851,44 @@ export class TaskRunner<
     this.currentCtx?.abortController.abort();
   }
 
+  /** @internal Forwards a post-completion charge to the run's usage sink. */
+  public reportLateUsage(usage: Usage, modelId: string | undefined): void {
+    try {
+      this.lateUsageSink?.(String(this.task.id), usage, modelId);
+    } catch (err) {
+      getLogger().error("late usage sink threw", { taskId: this.task.id, error: err });
+    }
+  }
+
   /**
-   * Stream-pacing options retained from the current run's config (resolved in
+   * Run options retained from the current run's config (resolved in
    * handleStart), in the shape both `TaskGraphRunConfig` and {@link IRunConfig}
    * accept. Compound tasks spread this into their subgraph runs so nested
-   * graphs inherit the caller's passthrough opt-in, high-water mark, and
-   * watchdog.
+   * graphs inherit the caller's passthrough opt-in, high-water mark, watchdog,
+   * and late-usage sink.
+   *
+   * `lateUsageSink` rides here rather than being threaded per call site
+   * because every nested-run site already spreads this — including
+   * `GraphAsTask.executeStream`, which threads neither `registry` nor
+   * `resourceScope` and would otherwise leave a streaming subgraph's late
+   * charge in an inner aggregator the root run never reads.
    */
   public get streamRunOptions(): Pick<
     IRunConfig,
-    "noAccumulation" | "streamHighWaterBytes" | "streamGateWatchdogMs"
+    | "noAccumulation"
+    | "streamHighWaterBytes"
+    | "streamGateWatchdogMs"
+    | "lateUsageSink"
+    | "usageSink"
+    | "usageRetireSink"
   > {
     return {
       noAccumulation: this.noAccumulation,
       streamHighWaterBytes: this.streamHighWaterBytes,
       streamGateWatchdogMs: this.streamGateWatchdogMs,
+      lateUsageSink: this.lateUsageSink,
+      usageSink: this.usageSink,
+      usageRetireSink: this.usageRetireSink,
     };
   }
 
@@ -883,11 +960,50 @@ export class TaskRunner<
       const stamp: Partial<IRunConfig> = {
         registry: this.registry,
         signal: this.currentCtx?.abortController.signal,
+        // Unconditional, unlike `resourceScope`: a sink has no disposal
+        // lifetime to leak, and an owned child's own `task.run()` needs it to
+        // reach the run total.
+        lateUsageSink: this.lateUsageSink,
+        usageSink: this.usageSink,
+        usageRetireSink: this.usageRetireSink,
       };
       if (!this.ownsResourceScope) {
         stamp.resourceScope = this.resourceScope;
       }
       Object.assign(i.runConfig, stamp);
+    }
+    // Owned children run via `child.run()`, not the graph scheduler, so their
+    // `usage` events never become `task_usage` unless we bridge them here.
+    // Subscribe on the value the caller runs (`i` for a plain task; for a
+    // graph/workflow the wrapper below is what the subgraph schedules — but
+    // sec's pattern owns a Task and calls `task.run()` on that same value).
+    if ((this.usageSink || this.usageRetireSink) && hasUsageEvents(i)) {
+      // Narrow off the Taskish generic — see OwnUsageEventSource.
+      const events: OwnUsageEventSource = i;
+      const sink = this.usageSink;
+      const retire = this.usageRetireSink;
+      const childId = String(task.id);
+      const previousOff = trackable ? this.ownedUsageUnsubs.get(i) : undefined;
+      previousOff?.();
+      const offs: Array<() => void> = [];
+      if (sink) {
+        offs.push(
+          events.subscribe("usage", (usage: Usage, modelId: string | undefined) => {
+            sink(childId, usage, modelId);
+          })
+        );
+      }
+      if (retire) {
+        const onDone = (): void => retire(childId);
+        offs.push(events.subscribe("complete", onDone));
+        offs.push(events.subscribe("error", onDone));
+        offs.push(events.subscribe("abort", onDone));
+      }
+      if (trackable && offs.length > 0) {
+        this.ownedUsageUnsubs.set(i, () => {
+          for (const off of offs) off();
+        });
+      }
     }
     // Notify listeners that the entitlement landscape may have changed.
     // For GraphAsTask this is also handled by the subGraph subscription, but
@@ -917,6 +1033,11 @@ export class TaskRunner<
     // Drop the record even when the wrapper is already gone (a subgraph reset
     // between runs), so the value can be owned again.
     this.ownedWrappers.delete(i);
+    const off = this.ownedUsageUnsubs.get(i);
+    if (off) {
+      off();
+      this.ownedUsageUnsubs.delete(i);
+    }
     if (!this.isStillOwned(wrapper)) return;
     this.task.subGraph.removeTask(wrapper.id);
     if ((this.task.constructor as typeof Task).hasDynamicEntitlements) {
@@ -993,8 +1114,11 @@ export class TaskRunner<
     this.running = true;
 
     this.task.startedAt = new Date();
+    this.task.completedAt = undefined;
     this.task.progress = 0;
     this.task.status = TaskStatus.PROCESSING;
+    this.task.runUsage = undefined;
+    this.task.runUsageModelId = undefined;
 
     // Build per-run context (handles abortController + parentSignal wiring)
     const ctx = new TaskRunContext(config.signal);
@@ -1081,6 +1205,18 @@ export class TaskRunner<
 
     if (config.resourceScope) {
       this.resourceScope = config.resourceScope;
+    }
+
+    if (config.lateUsageSink) {
+      this.lateUsageSink = config.lateUsageSink;
+    }
+
+    if (config.usageSink) {
+      this.usageSink = config.usageSink;
+    }
+
+    if (config.usageRetireSink) {
+      this.usageRetireSink = config.usageRetireSink;
     }
 
     // Notify the disposal strategy that a new run is starting. Inactivity

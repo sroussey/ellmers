@@ -38,13 +38,19 @@ export const LlamaCpp_TextSummary_Stream: AiProviderRunFn<
           systemPrompt: "Summarize the following text concisely, preserving the key points.",
         });
         try {
-          for await (const e of streamFromSession<TextSummaryTaskOutput>((onTextChunk) => {
-            return session.prompt(input.text, {
-              signal,
-              onTextChunk,
-              ...llamaCppSeedPromptSpread(model.provider_config),
-            });
-          }, signal)) {
+          for await (const e of streamFromSession<TextSummaryTaskOutput>(
+            (onTextChunk) => {
+              return session.prompt(input.text, {
+                signal,
+                onTextChunk,
+                ...llamaCppSeedPromptSpread(model.provider_config),
+              });
+            },
+            signal,
+            {
+              promptText: `Summarize the following text concisely, preserving the key points.\n${input.text}`,
+            }
+          )) {
             emit(e);
           }
         } finally {

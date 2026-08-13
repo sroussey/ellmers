@@ -22,6 +22,8 @@ import { recordUsageTelemetry } from "../capability/UsageTelemetry";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
+import { disposeCheckpoint } from "../provider/CheckpointDisposal";
+import { setCheckpointUsageSink } from "../provider/CheckpointRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { runChatTurn } from "./base/chatTurn";
 import {
@@ -369,13 +371,13 @@ export class AiChatWithKbTask extends StreamingAiTask<
     if (!this._sessionId) {
       this._sessionId = getAiProviderRegistry().createSession(model.provider, model);
     }
-    return {
-      taskType: "AiChatWithKbTask",
-      requires: (this.constructor as typeof AiChatWithKbTask).requires,
-      aiProvider: model.provider,
-      taskInput: input as AiChatWithKbTaskInput & { model: ModelConfig },
+    // Delegate to base so timeoutMs, outputSchema, and any future base fields
+    // are always populated. The base reads (input as any).sessionId and
+    // forwards it as jobInput.session.sessionId.
+    return super.getJobInput({
+      ...input,
       sessionId: this._sessionId,
-    };
+    } as AiChatWithKbTaskInput & { sessionId: string });
   }
 
   override async *executeStream(
@@ -389,6 +391,16 @@ export class AiChatWithKbTask extends StreamingAiTask<
     if (!model || typeof model !== "object") {
       throw new Error("AiChatWithKbTask: model was not resolved to ModelConfig");
     }
+
+    // Strict gating: this override doesn't call super.executeStream, so we
+    // must gate here to match the contract AiTask.execute and
+    // StreamingAiTask.executeStream both enforce.
+    this.gateOrThrow(model);
+    // Set here rather than inherited: this override never calls
+    // super.executeStream, and StreamProcessor reads this field when it emits
+    // `usage`, so leaving it unset files the whole conversation under no model.
+    this.runUsageModelId = model.model_id;
+
     const connector = resolveHumanConnector(context);
 
     const embeddingModel = input.embeddingModel as ModelConfig | undefined;
@@ -410,8 +422,9 @@ export class AiChatWithKbTask extends StreamingAiTask<
 
     if (context.resourceScope && this._sessionId) {
       const sessionId = this._sessionId;
+      setCheckpointUsageSink(sessionId, (usage, modelId) => this.chargeLateUsage(usage, modelId));
       context.resourceScope.register(`ai:session:${sessionId}`, async () => {
-        await getAiProviderRegistry().disposeSession(model.provider, sessionId);
+        await disposeCheckpoint(sessionId, model.provider);
       });
     }
 

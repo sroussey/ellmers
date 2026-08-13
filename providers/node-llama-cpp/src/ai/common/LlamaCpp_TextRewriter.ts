@@ -38,13 +38,17 @@ export const LlamaCpp_TextRewriter_Stream: AiProviderRunFn<
           systemPrompt: input.prompt,
         });
         try {
-          for await (const e of streamFromSession<TextRewriterTaskOutput>((onTextChunk) => {
-            return session.prompt(input.text, {
-              signal,
-              onTextChunk,
-              ...llamaCppSeedPromptSpread(model.provider_config),
-            });
-          }, signal)) {
+          for await (const e of streamFromSession<TextRewriterTaskOutput>(
+            (onTextChunk) => {
+              return session.prompt(input.text, {
+                signal,
+                onTextChunk,
+                ...llamaCppSeedPromptSpread(model.provider_config),
+              });
+            },
+            signal,
+            { promptText: `${input.prompt}\n${input.text}` }
+          )) {
             emit(e);
           }
         } finally {

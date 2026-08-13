@@ -14,7 +14,7 @@ import { setLogger } from "@workglow/util";
 import { XAI } from "@workglow/xai/ai";
 import { registerXaiInline } from "@workglow/xai/ai-runtime";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 
 const RUN = !!process.env.XAI_API_KEY;

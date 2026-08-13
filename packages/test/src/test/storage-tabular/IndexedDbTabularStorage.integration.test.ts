@@ -5,12 +5,13 @@
  */
 
 import { IndexedDbTabularStorage } from "@workglow/indexeddb/storage";
+import { StorageUnsupportedError } from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject, FromSchema } from "@workglow/util/schema";
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 import {
   runTabularStorageContract,
   VectorItemPrimaryKeyNames,
@@ -49,7 +50,14 @@ describe("IndexedDbTabularStorage", () => {
         `${dbName}_compound`,
         SearchSchema,
         SearchPrimaryKeyNames,
-        ["category", ["category", "subcategory"], ["subcategory", "category"], "value"]
+        [
+          "category",
+          ["category", "subcategory"],
+          ["subcategory", "category"],
+          "value",
+          "tag",
+          ["category", "tag"],
+        ]
       ),
     async () => {
       const repo = new IndexedDbTabularStorage<
@@ -342,6 +350,71 @@ describe("IndexedDbTabularStorage", () => {
         expect(results?.length).toBe(3);
         expect(results?.map((e) => e.id).sort()).toEqual(["1", "2", "3"]);
       });
+    });
+  });
+
+  // A column can be listed in `required` and still hold null when its schema
+  // admits null — legal in IndexedDB, impossible in SQL (a required column is
+  // emitted `NOT NULL`). That combination is the only one that reaches the
+  // index planner with a null equality value, because `getCursorSafeIndexes`
+  // keeps only indexes whose every column is required.
+  describe("null equality on a required-but-nullable indexed column", () => {
+    const NullableStatusSchema = {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        category: { type: "string" },
+        status: { anyOf: [{ type: "string" }, { type: "null" }] },
+      },
+      required: ["id", "category", "status"],
+      additionalProperties: false,
+    } as const satisfies DataPortSchemaObject;
+    const NullableStatusPK = ["id"] as const;
+
+    let storage: IndexedDbTabularStorage<typeof NullableStatusSchema, typeof NullableStatusPK>;
+
+    beforeEach(async () => {
+      storage = new IndexedDbTabularStorage<typeof NullableStatusSchema, typeof NullableStatusPK>(
+        `${dbName}_nullable_status_${uuid4().replace(/-/g, "_")}`,
+        NullableStatusSchema,
+        NullableStatusPK,
+        ["status", ["category", "status"]]
+      );
+      await storage.setupDatabase();
+      await storage.put({ id: "1", category: "a", status: null });
+      await storage.put({ id: "2", category: "a", status: "open" });
+    });
+
+    afterEach(async () => {
+      await storage.deleteAll();
+      storage.destroy();
+    });
+
+    it("query resolves the null row instead of rejecting with DataError", async () => {
+      const rows = await storage.query({ status: null });
+      expect(rows?.map((r) => r.id)).toEqual(["1"]);
+    });
+
+    it("query narrows a compound prefix without pushing null into the key range", async () => {
+      const rows = await storage.query({ category: "a", status: null });
+      expect(rows?.map((r) => r.id)).toEqual(["1"]);
+    });
+
+    it("count matches the null row", async () => {
+      expect(await storage.count({ status: null })).toBe(1);
+      expect(await storage.count({ status: "open" })).toBe(1);
+    });
+
+    it("updateWhere patches the null row", async () => {
+      const updated = await storage.updateWhere({ status: null }, { category: "b" });
+      expect(updated?.id).toBe("1");
+      expect((await storage.get({ id: "1" }))?.category).toBe("b");
+    });
+
+    it("queryIndex rejects a null criterion rather than scanning past it", async () => {
+      await expect(
+        storage.queryIndex({ status: null }, { select: ["id", "status"] })
+      ).rejects.toThrow(StorageUnsupportedError);
     });
   });
 

@@ -6,10 +6,10 @@
 
 import { CloudflareClaim } from "@workglow/cloudflare/job-queue";
 import {
-  InMemoryJobStore,
   InMemoryQueueStorage,
   JobStatus,
   type JobStorageFormat,
+  wrapQueueStorage,
 } from "@workglow/job-queue";
 import { describe, expect, it, vi } from "vitest";
 
@@ -40,7 +40,7 @@ function emptyBody(): JobStorageFormat<TestInput, TestOutput> {
 
 async function setup() {
   const core = new InMemoryQueueStorage<TestInput, TestOutput>("q");
-  const jobStore = new InMemoryJobStore(core);
+  const jobStore = wrapQueueStorage(core).jobStore;
   const id = await jobStore.create(emptyBody(), {});
   const record = (await jobStore.get(id))!;
   return { jobStore, id, record };

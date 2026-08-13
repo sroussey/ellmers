@@ -4,17 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { TaskError } from "@workglow/task-graph";
+import { Task, TaskAbortedError, TaskConfigurationError, TaskStatus } from "@workglow/task-graph";
 import {
-  Task,
-  TaskAbortedError,
-  TaskConfigurationError,
-  TaskError,
-  TaskStatus,
-} from "@workglow/task-graph";
+  EventTestTask,
+  LongRunningTask,
+  SimpleProcessingTask,
+  TestIOTask,
+} from "@workglow/task-graph/test";
 import { setLogger, sleep } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
-import { EventTestTask, LongRunningTask, SimpleProcessingTask, TestIOTask } from "./TestTasks";
 
 const spyOn = vi.spyOn;
 

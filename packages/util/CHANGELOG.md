@@ -1,5 +1,40 @@
 # @workglow/util
 
+## Unreleased
+
+### Bug Fixes
+
+#### util
+
+- `createPartialJsonStream({ skipPreamble: true })`: **last complete object wins**.
+  A closed root is now provisional — it is retained and scanning resumes, so a
+  later `{` starts a fresh candidate that supersedes it. Previously the parser
+  latched onto the FIRST syntactically valid object in the preamble and ignored
+  the real payload, while still reporting `complete: true`. A thinking model that
+  restates the schema (`{"type":"object"}`) or shows a few-shot example
+  (`{"name":"Alice"}`) before answering therefore returned the wrong document —
+  and a schema-shaped one passes re-validation, so it was persisted silently.
+  Nothing is re-scanned, so the parser stays O(total input); the accepted
+  trade-off is that trailing prose containing a complete object now supersedes
+  the payload. `Mode.Done` is no longer reachable in this mode, so the parser
+  keeps scanning trailing text for the life of the stream (bounded, no buffering).
+- `PartialJsonStream.complete` no longer reports `true` for a root that only
+  closed because `finish()` repaired a truncated token (`push('"abc')`).
+
+### BREAKING
+
+#### util
+
+- `PartialJsonStream.finish()` is now declared as `JsonValue` (a new exported
+  type) instead of `Record<string, unknown>`. The runtime behavior is unchanged
+  — an array- or scalar-rooted document was always returned as such — but the
+  declared type was a lie, so `Object.keys(stream.finish())` on an array root
+  type-checked and silently produced `["0","1","2"]`. Callers feeding a consumer
+  that requires an object should switch to the new
+  `PartialJsonStream.finishObject()`, which yields `{}` for an array or scalar
+  root; all in-repo provider run-fns have been migrated. Third-party run-fns
+  calling `finish()` will see a compile break — intentionally.
+
 ## 0.3.38
 
 ### Features

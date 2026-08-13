@@ -4,10 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFn, Capability } from "@workglow/ai";
+import type { AiJobInput, AiProviderRunFn, Capability } from "@workglow/ai";
 import {
   AiJob,
-  AiJobInput,
   AiProviderRegistry,
   getAiProviderRegistry,
   setAiProviderRegistry,
@@ -21,17 +20,15 @@ import {
   RateLimiter,
   wrapQueueStorage,
 } from "@workglow/job-queue";
-import type { StreamEvent } from "@workglow/task-graph";
+import type { StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
 import {
   getTaskQueueRegistry,
   setTaskQueueRegistry,
-  TaskInput,
-  TaskOutput,
   TaskQueueRegistry,
 } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 const MOCK_PROVIDER = "mock-streaming-provider";
 const TEXT_GENERATION: readonly Capability[] = ["text.generation"];

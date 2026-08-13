@@ -76,6 +76,17 @@ export class ConditionalTask<
   Output extends TaskOutput = TaskOutput,
   Config extends ConditionalTaskConfig = ConditionalTaskConfig,
 > extends Task<Input, Output, Config> {
+  /**
+   * Marks the branch-routing family for the scheduler.
+   *
+   * The scheduler tests this instead of `instanceof` so it can reach this class
+   * through a type-only import: a value import closes the
+   * `Task -> TaskGraph -> TaskGraphRunner -> RunScheduler -> ConditionalTask`
+   * module cycle, and any module that enters it at `Task` then evaluates this
+   * class body before `Task` is defined. Subclasses inherit the flag, so the
+   * check keeps `instanceof` semantics.
+   */
+  static readonly isConditionalTask = true;
   static override type: TaskTypeName = "ConditionalTask";
   static override category = "Flow Control";
   static override title = "Condition";

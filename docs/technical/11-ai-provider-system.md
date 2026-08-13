@@ -384,7 +384,7 @@ yields a single `finish` event so GPU serialization is still respected.
 
 ## Vendor Provider Packages
 
-Unlike core packages that build per-runtime targets (`browser.ts`, `node.ts`, `bun.ts`), each
+Unlike core packages that build per-runtime targets (`browser.ts`, `node.ts`), each
 provider lives in its own package under `providers/*` with optional peer dependencies on the
 underlying vendor SDK. Providers import shared base classes and helpers from
 `@workglow/ai/provider-utils`.

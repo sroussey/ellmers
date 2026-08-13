@@ -13,6 +13,7 @@
  */
 // organize-imports-ignore
 
+export * from "./common/OpenAI_CacheCheckpoint";
 export * from "./common/OpenAI_Client";
 export * from "./registerOpenAiInline";
 export * from "./registerOpenAiWorker";

@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { IJobExecuteContext } from "@workglow/job-queue";
 import {
   AbortSignalJobError,
-  IJobExecuteContext,
   Job,
   PermanentJobError,
   RetryableJobError,
   withJobErrorDiagnostics,
 } from "@workglow/job-queue";
-import { TaskInput, TaskOutput } from "@workglow/task-graph";
+import type { TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { JsonSchema } from "@workglow/util/schema";
 import type { AiEmit } from "../capability/AiEmit";
 import type { Capability } from "../capability/Capabilities";
@@ -22,6 +22,7 @@ import {
   ProviderUnsupportedFeatureError,
 } from "../errors/ImageGenerationErrors";
 import type { ModelConfig } from "../model/ModelSchema";
+import type { AiSessionContext } from "../provider/AiProviderRegistry";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 
 /** Default timeout for provider API calls (60 minutes). */
@@ -78,8 +79,8 @@ export interface AiJobInput<Input extends TaskInput = TaskInput> {
   outputSchema?: JsonSchema;
   /** Timeout in milliseconds for the provider API call. Defaults to 120s. */
   timeoutMs?: number;
-  /** Opaque session token for multi-turn conversation caching (KV cache for local models, prompt caching for API providers). */
-  sessionId?: string;
+  /** Session / cache-checkpoint context forwarded to the provider run function. */
+  session?: AiSessionContext;
 }
 
 /**
@@ -279,7 +280,7 @@ export class AiJob<
         localController.signal,
         emit,
         input.outputSchema,
-        input.sessionId
+        input.session
       );
     } catch (err) {
       throw classifyProviderError(err, input.taskType, input.aiProvider);

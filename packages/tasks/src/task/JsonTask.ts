@@ -4,20 +4,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskGraphJson } from "@workglow/task-graph";
+import type {
+  GraphAsTaskConfig,
+  JsonTaskItem,
+  TaskConfig,
+  TaskGraphJson,
+} from "@workglow/task-graph";
 import {
   createGraphFromDependencyJSON,
   createGraphFromGraphJSON,
   CreateWorkflow,
-  Dataflow,
   GraphAsTask,
-  GraphAsTaskConfig,
-  JsonTaskItem,
-  TaskConfig,
-  TaskConfigurationError,
   Workflow,
 } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
 const inputSchema = {
   type: "object",
@@ -91,23 +91,8 @@ export class JsonTask<
       return;
     }
 
-    let jsonItems: JsonTaskItem[] = Array.isArray(data) ? data : [data as JsonTaskItem];
+    const jsonItems: JsonTaskItem[] = Array.isArray(data) ? data : [data as JsonTaskItem];
     this.subGraph = createGraphFromDependencyJSON(jsonItems, this.runConfig?.registry);
-
-    for (const item of jsonItems) {
-      if (!item.dependencies) continue;
-      for (const [input, dependency] of Object.entries(item.dependencies)) {
-        const dependencies = Array.isArray(dependency) ? dependency : [dependency];
-        for (const dep of dependencies) {
-          const sourceTask = this.subGraph.getTask(dep.id);
-          if (!sourceTask) {
-            throw new TaskConfigurationError(`Dependency id ${dep.id} not found`);
-          }
-          const df = new Dataflow(sourceTask.id, dep.output, item.id, input);
-          this.subGraph.addDataflow(df);
-        }
-      }
-    }
     super.regenerateGraph();
   }
 }

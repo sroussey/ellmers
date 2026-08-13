@@ -11,12 +11,7 @@ export * from "./common/WebBrowser_Constants";
 export * from "./common/WebBrowser_ModelSchema";
 export * from "./registerWebBrowser";
 
-import {
-  CONSERVATIVE_PROBED_CAPABILITIES,
-  inferWebBrowserCapabilities,
-  inferWebBrowserCapabilitiesAsync,
-  WEB_BROWSER_RUN_FN_SPECS,
-} from "./common/WebBrowser_Capabilities";
+import { WEB_BROWSER_RUN_FN_SPECS } from "./common/WebBrowser_Capabilities";
 import { _resetProbeCache, probeWebBrowserCapabilities } from "./common/WebBrowser_CapabilityProbe";
 import { WebBrowser_Chat } from "./common/WebBrowser_Chat";
 import {
@@ -75,9 +70,6 @@ export const _testOnly = {
   },
   probe: {
     probeWebBrowserCapabilities,
-    inferWebBrowserCapabilities,
-    inferWebBrowserCapabilitiesAsync,
-    CONSERVATIVE_PROBED_CAPABILITIES,
     _resetProbeCache,
   },
   // idle-evict session store (model-level lifecycle, used by ModelDispose)

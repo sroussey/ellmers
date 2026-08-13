@@ -28,8 +28,22 @@ export default defineConfig({
   ].filter(Boolean),
   resolve: {
     mainFields: ["browser", "import", "module", "main"],
-  },
-  build: {
+    // Bun's isolated linker can leave multiple @codemirror / @lezer copies in
+    // the graph; CodeMirror + HighlightStyle use instanceof / shared Tag
+    // identity and break when mixed ("tags is not iterable").
+    dedupe: [
+      "@codemirror/state",
+      "@codemirror/view",
+      "@codemirror/language",
+      "@codemirror/commands",
+      "@codemirror/autocomplete",
+      "@codemirror/lint",
+      "@codemirror/search",
+      "@lezer/common",
+      "@lezer/highlight",
+      "@lezer/lr",
+    ],
+  },  build: {
     target: "esnext",
     rolldownOptions: {
       output: {
@@ -49,7 +63,7 @@ export default defineConfig({
             {
               name: "codemirror",
               priority: 17,
-              test: /node_modules[\\/](?:@codemirror|@uiw[\\/])/,
+              test: /node_modules[\\/](?:@codemirror|@lezer|@uiw[\\/]|style-mod|crelt|w3c-keyname)/,
             },
             {
               name: "huggingface",
@@ -111,8 +125,13 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ["tiktoken", "@huggingface/transformers"],
-    rolldownOptions: {
-      target: "esnext",
-    },
+    // Direct @codemirror/{state,view,language} deps + resolve.dedupe keep a
+    // single copy; do not list them in `include` — Vite fails to resolve them
+    // here under Bun's isolated linker even though app imports work.
+    include: [
+      "@codemirror/lang-json",
+      "@uiw/react-codemirror",
+      "@uiw/codemirror-theme-vscode",
+    ],
   },
 });

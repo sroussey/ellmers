@@ -7,6 +7,7 @@
 import type { AiProviderRunFn } from "@workglow/ai";
 import { collectStream, createEmitQueue, ModelSearchTask } from "@workglow/ai";
 import { Anthropic_ModelSearch_Stream as Anthropic_ModelSearch } from "@workglow/anthropic/ai";
+import { DeepSeek_ModelSearch_Stream as DeepSeek_ModelSearch } from "@workglow/deepseek/ai";
 import { Gemini_ModelSearch_Stream as Gemini_ModelSearch } from "@workglow/google-gemini/ai";
 import { HFI_ModelSearch } from "@workglow/huggingface-inference/ai";
 import { OpenAI_ModelSearch_Stream as OpenAI_ModelSearch } from "@workglow/openai/ai";
@@ -65,6 +66,12 @@ describe("provider model search samples", () => {
     );
     await expect(modelIdsForSearch(Anthropic_ModelSearch, "claude-sonnet-4-6")).resolves.toContain(
       "claude-sonnet-4-6"
+    );
+  });
+
+  test("DeepSeek fallback includes the V4 Pro 0813 GA snapshot", async () => {
+    await expect(modelIdsForSearch(DeepSeek_ModelSearch, "0813")).resolves.toContain(
+      "deepseek-v4-pro-0813"
     );
   });
 

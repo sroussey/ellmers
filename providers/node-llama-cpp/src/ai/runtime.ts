@@ -14,5 +14,10 @@
 // organize-imports-ignore
 
 export * from "./common/LlamaCpp_Runtime";
+export {
+  renderLlamaCppPrefixChatHistory,
+  renderLlamaCppPrefixFunctions,
+} from "./common/LlamaCpp_CacheCheckpoint";
+export { LlamaCpp_SessionDispose } from "./common/LlamaCpp_SessionDispose";
 export * from "./registerLlamaCppInline";
 export * from "./registerLlamaCppWorker";

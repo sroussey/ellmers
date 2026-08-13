@@ -4,10 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFn } from "@workglow/ai";
+import type { AiJobInput, AiProviderRunFn } from "@workglow/ai";
 import {
   AiJob,
-  AiJobInput,
   AiProviderRegistry,
   getAiProviderRegistry,
   setAiProviderRegistry,
@@ -22,16 +21,15 @@ import {
   RateLimiter,
   wrapQueueStorage,
 } from "@workglow/job-queue";
+import type { TaskInput, TaskOutput } from "@workglow/task-graph";
 import {
   getTaskQueueRegistry,
   setTaskQueueRegistry,
-  TaskInput,
-  TaskOutput,
   TaskQueueRegistry,
 } from "@workglow/task-graph";
 import { ResourceScope, setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import { report, snap } from "../../binding/testTiming";
 
 const MOCK_PROVIDER = "mock-phase-provider";

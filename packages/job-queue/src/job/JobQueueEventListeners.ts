@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { EventParameters } from "@workglow/util";
+import type { EventParameters } from "@workglow/util";
 
 /**
  * Events that can be emitted by the JobQueue
@@ -15,7 +15,7 @@ export type JobQueueEventListeners<Input, Output> = {
   job_start: (queueName: string, jobId: unknown) => void;
   job_aborting: (queueName: string, jobId: unknown) => void;
   job_complete: (queueName: string, jobId: unknown, output: Output) => void;
-  job_error: (queueName: string, jobId: unknown, error: string) => void;
+  job_error: (queueName: string, jobId: unknown, error: string, errorCode?: string) => void;
   job_disabled: (queueName: string, jobId: unknown) => void;
   job_retry: (queueName: string, jobId: unknown, visibleAt: Date) => void;
   job_progress: (

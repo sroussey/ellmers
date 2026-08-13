@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { WithModelPricing } from "@workglow/ai/worker";
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
-import { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
+import type { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
 import { WEB_BROWSER } from "./WebBrowser_Constants";
 
 export const WebBrowserModelSchema = {
@@ -63,7 +64,9 @@ export const WebBrowserModelRecordSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type WebBrowserModelRecord = FromSchema<typeof WebBrowserModelRecordSchema>;
+export type WebBrowserModelRecord = WithModelPricing<
+  FromSchema<typeof WebBrowserModelRecordSchema>
+>;
 
 export const WebBrowserModelConfigSchema = {
   type: "object",
@@ -75,4 +78,6 @@ export const WebBrowserModelConfigSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type WebBrowserModelConfig = FromSchema<typeof WebBrowserModelConfigSchema>;
+export type WebBrowserModelConfig = WithModelPricing<
+  FromSchema<typeof WebBrowserModelConfigSchema>
+>;

@@ -24,7 +24,7 @@ import { assertNoExportCollisions } from "./detect-export-collisions";
 const srcDir = join(import.meta.dir, "src");
 const distDir = join(import.meta.dir, "dist");
 
-const barrelPaths = ["common.ts", "browser.ts", "node.ts", "bun.ts"]
+const barrelPaths = ["common.ts", "browser.ts", "node.ts"]
   .map((name) => join(srcDir, name))
   .filter((path) => existsSync(path));
 await assertNoExportCollisions(barrelPaths);

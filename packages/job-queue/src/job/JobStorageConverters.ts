@@ -5,9 +5,8 @@
  */
 
 import { DEFAULT_LIMITS } from "@workglow/util";
-import type { JobStorageFormat } from "../queue-storage/IQueueStorage";
-import { JobStatus } from "../queue-storage/IQueueStorage";
-import { Job, JobClass } from "./Job";
+import type { JobStatus, JobStorageFormat } from "../queue-storage/IQueueStorage";
+import type { Job, JobClass } from "./Job";
 
 /**
  * Convert a date string to a Date object, or null if invalid

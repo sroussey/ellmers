@@ -27,9 +27,9 @@ import {
   TaskQueueRegistry,
 } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { globalServiceRegistry, WORKER_MANAGER } from "@workglow/util/worker";
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 const TEST_PROVIDER_NAME = "test-ai-provider";
 const TEXT_GENERATION: readonly Capability[] = ["text.generation"];

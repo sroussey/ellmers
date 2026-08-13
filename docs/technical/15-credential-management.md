@@ -75,9 +75,13 @@ The full resolution sequence during task execution:
    config.credential_key === "sk-ant-..."  // Already the real API key
 ```
 
-If the credential store does not contain the requested key, the resolver returns the
-original string unchanged, allowing `getClient()` to fall through to the `api_key`
-or environment variable checks.
+If the credential store does not contain the requested key, the resolver returns
+`undefined` — **never the reference string**. Echoing the id back would thread the
+credential's *name* through as its *value*, so a missing key would end up sent as a
+real secret (for example straight into an `Authorization: Bearer <key-name>` header),
+leaking the key name to the remote host and masking the misconfiguration. Consumers
+treat `undefined` as "no credential" and fall through to the `api_key` or environment
+variable checks, or raise their own missing-key error.
 
 ---
 
@@ -249,6 +253,64 @@ extends it with provider-specific fields:
 The `credential_key` field is marked with `"x-ui-hidden": true` in provider schemas,
 keeping it out of end-user form UIs while still participating in the automatic
 resolution system.
+
+---
+
+## Credentials in FetchUrlTask
+
+`FetchUrlTask` consumes credentials through the same `format: "credential"` path: its
+`credential_key` input is resolved to the real secret before `execute()` runs. Two
+sibling ports — plain, non-secret configuration — decide where that secret goes:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `credential_key` | `string` (`format: "credential"`) | -- | Key to look up in the credential store. |
+| `credential_scheme` | `"bearer" \| "basic" \| "header" \| "none"` | `"bearer"` | How the resolved secret is placed on the request. |
+| `credential_header` | `string` | `"Authorization"` | Header name used when `credential_scheme` is `"header"`. |
+
+- **`bearer`** -- `Authorization: Bearer <secret>`. The default, so existing graphs
+  are unaffected.
+- **`basic`** -- `Authorization: Basic <secret>`. The secret is used **verbatim** and
+  must already be the base64 encoding of `user:pass`; the task performs no splitting
+  or encoding of its own.
+- **`header`** -- the raw secret becomes the value of `credential_header`, for
+  API-key style services (e.g. `X-Api-Key`).
+- **`none`** -- the credential is resolved but never placed on the request.
+
+`credential_header` must be 1-64 characters of letters, digits, or hyphens; anything
+else raises a `TaskConfigurationError`. The narrow allow-list rejects the CR/LF, colon
+and whitespace characters that would otherwise let a configured header name inject
+additional headers into the outbound request. Validation runs even for schemes that
+ignore the field, so a malformed name is reported rather than silently discarded.
+
+The placement logic is the exported pure function `applyCredentialToHeaders()`
+(`packages/tasks/src/task/FetchUrlCredentials.ts`), so it can be exercised directly.
+
+### Credentials and the queued path
+
+`FetchUrlTask` can dispatch through a job queue (`config.queue`) to get per-domain
+rate limiting. **A credential cannot be combined with that path.** Queue payloads are
+persisted durably (SQLite / Postgres / SQS), so a resolved secret written into the
+queued job input would be written to storage. Setting both raises a
+`TaskConfigurationError`:
+
+```ts
+// Throws: credential_key cannot be combined with config.queue
+new FetchUrlTask({ queue: "fetch:api.example.com" })
+  .run({ url: "https://api.example.com/data", credential_key: "my-api-key" });
+```
+
+The refusal is deliberate and explicit rather than a silent downgrade to the inline
+path, which would quietly drop the rate limiting the caller asked for. To use both,
+have the queue worker supply the credential itself instead of threading it through
+the job payload.
+
+The invariant holds regardless of scheme: `credential_key`, `credential_scheme`, and
+`credential_header` are all stripped from the job input, so the resolved secret only
+ever exists as an in-process request header. Note that a resolved credential
+**overwrites** a same-named header the caller supplied in `headers` -- the credential
+store is authoritative, and letting a hard-coded header shadow it would silently
+defeat the configured credential.
 
 ---
 

@@ -4,11 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { IExecuteContext, MapTask } from "@workglow/task-graph";
 import {
   Dataflow,
   GraphAsTask,
-  IExecuteContext,
-  MapTask,
   Task,
   TaskGraph,
   Workflow,
@@ -16,10 +15,9 @@ import {
 } from "@workglow/task-graph";
 import { InputTask, OutputTask } from "@workglow/tasks";
 import { Container, ServiceRegistry, setLogger, sleep } from "@workglow/util";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   GraphAsTask_ComputeTask,
   GraphAsTask_InputTask,
@@ -29,7 +27,8 @@ import {
   GraphAsTask_TaskC,
   TestGraphAsTask_AB,
   TestGraphAsTask_Value,
-} from "./TestTasks";
+} from "@workglow/task-graph/test";
+import { getTestingLogger } from "@workglow/util/test";
 
 describe("GraphAsTask Dynamic Schema", () => {
   let logger = getTestingLogger();

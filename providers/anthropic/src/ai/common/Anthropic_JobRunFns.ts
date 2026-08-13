@@ -6,6 +6,7 @@
 
 import type { AiProviderPreviewRunFn, AiProviderRunFnRegistration } from "@workglow/ai";
 import {
+  ANTHROPIC_CACHE_CHECKPOINT,
   ANTHROPIC_COUNT_TOKENS,
   ANTHROPIC_JSON_MODE,
   ANTHROPIC_MODEL_INFO,
@@ -19,6 +20,7 @@ import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 
 export { getClient, getMaxTokens, getModelName, loadAnthropicSDK } from "./Anthropic_Client";
 
+import { Anthropic_CacheCheckpoint_Stream } from "./Anthropic_CacheCheckpoint";
 import {
   Anthropic_CountTokens_Preview,
   Anthropic_CountTokens_Stream,
@@ -54,6 +56,7 @@ export const ANTHROPIC_RUN_FNS: readonly AiProviderRunFnRegistration<
   { serves: ANTHROPIC_COUNT_TOKENS, runFn: Anthropic_CountTokens_Stream },
   { serves: ANTHROPIC_MODEL_SEARCH, runFn: Anthropic_ModelSearch_Stream },
   { serves: ANTHROPIC_MODEL_INFO, runFn: Anthropic_ModelInfo_Stream },
+  { serves: ANTHROPIC_CACHE_CHECKPOINT, runFn: Anthropic_CacheCheckpoint_Stream },
 ];
 
 export const ANTHROPIC_PREVIEW_TASKS: Record<

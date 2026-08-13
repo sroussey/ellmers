@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ServiceRegistry } from "@workglow/util";
 import {
   createServiceToken,
   globalServiceRegistry,
   registerInputCompactor,
   registerInputResolver,
-  ServiceRegistry,
 } from "@workglow/util";
 import { InMemoryModelRepository } from "./InMemoryModelRepository";
-import { ModelRepository } from "./ModelRepository";
+import type { ModelRepository } from "./ModelRepository";
 import type { ModelConfig } from "./ModelSchema";
 
 export const MODEL_REPOSITORY = createServiceToken<ModelRepository>("model.repository");

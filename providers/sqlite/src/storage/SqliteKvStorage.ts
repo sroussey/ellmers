@@ -4,14 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  DefaultKeyValueKey,
-  DefaultKeyValueSchema,
-  IKvStorage,
-  KvViaTabularStorage,
-} from "@workglow/storage";
+import type { IKvStorage } from "@workglow/storage";
+import { DefaultKeyValueKey, DefaultKeyValueSchema, KvViaTabularStorage } from "@workglow/storage";
 import { createServiceToken } from "@workglow/util";
-import { JsonSchema } from "@workglow/util/schema";
+import type { JsonSchema } from "@workglow/util/schema";
 import { SqliteTabularStorage } from "./SqliteTabularStorage";
 
 export const SQLITE_KV_REPOSITORY = createServiceToken<IKvStorage<string, any, any>>(

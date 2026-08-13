@@ -27,17 +27,19 @@ async function main(): Promise<void> {
   const sec = path.join(root, "sec");
   const embarcData = path.join(root, "embarc-data");
 
+  await run(libs, ["install"]);
   await run(libs, ["run", "link-all"]); // link self
   await run(libs, ["run", "use-source"]);
 
+  await run(sec, ["install"]);
   await run(sec, ["run", "link"]); // link self
   await run(sec, ["run", "link-workglow"]); // link from workglow
   await run(sec, ["run", "use-source"]);
 
+  await run(embarcData, ["install"]);
   await run(embarcData, ["run", "link-sec-workglow"]); // link from workglow and sec
 
   console.log("\n✅ dev-link complete (libs → sec → embarc-data)");
-  console.log("Remember: bun run use-dist in libs/sec before committing export changes.");
 }
 
 main().catch((error) => {

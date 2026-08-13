@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { WithModelPricing } from "@workglow/ai/worker";
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
-import type { DataPortSchemaObject } from "@workglow/util/schema";
-import { FromSchema } from "@workglow/util/schema";
+import type { DataPortSchemaObject, FromSchema } from "@workglow/util/schema";
 import { CACTUS_DEFAULT_MODELS_DIR, CACTUS_NEEDLE_26M, LOCAL_CACTUS } from "./Cactus_Constants";
 
 export const CactusModelSchema = {
@@ -50,7 +50,7 @@ export const CactusModelRecordSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type CactusModelRecord = FromSchema<typeof CactusModelRecordSchema>;
+export type CactusModelRecord = WithModelPricing<FromSchema<typeof CactusModelRecordSchema>>;
 
 export const CactusModelConfigSchema = {
   type: "object",
@@ -62,4 +62,4 @@ export const CactusModelConfigSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type CactusModelConfig = FromSchema<typeof CactusModelConfigSchema>;
+export type CactusModelConfig = WithModelPricing<FromSchema<typeof CactusModelConfigSchema>>;

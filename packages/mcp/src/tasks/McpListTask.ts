@@ -10,17 +10,21 @@ import {
   getMcpTaskDeps,
   TypeMcpServer,
 } from "@workglow/mcp/util";
-import type { CachePolicy, IRunConfig, TaskEntitlements } from "@workglow/task-graph";
+import type {
+  CachePolicy,
+  IExecuteContext,
+  IRunConfig,
+  TaskConfig,
+  TaskEntitlements,
+} from "@workglow/task-graph";
 import {
   CreateWorkflow,
   Entitlements,
-  IExecuteContext,
   mergeEntitlements,
   Task,
-  TaskConfig,
   Workflow,
 } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
 const mcpListTypes = ["tools", "resources", "prompts"] as const;
 
@@ -217,7 +221,10 @@ export class McpListTask extends Task<McpListTaskInput, McpListTaskOutput, TaskC
       });
     }
     return mergeEntitlements(base, {
-      entitlements: [{ id: Entitlements.NETWORK_HTTP, reason: "Connects to MCP server over HTTP" }],
+      entitlements: [
+        { id: Entitlements.NETWORK_HTTP, reason: "Connects to MCP server over HTTP" },
+        { id: Entitlements.CREDENTIAL, reason: "May require authentication", optional: true },
+      ],
     });
   }
 

@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { StreamEvent } from "@workglow/task-graph";
-import { TaskInput, TaskOutput } from "@workglow/task-graph";
+import type { StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { JsonSchema, ServiceRegistry } from "@workglow/util/worker";
 import { createServiceToken, globalServiceRegistry, WORKER_MANAGER } from "@workglow/util/worker";
 import type { AiEmit } from "../capability/AiEmit";
@@ -14,6 +13,54 @@ import { DirectExecutionStrategy } from "../execution/DirectExecutionStrategy";
 import type { AiStrategyResolver, IAiExecutionStrategy } from "../execution/IAiExecutionStrategy";
 import type { ModelConfig } from "../model/ModelSchema";
 import type { AiProvider } from "./AiProvider";
+import type { CheckpointPrefix } from "./CheckpointRegistry";
+
+/**
+ * Session/checkpoint context passed to provider run functions.
+ *
+ * - `sessionId`: session to use / rewind source. For checkpoint consumers this
+ *   is the checkpoint id; state may live worker-side under this key.
+ * - `emitCheckpointId`: pre-minted id the provider should snapshot post-turn
+ *   state under at finish (local KV providers only; cloud providers annotate
+ *   the final turn for server-side caching instead).
+ * - `supersedeParent`: dispose `sessionId`'s worker-side state after a
+ *   successful `emitCheckpointId` snapshot.
+ * - `prefix`: resolved prefix content — cloud replay payload and local
+ *   re-encode fallback. When present (and `ownedSession` is not set), run-fns
+ *   must treat `sessionId` as an immutable checkpoint (never write back under
+ *   it).
+ * - `ownedSession`: `sessionId` is the caller's own mutable session (e.g. a
+ *   chat's per-conversation id) that merely STARTS from `prefix` content.
+ *   Local providers keep their normal progressive per-turn KV snapshotting
+ *   under it — a checkpoint-seeded chat must never be slower than a plain
+ *   one — instead of applying checkpoint immutability semantics.
+ * - `seedCheckpointId`: for `ownedSession` consumers, the checkpoint id whose
+ *   provider-side warmed state (server cache entry or local KV snapshot) can
+ *   seed the session's first turn. Read-only: providers must never write back
+ *   or dispose under this id — its lifecycle belongs to the checkpoint.
+ */
+export interface AiSessionContext {
+  readonly sessionId?: string | undefined;
+  readonly emitCheckpointId?: string | undefined;
+  readonly supersedeParent?: boolean | undefined;
+  readonly prefix?: CheckpointPrefix | undefined;
+  readonly ownedSession?: boolean | undefined;
+  readonly seedCheckpointId?: string | undefined;
+}
+
+/**
+ * What a session disposal released, when the provider can state it. Gemini's
+ * server-side CachedContent bills storage by token-hours — a cost that is only
+ * known once the entry's token count and lifetime are both final, i.e. at
+ * disposal. Providers with nothing to report (most of them: local KV sessions,
+ * providers with no server-side cache) resolve `undefined`.
+ */
+export interface SessionDisposalResult {
+  /** Prefix tokens the provider reported writing, when it stated one. */
+  readonly tokens: number | undefined;
+  /** Wall-clock time the released resource was held, in milliseconds. */
+  readonly lifetimeMs: number;
+}
 
 /**
  * Type for the preview run function for AiTask.executePreview().
@@ -44,7 +91,7 @@ export type AiProviderRunFn<
   signal: AbortSignal,
   emit: AiEmit<Output>,
   outputSchema?: JsonSchema,
-  sessionId?: string
+  session?: AiSessionContext
 ) => Promise<void>;
 
 /**
@@ -189,12 +236,17 @@ export class AiProviderRegistry {
    * Disposes a session on the named provider. Silently ignores unknown providers.
    * @param providerName - The provider that owns the session
    * @param sessionId - The session ID to dispose
+   * @returns What the provider released (tokens/lifetime), for providers that
+   *   bill storage and can only state the charge at disposal; `undefined` for
+   *   an unknown provider or one with nothing to report.
    */
-  async disposeSession(providerName: string, sessionId: string): Promise<void> {
+  async disposeSession(
+    providerName: string,
+    sessionId: string
+  ): Promise<SessionDisposalResult | undefined> {
     const provider = this.providers.get(providerName);
-    if (provider) {
-      await provider.disposeSession(sessionId);
-    }
+    if (!provider) return undefined;
+    return (await provider.disposeSession(sessionId)) ?? undefined;
   }
 
   /**
@@ -252,13 +304,13 @@ export class AiProviderRegistry {
       signal: AbortSignal,
       emit: AiEmit,
       outputSchema?: JsonSchema,
-      sessionId?: string
+      session?: AiSessionContext
     ): Promise<void> => {
       const workerManager = globalServiceRegistry.get(WORKER_MANAGER);
       await workerManager.callWorkerRunFunction<StreamEvent<TaskOutput>>(
         providerName,
         key,
-        [input, model, outputSchema, sessionId],
+        [input, model, outputSchema, session],
         { signal, emit }
       );
     };

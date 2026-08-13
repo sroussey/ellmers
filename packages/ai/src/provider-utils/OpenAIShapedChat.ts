@@ -4,11 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { StreamEvent } from "@workglow/task-graph";
+import type { StreamEvent, Usage } from "@workglow/task-graph";
 import { parsePartialJson } from "@workglow/util/worker";
 import type { ToolCallingTaskOutput } from "../task/ToolCallingTask";
 import type { ToolCalls, ToolDefinition } from "../task/ToolCallingUtils";
 import { buildToolDescription, sanitizeToolArgs } from "../task/ToolCallingUtils";
+import { createEstimatedOutputUsageReporter, mapOpenAIChatUsage } from "./UsageMapping";
 
 /**
  * Shared helpers for providers that expose an OpenAI-compatible chat-completions
@@ -135,19 +136,45 @@ interface ToolCallAccumulatorEntry {
  * `{ text: "", toolCalls: [] }` so the final output satisfies
  * {@link ToolCallingTaskOutput} even when the model streams only
  * `tool_calls` (no `content` deltas).
+ *
+ * Returns the stream's token accounting when the request opted in with
+ * `stream_options: { include_usage: true }`, else `undefined`. That usage
+ * arrives on a final chunk with an **empty** `choices` array, so it is read
+ * before the choice-less chunk is skipped. The caller attaches it to its
+ * `finish` event as a sibling of `data`.
+ *
+ * `mapUsage` defaults to the standard OpenAI-shape mapping; a provider that
+ * reports counters beyond that common set (DeepSeek's cache hit/miss split,
+ * OpenRouter's `cost`) passes its own mapper instead.
+ *
+ * Pass `promptText` to emit a provisional ↑ estimate before the first delta —
+ * chat-completions only attach billed usage to the terminal chunk.
  */
 export async function accumulateOpenAIChatStream(
   stream: AsyncIterable<any>,
-  emit: (event: StreamEvent<ToolCallingTaskOutput>) => void
-): Promise<void> {
+  emit: (event: StreamEvent<ToolCallingTaskOutput>) => void,
+  mapUsage: (raw: unknown) => Usage | undefined = mapOpenAIChatUsage,
+  options: { readonly promptText?: string | undefined } = {}
+): Promise<Usage | undefined> {
   const toolCallAccumulator = new Map<number, ToolCallAccumulatorEntry>();
+  // Chat-completions shape only reports billed usage on the final empty-choices
+  // chunk; estimate ↓ from content deltas so the CLI counter moves during the
+  // call. The caller still attaches the provider total to `finish.usage`.
+  const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+  if (options.promptText !== undefined) {
+    provisionalUsage.onPrompt(options.promptText);
+  }
+  let usage: Usage | undefined;
 
   for await (const chunk of stream) {
+    usage = mapUsage(chunk?.usage) ?? usage;
+
     const choice = chunk?.choices?.[0];
     if (!choice) continue;
 
     const contentDelta: string = choice.delta?.content ?? "";
     if (contentDelta) {
+      provisionalUsage.onText(contentDelta);
       emit({ type: "text-delta", port: "text", textDelta: contentDelta });
     }
 
@@ -181,6 +208,11 @@ export async function accumulateOpenAIChatStream(
 
       const parsedInput = parseToolArgs(acc.arguments);
       const sanitizedInput = sanitizeToolArgs(parsedInput) as Record<string, unknown>;
+      // Argument JSON is also generated text — count it so a tools-only reply
+      // still ticks the ↓ counter (content deltas alone would stay silent).
+      if (tcDelta.function?.arguments) {
+        provisionalUsage.onText(tcDelta.function.arguments);
+      }
       emit({
         type: "object-delta",
         port: "toolCalls",
@@ -188,4 +220,7 @@ export async function accumulateOpenAIChatStream(
       });
     }
   }
+
+  provisionalUsage.flush();
+  return usage;
 }

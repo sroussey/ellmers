@@ -7,7 +7,7 @@
 import { uuid4 } from "@workglow/util";
 import type { DataPortSchema, JsonSchema } from "@workglow/util/schema";
 import type { ITask } from "../task/ITask";
-import { Task } from "../task/Task";
+import type { Task } from "../task/Task";
 import type {
   DataflowJson,
   JsonTaskItem,

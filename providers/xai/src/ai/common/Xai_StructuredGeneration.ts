@@ -8,9 +8,15 @@ import type {
   AiProviderRunFn,
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
+  Usage,
 } from "@workglow/ai";
-import { isStrictCompatibleSchema } from "@workglow/ai/provider-utils";
-import { parsePartialJson } from "@workglow/util/worker";
+import {
+  createEstimatedOutputUsageReporter,
+  isStrictCompatibleSchema,
+  mapOpenAIChatUsage,
+  OPENAI_STREAM_USAGE_OPTIONS,
+} from "@workglow/ai/provider-utils";
+import { createPartialJsonStream } from "@workglow/util/worker";
 import { getClient, getModelName } from "./Xai_Client";
 import type { XaiModelConfig } from "./Xai_ModelSchema";
 
@@ -30,6 +36,13 @@ export const Xai_StructuredGeneration_Stream: AiProviderRunFn<
 
   const schema = input.outputSchema ?? outputSchema;
 
+  // xAI only attaches billed usage to the final empty-choices chunk, so without
+  // a provisional estimate the CLI row stays on a static "Preparing" for the
+  // whole TTFB wait. Emit ↑ before the request so it appears during connect;
+  // finish.usage below still carries the provider total.
+  const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+  provisionalUsage.onPrompt(input.prompt);
+
   const stream = await client.chat.completions.create(
     {
       model: modelName,
@@ -45,33 +58,35 @@ export const Xai_StructuredGeneration_Stream: AiProviderRunFn<
       max_completion_tokens: input.maxTokens,
       temperature: input.temperature,
       stream: true,
+      ...OPENAI_STREAM_USAGE_OPTIONS,
     },
     { signal }
   );
 
-  let accumulatedJson = "";
+  const json = createPartialJsonStream();
   let refusal = "";
+  let usage: Usage | undefined;
   for await (const chunk of stream) {
+    usage = mapOpenAIChatUsage(chunk.usage) ?? usage;
     const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
-      accumulatedJson += delta;
-      const partial = parsePartialJson(accumulatedJson);
+      provisionalUsage.onText(delta);
+      const partial = json.push(delta);
       if (partial !== undefined) {
         emit({ type: "object-delta", port: "object", objectDelta: partial });
       }
     }
     refusal += chunk.choices?.[0]?.delta?.refusal ?? "";
   }
+  provisionalUsage.flush();
 
   if (refusal) {
     emit({ type: "refusal", refusal });
   }
 
-  let finalObject: Record<string, unknown>;
-  try {
-    finalObject = JSON.parse(accumulatedJson);
-  } catch {
-    finalObject = parsePartialJson(accumulatedJson) ?? {};
-  }
-  emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
+  emit({
+    type: "finish",
+    data: { object: json.finishObject() } as StructuredGenerationTaskOutput,
+    usage,
+  });
 };

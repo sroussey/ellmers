@@ -4,29 +4,31 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  Dataflow,
+import type {
   GraphResultArray,
   GraphSingleTaskResult,
   ITask,
+  TaskOutput,
+} from "@workglow/task-graph";
+import {
+  Dataflow,
   TaskAbortedError,
   TaskError,
   TaskFailedError,
   TaskGraph,
   TaskGraphRunner,
-  TaskOutput,
   TaskStatus,
 } from "@workglow/task-graph";
-import { setLogger, sleep } from "@workglow/util";
-import { beforeEach, describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   FailingTask,
   FAILURE_MESSAGE,
   LongRunningTask,
   TestDoubleTask,
   TestSquareTask,
-} from "../task/TestTasks";
+} from "@workglow/task-graph/test";
+import { setLogger, sleep } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
+import { beforeEach, describe, expect, it } from "vitest";
 
 describe("TaskSubGraphRunner", () => {
   let logger = getTestingLogger();

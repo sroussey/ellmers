@@ -4,15 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  dropIndexedDbTable,
-  ensureIndexedDbTable,
-  ExpectedIndexDefinition,
-} from "@workglow/indexeddb/storage";
+import type { ExpectedIndexDefinition } from "@workglow/indexeddb/storage";
+import { dropIndexedDbTable, ensureIndexedDbTable } from "@workglow/indexeddb/storage";
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("IndexedDbTable - Migration Tests", () => {
   let logger = getTestingLogger();

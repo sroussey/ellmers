@@ -6,9 +6,9 @@
 
 import { FsFolderTabularStorage } from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { mkdirSync, rmSync } from "fs";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import { runTabularStorageContract } from "../../contract/tabular-storage/runTabularStorageContract";
 import { runGenericTabularStorageSubscriptionTests } from "./genericTabularStorageSubscriptionTests";
 import {
@@ -75,7 +75,14 @@ describe("FsFolderTabularStorage", () => {
           testDir,
           SearchSchema,
           SearchPrimaryKeyNames,
-          ["category", ["category", "subcategory"], ["subcategory", "category"], "value"]
+          [
+            "category",
+            ["category", "subcategory"],
+            ["subcategory", "category"],
+            "value",
+            "tag",
+            ["category", "tag"],
+          ]
         );
       } catch (error) {
         expect(error).toBeDefined();

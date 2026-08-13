@@ -14,9 +14,22 @@ describe("resolveModelConfig", () => {
     expect(resolveModelConfig("o3-mini", "classify").provider).toBe("OPENAI");
     expect(resolveModelConfig("text-embedding-3-small", "similarity").provider).toBe("OPENAI");
     expect(resolveModelConfig("gemini-3-flash-preview", "classify").provider).toBe("GOOGLE_GEMINI");
-    expect(resolveModelConfig("grok-4.5", "classify").provider).toBe("XAI");
+    expect(resolveModelConfig("grok-4.6", "classify").provider).toBe("XAI");
     expect(resolveModelConfig("deepseek-v4-flash", "classify").provider).toBe("DEEPSEEK");
     expect(resolveModelConfig("deepseek-v4-pro", "classify").provider).toBe("DEEPSEEK");
+    expect(resolveModelConfig("deepseek-v4-pro-0813", "classify").provider).toBe("DEEPSEEK");
+  });
+
+  it("prices the DeepSeek V4 Pro 0813 GA snapshot at the published cache-miss rates", () => {
+    const config = resolveModelConfig("deepseek-v4-pro-0813", "extract");
+    expect(config.pricing).toEqual({
+      currency: "USD",
+      input: 0.435,
+      output: 0.87,
+      cached: 0.0435,
+      cacheWrite: undefined,
+      cacheStoragePerHour: undefined,
+    });
   });
 
   it("passes the id through as the provider model name", () => {

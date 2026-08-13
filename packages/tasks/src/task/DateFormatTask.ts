@@ -4,15 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  CreateWorkflow,
-  IExecuteContext,
-  IExecutePreviewContext,
-  Task,
-  TaskConfig,
-  Workflow,
-} from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { IExecuteContext, IExecutePreviewContext, TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Task, TaskInvalidInputError, Workflow } from "@workglow/task-graph";
+import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
 function formatDate(input: {
   value: string;
@@ -24,7 +18,7 @@ function formatDate(input: {
   const date = new Date(dateInput);
 
   if (isNaN(date.getTime())) {
-    throw new Error(`Invalid date: ${input.value}`);
+    throw new TaskInvalidInputError(`Invalid date: ${input.value}`);
   }
 
   const format = input.format ?? "iso";

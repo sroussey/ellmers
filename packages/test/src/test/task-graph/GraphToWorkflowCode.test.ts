@@ -4,19 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { MapTask, ReduceTask, WhileTask } from "@workglow/task-graph";
 import {
   Dataflow,
   graphToWorkflowCode,
-  MapTask,
-  ReduceTask,
   resetMethodNameCache,
   TaskGraph,
-  WhileTask,
   Workflow,
 } from "@workglow/task-graph";
-import { deepEqual, setLogger } from "@workglow/util";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   AddToSumTask,
   DoubleToResultTask as DoubleTask,
@@ -25,9 +20,11 @@ import {
   TestInputTask,
   TestOutputTask,
   TestSimpleTask,
-} from "../task/TestTasks";
+} from "@workglow/task-graph/test";
+import { deepEqual, setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 // Import to register workflow prototype methods
-import "../task/TestTasks";
 
 // Import to register RAG and pipeline workflow prototype methods (side-effect imports)
 import { registerAiTasks } from "@workglow/ai";

@@ -8,6 +8,8 @@ import type { AiProviderRunFn, ToolCallingTaskInput, ToolCallingTaskOutput } fro
 import {
   accumulateOpenAIChatStream,
   buildOpenAITools,
+  createEstimatedOutputUsageReporter,
+  mapOpenAIChatUsage,
   mapOpenAIToolChoice,
 } from "@workglow/ai/provider-utils";
 import { toOpenAIMessages } from "@workglow/ai/worker";
@@ -26,6 +28,10 @@ export const HFI_ToolCalling_Stream: AiProviderRunFn<
   const tools = buildOpenAITools(input.tools);
   const messages = toOpenAIMessages(input);
   const toolChoice = mapOpenAIToolChoice(input.toolChoice, false);
+  const promptText = messages
+    .map((m) => (typeof m.content === "string" ? m.content : ""))
+    .filter(Boolean)
+    .join("\n");
 
   const params: any = {
     model: modelName,
@@ -40,8 +46,14 @@ export const HFI_ToolCalling_Stream: AiProviderRunFn<
     params.tool_choice = toolChoice;
   }
 
+  // Estimate ↑ before the request so the CLI row shows spend during TTFB.
+  createEstimatedOutputUsageReporter(emit).onPrompt(promptText);
+
   const stream = client.chatCompletionStream(params, { signal });
 
-  await accumulateOpenAIChatStream(stream, emit);
-  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
+  // No `include_usage` opt-in here: the request is routed to a third-party
+  // inference provider whose support for it varies. Usage is forwarded when the
+  // upstream volunteers it on the terminal chunk, and stays absent otherwise.
+  const usage = await accumulateOpenAIChatStream(stream, emit, mapOpenAIChatUsage, { promptText });
+  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput, usage });
 };

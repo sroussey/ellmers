@@ -7,7 +7,7 @@
 import type { ITabularStorage, PageCursor } from "@workglow/storage";
 import { makeFingerprint } from "@workglow/util";
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
-import {
+import type {
   RunPrivateTaskOutputPrimaryKeyNames,
   RunPrivateTaskOutputSchema,
 } from "./RunPrivateTaskOutputSchema";

@@ -8,8 +8,13 @@ import type {
   AiProviderRunFn,
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
+  Usage,
 } from "@workglow/ai";
-import { parsePartialJson } from "@workglow/util/worker";
+import {
+  createEstimatedOutputUsageReporter,
+  OPENAI_STREAM_USAGE_OPTIONS,
+} from "@workglow/ai/provider-utils";
+import { createPartialJsonStream } from "@workglow/util/worker";
 import {
   assertNotTruncatedByReasoning,
   getClient,
@@ -17,6 +22,7 @@ import {
   resolveMaxTokens,
 } from "./DeepSeek_Client";
 import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
+import { mapDeepSeekUsage } from "./DeepSeek_Usage";
 
 /**
  * Build the user message for DeepSeek's JSON mode.
@@ -58,27 +64,43 @@ export const DeepSeek_StructuredGeneration_Stream: AiProviderRunFn<
   const modelName = getModelName(model);
 
   const schema = input.outputSchema ?? outputSchema;
+  const userContent = buildJsonPrompt(input.prompt, schema);
+
+  // DeepSeek only attaches billed usage to the final empty-choices chunk, so
+  // without a provisional estimate the CLI row stays on a static "Preparing"
+  // for the whole TTFB wait. Emit ↑ before the request so it appears during
+  // connect; finish.usage below still carries the provider total.
+  const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+  provisionalUsage.onPrompt(userContent);
 
   const stream = await client.chat.completions.create(
     {
       model: modelName,
-      messages: [{ role: "user", content: buildJsonPrompt(input.prompt, schema) }],
+      messages: [{ role: "user", content: userContent }],
       response_format: { type: "json_object" } as never,
       max_tokens: resolveMaxTokens(model, input.maxTokens),
       temperature: input.temperature,
       stream: true,
+      ...OPENAI_STREAM_USAGE_OPTIONS,
     },
     { signal }
   );
 
-  let accumulatedJson = "";
+  const json = createPartialJsonStream();
   let refusal = "";
   let finishReason: string | null | undefined;
+  let usage: Usage | undefined;
+  // The reasoning-exhaustion guard below only distinguishes "no content at all"
+  // from "some content", so retaining one delta answers it without re-growing a
+  // copy of the whole document.
+  let anyContent = "";
   for await (const chunk of stream) {
+    usage = mapDeepSeekUsage(chunk.usage) ?? usage;
     const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
-      accumulatedJson += delta;
-      const partial = parsePartialJson(accumulatedJson);
+      if (anyContent === "") anyContent = delta;
+      provisionalUsage.onText(delta);
+      const partial = json.push(delta);
       if (partial !== undefined) {
         emit({ type: "object-delta", port: "object", objectDelta: partial });
       }
@@ -86,18 +108,17 @@ export const DeepSeek_StructuredGeneration_Stream: AiProviderRunFn<
     refusal += chunk.choices?.[0]?.delta?.refusal ?? "";
     finishReason = chunk.choices?.[0]?.finish_reason ?? finishReason;
   }
+  provisionalUsage.flush();
 
   if (refusal) {
     emit({ type: "refusal", refusal });
   }
 
-  assertNotTruncatedByReasoning(finishReason, accumulatedJson, input.maxTokens);
+  assertNotTruncatedByReasoning(finishReason, anyContent, input.maxTokens);
 
-  let finalObject: Record<string, unknown>;
-  try {
-    finalObject = JSON.parse(accumulatedJson);
-  } catch {
-    finalObject = parsePartialJson(accumulatedJson) ?? {};
-  }
-  emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
+  emit({
+    type: "finish",
+    data: { object: json.finishObject() } as StructuredGenerationTaskOutput,
+    usage,
+  });
 };

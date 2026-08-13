@@ -4,9 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFn, TextRewriterTaskInput, TextRewriterTaskOutput } from "@workglow/ai";
+import type {
+  AiProviderRunFn,
+  TextRewriterTaskInput,
+  TextRewriterTaskOutput,
+  Usage,
+} from "@workglow/ai";
+import {
+  createEstimatedOutputUsageReporter,
+  OPENAI_STREAM_USAGE_OPTIONS,
+} from "@workglow/ai/provider-utils";
 import { getClient, getModelName } from "./DeepSeek_Client";
 import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
+import { mapDeepSeekUsage } from "./DeepSeek_Usage";
 
 /**
  * Streaming run-fn for `["text.rewriter"]`. Emits `text-delta` events on the
@@ -20,6 +30,11 @@ export const DeepSeek_TextRewriter_Stream: AiProviderRunFn<
   const client = await getClient(model);
   const modelName = getModelName(model);
 
+  const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+  provisionalUsage.onPrompt(
+    `${typeof input.prompt === "string" ? input.prompt : ""}\n${typeof input.text === "string" ? input.text : ""}`
+  );
+
   const stream = await client.chat.completions.create(
     {
       model: modelName,
@@ -28,13 +43,17 @@ export const DeepSeek_TextRewriter_Stream: AiProviderRunFn<
         { role: "user", content: input.text },
       ],
       stream: true,
+      ...OPENAI_STREAM_USAGE_OPTIONS,
     },
     { signal }
   );
 
+  let usage: Usage | undefined;
   for await (const chunk of stream) {
+    usage = mapDeepSeekUsage(chunk.usage) ?? usage;
     const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
+      provisionalUsage.onText(delta);
       emit({ type: "text-delta", port: "text", textDelta: delta });
     }
     const refusalDelta = chunk.choices?.[0]?.delta?.refusal ?? "";
@@ -42,5 +61,6 @@ export const DeepSeek_TextRewriter_Stream: AiProviderRunFn<
       emit({ type: "refusal", refusal: refusalDelta });
     }
   }
-  emit({ type: "finish", data: {} as TextRewriterTaskOutput });
+  provisionalUsage.flush();
+  emit({ type: "finish", data: {} as TextRewriterTaskOutput, usage });
 };

@@ -4,7 +4,7 @@
  * All Rights Reserved
  */
 
-import { PropertySchema } from "../schema-entry";
+import type { PropertySchema } from "../schema-entry";
 import type { ImageValue } from "./imageValue";
 
 export type WithImageValuePorts<

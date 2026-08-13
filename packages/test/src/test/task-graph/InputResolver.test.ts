@@ -5,13 +5,14 @@
  */
 
 import { TypeTabularStorage } from "@workglow/knowledge-base";
+import type { AnyTabularStorage } from "@workglow/storage";
 import {
-  AnyTabularStorage,
   getGlobalTabularRepositories,
   InMemoryTabularStorage,
   registerTabularRepository,
 } from "@workglow/storage";
-import { IExecuteContext, resolveSchemaInputs, Task, TaskRegistry } from "@workglow/task-graph";
+import type { IExecuteContext } from "@workglow/task-graph";
+import { resolveSchemaInputs, Task, TaskRegistry } from "@workglow/task-graph";
 import {
   getInputResolvers,
   globalServiceRegistry,
@@ -20,8 +21,8 @@ import {
   sleep,
 } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("InputResolver", () => {
   let logger = getTestingLogger();

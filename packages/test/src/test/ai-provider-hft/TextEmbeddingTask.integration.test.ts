@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { TextEmbeddingTaskOutput } from "@workglow/ai";
 import {
   getGlobalModelRepository,
   InMemoryModelRepository,
   ModelDownloadTask,
   setGlobalModelRepository,
-  TextEmbeddingTaskOutput,
 } from "@workglow/ai";
 import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-runtime";
 import {
@@ -22,7 +22,7 @@ import { getTaskQueueRegistry, setTaskQueueRegistry, Workflow } from "@workglow/
 import { setLogger } from "@workglow/util";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 
 describe("TextEmbeddingTask with real models", () => {
   const logger = getTestingLogger();

@@ -10,11 +10,13 @@ import {
   RunPrivateCacheRepo,
   Task,
 } from "@workglow/task-graph";
+import {
+  RunPrivateInMemoryTaskOutputRepository,
+  StreamingMemoryRepo,
+} from "@workglow/task-graph/test";
 import { Container, ServiceRegistry } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { beforeEach, describe, expect, it } from "vitest";
-import { RunPrivateInMemoryTaskOutputRepository } from "../../binding/RunPrivateInMemoryTaskOutputRepository";
-import { StreamingMemoryRepo } from "../../binding/StreamingMemoryRepo";
 
 async function* gen(...chunks: Uint8Array[]): AsyncIterable<Uint8Array> {
   for (const c of chunks) yield c;

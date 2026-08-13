@@ -3,7 +3,8 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { registerFilterOp, SharpImage } from "@workglow/util/media";
+import type { SharpImage } from "@workglow/util/media";
+import { registerFilterOp } from "@workglow/util/media";
 import type { ResizeParams } from "./resize.cpu";
 
 registerFilterOp<ResizeParams>("sharp", "resize", (image, { width, height, fit, kernel }) => {

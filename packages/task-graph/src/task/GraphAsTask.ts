@@ -12,8 +12,9 @@ import { registerGraphWrapperFactory } from "../task-graph/Conversions";
 import { computeGraphEntitlements } from "../task-graph/GraphEntitlementUtils";
 import { computeGraphInputSchema, computeGraphOutputSchema } from "../task-graph/GraphSchemaUtils";
 import { bridgeSubGraphTaskEvents } from "../task-graph/SubGraphEventBridge";
-import { TaskGraph } from "../task-graph/TaskGraph";
-import { CompoundMergeStrategy, PROPERTY_ARRAY } from "../task-graph/TaskGraphRunner";
+import type { TaskGraph } from "../task-graph/TaskGraph";
+import type { CompoundMergeStrategy } from "../task-graph/TaskGraphRunner";
+import { PROPERTY_ARRAY } from "../task-graph/TaskGraphRunner";
 import type { CreateLoopWorkflow } from "../task-graph/WorkflowFactories";
 import { GraphAsTaskRunner } from "./GraphAsTaskRunner";
 import type { IExecuteContext, IRunConfig } from "./ITask";
@@ -211,7 +212,11 @@ export class GraphAsTask<
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            if (value.type === "finish") continue;
+            // A child's `finish` is its own result, and its `usage` is its own
+            // spend -- the subgraph bridge already forwards that to the parent
+            // graph attributed to the child. Re-yielding it here would have the
+            // run total count the same tokens twice, under two task ids.
+            if (value.type === "finish" || value.type === "usage") continue;
             yield value as StreamEvent<Output>;
           }
         } finally {
@@ -256,7 +261,7 @@ export class GraphAsTask<
 
       const unsub = this.subGraph.subscribeToTaskStreaming({
         onStreamChunk: (taskId, event) => {
-          if (endingNodeIds.has(taskId) && event.type !== "finish") {
+          if (endingNodeIds.has(taskId) && event.type !== "finish" && event.type !== "usage") {
             eventQueue.push(event as StreamEvent<Output>);
             notify();
           }

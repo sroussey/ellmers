@@ -5,7 +5,7 @@
  */
 
 import { createServiceToken } from "@workglow/util";
-import { ILimiter, LimiterScope, RateLimiterOptions } from "./ILimiter";
+import type { ILimiter, LimiterScope, RateLimiterOptions } from "./ILimiter";
 
 export const EVENLY_SPACED_JOB_RATE_LIMITER = createServiceToken<ILimiter>(
   "jobqueue.limiter.rate.evenlyspaced"

@@ -7,29 +7,52 @@
 import type {
   AiProviderRunFn,
   ChatMessage,
+  CheckpointPrefix,
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   ToolCalls,
   ToolDefinition,
 } from "@workglow/ai";
-import { extractMessageText, toolChoiceForcesToolCall } from "@workglow/ai/provider-utils";
+import {
+  createEstimatedOutputUsageReporter,
+  extractMessageText,
+  toolChoiceForcesToolCall,
+} from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
 import type { StreamEvent } from "@workglow/task-graph";
-import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
+  renderLlamaCppPrefixChatHistory,
+  renderLlamaCppPrefixFunctions,
+} from "./LlamaCpp_CacheCheckpoint";
+import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
+import type { LlamaCppSessionState } from "./LlamaCpp_Runtime";
+import {
+  acquireContextSequence,
+  captureSequenceTokenBoundary,
   getActualModelPath,
+  getConfigKey,
   getLlamaCppSdk,
+  getLlamaCppSession,
   getOrCreateTextContext,
   llamaCppChatSessionConstructorSpread,
   llamaCppSeedPromptSpread,
   loadSdk,
+  restoreLlamaCppCheckpointSession,
+  setLlamaCppSession,
+  stealLlamaCppSession,
   withModelInUse,
   withSequence,
+  withSessionLock,
 } from "./LlamaCpp_Runtime";
 import { extractToolCallsFromText } from "./LlamaCpp_ToolParser";
 
-function buildSystemPrompt(input: ToolCallingTaskInput): string | undefined {
-  const base = input.systemPrompt;
+function buildSystemPrompt(
+  input: ToolCallingTaskInput,
+  prefixSystemPrompt: string | undefined = undefined
+): string | undefined {
+  // `||`, not `??`: an explicit empty-string systemPrompt falls through to the
+  // checkpoint prefix's system prompt, matching the other providers.
+  const base = input.systemPrompt || prefixSystemPrompt;
   if (input.toolChoice === "required") {
     const instruction =
       "You must call at least one tool from the provided tool list when answering.";
@@ -38,28 +61,43 @@ function buildSystemPrompt(input: ToolCallingTaskInput): string | undefined {
   return base || undefined;
 }
 
+function buildToolChatHistory(
+  input: ToolCallingTaskInput,
+  prefix: CheckpointPrefix | undefined
+): any[] {
+  const messages: ChatMessage[] = [...(prefix?.messages ?? [])];
+  if (input.messages && input.messages.length > 0) {
+    messages.push(...input.messages);
+  } else {
+    const promptText =
+      typeof input.prompt === "string" ? input.prompt : extractMessageText(input.prompt);
+    messages.push({
+      role: "user",
+      content: [{ type: "text", text: promptText }],
+    });
+  }
+  return convertMessagesToChatHistory(
+    messages,
+    undefined,
+    buildSystemPrompt(input, prefix?.systemPrompt)
+  );
+}
+
 /**
- * Convert workglow messages to node-llama-cpp's `ChatHistoryItem[]`.
- *
- * Key difference from OpenAI/Anthropic format: tool results are NOT separate
- * history items. They get merged into the preceding `model` response's
- * `ChatModelFunctionCall.result` fields, matched by `tool_use_id`.
+ * Pure message-array → `ChatHistoryItem[]` conversion — no trailing empty-user
+ * placeholder when `messages` is empty. Emits only `system` when a system
+ * prompt is provided and messages is empty; that shape is what a cache
+ * checkpoint prefix needs before running any turn. Unknown block types are
+ * skipped rather than throwing (mirrors HFT's posture).
  */
-export function convertMessagesToChatHistory(
-  messages: ReadonlyArray<ChatMessage> | undefined,
-  prompt: string | undefined,
+function messagesToPureChatHistory(
+  messages: ReadonlyArray<ChatMessage>,
   systemPrompt: string | undefined
 ): any[] {
   const history: any[] = [];
 
   if (systemPrompt) {
     history.push({ type: "system", text: systemPrompt });
-  }
-
-  if (!messages || messages.length === 0) {
-    const promptText = typeof prompt === "string" ? prompt : String(prompt ?? "");
-    history.push({ type: "user", text: promptText });
-    return history;
   }
 
   for (const msg of messages) {
@@ -144,7 +182,39 @@ export function convertMessagesToChatHistory(
   return history;
 }
 
-function buildChatModelFunctions(
+/**
+ * Convert workglow messages to node-llama-cpp's `ChatHistoryItem[]` for a
+ * one-shot generation call. When `messages` is empty, `prompt` is appended as
+ * the trailing user turn so the model has something to respond to.
+ *
+ * Key difference from OpenAI/Anthropic format: tool results are NOT separate
+ * history items. They get merged into the preceding `model` response's
+ * `ChatModelFunctionCall.result` fields, matched by `tool_use_id`.
+ */
+export function convertMessagesToChatHistory(
+  messages: ReadonlyArray<ChatMessage> | undefined,
+  prompt: string | undefined,
+  systemPrompt: string | undefined
+): any[] {
+  if (!messages || messages.length === 0) {
+    const history: any[] = [];
+    if (systemPrompt) history.push({ type: "system", text: systemPrompt });
+    const promptText = typeof prompt === "string" ? prompt : String(prompt ?? "");
+    history.push({ type: "user", text: promptText });
+    return history;
+  }
+  return messagesToPureChatHistory(messages, systemPrompt);
+}
+
+/** Pure history renderer for a checkpoint prefix — reused by the checkpoint module. */
+export function messagesToPureChatHistoryForPrefix(
+  messages: ReadonlyArray<ChatMessage>,
+  systemPrompt: string | undefined
+): any[] {
+  return messagesToPureChatHistory(messages, systemPrompt);
+}
+
+export function buildChatModelFunctions(
   tools: ReadonlyArray<ToolDefinition>
 ): Record<string, { description?: string; params?: any }> {
   const functions: Record<string, { description?: string; params?: any }> = {};
@@ -195,15 +265,17 @@ function extractNativeFunctionCalls(
 
 /**
  * Drives an async generation call that pushes text chunks via `onTextChunk`,
- * yielding `text-delta` events as they arrive. Returns accumulated text and
- * the generation result (if any) once complete.
+ * yielding `text-delta` events (and provisional `usage` snapshots) as they
+ * arrive. Returns accumulated text and the generation result (if any) once
+ * complete.
  */
 async function* streamTextChunks<T>(
   startGeneration: (onTextChunk: (chunk: string) => void) => Promise<T>,
   signal: AbortSignal,
-  cleanup: () => void | Promise<void>
+  options: { readonly promptText?: string | undefined } = {}
 ): AsyncGenerator<StreamEvent<ToolCallingTaskOutput>, { text: string; result: T | undefined }> {
   const queue: string[] = [];
+  const pendingUsage: StreamEvent<ToolCallingTaskOutput>[] = [];
   let isComplete = false;
   let completionError: unknown;
   let resolveWait: (() => void) | null = null;
@@ -215,8 +287,17 @@ async function* streamTextChunks<T>(
     resolveWait = null;
   };
 
+  const provisionalUsage = createEstimatedOutputUsageReporter((event) => {
+    pendingUsage.push(event);
+    notifyWaiter();
+  });
+  if (options.promptText !== undefined) {
+    provisionalUsage.onPrompt(options.promptText);
+  }
+
   const generationPromise = startGeneration((chunk: string) => {
     queue.push(chunk);
+    provisionalUsage.onText(chunk);
     notifyWaiter();
   })
     .then((res) => {
@@ -230,26 +311,28 @@ async function* streamTextChunks<T>(
       notifyWaiter();
     });
 
-  try {
-    while (true) {
-      while (queue.length > 0) {
-        const chunk = queue.shift()!;
-        accumulatedText += chunk;
-        yield { type: "text-delta", port: "text", textDelta: chunk };
-      }
-      if (isComplete) break;
-      await new Promise<void>((r) => {
-        resolveWait = r;
-      });
+  const drain = function* (): Generator<StreamEvent<ToolCallingTaskOutput>> {
+    while (pendingUsage.length > 0) {
+      yield pendingUsage.shift()!;
     }
     while (queue.length > 0) {
       const chunk = queue.shift()!;
       accumulatedText += chunk;
       yield { type: "text-delta", port: "text", textDelta: chunk };
     }
+  };
+
+  try {
+    while (true) {
+      yield* drain();
+      if (isComplete) break;
+      await new Promise<void>((r) => {
+        resolveWait = r;
+      });
+    }
+    yield* drain();
   } finally {
     await generationPromise.catch(() => {});
-    await cleanup();
   }
 
   if (completionError) {
@@ -259,14 +342,94 @@ async function* streamTextChunks<T>(
   if (signal.aborted) {
     throw (signal as any).reason ?? new Error("The operation was aborted");
   }
+  provisionalUsage.flush();
+  yield* drain();
   return { text: accumulatedText, result };
+}
+
+async function generateToolResponse(
+  input: ToolCallingTaskInput,
+  model: LlamaCppModelConfig,
+  signal: AbortSignal,
+  emit: (event: StreamEvent<ToolCallingTaskOutput>) => void,
+  sequence: any,
+  prefix: CheckpointPrefix | undefined
+): Promise<{ output: ToolCallingTaskOutput; cleanHistory: any[] }> {
+  const { LlamaChat } = getLlamaCppSdk();
+  let llamaChat: any;
+  let gen:
+    | AsyncGenerator<StreamEvent<ToolCallingTaskOutput>, { text: string; result: any | undefined }>
+    | undefined;
+  try {
+    llamaChat = new LlamaChat({
+      contextSequence: sequence,
+      ...llamaCppChatSessionConstructorSpread(model),
+    });
+
+    const chatHistory = buildToolChatHistory(input, prefix);
+    const functions = buildChatModelFunctions(input.tools);
+    const promptText = [
+      input.systemPrompt ?? "",
+      ...(input.messages ?? []).map((m) => extractMessageText(m.content)),
+      typeof input.prompt === "string" ? input.prompt : extractMessageText(input.prompt),
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    gen = streamTextChunks(
+      (onTextChunk) =>
+        llamaChat.generateResponse(chatHistory, {
+          signal,
+          ...llamaCppChatGenerateOptions(input, model),
+          functions,
+          ...(toolChoiceForcesToolCall(input.toolChoice) && { documentFunctionParams: true }),
+          onTextChunk,
+        }),
+      signal,
+      { promptText }
+    );
+    let step = await gen.next();
+    while (!step.done) {
+      emit(step.value);
+      step = await gen.next();
+    }
+    const { text: accumulatedText, result: chatResponse } = step.value;
+
+    const toolCalls = extractNativeFunctionCalls(chatResponse?.functionCalls);
+
+    // Fallback: parse tool calls from text if native parsing found nothing
+    if (toolCalls.length === 0 && input.tools.length > 0 && input.toolChoice !== "none") {
+      toolCalls.push(...extractToolCallsFromText(accumulatedText, input));
+    }
+    const validToolCalls = filterValidToolCalls(toolCalls, input.tools);
+
+    if (validToolCalls.length > 0) {
+      emit({ type: "object-delta", port: "toolCalls", objectDelta: [...validToolCalls] });
+    }
+
+    return {
+      output: { text: accumulatedText, toolCalls: validToolCalls },
+      cleanHistory: chatResponse?.lastEvaluation.cleanHistory ?? chatHistory,
+    };
+  } finally {
+    if (gen) {
+      try {
+        await gen.return({ text: "", result: undefined });
+      } catch {}
+    }
+    if (llamaChat) {
+      try {
+        await llamaChat.dispose({ disposeSequence: false });
+      } catch {}
+    }
+  }
 }
 
 export const LlamaCpp_ToolCalling_Stream: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   LlamaCppModelConfig
-> = async (input, model, signal, emit) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
   if (!model) throw new Error("Model config is required for ToolCallingTask.");
 
   await loadSdk();
@@ -274,65 +437,206 @@ export const LlamaCpp_ToolCalling_Stream: AiProviderRunFn<
   const modelPath = getActualModelPath(model);
 
   await withModelInUse(modelPath, async () => {
-    const context = await getOrCreateTextContext(model);
+    if (!sessionContext) {
+      const context = await getOrCreateTextContext(model);
+      await withSequence(
+        context,
+        async (sequence) => {
+          const { output } = await generateToolResponse(
+            input,
+            model,
+            signal,
+            emit,
+            sequence,
+            undefined
+          );
+          emit({ type: "finish", data: output });
+        },
+        { signal }
+      );
+      return;
+    }
 
-    await withSequence(
-      context,
-      async (sequence) => {
-        const { LlamaChat } = getLlamaCppSdk();
-        const systemPrompt = buildSystemPrompt(input);
+    const sessionId = sessionContext.sessionId;
+    const isCheckpoint = sessionContext.prefix !== undefined;
+    // Consuming an immutable checkpoint steals ownership atomically — two
+    // concurrent consumers of the same id would otherwise both call `.generate()`
+    // on the shared LlamaContextSequence, which advances in place. The loser of
+    // the steal observes `undefined` and re-encodes via the missing-state
+    // fallback below. AiChatTask's `ownedSession` mode is the caller's mutable
+    // session (not a checkpoint) so it uses the non-consuming getter.
+    const isCheckpointConsumption =
+      isCheckpoint && sessionId !== undefined && !sessionContext.ownedSession;
 
-        const llamaChat = new LlamaChat({
-          contextSequence: sequence,
-          ...llamaCppChatSessionConstructorSpread(model),
-        });
+    const runGeneration = async (): Promise<void> => {
+      // Defense-in-depth at the get site: an entry stored under this id for a
+      // DIFFERENT model must be treated as a miss — its KV tokens belong to the
+      // other model — without stealing, disposing, or overwriting it (the entry
+      // belongs to that task). This run then stays ephemeral.
+      const peeked = sessionId ? getLlamaCppSession(sessionId) : undefined;
+      const modelKeyMismatch = peeked !== undefined && peeked.modelKey !== getConfigKey(model);
+      let cached =
+        peeked !== undefined && !modelKeyMismatch
+          ? isCheckpointConsumption
+            ? stealLlamaCppSession(sessionId!)
+            : peeked
+          : undefined;
+      // A stolen checkpoint session's map entry is already gone — track owned=false
+      // so the dispose path frees it unless it is re-keyed / restored below.
+      // A non-consumption cache hit keeps the map entry, so it stays map-owned.
+      let ownedByMap = Boolean(cached) && !isCheckpointConsumption;
 
-        const promptText =
-          typeof input.prompt === "string" ? input.prompt : extractMessageText(input.prompt);
-        const chatHistory = convertMessagesToChatHistory(input.messages, promptText, systemPrompt);
-        const functions = buildChatModelFunctions(input.tools);
-
-        const gen = streamTextChunks(
-          (onTextChunk) =>
-            llamaChat.generateResponse(chatHistory, {
-              signal,
-              ...llamaCppChatGenerateOptions(input, model),
-              functions,
-              ...(toolChoiceForcesToolCall(input.toolChoice) && { documentFunctionParams: true }),
-              onTextChunk,
-            }),
-          signal,
-          async () => {
+      if (sessionId && !cached && isCheckpoint) {
+        const prefix = sessionContext.prefix!;
+        const { LlamaChatSession } = getLlamaCppSdk();
+        const context = await getOrCreateTextContext(model);
+        const sequence = await acquireContextSequence(context, signal);
+        let chatSession: any;
+        let state: LlamaCppSessionState | undefined;
+        try {
+          chatSession = new LlamaChatSession({
+            contextSequence: sequence,
+            ...(prefix.systemPrompt !== undefined && { systemPrompt: prefix.systemPrompt }),
+            ...llamaCppChatSessionConstructorSpread(model),
+          });
+          // Route the prefix through the model's chat template — feeding role/text
+          // strings via preloadPrompt would bypass the wrapper and drop
+          // tool_use / tool_result blocks. setChatHistory + preloadPrompt("", { functions })
+          // populates KV state via the same wrapper the consumer's generation uses.
+          const history = renderLlamaCppPrefixChatHistory(prefix);
+          chatSession.setChatHistory(history);
+          const functions = renderLlamaCppPrefixFunctions(prefix);
+          await chatSession.preloadPrompt("", {
+            signal,
+            ...(functions ? { functions } : {}),
+          });
+          state = {
+            mode: "prefix-rewind",
+            sequence,
+            session: chatSession,
+            modelKey: getConfigKey(model),
+          };
+        } catch (err) {
+          if (chatSession) {
             try {
-              await llamaChat.dispose({ disposeSequence: false });
+              await chatSession.dispose({ disposeSequence: false });
             } catch {}
           }
-        );
-        let step = await gen.next();
-        while (!step.done) {
-          emit(step.value);
-          step = await gen.next();
+          try {
+            await sequence.dispose();
+          } catch {}
+          throw err;
         }
-        const { text: accumulatedText, result: chatResponse } = step.value;
+        cached = state;
+      }
 
-        const toolCalls = extractNativeFunctionCalls(chatResponse?.functionCalls);
-
-        // Fallback: parse tool calls from text if native parsing found nothing
-        if (toolCalls.length === 0 && input.tools.length > 0 && input.toolChoice !== "none") {
-          toolCalls.push(...extractToolCallsFromText(accumulatedText, input));
+      // Ownership tracking (`ownedByMap`) was decided above alongside the
+      // steal-vs-get split: a stolen or freshly-encoded checkpoint session is
+      // caller-owned until we re-key or restore it; a plain cache hit
+      // (progressive / ownedSession) stays map-owned.
+      const context = cached ? undefined : await getOrCreateTextContext(model);
+      const sequence = cached ? cached.sequence : await acquireContextSequence(context!, signal);
+      let session = cached?.session;
+      if (!session) {
+        const { LlamaChatSession } = getLlamaCppSdk();
+        try {
+          session = new LlamaChatSession({
+            contextSequence: sequence,
+            ...llamaCppChatSessionConstructorSpread(model),
+          });
+        } catch (err) {
+          try {
+            await sequence.dispose();
+          } catch {}
+          throw err;
         }
-        const validToolCalls = filterValidToolCalls(toolCalls, input.tools);
+      }
 
-        if (validToolCalls.length > 0) {
-          emit({ type: "object-delta", port: "toolCalls", objectDelta: [...validToolCalls] });
-        }
-
-        emit({
-          type: "finish",
-          data: { text: accumulatedText, toolCalls: validToolCalls } as ToolCallingTaskOutput,
+      if (sessionId && !cached && !modelKeyMismatch) {
+        setLlamaCppSession(sessionId, {
+          mode: "progressive",
+          sequence,
+          session,
+          modelKey: getConfigKey(model),
         });
-      },
-      { signal }
-    );
+        ownedByMap = true;
+      }
+
+      // Capture the prefix token boundary before generation so a successful
+      // non-superseding consumption can rewind the KV back to the warmed prefix.
+      const prefixBoundary = isCheckpointConsumption
+        ? captureSequenceTokenBoundary(sequence)
+        : undefined;
+
+      try {
+        const { output, cleanHistory } = await generateToolResponse(
+          input,
+          model,
+          signal,
+          emit,
+          sequence,
+          sessionContext.prefix
+        );
+        const emitId = sessionContext.emitCheckpointId;
+        // Re-key under the emitted id only when the consumed parent is
+        // superseded (or when nothing was consumed at all). An emit that keeps
+        // the parent leaves the emitted id with no local KV state — its
+        // consumers take the documented re-encode fallback — so the parent's
+        // warmed state can be restored below.
+        const reKeyForEmit =
+          emitId !== undefined &&
+          (!isCheckpointConsumption || sessionContext.supersedeParent === true);
+        if (!isCheckpointConsumption || reKeyForEmit) {
+          session.setChatHistory(cleanHistory);
+        }
+        emit({ type: "finish", data: output });
+        if (emitId !== undefined && reKeyForEmit) {
+          setLlamaCppSession(emitId, {
+            mode: "prefix-rewind",
+            sequence,
+            session,
+            modelKey: getConfigKey(model),
+          });
+          ownedByMap = true;
+        } else if (isCheckpointConsumption && sessionId) {
+          // Restore-after-consume: rewind the sequence KV to the prefix
+          // boundary and re-register the warmed state under the checkpoint id
+          // so the next consumer reuses it instead of paying a full prefix
+          // re-encode. A consumer that arrived while the session was stolen
+          // already re-encoded via the missing-state fallback (acceptable);
+          // whichever finisher restores first wins and the other disposes. On
+          // any rewind failure the state is disposed below — post-generation
+          // state is never left registered under the checkpoint id.
+          const restored = await restoreLlamaCppCheckpointSession(
+            sessionId,
+            { mode: "prefix-rewind", sequence, session, modelKey: getConfigKey(model) },
+            prefixBoundary,
+            renderLlamaCppPrefixChatHistory(sessionContext.prefix!)
+          );
+          if (restored) ownedByMap = true;
+        }
+      } finally {
+        if (!ownedByMap) {
+          try {
+            await session.dispose({ disposeSequence: false });
+          } catch {}
+          try {
+            await sequence.dispose();
+          } catch {}
+        }
+      }
+    };
+
+    // Non-consuming shared-session paths (a fingerprint session reused across
+    // same-toolset calls, or a chat's ownedSession) read-modify-write one live
+    // sequence with async gaps between lookup, creation, generation, and the
+    // store-back — serialize them per session id. Checkpoint consumption skips
+    // the lock: the steal above is atomic and the loser re-encodes on its own
+    // sequence.
+    if (sessionId !== undefined && !isCheckpointConsumption) {
+      await withSessionLock(sessionId, runGeneration);
+    } else {
+      await runGeneration();
+    }
   });
 };

@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { StreamEvent } from "@workglow/task-graph";
+import type { StreamEvent, Usage } from "@workglow/task-graph";
 import type { ToolCalls, ToolDefinition } from "../task/ToolCallingUtils";
 import { buildToolDescription, sanitizeToolArgs } from "../task/ToolCallingUtils";
 import { parseToolArgs } from "./OpenAIShapedChat";
+import { createEstimatedOutputUsageReporter, mapOpenAIResponsesUsage } from "./UsageMapping";
 
 /**
  * Shared helpers for the OpenAI **Responses** API (`client.responses.create`),
@@ -233,17 +234,36 @@ interface ResponsesToolCallEntry {
  * own `finish` event after this returns (per the streaming convention). Generic
  * over the output type so non-tool-calling run-fns (TextGeneration / Rewriter /
  * Summary) can pass their own `emit` under `strictFunctionTypes`.
+ *
+ * Returns the token accounting off the terminal `response.completed` event —
+ * the Responses API reports usage there unprompted — or `undefined` when the
+ * stream ended without one. The caller attaches it to its `finish` event as a
+ * sibling of `data`.
+ *
+ * Pass `promptText` to emit a provisional ↑ estimate before the first delta —
+ * Responses only attaches billed usage to the terminal lifecycle event.
  */
 export async function accumulateOpenAIResponsesStream<Output = Record<string, any>>(
   stream: AsyncIterable<any>,
-  emit: (event: StreamEvent<Output>) => void
-): Promise<void> {
+  emit: (event: StreamEvent<Output>) => void,
+  options: { readonly promptText?: string | undefined } = {}
+): Promise<Usage | undefined> {
   // Keyed by the output item's stable id (`item.id` on `output_item.{added,done}`,
   // `item_id` on `function_call_arguments.delta`). Falls back to `output_index`
   // only for gateways that omit both — keying purely on `output_index` collapses
   // concurrent function calls that share (or lack) the index onto one slot,
   // silently dropping every call but the last.
   const toolCalls = new Map<string, ResponsesToolCallEntry>();
+  // Responses only reports billed usage on the terminal lifecycle event; when the
+  // caller supplies promptText, estimate ↑ before the first delta and ↓ from
+  // content / tool-arg deltas so the CLI counter moves during the call. The
+  // caller still attaches the provider total to `finish.usage`.
+  const provisionalUsage =
+    options.promptText !== undefined ? createEstimatedOutputUsageReporter(emit) : undefined;
+  if (provisionalUsage && options.promptText !== undefined) {
+    provisionalUsage.onPrompt(options.promptText);
+  }
+  let usage: Usage | undefined;
 
   const emitToolCall = (entry: ResponsesToolCallEntry): void => {
     const parsed = parseToolArgs(entry.arguments);
@@ -259,7 +279,10 @@ export async function accumulateOpenAIResponsesStream<Output = Record<string, an
     switch (event?.type) {
       case "response.output_text.delta": {
         const delta: string = event.delta ?? "";
-        if (delta) emit({ type: "text-delta", port: "text", textDelta: delta });
+        if (delta) {
+          provisionalUsage?.onText(delta);
+          emit({ type: "text-delta", port: "text", textDelta: delta });
+        }
         break;
       }
 
@@ -305,7 +328,11 @@ export async function accumulateOpenAIResponsesStream<Output = Record<string, an
           entry = { id: (event.item_id as string) || `call_${key}`, name: "", arguments: "" };
           toolCalls.set(key, entry);
         }
-        entry!.arguments += event.delta ?? "";
+        const argDelta: string = event.delta ?? "";
+        entry!.arguments += argDelta;
+        // Argument JSON is also generated text — count it so a tools-only reply
+        // still ticks the ↓ counter (content deltas alone would stay silent).
+        if (argDelta) provisionalUsage?.onText(argDelta);
         emitToolCall(entry!);
         break;
       }
@@ -341,10 +368,60 @@ export async function accumulateOpenAIResponsesStream<Output = Record<string, an
         break;
       }
 
+      case "response.completed":
+      case "response.incomplete":
+      case "response.failed": {
+        // Terminal lifecycle events carry the authoritative token accounting.
+        // An incomplete/failed response still consumed tokens, so its usage is
+        // recorded too rather than being dropped as a non-success.
+        usage = mapOpenAIResponsesUsage(event.response?.usage) ?? usage;
+        break;
+      }
+
       default:
-        // Ignore lifecycle (created/in_progress/completed), reasoning summaries,
-        // and non-function tool events.
+        // Ignore the remaining lifecycle events (created/in_progress),
+        // reasoning summaries, and non-function tool events.
         break;
     }
   }
+
+  provisionalUsage?.flush();
+  return usage;
+}
+
+/**
+ * Flatten Responses `instructions` + `input` into one string for the provisional
+ * ↑ estimate. Multimodal / tool items contribute only their string content.
+ */
+export function promptTextForResponsesUsageEstimate(params: {
+  readonly instructions?: unknown;
+  readonly input?: unknown;
+}): string {
+  const parts: string[] = [];
+  if (typeof params.instructions === "string" && params.instructions) {
+    parts.push(params.instructions);
+  }
+  if (typeof params.input === "string") {
+    if (params.input) parts.push(params.input);
+    return parts.join("\n");
+  }
+  if (!Array.isArray(params.input)) return parts.join("\n");
+  for (const item of params.input) {
+    if (!item || typeof item !== "object") continue;
+    const content = (item as { content?: unknown }).content;
+    if (typeof content === "string") {
+      if (content) parts.push(content);
+      continue;
+    }
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (typeof block === "string") {
+        if (block) parts.push(block);
+      } else if (block && typeof block === "object") {
+        const text = (block as { text?: unknown }).text;
+        if (typeof text === "string" && text) parts.push(text);
+      }
+    }
+  }
+  return parts.join("\n");
 }

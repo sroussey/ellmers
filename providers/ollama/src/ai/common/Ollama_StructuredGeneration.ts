@@ -8,10 +8,13 @@ import type {
   AiProviderRunFn,
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
+  Usage,
 } from "@workglow/ai";
-import { parsePartialJson } from "@workglow/util/worker";
+import { createEstimatedOutputUsageReporter } from "@workglow/ai/provider-utils";
+import { createPartialJsonStream } from "@workglow/util/worker";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getOllamaModelName } from "./Ollama_ModelUtil";
+import { mapOllamaUsage } from "./Ollama_Usage";
 
 type GetClient = (model: OllamaModelConfig | undefined) => Promise<any>;
 
@@ -22,9 +25,9 @@ type GetClient = (model: OllamaModelConfig | undefined) => Promise<any>;
  * parsed partial JSON on the `object` port.
  *
  * Per the structured-generation streaming-convention exception, the final
- * `finish` event MUST carry the parsed object in `finish.data.object` so the
- * {@link StructuredGenerationTask} consumer can read it without running a JSON
- * streaming parser.
+ * `finish` event MUST carry the parsed object in `finish.data.object`: it is the
+ * definitive result the {@link StructuredGenerationTask} consumer validates
+ * against the output schema.
  */
 export function createOllamaStructuredGenerationStream(
   getClient: GetClient
@@ -40,6 +43,11 @@ export function createOllamaStructuredGenerationStream(
 
     const schema = input.outputSchema ?? outputSchema;
 
+    // Ollama only reports counts on the terminal `done: true` chunk; estimate ↑
+    // before the request so the CLI row shows spend during TTFB / prefill.
+    const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+    provisionalUsage.onPrompt(typeof input.prompt === "string" ? input.prompt : "");
+
     const stream = await client.chat({
       model: modelName,
       messages: [{ role: "user", content: input.prompt }],
@@ -53,30 +61,31 @@ export function createOllamaStructuredGenerationStream(
 
     const onAbort = (): void => stream.abort();
     signal?.addEventListener("abort", onAbort, { once: true });
-    let accumulatedJson = "";
+    const json = createPartialJsonStream();
+    let usage: Usage | undefined;
     try {
       if (signal?.aborted) stream.abort();
       signal?.throwIfAborted?.();
       for await (const chunk of stream) {
+        usage = mapOllamaUsage(chunk) ?? usage;
         const delta = chunk.message.content;
         if (delta) {
-          accumulatedJson += delta;
-          const partial = parsePartialJson(accumulatedJson);
+          provisionalUsage.onText(delta);
+          const partial = json.push(delta);
           if (partial !== undefined) {
             emit({ type: "object-delta", port: "object", objectDelta: partial });
           }
         }
       }
+      provisionalUsage.flush();
     } finally {
       signal?.removeEventListener("abort", onAbort);
     }
 
-    let finalObject: Record<string, unknown>;
-    try {
-      finalObject = JSON.parse(accumulatedJson);
-    } catch {
-      finalObject = parsePartialJson(accumulatedJson) ?? {};
-    }
-    emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
+    emit({
+      type: "finish",
+      data: { object: json.finishObject() } as StructuredGenerationTaskOutput,
+      usage,
+    });
   };
 }

@@ -8,8 +8,14 @@ import type {
   AiProviderRunFn,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
+  Usage,
 } from "@workglow/ai";
-import { localOnlyFetch } from "@workglow/ai/provider-utils";
+import {
+  createEstimatedOutputUsageReporter,
+  localOnlyFetch,
+  mapOpenAIChatUsage,
+  OPENAI_STREAM_USAGE_OPTIONS,
+} from "@workglow/ai/provider-utils";
 import {
   acquireBaseUrl,
   buildServerUrl,
@@ -74,11 +80,17 @@ export function createLlamaCppServerTextGenerationStream(
         ? { frequency_penalty: input.frequencyPenalty }
         : {}),
       ...(input.presencePenalty !== undefined ? { presence_penalty: input.presencePenalty } : {}),
+      ...OPENAI_STREAM_USAGE_OPTIONS,
     });
 
     const { baseUrl, release } = await acquire(model, opts);
     try {
       signal?.throwIfAborted?.();
+      // Chat-completions only attach billed usage to the final chunk; estimate
+      // ↑ before TTFB and ↓ from content so the CLI counter moves during the call.
+      const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+      provisionalUsage.onPrompt(promptTextFromMessages(messages));
+
       const response = await localOnlyFetch(
         buildServerUrl(baseUrl, "/v1/chat/completions"),
         {
@@ -95,15 +107,40 @@ export function createLlamaCppServerTextGenerationStream(
           `LlamaCppServer: HTTP ${response.status} from /v1/chat/completions (text-generation) — ${text}`
         );
       }
+      let usage: Usage | undefined;
       for await (const delta of readChatCompletionDeltas(response, signal)) {
         if (delta.done) break;
+        usage = mapOpenAIChatUsage(delta.usage) ?? usage;
         if (delta.contentDelta) {
+          provisionalUsage.onText(delta.contentDelta);
           emit({ type: "text-delta", port: "text", textDelta: delta.contentDelta });
         }
       }
-      emit({ type: "finish", data: {} as TextGenerationTaskOutput });
+      provisionalUsage.flush();
+      emit({ type: "finish", data: {} as TextGenerationTaskOutput, usage });
     } finally {
       await release();
     }
   };
+}
+
+function promptTextFromMessages(
+  messages: ReadonlyArray<{ readonly content: unknown }>
+): string {
+  const parts: string[] = [];
+  for (const message of messages) {
+    const content = message.content;
+    if (typeof content === "string") {
+      parts.push(content);
+      continue;
+    }
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      if (part && typeof part === "object" && (part as { type?: string }).type === "text") {
+        const text = (part as { text?: unknown }).text;
+        if (typeof text === "string") parts.push(text);
+      }
+    }
+  }
+  return parts.join("\n");
 }

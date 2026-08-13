@@ -5,9 +5,11 @@
  */
 
 import type { AiProviderRunFn, TextSummaryTaskInput, TextSummaryTaskOutput } from "@workglow/ai";
+import { createUsageSnapshotEmitter } from "@workglow/ai/provider-utils";
 import { createGeminiClient, getModelName } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
+import { mapGeminiUsage } from "./Gemini_Usage";
 
 export const Gemini_TextSummary_Stream: AiProviderRunFn<
   TextSummaryTaskInput,
@@ -26,7 +28,11 @@ export const Gemini_TextSummary_Stream: AiProviderRunFn<
   });
 
   let refusalCategory: string | undefined;
+  let lastUsageMetadata: unknown;
+  const snapshotUsage = createUsageSnapshotEmitter(emit);
   for await (const chunk of result) {
+    lastUsageMetadata = chunk.usageMetadata ?? lastUsageMetadata;
+    snapshotUsage(mapGeminiUsage(lastUsageMetadata));
     const text = chunk.text;
     if (text) {
       emit({ type: "text-delta", port: "text", textDelta: text });
@@ -34,5 +40,9 @@ export const Gemini_TextSummary_Stream: AiProviderRunFn<
     refusalCategory = refusalCategory ?? geminiRefusalCategory(chunk);
   }
   emitGeminiRefusal(emit, refusalCategory);
-  emit({ type: "finish", data: {} as TextSummaryTaskOutput });
+  emit({
+    type: "finish",
+    data: {} as TextSummaryTaskOutput,
+    usage: mapGeminiUsage(lastUsageMetadata),
+  });
 };

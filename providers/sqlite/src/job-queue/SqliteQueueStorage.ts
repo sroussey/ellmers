@@ -64,7 +64,7 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
 
   constructor(
     protected db: Sqlite.Database,
-    protected queueName: string,
+    public readonly queueName: string,
     protected options?: SqliteQueueStorageOptions
   ) {
     this.prefixes = options?.prefixes ?? [];
@@ -126,7 +126,8 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     job.progress_message = "";
     job.progress_details = null;
     job.created_at = now;
-    job.visible_at = now;
+    // A caller-set future visible_at is a delayed send (delaySeconds) — keep it.
+    job.visible_at = job.visible_at ?? now;
 
     const { columns: prefixColumnsInsert, placeholders: prefixPlaceholders } =
       buildPrefixInsertFragments(SqliteDialect, this.prefixes);
@@ -655,7 +656,7 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     jobId: unknown,
     progress: number,
     message: string,
-    details: Record<string, any>
+    details: Record<string, any> | null
   ): Promise<void> {
     const prefixConditions = this.buildPrefixWhereClause();
     const prefixParams = this.getPrefixParamValues();
@@ -671,7 +672,7 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     stmt.run(
       progress,
       message,
-      JSON.stringify(details),
+      details != null ? JSON.stringify(details) : null,
       String(jobId),
       this.queueName,
       ...prefixParams

@@ -4,11 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IQueueStorage, JobHandle, JobStorageFormat } from "@workglow/job-queue";
-import {
-  AbortSignalJobError,
+import type {
   IJobExecuteContext,
   ILimiter,
+  IQueueStorage,
+  JobHandle,
+  JobStorageFormat,
+} from "@workglow/job-queue";
+import {
+  AbortSignalJobError,
   Job,
   JobError,
   JobQueueClient,
@@ -346,6 +350,15 @@ export function runGenericJobQueueTests(
       expect(await client.size()).toBe(2);
       await storage.deleteAll();
       expect(await client.size()).toBe(0);
+    });
+
+    it("preserves a caller-supplied fingerprint on the stored row", async () => {
+      const handle = await client.send(
+        { taskType: "task1", data: "custom-fp" },
+        { fingerprint: "fp-custom-1" }
+      );
+      const stored = await client.getJob(handle.id);
+      expect(stored?.fingerprint).toBe("fp-custom-1");
     });
 
     it("should retrieve the output for a given task type and input", async () => {
@@ -725,10 +738,24 @@ export function runGenericJobQueueTests(
       client.attach(server);
       await server.start();
 
+      const t0 = Date.now();
       const handle = await client.send(
         { taskType: "other", data: "deferred-wake" },
         { delaySeconds: 0.2 }
       );
+      const t1 = Date.now();
+
+      // The stored row must carry the deferred visibility — a backend that
+      // clobbers visible_at with "now" on add() collapses it back into
+      // [t0, t1]. visible_at is computed from a Date.now() sample taken
+      // inside send(), so it must land in [t0 + 200, t1 + 200] — both bounds
+      // from the same clock as the sample, immune to storage latency between
+      // the client-side compute and the backend's created_at stamp.
+      const stored = await client.getJob(handle.id);
+      expect(stored).toBeDefined();
+      const visibleAtMs = stored!.visibleAt.getTime();
+      expect(visibleAtMs).toBeGreaterThanOrEqual(t0 + 200);
+      expect(visibleAtMs).toBeLessThanOrEqual(t1 + 200);
 
       const start = Date.now();
       const result = (await Promise.race([

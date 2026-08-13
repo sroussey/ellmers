@@ -5,7 +5,7 @@
  */
 
 import { makeFingerprint } from "@workglow/util";
-import { TaskInput, TaskOutput } from "../task/TaskTypes";
+import type { TaskInput, TaskOutput } from "../task/TaskTypes";
 import type { ITaskOutputStorage } from "./ITaskOutputStorage";
 import type { TaskOutputTabularBacking } from "./TabularTaskOutputStorage";
 import { decodeTaskOutput, encodeTaskOutput } from "./taskOutputCodec";

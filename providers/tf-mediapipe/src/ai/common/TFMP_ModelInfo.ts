@@ -5,7 +5,7 @@
  */
 
 import type { AiProviderRunFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
-import { TFMPModelConfig } from "./TFMP_ModelSchema";
+import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { modelTaskCache } from "./TFMP_Runtime";
 
 /** Known MediaPipe embedding model dimensions. */

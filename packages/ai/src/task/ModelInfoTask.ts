@@ -7,10 +7,10 @@
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 
 import type { CachePolicy, IExecuteContext, IRunConfig, TaskConfig } from "@workglow/task-graph";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { accumulatingEmit } from "../capability/accumulatingEmit";
 import type { Capability } from "../capability/Capabilities";
-import { ModelConfig } from "../model/ModelSchema";
+import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";

@@ -4,24 +4,36 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { CachePolicy } from "@workglow/task-graph";
+import type {
+  CachePolicy,
+  IExecuteContext,
+  StreamEvent,
+  TaskConfig,
+  TaskEntitlements,
+  TaskIdType,
+} from "@workglow/task-graph";
 import {
   computeGraphInputSchema,
   CreateWorkflow,
   hasVectorOutput,
-  IExecuteContext,
   MapTask,
   PROPERTY_ARRAY,
-  StreamEvent,
   Task,
-  TaskConfig,
-  TaskEntitlements,
   TaskError,
   TaskGraph,
-  TaskIdType,
   Workflow,
   WorkflowError,
 } from "@workglow/task-graph";
+import {
+  LongRunningTask,
+  NumberTask,
+  NumberToStringTask,
+  StringTask,
+  TestInputTask,
+  TestOutputTask,
+  TestSimpleTask,
+  WildcardPassthroughTask,
+} from "@workglow/task-graph/test";
 import {
   InputTask,
   OutputTask,
@@ -37,21 +49,10 @@ import {
   setLogger,
   sleep,
 } from "@workglow/util";
-import { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  LongRunningTask,
-  NumberTask,
-  NumberToStringTask,
-  StringTask,
-  TestInputTask,
-  TestOutputTask,
-  TestSimpleTask,
-  WildcardPassthroughTask,
-} from "../task/TestTasks";
 // Import for module-augmentation side effects that register vector test tasks
-import { getTestingLogger } from "../../binding/TestingLogger";
-import "../task/TestTasks";
+import { getTestingLogger } from "@workglow/util/test";
 
 const spyOn = vi.spyOn;
 

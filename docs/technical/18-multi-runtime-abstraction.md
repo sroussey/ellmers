@@ -37,15 +37,23 @@ Source files referenced in this document:
 
 ## Entry Point Pattern
 
-Every package in the Workglow monorepo follows a three-file entry point convention:
+Every package in the Workglow monorepo follows a two-file entry point convention, plus a third
+Bun entry only where Bun genuinely needs different code:
 
 ```
 src/
   browser.ts    # Browser entry point
-  node.ts       # Node.js entry point
-  bun.ts        # Bun entry point
-  common.ts     # Shared logic re-exported by all three
+  node.ts       # Node.js entry point (also serves Bun by default)
+  bun.ts        # Bun entry point — ONLY when it differs from node.ts
+  common.ts     # Shared logic re-exported by the entry points
 ```
+
+Bun supports every Node.js API the packages here rely on, so a `bun.ts` that is a byte-for-byte
+copy of `node.ts` buys nothing but a third build target and a third `.d.ts` to keep in sync. With
+no `"bun"` condition in `exports`, Bun falls through to the `"import"`/`"types"` default and gets
+the Node entry — the same code the duplicated file would have given it. Only two entries in the
+monorepo earn a Bun build: `@workglow/util` (`Worker.bun` vs `Worker.node`) and
+`@workglow/sqlite`'s `./storage` sub-path (`bun:sqlite` vs the Node driver).
 
 Each platform entry point re-exports everything from `common.ts` and then layers on
 platform-specific modules. For `@workglow/util`, the entry points look like this:
@@ -149,19 +157,18 @@ Sub-paths that **are** platform-specific use the same condition structure as the
       "types": "./dist/media-browser.d.ts",
       "import": "./dist/media-browser.js"
     },
-    "bun": {
-      "types": "./dist/media-node.d.ts",
-      "import": "./dist/media-node.js"
-    },
     "types": "./dist/media-node.d.ts",
     "import": "./dist/media-node.js"
   }
 }
 ```
 
-Note that Bun shares the Node.js media implementation (`media-node.js`) because both runtimes have
-access to the same server-side image APIs. This is a common pattern — Bun and Node often share an
-implementation while the browser diverges.
+Note the absence of a `"bun"` condition: Bun shares the Node.js media implementation
+(`media-node.js`) because both runtimes have access to the same server-side image APIs, and the
+default `"import"` already points there. This is the common case — Bun and Node share an
+implementation while the browser diverges, so only the browser needs a condition of its own.
+`./worker` is the exception that proves it: Bun's `Worker` differs enough to warrant a
+`"bun"` condition pointing at `worker-bun.js`.
 
 ---
 
@@ -584,7 +591,6 @@ The complete conditional exports map for `@workglow/util`:
     "./media": {
       "react-native": { "types": "./dist/media-browser.d.ts", "import": "./dist/media-browser.js" },
       "browser": { "types": "./dist/media-browser.d.ts", "import": "./dist/media-browser.js" },
-      "bun": { "types": "./dist/media-node.d.ts", "import": "./dist/media-node.js" },
       "types": "./dist/media-node.d.ts",
       "import": "./dist/media-node.js"
     },
@@ -597,7 +603,6 @@ The complete conditional exports map for `@workglow/util`:
         "types": "./dist/compress-browser.d.ts",
         "import": "./dist/compress-browser.js"
       },
-      "bun": { "types": "./dist/compress-node.d.ts", "import": "./dist/compress-node.js" },
       "types": "./dist/compress-node.d.ts",
       "import": "./dist/compress-node.js"
     },

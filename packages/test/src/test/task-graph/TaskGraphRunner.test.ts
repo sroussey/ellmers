@@ -4,22 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { AnyGraphResult, ITask, TaskOutput } from "@workglow/task-graph";
 import {
-  AnyGraphResult,
   Dataflow,
   DataflowArrow,
-  ITask,
   TaskAbortedError,
   TaskConfigurationError,
   TaskGraph,
   TaskGraphRunner,
   TaskGraphTimeoutError,
-  TaskOutput,
   TaskStatus,
 } from "@workglow/task-graph";
-import { setLogger, sleep } from "@workglow/util";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   FailingTask,
   LongRunningTask,
@@ -27,7 +22,10 @@ import {
   TestDoubleTask,
   TestIOTask,
   TestSquareTask,
-} from "../task/TestTasks";
+} from "@workglow/task-graph/test";
+import { setLogger, sleep } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const spyOn = vi.spyOn;
 

@@ -42,7 +42,7 @@ interface ParsedAnthropicModelId {
  *
  * Returns `undefined` for anything else, including non-Claude ids.
  */
-function parseAnthropicModelId(id: string): ParsedAnthropicModelId | undefined {
+export function parseAnthropicModelId(id: string): ParsedAnthropicModelId | undefined {
   const normalized = id.trim().toLowerCase();
   if (!normalized.startsWith(CLAUDE_PREFIX)) return undefined;
 

@@ -10,13 +10,26 @@ import type {
   ChatMessage,
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
-  ToolDefinition,
 } from "@workglow/ai";
-import { buildToolDescription, filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
-import { createGeminiClient, getModelName, resolveThinkingConfig } from "./Gemini_Client";
+import { createUsageSnapshotEmitter } from "@workglow/ai/provider-utils";
+import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
+import {
+  buildGeminiFunctionDeclarations,
+  buildGeminiPrefixedContents,
+  geminiCachedToolsMatch,
+  geminiCachedToolsMatchCanonical,
+} from "./Gemini_CacheCheckpoint";
+import { generateGeminiStreamWithCacheFallback } from "./Gemini_CachedContentFallback";
+import { evictIfStaleGeminiCachedContent, getGeminiCachedContent } from "./Gemini_CacheStore";
+import {
+  createGeminiClient,
+  getGeminiSeed,
+  getModelName,
+  resolveThinkingConfig,
+} from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { emitGeminiRefusal, geminiRefusalCategory } from "./Gemini_Refusal";
-import { sanitizeSchemaForGemini } from "./Gemini_Schema";
+import { mapGeminiUsage } from "./Gemini_Usage";
 
 export function buildGeminiContents(
   messages: ReadonlyArray<ChatMessage> | undefined,
@@ -117,42 +130,118 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   GeminiModelConfig
-> = async (input, model, signal, emit) => {
+> = async (input, model, signal, emit, _outputSchema, sessionContext) => {
   const ai = await createGeminiClient(model);
 
-  const functionDeclarations = input.tools.map((t: ToolDefinition) => ({
-    name: t.name,
-    description: buildToolDescription(t),
-    parameters: sanitizeSchemaForGemini(t.inputSchema as Record<string, unknown>) as any,
-  }));
+  const functionDeclarations = buildGeminiFunctionDeclarations(input.tools);
 
   const toolConfig = mapGeminiToolConfig(input.toolChoice);
 
-  const contents = buildGeminiContents(input.messages, input.prompt);
+  // Checkpoint consumption. Preferred path: reference the warm-up's explicit
+  // CachedContent (which carries the warmed systemInstruction + tool
+  // declarations) and send only the tail. The API rejects requests that set
+  // systemInstruction / tools / toolConfig alongside cachedContent, so the
+  // handle is only usable when this call adds none of those beyond what the
+  // cache holds: no own system prompt (or the cache's own), and a default
+  // ("auto") tool choice. Anything else — including after the cache's TTL
+  // expiry — replays the prefix content inline; implicit caching still applies.
+  const prefix = sessionContext?.prefix;
+  const checkpointId = sessionContext?.sessionId;
+  const cachedEntry = checkpointId ? getGeminiCachedContent(checkpointId) : undefined;
+  const defaultToolChoice = input.toolChoice === undefined || input.toolChoice === "auto";
+  let useCachedContent =
+    prefix !== undefined &&
+    cachedEntry !== undefined &&
+    defaultToolChoice &&
+    prefix.tools !== undefined &&
+    prefix.tools.length > 0 &&
+    (input.systemPrompt === undefined ||
+      input.systemPrompt === "" ||
+      input.systemPrompt === cachedEntry.systemPrompt);
+
+  // Proactive stale eviction — drop a nearly-expired runtime-local entry up
+  // front and replay inline instead of eating a reactive NOT_FOUND. Runs
+  // before the tools comparison below so a doomed entry never pays for it.
+  if (
+    useCachedContent &&
+    cachedEntry &&
+    checkpointId &&
+    evictIfStaleGeminiCachedContent(checkpointId, cachedEntry)
+  ) {
+    useCachedContent = false;
+  }
+
+  // Tools comparison last — it recursively canonicalizes the declarations, so
+  // the cheap eligibility checks (and the stale eviction) must not pay for it.
+  // The prefix side was canonicalized once at cache creation; an entry seeded
+  // without `canonicalTools` falls back to canonicalizing both sides.
+  if (useCachedContent && prefix?.tools !== undefined && cachedEntry !== undefined) {
+    useCachedContent =
+      cachedEntry.canonicalTools !== undefined
+        ? geminiCachedToolsMatchCanonical(cachedEntry.canonicalTools, input.tools)
+        : geminiCachedToolsMatch(prefix.tools, input.tools);
+  }
 
   // Thinking is opt-in here (no default budget): the model uses its own default
   // reasoning unless `provider_config.thinking_budget` is set, in which case the
   // output cap is padded so reasoning can't starve the tool call / answer.
   const { thinkingConfig, maxOutputTokens } = resolveThinkingConfig(model, input.maxTokens);
 
-  const result = await ai.models.generateContentStream({
+  /** Build the tail-only request that references the CachedContent handle. */
+  const buildCachedRequest = (): Record<string, unknown> => ({
     model: getModelName(model),
-    contents,
+    contents: buildGeminiContents(input.messages, input.prompt),
     config: {
       abortSignal: signal ?? undefined,
-      systemInstruction: input.systemPrompt || undefined,
+      systemInstruction: undefined,
       maxOutputTokens,
       temperature: input.temperature,
-      tools: [{ functionDeclarations }],
-      toolConfig: toolConfig as any,
+      seed: getGeminiSeed(model),
+      cachedContent: cachedEntry!.name,
       thinkingConfig,
     },
   });
 
+  /** Build the full inline-replay request (prefix messages + tail + tools). */
+  const buildInlineReplayRequest = (): Record<string, unknown> => {
+    const contents = prefix
+      ? buildGeminiPrefixedContents(prefix, input.messages, input.prompt)
+      : buildGeminiContents(input.messages, input.prompt);
+    const systemInstruction = input.systemPrompt || (prefix ? prefix.systemPrompt : undefined);
+    return {
+      model: getModelName(model),
+      contents,
+      config: {
+        abortSignal: signal ?? undefined,
+        systemInstruction,
+        maxOutputTokens,
+        temperature: input.temperature,
+        seed: getGeminiSeed(model),
+        tools: [{ functionDeclarations }],
+        toolConfig: toolConfig as any,
+        thinkingConfig,
+      },
+    };
+  };
+
+  const result = await generateGeminiStreamWithCacheFallback({
+    useCachedContent,
+    checkpointId,
+    buildRequest: (useCached) => (useCached ? buildCachedRequest() : buildInlineReplayRequest()),
+    runStream: (request) =>
+      ai.models.generateContentStream(
+        request as unknown as Parameters<typeof ai.models.generateContentStream>[0]
+      ),
+  });
+
   let callIndex = 0;
   let refusalCategory: string | undefined;
+  let lastUsageMetadata: unknown;
+  const snapshotUsage = createUsageSnapshotEmitter(emit);
 
   for await (const chunk of result) {
+    lastUsageMetadata = chunk.usageMetadata ?? lastUsageMetadata;
+    snapshotUsage(mapGeminiUsage(lastUsageMetadata));
     refusalCategory = refusalCategory ?? geminiRefusalCategory(chunk);
     const parts = chunk.candidates?.[0]?.content?.parts ?? [];
     for (const part of parts) {
@@ -192,5 +281,9 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
   }
 
   emitGeminiRefusal(emit, refusalCategory);
-  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
+  emit({
+    type: "finish",
+    data: { text: "", toolCalls: [] } as ToolCallingTaskOutput,
+    usage: mapGeminiUsage(lastUsageMetadata),
+  });
 };

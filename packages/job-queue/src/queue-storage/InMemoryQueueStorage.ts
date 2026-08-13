@@ -13,14 +13,14 @@ import {
   uuid4,
 } from "@workglow/util";
 import type { StreamChunkRow, StreamEventLike } from "../job/JobQueueEventListeners";
-import {
+import type {
   IQueueStorage,
-  JobStatus,
   JobStorageFormat,
   QueueChangePayload,
   QueueStorageOptions,
   QueueSubscribeOptions,
 } from "./IQueueStorage";
+import { JobStatus } from "./IQueueStorage";
 import { validateLeaseMs } from "./validateLeaseMs";
 
 /**
@@ -52,6 +52,11 @@ const STREAM_LOG_RETENTION_MS = 30_000;
  */
 export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input, Output> {
   public readonly scope = "process" as const;
+  /**
+   * In-memory rows do not survive the process — declared so wrapper facades
+   * and cloud adapters can detect the non-durable pairing.
+   */
+  public readonly durable = false;
   /** The prefix values for filtering jobs */
   protected readonly prefixValues: Readonly<Record<string, string | number>>;
   /** Event emitter for change notifications */
@@ -121,7 +126,8 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     jobWithPrefixes.progress_message = "";
     jobWithPrefixes.progress_details = null;
     jobWithPrefixes.created_at = now;
-    jobWithPrefixes.visible_at = now;
+    // A caller-set future visible_at is a delayed send (delaySeconds) — keep it.
+    jobWithPrefixes.visible_at = jobWithPrefixes.visible_at ?? now;
 
     for (const [key, value] of Object.entries(this.prefixValues)) {
       jobWithPrefixes[key] = value;
@@ -540,7 +546,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
   /**
    * Atomically write `output` and set status to COMPLETED in one mutation.
    */
-  public async completeWithResult(id: unknown, output: Output | null): Promise<void> {
+  public async completeWithResult(id: unknown, output: Output): Promise<void> {
     await this.finalize(id, {
       output,
       error: null,

@@ -7,7 +7,7 @@
 import type { JsonSchema } from "@workglow/util/schema";
 import type { ITask } from "../task/ITask";
 import { getPortStreamMode } from "../task/StreamTypes";
-import { Task } from "../task/Task";
+import type { Task } from "../task/Task";
 import { Dataflow, DATAFLOW_ALL_PORTS } from "./Dataflow";
 import type { TaskGraph } from "./TaskGraph";
 

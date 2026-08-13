@@ -39,7 +39,13 @@ describe("OpenAI-compatible chat refusals (xAI / HFI via accumulateOpenAIChatStr
   it("keeps ordinary content on the text port (no spurious refusal)", async () => {
     const out: any[] = [];
     await accumulateOpenAIChatStream(chatStream([{ content: "hello" }]), (e) => out.push(e));
-    expect(out).toEqual([{ type: "text-delta", port: "text", textDelta: "hello" }]);
+    // Provisional ↓ usage rides content deltas (chat-completions only bill on
+    // the final chunk); the assertion is that content stayed on `text` and no
+    // refusal was synthesised.
+    expect(out.filter((e) => e.type !== "usage")).toEqual([
+      { type: "text-delta", port: "text", textDelta: "hello" },
+    ]);
+    expect(out.some((e) => e.type === "usage" && e.usage.output === 2)).toBe(true);
   });
 });
 

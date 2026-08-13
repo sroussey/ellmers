@@ -8,8 +8,6 @@
 
 export * from "./PostgresQueueStorage";
 export * from "./PostgresRateLimiterStorage";
-export * from "./PostgresMessageQueue";
-export * from "./PostgresJobStore";
 export * from "./createPostgresQueue";
 
 // Versioned migration sets for the queue + rate-limiter tables, plus the

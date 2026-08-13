@@ -48,7 +48,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
 
   constructor(
     client: SupabaseClient,
-    protected readonly queueName: string,
+    public readonly queueName: string,
     options?: QueueStorageOptions
   ) {
     this.client = client as SupabaseClient;
@@ -269,7 +269,8 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
     job.progress_message = "";
     job.progress_details = null;
     job.created_at = now;
-    job.visible_at = now;
+    // A caller-set future visible_at is a delayed send (delaySeconds) — keep it.
+    job.visible_at = job.visible_at ?? now;
 
     const prefixInsertValues = this.getPrefixInsertValues();
 
@@ -828,7 +829,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
     jobId: unknown,
     progress: number,
     message: string,
-    details: Record<string, any>
+    details: Record<string, any> | null
   ): Promise<void> {
     let query = this.client
       .from(this.tableName)

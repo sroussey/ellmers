@@ -6,8 +6,8 @@
 
 import { CachedTabularStorage, InMemoryTabularStorage } from "@workglow/storage";
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   runTabularStorageContract,
   VectorItemPrimaryKeyNames,
@@ -50,13 +50,22 @@ describe("CachedTabularStorage", () => {
           ["category", "subcategory"],
           ["subcategory", "category"],
           "value",
+          "tag",
+          ["category", "tag"],
         ]);
         return new CachedTabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>(
           durable,
           undefined,
           SearchSchema,
           SearchPrimaryKeyNames,
-          ["category", ["category", "subcategory"], ["subcategory", "category"], "value"]
+          [
+            "category",
+            ["category", "subcategory"],
+            ["subcategory", "category"],
+            "value",
+            "tag",
+            ["category", "tag"],
+          ]
         );
       }
     );

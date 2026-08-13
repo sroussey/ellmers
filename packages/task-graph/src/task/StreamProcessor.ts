@@ -5,6 +5,7 @@
  */
 
 import type { ResourceScope, ServiceRegistry } from "@workglow/util";
+import { getLogger } from "@workglow/util";
 import type { CacheRef } from "../cache/CacheRef";
 import type { StreamPortCodec } from "../cache/streamCodec";
 import { getStreamPortCodec } from "../cache/streamCodec";
@@ -195,7 +196,22 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
     let finalOutput: Output | undefined;
     let refusalText = "";
     let refusalCategory: string | undefined;
-    let usage: Usage | undefined;
+    // Two accumulators, because a `usage` event is a CUMULATIVE snapshot of the
+    // in-flight call while `finish` states that call's total. Merging snapshots
+    // additively would count the same tokens once per event.
+    let settledUsage: Usage | undefined;
+    let liveUsage: Usage | undefined;
+    const runningUsage = (): Usage | undefined => mergeUsage(settledUsage, liveUsage);
+    const publishRunning = (): void => {
+      const running = runningUsage();
+      if (!running) return;
+      this.task.runUsage = running;
+      try {
+        this.task.emit("usage", running, this.task.runUsageModelId);
+      } catch (err) {
+        getLogger().error("usage listener threw", { taskId: this.task.id, error: err });
+      }
+    };
 
     this.task.emit("stream_start");
 
@@ -320,9 +336,21 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
             this.task.emit("stream_chunk", event as StreamEvent);
             break;
           }
+          case "usage": {
+            // Replace, never merge: the snapshot restates the call's running
+            // total. Metadata only — no status flip, no accumulator mutation.
+            liveUsage = event.usage;
+            publishRunning();
+            this.task.emit("stream_chunk", event as StreamEvent);
+            break;
+          }
           case "finish": {
             sawFinish = true;
-            usage = mergeUsage(usage, event.usage);
+            // finish supersedes the snapshots it summarizes; `?? liveUsage`
+            // keeps a provider that emitted snapshots but no finish usage.
+            settledUsage = mergeUsage(settledUsage, event.usage ?? liveUsage);
+            liveUsage = undefined;
+            publishRunning();
             // Re-attached to every finish this processor constructs below, so a
             // downstream StreamPump consumer sees the same token counts the
             // provider reported. Spread conditionally: an unreported usage must
@@ -475,6 +503,12 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
       for (const { router } of routers.values()) router.fail(failure);
       throw err;
     } finally {
+      // An aborted or errored stream still spent the input tokens it sent, so
+      // the last in-flight snapshot is promoted rather than dropped.
+      if (liveUsage) {
+        settledUsage = mergeUsage(settledUsage, liveUsage);
+        liveUsage = undefined;
+      }
       // If the loop exited without a `finish` event (abort via cooperative
       // generator return, or a generator ending early), the routed bytes are
       // incomplete: FAIL the routers so their sinks reject and discard the
@@ -515,10 +549,10 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
     // Same treatment for token accounting: a reserved output field, kept off
     // dataflow edges, applied after any refusal so a refused turn still reports
     // what it was billed. Absent when no provider reported usage.
-    if (usage) {
+    if (settledUsage) {
       this.task.runOutputData = {
         ...(this.task.runOutputData as Record<string, unknown> | undefined),
-        [USAGE_OUTPUT_KEY]: usage,
+        [USAGE_OUTPUT_KEY]: settledUsage,
       } as unknown as Output;
     }
 

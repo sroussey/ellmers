@@ -6,7 +6,8 @@
 
 import type { DataPortSchema } from "@workglow/util/schema";
 import { Workflow } from "../task-graph/Workflow";
-import { CreateEndLoopWorkflow, CreateLoopWorkflow } from "../task-graph/WorkflowFactories";
+import type { CreateLoopWorkflow } from "../task-graph/WorkflowFactories";
+import { CreateEndLoopWorkflow } from "../task-graph/WorkflowFactories";
 import { FallbackTaskRunner } from "./FallbackTaskRunner";
 import type { GraphAsTaskConfig } from "./GraphAsTask";
 import { GraphAsTask, graphAsTaskConfigSchema } from "./GraphAsTask";

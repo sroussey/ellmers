@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IDisposeStrategy, ResourceScope } from "@workglow/util";
-import { EventEmitter, ServiceRegistry, uuid4 } from "@workglow/util";
+import type { IDisposeStrategy, ResourceScope, ServiceRegistry } from "@workglow/util";
+import { EventEmitter, uuid4 } from "@workglow/util";
 import { DirectedAcyclicGraph } from "@workglow/util/graph";
-import { TaskOutputRepository } from "../storage/TaskOutputRepository";
-import type { ITask } from "../task/ITask";
-import type { StreamEvent } from "../task/StreamTypes";
+import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
+import type { IRunConfig, ITask } from "../task/ITask";
+import type { StreamEvent, Usage } from "../task/StreamTypes";
 import type { TaskEntitlements } from "../task/TaskEntitlements";
 import type { JsonTaskItem, TaskGraphJson, TaskGraphJsonOptions } from "../task/TaskJSON";
 import type { TaskIdType, TaskInput, TaskOutput, TaskStatus } from "../task/TaskTypes";
@@ -19,9 +19,9 @@ import type { DataflowIdType } from "./Dataflow";
 import { Dataflow, DataflowArrow } from "./Dataflow";
 import { computeGraphEntitlements } from "./GraphEntitlementUtils";
 import { addBoundaryNodesToDependencyJson, addBoundaryNodesToGraphJson } from "./GraphSchemaUtils";
+import { GraphUsageAggregator } from "./GraphUsageAggregator";
 import type { ITaskGraph } from "./ITaskGraph";
-import {
-  EventTaskGraphToDagMapping,
+import type {
   GraphEventDagEvents,
   GraphEventDagParameters,
   TaskGraphEventListener,
@@ -30,8 +30,9 @@ import {
   TaskGraphStatusEvents,
   TaskGraphStatusListeners,
 } from "./TaskGraphEvents";
-import type { GraphResultArray } from "./TaskGraphRunner";
-import { CompoundMergeStrategy, GraphResult, TaskGraphRunner } from "./TaskGraphRunner";
+import { EventTaskGraphToDagMapping } from "./TaskGraphEvents";
+import type { CompoundMergeStrategy, GraphResult, GraphResultArray } from "./TaskGraphRunner";
+import { TaskGraphRunner } from "./TaskGraphRunner";
 
 /**
  * Configuration for running a task graph
@@ -104,6 +105,15 @@ export interface TaskGraphRunConfig {
   /** Same semantics as on {@link IRunConfig}. */
   disposeStrategy?: IDisposeStrategy;
 
+  /** Same semantics as on {@link IRunConfig}. */
+  lateUsageSink?: IRunConfig["lateUsageSink"];
+
+  /** Same semantics as on {@link IRunConfig}. */
+  usageSink?: IRunConfig["usageSink"];
+
+  /** Same semantics as on {@link IRunConfig}. */
+  usageRetireSink?: IRunConfig["usageRetireSink"];
+
   /**
    * Stable identifier for this logical run. When provided, the graph runner
    * wraps the `private` cache slot in a {@link RunPrivateCacheRepo} keyed by
@@ -147,6 +157,12 @@ export class TaskGraph implements ITaskGraph {
   /** Optional output cache to use for this task graph */
   public outputCache?: TaskOutputRepository;
 
+  /** This run's token aggregator. Reset — not replaced — at the start of each run, so a subscriber attached beforehand keeps receiving. */
+  usageAggregator: GraphUsageAggregator = new GraphUsageAggregator();
+
+  /** Final run token total, set at run end. */
+  runUsage: Usage | undefined = undefined;
+
   constructor({ outputCache, dag }: TaskGraphConstructorConfig = {}) {
     this.outputCache = outputCache;
     this._dag = dag || new TaskGraphDAG();
@@ -177,18 +193,11 @@ export class TaskGraph implements ITaskGraph {
     config: TaskGraphRunConfig = {}
   ): Promise<GraphResultArray<ExecuteOutput>> {
     return this.runner.runGraph<ExecuteOutput>(input, {
-      outputCache: config?.outputCache || this.outputCache,
-      parentSignal: config?.parentSignal || undefined,
-      accumulateLeafOutputs: config?.accumulateLeafOutputs,
-      noAccumulation: config?.noAccumulation,
-      streamHighWaterBytes: config?.streamHighWaterBytes,
-      streamGateWatchdogMs: config?.streamGateWatchdogMs,
-      registry: config?.registry,
-      timeout: config?.timeout,
-      maxTasks: config?.maxTasks,
-      resourceScope: config?.resourceScope,
-      disposeStrategy: config?.disposeStrategy,
-      runId: config?.runId,
+      ...config,
+      // `??`, not `||`: an explicit `outputCache: false` is a documented
+      // "disable all caching" signal the runner branches on — `||` would
+      // swallow it and substitute the graph's own cache repository.
+      outputCache: config?.outputCache ?? this.outputCache,
     });
   }
 

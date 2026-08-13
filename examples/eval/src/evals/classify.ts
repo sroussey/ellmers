@@ -5,9 +5,11 @@
  */
 
 import type { ModelConfig } from "@workglow/ai";
-import { Workflow } from "@workglow/task-graph";
+import type { Usage } from "@workglow/task-graph";
+import { USAGE_OUTPUT_KEY, Workflow } from "@workglow/task-graph";
 import type { DatasetRow, LabelNames } from "../hf/types";
 import { fenceText } from "./prompt";
+import { runWithStreamChunks } from "./streamSubscribe";
 import type { ColumnOptions, DatasetContext, RowExecutor } from "./types";
 
 /**
@@ -80,7 +82,7 @@ export function makeClassifyExecutor(
     additionalProperties: false,
   };
 
-  return async (row) => {
+  return async (row, onStreamChunk) => {
     const text = String(row[options.textColumn] ?? "");
     const workflow = new Workflow();
     workflow.structuredGeneration({
@@ -90,10 +92,14 @@ export function makeClassifyExecutor(
       temperature: 0,
       maxTokens: 256,
     });
-    const result = (await workflow.run()) as { object?: { label?: unknown } };
+    const output = await runWithStreamChunks<{
+      object?: { label?: unknown };
+      [USAGE_OUTPUT_KEY]?: Usage;
+    }>(workflow, onStreamChunk);
     return {
       expected: expectedLabel(row, options.labelColumn, context.labelNames, labels),
-      predicted: String(result.object?.label ?? ""),
+      predicted: String(output.object?.label ?? ""),
+      usage: output[USAGE_OUTPUT_KEY],
     };
   };
 }

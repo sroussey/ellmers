@@ -58,7 +58,7 @@ export function sessionReuseBlock(
             new AbortController().signal,
             emit,
             undefined,
-            sessionId
+            { sessionId }
           );
         }
         {
@@ -69,7 +69,7 @@ export function sessionReuseBlock(
             new AbortController().signal,
             emit,
             undefined,
-            sessionId
+            { sessionId }
           );
         }
 

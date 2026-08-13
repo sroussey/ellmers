@@ -5,8 +5,8 @@
  */
 
 import type { ColorObject } from "@workglow/util/media";
-import type { JsonSchema } from "@workglow/util/schema";
-import { FromSchema, FromSchemaDefaultOptions, FromSchemaOptions } from "@workglow/util/schema";
+import type { FromSchema, FromSchemaOptions, JsonSchema } from "@workglow/util/schema";
+import { FromSchemaDefaultOptions } from "@workglow/util/schema";
 
 const cssRgbChannelPattern = "(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)";
 const cssRgbAlphaPattern = "(?:0(?:\\.\\d+)?|1(?:\\.0+)?)";

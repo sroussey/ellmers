@@ -8,12 +8,8 @@ import type { DataPortSchema } from "@workglow/util/schema";
 import { Workflow } from "../task-graph/Workflow";
 import { CreateEndLoopWorkflow, CreateLoopWorkflow } from "../task-graph/WorkflowFactories";
 import type { IRunConfig } from "./ITask";
-import {
-  IterationAnalysisResult,
-  IteratorTask,
-  IteratorTaskConfig,
-  iteratorTaskConfigSchema,
-} from "./IteratorTask";
+import type { IterationAnalysisResult, IteratorTaskConfig } from "./IteratorTask";
+import { IteratorTask, iteratorTaskConfigSchema } from "./IteratorTask";
 import type { TaskInput, TaskOutput, TaskTypeName } from "./TaskTypes";
 
 export const reduceTaskConfigSchema = {
@@ -132,7 +128,16 @@ export class ReduceTask<
 
       for (const [key, schema] of Object.entries(taskOutputSchema.properties || {})) {
         if (!properties[key]) {
-          properties[key] = schema;
+          // The reduce output is the accumulated value of the final iteration,
+          // never a live stream — a child port's x-stream annotation must not
+          // survive onto the aggregate schema, or the run would be routed
+          // through executeStream and skip the iterations entirely.
+          if (typeof schema === "object" && schema !== null && "x-stream" in schema) {
+            const { ["x-stream"]: _xStream, ...rest } = schema as Record<string, unknown>;
+            properties[key] = rest;
+          } else {
+            properties[key] = schema;
+          }
         }
       }
     }

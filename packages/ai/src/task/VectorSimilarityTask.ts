@@ -6,14 +6,12 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, GraphAsTask, Workflow } from "@workglow/task-graph";
+import type { DataPortSchema, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
 import {
   cosineSimilarity,
-  DataPortSchema,
-  FromSchema,
   hammingSimilarity,
   jaccardSimilarity,
   TypedArraySchema,
-  TypedArraySchemaOptions,
 } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 

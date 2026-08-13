@@ -84,6 +84,27 @@ export function buildSearchWhere<Entity>(
       throw new Error(`Unsupported SearchCondition operator: ${String(operator)}`);
     }
 
+    // `col = NULL` is never true in SQL — not even against a NULL column — so a
+    // null criterion used to match zero rows instead of the rows holding NULL.
+    // That failed silently and in the worst possible direction: a repo looking
+    // up a row by a tuple containing a nullable column always missed, and
+    // callers that "find or create" therefore created every time. One such
+    // resolver minted 6 canonical identities for a single person in one run.
+    //
+    // Only equality and its negation are rewritten. An ordering comparison
+    // against NULL is
+    // unknown by definition, so `<`/`>` keep matching nothing — which is what
+    // SQL means — rather than being quietly redefined here.
+    //
+    // `undefined` is deliberately NOT folded in: it is indistinguishable from
+    // "caller omitted this filter", and guessing between the two would trade a
+    // visible bug for an invisible one.
+    if (value === null && (operator === "=" || operator === "!=")) {
+      // Binds no parameter, so paramIndex must not advance.
+      conditions.push(`${quotedColumn} IS ${operator === "=" ? "" : "NOT "}NULL`);
+      continue;
+    }
+
     conditions.push(`${quotedColumn} ${operator} ${dialect.placeholder(paramIndex)}`);
     params.push(convertValue(column as string, value));
     paramIndex++;

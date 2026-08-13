@@ -8,6 +8,7 @@ import { TaskRegistry } from "@workglow/task-graph";
 import { AiChatTask } from "./AiChatTask";
 import { AiChatWithKbTask } from "./AiChatWithKbTask";
 import { BackgroundRemovalTask } from "./BackgroundRemovalTask";
+import { CacheCheckpointTask } from "./CacheCheckpointTask";
 import { ChunkRetrievalTask } from "./ChunkRetrievalTask";
 import { ChunkVectorUpsertTask } from "./ChunkVectorUpsertTask";
 import { ContextBuilderTask } from "./ContextBuilderTask";
@@ -67,6 +68,7 @@ export const registerAiTasks = () => {
     AiChatTask,
     AiChatWithKbTask,
     BackgroundRemovalTask,
+    CacheCheckpointTask,
     CountTokensTask,
     ContextBuilderTask,
     DocumentEnricherTask,

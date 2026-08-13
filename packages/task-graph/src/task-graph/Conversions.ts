@@ -4,12 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { DataPortSchema } from "@workglow/util/schema";
-import type { CachePolicy } from "../cache/CachePolicy";
 import type { IExecuteContext, ITask } from "../task/ITask";
 import { Task } from "../task/Task";
 import type { DataPorts } from "../task/TaskTypes";
-import { DATAFLOW_ALL_PORTS } from "./Dataflow";
 import type { ITaskGraph } from "./ITaskGraph";
 import type { IWorkflow } from "./IWorkflow";
 import { TaskGraph } from "./TaskGraph";
@@ -62,6 +59,40 @@ function graphWrapperFactory(): GraphWrapperFactory {
 }
 
 // ============================================================================
+// Pipe-function wrapper factory (deferred seam)
+//
+// Same cycle as above, and the same remedy. `Task.ts` imports `TaskRunner`,
+// which imports this module, so by the time this module is evaluated `Task` is
+// still uninitialized. A method body that merely *reads* `Task` later is fine
+// (the binding is live by then — `ensureTask`'s `instanceof` below relies on
+// that), but a `class ... extends Task` clause is not: it resolves the
+// superclass against the binding as it stood when the module was evaluated,
+// and throws "Class extends value undefined". PipeFunctionTask.ts owns the
+// wrapper subclass and registers this factory once it has finished evaluating.
+// ============================================================================
+
+export type PipeWrapperFactory = <I extends DataPorts, O extends DataPorts>(
+  fn: PipeFunction<I, O>,
+  config: any
+) => ITask<I, O>;
+
+let _pipeWrapperFactory: PipeWrapperFactory | undefined;
+
+/** Called from {@link PipeFunctionTask} once its module has finished evaluating. */
+export function registerPipeWrapperFactory(factory: PipeWrapperFactory): void {
+  _pipeWrapperFactory = factory;
+}
+
+function pipeWrapperFactory(): PipeWrapperFactory {
+  if (!_pipeWrapperFactory) {
+    throw new Error(
+      "PipeFunctionTask is not registered yet. Ensure @workglow/task-graph has finished loading."
+    );
+  }
+  return _pipeWrapperFactory;
+}
+
+// ============================================================================
 // ensureTask — converts Taskish values into ITask instances
 // ============================================================================
 
@@ -69,40 +100,7 @@ function convertPipeFunctionToTask<I extends DataPorts, O extends DataPorts>(
   fn: PipeFunction<I, O>,
   config?: any
 ): ITask<I, O> {
-  // Plain JS functions used inside `pipe()` cannot declare port schemas, so
-  // the wrapper must accept (and emit) any object shape. The previous
-  // `additionalProperties: false` (alongside a single `[DATAFLOW_ALL_PORTS]`
-  // ("*") property) caused the JSON-schema validator to treat "*" as a
-  // literal key and reject every real upstream port — e.g. `{ json, metadata }`
-  // from `FetchUrlTask` — breaking any `pipe(task, async fn, ...)` chain with
-  // TaskInvalidInputError. The runtime already handles the "*" wildcard in
-  // `Task.addInput`; the schema just needs to permit the data through.
-  class QuickTask extends Task<I, O> {
-    public static override type = fn.name ? `𝑓 ${fn.name}` : "𝑓";
-    public static override inputSchema = () => {
-      return {
-        type: "object",
-        properties: {
-          [DATAFLOW_ALL_PORTS]: {},
-        },
-        additionalProperties: true,
-      } as const satisfies DataPortSchema;
-    };
-    public static override outputSchema = () => {
-      return {
-        type: "object",
-        properties: {
-          [DATAFLOW_ALL_PORTS]: {},
-        },
-        additionalProperties: true,
-      } as const satisfies DataPortSchema;
-    };
-    public static override cachePolicy: CachePolicy = { kind: "none" };
-    public override async execute(input: I, context: IExecuteContext) {
-      return fn(input, context);
-    }
-  }
-  return new QuickTask(config);
+  return pipeWrapperFactory()(fn, config);
 }
 
 /**

@@ -4,8 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ITask, IWorkflow, TaskGraphRunConfig, WorkflowRunConfig } from "@workglow/task-graph";
-import { IRunConfig, TaskGraph } from "@workglow/task-graph";
+import type {
+  IRunConfig,
+  ITask,
+  IWorkflow,
+  TaskGraphRunConfig,
+  WorkflowRunConfig,
+} from "@workglow/task-graph";
+import { TaskGraph } from "@workglow/task-graph";
 import { detectCliTheme, setCliTheme } from "./terminal/detectTerminalTheme";
 import { renderTaskInstanceRun, renderWorkflowRun } from "./ui/render";
 

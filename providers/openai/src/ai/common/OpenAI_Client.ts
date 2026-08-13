@@ -4,8 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { isModelEffort, type ModelEffort } from "@workglow/ai";
 import { isBrowserLike, resolveApiKey, validateProviderBaseUrl } from "@workglow/ai/provider-utils";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
+
+/** Maps coarse {@link ModelEffort} to OpenAI Responses `reasoning.effort`. */
+const EFFORT_TO_OPENAI: Record<ModelEffort, string> = {
+  none: "none",
+  low: "low",
+  medium: "medium",
+  high: "high",
+  extra: "xhigh",
+  ultra: "max",
+};
 
 /**
  * Hostnames (or hostname suffixes) accepted for OpenAI `base_url` without
@@ -45,7 +56,32 @@ interface ResolvedProviderConfig {
   readonly trustedBaseUrl?: boolean;
 }
 
+let _testClient: unknown;
+
+/**
+ * Override the client returned by {@link getClient} so runtime tests can
+ * capture the requests the OpenAI run-fns build without a live SDK, API key,
+ * or network call. Pass `undefined` to restore normal SDK-backed creation.
+ * This lives in the runtime module (not a `vi.mock` of `openai`) so it works
+ * identically whether the provider resolves to `src` or the bundled `dist`,
+ * and is immune to duplicate SDK copies across the workspace defeating
+ * module-level mocks.
+ */
+function setOpenAIClientForTests(client: unknown): void {
+  _testClient = client;
+}
+
+/**
+ * @internal Symbols exported only for use by `@workglow/test`. Not part of the
+ * stable public API. Surfaced on the `ai-runtime` barrel (via `export *`) and
+ * merged into the `/ai` barrel's `_testOnly`.
+ */
+export const _testOnly = {
+  setOpenAIClientForTests,
+} as const;
+
 export async function getClient(model: OpenAiModelConfig | undefined) {
+  if (_testClient) return _testClient as InstanceType<OpenAIClientClass>;
   const OpenAI = await loadOpenAISDK();
   const config = model?.provider_config as ResolvedProviderConfig | undefined;
   const apiKey = resolveApiKey({
@@ -84,19 +120,21 @@ export function getModelName(model: OpenAiModelConfig | undefined): string {
 }
 
 /**
- * Resolves the configured `reasoning` object for reasoning-capable models
- * (the GPT-5.6 sol/terra/luna family and the o-series), sent verbatim as the
- * Responses `reasoning` parameter. Returns `undefined` when unset so
- * non-reasoning models and callers that don't opt in send no reasoning field.
+ * Resolves the `reasoning` object for reasoning-capable models (GPT-5.6
+ * sol/terra/luna and the o-series). Native `provider_config.reasoning` wins;
+ * otherwise map `model.effort`. Returns `undefined` when neither is set.
  */
 export function getReasoningConfig(
   model: OpenAiModelConfig | undefined
 ): { effort?: string; mode?: string } | undefined {
   const reasoning = (model?.provider_config as ResolvedProviderConfig | undefined)?.reasoning;
-  if (!reasoning || (reasoning.effort === undefined && reasoning.mode === undefined)) {
-    return undefined;
+  if (reasoning && (reasoning.effort !== undefined || reasoning.mode !== undefined)) {
+    return reasoning;
   }
-  return reasoning;
+  if (isModelEffort(model?.effort)) {
+    return { effort: EFFORT_TO_OPENAI[model.effort] };
+  }
+  return undefined;
 }
 
 /** Deterministic 32-bit FNV-1a hash → 8-char hex. Worker-safe (no crypto import). */
@@ -133,10 +171,19 @@ export function resolvePromptCacheKey(
 
 /**
  * Applies the per-request Responses fields common to every OpenAI text run-fn:
- * the model's `reasoning` config (when set) and a stable `prompt_cache_key`.
- * Mutates and returns `params` so callers can inline it into the create call.
- * Call this last, after model/instructions/tools are populated, so the cache
- * key sees the full prefix.
+ * the model's `reasoning` config and a stable `prompt_cache_key`. Mutates and
+ * returns `params` so callers can inline it into the create call. Call this
+ * last, after model/instructions/tools/temperature are populated, so the cache
+ * key sees the full prefix and the reasoning default can see the temperature.
+ *
+ * When the caller pinned a `temperature` but expressed no reasoning preference,
+ * reasoning is forced off. The two are not independently selectable on the
+ * reasoning families: `gpt-5.6-luna` answers `temperature` alone with
+ * `400 Unsupported parameter: 'temperature' is not supported with this model`,
+ * yet accepts `{reasoning: {effort: "none"}, temperature: 0}`. A caller asking
+ * for a specific temperature is asking for controlled sampling, so honouring
+ * that request — rather than failing it — is the useful reading. An explicit
+ * `reasoning` in the model config always wins.
  */
 export function finalizeResponsesRequest(
   model: OpenAiModelConfig | undefined,
@@ -144,6 +191,7 @@ export function finalizeResponsesRequest(
 ): Record<string, unknown> {
   const reasoning = getReasoningConfig(model);
   if (reasoning !== undefined) params.reasoning = reasoning;
+  else if (params.temperature !== undefined) params.reasoning = { effort: "none" };
   params.prompt_cache_key = resolvePromptCacheKey(model, params);
   return params;
 }

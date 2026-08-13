@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ServiceRegistry } from "@workglow/util";
 import {
   createServiceToken,
   globalServiceRegistry,
   registerInputCompactor,
   registerInputResolver,
-  ServiceRegistry,
 } from "@workglow/util";
 import { InMemoryMcpServerRepository } from "./InMemoryMcpServerRepository";
-import { McpServerRepository } from "./McpServerRepository";
+import type { McpServerRepository } from "./McpServerRepository";
 import type { McpServerRecord } from "./McpServerSchema";
 
 export interface McpServerConnection {

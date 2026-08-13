@@ -19,6 +19,7 @@
 
 export * from "./provider/AiProvider";
 export * from "./provider/AiProviderRegistry";
+export * from "./provider/CheckpointRegistry";
 
 export * from "./task/ToolCallingUtils";
 export * from "./task/MessageConversion";

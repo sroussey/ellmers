@@ -38,10 +38,16 @@ export async function loadTransformersSDK(): Promise<TransformersSDKModule> {
       _transformersSdk = mod;
       return mod;
     })
-    .catch(() => {
+    .catch((err: unknown) => {
       _loadPromise = undefined;
+      // Preserve the underlying failure — a missing package is only one cause.
+      // Linked `bun link` setups often fail here on a sharp/libvips mismatch
+      // (e.g. format.jp2k) which this wrapper used to hide.
+      const detail = err instanceof Error ? err.message : String(err);
       throw new Error(
-        "@huggingface/transformers is required for HuggingFace Transformers tasks. Install it with: bun add @huggingface/transformers"
+        `@huggingface/transformers failed to load (${detail}). ` +
+          `Install it in the app package (bun add @huggingface/transformers). ` +
+          `If it is already installed, check for conflicting sharp / @img/sharp-* versions after bun link.`
       );
     });
   return _loadPromise;
@@ -331,10 +337,20 @@ export interface HftPrefixRewindSession extends HftSessionBase {
   readonly mode: "prefix-rewind";
   /** Snapshot of prefix KV entries. On each call, a fresh DynamicCache is
    *  created from these entries so generation doesn't pollute the base prefix.
-   *  Safe for WASM/CPU tensors; WebGPU would need cloning since update()
-   *  disposes replaced GPU tensors. */
+   *  Safe for WASM/CPU tensors only: `DynamicCache.update()` disposes replaced
+   *  GPU tensors, which would free these shared snapshot entries mid-use, so
+   *  consumers must gate every rebuild on {@link hasGpuBufferEntries} and take
+   *  their full re-encode fallback when it trips. */
   readonly baseEntries: Record<string, any>;
   readonly baseSeqLength: number;
+  /**
+   * The exact prompt text these KV entries encode (rendered prefix for a
+   * warm-up, prompt + reply for a post-turn snapshot). Consumers check
+   * `prompt.startsWith(encodedText)` before trusting the cached tokens,
+   * instead of re-rendering the checkpoint prefix on every call. Absent on
+   * entries whose rendered text was not knowable at snapshot time.
+   */
+  readonly encodedText?: string | undefined;
 }
 
 export interface HftProgressiveSession extends HftSessionBase {
@@ -355,15 +371,74 @@ export function setHftSession(sessionId: string, state: HftSessionState): void {
   hftSessions.set(sessionId, state);
 }
 
+/**
+ * Snapshot a DynamicCache-shaped flat record into a prefix-rewind session and
+ * store it under `sessionId`. Owns the entry shape (own-key copy — class
+ * methods live on the prototype so `Object.keys` yields only tensors) and the
+ * `get_seq_length` guard, so every snapshot site stays consistent.
+ *
+ * @param encodedText - The exact prompt text the cache encodes (see
+ *   {@link HftPrefixRewindSession.encodedText}); omit when unknowable.
+ */
+export function snapshotHftSession(
+  sessionId: string,
+  cache: Record<string, any>,
+  modelPath: string,
+  cacheKey: string,
+  encodedText?: string | undefined
+): HftPrefixRewindSession {
+  const baseEntries: Record<string, any> = {};
+  for (const key of Object.keys(cache)) {
+    baseEntries[key] = cache[key];
+  }
+  const session: HftPrefixRewindSession = {
+    mode: "prefix-rewind",
+    baseEntries,
+    baseSeqLength: typeof cache.get_seq_length === "function" ? cache.get_seq_length() : 0,
+    modelPath,
+    cacheKey,
+    encodedText,
+  };
+  setHftSession(sessionId, session);
+  return session;
+}
+
+/**
+ * True when any snapshot entry lives in a GPU buffer. Rebuilding a
+ * `DynamicCache` from such entries is a use-after-free trap: the first decode
+ * step's `update()` disposes the replaced gpu-buffer tensors — which ARE the
+ * shared snapshot's — so a later consumer of the same snapshot would read
+ * freed GPU memory. Attach sites must skip KV reuse (full re-encode fallback)
+ * when this trips.
+ */
+export function hasGpuBufferEntries(entries: Record<string, any>): boolean {
+  for (const tensor of Object.values(entries)) {
+    if (tensor?.location === "gpu-buffer") {
+      return true;
+    }
+  }
+  return false;
+}
+
 function disposeSessionResources(session: HftSessionState): void {
   if (session.mode === "progressive") {
-    if (session.cache?.dispose) {
-      session.cache.dispose();
+    try {
+      // DynamicCache.dispose() is async; swallow rejections from tensors that
+      // generation's update() already disposed.
+      const result = session.cache?.dispose?.();
+      void (result as Promise<void> | undefined)?.catch?.(() => {});
+    } catch {
+      // Already-disposed tensors must not break session teardown.
     }
   } else {
     for (const tensor of Object.values(session.baseEntries)) {
       if (tensor?.location === "gpu-buffer" && typeof tensor.dispose === "function") {
-        tensor.dispose();
+        try {
+          tensor.dispose();
+        } catch {
+          // Double-dispose is expected when a consumer's update() already
+          // replaced (and disposed) a shared gpu-buffer entry.
+        }
       }
     }
   }

@@ -10,8 +10,14 @@ import type {
   ToolCallingTaskOutput,
   ToolCalls,
   ToolDefinition,
+  Usage,
 } from "@workglow/ai";
-import { localOnlyFetch } from "@workglow/ai/provider-utils";
+import {
+  createEstimatedOutputUsageReporter,
+  localOnlyFetch,
+  mapOpenAIChatUsage,
+  OPENAI_STREAM_USAGE_OPTIONS,
+} from "@workglow/ai/provider-utils";
 import {
   buildToolDescription,
   filterValidToolCalls,
@@ -56,9 +62,18 @@ export function createLlamaCppServerToolCallingStream(
       stream: true,
       ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
       ...(input.maxTokens !== undefined ? { max_tokens: input.maxTokens } : {}),
+      ...OPENAI_STREAM_USAGE_OPTIONS,
     });
     const { baseUrl, release } = await acquire(model, opts);
     try {
+      const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+      provisionalUsage.onPrompt(
+        messages
+          .map((m) => (typeof m.content === "string" ? m.content : ""))
+          .filter(Boolean)
+          .join("\n")
+      );
+
       const response = await localOnlyFetch(
         buildServerUrl(baseUrl, "/v1/chat/completions"),
         {
@@ -81,11 +96,14 @@ export function createLlamaCppServerToolCallingStream(
       const callMeta = new Map<number, { id?: string; name?: string }>();
       let nextSyntheticIndex = 0;
       let lastEmittedToolCalls: ToolCalls = [];
+      let usage: Usage | undefined;
 
       for await (const delta of readChatCompletionDeltas(response, signal)) {
         if (delta.done) break;
+        usage = mapOpenAIChatUsage(delta.usage) ?? usage;
         if (delta.contentDelta) {
           accumulatedText += delta.contentDelta;
+          provisionalUsage.onText(delta.contentDelta);
           emit({ type: "text-delta", port: "text", textDelta: delta.contentDelta });
         }
         if (delta.toolCallDeltas?.length) {
@@ -96,6 +114,7 @@ export function createLlamaCppServerToolCallingStream(
             if (tc.function?.name) meta.name = tc.function.name;
             callMeta.set(idx, meta);
             if (tc.function?.arguments) {
+              provisionalUsage.onText(tc.function.arguments);
               accumulatedArgs.set(idx, (accumulatedArgs.get(idx) ?? "") + tc.function.arguments);
             }
           }
@@ -103,10 +122,12 @@ export function createLlamaCppServerToolCallingStream(
           emit({ type: "object-delta", port: "toolCalls", objectDelta: [...lastEmittedToolCalls] });
         }
       }
+      provisionalUsage.flush();
       const finalToolCalls = filterValidToolCalls(lastEmittedToolCalls, input.tools);
       emit({
         type: "finish",
         data: { text: accumulatedText, toolCalls: finalToolCalls } as ToolCallingTaskOutput,
+        usage,
       });
     } finally {
       await release();

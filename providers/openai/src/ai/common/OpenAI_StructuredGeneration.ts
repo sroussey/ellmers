@@ -8,9 +8,15 @@ import type {
   AiProviderRunFn,
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
+  Usage,
 } from "@workglow/ai";
-import { firstNonStrictReason, isStrictCompatibleSchema } from "@workglow/ai/provider-utils";
-import { parsePartialJson } from "@workglow/util/worker";
+import {
+  createEstimatedOutputUsageReporter,
+  firstNonStrictReason,
+  isStrictCompatibleSchema,
+  mapOpenAIResponsesUsage,
+} from "@workglow/ai/provider-utils";
+import { createPartialJsonStream } from "@workglow/util/worker";
 import { finalizeResponsesRequest, getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 import { warnStrictDowngradedOnce } from "./OpenAI_ResponsesWarnings";
@@ -57,19 +63,37 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
   if (input.temperature !== undefined) params.temperature = input.temperature;
   finalizeResponsesRequest(model, params);
 
+  // Responses only attaches billed usage to the terminal lifecycle event, so
+  // without a provisional estimate the CLI row stays on a static "Preparing"
+  // for the whole TTFB wait. Emit ↑ before the request so it appears during
+  // connect; finish.usage below still carries the provider total.
+  const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+  provisionalUsage.onPrompt(typeof input.prompt === "string" ? input.prompt : "");
+
   const stream = await client.responses.create(
     { ...params, stream: true } as Parameters<typeof client.responses.create>[0],
     { signal }
   );
 
-  let accumulatedJson = "";
+  const json = createPartialJsonStream();
   let refusal = "";
-  for await (const event of stream as AsyncIterable<{ type?: string; delta?: string }>) {
-    if (event.type === "response.output_text.delta") {
+  let usage: Usage | undefined;
+  for await (const event of stream as AsyncIterable<{
+    type?: string;
+    delta?: string;
+    response?: { usage?: unknown };
+  }>) {
+    if (
+      event.type === "response.completed" ||
+      event.type === "response.incomplete" ||
+      event.type === "response.failed"
+    ) {
+      usage = mapOpenAIResponsesUsage(event.response?.usage) ?? usage;
+    } else if (event.type === "response.output_text.delta") {
       const delta = event.delta ?? "";
       if (delta) {
-        accumulatedJson += delta;
-        const partial = parsePartialJson(accumulatedJson);
+        provisionalUsage.onText(delta);
+        const partial = json.push(delta);
         if (partial !== undefined) {
           emit({ type: "object-delta", port: "object", objectDelta: partial });
         }
@@ -78,6 +102,7 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
       refusal += event.delta ?? "";
     }
   }
+  provisionalUsage.flush();
 
   if (refusal) {
     // Surface the refusal as a first-class event; the consumer completes with
@@ -85,11 +110,9 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
     emit({ type: "refusal", refusal });
   }
 
-  let finalObject: Record<string, unknown>;
-  try {
-    finalObject = JSON.parse(accumulatedJson);
-  } catch {
-    finalObject = parsePartialJson(accumulatedJson) ?? {};
-  }
-  emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
+  emit({
+    type: "finish",
+    data: { object: json.finishObject() } as StructuredGenerationTaskOutput,
+    usage,
+  });
 };

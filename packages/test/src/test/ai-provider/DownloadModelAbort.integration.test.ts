@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ModelDownloadTaskRunOutput } from "@workglow/ai";
 import {
   getGlobalModelRepository,
   InMemoryModelRepository,
   ModelDownloadTask,
-  ModelDownloadTaskRunOutput,
   setGlobalModelRepository,
   unloadModel,
 } from "@workglow/ai";
@@ -22,7 +22,7 @@ import { getTaskQueueRegistry, setTaskQueueRegistry, TaskStatus } from "@workglo
 import { setLogger, sleep } from "@workglow/util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 
 const MODEL_ID = "onnx:Supabase/gte-small:q8";
 

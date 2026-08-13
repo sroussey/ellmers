@@ -6,7 +6,8 @@
 
 import type { TaskConfig, TaskOutput } from "@workglow/task-graph";
 
-import { AiTask, AiTaskInput } from "./AiTask";
+import type { AiTaskInput } from "./AiTask";
+import { AiTask } from "./AiTask";
 
 /**
  * A base class for AI vision tasks.

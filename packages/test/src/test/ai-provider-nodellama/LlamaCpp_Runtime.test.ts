@@ -7,7 +7,9 @@
 import {
   acquireContextSequence,
   acquireModelInUse,
+  captureSequenceTokenBoundary,
   disposeLlamaCppSessionsForModel,
+  getLlamaCppSession,
   getOrCreateEmbeddingContext,
   isVramError,
   llamaCppEmbeddingContexts,
@@ -17,7 +19,9 @@ import {
   recycleLlamaCppTextContext,
   releaseModelInUse,
   resolvedPaths,
+  restoreLlamaCppCheckpointSession,
   setLlamaCppSession,
+  stealLlamaCppSession,
   withSequence,
   withSessionLock,
   withVramEviction,
@@ -481,5 +485,146 @@ describe("withSessionLock", () => {
     // A subsequent call must be able to proceed immediately.
     const result = await withSessionLock(sessionId, async () => "ok");
     expect(result).toEqual("ok");
+  });
+});
+
+describe("stealLlamaCppSession", () => {
+  afterEach(() => {
+    llamaCppSessions.clear();
+  });
+
+  it("atomically returns and removes the state for a known session id", () => {
+    const state = {
+      mode: "prefix-rewind" as const,
+      sequence: { id: "seq-A" } as unknown,
+      session: { id: "session-A" } as unknown,
+      modelKey: "modelA",
+    };
+    setLlamaCppSession("ckpt-A", state);
+    // Sanity: present before the steal.
+    expect(getLlamaCppSession("ckpt-A")).toBe(state);
+
+    const stolen = stealLlamaCppSession("ckpt-A");
+
+    // Exactly one caller receives the state.
+    expect(stolen).toBe(state);
+    // Post-steal the entry is gone — the loser of a concurrent steal
+    // observes `undefined` and re-encodes via the missing-state fallback.
+    expect(getLlamaCppSession("ckpt-A")).toBeUndefined();
+    expect(llamaCppSessions.has("ckpt-A")).toBe(false);
+    // A second steal of the same id must not re-return the stale state.
+    expect(stealLlamaCppSession("ckpt-A")).toBeUndefined();
+  });
+
+  it("returns undefined for an unknown session id without mutating the map", () => {
+    const other = {
+      mode: "progressive" as const,
+      sequence: { id: "seq-B" } as unknown,
+      session: { id: "session-B" } as unknown,
+      modelKey: "modelB",
+    };
+    setLlamaCppSession("ckpt-B", other);
+
+    expect(stealLlamaCppSession("nonexistent")).toBeUndefined();
+    // Other entries are untouched.
+    expect(getLlamaCppSession("ckpt-B")).toBe(other);
+    expect(llamaCppSessions.size).toBe(1);
+  });
+});
+
+describe("restoreLlamaCppCheckpointSession", () => {
+  afterEach(() => {
+    llamaCppSessions.clear();
+  });
+
+  function makeRewindableSequence(prefixTokens: number[]) {
+    const sequence = {
+      contextTokens: [...prefixTokens],
+      get nextTokenIndex(): number {
+        return this.contextTokens.length;
+      },
+      eraseContextTokenRanges: vi.fn(async (ranges: Array<{ start: number; end: number }>) => {
+        for (const { start, end } of ranges) {
+          sequence.contextTokens.splice(start, end - start);
+        }
+      }),
+      dispose: vi.fn(async () => {}),
+    };
+    return sequence;
+  }
+
+  function makeState(sequence: unknown) {
+    const setChatHistory = vi.fn();
+    return {
+      state: {
+        mode: "prefix-rewind" as const,
+        sequence: sequence as never,
+        session: { setChatHistory, dispose: vi.fn(async () => {}) } as never,
+        modelKey: "model-key",
+      },
+      setChatHistory,
+    };
+  }
+
+  it("erases the turn's tokens, resets the history, and re-registers the entry", async () => {
+    const sequence = makeRewindableSequence([1, 2, 3]);
+    const boundary = captureSequenceTokenBoundary(sequence);
+    expect(boundary).toEqual({ index: 3, prefixTokens: [1, 2, 3] });
+    // The generated turn appends tokens past the boundary.
+    sequence.contextTokens.push(4, 5);
+    const { state, setChatHistory } = makeState(sequence);
+    const prefixHistory = [{ type: "system", text: "sys" }];
+
+    const restored = await restoreLlamaCppCheckpointSession("ckpt-r", state, boundary, [
+      ...prefixHistory,
+    ]);
+
+    expect(restored).toBe(true);
+    expect(sequence.eraseContextTokenRanges).toHaveBeenCalledWith([{ start: 3, end: 5 }]);
+    expect(sequence.contextTokens).toEqual([1, 2, 3]);
+    expect(setChatHistory).toHaveBeenCalledWith(prefixHistory);
+    expect(llamaCppSessions.get("ckpt-r")).toBe(state);
+  });
+
+  it("refuses to restore when the id was re-registered by a concurrent consumer", async () => {
+    const sequence = makeRewindableSequence([1, 2]);
+    const boundary = captureSequenceTokenBoundary(sequence);
+    const occupant = makeState(makeRewindableSequence([9])).state;
+    setLlamaCppSession("ckpt-busy", occupant);
+    const { state } = makeState(sequence);
+
+    const restored = await restoreLlamaCppCheckpointSession("ckpt-busy", state, boundary, []);
+
+    expect(restored).toBe(false);
+    // The occupant is never overwritten (that would strand its sequence).
+    expect(llamaCppSessions.get("ckpt-busy")).toBe(occupant);
+    expect(sequence.eraseContextTokenRanges).not.toHaveBeenCalled();
+  });
+
+  it("refuses to restore when a context shift rewrote the prefix cells", async () => {
+    const sequence = makeRewindableSequence([1, 2, 3]);
+    const boundary = captureSequenceTokenBoundary(sequence);
+    // Simulate a context shift during the turn: cell 0 was dropped and the
+    // remaining tokens moved down, so a positional rewind would be unsound.
+    sequence.contextTokens.splice(0, 1);
+    sequence.contextTokens.push(4, 5);
+    const { state, setChatHistory } = makeState(sequence);
+
+    const restored = await restoreLlamaCppCheckpointSession("ckpt-shifted", state, boundary, []);
+
+    expect(restored).toBe(false);
+    expect(sequence.eraseContextTokenRanges).not.toHaveBeenCalled();
+    expect(setChatHistory).not.toHaveBeenCalled();
+    expect(llamaCppSessions.has("ckpt-shifted")).toBe(false);
+  });
+
+  it("returns undefined from capture (and false from restore) when the rewind API is missing", async () => {
+    const bareSequence = { dispose: vi.fn(async () => {}) };
+    expect(captureSequenceTokenBoundary(bareSequence)).toBeUndefined();
+
+    const { state } = makeState(bareSequence);
+    const restored = await restoreLlamaCppCheckpointSession("ckpt-bare", state, undefined, []);
+    expect(restored).toBe(false);
+    expect(llamaCppSessions.has("ckpt-bare")).toBe(false);
   });
 });

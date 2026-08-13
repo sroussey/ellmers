@@ -8,7 +8,12 @@ import type {
   AiProviderRunFn,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
+  Usage,
 } from "@workglow/ai";
+import {
+  createEstimatedOutputUsageReporter,
+  OPENAI_STREAM_USAGE_OPTIONS,
+} from "@workglow/ai/provider-utils";
 import { toOpenAIMessages } from "@workglow/ai/worker";
 import { getLogger } from "@workglow/util/worker";
 import {
@@ -18,6 +23,7 @@ import {
   resolveMaxTokens,
 } from "./DeepSeek_Client";
 import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
+import { mapDeepSeekUsage } from "./DeepSeek_Usage";
 
 /**
  * Inputs that the unified `["text.generation"]` runFn handles. Both
@@ -85,22 +91,36 @@ export const DeepSeek_TextGeneration_Stream: AiProviderRunFn<
     const client = await getClient(model);
     const params = buildChatParams(input as UnifiedTextGenerationInput, model);
 
+    // DeepSeek only attaches billed usage to the final empty-choices chunk;
+    // estimate ↑ from the request (before TTFB) and ↓ from streamed text so
+    // the CLI counter moves during the call. finish.usage still carries billed totals.
+    const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+    provisionalUsage.onPrompt(promptTextForUsageEstimate(params.messages));
+
     const stream = await client.chat.completions.create(
-      { ...params, stream: true } as Parameters<typeof client.chat.completions.create>[0],
+      { ...params, stream: true, ...OPENAI_STREAM_USAGE_OPTIONS } as Parameters<
+        typeof client.chat.completions.create
+      >[0],
       { signal }
     );
 
     let emittedText = "";
     let finishReason: string | null | undefined;
+    let usage: Usage | undefined;
     for await (const chunk of stream as AsyncIterable<{
       choices?: Array<{
         delta?: { content?: string | null; refusal?: string | null };
         finish_reason?: string | null;
       }>;
+      usage?: unknown;
     }>) {
+      // The usage-bearing chunk arrives last with an empty `choices` array; the
+      // delta reads below already tolerate that, so nothing else needs guarding.
+      usage = mapDeepSeekUsage(chunk.usage) ?? usage;
       const delta = chunk.choices?.[0]?.delta?.content ?? "";
       if (delta) {
         emittedText += delta;
+        provisionalUsage.onText(delta);
         emit({ type: "text-delta", port: "text", textDelta: delta });
       }
       const refusalDelta = chunk.choices?.[0]?.delta?.refusal ?? "";
@@ -109,9 +129,22 @@ export const DeepSeek_TextGeneration_Stream: AiProviderRunFn<
       }
       finishReason = chunk.choices?.[0]?.finish_reason ?? finishReason;
     }
+    provisionalUsage.flush();
     assertNotTruncatedByReasoning(finishReason, emittedText, input.maxTokens);
-    emit({ type: "finish", data: {} as TextGenerationTaskOutput });
+    emit({ type: "finish", data: {} as TextGenerationTaskOutput, usage });
   } finally {
     logger.timeEnd(timerLabel, { model: getModelName(model) });
   }
 };
+
+/** Flatten chat-message contents into one string for the provisional ↑ estimate. */
+function promptTextForUsageEstimate(messages: unknown): string {
+  if (!Array.isArray(messages)) return "";
+  const parts: string[] = [];
+  for (const message of messages) {
+    if (!message || typeof message !== "object") continue;
+    const content = (message as { content?: unknown }).content;
+    if (typeof content === "string") parts.push(content);
+  }
+  return parts.join("\n");
+}

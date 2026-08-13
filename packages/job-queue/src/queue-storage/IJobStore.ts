@@ -17,6 +17,14 @@ export type JobRecord<Input, Output> = JobStorageFormat<Input, Output>;
  * {@link IMessageQueue}.
  */
 export interface IJobStore<Input, Output> {
+  /**
+   * Declared durability of the backing store, surfaced from
+   * {@link IQueueStorage.durable} by the wrapper facade. `false` marks a
+   * store whose rows do not survive the process (in-memory); undefined
+   * means durable. Cloud message-queue adapters key their pairing warning
+   * on this flag.
+   */
+  readonly durable?: boolean;
   get(id: MessageId): Promise<JobRecord<Input, Output> | undefined>;
   peek(status?: JobStatus, num?: number): Promise<readonly JobRecord<Input, Output>[]>;
   size(status?: JobStatus): Promise<number>;
@@ -40,10 +48,12 @@ export interface IJobStore<Input, Output> {
   /**
    * Insert a new job record built from a {@link JobStorageFormat} body and
    * {@link SendOptions}. Sets status to PENDING, generates the id, persists
-   * fingerprint / job_run_id / max_attempts / deadline_at, then returns the
-   * generated id. Used by message-queue adapters that don't share a SQL core
-   * with the store (SQS, Cloudflare Queues). SQL backends should delegate to
-   * their existing native insert path.
+   * fingerprint / job_run_id / max_attempts / deadline_at — and applies
+   * `delaySeconds` to `visible_at` where the storage preserves caller-set
+   * visibility — then returns the generated id. Used by message-queue
+   * adapters that don't share a SQL core with the store (SQS, Cloudflare
+   * Queues). SQL backends should delegate to their existing native insert
+   * path.
    */
   create(body: JobStorageFormat<Input, Output>, opts: SendOptions): Promise<MessageId>;
 
@@ -139,8 +149,9 @@ export interface IJobStore<Input, Output> {
    * `Promise.allSettled` to fan out the per-id writes in parallel and
    * returns a structured `{ failed }` list rather than throwing on the
    * first error — callers (sendBatch) log each failed id and surface the
-   * aggregate via their existing `AggregateError`. Native SQL backends may
-   * override with a single `UPDATE ... WHERE id = ANY($1)` round-trip.
+   * aggregate via their existing `AggregateError`. A custom IJobStore backed
+   * by native SQL may override with a single `UPDATE ... WHERE id = ANY($1)`
+   * round-trip.
    *
    * Optional: the wrapper layer provides a default implementation so
    * adapters can call this method as `jobStore.markEnqueueDeferredMany!`

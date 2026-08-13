@@ -7,8 +7,6 @@
 // organize-imports-ignore
 
 export * from "./IndexedDbQueueStorage";
-export * from "./IndexedDbMessageQueue";
-export * from "./IndexedDbJobStore";
 export * from "./createIndexedDbQueue";
 export * from "./IndexedDbRateLimiterStorage";
 

@@ -3,6 +3,7 @@
   "type": "module",
   "sideEffects": false,
   "version": "0.3.38",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
@@ -67,7 +68,7 @@
     }
   },
   "devDependencies": {
-    "@types/dom-chromium-ai": "^0.0.17",
+    "@types/dom-chromium-ai": "catalog:",
     "@workglow/ai": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",

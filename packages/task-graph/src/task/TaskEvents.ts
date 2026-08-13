@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { EventParameters } from "@workglow/util";
+import type { EventParameters } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
-import type { StreamEvent } from "./StreamTypes";
+import type { StreamEvent, Usage } from "./StreamTypes";
 import type { TaskEntitlements } from "./TaskEntitlements";
-import { TaskAbortedError, TaskError } from "./TaskError";
-import { TaskStatus } from "./TaskTypes";
+import type { TaskAbortedError, TaskError } from "./TaskError";
+import type { TaskStatus } from "./TaskTypes";
 
 // ========================================================================
 // Event Handling Types
@@ -36,6 +36,19 @@ export type TaskEventListeners = {
 
   /** Fired when a task reports progress */
   progress: (progress: number | undefined, message?: string, ...args: any[]) => void;
+
+  /**
+   * Fired whenever the task's running token total changes, and once more at the
+   * end. `usage` is cumulative for the whole task execution — monotonic, unlike
+   * the per-model-call stream event it is derived from — so consumers replace
+   * rather than accumulate. `modelId` is the model that produced this update, or
+   * `undefined` when the provider did not name one.
+   *
+   * A charge that settles after the task finished (provider cache storage,
+   * billed at disposal) re-emits the new cumulative total, so replace still
+   * holds.
+   */
+  usage: (usage: Usage, modelId: string | undefined) => void;
 
   /**
    * Iterator tasks (MapTask, ReduceTask, etc.): a per-iteration subgraph run is starting.
