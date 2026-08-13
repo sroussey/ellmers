@@ -61,14 +61,9 @@ describe("OpenAI_ModelInfo", () => {
     const runFn = findModelInfoRunFn();
     const model = modelConfig("gpt-5.5");
     let data: ModelInfoTaskOutput | undefined;
-    await runFn(
-      { model } as never,
-      model,
-      undefined as never,
-      ((ev) => {
-        if (ev.type === "finish") data = ev.data as ModelInfoTaskOutput;
-      }) as never
-    );
+    await runFn({ model }, model, undefined as never, (ev) => {
+      if (ev.type === "finish") data = ev.data as ModelInfoTaskOutput;
+    });
 
     expect(retrieved).toEqual(["gpt-5.5"]);
     expect(data?.is_remote).toBe(true);
@@ -79,23 +74,18 @@ describe("OpenAI_ModelInfo", () => {
   it("throws naming the id and provider when retrieve 404s", async () => {
     const runFn = findModelInfoRunFn();
     const model = modelConfig("missing-model");
-    await expect(
-      runFn({ model } as never, model, undefined as never, (() => {}) as never)
-    ).rejects.toThrow(/OpenAI.*missing-model/i);
+    await expect(runFn({ model }, model, undefined as never, (() => {}) as never)).rejects.toThrow(
+      /OpenAI.*missing-model/i
+    );
   });
 
   it("verifies before attaching embedding dimensions", async () => {
     const runFn = findModelInfoRunFn();
     const model = modelConfig("text-embedding-3-small");
     let data: ModelInfoTaskOutput | undefined;
-    await runFn(
-      { model, detail: "dimensions" } as never,
-      model,
-      undefined as never,
-      ((ev) => {
-        if (ev.type === "finish") data = ev.data as ModelInfoTaskOutput;
-      }) as never
-    );
+    await runFn({ model, detail: "dimensions" } as never, model, undefined as never, (ev) => {
+      if (ev.type === "finish") data = ev.data as ModelInfoTaskOutput;
+    });
 
     expect(retrieved).toEqual(["text-embedding-3-small"]);
     expect(data?.native_dimensions).toBe(1536);

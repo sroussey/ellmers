@@ -61,14 +61,9 @@ describe("Xai_ModelInfo", () => {
     const runFn = findModelInfoRunFn();
     const model = modelConfig("grok-4.6");
     let data: ModelInfoTaskOutput | undefined;
-    await runFn(
-      { model } as never,
-      model,
-      undefined as never,
-      ((ev) => {
-        if (ev.type === "finish") data = ev.data as ModelInfoTaskOutput;
-      }) as never
-    );
+    await runFn({ model }, model, undefined as never, (ev) => {
+      if (ev.type === "finish") data = ev.data as ModelInfoTaskOutput;
+    });
 
     expect(retrieved).toEqual(["grok-4.6"]);
     expect(data?.is_remote).toBe(true);
@@ -77,8 +72,8 @@ describe("Xai_ModelInfo", () => {
   it("throws naming the id and provider when retrieve 404s", async () => {
     const runFn = findModelInfoRunFn();
     const model = modelConfig("missing-model");
-    await expect(
-      runFn({ model } as never, model, undefined as never, (() => {}) as never)
-    ).rejects.toThrow(/XAI.*missing-model/i);
+    await expect(runFn({ model }, model, undefined as never, (() => {}) as never)).rejects.toThrow(
+      /XAI.*missing-model/i
+    );
   });
 });

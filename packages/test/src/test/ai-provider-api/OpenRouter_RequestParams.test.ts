@@ -9,8 +9,8 @@ import { describe, expect, it } from "vitest";
 
 const { buildChatParams, buildOpenRouterExtras } = _testOnly;
 
-function cfg(provider_config: Record<string, unknown>) {
-  return { provider: "OPENROUTER", provider_config } as never;
+function cfg(provider_config: Record<string, unknown>, extra: Record<string, unknown> = {}) {
+  return { provider: "OPENROUTER", provider_config, ...extra } as never;
 }
 
 describe("buildChatParams", () => {
@@ -54,26 +54,25 @@ describe("buildOpenRouterExtras", () => {
   });
 
   it("maps model.effort when provider_config.reasoning is unset", () => {
-    expect(
-      buildOpenRouterExtras({ ...cfg({ model_name: "openai/gpt-5" }), effort: "high" })
-    ).toEqual({ reasoning: { effort: "high" } });
-    expect(
-      buildOpenRouterExtras({ ...cfg({ model_name: "openai/gpt-5" }), effort: "none" })
-    ).toEqual({ reasoning: { effort: "none", exclude: true } });
-    expect(
-      buildOpenRouterExtras({ ...cfg({ model_name: "openai/gpt-5" }), effort: "extra" })
-    ).toEqual({ reasoning: { effort: "xhigh" } });
-    expect(
-      buildOpenRouterExtras({ ...cfg({ model_name: "openai/gpt-5" }), effort: "ultra" })
-    ).toEqual({ reasoning: { effort: "max" } });
+    expect(buildOpenRouterExtras(cfg({ model_name: "openai/gpt-5" }, { effort: "high" }))).toEqual({
+      reasoning: { effort: "high" },
+    });
+    expect(buildOpenRouterExtras(cfg({ model_name: "openai/gpt-5" }, { effort: "none" }))).toEqual({
+      reasoning: { effort: "none", exclude: true },
+    });
+    expect(buildOpenRouterExtras(cfg({ model_name: "openai/gpt-5" }, { effort: "extra" }))).toEqual(
+      { reasoning: { effort: "xhigh" } }
+    );
+    expect(buildOpenRouterExtras(cfg({ model_name: "openai/gpt-5" }, { effort: "ultra" }))).toEqual(
+      { reasoning: { effort: "max" } }
+    );
   });
 
   it("lets provider_config.reasoning win over model.effort", () => {
     expect(
-      buildOpenRouterExtras({
-        ...cfg({ model_name: "openai/gpt-5", reasoning: { effort: "low" } }),
-        effort: "ultra",
-      })
+      buildOpenRouterExtras(
+        cfg({ model_name: "openai/gpt-5", reasoning: { effort: "low" } }, { effort: "ultra" })
+      )
     ).toEqual({ reasoning: { effort: "low" } });
   });
 });
