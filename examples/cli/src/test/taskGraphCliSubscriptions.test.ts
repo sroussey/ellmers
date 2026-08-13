@@ -107,7 +107,9 @@ describe("registerIterationListeners", () => {
     const task = makeTask();
     const graph = new TaskGraph();
     (
-      task as { getVisibleIterationGraphs: () => Array<{ index: number; graph: TaskGraph }> }
+      task as unknown as {
+        getVisibleIterationGraphs: () => Array<{ index: number; graph: TaskGraph }>;
+      }
     ).getVisibleIterationGraphs = () => [{ index: 0, graph }];
 
     const sink = makeSink<IterationSlotRow[]>();

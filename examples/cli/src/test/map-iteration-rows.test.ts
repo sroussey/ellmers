@@ -80,7 +80,7 @@ describe("WorkflowRunApp map iteration rows", () => {
     const workflow = new Workflow();
     workflow
       .map({ concurrencyLimit: 1, maxIterations: 2 })
-      .pipe(new HarvestedFilingTask() as never)
+      .addTask(HarvestedFilingTask)
       .endMap();
 
     const mapTask = workflow.graph.getTasks()[0] as ITask;
@@ -140,9 +140,7 @@ describe("WorkflowRunApp map iteration rows", () => {
       }
       override async execute(input: { item: number }, context: IExecuteContext) {
         const wf = context.own(new Workflow(), { title: "filing pipeline" });
-        wf.map({ concurrencyLimit: 1, maxIterations: 1 })
-          .pipe(new InnerSectionTask() as never)
-          .endMap();
+        wf.map({ concurrencyLimit: 1, maxIterations: 1 }).addTask(InnerSectionTask).endMap();
         await wf.run({ item: [input.item] });
         return {};
       }
@@ -151,7 +149,7 @@ describe("WorkflowRunApp map iteration rows", () => {
     const workflow = new Workflow();
     workflow
       .map({ concurrencyLimit: 1, maxIterations: 1 })
-      .pipe(new OuterFilingTask() as never)
+      .addTask(OuterFilingTask)
       .endMap();
 
     const stdout = new CapturingStdout();
@@ -188,7 +186,7 @@ describe("WorkflowRunApp map iteration rows", () => {
     const workflow = new Workflow();
     workflow
       .map({ concurrencyLimit: 1, maxIterations: 4 })
-      .pipe(new HarvestedFilingTask() as never)
+      .addTask(HarvestedFilingTask)
       .endMap();
 
     const stdout = new CapturingStdout();
