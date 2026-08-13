@@ -9,7 +9,12 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { stubSpecsFor, type PackageManifest } from "./lib/sourceStubs";
 import { ROOT } from "./lib/testDiscovery";
-import { distToSource, listWorkspacePackages } from "./lib/workspaceSource";
+import {
+  distToSource,
+  listWorkspacePackages,
+  ownerOf,
+  unresolvedWorkspaceMessage,
+} from "./lib/workspaceSource";
 
 const packages = listWorkspacePackages(ROOT);
 
@@ -60,5 +65,64 @@ describe("workspace source resolution", () => {
     expect(existsSync(invented)).toBe(false);
     expect(distToSource(invented)).toBeUndefined();
     expect(distToSource(join(ROOT, "packages/ai/src/node.ts"))).toBeUndefined();
+  });
+
+  /**
+   * `resolveId` itself needs Vite's plugin context to drive, so the owner
+   * lookup and the message are separated out and tested directly. The lookup is
+   * what makes an actionable message possible at all: the old plugin kept only
+   * package NAMES, so at the point resolution failed it could not say which
+   * package's `dist` to look at.
+   */
+  describe("owner lookup", () => {
+    it("attributes a subpath specifier to its package", () => {
+      expect(ownerOf(packages, "@workglow/util/schema")?.name).toBe("@workglow/util");
+      expect(ownerOf(packages, "@workglow/util")?.name).toBe("@workglow/util");
+    });
+
+    it("matches on the package boundary, not a string prefix", () => {
+      // `@workglow/util` is a string prefix of this, but the specifier belongs
+      // to no package — attributing it would point the diagnostic at an
+      // unrelated directory.
+      expect(ownerOf(packages, "@workglow/utilities")).toBeUndefined();
+      expect(ownerOf(packages, "vitest")).toBeUndefined();
+    });
+  });
+
+  describe("unresolved specifier diagnostic", () => {
+    const owner = { name: "@workglow/ai", dir: "/repo/packages/ai" };
+
+    it("names the specifier, the owning package and the importer", () => {
+      const message = unresolvedWorkspaceMessage(
+        "@workglow/ai/worker",
+        owner,
+        false,
+        "/repo/providers/hft/src/x.ts"
+      );
+      expect(message).toContain("@workglow/ai/worker");
+      expect(message).toContain("@workglow/ai");
+      expect(message).toContain("/repo/providers/hft/src/x.ts");
+      expect(message).toContain("workglow:workspace-source");
+    });
+
+    // The two cases need opposite responses, so they must not read the same.
+    it("distinguishes a never-built package from a stale dist", () => {
+      const neverBuilt = unresolvedWorkspaceMessage("@workglow/ai/worker", owner, false, undefined);
+      const staleDist = unresolvedWorkspaceMessage("@workglow/ai/worker", owner, true, undefined);
+
+      expect(neverBuilt).toContain("missing or empty");
+      expect(neverBuilt).toContain("never been built");
+      // "run build" alone would read as wrong advice to someone looking at a
+      // populated dist directory, so the stale case has to say why.
+      expect(staleDist).toContain("carries built entries but none for this specifier");
+      expect(staleDist).toContain("stale rather than absent");
+      expect(staleDist).not.toContain("never been built");
+    });
+
+    it("omits the importer clause when there is no importer", () => {
+      expect(unresolvedWorkspaceMessage("@workglow/ai", owner, true, undefined)).not.toContain(
+        "imported from"
+      );
+    });
   });
 });
