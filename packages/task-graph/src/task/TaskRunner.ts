@@ -50,12 +50,20 @@ import { TaskRunContext } from "./TaskRunContext";
 import type { TaskConfig, TaskInput, TaskOutput } from "./TaskTypes";
 import { TaskStatus } from "./TaskTypes";
 
+/** An ITask-like object with a mutable `runConfig`. */
+interface RunConfigHolder {
+  runConfig: Partial<IRunConfig>;
+}
+
 /**
  * Type guard that checks whether a value is an ITask-like object with a mutable `runConfig`.
  */
-function hasRunConfig(i: unknown): i is { runConfig: Partial<IRunConfig> } {
+function hasRunConfig(i: unknown): i is RunConfigHolder {
   return i !== null && typeof i === "object" && "runConfig" in (i as object);
 }
+
+/** The `own()` stamp fields whose lifetime is the parent run, not the child. */
+const OWNED_SINK_KEYS = ["lateUsageSink", "usageSink", "usageRetireSink"] as const;
 
 /**
  * Minimal event surface {@link TaskRunner.own} bridges into the run-total sinks.
@@ -64,10 +72,7 @@ function hasRunConfig(i: unknown): i is { runConfig: Partial<IRunConfig> } {
  * `T & Guard` still leaves `.subscribe` as an uncallable method union.
  */
 interface OwnUsageEventSource {
-  subscribe(
-    name: "usage",
-    fn: (usage: Usage, modelId: string | undefined) => void
-  ): () => void;
+  subscribe(name: "usage", fn: (usage: Usage, modelId: string | undefined) => void): () => void;
   subscribe(name: "complete" | "error" | "abort", fn: (...args: never[]) => void): () => void;
 }
 
@@ -168,7 +173,9 @@ export class TaskRunner<
   /**
    * Where a charge that settles after this run finished is reported. Not
    * cleared in `run()`'s `finally` — the whole point is that it fires after
-   * the run; the next `handleStart` overwrites it.
+   * the run. It is instead replaced by every `handleStart`, supplied or not:
+   * a run that supplies no sink must not keep reporting into the previous
+   * run's aggregator, whose run is over and whose total is already recorded.
    */
   protected lateUsageSink?: (taskId: string, usage: Usage, modelId: string | undefined) => void;
 
@@ -186,6 +193,17 @@ export class TaskRunner<
    * {@link IRunConfig.usageRetireSink}.
    */
   protected usageRetireSink?: (taskId: string) => void;
+
+  /**
+   * Each owned child's usage-sink values from before {@link own} stamped this
+   * run's, restored in `run()`'s `finally`. A stamp lands in the child's
+   * long-lived `runConfig`, and `Task.run` merges that under any per-call
+   * config — so without restoring it, a standalone `child.run()` after the
+   * parent run ends still arrives at `handleStart` carrying this run's sinks
+   * as *supplied* values. Restored rather than deleted so a nested `own()`
+   * chain hands each level back what it had.
+   */
+  private readonly ownedSinkStamps = new Map<RunConfigHolder, Partial<IRunConfig>>();
 
   /**
    * Teardowns for `usage` subscriptions installed by {@link own}. Cleared in
@@ -531,6 +549,8 @@ export class TaskRunner<
     } finally {
       for (const off of this.ownedUsageUnsubs.values()) off();
       this.ownedUsageUnsubs.clear();
+      for (const [target, prior] of this.ownedSinkStamps) Object.assign(target.runConfig, prior);
+      this.ownedSinkStamps.clear();
       if (ownsScope) {
         await effectiveConfig.resourceScope!.runComplete();
         this.resourceScope = undefined;
@@ -960,15 +980,23 @@ export class TaskRunner<
       const stamp: Partial<IRunConfig> = {
         registry: this.registry,
         signal: this.currentCtx?.abortController.signal,
-        // Unconditional, unlike `resourceScope`: a sink has no disposal
-        // lifetime to leak, and an owned child's own `task.run()` needs it to
-        // reach the run total.
+        // An owned child's own `task.run()` needs these to reach the run total,
+        // but they belong to the parent RUN, not to the child — `run()`'s
+        // `finally` restores what was there before.
         lateUsageSink: this.lateUsageSink,
         usageSink: this.usageSink,
         usageRetireSink: this.usageRetireSink,
       };
       if (!this.ownsResourceScope) {
         stamp.resourceScope = this.resourceScope;
+      }
+      // Record only on the first stamp of this run, so a nested re-`own()` of
+      // the same child restores the value it had before the run, not the one
+      // an earlier `own()` in the same run wrote.
+      if (!this.ownedSinkStamps.has(i)) {
+        const prior: Partial<IRunConfig> = {};
+        for (const key of OWNED_SINK_KEYS) prior[key] = i.runConfig[key] as never;
+        this.ownedSinkStamps.set(i, prior);
       }
       Object.assign(i.runConfig, stamp);
     }
@@ -1207,17 +1235,12 @@ export class TaskRunner<
       this.resourceScope = config.resourceScope;
     }
 
-    if (config.lateUsageSink) {
-      this.lateUsageSink = config.lateUsageSink;
-    }
-
-    if (config.usageSink) {
-      this.usageSink = config.usageSink;
-    }
-
-    if (config.usageRetireSink) {
-      this.usageRetireSink = config.usageRetireSink;
-    }
+    // Unconditional: a sink belongs to the run that supplied it. Assigning only
+    // when one is supplied leaves a standalone re-run of the same task instance
+    // still reporting into a finished run's aggregator.
+    this.lateUsageSink = config.lateUsageSink;
+    this.usageSink = config.usageSink;
+    this.usageRetireSink = config.usageRetireSink;
 
     // Notify the disposal strategy that a new run is starting. Inactivity
     // strategies use this hook to clear any pending idle timers that were
