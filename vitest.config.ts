@@ -62,10 +62,12 @@ const shared = {
  * reading as untested. It also collapses the two module identities a mixed
  * package/relative import graph otherwise produces.
  *
- * `dist` restores the old behavior for the rare check that the built bundles
- * themselves are wired correctly. Bundle integrity is not left unguarded by
- * the default: the Bun runner resolves `exports` natively, so the nightly
- * parity workflow still runs the whole suite against `dist`.
+ * `dist` restores the old behavior for the check that the built bundles
+ * themselves are wired correctly. The plugin below is attached to every project
+ * unconditionally, so under the default NO vitest run resolves a `@workglow/*`
+ * specifier through `exports`. The nightly Bun parity workflow does, but it is
+ * informational and never blocks a merge, so the blocking guard is the
+ * `test-vitest-dist` CI job, which sets this variable.
  */
 const testsRunAgainstSource = (process.env.WORKGLOW_TEST_TARGET ?? "source") !== "dist";
 
@@ -106,13 +108,31 @@ export default defineConfig({
       provider: "v8", // or 'istanbul'
       reporter: ["text", "json", "json-summary", "html"],
       /**
+       * Base directory the globs below resolve against. Pinned rather than
+       * inherited: `include`/`exclude` are documented as relative to
+       * `coverage.root`, which otherwise follows the run's root — and this
+       * config is invoked from package directories too
+       * (`vitest run --config ../../vitest.config.ts`), where a repo-relative
+       * glob would match nothing.
+       */
+      root: __dirname,
+      /**
        * The denominator is every package's own `src`, stated explicitly. Left
        * to vitest's default (files loaded during the run), a package's score
        * silently omits the modules no test imports at all — the ones a coverage
        * report exists to surface — and its file list changes with whichever
        * section CI happened to run.
+       *
+       * All THREE workspace groups, matching `WORKSPACE_GROUPS`: `examples/*`
+       * holds published, non-private packages with tests of their own, so
+       * omitting it drops real source from the denominator while still counting
+       * the tests that cover it.
        */
-      include: ["packages/*/src/**/*.{ts,tsx}", "providers/*/src/**/*.{ts,tsx}"],
+      include: [
+        "packages/*/src/**/*.{ts,tsx}",
+        "providers/*/src/**/*.{ts,tsx}",
+        "examples/*/src/**/*.{ts,tsx}",
+      ],
       exclude: [
         ...configDefaults.exclude,
         // Built output is never the unit of measure. Nothing should resolve
@@ -122,6 +142,10 @@ export default defineConfig({
         "**/dist/**",
         // The cross-package suite is the harness, not the subject.
         "packages/test/**",
+        // The examples keep their suites in `src/test`, which also holds the
+        // odd non-`.test.` helper (`chromeAvailability.ts`) that the filename
+        // rules below cannot catch.
+        "examples/*/src/test/**",
         // Tests, fixtures and testing-only helpers: counting them inflates
         // every package by the coverage of code that exists to be run.
         "**/__tests__/**",
