@@ -97,6 +97,71 @@ export function distToSource(id: string): string | undefined {
 }
 
 /**
+ * The workspace package a bare specifier belongs to, or `undefined` when none
+ * owns it.
+ *
+ * Matching is on the package BOUNDARY, not on string prefix: `@workglow/util`
+ * owns `@workglow/util/schema` but not a hypothetical `@workglow/utilities`.
+ */
+export function ownerOf(
+  packages: readonly WorkspacePackage[],
+  source: string
+): WorkspacePackage | undefined {
+  return packages.find((pkg) => source === pkg.name || source.startsWith(`${pkg.name}/`));
+}
+
+/**
+ * The diagnostic for a workspace specifier that resolved to nothing.
+ *
+ * Worth building by hand because the default is actively misleading: this
+ * plugin rewrites the RESULT of resolution, so resolution itself still goes
+ * through the package's `exports`, which point at `./dist/*`. With no built
+ * entry there, resolution fails before the rewrite can happen and the error
+ * blames the manifest, naming neither this plugin nor anything to do about it.
+ *
+ * `distHasBuiltEntries` is passed in rather than probed here so the message
+ * stays a pure function of its inputs. The two branches need opposite
+ * responses, which is why they are not one sentence: an empty or absent `dist`
+ * means the package has simply never been built, whereas a POPULATED `dist`
+ * that still does not carry this entry is the "added an `exports` subpath and
+ * did not rebuild" case — where "run build" on its own reads as wrong advice to
+ * someone looking at a directory full of bundles.
+ */
+export function unresolvedWorkspaceMessage(
+  source: string,
+  owner: WorkspacePackage,
+  distHasBuiltEntries: boolean,
+  importer: string | undefined
+): string {
+  const from = importer === undefined ? "" : ` (imported from ${importer})`;
+  const remedy = distHasBuiltEntries
+    ? `${owner.dir}/dist carries built entries but none for this specifier. A new "exports" ` +
+      `subpath was most likely added without rebuilding, so dist is stale rather than absent: ` +
+      `re-run \`bun run build\` (or \`bun run use-source\`).`
+    : `${owner.dir}/dist is missing or empty — ${owner.name} has never been built in this ` +
+      `checkout. Run \`bun run build\`, or \`bun run use-source\` to write source stubs into dist.`;
+  return (
+    `[workglow:workspace-source] cannot resolve "${source}"${from}. ` +
+    `It is owned by the workspace package ${owner.name}. Resolution goes through that ` +
+    `package's "exports", which point at ./dist/*, so the built entry has to exist even ` +
+    `though this plugin then rewrites it to src. ${remedy}`
+  );
+}
+
+/**
+ * Whether a package's `dist` holds anything at all. `bun run clean` and
+ * `use-dist --no-build` both leave the directory in place but empty, which is
+ * "never built" rather than "stale".
+ */
+function hasBuiltEntries(packageDir: string): boolean {
+  try {
+    return readdirSync(join(packageDir, "dist")).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Redirect workspace package imports from `dist` to `src`.
  *
  * Resolution runs normally first (so conditional exports still pick the
@@ -105,9 +170,7 @@ export function distToSource(id: string): string | undefined {
  * resolution in an alias table is what a per-package fix would have to do.
  */
 export function workspaceSourcePlugin(root: string): Plugin {
-  const names = listWorkspacePackages(root).map((p) => p.name);
-  const ownsSpecifier = (source: string): boolean =>
-    names.some((name) => source === name || source.startsWith(`${name}/`));
+  const packages = listWorkspacePackages(root);
 
   return {
     name: "workglow:workspace-source",
@@ -116,9 +179,17 @@ export function workspaceSourcePlugin(root: string): Plugin {
       // Bare workspace specifiers only: a relative import already points at
       // source, and resolving every third-party specifier twice would tax the
       // whole run for nothing.
-      if (!ownsSpecifier(source)) return null;
+      const owner = ownerOf(packages, source);
+      if (owner === undefined) return null;
       const resolved = await this.resolve(source, importer, { ...options, skipSelf: true });
-      if (!resolved || resolved.external) return resolved;
+      if (!resolved) {
+        // Throwing, not warning: an unresolvable @workglow/* specifier already
+        // fails the run a moment later. This only replaces the message.
+        throw new Error(
+          unresolvedWorkspaceMessage(source, owner, hasBuiltEntries(owner.dir), importer)
+        );
+      }
+      if (resolved.external) return resolved;
       const sourceFile = distToSource(resolved.id);
       return sourceFile === undefined ? resolved : { ...resolved, id: sourceFile };
     },

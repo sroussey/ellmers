@@ -396,6 +396,17 @@ and rewrites only the RESULT, `<pkg>/dist/<entry>.js` → `<pkg>/src/<entry>.ts`
 package, every subpath export, and every package added later is covered with no list to
 maintain, and unlike `use-source` it writes nothing into `dist`.
 
+Rewriting the result rather than aliasing has one consequence worth knowing: resolution
+still goes through `exports`, which point at `./dist/*`, so **`dist/<entry>.js` must exist
+even though the plugin immediately rewrites it to `src`**. When it does not, resolution
+fails before the rewrite can happen. The plugin therefore throws its own error naming the
+specifier, the owning package and the remedy — and branches on whether `<pkg>/dist` holds
+any built entries, because "never built, run `bun run build`" and "a new `exports` subpath
+was added without rebuilding, so `dist` is stale" call for different actions and the second
+reads as wrong advice to anyone looking at a populated `dist` directory. (`bun run clean`
+and `use-dist --no-build` both leave an EMPTY `dist` behind, which is the first case, not
+the second.)
+
 This is what makes the numbers mean anything. `packages/test` reaches what it exercises by
 package specifier, so with bundles in play v8 attributes those executed lines to
 `packages/ai/dist/node.js` and `packages/ai/src/**` reads as barely covered — a package
