@@ -11,6 +11,29 @@ import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 
 const HF_API_BASE = "https://huggingface.co/api";
 
+/** Characters the Hub allows in a namespace or repo name. */
+const HF_REPO_SEGMENT = /^[\w.-]+$/;
+
+/** `.` and `..` pass the charset test but would traverse out of `/api/models`. */
+function isValidSegment(segment: string): boolean {
+  return HF_REPO_SEGMENT.test(segment) && segment !== "." && segment !== "..";
+}
+
+/**
+ * Build the `{namespace}/{name}` path for a Hub model id. The slash separating
+ * the two segments is a path separator, so the id is encoded per segment: a
+ * whole-id `encodeURIComponent` turns it into `%2F` and the Hub answers 400.
+ * Each segment is still encoded even though the validated charset needs no
+ * escaping — that stays correct if the accepted charset ever widens.
+ */
+function hfModelPath(modelName: string): string {
+  const segments = modelName.split("/");
+  if (segments.length > 2 || !segments.every(isValidSegment)) {
+    throw new Error(`${HF_INFERENCE} model "${modelName}" is not a valid Hugging Face repo id`);
+  }
+  return segments.map(encodeURIComponent).join("/");
+}
+
 function modelNameOf(model: HfInferenceModelConfig | undefined): string {
   const name = model?.provider_config?.model_name;
   if (!name) {
@@ -21,8 +44,7 @@ function modelNameOf(model: HfInferenceModelConfig | undefined): string {
 
 function apiKeyOf(model: HfInferenceModelConfig | undefined): string | undefined {
   const config = model?.provider_config as
-    | { credential_key?: string; api_key?: string }
-    | undefined;
+    { credential_key?: string; api_key?: string } | undefined;
   try {
     return resolveApiKey({
       config,
@@ -46,13 +68,20 @@ async function assertHfModelExists(
 ): Promise<string> {
   const modelName = modelNameOf(model);
   const token = apiKeyOf(model);
-  const res = await fetch(`${HF_API_BASE}/models/${encodeURIComponent(modelName)}`, {
+  const res = await fetch(`${HF_API_BASE}/models/${hfModelPath(modelName)}`, {
     signal,
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
   if (res.status === 404) {
     throw new Error(
       `${HF_INFERENCE} model "${modelName}" was not found (provider API returned not found)`
+    );
+  }
+  // A 4xx that is not 404 is the request being rejected, not the model missing;
+  // reporting it as a lookup failure hides a malformed request.
+  if (res.status >= 400 && res.status < 500) {
+    throw new Error(
+      `${HF_INFERENCE} model "${modelName}" lookup was rejected by the Hugging Face API (${res.status})`
     );
   }
   if (!res.ok) {
