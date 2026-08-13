@@ -62,10 +62,12 @@ const shared = {
  * reading as untested. It also collapses the two module identities a mixed
  * package/relative import graph otherwise produces.
  *
- * `dist` restores the old behavior for the rare check that the built bundles
- * themselves are wired correctly. Bundle integrity is not left unguarded by
- * the default: the Bun runner resolves `exports` natively, so the nightly
- * parity workflow still runs the whole suite against `dist`.
+ * `dist` restores the old behavior for the check that the built bundles
+ * themselves are wired correctly. The plugin below is attached to every project
+ * unconditionally, so under the default NO vitest run resolves a `@workglow/*`
+ * specifier through `exports`. The nightly Bun parity workflow does, but it is
+ * informational and never blocks a merge, so the blocking guard is the
+ * `test-vitest-dist` CI job, which sets this variable.
  */
 const testsRunAgainstSource = (process.env.WORKGLOW_TEST_TARGET ?? "source") !== "dist";
 
