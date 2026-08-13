@@ -17,7 +17,7 @@ import {
 } from "@workglow/ai/provider-utils";
 import { toOpenAIMessages } from "@workglow/ai/worker";
 import { getLogger } from "@workglow/util/worker";
-import { getClient, getModelName } from "./Xai_Client";
+import { getClient, getModelName, getXaiReasoningEffort } from "./Xai_Client";
 import type { XaiModelConfig } from "./Xai_ModelSchema";
 
 /**
@@ -63,6 +63,8 @@ function buildChatParams(
     params.frequency_penalty = (input as { frequencyPenalty?: number }).frequencyPenalty;
   if ((input as { presencePenalty?: number }).presencePenalty !== undefined)
     params.presence_penalty = (input as { presencePenalty?: number }).presencePenalty;
+  const reasoningEffort = getXaiReasoningEffort(model);
+  if (reasoningEffort !== undefined) params.reasoning_effort = reasoningEffort;
   return params;
 }
 

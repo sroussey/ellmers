@@ -13,6 +13,7 @@ import { HFI_ModelSearch } from "@workglow/huggingface-inference/ai";
 import { OpenAI_ModelSearch_Stream as OpenAI_ModelSearch } from "@workglow/openai/ai";
 import { mapOpenRouterModels, OPENROUTER_FALLBACK_MODELS } from "@workglow/openrouter/ai";
 import { TENSORFLOW_MEDIAPIPE, TFMP_ModelSearch } from "@workglow/tf-mediapipe/ai";
+import { Xai_ModelSearch_Stream as Xai_ModelSearch } from "@workglow/xai/ai";
 import { afterEach, describe, expect, test } from "vitest";
 
 const originalFetch = globalThis.fetch;
@@ -100,6 +101,19 @@ describe("provider model search samples", () => {
   test("OpenRouter mapper stamps all six effort_options", () => {
     const [first] = mapOpenRouterModels(OPENROUTER_FALLBACK_MODELS);
     expect(first?.record?.effort_options).toEqual([...MODEL_EFFORTS]);
+  });
+
+  test("xAI fallback stamps effort_options by class", async () => {
+    const { results } = (await collectStream(
+      await runFnToIterable(Xai_ModelSearch, { query: "" })
+    )) as { results: Array<{ id: string; record?: { effort_options?: string[] } }> };
+    expect(results.find((r) => r.id === "grok-4")?.record?.effort_options).toEqual([
+      ...MODEL_EFFORTS,
+    ]);
+    expect(
+      results.find((r) => r.id === "grok-4-fast-non-reasoning")?.record?.effort_options
+    ).toEqual([]);
+    expect(results.find((r) => r.id === "grok-2-image-1212")?.record?.effort_options).toEqual([]);
   });
 
   test("Anthropic fallback includes the latest Claude samples", async () => {
