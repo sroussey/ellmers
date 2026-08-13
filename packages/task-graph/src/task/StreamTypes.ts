@@ -108,6 +108,18 @@ export interface Usage {
   readonly reasoning: number | undefined;
   readonly total: number | undefined;
   readonly extra: Readonly<Record<string, number | string>> | undefined;
+  /**
+   * Set when any contributing counter is a heuristic (character-count)
+   * estimate rather than a provider-stated figure. Absent means stated. A
+   * total mixing the two is an estimate.
+   *
+   * Deliberately `?: true` rather than the house `boolean | undefined` style.
+   * A required key forces an edit at every `Usage` literal and breaks
+   * out-of-tree constructors — which is exactly the change to a shape
+   * consumers persist that this is meant to avoid. `false` is never written;
+   * the absence of the key is the "stated" case.
+   */
+  readonly estimated?: true;
 }
 
 /**
@@ -241,6 +253,10 @@ function mergeUsageExtra(
  * enough to trigger it, since {@link CACHE_HIT_USAGE} states `0` on every
  * counter. Read per-execution rows, not the aggregate, when the distinction
  * between "billed nothing" and "never reported" has to survive.
+ *
+ * `estimated` is sticky in the other direction: one estimated contributor makes
+ * the whole total an estimate, since no counter here records which side it came
+ * from.
  */
 export function mergeUsage(a: Usage | undefined, b: Usage | undefined): Usage | undefined {
   if (!a) return b;
@@ -253,6 +269,9 @@ export function mergeUsage(a: Usage | undefined, b: Usage | undefined): Usage | 
     reasoning: addUsageField(a.reasoning, b.reasoning),
     total: addUsageField(a.total, b.total),
     extra: mergeUsageExtra(a.extra, b.extra),
+    // Spread conditionally so a stated total carries no key at all, rather
+    // than an explicit `estimated: undefined`.
+    ...(a.estimated || b.estimated ? { estimated: true as const } : {}),
   };
 }
 

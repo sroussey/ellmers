@@ -165,6 +165,11 @@ export class GraphUsageAggregator {
     if (!models || !row) return;
     models.delete(key);
     if (models.size === 0) this.live.delete(taskId);
+    // An estimate is display feedback, not accounting. Dropping it here rather
+    // than folding it into `retired` is what keeps a character-count guess out
+    // of the persisted run total and out of every cost figure derived from it;
+    // it still contributed to `total` for as long as it was live.
+    if (row.usage.estimated) return;
     this.retired = mergeUsage(this.retired, row.usage);
     this.retiredByTask.set(
       taskId,

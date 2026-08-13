@@ -20,6 +20,12 @@ const usage = (input: number | undefined, output: number | undefined): Usage => 
   extra: undefined,
 });
 
+/** A character-count guess, as `createEstimatedOutputUsageReporter` mints it. */
+const estimate = (input: number | undefined, output: number | undefined): Usage => ({
+  ...usage(input, output),
+  estimated: true,
+});
+
 /** Replays a fixed event script so the processor's folding can be asserted. */
 class ScriptedStreamTask extends Task<{ script: string }, { text: string }> {
   static override readonly type: string = "ScriptedStreamTask";
@@ -169,5 +175,75 @@ describe("StreamProcessor usage folding", () => {
     // promotion (liveUsage -> settledUsage) exists for.
     expect(output[USAGE_OUTPUT_KEY]).toEqual(usage(85, 6));
     expect(task.runUsage).toEqual(usage(85, 6));
+  });
+});
+
+/**
+ * A provider that reports no billed totals (HFI deliberately omits
+ * `include_usage`) still drives a live ↑↓ counter from character-count
+ * estimates. Those are display feedback. Promoting one into `settledUsage`
+ * makes it this execution's recorded spend, which is then priced and persisted
+ * as if the provider had stated it.
+ */
+describe("StreamProcessor refuses to settle on an estimate", () => {
+  it("records nothing when finish carries no usage and the snapshot was a guess", async () => {
+    const task = new ScriptedStreamTask({ defaults: { script: "x" } });
+    task.events_ = [
+      { type: "usage", usage: estimate(30, 2) },
+      { type: "finish", data: {} as Record<string, never> },
+    ];
+
+    const output = (await task.run()) as Record<string, unknown>;
+
+    expect(USAGE_OUTPUT_KEY in output).toBe(false);
+    // runUsage is the field the abort/error paths and the graph aggregator
+    // read; leaving the estimate here would reintroduce the same bug one level
+    // down.
+    expect(task.runUsage).toBeUndefined();
+  });
+
+  it("keeps the provider's stated total when finish reports one", async () => {
+    const task = new ScriptedStreamTask({ defaults: { script: "x" } });
+    task.events_ = [
+      { type: "usage", usage: estimate(30, 2) },
+      { type: "finish", data: {} as Record<string, never>, usage: usage(28, 5) },
+    ];
+
+    const output = (await task.run()) as Record<string, unknown>;
+
+    // The normal path: the estimate was only ever provisional, and the stated
+    // figure supersedes it with no `estimated` flag left behind.
+    expect(output[USAGE_OUTPUT_KEY]).toEqual(usage(28, 5));
+    expect(task.runUsage).toEqual(usage(28, 5));
+  });
+
+  it("does not settle an estimate when the stream is aborted mid-flight", async () => {
+    const task = new AbortableStreamTask({ defaults: { script: "x" } });
+    task.events_ = [{ type: "usage", usage: estimate(75, 3) }];
+
+    const runPromise = task.run({ script: "x" });
+    await sleep(30);
+    task.abort();
+
+    await expect(runPromise).rejects.toThrow();
+
+    // The `finally` promotes a last in-flight snapshot because an interrupted
+    // call still spent its input tokens — true of a stated count, and exactly
+    // wrong for a guessed one.
+    expect(task.runUsage).toBeUndefined();
+  });
+
+  it("still settles a stated snapshot when the stream is aborted mid-flight", async () => {
+    const task = new AbortableStreamTask({ defaults: { script: "x" } });
+    task.events_ = [{ type: "usage", usage: usage(75, 3) }];
+
+    const runPromise = task.run({ script: "x" });
+    await sleep(30);
+    task.abort();
+
+    await expect(runPromise).rejects.toThrow();
+
+    // Scope guard: the abort-path promotion is unchanged for stated counts.
+    expect(task.runUsage).toEqual(usage(75, 3));
   });
 });

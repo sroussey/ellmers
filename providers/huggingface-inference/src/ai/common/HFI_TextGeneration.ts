@@ -8,8 +8,12 @@ import type {
   AiProviderRunFn,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
+  Usage,
 } from "@workglow/ai";
-import { createEstimatedOutputUsageReporter } from "@workglow/ai/provider-utils";
+import {
+  createEstimatedOutputUsageReporter,
+  mapOpenAIChatUsage,
+} from "@workglow/ai/provider-utils";
 import { toOpenAIMessages } from "@workglow/ai/worker";
 import { getClient, getModelName, getProvider } from "./HFI_Client";
 import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
@@ -76,7 +80,14 @@ export const HFI_TextGeneration_Stream: AiProviderRunFn<
     { signal }
   );
 
+  // The usage-bearing chunk arrives last with an empty `choices` array, so it
+  // is read before the delta guard below rather than inside it. Whether it
+  // arrives at all is up to the third-party provider the request is routed to;
+  // when it does not, `usage` stays undefined and the estimate above remains
+  // the only feedback.
+  let usage: Usage | undefined;
   for await (const chunk of stream) {
+    usage = mapOpenAIChatUsage((chunk as { usage?: unknown }).usage) ?? usage;
     const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
       provisionalUsage.onText(delta);
@@ -84,5 +95,5 @@ export const HFI_TextGeneration_Stream: AiProviderRunFn<
     }
   }
   provisionalUsage.flush();
-  emit({ type: "finish", data: {} as TextGenerationTaskOutput });
+  emit({ type: "finish", data: {} as TextGenerationTaskOutput, usage });
 };

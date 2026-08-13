@@ -35,11 +35,16 @@ const PER_MILLION = 1_000_000;
  * `reasoning` and `total` are never priced and never reported unpriced: the
  * first is contained in `output` and the second covers the whole request, so
  * charging either would count the same tokens twice.
+ *
+ * A usage whose counters are heuristic estimates (`usage.estimated`) is not
+ * priced at all: a dollar figure derived from a character count reads exactly
+ * like one derived from billed tokens, and nothing downstream distinguishes them.
  */
 export function estimateCost(
   usage: Usage,
   pricing: ModelPricing | undefined
 ): CostEstimate | undefined {
+  if (usage.estimated) return undefined;
   // A stated fact beats a derived one: OpenRouter reports credits actually
   // charged, which no local rate card can improve on.
   const stated = usage.extra?.cost;
@@ -92,9 +97,7 @@ export function estimateCost(
  * `unpriced` is the union across contributors; `stated` is true only when every
  * contributor was provider-stated.
  */
-export function sumCostEstimates(
-  estimates: readonly CostEstimate[]
-): CostEstimate | undefined {
+export function sumCostEstimates(estimates: readonly CostEstimate[]): CostEstimate | undefined {
   if (estimates.length === 0) return undefined;
   const currency = estimates[0]!.currency;
   if (estimates.some((estimate) => estimate.currency !== currency)) return undefined;

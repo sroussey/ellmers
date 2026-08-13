@@ -100,6 +100,9 @@ function formatCostAmount(amount: number): string {
  * nothing, and appending `$0.0000` would read as a priced run. Provider-stated
  * costs (`usage.extra.cost`) surface even when `pricing` is absent; otherwise
  * the rate card is required and an unpriceable spend stays tokens-only.
+ *
+ * Heuristic counters get a `~` and no cost figure: they are worth showing as
+ * live feedback, but a reader must not mistake them for what was billed.
  */
 export function formatUsageWithCost(
   usage: Usage | undefined,
@@ -108,6 +111,7 @@ export function formatUsageWithCost(
 ): string {
   const tokens = formatUsage(usage, detail);
   if (!tokens || tokens === "cached") return tokens;
+  if (usage?.estimated) return `~${tokens}`;
   const cost = formatCost(estimateCost(usage!, pricing));
   return cost ? `${tokens} ${cost}` : tokens;
 }
