@@ -145,16 +145,18 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
     max_tokens: getMaxTokens(input, model),
   };
 
-  applyAnthropicSamplingParams(params, input, model);
-  applyAnthropicThinkingParams(params, model);
-
-  if (input.systemPrompt) {
-    params.system = input.systemPrompt;
-  }
-
+  // tool_choice first: a forced choice suppresses legacy extended thinking,
+  // which in turn decides whether sampling parameters are legal.
   if (toolChoice !== undefined) {
     params.tools = tools;
     params.tool_choice = toolChoice;
+  }
+
+  applyAnthropicThinkingParams(params, model);
+  applyAnthropicSamplingParams(params, input, model);
+
+  if (input.systemPrompt) {
+    params.system = input.systemPrompt;
   }
 
   // Emit-only run (emitCheckpoint with no parent checkpoint): this request is

@@ -143,4 +143,19 @@ describe("createEstimatedOutputUsageReporter", () => {
     h.reporter.flush();
     expect(h.events).toEqual([]);
   });
+
+  // Every counter this reporter emits is `ceil(chars / 4)`, not a provider
+  // figure. Tagging them at the one place they are minted is what stops ~40
+  // call sites across eight providers from having their guesses priced as
+  // billed spend and written to `run_usage`.
+  it("marks every snapshot as an estimate", () => {
+    const h = harness();
+    h.reporter.onPrompt("prompt");
+    h.advance(250);
+    h.reporter.onText("abcd");
+    h.reporter.flush();
+
+    expect(h.events.length).toBeGreaterThan(0);
+    expect(h.events.every((e) => e.usage.estimated === true)).toBe(true);
+  });
 });

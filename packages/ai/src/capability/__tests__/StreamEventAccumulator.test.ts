@@ -313,6 +313,67 @@ describe("usage snapshots", () => {
     // the other's finish carries its own usage that overwrites the result.
     expect((acc.materialize() as Record<string, unknown>).usage).toEqual(usage(100, 7));
   });
+
+  /**
+   * A provider that states no billed totals (HFI text run-fns, OpenAI-shaped
+   * chat with no usage trailer) still drives a live ↑↓ counter from
+   * character-count guesses. Those are display feedback: settling one makes it
+   * this run's recorded spend, which then reaches the output cache, the `usage`
+   * event and the `gen_ai.usage.*` span attributes as if the provider had
+   * stated it. StreamProcessor refuses the promotion; so does this.
+   */
+  const estimate = (input: number | undefined, output: number | undefined): Usage => ({
+    ...usage(input, output),
+    estimated: true,
+  });
+
+  it("records no usage at all when finish states none and the snapshot was a guess", () => {
+    const acc = new StreamEventAccumulator();
+    acc.observe({ type: "usage", usage: estimate(30, 2) });
+    acc.observe({ type: "finish", data: {} });
+
+    // Absent, not zeroed: a counter nobody reported must not read as a total.
+    expect("usage" in (acc.materialize() as Record<string, unknown>)).toBe(false);
+  });
+
+  it("keeps a stated finish total when a guessed snapshot arrives after it", () => {
+    const acc = new StreamEventAccumulator();
+    acc.observe({ type: "finish", data: {}, usage: usage(28, 5) });
+    // Reachable when a provider emits usage after the finish it belongs to.
+    acc.observe({ type: "usage", usage: estimate(30, 2) });
+
+    expect((acc.materialize() as Record<string, unknown>).usage).toEqual(usage(28, 5));
+  });
+
+  it("keeps only the stated turn across a multi-turn stated/estimated sequence", () => {
+    const acc = new StreamEventAccumulator();
+    acc.observe({ type: "finish", data: {}, usage: usage(10, 2) });
+    acc.observe({ type: "usage", usage: estimate(40, 3) });
+    acc.observe({ type: "finish", data: {} });
+
+    // A tool-calling loop bills every turn, so the second finish merges rather
+    // than replaces — which is exactly how an unrefused estimate would be added
+    // to a real total instead of merely standing in for a missing one.
+    expect((acc.materialize() as Record<string, unknown>).usage).toEqual(usage(10, 2));
+  });
+
+  it("lets a stated finish supersede a guessed snapshot with no estimated flag left", () => {
+    const acc = new StreamEventAccumulator();
+    acc.observe({ type: "usage", usage: estimate(30, 2) });
+    acc.observe({ type: "finish", data: {}, usage: usage(28, 5) });
+
+    expect((acc.materialize() as Record<string, unknown>).usage).toEqual(usage(28, 5));
+  });
+
+  it("still promotes a stated snapshot when finish reports no usage", () => {
+    const acc = new StreamEventAccumulator();
+    acc.observe({ type: "usage", usage: usage(50, 4) });
+    acc.observe({ type: "finish", data: {} });
+
+    // The guard is scoped to guesses: a provider that states a running total
+    // and omits it from the finish is still billed for what it stated.
+    expect((acc.materialize() as Record<string, unknown>).usage).toEqual(usage(50, 4));
+  });
 });
 
 describe("mergeUsage", () => {

@@ -74,8 +74,8 @@ export const Anthropic_TextGeneration_Stream: AiProviderRunFn<
       messages,
       max_tokens: getMaxTokens(input, model),
     };
-    applyAnthropicSamplingParams(params, input, model);
     applyAnthropicThinkingParams(params, model);
+    applyAnthropicSamplingParams(params, input, model);
 
     // Emit-only run (emitCheckpoint with no parent checkpoint): this request
     // is the cache write the emitted checkpoint's first consumer reads, so it

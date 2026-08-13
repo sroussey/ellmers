@@ -5,9 +5,14 @@
  */
 
 import { _testOnly } from "@workglow/anthropic/ai";
-import { describe, expect, it } from "vitest";
+import { getLogger } from "@workglow/util";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { buildAnthropicThinkingParams, anthropicSupportsAdaptiveThinking } = _testOnly;
+const {
+  buildAnthropicThinkingParams,
+  applyAnthropicThinkingParams,
+  anthropicSupportsAdaptiveThinking,
+} = _testOnly;
 
 function model(opts: {
   model_name: string;
@@ -112,5 +117,112 @@ describe("buildAnthropicThinkingParams", () => {
       output_config: { effort: "max" },
       max_tokens: 1000,
     });
+  });
+
+  // Anthropic rejects a legacy budget below 1024 with a 400, and `low` maps to
+  // 512. Before the clamp, `{model_name: "claude-haiku-4-5", effort: "low"}` —
+  // an ordinary configuration — built a request the API always refused.
+  it("clamps the legacy budget up to the 1024 minimum", () => {
+    expect(
+      buildAnthropicThinkingParams(model({ model_name: "claude-haiku-4-5", effort: "low" }), 1000)
+    ).toEqual({
+      thinking: { type: "enabled", budget_tokens: 1024 },
+      max_tokens: 1000 + 1024,
+    });
+  });
+
+  // Scope guard: on the adaptive path the same 512 is `max_tokens` headroom,
+  // not a budget, so the minimum does not apply and must not be applied.
+  it("does not clamp adaptive headroom", () => {
+    expect(
+      buildAnthropicThinkingParams(model({ model_name: "claude-sonnet-5", effort: "low" }), 1000)
+    ).toEqual({
+      thinking: { type: "adaptive" },
+      output_config: { effort: "low" },
+      max_tokens: 1000 + 512,
+    });
+  });
+
+  // Carve-out guard: a native `provider_config.thinking.budget_tokens` is an
+  // explicit provider-level opt-in. Silently rewriting it would hide the
+  // config error rather than surfacing it as the 400 it is.
+  it("leaves a native sub-minimum budget alone", () => {
+    expect(
+      buildAnthropicThinkingParams(
+        model({
+          model_name: "claude-haiku-4-5",
+          thinking: { type: "enabled", budget_tokens: 100 },
+        }),
+        1000
+      )
+    ).toEqual({
+      thinking: { type: "enabled", budget_tokens: 100 },
+      max_tokens: 1100,
+    });
+  });
+});
+
+describe("applyAnthropicThinkingParams — forced tool choice", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function baseParams(toolChoice?: Record<string, unknown>): Record<string, unknown> {
+    return { max_tokens: 1000, ...(toolChoice ? { tool_choice: toolChoice } : {}) };
+  }
+
+  it("merges thinking when no tool_choice is present", () => {
+    const params = baseParams();
+    applyAnthropicThinkingParams(params, model({ model_name: "claude-haiku-4-5", effort: "high" }));
+    expect(params.thinking).toEqual({ type: "enabled", budget_tokens: 2048 });
+    expect(params.max_tokens).toBe(1000 + 2048);
+  });
+
+  // A forced tool choice cannot carry legacy extended thinking. Before the
+  // guard, a structured-generation request (which always forces
+  // `{type:"tool"}`) on a thinking-configured legacy model sent both.
+  it.each([[{ type: "tool", name: "structured_output" }], [{ type: "any" }]])(
+    "omits legacy thinking under tool_choice %o",
+    (toolChoice) => {
+      vi.spyOn(getLogger(), "warn").mockImplementation(() => {});
+      const params = baseParams(toolChoice);
+      applyAnthropicThinkingParams(
+        params,
+        model({ model_name: "claude-haiku-4-5", effort: "high" })
+      );
+      expect("thinking" in params).toBe(false);
+      // max_tokens is left unpadded — there is no thinking budget to pad for.
+      expect(params.max_tokens).toBe(1000);
+    }
+  );
+
+  // `{type:"auto"}` is what mapAnthropicToolChoice produces by default, so a
+  // naive "tool_choice is present" check would suppress thinking on nearly
+  // every tool-calling request.
+  it("does not treat tool_choice auto as forced", () => {
+    const params = baseParams({ type: "auto" });
+    applyAnthropicThinkingParams(params, model({ model_name: "claude-haiku-4-5", effort: "high" }));
+    expect(params.thinking).toEqual({ type: "enabled", budget_tokens: 2048 });
+  });
+
+  // Over-suppression guard: the constraint is on legacy `enabled` thinking.
+  // Adaptive thinking on 4.6+ is unaffected and must survive a forced choice.
+  it("keeps adaptive thinking under a forced tool choice", () => {
+    const params = baseParams({ type: "tool", name: "structured_output" });
+    applyAnthropicThinkingParams(params, model({ model_name: "claude-sonnet-5", effort: "high" }));
+    expect(params.thinking).toEqual({ type: "adaptive" });
+    expect(params.output_config).toEqual({ effort: "high" });
+  });
+
+  // The guard reads the built result, not the model version, so a native
+  // provider_config.thinking on a modern id is covered too.
+  it("omits a native enabled thinking under a forced tool choice", () => {
+    vi.spyOn(getLogger(), "warn").mockImplementation(() => {});
+    const params = baseParams({ type: "any" });
+    applyAnthropicThinkingParams(
+      params,
+      model({ model_name: "claude-sonnet-5", thinking: { type: "enabled", budget_tokens: 2048 } })
+    );
+    expect("thinking" in params).toBe(false);
   });
 });

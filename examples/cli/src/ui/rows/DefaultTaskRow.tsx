@@ -7,21 +7,16 @@
 import { Box, Text } from "ink";
 import React from "react";
 import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
-import {
-  iterationSlotToTaskStatus,
-  sortIterationSlotsForDisplay,
-  type CliTaskLine,
-  type IterationSlotRow,
-} from "../taskGraphCliSubscriptions";
+import type { CliTaskLine } from "../taskGraphCliSubscriptions";
 import type { TaskRowProps } from "./pickRenderer";
-import { isRedundantSubgraph, SubtaskRows } from "./SubtaskRows";
-import { useSubtaskRows } from "./useSubtaskRows";
+import { isRedundantSubgraph, IterationTaskRows, SubtaskRows } from "./SubtaskRows";
+import { concurrencyLimitOf, isIteratorTask, useSubtaskRows } from "./useSubtaskRows";
 import { useTaskUsageLine } from "./useTaskUsageLine";
 
 export function DefaultTaskRow({ task, line, iterationSlots }: TaskRowProps): React.ReactElement {
-  const sortedSlots = iterationSlots ? sortIterationSlotsForDisplay(iterationSlots) : [];
   const subtasks = useSubtaskRows(task);
   const usageLine = useTaskUsageLine(task);
+  const iterator = isIteratorTask(task);
   return (
     <Box key={line.id} flexDirection="column">
       <TaskStatusProgressRow
@@ -31,18 +26,12 @@ export function DefaultTaskRow({ task, line, iterationSlots }: TaskRowProps): Re
         barProgress={line.progress ?? 0}
       />
       {usageLine ? <Text dimColor> {usageLine}</Text> : null}
-      {sortedSlots.map((slot: IterationSlotRow) => (
-        <Box key={`${line.id}-iter-${slot.index}`} flexDirection="column" paddingLeft={2}>
-          <TaskStatusProgressRow
-            label={`#${slot.index + 1}`}
-            status={iterationSlotToTaskStatus(slot.status)}
-            message={slot.status === "completed" ? undefined : slot.message}
-            barProgress={slot.progress ?? 0}
-            suppressProgressBar={slot.status !== "running" || slot.progress === undefined}
-          />
-        </Box>
-      ))}
-      {!isRedundantSubgraph(subtasks.rows, line.type) && (
+      <IterationTaskRows
+        task={task}
+        slots={iterationSlots}
+        concurrencyLimit={concurrencyLimitOf(task)}
+      />
+      {!iterator && !isRedundantSubgraph(subtasks.rows, line.type) && (
         <SubtaskRows
           rows={subtasks.rows}
           tasks={subtasks.tasks}

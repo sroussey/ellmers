@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.39
+
+### Bug Fixes
+
+#### test
+
+- close the gaps the Turbo/projects wiring opened
+
 ## 0.3.38
 
 ## 0.3.37
