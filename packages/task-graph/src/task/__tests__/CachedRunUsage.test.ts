@@ -52,6 +52,40 @@ describe("cache-hit usage", () => {
   });
 });
 
+describe("mergeUsage and the estimated flag", () => {
+  const stated: Usage = {
+    input: 10,
+    output: 4,
+    cached: undefined,
+    cacheWrite: undefined,
+    reasoning: undefined,
+    total: undefined,
+    extra: undefined,
+  };
+  const guessed: Usage = { ...stated, input: 3, output: 1, estimated: true };
+
+  it("marks a total that mixes a guess with a stated figure", () => {
+    // Nothing in a merged Usage records which counter came from which side, so
+    // one estimated contributor makes the whole total an estimate. The
+    // alternative is a total that reads as billed but is partly invented.
+    expect(mergeUsage(stated, guessed)?.estimated).toBe(true);
+    expect(mergeUsage(guessed, stated)?.estimated).toBe(true);
+  });
+
+  it("leaves no key at all on a wholly stated total", () => {
+    const merged = mergeUsage(stated, stated)!;
+    // Absent, not present-and-undefined: the value is serialized whole in
+    // places (stream events, cached outputs), and an explicit `undefined` would
+    // survive into shapes that only ever carried the seven counters.
+    expect("estimated" in merged).toBe(false);
+  });
+
+  it("carries the flag through a single-sided merge", () => {
+    expect(mergeUsage(undefined, guessed)?.estimated).toBe(true);
+    expect(mergeUsage(guessed, undefined)?.estimated).toBe(true);
+  });
+});
+
 // ============================================================================
 // Integration: CacheCoordinator.lookup() driving a real task, asserting the
 // observable effects a unit test on CACHE_HIT_USAGE / mergeUsage alone cannot

@@ -110,3 +110,30 @@ describe("sumCostEstimates", () => {
     ).toBe(undefined);
   });
 });
+
+describe("estimateCost and heuristic counters", () => {
+  it("prices nothing when the counters are character-count estimates", () => {
+    // Multiplying a guessed token count by a real rate produces a dollar figure
+    // that reads exactly like a billed one, and nothing downstream can tell them
+    // apart afterwards.
+    expect(estimateCost(usage({ input: 100, output: 20, estimated: true }), pricing)).toBe(
+      undefined
+    );
+  });
+
+  it("still prices the same counters when they are stated", () => {
+    // Scope guard: the refusal keys on the flag, not on the counters.
+    expect(estimateCost(usage({ input: 100, output: 20 }), pricing)?.amount).toBeGreaterThan(0);
+  });
+
+  it("does not price an estimate even with a provider-stated cost attached", () => {
+    // `extra.cost` normally wins outright. A run whose token counts are guesses
+    // has no business asserting a stated total either.
+    expect(
+      estimateCost(
+        usage({ input: 100, output: 20, extra: { cost: 0.5 }, estimated: true }),
+        pricing
+      )
+    ).toBe(undefined);
+  });
+});

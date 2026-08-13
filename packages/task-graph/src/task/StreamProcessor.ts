@@ -204,8 +204,11 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
     const runningUsage = (): Usage | undefined => mergeUsage(settledUsage, liveUsage);
     const publishRunning = (): void => {
       const running = runningUsage();
-      if (!running) return;
+      // Assign unconditionally: when the finish handler clears an unpromotable
+      // estimate there is nothing running, and an early return here would leave
+      // `runUsage` holding that estimate as if it were the settled total.
       this.task.runUsage = running;
+      if (!running) return;
       try {
         this.task.emit("usage", running, this.task.runUsageModelId);
       } catch (err) {
@@ -347,8 +350,11 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
           case "finish": {
             sawFinish = true;
             // finish supersedes the snapshots it summarizes; `?? liveUsage`
-            // keeps a provider that emitted snapshots but no finish usage.
-            settledUsage = mergeUsage(settledUsage, event.usage ?? liveUsage);
+            // keeps a provider that emitted snapshots but no finish usage —
+            // unless that snapshot is a character-count estimate, which is
+            // display feedback and must not settle as this run's spend.
+            const promotable = liveUsage?.estimated ? undefined : liveUsage;
+            settledUsage = mergeUsage(settledUsage, event.usage ?? promotable);
             liveUsage = undefined;
             publishRunning();
             // Re-attached to every finish this processor constructs below, so a
@@ -504,10 +510,17 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
       throw err;
     } finally {
       // An aborted or errored stream still spent the input tokens it sent, so
-      // the last in-flight snapshot is promoted rather than dropped.
+      // a *stated* snapshot is promoted rather than dropped. A character-count
+      // estimate is not a record of what was spent, and an interrupted stream
+      // is where it is least trustworthy.
       if (liveUsage) {
-        settledUsage = mergeUsage(settledUsage, liveUsage);
+        const dropped = liveUsage.estimated === true;
+        if (!dropped) settledUsage = mergeUsage(settledUsage, liveUsage);
         liveUsage = undefined;
+        // Withdraw the estimate from `runUsage` too, so it does not survive as
+        // this execution's reported total. Only on the drop, so the stated path
+        // emits exactly what it emitted before.
+        if (dropped) publishRunning();
       }
       // If the loop exited without a `finish` event (abort via cooperative
       // generator return, or a generator ending early), the routed bytes are
