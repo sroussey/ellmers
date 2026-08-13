@@ -1,5 +1,47 @@
 # @workglow/util
 
+## 0.3.39
+
+### Features
+
+#### util
+
+- add a ./test entry and drop _testOnly from the public API
+
+### Bug Fixes
+
+- reunite the graph test helper with its dependents
+- make the ./test entries survive a real build
+
+#### util
+
+- last complete object wins when skipping JSON preamble (#718)
+- resolve repo-root script imports independently of the vitest root
+- stop TestingLogger inlining a second ConsoleLogger
+
+#### test
+
+- close the gaps the Turbo/projects wiring opened
+
+### Performance
+
+#### util
+
+- add an incremental partial-JSON stream parser (#681)
+
+### Tests
+
+- run tests through Turbo and per-package vitest projects
+- move 174 more unit tests into their owning packages
+- settle the Bun policy, close a CI gap, and pilot the __tests__ move
+- discover test files instead of enumerating sections
+
+### Chores
+
+#### eslint
+
+- enforce consistent-type-imports and apply the repo-wide autofix (#683)
+
 ## Unreleased
 
 ### Bug Fixes

@@ -39,13 +39,29 @@ describe("OpenAI-compatible chat refusals (xAI / HFI via accumulateOpenAIChatStr
   it("keeps ordinary content on the text port (no spurious refusal)", async () => {
     const out: any[] = [];
     await accumulateOpenAIChatStream(chatStream([{ content: "hello" }]), (e) => out.push(e));
-    // Provisional ↓ usage rides content deltas (chat-completions only bill on
-    // the final chunk); the assertion is that content stayed on `text` and no
-    // refusal was synthesised.
+    // No promptText, so no provisional reporter is constructed and the only
+    // event is the content itself — matching the Responses-shape helper, which
+    // has always gated the reporter this way.
+    expect(out).toEqual([{ type: "text-delta", port: "text", textDelta: "hello" }]);
+  });
+
+  it("emits provisional ↓ usage when the caller supplies promptText", async () => {
+    const out: any[] = [];
+    await accumulateOpenAIChatStream(
+      chatStream([{ content: "hello" }]),
+      (e) => out.push(e),
+      undefined,
+      { promptText: "hi" }
+    );
     expect(out.filter((e) => e.type !== "usage")).toEqual([
       { type: "text-delta", port: "text", textDelta: "hello" },
     ]);
-    expect(out.some((e) => e.type === "usage" && e.usage.output === 2)).toBe(true);
+    // Chat-completions only bill on the final chunk, so the counter is driven
+    // by a character-count estimate — flagged as such so nothing prices it.
+    const estimates = out.filter((e) => e.type === "usage");
+    expect(estimates.length).toBeGreaterThan(0);
+    expect(estimates.some((e) => e.usage.output === 2)).toBe(true);
+    expect(estimates.every((e) => e.usage.estimated === true)).toBe(true);
   });
 });
 

@@ -1,5 +1,63 @@
 # @workglow/cli
 
+## 0.3.39
+
+### Features
+
+- add tests for task usage duration and enhance usage line handling
+- implement CLI duration formatting and enhance task usage tracking
+
+#### cli-example
+
+- show live input and output token counts
+
+### Bug Fixes
+
+- usage tracking for owned subtasks in Task Graph
+
+#### cli-example
+
+- render token usage on the actual rendered path
+
+#### ai
+
+- require explicit ModelPricing rates and make the type assertion enforceable
+
+### Refactors
+
+#### pricing
+
+- optimize model pricing state management and improve usage line updates
+
+#### cli-example
+
+- hoist the footer's format call and drop a needless cast
+
+### Tests
+
+- run tests through Turbo and per-package vitest projects
+
+#### cli-example
+
+- gate usage emission on a mounted row, not a fixed sleep
+
+### Chores
+
+- update deps
+- update CodeMirror dependencies and improve TypeScript configuration
+- upgrade to catalog for many deps and update the deps themselves
+
+#### eslint
+
+- enforce consistent-type-imports and apply the repo-wide autofix (#683)
+
+### Updated Dependencies
+
+- `commander`: catalog:
+- `react`: catalog:
+- `smol-toml`: ^1.8.0
+- `@types/react`: catalog:
+
 ## 0.3.38
 
 ## 0.3.37

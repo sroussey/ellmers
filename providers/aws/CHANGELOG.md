@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.3.39
+
+### Bug Fixes
+
+#### test
+
+- close the gaps the Turbo/projects wiring opened
+
+### Refactors
+
+#### job-queue
+
+- collapse per-backend queue adapters onto wrapQueueStorage (#684)
+
+### Chores
+
+- upgrade to catalog for many deps and update the deps themselves
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: catalog:
+- `aws-sdk-client-mock`: catalog:
+
 ## 0.3.38
 
 ## 0.3.37

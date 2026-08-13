@@ -285,6 +285,10 @@ export function createEstimatedOutputUsageReporter(
     reasoning: undefined,
     total: undefined,
     extra: undefined,
+    // Every counter here is a character-count guess. Tagging at the one place
+    // they are minted marks them for every call site at once, so nothing
+    // downstream prices or persists them as billed spend.
+    estimated: true,
   });
 
   const send = (at: number): void => {
@@ -312,11 +316,7 @@ export function createEstimatedOutputUsageReporter(
     flush: (): void => {
       if (input === undefined && outputChars === 0) return;
       const next = { input, output: outputFromChars() };
-      if (
-        lastEmitted &&
-        lastEmitted.input === next.input &&
-        lastEmitted.output === next.output
-      ) {
+      if (lastEmitted && lastEmitted.input === next.input && lastEmitted.output === next.output) {
         return;
       }
       send(now());

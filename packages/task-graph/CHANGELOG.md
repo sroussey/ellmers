@@ -1,5 +1,99 @@
 # @workglow/task-graph
 
+## 0.3.39
+
+### Features
+
+- add tests for task usage duration and enhance usage line handling
+
+#### web-example
+
+- show the run's cumulative token total
+
+#### task-graph
+
+- add an opt-in run-usage recorder
+- report a cache hit as a stated zero cost
+- aggregate token usage per run
+- add a task-level usage event
+- fold mid-stream usage snapshots without double-counting
+- add the mid-stream usage event
+- ship InMemoryTaskOutputRepository from ./test
+
+### Bug Fixes
+
+- improve usage tracking
+- usage tracking for owned subtasks in Task Graph
+
+#### ai,task-graph
+
+- keep heuristic usage estimates out of accounting
+
+#### task-graph
+
+- count an owned child's late charge once
+- scope usage sinks to the run that supplied them
+- drop the run_usage columns nothing can populate
+- roll usage up by task and by model, not one slice each
+- count a nested task's spend once, not once per hop
+- break the Task/ConditionalTask module cycle
+- detach the run's usage listeners at run end
+- reset the usage aggregator per run instead of replacing it
+- key usage buckets without string collision
+- defer the pipe-function wrapper past the Task cycle
+
+#### task-graph,ai
+
+- route a checkpoint's storage charge into the run total
+
+#### test
+
+- satisfy typecheck:tests across the usage test helpers
+- close the gaps the Turbo/projects wiring opened
+
+#### util
+
+- last complete object wins when skipping JSON preamble (#718)
+
+### Refactors
+
+- decompose BaseTabularStorage.ts and Task.ts along functional seams (#682)
+
+#### task-graph
+
+- name run-usage columns like every sibling schema
+
+#### test
+
+- drop the FsFolderTaskOutputRepository shim
+
+### Tests
+
+- run tests through Turbo and per-package vitest projects
+- move 174 more unit tests into their owning packages
+- discover test files instead of enumerating sections
+
+#### task-graph
+
+- cover the cache-hit usage emit
+- cover usage survival on aborted and finish-less streams
+- make the StreamUsage type assertion actually enforceable
+- relocate the remaining task-graph test infrastructure
+- move TestTasks into the package's ./test entry
+- extract the streaming task-output repository contract
+
+#### ai
+
+- pin the Usage field contract and assert disjointness
+
+### Chores
+
+- upgrade to catalog for many deps and update the deps themselves
+
+#### eslint
+
+- enforce consistent-type-imports and apply the repo-wide autofix (#683)
+
 ## 0.3.38
 
 ### Features

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.39
+
+### Bug Fixes
+
+#### ai
+
+- require explicit ModelPricing rates and make the type assertion enforceable
+
 ## 0.3.38
 
 ## 0.3.37
