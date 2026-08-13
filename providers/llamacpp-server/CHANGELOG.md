@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.39
+
+### Features
+
+- enhance usage tracking in AI providers
+
+### Bug Fixes
+
+#### ai
+
+- require explicit ModelPricing rates and make the type assertion enforceable
+
 ## 0.3.38
 
 ## 0.3.37

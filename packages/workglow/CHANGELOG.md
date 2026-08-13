@@ -1,5 +1,25 @@
 # workglow
 
+## 0.3.39
+
+### Features
+
+#### ai
+
+- add a ./test entry and drop _testOnly from the public API
+
+### Bug Fixes
+
+#### test
+
+- close the gaps the Turbo/projects wiring opened
+
+### Documentation
+
+#### build
+
+- correct the surviving bun-condition count and pin it with a test (#716)
+
 ## 0.3.38
 
 ### Bug Fixes

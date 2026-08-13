@@ -1,5 +1,210 @@
 # @workglow/test
 
+## 0.3.39
+
+### Features
+
+- enhance model existence verification in AI provider streams
+- enhance provisional usage reporting in AI provider streams
+- dd prefill phase emission to HFT streaming
+
+#### models
+
+- update pricing and add new model for DeepSeek
+
+#### anthropic
+
+- honor model.effort for extended/adaptive thinking
+
+#### deepseek
+
+- map model.effort to reasoning_allowance
+
+#### openrouter
+
+- map model.effort into reasoning extras
+
+#### openai
+
+- map model.effort to Responses reasoning
+
+#### hft
+
+- report local token counts as usage, not a phase message
+
+#### gemini
+
+- report checkpoint write tokens and cache lifetime
+- add support for reproducible generation with sampling seed
+
+#### providers
+
+- report cache-checkpoint warm-up token cost
+- emit cumulative usage snapshots mid-stream
+
+#### storage
+
+- enhance query operators to support null handling and inequality checks
+
+#### task-graph
+
+- ship InMemoryTaskOutputRepository from ./test
+
+#### ai
+
+- add a ./test entry and drop _testOnly from the public API
+
+#### util
+
+- add a ./test entry and drop _testOnly from the public API
+
+### Bug Fixes
+
+- improve usage tracking
+- usage tracking for owned subtasks in Task Graph
+- reunite the graph test helper with its dependents
+- make the ./test entries survive a real build
+
+#### huggingface-inference
+
+- forward provider-stated usage from text run-fns
+- encode Hub model ids per path segment
+
+#### anthropic
+
+- keep an in-range top_p under legacy extended thinking
+- build a legal request under legacy extended thinking
+
+#### ai,task-graph
+
+- keep heuristic usage estimates out of accounting
+
+#### task-graph
+
+- count an owned child's late charge once
+- scope usage sinks to the run that supplied them
+- count a nested task's spend once, not once per hop
+- break the Task/ConditionalTask module cycle
+- key usage buckets without string collision
+
+#### gemini
+
+- remove structured-generation 2048 thinking default
+- return cache disposal result through the queued path
+- report disjoint input and fold thoughts into output
+
+#### tasks
+
+- handle the SafeFetch body-pipe rejection instead of crashing the process
+- keep resolved credentials out of queued job payloads, add credential schemes (#677)
+
+#### task-graph,ai
+
+- route a checkpoint's storage charge into the run total
+
+#### test
+
+- satisfy typecheck:tests across the usage test helpers
+- update provider-api usage expectations to the disjoint contract
+- guard against getAll() returning undefined in PostgresTabularDateTime test
+
+#### deepseek
+
+- map the stated cache-miss count to disjoint input
+
+#### ai
+
+- make the OpenAI-shaped usage mappers report disjoint input
+
+#### job-queue
+
+- retry promptly when an idle peek finds a ready job
+
+### Refactors
+
+- decompose BaseTabularStorage.ts and Task.ts along functional seams (#682)
+
+#### tests
+
+- streamline model info test function calls (fix type errors)
+
+#### test
+
+- drop the FsFolderTaskOutputRepository shim
+
+#### job-queue
+
+- collapse per-backend queue adapters onto wrapQueueStorage (#684)
+
+### Performance
+
+#### util
+
+- add an incremental partial-JSON stream parser (#681)
+
+### Tests
+
+- fix out of date assertion in test
+- run tests through Turbo and per-package vitest projects
+- delete the unused Postgres task-output and task-graph repositories
+- move 174 more unit tests into their owning packages
+- settle the Bun policy, close a CI gap, and pilot the __tests__ move
+- discover test files instead of enumerating sections
+- add unit tests for OpenAI reasoning and temperature coupling, and Postgres date handling
+
+#### huggingface-inference
+
+- pin the estimate/stated boundary for HFI
+
+#### ai
+
+- verify OpenAI cache counters are portions of input_tokens
+- pin the Usage field contract and assert disjointness
+
+#### task-graph
+
+- cover a nested task's spend reaching the run total
+- relocate the remaining task-graph test infrastructure
+- move TestTasks into the package's ./test entry
+- extract the streaming task-output repository contract
+
+#### providers
+
+- drop a plan reference from a test comment
+- cover checkpoint warm-up usage wiring
+
+#### storage
+
+- exercise a null criterion against a real index
+
+### Documentation
+
+#### build
+
+- correct the surviving bun-condition count and pin it with a test (#716)
+
+### Chores
+
+- update deps
+- add Lezer dependencies and update Vite configuration
+- upgrade to catalog for many deps and update the deps themselves
+- update deps
+
+#### eslint
+
+- enforce consistent-type-imports and apply the repo-wide autofix (#683)
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: catalog:
+- `@cloudflare/workers-types`: catalog:
+- `@types/dom-chromium-ai`: catalog:
+- `@types/pg`: catalog:
+- `aws-sdk-client-mock`: catalog:
+- `fake-indexeddb`: catalog:
+- `miniflare`: ^5.20260811.0-alpha
+- `vitest`: catalog:
+
 ## 0.3.38
 
 ### Features

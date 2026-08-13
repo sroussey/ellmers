@@ -1,5 +1,23 @@
 # @workglow/knowledge-base
 
+## 0.3.39
+
+### Bug Fixes
+
+#### test
+
+- close the gaps the Turbo/projects wiring opened
+
+### Tests
+
+- run tests through Turbo and per-package vitest projects
+
+### Chores
+
+#### eslint
+
+- enforce consistent-type-imports and apply the repo-wide autofix (#683)
+
 ## 0.3.38
 
 ## 0.3.37
