@@ -6,7 +6,13 @@
 
 import type { CachePolicy, IExecuteContext } from "@workglow/task-graph";
 import { Task, Workflow } from "@workglow/task-graph";
-import type { ITriggerListenerHandle } from "@workglow/triggers";
+import type {
+  ITrigger,
+  ITriggerListenerHandle,
+  TriggerEventListener,
+  TriggerEventListeners,
+  TriggerEvents,
+} from "@workglow/triggers";
 import {
   CronTrigger,
   CronUnsatisfiableError,
@@ -15,6 +21,8 @@ import {
   PollingTrigger,
   WorkflowTriggerError,
 } from "@workglow/triggers";
+import type { ILogger } from "@workglow/util";
+import { EventEmitter, getLogger, setLogger } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -112,6 +120,73 @@ class RecorderTask extends Task<RecorderInput, RecorderOutput> {
 
 function createWorkflow(): Workflow {
   return new Workflow().addTask(RecorderTask, { label: "default" });
+}
+
+/**
+ * A third-party `ITrigger` whose `stop()` never settles AND which ignores
+ * `TriggerStopOptions` entirely — the shape of any implementation written
+ * before the option existed. It is why the deadline is applied again around the
+ * whole set: forwarding it to each trigger alone would leave this one wedging
+ * every sibling on the workflow.
+ */
+class WedgedTrigger implements ITrigger {
+  public readonly kind = "wedged";
+  public readonly events = new EventEmitter<TriggerEventListeners>();
+  public running = false;
+
+  constructor(public readonly id: string) {}
+
+  public start(): void {
+    this.running = true;
+  }
+
+  public stop(): Promise<void> {
+    return new Promise<void>(() => {});
+  }
+
+  public on<Event extends TriggerEvents>(name: Event, fn: TriggerEventListener<Event>): void {
+    this.events.on(name, fn);
+  }
+
+  public off<Event extends TriggerEvents>(name: Event, fn: TriggerEventListener<Event>): void {
+    this.events.off(name, fn);
+  }
+
+  public once<Event extends TriggerEvents>(name: Event, fn: TriggerEventListener<Event>): void {
+    this.events.once(name, fn);
+  }
+}
+
+interface WarnRecord {
+  readonly message: string;
+  readonly meta: Record<string, unknown> | undefined;
+}
+
+/**
+ * Installs a logger that records `warn` calls; returns the sink and a restore fn.
+ * Built from scratch rather than spread from the installed logger, whose methods
+ * live on a class prototype and would be lost.
+ */
+function captureWarnings(): { warnings: WarnRecord[]; restore: () => void } {
+  const warnings: WarnRecord[] = [];
+  const previous = getLogger();
+  const noop = (): void => {};
+  const logger: ILogger = {
+    debug: noop,
+    info: noop,
+    warn: (message: string, meta?: Record<string, unknown>) => {
+      warnings.push({ message, meta });
+    },
+    error: noop,
+    fatal: noop,
+    child: () => logger,
+    time: noop,
+    timeEnd: noop,
+    group: noop,
+    groupEnd: noop,
+  };
+  setLogger(logger);
+  return { warnings, restore: () => setLogger(previous) };
 }
 
 /**
@@ -516,6 +591,125 @@ describe("Workflow trigger bindings", () => {
     expect(executions).toContain("after");
 
     await handle.stop();
+  });
+
+  describe("an already-aborted listen() signal", () => {
+    test("rejects instead of returning an inert handle", async () => {
+      // The old path returned a handle that had already been removed from the
+      // registry and whose triggers were never scheduled — a listen() that
+      // looked successful and did nothing.
+      const workflow = createWorkflow();
+      const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+      workflow.trigger(trigger, { input: () => ({ label: "never" }) });
+
+      await expect(workflow.listen({ signal: AbortSignal.abort() })).rejects.toBeInstanceOf(Error);
+
+      expect(trigger.running).toBe(false);
+      await advanceFakeTimers(PERIOD * 3);
+      expect(executions).toEqual([]);
+    });
+
+    test("leaves the workflow free to bind and listen again", async () => {
+      // Checked before any state is touched, so the binding lock was never
+      // taken and the handle registry was never written.
+      const workflow = createWorkflow();
+      workflow.trigger(new IntervalTrigger({ intervalMs: PERIOD }), {
+        input: () => ({ label: "first" }),
+      });
+
+      await expect(workflow.listen({ signal: AbortSignal.abort() })).rejects.toBeInstanceOf(Error);
+
+      expect(() =>
+        workflow.trigger(new IntervalTrigger({ intervalMs: PERIOD, id: "later" }), {
+          input: () => ({ label: "later" }),
+        })
+      ).not.toThrow();
+
+      const handle = await workflow.listen();
+      await advanceFakeTimers(PERIOD);
+      expect(executions).toContain("later");
+
+      await handle.stop();
+    });
+  });
+
+  describe("stop deadline", () => {
+    test("listen({ stopTimeoutMs }) bounds stop() even when a trigger ignores the option", async () => {
+      const { warnings, restore } = captureWarnings();
+      try {
+        const workflow = createWorkflow();
+        const wedged = new WedgedTrigger("wedged-1");
+        const healthy = new IntervalTrigger({ intervalMs: PERIOD, id: "healthy" });
+        workflow.trigger(wedged);
+        workflow.trigger(healthy, { input: () => ({ label: "healthy" }) });
+
+        const handle = await workflow.listen({ stopTimeoutMs: PERIOD * 5 });
+        await advanceFakeTimers(PERIOD);
+        expect(executions).toContain("healthy");
+
+        const stopping = handle.stop();
+        await advanceFakeTimers(PERIOD * 5);
+        await stopping;
+
+        // The sibling actually stopped rather than being held hostage.
+        expect(healthy.running).toBe(false);
+        const timedOut = warnings.find(
+          (warning) => warning.message === "Timed out stopping workflow triggers"
+        );
+        expect(timedOut?.meta?.triggerIds).toEqual(["wedged-1"]);
+
+        // The handle was released, so binding and listening are possible again.
+        expect(() =>
+          workflow.trigger(new IntervalTrigger({ intervalMs: PERIOD, id: "after" }))
+        ).not.toThrow();
+      } finally {
+        restore();
+      }
+    });
+
+    test("stop({ timeoutMs }) overrides the listen() default", async () => {
+      const { warnings, restore } = captureWarnings();
+      try {
+        const workflow = createWorkflow();
+        workflow.trigger(new WedgedTrigger("wedged-2"));
+
+        const handle = await workflow.listen();
+        const stopping = handle.stop({ timeoutMs: PERIOD * 2 });
+        await advanceFakeTimers(PERIOD * 2);
+        await stopping;
+
+        expect(
+          warnings.some((warning) => warning.message === "Timed out stopping workflow triggers")
+        ).toBe(true);
+      } finally {
+        restore();
+      }
+    });
+
+    test("a set of triggers that all stop cleanly reports nothing", async () => {
+      const { warnings, restore } = captureWarnings();
+      try {
+        const workflow = createWorkflow();
+        workflow.trigger(new IntervalTrigger({ intervalMs: PERIOD, id: "a" }), {
+          input: () => ({ label: "a" }),
+        });
+        workflow.trigger(new IntervalTrigger({ intervalMs: PERIOD, id: "b" }), {
+          input: () => ({ label: "b" }),
+        });
+
+        const handle = await workflow.listen({ stopTimeoutMs: PERIOD * 5 });
+        await advanceFakeTimers(PERIOD);
+        await handle.stop();
+
+        expect(
+          warnings.some((warning) => warning.message === "Timed out stopping workflow triggers")
+        ).toBe(false);
+        // The deadline timer is cleared once the drain wins the race.
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        restore();
+      }
+    });
   });
 
   test("a fire with no input mapping runs the workflow with its declared defaults", async () => {

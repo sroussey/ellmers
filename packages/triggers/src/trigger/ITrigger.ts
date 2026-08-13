@@ -105,6 +105,26 @@ export interface TriggerStartOptions {
   readonly signal?: AbortSignal | undefined;
 }
 
+/** Options accepted by {@link ITrigger.stop}. */
+export interface TriggerStopOptions {
+  /**
+   * Deadline for the drain, in milliseconds. A positive integer.
+   *
+   * Omitted (the default) means NO deadline — `stop()` waits for every
+   * in-flight handler however long that takes, which is what makes
+   * "`await stop()` means no handler of that run is still running" true. A
+   * handler that never settles therefore wedges `stop()` forever, and through
+   * the workflow bindings that wedges every other trigger on the workflow too.
+   *
+   * When set, the drain is abandoned at the deadline: an
+   * {@link TriggerStopTimeoutError} is emitted on `error` with the number of
+   * invocations still pending, the trigger is released so it can be started
+   * again, and THE ABANDONED HANDLERS KEEP RUNNING. Opt in only where a bounded
+   * shutdown matters more than that guarantee.
+   */
+  readonly timeoutMs?: number | undefined;
+}
+
 /**
  * A source of workflow invocations.
  *
@@ -138,9 +158,14 @@ export interface ITrigger {
    * Cancels the pending tick, aborts the signal handed to handlers, and
    * resolves once any in-flight handler has settled — so a caller that awaits
    * `stop()` knows no handler is still running. Concurrent calls join the same
-   * drain rather than resolving early.
+   * drain rather than resolving early, which means the FIRST call's deadline
+   * governs; a later call cannot shorten a drain already under way.
+   *
+   * That guarantee holds only without {@link TriggerStopOptions.timeoutMs},
+   * which is opt-in for exactly this reason: past its deadline `stop()`
+   * abandons whatever is still in flight and resolves anyway.
    */
-  stop(): Promise<void>;
+  stop(options?: TriggerStopOptions): Promise<void>;
 
   on<Event extends TriggerEvents>(name: Event, fn: TriggerEventListener<Event>): void;
   off<Event extends TriggerEvents>(name: Event, fn: TriggerEventListener<Event>): void;

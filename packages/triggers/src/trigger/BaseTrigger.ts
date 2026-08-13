@@ -15,9 +15,10 @@ import type {
   TriggerEvents,
   TriggerHandler,
   TriggerStartOptions,
+  TriggerStopOptions,
 } from "./ITrigger";
 import { OVERLAP_POLICIES } from "./ITrigger";
-import { TriggerConfigurationError } from "./TriggerError";
+import { TriggerConfigurationError, TriggerStopTimeoutError } from "./TriggerError";
 
 /**
  * Largest delay a host timer accepts. A larger value overflows the 32-bit
@@ -32,6 +33,22 @@ const MAX_TIMER_DELAY_MS = 2_147_483_647;
  */
 const EARLY_TIMER_TOLERANCE_MS = 50;
 
+/** A `stop()` drain's deadline: the race arm, its cancellation, and its size. */
+interface StopDeadline {
+  readonly timeoutMs: number;
+  readonly expired: Promise<"expired">;
+  readonly cancel: () => void;
+}
+
+function assertPositiveInteger(value: number, name: string): number {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new TriggerConfigurationError(
+      `${name} must be a positive integer, received ${String(value)}.`
+    );
+  }
+  return value;
+}
+
 /** Options common to every built-in trigger. */
 export interface TriggerOptions {
   /** Stable id; a UUID is generated when omitted. */
@@ -40,6 +57,26 @@ export interface TriggerOptions {
   readonly overlap?: OverlapPolicy | undefined;
   /** Backlog bound for the `"queue"` policy. Defaults to `1`. */
   readonly maxQueuedFires?: number | undefined;
+  /**
+   * Ceiling on handler invocations in flight at once under
+   * `overlap: "concurrent"`. A positive integer; unbounded by default.
+   *
+   * `"concurrent"` otherwise has no bound at all: a handler slower than the
+   * period accumulates one more invocation every tick, forever, and the fan-out
+   * is limited only by whatever the handler itself runs out of. A tick past the
+   * ceiling behaves exactly like a `"skip"` — `skip` event, collapsed warning —
+   * so the trigger stays a clock rather than becoming an unbounded work queue.
+   *
+   * Ignored by the other overlap policies, which already bound themselves.
+   */
+  readonly maxConcurrentFires?: number | undefined;
+  /**
+   * Default deadline for {@link BaseTrigger.stop}'s drain, in milliseconds. A
+   * positive integer; unbounded by default. See
+   * {@link TriggerStopOptions.timeoutMs} — the default MUST stay unbounded, or
+   * the documented meaning of `await stop()` quietly stops being true.
+   */
+  readonly stopTimeoutMs?: number | undefined;
   /**
    * Call `unref()` on the scheduled timer where the host supports it (Node and
    * Bun; a browser's numeric handle has no such method and is left alone).
@@ -103,6 +140,8 @@ export abstract class BaseTrigger implements ITrigger {
 
   protected readonly overlap: OverlapPolicy;
   protected readonly maxQueuedFires: number;
+  protected readonly maxConcurrentFires: number;
+  protected readonly stopTimeoutMs: number | undefined;
   protected readonly unrefTimer: boolean;
 
   /**
@@ -131,12 +170,20 @@ export abstract class BaseTrigger implements ITrigger {
         `Unknown overlap policy "${this.overlap}". Expected one of: ${OVERLAP_POLICIES.join(", ")}.`
       );
     }
-    this.maxQueuedFires = options.maxQueuedFires ?? 1;
-    if (!Number.isInteger(this.maxQueuedFires) || this.maxQueuedFires < 1) {
-      throw new TriggerConfigurationError(
-        `maxQueuedFires must be a positive integer, received ${String(options.maxQueuedFires)}.`
-      );
-    }
+    this.maxQueuedFires =
+      options.maxQueuedFires === undefined
+        ? 1
+        : assertPositiveInteger(options.maxQueuedFires, "maxQueuedFires");
+    // Infinity, not a large number: the ceiling is genuinely absent by default,
+    // and a sentinel would eventually be reached by a long-lived trigger.
+    this.maxConcurrentFires =
+      options.maxConcurrentFires === undefined
+        ? Number.POSITIVE_INFINITY
+        : assertPositiveInteger(options.maxConcurrentFires, "maxConcurrentFires");
+    this.stopTimeoutMs =
+      options.stopTimeoutMs === undefined
+        ? undefined
+        : assertPositiveInteger(options.stopTimeoutMs, "stopTimeoutMs");
     this.unrefTimer = options.unrefTimer ?? false;
   }
 
@@ -224,9 +271,20 @@ export abstract class BaseTrigger implements ITrigger {
    *
    * Concurrent calls join the same drain: the second call returns the first
    * call's promise rather than resolving early, so `await stop()` always means
-   * "no handler of that run is still running".
+   * "no handler of that run is still running" — and the first call's deadline
+   * is the one in force, since there is only ever one drain.
+   *
+   * Pass {@link TriggerStopOptions.timeoutMs} (or set `stopTimeoutMs` on the
+   * trigger) to bound the drain. The deadline is OPT-IN, and deliberately so: a
+   * bounded default would turn the sentence above into a lie for every caller
+   * that never asked for one. Past the deadline the still-pending handlers are
+   * abandoned — they keep running — and the expiry is reported on `error`.
    */
-  public stop(): Promise<void> {
+  public stop(options: TriggerStopOptions = {}): Promise<void> {
+    const timeoutMs =
+      options.timeoutMs === undefined
+        ? this.stopTimeoutMs
+        : assertPositiveInteger(options.timeoutMs, "timeoutMs");
     const run = this._run;
     if (!run) return Promise.resolve();
     if (run.stopping) return run.stopping;
@@ -243,7 +301,7 @@ export abstract class BaseTrigger implements ITrigger {
 
     // Record the drain BEFORE aborting: an abort listener that re-enters
     // `stop()` must join this drain instead of starting a second one.
-    const stopping = this.releaseWhenIdle(run);
+    const stopping = this.releaseWhenIdle(run, timeoutMs);
     run.stopping = stopping;
     run.controller.abort();
     return stopping;
@@ -289,12 +347,33 @@ export abstract class BaseTrigger implements ITrigger {
     return this._run;
   }
 
-  private async releaseWhenIdle(run: TriggerRun): Promise<void> {
-    // A loop, not a single `allSettled`: a chain draining queued ticks may still
-    // be adding work when the first snapshot is taken.
-    while (run.pending.size > 0) {
-      await Promise.allSettled([...run.pending]);
+  private async releaseWhenIdle(run: TriggerRun, timeoutMs: number | undefined): Promise<void> {
+    const deadline = timeoutMs === undefined ? undefined : this.createStopDeadline(timeoutMs);
+    try {
+      // A loop, not a single `allSettled`: a chain draining queued ticks may still
+      // be adding work when the first snapshot is taken.
+      while (run.pending.size > 0) {
+        if (deadline === undefined) {
+          await Promise.allSettled([...run.pending]);
+          continue;
+        }
+        const outcome = await Promise.race([
+          Promise.allSettled([...run.pending]).then(() => "settled" as const),
+          deadline.expired,
+        ]);
+        if (outcome === "expired") {
+          this.reportStopTimeout(run, deadline.timeoutMs);
+          break;
+        }
+      }
+    } finally {
+      deadline?.cancel();
     }
+
+    // Reached on the timeout path too. The abandoned handlers cannot be
+    // recalled, but stranding the run as well would leave the trigger reporting
+    // `running` with nothing scheduled, and every later `start()` a silent
+    // no-op — the caller would have lost the trigger, not just the drain.
 
     // A `start()` during the drain installed a newer run. Clearing `_run` here
     // would strand it, and emitting `stop` would report a trigger that is
@@ -302,6 +381,50 @@ export abstract class BaseTrigger implements ITrigger {
     if (this._run !== run) return;
     this._run = undefined;
     this.safeEmit("stop");
+  }
+
+  /**
+   * A timer the drain races against, cancelled in the caller's `finally` — an
+   * un-cleared one keeps a Node host alive for the length of a deadline that
+   * has already been beaten, which is precisely what `stop()` was called to end.
+   */
+  private createStopDeadline(timeoutMs: number): StopDeadline {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<"expired">((resolve) => {
+      timer = setTimeout(() => resolve("expired"), timeoutMs);
+      if (this.unrefTimer) {
+        (timer as unknown as { unref?: () => void }).unref?.();
+      }
+    });
+    return {
+      timeoutMs,
+      expired,
+      cancel: () => {
+        if (timer !== undefined) clearTimeout(timer);
+        timer = undefined;
+      },
+    };
+  }
+
+  /**
+   * Reported, not thrown: `stop()` resolves so the caller can finish shutting
+   * down, and the count is what says how much work was left behind.
+   */
+  private reportStopTimeout(run: TriggerRun, timeoutMs: number): void {
+    const pending = run.pending.size;
+    this.safeEmit(
+      "error",
+      new TriggerStopTimeoutError(
+        `stop() gave up after ${timeoutMs}ms with ${pending} handler invocation(s) ` +
+          `still in flight; they were abandoned and are still running.`
+      )
+    );
+    getLogger().warn("Trigger stop deadline expired with handlers still in flight", {
+      triggerId: this.id,
+      kind: this.kind,
+      pending,
+      timeoutMs,
+    });
   }
 
   private scheduleAt(run: TriggerRun, targetMs: number): void {
@@ -351,7 +474,15 @@ export abstract class BaseTrigger implements ITrigger {
   }
 
   private dispatch(run: TriggerRun, scheduledAt: number): void {
-    if (this.overlap !== "concurrent" && (run.inFlight > 0 || run.queued.length > 0)) {
+    if (this.overlap === "concurrent") {
+      // Unbounded by default; a ceiling degrades the excess tick to a skip
+      // rather than letting the fan-out grow one invocation per tick forever.
+      if (run.inFlight >= this.maxConcurrentFires) {
+        this.safeEmit("skip", scheduledAt);
+        this.noteSkip(run, scheduledAt);
+        return;
+      }
+    } else if (run.inFlight > 0 || run.queued.length > 0) {
       if (this.overlap === "queue" && run.queued.length < this.maxQueuedFires) {
         this.flushSkipStreak(run);
         run.queued.push(scheduledAt);
@@ -421,7 +552,22 @@ export abstract class BaseTrigger implements ITrigger {
       try {
         await this.runTick(scheduledAt, run);
       } catch (error) {
-        this.reportError(error, scheduledAt);
+        // A tick that failed BECAUSE we stopped it is the expected shape of a
+        // graceful `stop()`, not a fault: a handler that forwards its signal
+        // rejects with an AbortError, and reporting that on `error` makes every
+        // orderly shutdown look like a failure — loudly enough that callers
+        // install absorbing `error` listeners, which then swallow the real
+        // failures too.
+        if (run.signal.aborted) {
+          getLogger().debug("Trigger tick aborted during stop", {
+            triggerId: this.id,
+            kind: this.kind,
+            scheduledAt,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        } else {
+          this.reportError(error, scheduledAt);
+        }
       } finally {
         run.inFlight -= 1;
       }

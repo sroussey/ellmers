@@ -58,10 +58,26 @@ scope exit.
 
 - **Abort** — `stop()` aborts the signal handed to handlers and resolves only
   once in-flight handlers settle; concurrent `stop()` calls join the same drain.
-  A caller signal passed to `start()` is linked with `AbortSignal.any`. Under
-  the workflow bindings, stopping a trigger aborts only the workflow runs THAT
-  trigger started — the signal is forwarded as `runConfig.signal`, so a second
-  trigger bound to the same workflow keeps running.
+  A tick that fails because of that abort is not reported on `error` — a
+  graceful shutdown is not a fault. A caller signal passed to `start()` is
+  linked with `AbortSignal.any`. Under the workflow bindings, stopping a trigger
+  aborts only the workflow runs THAT trigger started — the signal is forwarded
+  as `runConfig.signal`, so a second trigger bound to the same workflow keeps
+  running. An `AbortSignal` that is ALREADY aborted when it reaches `listen()`
+  makes `listen()` reject rather than hand back a handle whose triggers were
+  never scheduled.
+- **Bounding the drain** — the wait above is **unbounded by default**, and that
+  default is load-bearing: it is what makes "`await stop()` means no handler of
+  that run is still running" true. A handler that never settles therefore never
+  lets `stop()` resolve, and through the workflow bindings that wedges
+  `handle.stop()`, `workflow.stopListening()` and an `await using` scope exit
+  for every other trigger on the workflow. Opt into a deadline with
+  `stopTimeoutMs` on the trigger, `timeoutMs` on the `stop()` call, or
+  `stopTimeoutMs` on `listen()` (which forwards to each trigger AND bounds the
+  set, so a third-party `ITrigger` that ignores the option cannot wedge its
+  siblings). Past the deadline the still-pending handlers are **abandoned — they
+  keep running** — a `TriggerStopTimeoutError` carrying the count is emitted on
+  `error`, and the trigger is released so it can be started again.
 - **Overlap** — `overlap: "skip" | "queue" | "concurrent"`, default `"skip"`. A
   tick arriving while the previous handler runs is dropped (and emits `skip`); a
   trigger is a clock, not a work queue, so a slow handler cannot grow a backlog.
@@ -72,7 +88,10 @@ scope exit.
   A fire past that bound is dropped and reported on `error`. When queueing is
   what you want, ask for it: `overlap: "queue"` with `maxQueuedFires`. A dropped
   tick emits `skip` every time; the accompanying log is collapsed to the first
-  skip of a contiguous run plus a count when the run ends.
+  skip of a contiguous run plus a count when the run ends. `"concurrent"` is
+  unbounded unless you say otherwise — a handler slower than the period gains
+  one more invocation every tick, forever — so pass `maxConcurrentFires` to cap
+  it; ticks past the cap degrade to skips.
 - **Errors** — a handler rejection never stops the loop. It is emitted on
   `error` as the real `Error` and logged through `getLogger()`. A polling
   handler that throws does not consume the change: the baseline is restored and

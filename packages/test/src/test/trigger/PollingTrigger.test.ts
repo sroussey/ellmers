@@ -606,7 +606,12 @@ describe("PollingTrigger", () => {
           });
         },
       });
-      trigger.on("error", () => {});
+      // A COLLECTING listener, not an absorbing one. The poll rejects because
+      // stop() aborted it, which is the graceful path — reporting it on `error`
+      // makes every orderly shutdown look like a failure, and the absorbing
+      // listener this test used to need was the evidence.
+      const errors: Error[] = [];
+      trigger.on("error", (error) => errors.push(error));
       trigger.start(() => {});
 
       await advanceFakeTimers(PERIOD);
@@ -618,6 +623,7 @@ describe("PollingTrigger", () => {
 
       await stopping;
       expect(trigger.running).toBe(false);
+      expect(errors).toEqual([]);
       // The deadline timer was cleared rather than left to fire on a dead run.
       expect(vi.getTimerCount()).toBe(0);
     });

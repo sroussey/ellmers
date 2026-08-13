@@ -5,7 +5,11 @@
  */
 
 import type { ITriggerFireContext } from "@workglow/triggers";
-import { IntervalTrigger, TriggerConfigurationError } from "@workglow/triggers";
+import {
+  IntervalTrigger,
+  TriggerConfigurationError,
+  TriggerStopTimeoutError,
+} from "@workglow/triggers";
 import type { ILogger } from "@workglow/util";
 import { getLogger, setLogger } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -318,6 +322,74 @@ describe("IntervalTrigger", () => {
         () => new IntervalTrigger({ intervalMs: PERIOD, overlap: "queue", maxQueuedFires: 0 })
       ).toThrow(TriggerConfigurationError);
     });
+
+    test("maxConcurrentFires caps concurrent fan-out, degrading the excess to skips", async () => {
+      // Without a cap, a handler slower than the period gains one more
+      // invocation every tick, indefinitely — the fan-out is bounded only by
+      // whatever the handler itself runs out of first.
+      const trigger = new IntervalTrigger({
+        intervalMs: PERIOD,
+        overlap: "concurrent",
+        maxConcurrentFires: 2,
+      });
+      const gate = createGate();
+      const fired: number[] = [];
+      const skipped: number[] = [];
+      trigger.on("skip", (scheduledAt) => skipped.push(scheduledAt));
+
+      trigger.start(async (context) => {
+        fired.push(context.scheduledAt);
+        await gate.promise;
+      });
+
+      await advanceFakeTimers(PERIOD * 4);
+      expect(fired).toEqual([START + PERIOD, START + PERIOD * 2]);
+      expect(skipped).toEqual([START + PERIOD * 3, START + PERIOD * 4]);
+
+      // Once the in-flight invocations settle, the cap stops applying.
+      gate.open();
+      await flushAsyncWork();
+      await advanceFakeTimers(PERIOD);
+      expect(fired).toEqual([START + PERIOD, START + PERIOD * 2, START + PERIOD * 5]);
+
+      await trigger.stop();
+    });
+
+    test("concurrent stays unbounded when no cap is given", async () => {
+      const trigger = new IntervalTrigger({ intervalMs: PERIOD, overlap: "concurrent" });
+      const gate = createGate();
+      let fires = 0;
+      const skipped: number[] = [];
+      trigger.on("skip", (scheduledAt) => skipped.push(scheduledAt));
+
+      trigger.start(async () => {
+        fires += 1;
+        await gate.promise;
+      });
+
+      await advanceFakeTimers(PERIOD * 6);
+      expect(fires).toBe(6);
+      expect(skipped).toEqual([]);
+
+      gate.open();
+      await flushAsyncWork();
+      await trigger.stop();
+    });
+
+    test("rejects a non-positive concurrency bound", () => {
+      expect(
+        () =>
+          new IntervalTrigger({ intervalMs: PERIOD, overlap: "concurrent", maxConcurrentFires: 0 })
+      ).toThrow(TriggerConfigurationError);
+      expect(
+        () =>
+          new IntervalTrigger({
+            intervalMs: PERIOD,
+            overlap: "concurrent",
+            maxConcurrentFires: 1.5,
+          })
+      ).toThrow(TriggerConfigurationError);
+    });
   });
 
   describe("skip logging", () => {
@@ -581,6 +653,50 @@ describe("IntervalTrigger", () => {
       expect(trigger.running).toBe(false);
     });
 
+    test("a handler that rejects because stop() aborted it is not reported as an error", async () => {
+      // The ordinary shape of a cooperative handler: forward the signal, reject
+      // when it aborts. Reporting that on `error` makes every graceful shutdown
+      // look like a failure and pushes callers into installing absorbing
+      // `error` listeners, which then swallow the failures that do matter.
+      const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+      const errors: Error[] = [];
+      trigger.on("error", (error) => errors.push(error));
+
+      trigger.start(
+        (context) =>
+          new Promise<void>((_resolve, reject) => {
+            context.signal.addEventListener(
+              "abort",
+              () => reject(new DOMException("Aborted", "AbortError")),
+              { once: true }
+            );
+          })
+      );
+
+      await advanceFakeTimers(PERIOD);
+      await trigger.stop();
+
+      expect(errors).toEqual([]);
+      expect(trigger.running).toBe(false);
+    });
+
+    test("a handler that throws for its own reasons is still reported", async () => {
+      // The guard above keys on the run's signal, so it must not blanket
+      // everything: a real failure before any stop() is still a failure.
+      const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+      const errors: Error[] = [];
+      trigger.on("error", (error) => errors.push(error));
+
+      trigger.start(() => {
+        throw new Error("sink down");
+      });
+
+      await advanceFakeTimers(PERIOD);
+      expect(errors.map((error) => error.message)).toEqual(["sink down"]);
+
+      await trigger.stop();
+    });
+
     test("a caller signal stops the trigger when it aborts", async () => {
       const trigger = new IntervalTrigger({ intervalMs: PERIOD });
       const controller = new AbortController();
@@ -819,6 +935,127 @@ describe("IntervalTrigger", () => {
       expect(trigger.running).toBe(false);
       await advanceFakeTimers(PERIOD * 3);
       expect(fires).toBe(0);
+    });
+  });
+
+  describe("stop deadline", () => {
+    test("stop() is unbounded by default and waits for a handler that never settles", async () => {
+      // The default MUST stay unbounded: it is what makes "await stop() means no
+      // handler of that run is still running" true. A bounded default would turn
+      // that documented guarantee into a lie for every caller that never asked.
+      const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+      const gate = createGate();
+      trigger.start(async () => {
+        await gate.promise;
+      });
+
+      await advanceFakeTimers(PERIOD);
+
+      let resolved = false;
+      const stopping = trigger.stop();
+      void stopping.then(() => {
+        resolved = true;
+      });
+
+      await advanceFakeTimers(PERIOD * 50);
+      expect(resolved).toBe(false);
+
+      gate.open();
+      await stopping;
+      expect(resolved).toBe(true);
+    });
+
+    test("stop({ timeoutMs }) abandons what is still in flight and reports the count", async () => {
+      const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+      const gate = createGate();
+      const errors: Error[] = [];
+      const stops: string[] = [];
+      trigger.on("error", (error) => errors.push(error));
+      trigger.on("stop", () => stops.push("stop"));
+      trigger.start(async () => {
+        await gate.promise;
+      });
+
+      await advanceFakeTimers(PERIOD);
+
+      const stopping = trigger.stop({ timeoutMs: PERIOD * 5 });
+      await advanceFakeTimers(PERIOD * 5);
+      await stopping;
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toBeInstanceOf(TriggerStopTimeoutError);
+      expect(errors[0]?.message).toContain("1 handler invocation(s)");
+      // The `stop` event still fires: the run was released, not stranded.
+      expect(stops).toEqual(["stop"]);
+      expect(trigger.running).toBe(false);
+      // The deadline timer was cleared rather than left to fire on a dead run.
+      expect(vi.getTimerCount()).toBe(0);
+
+      // A restart works, which is the point of running the release tail on the
+      // timeout path: otherwise `_run` stays set and every start() is a no-op.
+      let fires = 0;
+      trigger.start(() => {
+        fires += 1;
+      });
+      await advanceFakeTimers(PERIOD);
+      expect(fires).toBe(1);
+
+      gate.open();
+      await trigger.stop();
+    });
+
+    test("stopTimeoutMs supplies the default deadline for a bare stop()", async () => {
+      const trigger = new IntervalTrigger({ intervalMs: PERIOD, stopTimeoutMs: PERIOD * 3 });
+      const gate = createGate();
+      const errors: Error[] = [];
+      trigger.on("error", (error) => errors.push(error));
+      trigger.start(async () => {
+        await gate.promise;
+      });
+
+      await advanceFakeTimers(PERIOD);
+
+      const stopping = trigger.stop();
+      await advanceFakeTimers(PERIOD * 3);
+      await stopping;
+
+      expect(errors[0]).toBeInstanceOf(TriggerStopTimeoutError);
+      expect(trigger.running).toBe(false);
+
+      gate.open();
+      await flushAsyncWork();
+    });
+
+    test("a handler that settles inside the deadline reports nothing", async () => {
+      const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+      const gate = createGate();
+      const errors: Error[] = [];
+      let settled = false;
+      trigger.on("error", (error) => errors.push(error));
+      trigger.start(async () => {
+        await gate.promise;
+        settled = true;
+      });
+
+      await advanceFakeTimers(PERIOD);
+
+      const stopping = trigger.stop({ timeoutMs: PERIOD * 5 });
+      gate.open();
+      await stopping;
+
+      expect(settled).toBe(true);
+      expect(errors).toEqual([]);
+      // The deadline timer is cancelled once the drain wins the race.
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    test("rejects a non-positive stop deadline", () => {
+      expect(() => new IntervalTrigger({ intervalMs: PERIOD, stopTimeoutMs: 0 })).toThrow(
+        TriggerConfigurationError
+      );
+      const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+      expect(() => trigger.stop({ timeoutMs: -1 })).toThrow(TriggerConfigurationError);
+      expect(() => trigger.stop({ timeoutMs: 1.5 })).toThrow(TriggerConfigurationError);
     });
   });
 });

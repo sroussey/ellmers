@@ -21,6 +21,17 @@ export class TriggerPollTimeoutError extends TriggerError {
   public static override type = "TriggerPollTimeoutError";
 }
 
+/**
+ * Raised when a `stop()` deadline expires with handlers still in flight.
+ *
+ * Reported on the `error` event rather than thrown from `stop()`: the deadline
+ * exists so the caller can get on with shutting down, and rejecting would make
+ * the abandoned work harder to observe, not easier.
+ */
+export class TriggerStopTimeoutError extends TriggerError {
+  public static override type = "TriggerStopTimeoutError";
+}
+
 /** Raised when a cron expression cannot be parsed. */
 export class CronExpressionError extends TriggerError {
   public static override type = "CronExpressionError";
