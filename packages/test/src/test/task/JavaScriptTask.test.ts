@@ -7,8 +7,8 @@
 import { javaScript, JavaScriptTask } from "@workglow/javascript/task";
 import { TaskGraph, TaskStatus, Workflow } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, test } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("JavaScriptTask", () => {
   let logger = getTestingLogger();

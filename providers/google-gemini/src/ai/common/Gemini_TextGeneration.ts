@@ -9,6 +9,7 @@ import type {
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
 } from "@workglow/ai";
+import { createUsageSnapshotEmitter } from "@workglow/ai/provider-utils";
 import { getLogger } from "@workglow/util/worker";
 import { buildGeminiPrefixedContents } from "./Gemini_CacheCheckpoint";
 import { generateGeminiStreamWithCacheFallback } from "./Gemini_CachedContentFallback";
@@ -202,6 +203,7 @@ export const Gemini_TextGeneration_Stream: AiProviderRunFn<
 
     let refusalCategory: string | undefined;
     let lastUsageMetadata: unknown;
+    const snapshotUsage = createUsageSnapshotEmitter(emit);
     for await (const chunk of result) {
       // `chunk.text` concatenates answer text and already skips thought parts.
       const text = chunk.text;
@@ -209,6 +211,7 @@ export const Gemini_TextGeneration_Stream: AiProviderRunFn<
         emit({ type: "text-delta", port: "text", textDelta: text });
       }
       lastUsageMetadata = chunk.usageMetadata ?? lastUsageMetadata;
+      snapshotUsage(mapGeminiUsage(lastUsageMetadata));
       refusalCategory = refusalCategory ?? geminiRefusalCategory(chunk);
     }
     emitGeminiRefusal(emit, refusalCategory);

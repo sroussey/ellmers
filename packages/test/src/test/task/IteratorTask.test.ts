@@ -19,7 +19,6 @@ import { setLogger, sleep } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, test } from "vitest";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   AddToSumTask,
   DoubleToResultTask as DoubleTask,
@@ -27,7 +26,8 @@ import {
   RefineTask,
   TestIteratorTask,
   TextEmbeddingTask,
-} from "./TestTasks";
+} from "@workglow/task-graph/test";
+import { getTestingLogger } from "@workglow/util/test";
 
 interface ArrayInput extends TaskInput {
   items: number[];
@@ -1182,6 +1182,109 @@ describe("IteratorTask", () => {
 
       expect(result.processed).toEqual([2, 4, 6]);
       expect(liveMessages).toEqual(["Map 1/3 — working", "Map 2/3 — working", "Map 3/3 — working"]);
+    });
+
+    test("iteration_start includes the cloned subgraph so UIs can render the live tasks", async () => {
+      class CloneBodyTask extends Task<{ item: number }, { processed: number }> {
+        public static override type = "CloneBodyTask_IterationStartGraph";
+        public static override title = "Harvested filing";
+
+        public static override inputSchema(): DataPortSchema {
+          return {
+            type: "object",
+            properties: { item: { type: "number" } },
+            required: ["item"],
+            additionalProperties: true,
+          } as const satisfies DataPortSchema;
+        }
+
+        public static override outputSchema(): DataPortSchema {
+          return {
+            type: "object",
+            properties: { processed: { type: "number" } },
+            required: ["processed"],
+            additionalProperties: false,
+          } as const satisfies DataPortSchema;
+        }
+
+        override async execute(input: { item: number }): Promise<{ processed: number }> {
+          return { processed: input.item };
+        }
+      }
+
+      const workflow = new Workflow();
+      workflow
+        .map({ concurrencyLimit: 1, maxIterations: "unbounded" })
+        .addTask(CloneBodyTask)
+        .endMap();
+
+      const mapTask = workflow.graph.getTasks()[0] as MapTask;
+      const starts: Array<{ index: number; types: string[]; titles: string[] }> = [];
+      mapTask.events.on("iteration_start", (_index, _count, subgraph) => {
+        const tasks = subgraph?.getTasks() ?? [];
+        starts.push({
+          index: _index,
+          types: tasks.map((t) => t.type),
+          titles: tasks.map((t) => t.title),
+        });
+      });
+
+      await workflow.run({ item: [1, 2] });
+
+      expect(starts).toHaveLength(2);
+      expect(starts[0]?.types).toEqual(["CloneBodyTask_IterationStartGraph"]);
+      expect(starts[0]?.titles).toEqual(["Harvested filing"]);
+      expect(starts[1]?.types).toEqual(["CloneBodyTask_IterationStartGraph"]);
+    });
+
+    test("visible iteration graphs stay readable after iteration_start so a late UI can attach", async () => {
+      class LateAttachBody extends Task<{ item: number }, { processed: number }> {
+        public static override type = "LateAttachBody_VisibleIterationGraphs";
+        public static override title = "Inner section";
+
+        public static override inputSchema(): DataPortSchema {
+          return {
+            type: "object",
+            properties: { item: { type: "number" } },
+            required: ["item"],
+            additionalProperties: true,
+          } as const satisfies DataPortSchema;
+        }
+
+        public static override outputSchema(): DataPortSchema {
+          return {
+            type: "object",
+            properties: { processed: { type: "number" } },
+            required: ["processed"],
+            additionalProperties: false,
+          } as const satisfies DataPortSchema;
+        }
+
+        override async execute(input: { item: number }): Promise<{ processed: number }> {
+          return { processed: input.item };
+        }
+      }
+
+      const workflow = new Workflow();
+      workflow
+        .map({ concurrencyLimit: 1, maxIterations: "unbounded" })
+        .addTask(LateAttachBody)
+        .endMap();
+
+      const mapTask = workflow.graph.getTasks()[0] as MapTask;
+      const seen: string[][] = [];
+      mapTask.events.on("iteration_start", () => {
+        seen.push(
+          mapTask.getVisibleIterationGraphs().flatMap((g) => g.graph.getTasks().map((t) => t.title))
+        );
+      });
+
+      await workflow.run({ item: [1] });
+
+      expect(seen[0]).toEqual(["Inner section"]);
+      expect(
+        mapTask.getVisibleIterationGraphs().flatMap((g) => g.graph.getTasks().map((t) => t.title))
+      ).toEqual(["Inner section"]);
     });
 
     /**

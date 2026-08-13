@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { WithModelPricing } from "@workglow/ai/worker";
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
 import type { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
 import { ANTHROPIC, ANTHROPIC_DEFAULT_MAX_TOKENS } from "./Anthropic_Constants";
@@ -47,6 +48,27 @@ export const AnthropicModelSchema = {
           default: ANTHROPIC_DEFAULT_MAX_TOKENS,
           minimum: 1,
         },
+        thinking: {
+          type: "object",
+          description:
+            "Native Anthropic thinking block (`type: adaptive` or `enabled` + budget_tokens). " +
+            "Wins over model.effort when set.",
+          additionalProperties: true,
+          "x-ui-hidden": true,
+        },
+        output_config: {
+          type: "object",
+          description:
+            "Native Anthropic output_config (adaptive thinking effort). Wins over model.effort when effort is set.",
+          properties: {
+            effort: {
+              type: "string",
+              enum: ["low", "medium", "high", "xhigh", "max"],
+            },
+          },
+          additionalProperties: true,
+          "x-ui-hidden": true,
+        },
         sampling_params: {
           type: "string",
           enum: ["send", "omit"],
@@ -73,7 +95,7 @@ export const AnthropicModelRecordSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type AnthropicModelRecord = FromSchema<typeof AnthropicModelRecordSchema>;
+export type AnthropicModelRecord = WithModelPricing<FromSchema<typeof AnthropicModelRecordSchema>>;
 
 export const AnthropicModelConfigSchema = {
   type: "object",
@@ -85,4 +107,4 @@ export const AnthropicModelConfigSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type AnthropicModelConfig = FromSchema<typeof AnthropicModelConfigSchema>;
+export type AnthropicModelConfig = WithModelPricing<FromSchema<typeof AnthropicModelConfigSchema>>;

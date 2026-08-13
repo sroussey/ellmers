@@ -8,8 +8,9 @@ import type { AiProviderRunFn } from "@workglow/ai";
 import { AiProviderRegistry, getAiProviderRegistry, setAiProviderRegistry } from "@workglow/ai";
 import { _testOnly } from "@workglow/google-gemini/ai";
 import * as GeminiRuntime from "@workglow/google-gemini/ai-runtime";
+import { getLogger } from "@workglow/util";
 import { globalServiceRegistry, WORKER_MANAGER, WorkerManager } from "@workglow/util/worker";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { GEMINI_RUN_FNS, GoogleGeminiQueuedProvider } = _testOnly;
 const runtime = GeminiRuntime as typeof GeminiRuntime & {
@@ -89,6 +90,110 @@ describe("Gemini session disposal", () => {
     );
 
     expect(runtime.getGeminiCachedContent("checkpoint-2")).toBeUndefined();
-    expect(events).toEqual([{ type: "finish", data: {} }]);
+    expect(events).toHaveLength(1);
+    const [event] = events as [{ type: string; data: { tokens?: number; lifetimeMs?: number } }];
+    expect(event.type).toBe("finish");
+    // No tokens were recorded on the fixture entry, but a real dispose still
+    // reports the elapsed lifetime — the run-fn's `finish` payload is the
+    // released SessionDisposalResult, not the discarded `{}` it used to be.
+    expect(event.data.tokens).toBeUndefined();
+    expect(event.data.lifetimeMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("disposeSession returns the released SessionDisposalResult through the registered session.dispose run-fn", async () => {
+    const registry = new AiProviderRegistry();
+    setAiProviderRegistry(registry);
+
+    const provider = new GoogleGeminiQueuedProvider(GEMINI_RUN_FNS);
+    await provider.register({});
+
+    const createdAtMs = Date.now() - 2_000;
+    // Seed through the ai barrel, not ai-runtime: the two subpaths are separate
+    // bundles outside source mode, so each owns its own cache map. The run-fns
+    // under test come from the ai bundle and must see the entry this writes.
+    _testOnly.setGeminiCachedContent("checkpoint-queued", {
+      name: "cachedContents/checkpoint-queued",
+      model: {
+        model_id: "gemini-2.5-flash",
+        provider: "GOOGLE_GEMINI",
+        provider_config: { model_name: "gemini-2.5-flash" },
+      },
+      systemPrompt: undefined,
+      tokens: 1500,
+      createdAtMs,
+    });
+
+    const released = await provider.disposeSession("checkpoint-queued");
+
+    // This is the confirmed defect this test guards: disposeSession used to
+    // dispatch through a `noopEmit` and unconditionally return `undefined`, so
+    // a queued-mode dispose reported nothing even though the run-fn (and the
+    // cache delete it performs) already knows the released tokens/lifetime.
+    expect(released?.tokens).toBe(1500);
+    expect(released?.lifetimeMs).toBeGreaterThanOrEqual(2_000);
+    expect(_testOnly.getGeminiCachedContent("checkpoint-queued")).toBeUndefined();
+  });
+});
+
+describe("Gemini cache store: delete return value and lifetime", () => {
+  const testModel = {
+    model_id: "gemini-2.5-flash",
+    provider: "GOOGLE_GEMINI",
+    provider_config: { model_name: "gemini-2.5-flash" },
+  } as never;
+
+  afterEach(() => {
+    GeminiRuntime._testOnly.setGeminiClientForTests(undefined);
+    vi.restoreAllMocks();
+  });
+
+  it("returns the released token count and elapsed lifetime, and clears the local entry", async () => {
+    GeminiRuntime._testOnly.setGeminiClientForTests({
+      caches: { delete: async () => {} },
+    } as never);
+    const createdAtMs = Date.now() - 5_000;
+    GeminiRuntime.setGeminiCachedContent("lifetime-ok", {
+      name: "cachedContents/lifetime-ok",
+      model: testModel,
+      systemPrompt: undefined,
+      tokens: 4200,
+      createdAtMs,
+    });
+
+    const result = await GeminiRuntime.deleteGeminiCachedContent("lifetime-ok");
+
+    expect(result?.tokens).toBe(4200);
+    expect(result?.lifetimeMs).toBeGreaterThanOrEqual(5_000);
+    expect(GeminiRuntime.getGeminiCachedContent("lifetime-ok")).toBeUndefined();
+  });
+
+  it("returns undefined for an id with no entry", async () => {
+    expect(await GeminiRuntime.deleteGeminiCachedContent("no-such-checkpoint")).toBeUndefined();
+  });
+
+  it("warns (non-fatally) and still returns the released token count when the delete API fails", async () => {
+    GeminiRuntime._testOnly.setGeminiClientForTests({
+      caches: {
+        delete: async () => {
+          throw new Error("network blip");
+        },
+      },
+    } as never);
+    const warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => {});
+    GeminiRuntime.setGeminiCachedContent("lifetime-fail", {
+      name: "cachedContents/lifetime-fail",
+      model: testModel,
+      systemPrompt: undefined,
+      tokens: 900,
+    });
+
+    const result = await GeminiRuntime.deleteGeminiCachedContent("lifetime-fail");
+
+    expect(result?.tokens).toBe(900);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toMatch(/delete failed/i);
+    // Non-fatal: the local entry is still released even though the server-side
+    // delete failed — the run must not be broken by this.
+    expect(GeminiRuntime.getGeminiCachedContent("lifetime-fail")).toBeUndefined();
   });
 });

@@ -8,8 +8,8 @@ import { RateLimiter } from "@workglow/job-queue";
 import { SqliteQueueStorage, SqliteRateLimiterStorage } from "@workglow/sqlite/job-queue";
 import { Sqlite } from "@workglow/sqlite/storage";
 import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import { runGenericJobQueueTests } from "./genericJobQueueTests";
 
 describe("SqliteJobQueue", async () => {

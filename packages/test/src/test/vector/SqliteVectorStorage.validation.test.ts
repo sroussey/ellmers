@@ -9,8 +9,8 @@ import { StorageValidationError } from "@workglow/storage";
 import { setLogger } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { TypedArraySchema } from "@workglow/util/schema";
+import { getTestingLogger } from "@workglow/util/test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 const VecSchema = {
   type: "object",

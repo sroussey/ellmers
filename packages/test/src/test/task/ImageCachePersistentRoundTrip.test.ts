@@ -3,6 +3,7 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
+import { InMemoryTaskOutputRepository } from "@workglow/task-graph/test";
 import "@workglow/tasks";
 import { ImageBlurTask } from "@workglow/tasks";
 import "@workglow/util/media";
@@ -13,7 +14,6 @@ import {
   type ImageValue,
 } from "@workglow/util/media";
 import { describe, expect, test } from "vitest";
-import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 
 /**
  * Verifies that `ImageValue` outputs survive a real persistent cache round-trip

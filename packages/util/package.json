@@ -1,7 +1,7 @@
 {
   "name": "@workglow/util",
   "type": "module",
-  "version": "0.3.38",
+  "version": "0.3.39",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -15,7 +15,7 @@
   "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
-    "watch-js": "concurrently -c 'auto' -n 'browser,node,bun,worker,schema,graph,media-b,media-n,compress-b,compress-n' 'bun run watch-browser' 'bun run watch-node' 'bun run watch-bun' 'bun run watch-worker' 'bun run watch-schema' 'bun run watch-graph' 'bun run watch-media-browser' 'bun run watch-media-node' 'bun run watch-compress-browser' 'bun run watch-compress-node'",
+    "watch-js": "concurrently -c 'auto' -n 'browser,node,bun,worker,schema,graph,media-b,media-n,compress-b,compress-n,test-b,test-n' 'bun run watch-browser' 'bun run watch-node' 'bun run watch-bun' 'bun run watch-worker' 'bun run watch-schema' 'bun run watch-graph' 'bun run watch-media-browser' 'bun run watch-media-node' 'bun run watch-compress-browser' 'bun run watch-compress-node' 'bun run watch-test-browser' 'bun run watch-test-node'",
     "watch-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "watch-node": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
     "watch-bun": "bun build --watch --no-clear-screen --target=bun --sourcemap=external --packages=external --outdir ./dist ./src/bun.ts",
@@ -28,7 +28,7 @@
     "watch-compress-node": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/compress-node.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "bun run build-js && bun run build-types",
-    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'browser,node,bun,worker,schema,graph,media,compress' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-worker' 'bun run build-schema' 'bun run build-graph' 'bun run build-media' 'bun run build-compress'",
+    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'browser,node,bun,worker,schema,graph,media,compress,test' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-worker' 'bun run build-schema' 'bun run build-graph' 'bun run build-media' 'bun run build-compress' 'bun run build-test'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "build-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
@@ -46,7 +46,13 @@
     "build-compress-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/compress-browser.ts",
     "build-compress-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/compress-node.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo && test -f dist/json-schema/FromSchema.d.ts",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "build-test": "concurrently -c 'auto' -n 'test-browser,test-node' 'bun run build-test-browser' 'bun run build-test-node'",
+    "build-test-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/test-browser.ts",
+    "build-test-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/test-node.ts",
+    "test": "vitest run --config ../../vitest.config.ts --project util",
+    "watch-test-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/test-browser.ts",
+    "watch-test-node": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/test-node.ts"
   },
   "exports": {
     ".": {
@@ -84,6 +90,18 @@
       },
       "types": "./dist/media-node.d.ts",
       "import": "./dist/media-node.js"
+    },
+    "./test": {
+      "react-native": {
+        "types": "./dist/test-browser.d.ts",
+        "import": "./dist/test-browser.js"
+      },
+      "browser": {
+        "types": "./dist/test-browser.d.ts",
+        "import": "./dist/test-browser.js"
+      },
+      "types": "./dist/test-node.d.ts",
+      "import": "./dist/test-node.js"
     },
     "./compress": {
       "react-native": {

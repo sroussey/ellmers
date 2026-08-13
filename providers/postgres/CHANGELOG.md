@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.3.39
+
+### Bug Fixes
+
+#### test
+
+- close the gaps the Turbo/projects wiring opened
+
+### Refactors
+
+#### job-queue
+
+- collapse per-backend queue adapters onto wrapQueueStorage (#684)
+
+### Tests
+
+- add unit tests for OpenAI reasoning and temperature coupling, and Postgres date handling
+
+### Chores
+
+- upgrade to catalog for many deps and update the deps themselves
+- update deps
+
+#### eslint
+
+- enforce consistent-type-imports and apply the repo-wide autofix (#683)
+
+### Updated Dependencies
+
+- `@types/pg`: catalog:
+
 ## 0.3.38
 
 ### Bug Fixes

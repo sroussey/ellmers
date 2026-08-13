@@ -11,6 +11,7 @@ import type {
   Usage,
 } from "@workglow/ai";
 import {
+  createEstimatedOutputUsageReporter,
   firstNonStrictReason,
   isStrictCompatibleSchema,
   mapOpenAIResponsesUsage,
@@ -62,6 +63,13 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
   if (input.temperature !== undefined) params.temperature = input.temperature;
   finalizeResponsesRequest(model, params);
 
+  // Responses only attaches billed usage to the terminal lifecycle event, so
+  // without a provisional estimate the CLI row stays on a static "Preparing"
+  // for the whole TTFB wait. Emit ↑ before the request so it appears during
+  // connect; finish.usage below still carries the provider total.
+  const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+  provisionalUsage.onPrompt(typeof input.prompt === "string" ? input.prompt : "");
+
   const stream = await client.responses.create(
     { ...params, stream: true } as Parameters<typeof client.responses.create>[0],
     { signal }
@@ -84,6 +92,7 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
     } else if (event.type === "response.output_text.delta") {
       const delta = event.delta ?? "";
       if (delta) {
+        provisionalUsage.onText(delta);
         const partial = json.push(delta);
         if (partial !== undefined) {
           emit({ type: "object-delta", port: "object", objectDelta: partial });
@@ -93,6 +102,7 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
       refusal += event.delta ?? "";
     }
   }
+  provisionalUsage.flush();
 
   if (refusal) {
     // Surface the refusal as a first-class event; the consumer completes with
@@ -102,7 +112,7 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
 
   emit({
     type: "finish",
-    data: { object: json.finish() } as StructuredGenerationTaskOutput,
+    data: { object: json.finishObject() } as StructuredGenerationTaskOutput,
     usage,
   });
 };

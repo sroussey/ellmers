@@ -10,6 +10,7 @@ import type {
   TextSummaryTaskOutput,
   Usage,
 } from "@workglow/ai";
+import { createEstimatedOutputUsageReporter } from "@workglow/ai/provider-utils";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getOllamaModelName } from "./Ollama_ModelUtil";
 import { mapOllamaUsage } from "./Ollama_Usage";
@@ -22,6 +23,11 @@ export function createOllamaTextSummaryStream(
   return async (input, model, signal, emit) => {
     const client = await getClient(model);
     const modelName = getOllamaModelName(model);
+
+    const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+    provisionalUsage.onPrompt(
+      `Summarize the following text concisely.\n${typeof input.text === "string" ? input.text : ""}`
+    );
 
     const stream = await client.chat({
       model: modelName,
@@ -40,9 +46,11 @@ export function createOllamaTextSummaryStream(
         usage = mapOllamaUsage(chunk) ?? usage;
         const delta = chunk.message.content;
         if (delta) {
+          provisionalUsage.onText(delta);
           emit({ type: "text-delta", port: "text", textDelta: delta });
         }
       }
+      provisionalUsage.flush();
       emit({ type: "finish", data: {} as TextSummaryTaskOutput, usage });
     } finally {
       signal?.removeEventListener("abort", onAbort);

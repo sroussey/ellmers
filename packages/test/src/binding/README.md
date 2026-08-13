@@ -18,7 +18,7 @@ Available Binding Implementations:
 - **FsFolderTaskOutputRepository**: File system storage
 - **IndexedDbTaskOutputRepository**: IndexedDB storage
 - **SqliteTaskOutputRepository**: SQLite storage
-- **PostgresTaskOutputRepository**: PostgreSQL storage
+- **StreamingSqliteTaskOutputRepository** / **StreamingPostgresTaskOutputRepository** / **StreamingSupabaseTaskOutputRepository**: SQL backings that additionally stream port payloads as ordered blob chunk rows
 
 All implementations extend `TaskOutputRepository` abstract class and provide:
 
@@ -44,7 +44,6 @@ Available Binding Implementations:
 - **FsFolderTaskGraphRepository**: File system storage using JSON files
 - **IndexedDbTaskGraphRepository**: Browser-based IndexedDB storage
 - **SqliteTaskGraphRepository**: SQLite database storage
-- **PostgresTaskGraphRepository**: PostgreSQL database storage
 
 All implementations extend `TaskGraphRepository` class and provide storage for task graphs.
 

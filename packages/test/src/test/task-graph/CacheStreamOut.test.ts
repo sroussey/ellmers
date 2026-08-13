@@ -11,12 +11,12 @@ import {
   RunPrivateCacheRepo,
   streamRefViaBacking,
 } from "@workglow/task-graph";
+import { NonStreamingMemoryRepo, StreamingMemoryRepo } from "@workglow/task-graph/test";
 import { existsSync } from "node:fs";
 import { mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { NonStreamingMemoryRepo, StreamingMemoryRepo } from "../../binding/StreamingMemoryRepo";
 
 async function* gen(...chunks: Uint8Array[]): AsyncIterable<Uint8Array> {
   for (const c of chunks) yield c;

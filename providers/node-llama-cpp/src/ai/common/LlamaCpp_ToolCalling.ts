@@ -13,7 +13,11 @@ import type {
   ToolCalls,
   ToolDefinition,
 } from "@workglow/ai";
-import { extractMessageText, toolChoiceForcesToolCall } from "@workglow/ai/provider-utils";
+import {
+  createEstimatedOutputUsageReporter,
+  extractMessageText,
+  toolChoiceForcesToolCall,
+} from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
 import type { StreamEvent } from "@workglow/task-graph";
 import {
@@ -261,14 +265,17 @@ function extractNativeFunctionCalls(
 
 /**
  * Drives an async generation call that pushes text chunks via `onTextChunk`,
- * yielding `text-delta` events as they arrive. Returns accumulated text and
- * the generation result (if any) once complete.
+ * yielding `text-delta` events (and provisional `usage` snapshots) as they
+ * arrive. Returns accumulated text and the generation result (if any) once
+ * complete.
  */
 async function* streamTextChunks<T>(
   startGeneration: (onTextChunk: (chunk: string) => void) => Promise<T>,
-  signal: AbortSignal
+  signal: AbortSignal,
+  options: { readonly promptText?: string | undefined } = {}
 ): AsyncGenerator<StreamEvent<ToolCallingTaskOutput>, { text: string; result: T | undefined }> {
   const queue: string[] = [];
+  const pendingUsage: StreamEvent<ToolCallingTaskOutput>[] = [];
   let isComplete = false;
   let completionError: unknown;
   let resolveWait: (() => void) | null = null;
@@ -280,8 +287,17 @@ async function* streamTextChunks<T>(
     resolveWait = null;
   };
 
+  const provisionalUsage = createEstimatedOutputUsageReporter((event) => {
+    pendingUsage.push(event);
+    notifyWaiter();
+  });
+  if (options.promptText !== undefined) {
+    provisionalUsage.onPrompt(options.promptText);
+  }
+
   const generationPromise = startGeneration((chunk: string) => {
     queue.push(chunk);
+    provisionalUsage.onText(chunk);
     notifyWaiter();
   })
     .then((res) => {
@@ -295,23 +311,26 @@ async function* streamTextChunks<T>(
       notifyWaiter();
     });
 
-  try {
-    while (true) {
-      while (queue.length > 0) {
-        const chunk = queue.shift()!;
-        accumulatedText += chunk;
-        yield { type: "text-delta", port: "text", textDelta: chunk };
-      }
-      if (isComplete) break;
-      await new Promise<void>((r) => {
-        resolveWait = r;
-      });
+  const drain = function* (): Generator<StreamEvent<ToolCallingTaskOutput>> {
+    while (pendingUsage.length > 0) {
+      yield pendingUsage.shift()!;
     }
     while (queue.length > 0) {
       const chunk = queue.shift()!;
       accumulatedText += chunk;
       yield { type: "text-delta", port: "text", textDelta: chunk };
     }
+  };
+
+  try {
+    while (true) {
+      yield* drain();
+      if (isComplete) break;
+      await new Promise<void>((r) => {
+        resolveWait = r;
+      });
+    }
+    yield* drain();
   } finally {
     await generationPromise.catch(() => {});
   }
@@ -323,6 +342,8 @@ async function* streamTextChunks<T>(
   if (signal.aborted) {
     throw (signal as any).reason ?? new Error("The operation was aborted");
   }
+  provisionalUsage.flush();
+  yield* drain();
   return { text: accumulatedText, result };
 }
 
@@ -347,6 +368,13 @@ async function generateToolResponse(
 
     const chatHistory = buildToolChatHistory(input, prefix);
     const functions = buildChatModelFunctions(input.tools);
+    const promptText = [
+      input.systemPrompt ?? "",
+      ...(input.messages ?? []).map((m) => extractMessageText(m.content)),
+      typeof input.prompt === "string" ? input.prompt : extractMessageText(input.prompt),
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     gen = streamTextChunks(
       (onTextChunk) =>
@@ -357,7 +385,8 @@ async function generateToolResponse(
           ...(toolChoiceForcesToolCall(input.toolChoice) && { documentFunctionParams: true }),
           onTextChunk,
         }),
-      signal
+      signal,
+      { promptText }
     );
     let step = await gen.next();
     while (!step.done) {

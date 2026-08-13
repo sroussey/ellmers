@@ -9,6 +9,7 @@ import React from "react";
 import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
 import type { TaskRowProps } from "./pickRenderer";
 import { useTaskStreamText } from "./useTaskStreamText";
+import { useTaskUsageLine } from "./useTaskUsageLine";
 
 const MAX_LINES = 8;
 
@@ -20,6 +21,7 @@ function tailLines(text: string, n: number): string {
 
 export function StreamingTextRow({ task, line }: TaskRowProps): React.ReactElement {
   const streamText = useTaskStreamText(task);
+  const usageLine = useTaskUsageLine(task);
   const isActive = line.status === "PROCESSING";
   const showPanel = isActive && streamText.length > 0;
 
@@ -31,6 +33,7 @@ export function StreamingTextRow({ task, line }: TaskRowProps): React.ReactEleme
         message={line.message}
         barProgress={line.progress ?? 0}
       />
+      {usageLine ? <Text dimColor> {usageLine}</Text> : null}
       {showPanel && (
         <Box
           flexDirection="column"

@@ -10,6 +10,7 @@ import {
   TaskOutputPrimaryKeyNames,
   TaskOutputSchema,
 } from "@workglow/task-graph";
+import { TabularStreamingTaskOutputRepository } from "@workglow/task-graph/test";
 import type { Pool } from "pg";
 import {
   BlobChunkPrimaryKeyNames,
@@ -18,12 +19,10 @@ import {
   BlobManifestSchema,
   TabularBlobChunkStore,
 } from "./TabularBlobChunkStore";
-import { TabularStreamingTaskOutputRepository } from "./TabularStreamingTaskOutputRepository";
 
 /**
  * Durable, server-side (PostgreSQL) streaming task-output repository. JSON rows
- * via {@link PostgresTabularStorage} (same as the non-streaming
- * `PostgresTaskOutputRepository`); streamed port payloads as ordered `bytea`
+ * via {@link PostgresTabularStorage}; streamed port payloads as ordered `bytea`
  * chunk rows in sibling tables via {@link TabularBlobChunkStore}. Streaming
  * behavior lives in {@link TabularStreamingTaskOutputRepository}.
  */

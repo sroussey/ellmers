@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { WithModelPricing } from "@workglow/ai/worker";
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
 import type { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
 import { HF_INFERENCE } from "./HFI_Constants";
@@ -54,7 +55,9 @@ export const HfInferenceModelRecordSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type HfInferenceModelRecord = FromSchema<typeof HfInferenceModelRecordSchema>;
+export type HfInferenceModelRecord = WithModelPricing<
+  FromSchema<typeof HfInferenceModelRecordSchema>
+>;
 
 export const HfInferenceModelConfigSchema = {
   type: "object",
@@ -66,4 +69,6 @@ export const HfInferenceModelConfigSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type HfInferenceModelConfig = FromSchema<typeof HfInferenceModelConfigSchema>;
+export type HfInferenceModelConfig = WithModelPricing<
+  FromSchema<typeof HfInferenceModelConfigSchema>
+>;

@@ -42,7 +42,7 @@ interface ParsedAnthropicModelId {
  *
  * Returns `undefined` for anything else, including non-Claude ids.
  */
-function parseAnthropicModelId(id: string): ParsedAnthropicModelId | undefined {
+export function parseAnthropicModelId(id: string): ParsedAnthropicModelId | undefined {
   const normalized = id.trim().toLowerCase();
   if (!normalized.startsWith(CLAUDE_PREFIX)) return undefined;
 
@@ -133,10 +133,20 @@ interface AnthropicSamplingInput {
 }
 
 /**
+ * Extended thinking bounds `top_p` rather than forbidding it: the API rejects
+ * anything below this with a 400 and accepts everything at or above it, so a
+ * value in range is worth passing through instead of discarding.
+ */
+const THINKING_MIN_TOP_P = 0.95;
+
+/**
  * Copies the caller's sampling fields onto an Anthropic request body when the
  * model accepts them. On a rejecting model the keys are left absent (rather
  * than set to `undefined`) and a single warning names everything dropped, so
  * the user's setting becoming a no-op is visible without failing the request.
+ *
+ * Call this after {@link applyAnthropicThinkingParams}: whether the request
+ * carries extended thinking decides whether sampling is legal at all.
  */
 export function applyAnthropicSamplingParams(
   params: Record<string, unknown>,
@@ -148,13 +158,43 @@ export function applyAnthropicSamplingParams(
   if (input.topP !== undefined) supplied.push(["top_p", input.topP]);
   if (supplied.length === 0) return;
 
+  // Extended thinking (`thinking.type = "enabled"`) narrows sampling rather
+  // than forbidding it, so an in-range `top_p` is passed through instead of
+  // discarded. `temperature` is always dropped: its only legal value under
+  // thinking is the default `1`, so sending it can never change the result,
+  // and omitting it also keeps the request clear of the separate rule that
+  // `temperature` and `top_p` may not both be specified. Scoped to "enabled"
+  // on purpose: `{type:"adaptive"}` on 4.6+ is the recommended configuration
+  // and accepts the full range. Requires that thinking has already been merged
+  // onto `params`.
+  const thinking = params.thinking as { type?: string } | undefined;
+  let permitted = supplied;
+  if (thinking?.type === "enabled") {
+    const dropped: string[] = [];
+    permitted = supplied.filter(([wireName, value]) => {
+      if (wireName === "top_p" && value >= THINKING_MIN_TOP_P) return true;
+      dropped.push(wireName);
+      return false;
+    });
+    if (dropped.length > 0) {
+      getLogger().warn(
+        "Anthropic extended thinking constrains sampling; dropping unsupported parameters.",
+        {
+          model: model?.provider_config?.model_name ?? "",
+          dropped,
+        }
+      );
+    }
+    if (permitted.length === 0) return;
+  }
+
   if (anthropicAcceptsSamplingParams(model)) {
-    for (const [wireName, value] of supplied) params[wireName] = value;
+    for (const [wireName, value] of permitted) params[wireName] = value;
     return;
   }
 
   getLogger().warn("Anthropic model rejects sampling parameters; dropping them.", {
     model: model?.provider_config?.model_name ?? "",
-    dropped: supplied.map(([wireName]) => wireName),
+    dropped: permitted.map(([wireName]) => wireName),
   });
 }

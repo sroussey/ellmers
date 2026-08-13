@@ -13,7 +13,18 @@ interface PackageJson {
   };
 }
 
-export async function findWorkspaces(): Promise<string[]> {
+/**
+ * Workspace directories from the root `workspaces` patterns.
+ *
+ * @param publishableOnly `true` (the default) keeps only packages marked
+ *   `publishConfig.access === "public"` — what publishing and consumer-linking
+ *   want. Pass `false` for tooling that has to cover *every* workspace, such as
+ *   source-mode stubbing: `providers/aws` and `providers/cloudflare` are
+ *   `private: true`, so a publishable-only scan skips them and their subpath
+ *   imports (`@workglow/aws/job-queue`) fail to resolve in source mode even
+ *   though their tests are part of the suite.
+ */
+export async function findWorkspaces(publishableOnly = true): Promise<string[]> {
   const workspaces: string[] = [];
 
   // Read root package.json
@@ -34,7 +45,7 @@ export async function findWorkspaces(): Promise<string[]> {
               const packageJson = JSON.parse(
                 (await readFile(packageJsonPath, "utf-8")).toString()
               ) as PackageJson;
-              if (packageJson.publishConfig?.access === "public") {
+              if (!publishableOnly || packageJson.publishConfig?.access === "public") {
                 workspaces.push(match);
               }
             }

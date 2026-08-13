@@ -8,14 +8,14 @@ import { ConditionalTask, Dataflow, TaskGraph, TaskStatus } from "@workglow/task
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 
-import { setLogger } from "@workglow/util";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   DoubleToDoubledTask as DoubleTask,
   HalveTask,
   ProcessValueTask,
   TrackingTask,
-} from "./TestTasks";
+} from "@workglow/task-graph/test";
+import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 
 // ============================================================================
 // Basic Tests

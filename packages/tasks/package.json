@@ -1,7 +1,7 @@
 {
   "name": "@workglow/tasks",
   "type": "module",
-  "version": "0.3.38",
+  "version": "0.3.39",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -27,8 +27,7 @@
     "build-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
     "build-electron": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/electron.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "test": "bun test"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "exports": {
     ".": {

@@ -2,7 +2,7 @@
   "name": "@workglow/playwright",
   "type": "module",
   "sideEffects": false,
-  "version": "0.3.38",
+  "version": "0.3.39",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -23,8 +23,7 @@
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-code": "bun build --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/index.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "test": "bun test"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "exports": {
     ".": {

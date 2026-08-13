@@ -10,7 +10,10 @@ import type {
   TextRewriterTaskOutput,
   Usage,
 } from "@workglow/ai";
-import { OPENAI_STREAM_USAGE_OPTIONS } from "@workglow/ai/provider-utils";
+import {
+  createEstimatedOutputUsageReporter,
+  OPENAI_STREAM_USAGE_OPTIONS,
+} from "@workglow/ai/provider-utils";
 import { getClient, getModelName } from "./DeepSeek_Client";
 import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
 import { mapDeepSeekUsage } from "./DeepSeek_Usage";
@@ -26,6 +29,11 @@ export const DeepSeek_TextRewriter_Stream: AiProviderRunFn<
 > = async (input, model, signal, emit) => {
   const client = await getClient(model);
   const modelName = getModelName(model);
+
+  const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+  provisionalUsage.onPrompt(
+    `${typeof input.prompt === "string" ? input.prompt : ""}\n${typeof input.text === "string" ? input.text : ""}`
+  );
 
   const stream = await client.chat.completions.create(
     {
@@ -45,6 +53,7 @@ export const DeepSeek_TextRewriter_Stream: AiProviderRunFn<
     usage = mapDeepSeekUsage(chunk.usage) ?? usage;
     const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
+      provisionalUsage.onText(delta);
       emit({ type: "text-delta", port: "text", textDelta: delta });
     }
     const refusalDelta = chunk.choices?.[0]?.delta?.refusal ?? "";
@@ -52,5 +61,6 @@ export const DeepSeek_TextRewriter_Stream: AiProviderRunFn<
       emit({ type: "refusal", refusal: refusalDelta });
     }
   }
+  provisionalUsage.flush();
   emit({ type: "finish", data: {} as TextRewriterTaskOutput, usage });
 };

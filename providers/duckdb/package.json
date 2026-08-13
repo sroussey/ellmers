@@ -1,7 +1,7 @@
 {
   "name": "@workglow/duckdb",
   "type": "module",
-  "version": "0.3.38",
+  "version": "0.3.39",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -25,8 +25,7 @@
     "build-storage-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/browser.ts",
     "build-storage-node-bun": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/node.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "test": "bun test"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "exports": {
     "./storage": {

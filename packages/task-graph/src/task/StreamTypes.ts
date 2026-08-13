@@ -75,12 +75,30 @@ export type StreamSnapshot<Output = Record<string, any>> = {
  * you about caching are different facts, and collapsing them to `0` silently
  * understates spend.
  *
+ * **Field relationships.** Counters are disjoint where the provider bills them
+ * at different rates; a counter sharing a rate with its parent is a labelled
+ * subset of it.
+ *
  * - `input` / `output` — prompt and completion tokens.
- * - `cached` — input tokens served from a provider-side prompt cache (read).
- * - `cacheWrite` — input tokens written into that cache.
- * - `reasoning` — output tokens spent on hidden reasoning, when reported separately.
+ * - `cached` — prompt tokens served from a provider-side cache (read).
+ * - `cacheWrite` — prompt tokens written into that cache.
+ * - `input`, `cached` and `cacheWrite` are **disjoint**: `input` is the portion
+ *   billed at the base input rate and never includes cache reads or writes, so
+ *   `input + cached + cacheWrite` is the full prompt. Providers reporting a
+ *   grand total plus a breakdown line are normalized by subtraction.
+ * - `reasoning` — output tokens spent on hidden reasoning, when reported
+ *   separately. **`output` includes `reasoning`**: no provider charges a
+ *   distinct reasoning rate, so it is a visibility breakdown of `output`, not a
+ *   sibling of it. Providers reporting them disjointly are normalized by
+ *   addition.
  * - `total` — the provider's own total, when it reports one. Never synthesized.
+ *   When present it satisfies `input + cached + cacheWrite + output === total`.
  * - `extra` — provider-specific counters that have no normalized slot.
+ *
+ * **Subtract only what the provider stated.** When `cached` is unreported,
+ * `input` remains the provider's stated prompt total and `cached` stays
+ * `undefined`; the disjointness invariant holds vacuously under uncertainty
+ * rather than being enforced by a guess.
  */
 export interface Usage {
   readonly input: number | undefined;
@@ -90,6 +108,18 @@ export interface Usage {
   readonly reasoning: number | undefined;
   readonly total: number | undefined;
   readonly extra: Readonly<Record<string, number | string>> | undefined;
+  /**
+   * Set when any contributing counter is a heuristic (character-count)
+   * estimate rather than a provider-stated figure. Absent means stated. A
+   * total mixing the two is an estimate.
+   *
+   * Deliberately `?: true` rather than the house `boolean | undefined` style.
+   * A required key forces an edit at every `Usage` literal and breaks
+   * out-of-tree constructors — which is exactly the change to a shape
+   * consumers persist that this is meant to avoid. `false` is never written;
+   * the absence of the key is the "stated" case.
+   */
+  readonly estimated?: true;
 }
 
 /**
@@ -97,6 +127,24 @@ export interface Usage {
  * task port — kept out of dataflow like {@link REFUSAL_OUTPUT_KEY} and `__cv`.
  */
 export const USAGE_OUTPUT_KEY = "usage";
+
+/**
+ * The token cost of replaying a cached task output: verifiably nothing.
+ *
+ * A *stated* zero, not an unknown — which is what distinguishes "this cost you
+ * nothing because it was cached" from "no model ran here" (`undefined`). `extra`
+ * stays unreported because a bag that may hold a model id or service tier has no
+ * meaningful zero.
+ */
+export const CACHE_HIT_USAGE: Usage = {
+  input: 0,
+  output: 0,
+  cached: 0,
+  cacheWrite: 0,
+  reasoning: 0,
+  total: 0,
+  extra: undefined,
+};
 
 /**
  * Signals that the stream has finished. In append mode, the runner
@@ -139,6 +187,26 @@ export type StreamRefusal = {
 };
 
 /**
+ * Token accounting reported *while* a request is still streaming.
+ *
+ * `usage` is a **cumulative snapshot of the current model call**, not a delta —
+ * every provider that reports mid-stream restates running totals, and cumulative
+ * is what composes with the last-wins consumption in StreamProcessor. Consumers
+ * replace their in-flight value with each snapshot and never merge them, or the
+ * same tokens are counted once per event.
+ *
+ * A run-fn that emits these MUST still emit a `finish` whose `usage` is the
+ * complete total for the call; `finish` supersedes the snapshots it summarizes.
+ *
+ * Metadata, not data: it never flips the task to STREAMING, is not accumulated
+ * into dataflow, and never appears in a `finish` payload.
+ */
+export type StreamUsage = {
+  type: "usage";
+  usage: Usage;
+};
+
+/**
  * Reserved output-port name that refusal text is accumulated into. Not a
  * declared task port — kept out of dataflow like `__cv` (cache versioning).
  */
@@ -177,6 +245,18 @@ function mergeUsageExtra(
  * or a structured-generation task's validation retries — into one {@link Usage}.
  * Field-wise addition that preserves `undefined` (see {@link Usage}), so a
  * provider that reports nothing never fabricates zeros for the caller's cost math.
+ *
+ * The preservation is per-pair, not transitive: a counter one side states as `0`
+ * and the other leaves unreported merges to `0`, because there is no third value
+ * meaning "partly unknown". So in an aggregate a `0` means *at least one*
+ * contributor stated `0` — not that every contributor did. A single cache hit is
+ * enough to trigger it, since {@link CACHE_HIT_USAGE} states `0` on every
+ * counter. Read per-execution rows, not the aggregate, when the distinction
+ * between "billed nothing" and "never reported" has to survive.
+ *
+ * `estimated` is sticky in the other direction: one estimated contributor makes
+ * the whole total an estimate, since no counter here records which side it came
+ * from.
  */
 export function mergeUsage(a: Usage | undefined, b: Usage | undefined): Usage | undefined {
   if (!a) return b;
@@ -189,6 +269,9 @@ export function mergeUsage(a: Usage | undefined, b: Usage | undefined): Usage | 
     reasoning: addUsageField(a.reasoning, b.reasoning),
     total: addUsageField(a.total, b.total),
     extra: mergeUsageExtra(a.extra, b.extra),
+    // Spread conditionally so a stated total carries no key at all, rather
+    // than an explicit `estimated: undefined`.
+    ...(a.estimated || b.estimated ? { estimated: true as const } : {}),
   };
 }
 
@@ -228,6 +311,7 @@ export type StreamEvent<Output = Record<string, any>> =
   | StreamFinish<Output>
   | StreamError
   | StreamRefusal
+  | StreamUsage
   | StreamPhase;
 
 // ========================================================================

@@ -13,6 +13,7 @@ import type {
   Usage,
 } from "@workglow/ai";
 import {
+  createEstimatedOutputUsageReporter,
   localOnlyFetch,
   mapOpenAIChatUsage,
   OPENAI_STREAM_USAGE_OPTIONS,
@@ -65,6 +66,14 @@ export function createLlamaCppServerToolCallingStream(
     });
     const { baseUrl, release } = await acquire(model, opts);
     try {
+      const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+      provisionalUsage.onPrompt(
+        messages
+          .map((m) => (typeof m.content === "string" ? m.content : ""))
+          .filter(Boolean)
+          .join("\n")
+      );
+
       const response = await localOnlyFetch(
         buildServerUrl(baseUrl, "/v1/chat/completions"),
         {
@@ -94,6 +103,7 @@ export function createLlamaCppServerToolCallingStream(
         usage = mapOpenAIChatUsage(delta.usage) ?? usage;
         if (delta.contentDelta) {
           accumulatedText += delta.contentDelta;
+          provisionalUsage.onText(delta.contentDelta);
           emit({ type: "text-delta", port: "text", textDelta: delta.contentDelta });
         }
         if (delta.toolCallDeltas?.length) {
@@ -104,6 +114,7 @@ export function createLlamaCppServerToolCallingStream(
             if (tc.function?.name) meta.name = tc.function.name;
             callMeta.set(idx, meta);
             if (tc.function?.arguments) {
+              provisionalUsage.onText(tc.function.arguments);
               accumulatedArgs.set(idx, (accumulatedArgs.get(idx) ?? "") + tc.function.arguments);
             }
           }
@@ -111,6 +122,7 @@ export function createLlamaCppServerToolCallingStream(
           emit({ type: "object-delta", port: "toolCalls", objectDelta: [...lastEmittedToolCalls] });
         }
       }
+      provisionalUsage.flush();
       const finalToolCalls = filterValidToolCalls(lastEmittedToolCalls, input.tools);
       emit({
         type: "finish",

@@ -437,6 +437,72 @@ export abstract class IteratorTask<
     return this.config.batchSize;
   }
 
+  /**
+   * Live clone graphs for currently-running iterations, plus the most recently
+   * completed ones up to {@link concurrencyLimit}. A UI that attaches after
+   * `iteration_start` can still render the in-flight (or just-finished) clones
+   * instead of an empty Map row.
+   */
+  private readonly runningIterationGraphs = new Map<number, TaskGraph>();
+  private readonly completedIterationGraphs: Array<{ index: number; graph: TaskGraph }> = [];
+
+  /** Hard cap so an unbounded map does not retain a graph per completed item. */
+  private static readonly VISIBLE_ITERATION_GRAPH_CAP = 64;
+
+  private iterationGraphCap(): number {
+    const limit = this.concurrencyLimit;
+    if (typeof limit === "number" && limit >= 1) {
+      return Math.min(limit, IteratorTask.VISIBLE_ITERATION_GRAPH_CAP);
+    }
+    return IteratorTask.VISIBLE_ITERATION_GRAPH_CAP;
+  }
+
+  /** Drop tracked clones at the start of a collect/reduce run. */
+  public clearIterationGraphs(): void {
+    this.runningIterationGraphs.clear();
+    this.completedIterationGraphs.length = 0;
+  }
+
+  /** Record the live clone for a just-started iteration. */
+  public trackIterationGraph(index: number, graph: TaskGraph): void {
+    this.runningIterationGraphs.set(index, graph);
+  }
+
+  /** Move a finished iteration's clone into the recently-completed window. */
+  public completeIterationGraph(index: number): void {
+    const graph = this.runningIterationGraphs.get(index);
+    this.runningIterationGraphs.delete(index);
+    if (!graph) return;
+    this.completedIterationGraphs.push({ index, graph });
+    const cap = this.iterationGraphCap();
+    while (this.completedIterationGraphs.length > cap) {
+      this.completedIterationGraphs.shift();
+    }
+  }
+
+  /**
+   * Clones a late-attaching UI should render: running first, then the most
+   * recently completed, capped at the iterator's concurrency.
+   */
+  public getVisibleIterationGraphs(): Array<{ index: number; graph: TaskGraph }> {
+    const cap = this.iterationGraphCap();
+    const running = [...this.runningIterationGraphs.entries()]
+      .map(([index, graph]) => ({ index, graph }))
+      .sort((a, b) => a.index - b.index);
+    if (running.length >= cap) return running.slice(0, cap);
+
+    const out = [...running];
+    const seen = new Set(running.map((r) => r.index));
+    for (let i = this.completedIterationGraphs.length - 1; i >= 0 && out.length < cap; i--) {
+      const completed = this.completedIterationGraphs[i];
+      if (completed && !seen.has(completed.index)) {
+        out.push(completed);
+        seen.add(completed.index);
+      }
+    }
+    return out.sort((a, b) => a.index - b.index);
+  }
+
   // ========================================================================
   // Iteration Input Schema Management
   // ========================================================================

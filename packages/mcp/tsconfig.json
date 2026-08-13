@@ -7,5 +7,16 @@
     "tsBuildInfoFile": "tsconfig.tsbuildinfo"
   },
   "include": ["src/**/*"],
-  "references": [{ "path": "../util" }, { "path": "../task-graph" }, { "path": "../storage" }]
+  "references": [
+    {
+      "path": "../util"
+    },
+    {
+      "path": "../task-graph"
+    },
+    {
+      "path": "../storage"
+    }
+  ],
+  "exclude": ["dist", "node_modules", "src/**/__tests__/**", "src/**/*.test.ts"]
 }

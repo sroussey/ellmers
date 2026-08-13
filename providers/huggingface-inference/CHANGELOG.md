@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.3.39
+
+### Features
+
+- enhance model existence verification in AI provider streams
+- enhance provisional usage reporting in AI provider streams
+
+### Bug Fixes
+
+#### huggingface-inference
+
+- forward provider-stated usage from text run-fns
+- encode Hub model ids per path segment
+
+#### ai
+
+- require explicit ModelPricing rates and make the type assertion enforceable
+
+### Chores
+
+#### eslint
+
+- enforce consistent-type-imports and apply the repo-wide autofix (#683)
+
 ## 0.3.38
 
 ## 0.3.37

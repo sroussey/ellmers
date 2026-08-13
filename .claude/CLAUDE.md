@@ -69,7 +69,7 @@ Each package builds two runtime targets via `bun build --target=X`:
 
 Types built with `tsc` (composite + incremental). Conditional exports in `package.json` resolve automatically per runtime.
 
-**No `bun` entry unless it differs.** Bun is not a build target by default: with no `"bun"` condition in `exports`, Bun resolves the default `"import"` and loads the node build. Add a `src/bun.ts`, a `--target=bun` build, and a `"bun"` export condition only when the Bun code genuinely differs — a duplicate of `node.ts` is a third bundle and a third `.d.ts` to keep in sync for no behavior change. Only `@workglow/util`'s `"."` (`Worker.bun` vs `Worker.node`) qualifies today. `@workglow/sqlite`'s `./storage` used to, but both runtimes now share the `node:sqlite` driver.
+**No `bun` entry unless it differs.** Bun is not a build target by default: with no `"bun"` condition in `exports`, Bun resolves the default `"import"` and loads the node build. Add a `src/bun.ts`, a `--target=bun` build, and a `"bun"` export condition only when the Bun code genuinely differs — a duplicate of `node.ts` is a third bundle and a third `.d.ts` to keep in sync for no behavior change. Only two entries qualify today: `@workglow/util`'s `"."` (`Worker.bun` vs `Worker.node`) and `@workglow/util`'s `"./worker"` (`dist/worker-bun.js` vs `dist/worker-node.js`). `@workglow/sqlite`'s `./storage` used to, but both runtimes now share the `node:sqlite` driver. That set is pinned by `packages/test/src/test/util/BunExportConditions.test.ts` — adding or removing a `"bun"` condition fails it until the fixture and this paragraph are updated together.
 
 Exception: vendor packages under `providers/*` (e.g. `@workglow/anthropic`, `@workglow/openai`, `@workglow/google-gemini`) ship `./ai` and `./ai-runtime` sub-paths instead of browser/node.
 
@@ -236,6 +236,44 @@ Shared cloud-provider helpers (base classes, registration, model search, OpenAI-
 
 **Streaming convention:** Provider stream functions (`AiProviderStreamFn`) must **not** accumulate output. They yield incremental `text-delta` / `object-delta` events and a final `finish` event with `{} as Output`. The consumer (`StreamingAiTask` / `TaskRunner`) is responsible for accumulating deltas into the final output. This separation keeps providers stateless and avoids double-buffering. Do **not** change finish events to include accumulated data.
 
+**Streaming convention (decode feedback):** deltas do not drive progress —
+`StreamProcessor` translates only `phase` events into `updateProgress`, and
+`StreamingAiTask` emits exactly one `Generating` phase, latched on the first
+delta. A slow model would therefore render as a single static line for its
+entire run unless the run-fn says otherwise.
+
+Local providers report that progress the same way every cloud provider does:
+as `usage` events carrying a **cumulative** {@link Usage} snapshot, so a local
+run's token counts appear wherever a cloud run's do with no per-provider
+special case. The HFT provider gets this from `createDecodeUsageReporter`
+(`HFT_Streaming.ts`), wired inside `createStreamingTextStreamer` so a new
+streaming run-fn cannot ship without it. Three things that path gets right and
+a naive one does not:
+
+- the prompt's own length is the `input` count, read from the first `put` —
+  the one moment a local model can state its prompt cost, which is why `↑`
+  appears before a single token is generated;
+- snapshots are throttled (250 ms), because a local model decodes hundreds of
+  tokens and an event per token floods the consumer — and the final total is
+  flushed when generation ends, so the throttle cannot swallow the last tokens
+  and leave a stale count;
+- `cached` / `cacheWrite` stay `undefined`, not a stated `0`. A local provider
+  reports no caching, which is not the same as reporting that it cached nothing.
+
+OpenAI-compatible chat completions (OpenRouter, DeepSeek, xAI, …) only attach
+billed usage to the **final** empty-choices chunk. Those run-fns emit
+provisional mid-stream snapshots via `createEstimatedOutputUsageReporter`
+(`provider-utils/UsageMapping.ts`): `onPrompt(text)` estimates ↑
+(`ceil(chars / 4)`) as soon as the request is known, then `onText` grows ↓
+from content deltas — so the CLI counter moves during TTFB and decode alike.
+`finish.usage` still carries the provider's billed totals and supersedes the
+estimate; do not use the provisional figures for cost math.
+
+Do **not** put token counts in a `phase` message. A count in prose is invisible
+to cost math, cannot be aggregated, and renders twice once the row also shows
+the real usage. Reserve `phase` for the stage label (`Prefilling`), which says
+*where* the run is rather than *what it has spent*.
+
 **Streaming convention exception (one-shot run-fns):** Run-fns that do not stream incremental deltas — typically meta-ops (`provider.model-info`, `provider.model-search`, `model.count-tokens`, `model.unload`, `model.download`), embeddings (`text.embedding`, `image.embedding`), and one-shot vision/classification (`image.classification`, `image.segmentation`, etc.) — MUST emit a single `finish` event whose `data` is the full `Output`. The `collectStream(...)` consumer in `@workglow/ai/capability` returns `finish.data` directly in this mode, so the payload is the result. Do not also yield deltas in this pattern — `collectStream` rejects streams mixing deltas with a one-shot finish.
 
 **Streaming convention exception (structured generation):** Run-fns serving
@@ -248,10 +286,29 @@ sequence of partial deltas cannot supply.
 Do **not** accumulate the JSON text to produce it. Feed the deltas to
 `createPartialJsonStream()` (`@workglow/util/worker`, or `/schema` off-worker):
 `push(chunk)` is O(chunk) and returns the partial object to emit as an
-`object-delta`, and `finish()` returns the value for `finish.data.object`.
+`object-delta`, and `finishObject()` returns the value for `finish.data.object`.
 Re-parsing a growing buffer on every delta is O(n²) and blocks the worker
 thread. Use the `skipPreamble` option for providers that emit prose, a
 `<think>` block, or a code fence ahead of the JSON.
+
+Use `finishObject()`, not `finish()`. `finish()` is typed `JsonValue` because it
+honestly returns whatever the document had at its root — an array or a scalar
+for a malformed response — and `StructuredGenerationTask` requires an object.
+`finishObject()` yields `{}` for a non-object root, so validation fails loudly on
+the missing required keys instead of the task receiving a value whose "keys" are
+array indices.
+
+`skipPreamble` is **last-complete-wins**: a closed root is provisional, so a
+later `{` starts a fresh candidate that supersedes it and the LAST complete
+object is what `finish()` returns. A thinking model that restates the schema or
+shows a few-shot example before answering would otherwise lock onto the prose
+object — and a schema-shaped one passes re-validation, so the wrong record gets
+persisted with no error anywhere. The cost is that trailing prose containing its
+own complete object supersedes the payload, so keep asking for the JSON last;
+trailing prose with no `{` in it never restarts anything. Nothing is re-scanned
+(a restart begins at the `{` that triggered it), so the parser stays O(total
+input) — but it does keep scanning trailing text for the life of the stream
+rather than exiting early at the first close.
 
 `push()` returns the parser's **live** root, which later pushes mutate — that
 aliasing is what keeps it linear. It is safe for the `object-delta` path
@@ -302,9 +359,34 @@ class TestTask extends Task<TestInput, TestOutput> {
 
 ```sh
 bun scripts/test.ts [--all] [kinds...] [sections...] [runners...] [options]
+bun scripts/test.ts --changed [base]   # only packages affected since base (default origin/main)
 ```
 
 When making code changes, run the tests on that section only, and pass vitest only. Otherwise tests are very slow. For example, if you are making changes to the McpServer, run `bun scripts/test.ts mcp vitest`.
+
+Sections are **discovered**, never enumerated — every directory holding tests maps to a
+section, and `--check-sections` fails if any test file is unreachable by section+kind
+selection. Note that `packages/test/src/test/task-graph*/` belongs to section `graph`,
+not `task-graph`; `task-graph` selects the package's own co-located `__tests__`.
+
+`--changed` delegates package selection to Turbo (`turbo run test --filter=...[base]`),
+so a change also runs the tests of everything that depends on it. Only workspaces with a
+`test` script participate; tooling tests outside any workspace (`scripts/`) are not
+covered by that mode — run them with `bun scripts/test.ts scripts`.
+
+### Vitest projects
+
+The root `vitest.config.ts` defines one **project** per workspace that holds tests, and
+the project list is derived from the same discovery the runner uses rather than written
+out by hand. `vitest run --project task-graph` runs just that package; each package's own
+`test` script is `vitest run --config ../../vitest.config.ts --project <name>`, which is
+what Turbo invokes.
+
+Anything path-shaped in the shared project options must be **absolute** — project roots
+differ, so a relative `setupFiles` or `typecheck.tsconfig` would resolve against each
+package and silently fail to load. `testDiscovery.test.ts` reads the real config and
+fails if any discovered test file falls outside every project root: such a file does not
+error or warn, it simply stops running.
 
 ### Developing without building
 

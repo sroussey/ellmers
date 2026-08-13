@@ -12,6 +12,7 @@ import type {
   ToolCallingTaskOutput,
   ToolDefinition,
 } from "@workglow/ai";
+import { createUsageSnapshotEmitter } from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
 import { parsePartialJson } from "@workglow/util/worker";
 import {
@@ -25,6 +26,7 @@ import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
 import { applyAnthropicSamplingParams } from "./Anthropic_RequestParams";
+import { applyAnthropicThinkingParams } from "./Anthropic_Thinking";
 import { createAnthropicUsageCollector } from "./Anthropic_Usage";
 
 /**
@@ -143,15 +145,18 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
     max_tokens: getMaxTokens(input, model),
   };
 
+  // tool_choice first: a forced choice suppresses legacy extended thinking,
+  // which in turn decides whether sampling parameters are legal.
+  if (toolChoice !== undefined) {
+    params.tools = tools;
+    params.tool_choice = toolChoice;
+  }
+
+  applyAnthropicThinkingParams(params, model);
   applyAnthropicSamplingParams(params, input, model);
 
   if (input.systemPrompt) {
     params.system = input.systemPrompt;
-  }
-
-  if (toolChoice !== undefined) {
-    params.tools = tools;
-    params.tool_choice = toolChoice;
   }
 
   // Emit-only run (emitCheckpoint with no parent checkpoint): this request is
@@ -203,8 +208,10 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
     filterValidToolCalls(toolCallsInStreamOrder(), toolDefinitions);
 
   const usageCollector = createAnthropicUsageCollector();
+  const snapshotUsage = createUsageSnapshotEmitter(emit);
   for await (const event of stream) {
     usageCollector.observe(event);
+    snapshotUsage(usageCollector.result());
     maybeEmitAnthropicRefusal(event, emit);
     if (event.type === "content_block_start") {
       const block = event.content_block;

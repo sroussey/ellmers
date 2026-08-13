@@ -22,7 +22,7 @@ import { getTaskQueueRegistry, setTaskQueueRegistry, Workflow } from "@workglow/
 import { setLogger } from "@workglow/util";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 
 describe("TextEmbeddingTask with real models", () => {
   const logger = getTestingLogger();

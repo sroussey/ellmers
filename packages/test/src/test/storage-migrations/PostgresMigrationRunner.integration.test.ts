@@ -10,7 +10,7 @@ import { PostgresMigrationRunner } from "@workglow/postgres/storage";
 import { setLogger } from "@workglow/util";
 import { describe } from "vitest";
 
-import { getTestingLogger } from "../../binding/TestingLogger";
+import { getTestingLogger } from "@workglow/util/test";
 import type { BuildMigrationFn } from "../../contract/storage-migrations/runMigrationRunnerContract";
 import { runMigrationRunnerContract } from "../../contract/storage-migrations/runMigrationRunnerContract";
 

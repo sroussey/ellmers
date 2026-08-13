@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.3.39
+
+### Features
+
+- dd prefill phase emission to HFT streaming
+
+#### hft
+
+- report local token counts as usage, not a phase message
+
+### Bug Fixes
+
+- better error message when HFT has issues importing
+
+#### task-graph
+
+- count a nested task's spend once, not once per hop
+
+#### ai
+
+- require explicit ModelPricing rates and make the type assertion enforceable
+
+#### HFT_Device
+
+- remove "webgpu" from device resolution logic
+
+#### util
+
+- last complete object wins when skipping JSON preamble (#718)
+
+### Refactors
+
+- update @huggingface/transformers to peerDependency and add to devDependencies
+
+### Performance
+
+#### util
+
+- add an incremental partial-JSON stream parser (#681)
+
+### Chores
+
+- upgrade to catalog for many deps and update the deps themselves
+
+#### eslint
+
+- enforce consistent-type-imports and apply the repo-wide autofix (#683)
+
 ## 0.3.38
 
 ## 0.3.37

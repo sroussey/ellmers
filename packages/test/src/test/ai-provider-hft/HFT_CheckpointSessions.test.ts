@@ -246,7 +246,7 @@ describe("checkpoint caller systemPrompt", () => {
   };
 
   it("tool calling renders the caller systemPrompt and re-encodes (parity broken)", async () => {
-    await HFT_CacheCheckpoint({ model } as never, model, signal(), emitNoop, undefined, {
+    await HFT_CacheCheckpoint({ model }, model, signal(), emitNoop, undefined, {
       sessionId: "ckpt-h7",
       prefix,
     });
@@ -280,7 +280,7 @@ describe("checkpoint caller systemPrompt", () => {
   });
 
   it("text generation keeps the prefix systemPrompt when the input carries none", async () => {
-    await HFT_CacheCheckpoint({ model } as never, model, signal(), emitNoop, undefined, {
+    await HFT_CacheCheckpoint({ model }, model, signal(), emitNoop, undefined, {
       sessionId: "ckpt-h7b",
       prefix,
     });
@@ -316,7 +316,7 @@ describe("text generation checkpoint consumption", () => {
   };
 
   it("attaches the warmed snapshot via its stored encodedText without re-rendering", async () => {
-    await HFT_CacheCheckpoint({ model } as never, model, signal(), emitNoop, undefined, {
+    await HFT_CacheCheckpoint({ model }, model, signal(), emitNoop, undefined, {
       sessionId: "ckpt-tg",
       prefix,
     });
@@ -339,7 +339,7 @@ describe("text generation checkpoint consumption", () => {
   });
 
   it("re-encodes and restores the snapshot when the checkpoint state is missing", async () => {
-    await HFT_CacheCheckpoint({ model } as never, model, signal(), emitNoop, undefined, {
+    await HFT_CacheCheckpoint({ model }, model, signal(), emitNoop, undefined, {
       sessionId: "ckpt-missing",
       prefix,
     });
@@ -430,7 +430,7 @@ describe("chat seed from checkpoint snapshot", () => {
   };
 
   it("seeds turn 1 from seedCheckpointId without re-encoding the prefix", async () => {
-    await HFT_CacheCheckpoint({ model } as never, model, signal(), emitNoop, undefined, {
+    await HFT_CacheCheckpoint({ model }, model, signal(), emitNoop, undefined, {
       sessionId: "ckpt-seed",
       prefix,
     });

@@ -14,8 +14,8 @@ import { SqliteQueueStorage } from "@workglow/sqlite/job-queue";
 import { Sqlite } from "@workglow/sqlite/storage";
 import type { TaskInput, TaskOutput } from "@workglow/task-graph";
 import { setLogger, uuid4 } from "@workglow/util";
+import { getTestingLogger } from "@workglow/util/test";
 import { describe } from "vitest";
-import { getTestingLogger } from "../../binding/TestingLogger";
 import { runGenericTaskGraphJobQueueTests, TestJob } from "./genericTaskGraphJobQueueTests";
 
 describe("SqliteTaskGraphJobQueue", async () => {

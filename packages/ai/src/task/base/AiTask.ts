@@ -23,17 +23,17 @@ import {
   hasStructuredOutput,
 } from "@workglow/task-graph";
 import type { ServiceRegistry } from "@workglow/util";
+import { getLogger } from "@workglow/util";
 import type { DataPortSchema, JsonSchema } from "@workglow/util/schema";
 
 import { accumulatingEmit } from "../../capability/accumulatingEmit";
 import type { AiEmit } from "../../capability/AiEmit";
 import { noopEmit } from "../../capability/AiEmit";
 import type { Capability } from "../../capability/Capabilities";
-import { recordUsageTelemetry } from "../../capability/UsageTelemetry";
+import { readUsage, recordUsageTelemetry } from "../../capability/UsageTelemetry";
 import type { AiJobInput } from "../../job/AiJob";
 import { AiJob } from "../../job/AiJob";
-import { MODEL_REPOSITORY } from "../../model/ModelRegistry";
-import type { ModelRepository } from "../../model/ModelRepository";
+import { getGlobalModelRepository } from "../../model/ModelRegistry";
 import type { ModelConfig } from "../../model/ModelSchema";
 import { getAiProviderRegistry } from "../../provider/AiProviderRegistry";
 
@@ -254,6 +254,19 @@ export class AiTask<
 
     recordUsageTelemetry(output, this.type, model.model_id);
 
+    // collectStream has already returned the final value, so this is the one
+    // and only usage publication for the non-streaming path.
+    const finalUsage = readUsage(output);
+    if (finalUsage) {
+      this.runUsage = finalUsage;
+      this.runUsageModelId = model.model_id;
+      try {
+        this.emit("usage", finalUsage, model.model_id);
+      } catch (err) {
+        getLogger().error("usage listener threw", { taskId: this.id, error: err });
+      }
+    }
+
     // Register a disposer so the caller can release the in-memory model when
     // done. The disposer is wired via the "model.dispose" capability —
     // distinct from "model.download-remove" (which deletes the on-disk
@@ -445,7 +458,7 @@ export class AiTask<
       (inputSchema.properties || {}) as Record<string, JsonSchema>
     ).filter(([, schema]) => modelSemanticFromPropertySchema(schema)?.startsWith("model:"));
     if (modelTaskProperties.length > 0) {
-      const modelRepo = registry.get<ModelRepository>(MODEL_REPOSITORY);
+      const modelRepo = getGlobalModelRepository(registry);
       const hostTaskClass = this.constructor as typeof AiTask;
 
       for (const [key, propertySchema] of modelTaskProperties) {

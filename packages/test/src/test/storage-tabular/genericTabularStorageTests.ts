@@ -44,6 +44,12 @@ export const SearchSchema = {
     category: { type: "string" },
     subcategory: { type: "string" },
     kind: { type: "string" },
+    // Indexed and optional, so a null criterion on it exercises the index
+    // planner on every backend. `kind` stays deliberately unindexed — two tests
+    // below rely on that to cover the no-covering-index and partial-narrowing
+    // paths. Keep `tag` out of `required`: a required column is emitted
+    // `NOT NULL` in SQL, which would reject every existing `put`.
+    tag: { type: "string" },
     value: { type: "number" },
     createdAt: { type: "string", format: "date-time" },
     updatedAt: { type: "string", format: "date-time" },
@@ -340,6 +346,131 @@ export function runGenericTabularStorageTests(
       afterEach(async () => {
         await searchableRepo.deleteAll();
         searchableRepo.destroy();
+      });
+
+      it("matches NULL columns with a null criterion", async () => {
+        // `col = NULL` is never true in SQL, so a null criterion used to match
+        // zero rows rather than the rows holding NULL. It failed silently and
+        // in the worst direction: a "find by tuple, else create" repo missed
+        // every time and created a duplicate on every call.
+        const now = new Date().toISOString();
+        await searchableRepo.put({
+          id: "null-kind",
+          category: "electronics",
+          subcategory: "phones",
+          value: 100,
+          createdAt: now,
+          updatedAt: now,
+        });
+        await searchableRepo.put({
+          id: "set-kind",
+          category: "electronics",
+          subcategory: "phones",
+          kind: "premium",
+          value: 200,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        const nullMatches = await searchableRepo.query({ kind: null } as never);
+        expect(nullMatches?.map((r) => r.id)).toEqual(["null-kind"]);
+
+        // Mixed with a non-null column, which is the shape a lookup tuple takes.
+        const mixed = await searchableRepo.query({
+          category: "electronics",
+          kind: null,
+        } as never);
+        expect(mixed?.map((r) => r.id)).toEqual(["null-kind"]);
+
+        // The non-null side must keep working unchanged.
+        const setMatches = await searchableRepo.query({ kind: "premium" } as never);
+        expect(setMatches?.map((r) => r.id)).toEqual(["set-kind"]);
+      });
+
+      it("matches NULL on an indexed column with a null criterion", async () => {
+        // The same rule as above, but on a column the backend has an index for.
+        // That is the path the previous test never reached: it used `kind`,
+        // which is in no index, so every backend answered it with a scan and
+        // the cross-backend claim went untested against an index planner.
+        const now = new Date().toISOString();
+        await searchableRepo.put({
+          id: "no-tag",
+          category: "electronics",
+          subcategory: "phones",
+          value: 100,
+          createdAt: now,
+          updatedAt: now,
+        });
+        await searchableRepo.put({
+          id: "with-tag",
+          category: "electronics",
+          subcategory: "phones",
+          tag: "a",
+          value: 200,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        const nullMatches = await searchableRepo.query({ tag: null } as never);
+        expect(nullMatches?.map((r) => r.id)).toEqual(["no-tag"]);
+
+        // Compound-index prefix shape: a non-null leading column plus a null
+        // one, which is what a "look up by tuple, else create" repo issues.
+        const compound = await searchableRepo.query({
+          category: "electronics",
+          tag: null,
+        } as never);
+        expect(compound?.map((r) => r.id)).toEqual(["no-tag"]);
+
+        expect(await searchableRepo.count({ tag: null } as never)).toBe(1);
+
+        const setMatches = await searchableRepo.query({ tag: "a" } as never);
+        expect(setMatches?.map((r) => r.id)).toEqual(["with-tag"]);
+      });
+
+      it("supports != , including its null form", async () => {
+        const now = new Date().toISOString();
+        await searchableRepo.put({
+          id: "null-kind",
+          category: "electronics",
+          subcategory: "phones",
+          value: 100,
+          createdAt: now,
+          updatedAt: now,
+        });
+        await searchableRepo.put({
+          id: "premium",
+          category: "electronics",
+          subcategory: "phones",
+          kind: "premium",
+          value: 200,
+          createdAt: now,
+          updatedAt: now,
+        });
+        await searchableRepo.put({
+          id: "budget",
+          category: "electronics",
+          subcategory: "phones",
+          kind: "budget",
+          value: 300,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        // `!= null` is IS NOT NULL — every row that holds a value.
+        const notNull = await searchableRepo.query({
+          kind: { value: null, operator: "!=" },
+        } as never);
+        expect(notNull?.map((r) => r.id).sort()).toEqual(["budget", "premium"]);
+
+        // `!= <value>` follows SQL three-valued logic: the NULL row is NOT
+        // returned, because `null != 'premium'` is UNKNOWN rather than true.
+        // A JS-native `!==` would wrongly include it, and the backends would
+        // then disagree with each other.
+        const notPremium = await searchableRepo.query({
+          kind: { value: "premium", operator: "!=" },
+        } as never);
+        expect(notPremium?.map((r) => r.id)).toEqual(["budget"]);
       });
 
       it("should store and search using compound indexes", async () => {

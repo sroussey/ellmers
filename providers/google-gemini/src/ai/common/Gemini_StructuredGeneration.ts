@@ -9,6 +9,7 @@ import type {
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
+import { createUsageSnapshotEmitter } from "@workglow/ai/provider-utils";
 import { createPartialJsonStream } from "@workglow/util/worker";
 import {
   createGeminiClient,
@@ -22,22 +23,15 @@ import { sanitizeSchemaForGemini } from "./Gemini_Schema";
 import { mapGeminiUsage } from "./Gemini_Usage";
 
 /**
- * Default reasoning allowance (in tokens) for the model's internal "thinking"
- * pass on a structured-generation request when `provider_config.thinking_budget`
- * is unset. Thinking models (Gemini 2.5+/3.x) reason before emitting the answer;
- * the thinking budget is separate from `maxOutputTokens`, so a small output cap
- * (the caller's `maxTokens`) still leaves room for the JSON. Without an explicit
- * budget a thinking model could consume the whole allotment reasoning and return
- * an empty object.
- */
-const DEFAULT_STRUCTURED_THINKING_BUDGET = 2048;
-
-/**
  * Streaming run-fn for `["text.generation", "json-mode"]`. Gemini uses
  * `responseSchema` + `responseMimeType: "application/json"` to produce
  * structured output. Per the streaming convention exception for json-mode,
  * the `finish` event MUST include the parsed `object` — it is the definitive
  * result `StructuredGenerationTask` validates against the schema.
+ *
+ * Thinking headroom is opt-in via `provider_config.thinking_budget` or
+ * `model.effort` (see {@link resolveThinkingConfig}). Do not invent a default
+ * thinking pad — callers set an adequate `maxTokens` for the JSON answer.
  *
  * With `responseMimeType: "application/json"` the response payload is JSON only —
  * reasoning stays internal and never appears in the emitted parts — so the
@@ -53,15 +47,9 @@ export const Gemini_StructuredGeneration_Stream: AiProviderRunFn<
   const schema = input.outputSchema ?? outputSchema;
   const sanitizedSchema = sanitizeSchemaForGemini(schema as Record<string, unknown>);
 
-  // Gemini counts thinking tokens against `maxOutputTokens`, so a caller's small
-  // output cap (e.g. 100) would otherwise be consumed by reasoning and truncate
-  // the JSON to nothing. resolveThinkingConfig adds the thinking allowance on top
-  // of the caller's cap; the emitted JSON still respects maxTokens.
-  const { thinkingConfig, maxOutputTokens } = resolveThinkingConfig(
-    model,
-    input.maxTokens,
-    DEFAULT_STRUCTURED_THINKING_BUDGET
-  );
+  // When a budget is set (native or via model.effort), resolveThinkingConfig pads
+  // maxTokens so thinking + JSON both fit; otherwise the caller's maxTokens passes through.
+  const { thinkingConfig, maxOutputTokens } = resolveThinkingConfig(model, input.maxTokens);
 
   const result = await ai.models.generateContentStream({
     model: getModelName(model),
@@ -80,8 +68,10 @@ export const Gemini_StructuredGeneration_Stream: AiProviderRunFn<
   const json = createPartialJsonStream();
   let refusalCategory: string | undefined;
   let lastUsageMetadata: unknown;
+  const snapshotUsage = createUsageSnapshotEmitter(emit);
   for await (const chunk of result) {
     lastUsageMetadata = chunk.usageMetadata ?? lastUsageMetadata;
+    snapshotUsage(mapGeminiUsage(lastUsageMetadata));
     // `chunk.text` concatenates the answer text (thought parts are excluded).
     const text = chunk.text;
     if (text) {
@@ -97,7 +87,7 @@ export const Gemini_StructuredGeneration_Stream: AiProviderRunFn<
   // json-mode finish exception: populate finish.data.object with parsed result.
   emit({
     type: "finish",
-    data: { object: json.finish() } as StructuredGenerationTaskOutput,
+    data: { object: json.finishObject() } as StructuredGenerationTaskOutput,
     usage: mapGeminiUsage(lastUsageMetadata),
   });
 };

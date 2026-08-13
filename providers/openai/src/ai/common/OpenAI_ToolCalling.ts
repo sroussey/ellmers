@@ -14,7 +14,9 @@ import {
   accumulateOpenAIResponsesStream,
   buildResponsesInput,
   buildResponsesTools,
+  createEstimatedOutputUsageReporter,
   mapResponsesToolChoice,
+  promptTextForResponsesUsageEstimate,
 } from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, toOpenAIMessages } from "@workglow/ai/worker";
 import { mergeOpenAICheckpointPrefix } from "./OpenAI_CacheCheckpoint";
@@ -72,6 +74,9 @@ export const OpenAI_ToolCalling_Stream: AiProviderRunFn<
   if (input.temperature !== undefined) params.temperature = input.temperature;
   finalizeResponsesRequest(model, params);
 
+  const promptText = promptTextForResponsesUsageEstimate(params);
+  createEstimatedOutputUsageReporter(emit).onPrompt(promptText);
+
   const stream = await client.responses.create(
     { ...params, stream: true } as Parameters<typeof client.responses.create>[0],
     { signal }
@@ -88,7 +93,8 @@ export const OpenAI_ToolCalling_Stream: AiProviderRunFn<
         return;
       }
       emit(event);
-    }
+    },
+    { promptText }
   );
   emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput, usage });
 };

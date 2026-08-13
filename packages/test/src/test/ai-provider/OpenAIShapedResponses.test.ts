@@ -11,7 +11,9 @@ import {
   buildResponsesTools,
   mapResponsesToolChoice,
   parseResponsesToolCalls,
+  promptTextForResponsesUsageEstimate,
 } from "@workglow/ai/provider-utils";
+import type { StreamEvent } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
 /** Turn a fixed array of Responses events into the async iterable the accumulator consumes. */
@@ -475,7 +477,7 @@ describe("accumulateOpenAIResponsesStream usage", () => {
       },
     ]);
     expect(usage).toEqual({
-      input: 120,
+      input: 40,
       output: 34,
       cached: 64,
       cacheWrite: 16,
@@ -522,5 +524,45 @@ describe("accumulateOpenAIResponsesStream usage", () => {
     ]);
     expect(usage?.input).toBe(0);
     expect(usage?.output).toBe(0);
+  });
+
+  it("emits a provisional ↑ estimate when promptText is supplied", async () => {
+    const out: StreamEvent[] = [];
+    await accumulateOpenAIResponsesStream(
+      events([{ type: "response.output_text.delta", delta: "abcd" }]),
+      (e) => out.push(e),
+      { promptText: "abcd".repeat(310) } // 1240 chars → 310 tokens
+    );
+    const usageEvents = out.filter((e) => e.type === "usage");
+    expect(usageEvents[0]).toMatchObject({
+      type: "usage",
+      usage: { input: 310, output: 0 },
+    });
+    expect(usageEvents.at(-1)).toMatchObject({
+      type: "usage",
+      usage: { input: 310, output: 1 },
+    });
+  });
+});
+
+describe("promptTextForResponsesUsageEstimate", () => {
+  it("joins instructions with a string input", () => {
+    expect(
+      promptTextForResponsesUsageEstimate({
+        instructions: "Be brief.",
+        input: "hello",
+      })
+    ).toBe("Be brief.\nhello");
+  });
+
+  it("flattens string content from input items", () => {
+    expect(
+      promptTextForResponsesUsageEstimate({
+        input: [
+          { role: "user", content: "one" },
+          { role: "assistant", content: "two" },
+        ],
+      })
+    ).toBe("one\ntwo");
   });
 });

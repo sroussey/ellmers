@@ -233,7 +233,11 @@ resolves the default `"import"` and loads `dist/node.js` — which is exactly wh
 identical to `src/node.ts` would have produced. Add a `src/bun.ts`, a `--target=bun` build, and a
 `"bun"` export condition only when the Bun code genuinely differs; a duplicate is a third bundle
 and a third `.d.ts` to keep in sync for no behavior change. Two entries qualify today, both in
-`@workglow/util`: `"."` and `"./worker"` (`Worker.bun` vs `Worker.node`).
+`@workglow/util`: `"."` (`Worker.bun` vs `Worker.node`) and `"./worker"` (`dist/worker-bun.js`
+vs `dist/worker-node.js`). `@workglow/sqlite`'s `./storage` used to, but both runtimes now share
+the `node:sqlite` driver. That set is pinned by
+`packages/test/src/test/util/BunExportConditions.test.ts`, which fails in both directions — on a
+redundant `"bun"` condition added back, and on one of the two being deleted.
 
 Each build command follows the same template:
 

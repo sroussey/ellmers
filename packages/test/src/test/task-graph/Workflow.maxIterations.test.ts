@@ -7,8 +7,7 @@
 import { Workflow } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
-import "../task/TestTasks";
-import { TestSimpleTask } from "../task/TestTasks";
+import { TestSimpleTask } from "@workglow/task-graph/test";
 
 /**
  * The fluent Workflow builder (`.while`, `.map`, `.reduce`, `.forEach`) defaults

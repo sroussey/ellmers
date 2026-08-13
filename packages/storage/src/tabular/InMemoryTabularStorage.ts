@@ -28,7 +28,11 @@ import type {
   TabularChangePayload,
   TabularSubscribeOptions,
 } from "./ITabularStorage";
-import { normalizeCriterion } from "./ITabularStorage";
+import {
+  matchesEqualityCriterion,
+  matchesInequalityCriterion,
+  normalizeCriterion,
+} from "./ITabularStorage";
 import { StorageError } from "./StorageError";
 
 export const MEMORY_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
@@ -63,7 +67,12 @@ function matchesCriteria<Entity>(
     const cv = columnValue as string | number | null | undefined;
     switch (normalized.operator) {
       case "=":
-        if (cv !== v) return false;
+        // Shared with every other backend: a null criterion matches null OR an
+        // absent column, which SQL spells the same way.
+        if (!matchesEqualityCriterion(cv, v)) return false;
+        break;
+      case "!=":
+        if (!matchesInequalityCriterion(cv, v)) return false;
         break;
       case "<":
         if (cv === null || cv === undefined || !(cv < v)) return false;

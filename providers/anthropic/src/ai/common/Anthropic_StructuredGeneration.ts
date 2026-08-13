@@ -9,10 +9,12 @@ import type {
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
+import { createUsageSnapshotEmitter } from "@workglow/ai/provider-utils";
 import { createPartialJsonStream } from "@workglow/util/worker";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { maybeEmitAnthropicRefusal } from "./Anthropic_Refusal";
+import { applyAnthropicThinkingParams } from "./Anthropic_Thinking";
 import { createAnthropicUsageCollector } from "./Anthropic_Usage";
 
 /**
@@ -37,30 +39,39 @@ export const Anthropic_StructuredGeneration_Stream: AiProviderRunFn<
 
   const schema = input.outputSchema ?? outputSchema;
 
-  const stream = client.messages.stream(
-    {
-      model: modelName,
-      messages: [{ role: "user", content: input.prompt as string }],
-      tools: [
-        {
-          name: "structured_output",
-          description: "Output structured data conforming to the schema",
-          input_schema: schema as any,
-        },
-      ],
-      tool_choice: { type: "tool" as const, name: "structured_output" },
-      max_tokens: getMaxTokens(input, model),
-    },
+  const params: Record<string, unknown> = {
+    model: modelName,
+    messages: [{ role: "user", content: input.prompt as string }],
+    tools: [
+      {
+        name: "structured_output",
+        description: "Output structured data conforming to the schema",
+        input_schema: schema as any,
+      },
+    ],
+    tool_choice: { type: "tool" as const, name: "structured_output" },
+    max_tokens: getMaxTokens(input, model),
+  };
+  applyAnthropicThinkingParams(params, model);
+
+  const stream = (client.messages.stream as (p: unknown, o: unknown) => AsyncIterable<unknown>)(
+    params,
     { signal }
   );
 
   const json = createPartialJsonStream();
   const usageCollector = createAnthropicUsageCollector();
+  const snapshotUsage = createUsageSnapshotEmitter(emit);
   for await (const event of stream) {
     usageCollector.observe(event);
+    snapshotUsage(usageCollector.result());
     maybeEmitAnthropicRefusal(event, emit);
-    if (event.type === "content_block_delta" && event.delta.type === "input_json_delta") {
-      const partial = json.push(event.delta.partial_json);
+    const e = event as {
+      type: string;
+      delta?: { type?: string; partial_json?: string };
+    };
+    if (e.type === "content_block_delta" && e.delta?.type === "input_json_delta") {
+      const partial = json.push(e.delta.partial_json ?? "");
       if (partial !== undefined) {
         emit({ type: "object-delta", port: "object", objectDelta: partial });
       }
@@ -69,7 +80,7 @@ export const Anthropic_StructuredGeneration_Stream: AiProviderRunFn<
 
   emit({
     type: "finish",
-    data: { object: json.finish() } as StructuredGenerationTaskOutput,
+    data: { object: json.finishObject() } as StructuredGenerationTaskOutput,
     usage: usageCollector.result(),
   });
 };

@@ -60,7 +60,13 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
   private finishData: T | undefined;
   private refusalText = "";
   private refusalCategory: string | undefined;
-  private usage: Usage | undefined;
+  // Mirrors StreamProcessor: `usage` events are cumulative snapshots of the
+  // in-flight call, so they replace; `finish` states the call total and settles.
+  // Mirrored down to the estimate guard — a snapshot flagged `estimated` is a
+  // character-count guess kept for live display, so it is never promoted into
+  // the settled total the run reports as its spend.
+  private settledUsage: Usage | undefined;
+  private liveUsage: Usage | undefined;
   /**
    * The `type` of the most recent observed event. Surfaced in the
    * no-finish materialise error so operators can see what the stream
@@ -122,6 +128,9 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
       case "error":
         this.lastEventType = "error";
         throw (event as { error: unknown }).error;
+      case "usage":
+        this.liveUsage = (event as Extract<StreamEvent, { type: "usage" }>).usage;
+        return;
       case "finish":
         this.observeFinish(event as Extract<StreamEvent<T>, { type: "finish" }>);
         return;
@@ -133,7 +142,12 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
     this.finishData = event.data;
     // Merged rather than replaced: a consumer driving several finishes through
     // one accumulator (a tool-calling loop) is billed for every turn.
-    this.usage = mergeUsage(this.usage, event.usage);
+    // `?? promotable` keeps a provider that emitted snapshots but no finish
+    // usage — unless that snapshot is a character-count estimate, which is
+    // display feedback and must not settle as this run's spend.
+    const promotable = this.liveUsage?.estimated ? undefined : this.liveUsage;
+    this.settledUsage = mergeUsage(this.settledUsage, event.usage ?? promotable);
+    this.liveUsage = undefined;
     this.lastEventType = "finish";
   }
 
@@ -199,14 +213,21 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
    * Folds accumulated token counts into the reserved `usage` output field.
    * No-op when no provider reported usage, so the key is absent rather than
    * present-and-empty.
+   *
+   * A still-live snapshot is reachable when a provider emits usage AFTER the
+   * finish it belongs to (a tool-calling loop whose last turn never finished).
+   * It is folded in for the same reason the finish path folds one — but an
+   * estimate is a guess, so it is dropped rather than reported as spend.
    */
   private applyUsage(output: T): T {
-    if (!this.usage) return output;
+    const promotable = this.liveUsage?.estimated ? undefined : this.liveUsage;
+    const usage = mergeUsage(this.settledUsage, promotable);
+    if (!usage) return output;
     const base = (output !== null && typeof output === "object" ? output : {}) as Record<
       string,
       unknown
     >;
-    return { ...base, [USAGE_OUTPUT_KEY]: this.usage } as unknown as T;
+    return { ...base, [USAGE_OUTPUT_KEY]: usage } as unknown as T;
   }
 
   /**

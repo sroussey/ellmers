@@ -4,8 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { isModelEffort, type ModelEffort } from "@workglow/ai";
 import { isBrowserLike, resolveApiKey, validateProviderBaseUrl } from "@workglow/ai/provider-utils";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
+
+/** Maps coarse {@link ModelEffort} to OpenAI Responses `reasoning.effort`. */
+const EFFORT_TO_OPENAI: Record<ModelEffort, string> = {
+  none: "none",
+  low: "low",
+  medium: "medium",
+  high: "high",
+  extra: "xhigh",
+  ultra: "max",
+};
 
 /**
  * Hostnames (or hostname suffixes) accepted for OpenAI `base_url` without
@@ -109,19 +120,21 @@ export function getModelName(model: OpenAiModelConfig | undefined): string {
 }
 
 /**
- * Resolves the configured `reasoning` object for reasoning-capable models
- * (the GPT-5.6 sol/terra/luna family and the o-series), sent verbatim as the
- * Responses `reasoning` parameter. Returns `undefined` when unset so
- * non-reasoning models and callers that don't opt in send no reasoning field.
+ * Resolves the `reasoning` object for reasoning-capable models (GPT-5.6
+ * sol/terra/luna and the o-series). Native `provider_config.reasoning` wins;
+ * otherwise map `model.effort`. Returns `undefined` when neither is set.
  */
 export function getReasoningConfig(
   model: OpenAiModelConfig | undefined
 ): { effort?: string; mode?: string } | undefined {
   const reasoning = (model?.provider_config as ResolvedProviderConfig | undefined)?.reasoning;
-  if (!reasoning || (reasoning.effort === undefined && reasoning.mode === undefined)) {
-    return undefined;
+  if (reasoning && (reasoning.effort !== undefined || reasoning.mode !== undefined)) {
+    return reasoning;
   }
-  return reasoning;
+  if (isModelEffort(model?.effort)) {
+    return { effort: EFFORT_TO_OPENAI[model.effort] };
+  }
+  return undefined;
 }
 
 /** Deterministic 32-bit FNV-1a hash → 8-char hex. Worker-safe (no crypto import). */

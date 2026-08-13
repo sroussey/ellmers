@@ -19,7 +19,6 @@ export * from "./ai/CactusProvider.browser";
 export * from "./ai/registerCactus.browser";
 
 import { CactusQueuedProvider } from "./ai/CactusQueuedProvider.browser";
-import { CACTUS_RUN_FN_SPECS } from "./ai/common/Cactus_Capabilities";
 import {
   CACTUS_HASH_PLACEHOLDER,
   CactusIntegrityError,
@@ -47,7 +46,6 @@ import { cactusConfigJson, cactusEngines } from "./ai/common/Cactus_Runtime.brow
  */
 export const _testOnly = {
   CactusQueuedProvider,
-  CACTUS_RUN_FN_SPECS,
   CACTUS_RUN_FNS,
   cactusEngines,
   cactusConfigJson,

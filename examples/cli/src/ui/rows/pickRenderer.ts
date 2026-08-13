@@ -34,7 +34,7 @@ export type TaskRowComponent = React.ComponentType<TaskRowProps>;
  *
  * Explicit mapping: AiChatTask → ChatTaskRow.
  * Fallback: any task with an `x-stream: append` port → StreamingTextRow.
- * Default: DefaultTaskRow (progress + iteration slots).
+ * Default: DefaultTaskRow (progress + live map/reduce iteration tasks).
  *
  * The concrete components are injected at call time (see WorkflowRunApp) to
  * avoid import cycles between this module and its consumers.

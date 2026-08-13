@@ -6,7 +6,8 @@
 
 import type { EventParameters } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
-import type { StreamEvent } from "./StreamTypes";
+import type { TaskGraph } from "../task-graph/TaskGraph";
+import type { StreamEvent, Usage } from "./StreamTypes";
 import type { TaskEntitlements } from "./TaskEntitlements";
 import type { TaskAbortedError, TaskError } from "./TaskError";
 import type { TaskStatus } from "./TaskTypes";
@@ -38,10 +39,25 @@ export type TaskEventListeners = {
   progress: (progress: number | undefined, message?: string, ...args: any[]) => void;
 
   /**
+   * Fired whenever the task's running token total changes, and once more at the
+   * end. `usage` is cumulative for the whole task execution — monotonic, unlike
+   * the per-model-call stream event it is derived from — so consumers replace
+   * rather than accumulate. `modelId` is the model that produced this update, or
+   * `undefined` when the provider did not name one.
+   *
+   * A charge that settles after the task finished (provider cache storage,
+   * billed at disposal) re-emits the new cumulative total, so replace still
+   * holds.
+   */
+  usage: (usage: Usage, modelId: string | undefined) => void;
+
+  /**
    * Iterator tasks (MapTask, ReduceTask, etc.): a per-iteration subgraph run is starting.
    * Index is 0-based; iterationCount is total iterations for this run.
+   * `subgraph` is the live clone for this iteration — UIs render its tasks as
+   * ordinary rows rather than numbered placeholders.
    */
-  iteration_start: (index: number, iterationCount: number) => void;
+  iteration_start: (index: number, iterationCount: number, subgraph?: TaskGraph) => void;
 
   /**
    * Iterator tasks: a per-iteration subgraph run finished (success or failure — check task status).
@@ -51,12 +67,15 @@ export type TaskEventListeners = {
   /**
    * Iterator tasks: progress inside the per-iteration cloned subgraph (0–100).
    * Does not update {@link Task#progress} on the parent — use for per-row UI without fighting concurrent map workers.
+   * `subgraph` is the same live clone as {@link TaskEventListeners.iteration_start}, so a
+   * listener that missed start can still attach the graph from a later progress event.
    */
   iteration_progress: (
     index: number,
     iterationCount: number,
     progress: number | undefined,
-    message?: string
+    message?: string,
+    subgraph?: TaskGraph
   ) => void;
 
   /** Fired when a regenerative task regenerates its graph */

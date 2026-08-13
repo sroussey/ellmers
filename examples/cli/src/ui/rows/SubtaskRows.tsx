@@ -4,18 +4,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ITask } from "@workglow/task-graph";
+import type { ITask, TaskGraph } from "@workglow/task-graph";
 import { Box, Text } from "ink";
 import React from "react";
 import { useCliTheme } from "../CliThemeContext";
 import { ProgressBar } from "../components/ProgressBar";
 import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
 import type { CliTaskLine, IterationSlotRow } from "../taskGraphCliSubscriptions";
+import { mergeLiveIterationGraphs, visibleIterationSlots } from "../taskGraphCliSubscriptions";
 import {
-  iterationSlotToTaskStatus,
-  sortIterationSlotsForDisplay,
-} from "../taskGraphCliSubscriptions";
-import { useSubtaskRows } from "./useSubtaskRows";
+  concurrencyLimitOf,
+  isIteratorTask,
+  useGraphTaskRows,
+  useSubtaskRows,
+} from "./useSubtaskRows";
+import { useTaskUsageLine } from "./useTaskUsageLine";
 
 /**
  * A long-running task can own hundreds of subtasks (one generation per eval
@@ -33,6 +36,38 @@ const MAX_VISIBLE_SUBTASKS = 6;
  * into more rows (and more attach pollers) than a terminal can use.
  */
 const MAX_SUBTASK_DEPTH = 2;
+
+/**
+ * Live Map/Reduce iterations: at most `concurrencyLimit` running clones, each
+ * rendered as a normal task tree (title + owned subtasks), not `#1`/`#2`.
+ */
+export function IterationTaskRows({
+  task,
+  slots,
+  concurrencyLimit,
+}: {
+  readonly task: ITask;
+  readonly slots: readonly IterationSlotRow[] | undefined;
+  readonly concurrencyLimit: number | undefined;
+}): React.ReactElement | null {
+  const visible = visibleIterationSlots(mergeLiveIterationGraphs(slots, task), concurrencyLimit);
+  if (visible.length === 0) return null;
+  return (
+    <Box flexDirection="column">
+      {visible.map((slot) =>
+        slot.graph ? <IterationGraphRows key={slot.index} graph={slot.graph} /> : null
+      )}
+    </Box>
+  );
+}
+
+function IterationGraphRows({ graph }: { readonly graph: TaskGraph }): React.ReactElement | null {
+  const state = useGraphTaskRows(graph);
+  if (state.rows.length === 0) return null;
+  return (
+    <SubtaskRows rows={state.rows} tasks={state.tasks} iterationSlots={state.iterationSlots} />
+  );
+}
 
 interface SubtaskRowsProps {
   readonly rows: readonly CliTaskLine[];
@@ -73,8 +108,43 @@ function SubtaskRow({
   readonly iterationSlots: ReadonlyMap<string, IterationSlotRow[]>;
   readonly depth: number;
 }): React.ReactElement {
+  if (task === undefined) {
+    return (
+      <Box flexDirection="column">
+        <TaskStatusProgressRow
+          label={line.label}
+          status={line.status}
+          message={line.message}
+          barProgress={line.progress ?? 0}
+        />
+      </Box>
+    );
+  }
+  return (
+    <SubtaskStatusWithUsage
+      task={task}
+      line={line}
+      iterationSlots={iterationSlots}
+      depth={depth}
+    />
+  );
+}
+
+/** Status + token/cost line for one owned child; isolated so the usage hook is legal. */
+function SubtaskStatusWithUsage({
+  task,
+  line,
+  iterationSlots,
+  depth,
+}: {
+  readonly task: ITask;
+  readonly line: CliTaskLine;
+  readonly iterationSlots: ReadonlyMap<string, IterationSlotRow[]>;
+  readonly depth: number;
+}): React.ReactElement {
   const slots = iterationSlots.get(line.id);
-  const sortedSlots = slots ? sortIterationSlotsForDisplay(slots) : [];
+  const usageLine = useTaskUsageLine(task);
+  const iterator = isIteratorTask(task);
   return (
     <Box flexDirection="column">
       <TaskStatusProgressRow
@@ -83,18 +153,13 @@ function SubtaskRow({
         message={line.message}
         barProgress={line.progress ?? 0}
       />
-      {sortedSlots.map((slot) => (
-        <Box key={`${line.id}-iter-${slot.index}`} flexDirection="column" paddingLeft={2}>
-          <TaskStatusProgressRow
-            label={`#${slot.index + 1}`}
-            status={iterationSlotToTaskStatus(slot.status)}
-            message={slot.status === "completed" ? undefined : slot.message}
-            barProgress={slot.progress ?? 0}
-            suppressProgressBar={slot.status !== "running" || slot.progress === undefined}
-          />
-        </Box>
-      ))}
-      {task !== undefined && depth < MAX_SUBTASK_DEPTH && (
+      {usageLine ? <Text dimColor> {usageLine}</Text> : null}
+      <IterationTaskRows
+        task={task}
+        slots={slots}
+        concurrencyLimit={concurrencyLimitOf(task)}
+      />
+      {depth < MAX_SUBTASK_DEPTH && !iterator && (
         <NestedSubtaskRows task={task} parentType={line.type} depth={depth} />
       )}
     </Box>

@@ -1,7 +1,7 @@
 {
   "name": "@workglow/postgres",
   "type": "module",
-  "version": "0.3.38",
+  "version": "0.3.39",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -33,8 +33,7 @@
     "build-text-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/text ./src/text/browser.ts",
     "build-text-node-bun": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/text ./src/text/node.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "test": "bun test"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "exports": {
     "./storage": {
@@ -87,7 +86,7 @@
     }
   },
   "devDependencies": {
-    "@types/pg": "^8.20.4",
+    "@types/pg": "catalog:",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/util": "workspace:*"

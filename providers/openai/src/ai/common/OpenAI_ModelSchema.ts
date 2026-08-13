@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { WithModelPricing } from "@workglow/ai/worker";
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
 import type { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
 import { OPENAI } from "./OpenAI_Constants";
@@ -89,7 +90,7 @@ export const OpenAiModelRecordSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type OpenAiModelRecord = FromSchema<typeof OpenAiModelRecordSchema>;
+export type OpenAiModelRecord = WithModelPricing<FromSchema<typeof OpenAiModelRecordSchema>>;
 
 export const OpenAiModelConfigSchema = {
   type: "object",
@@ -101,4 +102,4 @@ export const OpenAiModelConfigSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type OpenAiModelConfig = FromSchema<typeof OpenAiModelConfigSchema>;
+export type OpenAiModelConfig = WithModelPricing<FromSchema<typeof OpenAiModelConfigSchema>>;

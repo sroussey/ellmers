@@ -14,10 +14,10 @@ import {
 } from "@workglow/job-queue";
 import type { CacheRef } from "@workglow/task-graph";
 import { makeJobOutputStreamResolver } from "@workglow/task-graph";
+import { StreamingMemoryRepo } from "@workglow/task-graph/test";
 import { uuid4 } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { StreamingMemoryRepo } from "../../binding/StreamingMemoryRepo";
 
 interface SInput {
   readonly [key: string]: unknown;

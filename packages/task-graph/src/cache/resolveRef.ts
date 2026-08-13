@@ -114,92 +114,101 @@ export async function resolveOutput<T>(
   resolver: CacheRefResolver,
   options?: ResolveOutputOptions
 ): Promise<T> {
-  if (!hasRef(output, new WeakSet())) return output;
+  if (isCacheRef(output)) {
+    const limit = createLimiter(options?.concurrency);
+    return (await walk(output, resolver, limit, new WeakSet(), undefined, new WeakSet())) as T;
+  }
+  const scan = scanContainers(output);
+  if (!scan.hasRef) return output;
   const limit = createLimiter(options?.concurrency);
   // Acyclic values (the norm) memoize each container's resolution promise so a
   // subtree shared between two slots resolves ONCE and both slots receive the
   // same resolved copy — a plain visited-set would hand the second slot the
   // original, unresolved object. Cyclic values keep the conservative
   // visited-set behavior: cycles are returned by reference, unrewritten.
-  const memo = containsCycle(output) ? undefined : new WeakMap<object, Promise<unknown>>();
-  return (await walk(output, resolver, limit, new WeakSet(), memo)) as T;
+  const memo = scan.hasCycle ? undefined : new WeakMap<object, Promise<unknown>>();
+  return (await walk(output, resolver, limit, new WeakSet(), memo, scan.refBearing)) as T;
+}
+
+/** What one traversal of the output tells the walker. */
+interface ContainerScan {
+  /** Containers from which a {@link CacheRef} is reachable. */
+  readonly refBearing: WeakSet<object>;
+  /** Whether any ref is reachable at all — lets `resolveOutput` preserve identity. */
+  readonly hasRef: boolean;
+  /** Whether a back-edge exists, which disables resolution memoization. */
+  readonly hasCycle: boolean;
+}
+
+/** Children the walker would descend into, in walk order. */
+function childrenOf(value: object): readonly unknown[] {
+  if (Array.isArray(value)) return value;
+  if (value instanceof Map) return Array.from(value.values());
+  if (value instanceof Set) return Array.from(value);
+  return Object.values(value as Record<string, unknown>);
 }
 
 /**
- * Depth-first cycle probe over the same container vocabulary as the walker
- * (plain objects, Array, Map, Set; leaves are opaque). Gray/black coloring:
- * an object seen again while still on the current path is a back-edge.
- */
-function containsCycle(
-  value: unknown,
-  gray: WeakSet<object> = new WeakSet(),
-  black: WeakSet<object> = new WeakSet()
-): boolean {
-  if (value === null || typeof value !== "object" || isLeaf(value)) return false;
-  const obj = value as object;
-  if (black.has(obj)) return false;
-  if (gray.has(obj)) return true;
-  gray.add(obj);
-  const children: Iterable<unknown> = Array.isArray(value)
-    ? value
-    : value instanceof Map
-      ? value.values()
-      : value instanceof Set
-        ? value
-        : Object.values(value);
-  for (const child of children) {
-    if (containsCycle(child, gray, black)) return true;
-  }
-  gray.delete(obj);
-  black.add(obj);
-  return false;
-}
-
-/**
- * Cheap pre-scan: returns `true` if any {@link CacheRef} is reachable inside
- * `value`. Lets `resolveOutput` short-circuit and preserve identity when
- * nothing needs resolving.
+ * Single iterative pass over the walker's container vocabulary (plain objects,
+ * Array, Map, Set; leaves are opaque) answering everything the walk needs to
+ * know up front: which containers hold a reachable {@link CacheRef}, whether
+ * any ref exists at all, and whether the graph has a back-edge.
  *
- * `visited` short-circuits cyclic and shared-subtree structures: revisiting an
- * already-seen object answers `false` instead of recursing forever. The
- * pre-scan is a containment check, so reporting `false` on a revisit is safe —
- * if a ref were reachable through that subtree, the FIRST visit would have
- * found it.
+ * One pass, not three: a per-container `hasRef` probe inside the walk re-scanned
+ * each node's whole subtree, making resolution O(n·depth). It is iterative for
+ * the same reason — a deeply nested model output (thousands of levels) blew the
+ * stack in the recursive probe, surfacing as a `RangeError` from cache
+ * resolution rather than a cache miss.
+ *
+ * Cycles keep the pre-existing approximation: a container reached again while
+ * still on the current path contributes nothing to its parent's answer. A ref
+ * reachable ONLY through a back-edge can therefore go unnoticed, which is
+ * consistent with the walker returning cycles by reference, unrewritten.
  */
-function hasRef(value: unknown, visited: WeakSet<object>): boolean {
-  if (isCacheRef(value)) return true;
-  if (value === null || value === undefined) return false;
-  if (isLeaf(value)) return false;
-  if (typeof value === "object") {
-    if (visited.has(value as object)) return false;
-    visited.add(value as object);
+function scanContainers(root: unknown): ContainerScan {
+  const refBearing = new WeakSet<object>();
+  if (root === null || typeof root !== "object" || isLeaf(root)) {
+    return { refBearing, hasRef: false, hasCycle: false };
   }
-  if (Array.isArray(value)) {
-    for (const v of value) {
-      if (hasRef(v, visited)) return true;
+  const done = new WeakSet<object>();
+  const onPath = new WeakSet<object>();
+  let hasCycle = false;
+
+  type Frame = { readonly node: object; readonly children: readonly unknown[]; index: number };
+  const stack: Frame[] = [{ node: root, children: childrenOf(root), index: 0 }];
+  onPath.add(root);
+
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1]!;
+    if (frame.index >= frame.children.length) {
+      stack.pop();
+      onPath.delete(frame.node);
+      done.add(frame.node);
+      const parent = stack[stack.length - 1];
+      if (parent !== undefined && refBearing.has(frame.node)) refBearing.add(parent.node);
+      continue;
     }
-    return false;
-  }
-  if (value instanceof Map) {
-    for (const v of value.values()) {
-      if (hasRef(v, visited)) return true;
+    const child = frame.children[frame.index++];
+    if (isCacheRef(child)) {
+      refBearing.add(frame.node);
+      continue;
     }
-    return false;
-  }
-  if (value instanceof Set) {
-    for (const v of value) {
-      if (hasRef(v, visited)) return true;
+    if (child === null || typeof child !== "object" || isLeaf(child)) continue;
+    const obj = child as object;
+    if (onPath.has(obj)) {
+      hasCycle = true;
+      continue;
     }
-    return false;
-  }
-  if (typeof value === "object") {
-    const source = value as Record<string, unknown>;
-    for (const k of Object.keys(source)) {
-      if (hasRef(source[k], visited)) return true;
+    if (done.has(obj)) {
+      // Shared subtree: its answer is already final, so reuse it.
+      if (refBearing.has(obj)) refBearing.add(frame.node);
+      continue;
     }
-    return false;
+    onPath.add(obj);
+    stack.push({ node: obj, children: childrenOf(obj), index: 0 });
   }
-  return false;
+
+  return { refBearing, hasRef: refBearing.has(root), hasCycle };
 }
 
 async function walk(
@@ -207,7 +216,8 @@ async function walk(
   resolver: CacheRefResolver,
   limit: Limiter,
   visited: WeakSet<object>,
-  memo: WeakMap<object, Promise<unknown>> | undefined
+  memo: WeakMap<object, Promise<unknown>> | undefined,
+  refBearing: WeakSet<object>
 ): Promise<unknown> {
   if (isCacheRef(value)) {
     return limit.run(() => resolver(value));
@@ -226,14 +236,16 @@ async function walk(
     // topology, including any unresolved refs the cycle contains.
     return value;
   }
-  if (!hasRef(value, new WeakSet())) return value;
+  // Answered by the single up-front scan; probing the subtree here made
+  // resolution O(n·depth) and recursed once per level.
+  if (!refBearing.has(obj)) return value;
   if (memo) {
-    const promise = walkContainer(value, resolver, limit, visited, memo);
+    const promise = walkContainer(value, resolver, limit, visited, memo, refBearing);
     memo.set(obj, promise);
     return promise;
   }
   visited.add(obj);
-  return walkContainer(value, resolver, limit, visited, memo);
+  return walkContainer(value, resolver, limit, visited, memo, refBearing);
 }
 
 async function walkContainer(
@@ -241,16 +253,19 @@ async function walkContainer(
   resolver: CacheRefResolver,
   limit: Limiter,
   visited: WeakSet<object>,
-  memo: WeakMap<object, Promise<unknown>> | undefined
+  memo: WeakMap<object, Promise<unknown>> | undefined,
+  refBearing: WeakSet<object>
 ): Promise<unknown> {
   if (Array.isArray(value)) {
-    return Promise.all(value.map((v) => walk(v, resolver, limit, visited, memo)));
+    return Promise.all(value.map((v) => walk(v, resolver, limit, visited, memo, refBearing)));
   }
   if (value instanceof Map) {
     const out = new Map();
     const entries = Array.from(value.entries());
     const resolved = await Promise.all(
-      entries.map(async ([k, v]) => [k, await walk(v, resolver, limit, visited, memo)] as const)
+      entries.map(
+        async ([k, v]) => [k, await walk(v, resolver, limit, visited, memo, refBearing)] as const
+      )
     );
     for (const [k, v] of resolved) out.set(k, v);
     return out;
@@ -258,7 +273,7 @@ async function walkContainer(
   if (value instanceof Set) {
     const out = new Set();
     const resolved = await Promise.all(
-      Array.from(value).map((v) => walk(v, resolver, limit, visited, memo))
+      Array.from(value).map((v) => walk(v, resolver, limit, visited, memo, refBearing))
     );
     for (const v of resolved) out.add(v);
     return out;
@@ -273,7 +288,7 @@ async function walkContainer(
     // matches the input even though resolutions race.
     const keys = Object.keys(source);
     const resolvedValues = await Promise.all(
-      keys.map((k) => walk(source[k], resolver, limit, visited, memo))
+      keys.map((k) => walk(source[k], resolver, limit, visited, memo, refBearing))
     );
     for (let i = 0; i < keys.length; i++) out[keys[i]!] = resolvedValues[i];
     return out;

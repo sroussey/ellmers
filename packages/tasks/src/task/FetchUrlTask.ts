@@ -187,7 +187,10 @@ async function fetchWithProgress(
           while (true) {
             if (options.signal?.aborted) {
               controller.error(createFetchUrlAbortedError());
-              reader.cancel();
+              // Cancelling rejects when the source stream is already errored;
+              // the consumer sees the abort through `controller.error` above,
+              // so an unhandled rejection here would only crash the process.
+              void reader.cancel().catch(() => {});
               return;
             }
 
@@ -209,7 +212,7 @@ async function fetchWithProgress(
       push();
     },
     cancel() {
-      reader.cancel();
+      void reader.cancel().catch(() => {});
     },
   });
 

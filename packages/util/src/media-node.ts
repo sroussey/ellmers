@@ -81,7 +81,6 @@ export type {
 } from "./media/sharpImage.server";
 export type { ApplyParams, WebGpuImage } from "./media/webGpuImage.browser";
 
-import { _resetFilterRegistryForTests } from "./media/filterRegistry";
 import { registerGpuImageFactory as _registerGpuImageFactory } from "./media/gpuImage";
 import type { ImageValue as _ImageValue } from "./media/imageValue";
 import { SharpImage as _SharpImage } from "./media/sharpImage.server";
@@ -90,10 +89,12 @@ import { resetTexturePoolForTests } from "./media/texturePool.browser";
 _registerGpuImageFactory("from", (value: _ImageValue) => _SharpImage.from(value));
 
 /**
- * @internal Symbols exported only for use by `@workglow/test`. Not part of the stable public API.
+ * @internal Plumbing for the `@workglow/util/test` entry, which is the documented
+ * surface. It must be reachable from this bundle so both entries share one module
+ * instance — a separate bundle would get its own copy of the registries these
+ * reset. Do not import this directly; import `@workglow/util/test`.
  */
-export const _testOnly = {
-  _resetFilterRegistryForTests,
+export const _utilMediaInternal = {
   resetGpuDeviceForTests: (): void => {},
   resetTexturePoolForTests,
 } as const;

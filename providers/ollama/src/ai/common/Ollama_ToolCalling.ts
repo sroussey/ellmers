@@ -12,6 +12,7 @@ import type {
   ToolDefinition,
   Usage,
 } from "@workglow/ai";
+import { createEstimatedOutputUsageReporter } from "@workglow/ai/provider-utils";
 import { buildToolDescription, filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
 import { parsePartialJson } from "@workglow/util/worker";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
@@ -47,6 +48,14 @@ export function createOllamaToolCallingStream(
 
     const tools = input.toolChoice === "none" ? undefined : mapOllamaTools(input.tools);
 
+    const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+    provisionalUsage.onPrompt(
+      messages
+        .map((m) => m.content)
+        .filter(Boolean)
+        .join("\n")
+    );
+
     const stream = await client.chat({
       model: modelName,
       messages,
@@ -69,6 +78,7 @@ export function createOllamaToolCallingStream(
         usage = mapOllamaUsage(chunk) ?? usage;
         const delta = chunk.message.content;
         if (delta) {
+          provisionalUsage.onText(delta);
           emit({ type: "text-delta", port: "text", textDelta: delta });
         }
 
@@ -85,8 +95,10 @@ export function createOllamaToolCallingStream(
                 const partial = parsePartialJson(fnArgs);
                 parsedInput = (partial as Record<string, unknown>) ?? {};
               }
+              provisionalUsage.onText(fnArgs);
             } else if (fnArgs != null) {
               parsedInput = fnArgs as Record<string, unknown>;
+              provisionalUsage.onText(JSON.stringify(fnArgs));
             }
             parsed.push({
               id: `call_${callIndex++}`,
@@ -104,6 +116,7 @@ export function createOllamaToolCallingStream(
         }
       }
 
+      provisionalUsage.flush();
       // Static default scaffold only — the run-fn does not accumulate. The
       // consumer's accumulated deltas take precedence; this supplies the
       // required output ports when the model streamed neither text nor calls.

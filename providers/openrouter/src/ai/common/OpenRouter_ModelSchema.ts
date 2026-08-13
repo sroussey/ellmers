@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { WithModelPricing } from "@workglow/ai/worker";
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
 import type { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
 import { OPENROUTER } from "./OpenRouter_Constants";
@@ -60,7 +61,10 @@ export const OpenRouterModelSchema = {
           type: "object",
           description: "Reasoning configuration (serialized to the request 'reasoning' field).",
           properties: {
-            effort: { type: "string", enum: ["low", "medium", "high"] },
+            effort: {
+              type: "string",
+              enum: ["none", "low", "medium", "high", "xhigh", "max"],
+            },
             max_tokens: { type: "number" },
             exclude: { type: "boolean" },
           },
@@ -112,7 +116,9 @@ export const OpenRouterModelRecordSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type OpenRouterModelRecord = FromSchema<typeof OpenRouterModelRecordSchema>;
+export type OpenRouterModelRecord = WithModelPricing<
+  FromSchema<typeof OpenRouterModelRecordSchema>
+>;
 
 export const OpenRouterModelConfigSchema = {
   type: "object",
@@ -124,4 +130,6 @@ export const OpenRouterModelConfigSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type OpenRouterModelConfig = FromSchema<typeof OpenRouterModelConfigSchema>;
+export type OpenRouterModelConfig = WithModelPricing<
+  FromSchema<typeof OpenRouterModelConfigSchema>
+>;

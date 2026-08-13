@@ -1,4 +1,7 @@
 {
+  // No `references`: with `use-source` stubs, project-reference redirect turns
+  // `dist/*.d.ts` → `src` and makes stub `export * from "../src/browser"` a
+  // self-import, so every `@workglow/*` export appears missing.
   "compilerOptions": {
     "target": "ESNext",
     "useDefineForClassFields": true,
@@ -20,17 +23,5 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
-  "exclude": ["dist"],
-  "references": [
-    { "path": "../../packages/util" },
-    { "path": "../../packages/storage" },
-    { "path": "../../packages/job-queue" },
-    { "path": "../../packages/task-graph" },
-    { "path": "../../packages/knowledge-base" },
-    { "path": "../../packages/tasks" },
-    { "path": "../../packages/ai" },
-    { "path": "../../packages/indexeddb" },
-    { "path": "../../providers/huggingface-transformers" },
-    { "path": "../../providers/tf-mediapipe" }
-  ]
+  "exclude": ["dist"]
 }

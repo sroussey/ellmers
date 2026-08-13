@@ -10,6 +10,7 @@ import type {
   TextGenerationTaskOutput,
   Usage,
 } from "@workglow/ai";
+import { createEstimatedOutputUsageReporter } from "@workglow/ai/provider-utils";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getOllamaModelName } from "./Ollama_ModelUtil";
 import { mapOllamaUsage } from "./Ollama_Usage";
@@ -47,6 +48,11 @@ export function createOllamaTextGenerationStream(
         ]
       : [{ role: "user", content: input.prompt }];
 
+    // Ollama only reports counts on the terminal `done: true` chunk; estimate ↑
+    // before the request and ↓ from deltas so the CLI counter moves during the call.
+    const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+    provisionalUsage.onPrompt(messages.map((m) => m.content).filter(Boolean).join("\n"));
+
     const stream = await client.chat({
       model: modelName,
       messages,
@@ -70,9 +76,11 @@ export function createOllamaTextGenerationStream(
         usage = mapOllamaUsage(chunk) ?? usage;
         const delta = chunk.message.content;
         if (delta) {
+          provisionalUsage.onText(delta);
           emit({ type: "text-delta", port: "text", textDelta: delta });
         }
       }
+      provisionalUsage.flush();
       emit({ type: "finish", data: {} as TextGenerationTaskOutput, usage });
     } finally {
       signal?.removeEventListener("abort", onAbort);

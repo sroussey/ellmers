@@ -5,7 +5,7 @@
  */
 
 import type { Usage } from "@workglow/ai";
-import { mapOpenAIChatUsage, toUsageCount, usageExtra } from "@workglow/ai/provider-utils";
+import { mapOpenAIChatUsage, toUsageCount } from "@workglow/ai/provider-utils";
 
 interface DeepSeekUsagePayload {
   readonly prompt_cache_hit_tokens?: unknown;
@@ -17,11 +17,11 @@ interface DeepSeekUsagePayload {
  *
  * DeepSeek is OpenAI-shaped but splits the prompt across two counters of its
  * own: `prompt_cache_hit_tokens` (billed at the cache-hit rate) and
- * `prompt_cache_miss_tokens`. The hit count is the provider's cache-read figure,
- * so it fills `cached` — including when the API omits the OpenAI-standard
- * `prompt_tokens_details.cached_tokens`. The miss count has no normalized slot
- * and is carried in `extra`, where it is what makes DeepSeek's cache-miss-priced
- * cost reconstructable.
+ * `prompt_cache_miss_tokens`. Both map to normalized slots directly — the hit
+ * count is `cached`, and the miss count IS the disjoint base-rate `input`, so it
+ * is preferred over deriving `input` by subtraction from `prompt_tokens`. The
+ * hit count also fills `cached` when the API omits the OpenAI-standard
+ * `prompt_tokens_details.cached_tokens`.
  */
 export function mapDeepSeekUsage(raw: unknown): Usage | undefined {
   const base = mapOpenAIChatUsage(raw);
@@ -33,7 +33,7 @@ export function mapDeepSeekUsage(raw: unknown): Usage | undefined {
 
   return {
     ...base,
+    input: cacheMiss ?? base.input,
     cached: base.cached ?? cacheHit,
-    extra: usageExtra({ promptCacheMissTokens: cacheMiss }),
   };
 }

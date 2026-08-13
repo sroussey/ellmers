@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { WithModelPricing } from "@workglow/ai/worker";
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
 import type { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
 import { OLLAMA, OLLAMA_DEFAULT_BASE_URL } from "./Ollama_Constants";
@@ -47,7 +48,7 @@ export const OllamaModelRecordSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type OllamaModelRecord = FromSchema<typeof OllamaModelRecordSchema>;
+export type OllamaModelRecord = WithModelPricing<FromSchema<typeof OllamaModelRecordSchema>>;
 
 export const OllamaModelConfigSchema = {
   type: "object",
@@ -59,4 +60,4 @@ export const OllamaModelConfigSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type OllamaModelConfig = FromSchema<typeof OllamaModelConfigSchema>;
+export type OllamaModelConfig = WithModelPricing<FromSchema<typeof OllamaModelConfigSchema>>;

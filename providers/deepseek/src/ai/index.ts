@@ -24,6 +24,7 @@ export {
 export * from "./registerDeepSeek";
 
 import { DEEPSEEK_RUN_FN_SPECS } from "./common/DeepSeek_Capabilities";
+import { _testOnly as clientTestOnly } from "./common/DeepSeek_Client";
 import { DEEPSEEK_RUN_FNS } from "./common/DeepSeek_JobRunFns";
 import { mapDeepSeekUsage } from "./common/DeepSeek_Usage";
 import { DeepSeekQueuedProvider } from "./DeepSeekQueuedProvider";
@@ -36,4 +37,5 @@ export const _testOnly = {
   DEEPSEEK_RUN_FN_SPECS,
   DEEPSEEK_RUN_FNS,
   mapDeepSeekUsage,
+  setDeepSeekClientForTests: clientTestOnly.setDeepSeekClientForTests,
 } as const;

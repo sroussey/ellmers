@@ -6,8 +6,8 @@
 
 import type { Command } from "commander";
 import type { EvalKind } from "../models";
-import { aggregateResults } from "../report/aggregate";
-import type { EvalStores } from "../storage";
+import { aggregateResults, sumUsageColumns } from "../report/aggregate";
+import type { EvalResultRecord, EvalStores } from "../storage";
 import { formatError, formatMetric, formatTable } from "../util";
 
 /** Render the report for one stored run to stdout (table or json). */
@@ -46,22 +46,55 @@ export async function printReport(
 
   console.log(`run ${run.run_id} — ${run.kind} on ${run.dataset} [${run.split}]`);
   const REPORT_COLUMNS: Record<EvalKind, string[]> = {
-    classify: ["model", "rows", "ok", "accuracy", "avg_ms"],
-    similarity: ["model", "rows", "ok", "pearson", "spearman", "avg_ms"],
-    extract: ["model", "rows", "ok", "score", "found", "prec", "avg_ms"],
+    classify: ["model", "rows", "ok", "accuracy", "avg_ms", "tokens", "cached", "cost"],
+    similarity: [
+      "model",
+      "rows",
+      "ok",
+      "pearson",
+      "spearman",
+      "avg_ms",
+      "tokens",
+      "cached",
+      "cost",
+    ],
+    extract: [
+      "model",
+      "rows",
+      "ok",
+      "score",
+      "found",
+      "prec",
+      "avg_ms",
+      "tokens",
+      "cached",
+      "cost",
+    ],
   };
-  const tableRows = reports.map((r) => ({
-    model: r.model,
-    rows: String(r.rows),
-    ok: String(r.okRows),
-    accuracy: formatMetric(r.accuracy),
-    pearson: formatMetric(r.pearson),
-    spearman: formatMetric(r.spearman),
-    score: formatMetric(r.score),
-    found: formatMetric(r.found),
-    prec: formatMetric(r.prec),
-    avg_ms: formatMetric(r.avgLatencyMs, 0),
-  }));
+  const resultsByModel = new Map<string, EvalResultRecord[]>();
+  for (const result of results) {
+    const list = resultsByModel.get(result.model) ?? [];
+    list.push(result);
+    resultsByModel.set(result.model, list);
+  }
+  const tableRows = reports.map((r) => {
+    const totals = sumUsageColumns(resultsByModel.get(r.model) ?? []);
+    return {
+      model: r.model,
+      rows: String(r.rows),
+      ok: String(r.okRows),
+      accuracy: formatMetric(r.accuracy),
+      pearson: formatMetric(r.pearson),
+      spearman: formatMetric(r.spearman),
+      score: formatMetric(r.score),
+      found: formatMetric(r.found),
+      prec: formatMetric(r.prec),
+      avg_ms: formatMetric(r.avgLatencyMs, 0),
+      tokens: `${totals.inputTokens ?? "-"}/${totals.outputTokens ?? "-"}`,
+      cached: String(totals.cachedTokens ?? "-"),
+      cost: totals.cost === undefined ? "-" : `$${totals.cost.toFixed(4)}`,
+    };
+  });
   console.log(formatTable(tableRows, REPORT_COLUMNS[kind]));
 
   const failures = results.filter((r) => r.ok !== 1);

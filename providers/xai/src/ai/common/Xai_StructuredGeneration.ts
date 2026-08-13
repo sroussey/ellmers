@@ -11,6 +11,7 @@ import type {
   Usage,
 } from "@workglow/ai";
 import {
+  createEstimatedOutputUsageReporter,
   isStrictCompatibleSchema,
   mapOpenAIChatUsage,
   OPENAI_STREAM_USAGE_OPTIONS,
@@ -34,6 +35,13 @@ export const Xai_StructuredGeneration_Stream: AiProviderRunFn<
   const modelName = getModelName(model);
 
   const schema = input.outputSchema ?? outputSchema;
+
+  // xAI only attaches billed usage to the final empty-choices chunk, so without
+  // a provisional estimate the CLI row stays on a static "Preparing" for the
+  // whole TTFB wait. Emit ↑ before the request so it appears during connect;
+  // finish.usage below still carries the provider total.
+  const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+  provisionalUsage.onPrompt(input.prompt);
 
   const stream = await client.chat.completions.create(
     {
@@ -62,6 +70,7 @@ export const Xai_StructuredGeneration_Stream: AiProviderRunFn<
     usage = mapOpenAIChatUsage(chunk.usage) ?? usage;
     const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
+      provisionalUsage.onText(delta);
       const partial = json.push(delta);
       if (partial !== undefined) {
         emit({ type: "object-delta", port: "object", objectDelta: partial });
@@ -69,6 +78,7 @@ export const Xai_StructuredGeneration_Stream: AiProviderRunFn<
     }
     refusal += chunk.choices?.[0]?.delta?.refusal ?? "";
   }
+  provisionalUsage.flush();
 
   if (refusal) {
     emit({ type: "refusal", refusal });
@@ -76,7 +86,7 @@ export const Xai_StructuredGeneration_Stream: AiProviderRunFn<
 
   emit({
     type: "finish",
-    data: { object: json.finish() } as StructuredGenerationTaskOutput,
+    data: { object: json.finishObject() } as StructuredGenerationTaskOutput,
     usage,
   });
 };

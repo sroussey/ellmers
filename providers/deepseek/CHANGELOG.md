@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.3.39
+
+### Features
+
+- enhance model existence verification in AI provider streams
+- enhance provisional usage reporting in AI provider streams
+
+#### models
+
+- update pricing and add new model for DeepSeek
+
+#### deepseek
+
+- map model.effort to reasoning_allowance
+
+### Bug Fixes
+
+#### ai
+
+- require explicit ModelPricing rates and make the type assertion enforceable
+
+#### deepseek
+
+- map the stated cache-miss count to disjoint input
+
+#### util
+
+- last complete object wins when skipping JSON preamble (#718)
+
+### Performance
+
+#### util
+
+- add an incremental partial-JSON stream parser (#681)
+
+### Chores
+
+#### eslint
+
+- enforce consistent-type-imports and apply the repo-wide autofix (#683)
+
 ## 0.3.38
 
 ## 0.3.37

@@ -5,8 +5,8 @@
  */
 
 import { RunPrivateCacheRepo } from "@workglow/task-graph";
+import { RunPrivateInMemoryTaskOutputRepository } from "@workglow/task-graph/test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { RunPrivateInMemoryTaskOutputRepository } from "../../binding/RunPrivateInMemoryTaskOutputRepository";
 
 describe("RunPrivateCacheRepo", () => {
   let backing: RunPrivateInMemoryTaskOutputRepository;

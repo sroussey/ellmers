@@ -4,7 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFn, TextRewriterTaskInput, TextRewriterTaskOutput } from "@workglow/ai";
+import type {
+  AiProviderRunFn,
+  TextRewriterTaskInput,
+  TextRewriterTaskOutput,
+  Usage,
+} from "@workglow/ai";
+import {
+  createEstimatedOutputUsageReporter,
+  mapOpenAIChatUsage,
+} from "@workglow/ai/provider-utils";
 import { getClient, getModelName, getProvider } from "./HFI_Client";
 import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 
@@ -16,6 +25,11 @@ export const HFI_TextRewriter_Stream: AiProviderRunFn<
   const client = await getClient(model);
   const modelName = getModelName(model);
   const provider = getProvider(model);
+
+  const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+  provisionalUsage.onPrompt(
+    `${typeof input.prompt === "string" ? input.prompt : ""}\n${typeof input.text === "string" ? input.text : ""}`
+  );
 
   const stream = client.chatCompletionStream(
     {
@@ -29,11 +43,20 @@ export const HFI_TextRewriter_Stream: AiProviderRunFn<
     { signal }
   );
 
+  // The usage-bearing chunk arrives last with an empty `choices` array, so it
+  // is read before the delta guard below rather than inside it. Whether it
+  // arrives at all is up to the third-party provider the request is routed to;
+  // when it does not, `usage` stays undefined and the estimate above remains
+  // the only feedback.
+  let usage: Usage | undefined;
   for await (const chunk of stream) {
+    usage = mapOpenAIChatUsage((chunk as { usage?: unknown }).usage) ?? usage;
     const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
+      provisionalUsage.onText(delta);
       emit({ type: "text-delta", port: "text", textDelta: delta });
     }
   }
-  emit({ type: "finish", data: {} as TextRewriterTaskOutput });
+  provisionalUsage.flush();
+  emit({ type: "finish", data: {} as TextRewriterTaskOutput, usage });
 };

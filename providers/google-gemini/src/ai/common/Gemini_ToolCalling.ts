@@ -11,6 +11,7 @@ import type {
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
 } from "@workglow/ai";
+import { createUsageSnapshotEmitter } from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
 import {
   buildGeminiFunctionDeclarations,
@@ -236,9 +237,11 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
   let callIndex = 0;
   let refusalCategory: string | undefined;
   let lastUsageMetadata: unknown;
+  const snapshotUsage = createUsageSnapshotEmitter(emit);
 
   for await (const chunk of result) {
     lastUsageMetadata = chunk.usageMetadata ?? lastUsageMetadata;
+    snapshotUsage(mapGeminiUsage(lastUsageMetadata));
     refusalCategory = refusalCategory ?? geminiRefusalCategory(chunk);
     const parts = chunk.candidates?.[0]?.content?.parts ?? [];
     for (const part of parts) {

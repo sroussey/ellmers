@@ -17,6 +17,7 @@ import { pickRenderer } from "./rows/pickRenderer";
 import { StreamingTextRow } from "./rows/StreamingTextRow";
 import type { CliTaskLine, IterationSlotRow } from "./taskGraphCliSubscriptions";
 import { subscribeTaskGraphForCli } from "./taskGraphCliSubscriptions";
+import { useGraphUsageLine } from "./useGraphUsageLine";
 
 interface WorkflowRunAppProps {
   readonly graph: TaskGraph;
@@ -44,6 +45,7 @@ export function WorkflowRunApp({
   const [taskInfos, setTaskInfos] = useState<Map<string, CliTaskLine>>(new Map());
   const [overallProgress, setOverallProgress] = useState<number | undefined>(undefined);
   const [iterationSlots, setIterationSlots] = useState<Map<string, IterationSlotRow[]>>(new Map());
+  const runUsageLine = useGraphUsageLine(graph);
   useEffect(() => {
     const unsub = subscribeTaskGraphForCli(
       graph,
@@ -52,6 +54,7 @@ export function WorkflowRunApp({
       setOverallProgress,
       setIterationSlots
     );
+
     const stopPoll = startGraphTaskPoll(graph, setTaskInfos);
 
     const runPromise = runExecutor ? runExecutor() : graph.run(input, config);
@@ -98,6 +101,7 @@ export function WorkflowRunApp({
               />
             );
           })}
+          {runUsageLine ? <Text>{`Tokens ${runUsageLine}`}</Text> : null}
         </Box>
       </Box>
     </HumanInteractionHost>

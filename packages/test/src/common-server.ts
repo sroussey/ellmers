@@ -8,12 +8,9 @@
 
 export * from "./common";
 
-export * from "./binding/FsFolderTaskGraphRepository";
 export * from "./binding/IndexedDbTaskGraphRepository";
-export * from "./binding/PostgresTaskGraphRepository";
 export * from "./binding/SqliteTaskGraphRepository";
 
-export * from "./binding/FsFolderTaskOutputRepository";
+// FsFolderTaskOutputRepository is public API of `@workglow/task-graph`.
 export * from "./binding/IndexedDbTaskOutputRepository";
-export * from "./binding/PostgresTaskOutputRepository";
 export * from "./binding/SqliteTaskOutputRepository";

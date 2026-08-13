@@ -10,7 +10,10 @@ import type {
   TextSummaryTaskOutput,
   Usage,
 } from "@workglow/ai";
-import { OPENAI_STREAM_USAGE_OPTIONS } from "@workglow/ai/provider-utils";
+import {
+  createEstimatedOutputUsageReporter,
+  OPENAI_STREAM_USAGE_OPTIONS,
+} from "@workglow/ai/provider-utils";
 import { getClient, getModelName } from "./OpenRouter_Client";
 import type { OpenRouterModelConfig } from "./OpenRouter_ModelSchema";
 import { buildOpenRouterExtras } from "./OpenRouter_RequestParams";
@@ -24,6 +27,11 @@ export const OpenRouter_TextSummary_Stream: AiProviderRunFn<
 > = async (input, model, signal, emit) => {
   const client = await getClient(model);
   const modelName = getModelName(model);
+
+  const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+  provisionalUsage.onPrompt(
+    `Summarize the following text concisely.\n${typeof input.text === "string" ? input.text : ""}`
+  );
 
   const stream = await client.chat.completions.create(
     {
@@ -44,6 +52,7 @@ export const OpenRouter_TextSummary_Stream: AiProviderRunFn<
     usage = mapOpenRouterUsage(chunk.usage) ?? usage;
     const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
+      provisionalUsage.onText(delta);
       emit({ type: "text-delta", port: "text", textDelta: delta });
     }
     const refusalDelta = chunk.choices?.[0]?.delta?.refusal ?? "";
@@ -51,5 +60,6 @@ export const OpenRouter_TextSummary_Stream: AiProviderRunFn<
       emit({ type: "refusal", refusal: refusalDelta });
     }
   }
+  provisionalUsage.flush();
   emit({ type: "finish", data: {} as TextSummaryTaskOutput, usage });
 };

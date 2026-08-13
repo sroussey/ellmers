@@ -11,6 +11,7 @@ import type {
   Usage,
 } from "@workglow/ai";
 import {
+  createEstimatedOutputUsageReporter,
   localOnlyFetch,
   mapOpenAIChatUsage,
   OPENAI_STREAM_USAGE_OPTIONS,
@@ -43,6 +44,11 @@ export function createLlamaCppServerTextRewriterStream(
     });
     const { baseUrl, release } = await acquire(model, opts);
     try {
+      const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+      provisionalUsage.onPrompt(
+        `${typeof input.prompt === "string" ? input.prompt : ""}\n${typeof input.text === "string" ? input.text : ""}`
+      );
+
       const response = await localOnlyFetch(
         buildServerUrl(baseUrl, "/v1/chat/completions"),
         {
@@ -64,9 +70,11 @@ export function createLlamaCppServerTextRewriterStream(
         if (delta.done) break;
         usage = mapOpenAIChatUsage(delta.usage) ?? usage;
         if (delta.contentDelta) {
+          provisionalUsage.onText(delta.contentDelta);
           emit({ type: "text-delta", port: "text", textDelta: delta.contentDelta });
         }
       }
+      provisionalUsage.flush();
       emit({ type: "finish", data: {} as TextRewriterTaskOutput, usage });
     } finally {
       await release();

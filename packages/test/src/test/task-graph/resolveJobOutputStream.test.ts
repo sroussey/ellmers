@@ -8,9 +8,9 @@ import {
   makeJobOutputStreamResolver,
   resolveJobOutputStream,
 } from "@workglow/task-graph";
+import { StreamingMemoryRepo } from "@workglow/task-graph/test";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
-import { StreamingMemoryRepo } from "../../binding/StreamingMemoryRepo";
 
 const schemaWithStreaming = (mode: "binary" | "append" | "object", port = "audio") =>
   ({

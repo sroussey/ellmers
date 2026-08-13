@@ -92,5 +92,5 @@ export const TFMP_StructuredGeneration: AiProviderRunFn<
     });
   });
 
-  emit({ type: "finish", data: { object: json.finish() } as StructuredGenerationTaskOutput });
+  emit({ type: "finish", data: { object: json.finishObject() } as StructuredGenerationTaskOutput });
 };

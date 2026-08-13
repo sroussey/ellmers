@@ -8,7 +8,12 @@ import type {
   AiProviderRunFn,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
+  Usage,
 } from "@workglow/ai";
+import {
+  createEstimatedOutputUsageReporter,
+  mapOpenAIChatUsage,
+} from "@workglow/ai/provider-utils";
 import { toOpenAIMessages } from "@workglow/ai/worker";
 import { getClient, getModelName, getProvider } from "./HFI_Client";
 import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
@@ -52,6 +57,16 @@ export const HFI_TextGeneration_Stream: AiProviderRunFn<
     typeof client.chatCompletionStream
   >[0]["messages"];
 
+  // HF Inference rarely reports mid-stream usage; estimate ↑ before the request
+  // and ↓ from deltas so the CLI counter still moves during the call.
+  const provisionalUsage = createEstimatedOutputUsageReporter(emit);
+  provisionalUsage.onPrompt(
+    messages
+      .map((m) => (typeof m.content === "string" ? m.content : ""))
+      .filter(Boolean)
+      .join("\n")
+  );
+
   const stream = client.chatCompletionStream(
     {
       model: modelName,
@@ -65,11 +80,20 @@ export const HFI_TextGeneration_Stream: AiProviderRunFn<
     { signal }
   );
 
+  // The usage-bearing chunk arrives last with an empty `choices` array, so it
+  // is read before the delta guard below rather than inside it. Whether it
+  // arrives at all is up to the third-party provider the request is routed to;
+  // when it does not, `usage` stays undefined and the estimate above remains
+  // the only feedback.
+  let usage: Usage | undefined;
   for await (const chunk of stream) {
+    usage = mapOpenAIChatUsage((chunk as { usage?: unknown }).usage) ?? usage;
     const delta = chunk.choices?.[0]?.delta?.content ?? "";
     if (delta) {
+      provisionalUsage.onText(delta);
       emit({ type: "text-delta", port: "text", textDelta: delta });
     }
   }
-  emit({ type: "finish", data: {} as TextGenerationTaskOutput });
+  provisionalUsage.flush();
+  emit({ type: "finish", data: {} as TextGenerationTaskOutput, usage });
 };

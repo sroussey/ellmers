@@ -17,7 +17,9 @@ import { TaskStatusProgressRow } from "./components/TaskStatusProgressRow";
 import { HumanInteractionHost } from "./HumanInteractionHost";
 import { isRedundantSubgraph, SubtaskRows } from "./rows/SubtaskRows";
 import { useSubtaskRows } from "./rows/useSubtaskRows";
+import { useTaskUsageLine } from "./rows/useTaskUsageLine";
 import { cliTaskLabel } from "./taskGraphCliSubscriptions";
+import { useGraphUsageLine } from "./useGraphUsageLine";
 
 interface TaskRunAppProps {
   readonly task: ITask;
@@ -81,7 +83,9 @@ export function TaskRunApp({
   const [downloadFiles, setDownloadFiles] = useState<TaskFileProgressRow[]>([]);
   const [streamText, setStreamText] = useState("");
   const [logs, setLogs] = useState<LogLine[]>([]);
+  const runUsageLine = useGraphUsageLine(task.subGraph);
   const subtasks = useSubtaskRows(task);
+  const usageLine = useTaskUsageLine(task);
 
   const showFileDownloadList = downloadFiles.length > 0;
   /** One header row + optional file list — avoids a pre-files row (default bar width) then a second row after `files` appears. */
@@ -184,6 +188,7 @@ export function TaskRunApp({
             spinnerFrame={batch.spin}
             progressBarWidth={isModelDownloadTask ? DOWNLOAD_PROGRESS_BAR_WIDTH : undefined}
           />
+          {usageLine ? <Text dimColor> {usageLine}</Text> : null}
           {showFileDownloadList && (
             <Box paddingLeft={2} flexDirection="column">
               {downloadFiles.map((f) => (
@@ -210,6 +215,7 @@ export function TaskRunApp({
               variant="chrome"
             />
           )}
+          {runUsageLine ? <Text>{`Tokens ${runUsageLine}`}</Text> : null}
         </Box>
       </Box>
     </HumanInteractionHost>

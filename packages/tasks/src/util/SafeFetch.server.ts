@@ -209,9 +209,19 @@ export const serverSafeFetch: SafeFetchFn = async (url, options) => {
       const body = response.body;
       if (body !== null) {
         const { readable, writable } = new TransformStream();
-        body.pipeTo(writable).finally(() => {
-          closeAgent(dispatcher);
-        });
+        // `.catch` after `.finally` so the dispatcher closes on both paths.
+        // Cancelling the returned readable errors the writable, so `pipeTo`
+        // rejects with the cancel reason — `undefined` for a bare `cancel()` —
+        // and an unhandled rejection exits the process under Node's default
+        // `--unhandled-rejections=throw`. Nothing is lost by swallowing it:
+        // the consumer observes any real pipe error through the readable it
+        // holds.
+        void body
+          .pipeTo(writable)
+          .finally(() => {
+            closeAgent(dispatcher);
+          })
+          .catch(() => {});
         return new Response(readable, {
           status: response.status,
           statusText: response.statusText,

@@ -11,11 +11,12 @@ import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
+import { disposeCheckpoint } from "../provider/CheckpointDisposal";
 import type { CheckpointEntry, CheckpointPrefix } from "../provider/CheckpointRegistry";
 import {
-  deleteCheckpoint,
   registerCheckpoint,
   requireCheckpointModelKey,
+  setCheckpointUsageSink,
 } from "../provider/CheckpointRegistry";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
@@ -161,13 +162,18 @@ export class CacheCheckpointTask extends AiTask<
       provider: providerName,
       modelKey,
       prefix,
+      modelId: model.model_id,
       ...(input.checkpoint ? { parentId: input.checkpoint } : {}),
     });
 
+    // Attribute this checkpoint's eventual storage charge to this task — and
+    // through it to the run total — whoever ends up disposing it: a chained
+    // emit supersedes and disposes it inline, which is not this disposer.
+    setCheckpointUsageSink(id, (usage, modelId) => this.chargeLateUsage(usage, modelId));
+
     if (context.resourceScope) {
       context.resourceScope.register(`ai:session:${id}`, async () => {
-        await registry.disposeSession(providerName, id);
-        deleteCheckpoint(id);
+        await disposeCheckpoint(id, providerName);
       });
     }
 
@@ -196,13 +202,12 @@ export class CacheCheckpointTask extends AiTask<
     if (this._parentId && !input.keepParent) {
       const model = input.model as ModelConfig;
       try {
-        await getAiProviderRegistry().disposeSession(model.provider, this._parentId);
+        await disposeCheckpoint(this._parentId, model.provider);
       } catch {
         // Best-effort: a parent-dispose failure (worker restarted, transport
         // error) must not fail a warm-up that already succeeded. The parent's
         // scope disposer retries at run end and dispose is idempotent.
       }
-      deleteCheckpoint(this._parentId);
     }
 
     // prepareCheckpoint either threw or set the id; a silent empty-string

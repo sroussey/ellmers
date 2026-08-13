@@ -14,9 +14,11 @@
     "./src/media-browser.ts",
     "./src/media-node.ts",
     "./src/compress-browser.ts",
-    "./src/compress-node.ts"
+    "./src/compress-node.ts",
+    "./src/test-browser.ts",
+    "./src/test-node.ts"
   ],
-  "exclude": ["dist", "node_modules"],
+  "exclude": ["dist", "node_modules", "src/**/__tests__/**", "src/**/*.test.ts"],
   "compilerOptions": {
     "composite": true,
     "outDir": "./dist",
