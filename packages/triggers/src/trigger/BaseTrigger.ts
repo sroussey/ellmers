@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { TaskAbortedError } from "@workglow/task-graph";
 import { EventEmitter, getLogger, uuid4 } from "@workglow/util";
 import type {
   ITrigger,
@@ -38,6 +39,23 @@ interface StopDeadline {
   readonly timeoutMs: number;
   readonly expired: Promise<"expired">;
   readonly cancel: () => void;
+}
+
+/**
+ * Whether a rejection is a cancellation rather than a fault.
+ *
+ * The three shapes a stopped tick actually rejects with: the signal's own
+ * `reason` (what `throwIfAborted()` re-throws), the platform `AbortError`
+ * (`DOMException`, and the convention every hand-rolled one here follows), and
+ * {@link TaskAbortedError} — what a `Workflow` run raises when its signal
+ * fires, which is the common case since the workflow bindings are what most
+ * handlers wrap. Anything else is a real failure that happened to land during
+ * shutdown, and is reported.
+ */
+function isAbortShaped(error: unknown, signal: AbortSignal): boolean {
+  if (error !== undefined && error === signal.reason) return true;
+  if (error instanceof TaskAbortedError) return true;
+  return error instanceof Error && error.name === "AbortError";
 }
 
 function assertPositiveInteger(value: number, name: string): number {
@@ -558,7 +576,13 @@ export abstract class BaseTrigger implements ITrigger {
         // orderly shutdown look like a failure — loudly enough that callers
         // install absorbing `error` listeners, which then swallow the real
         // failures too.
-        if (run.signal.aborted) {
+        //
+        // Both halves are required. `run.signal.aborted` alone is a question
+        // about the RUN, not about this error: once `stop()` aborts, a handler
+        // that throws a genuine bug in the same window is indistinguishable
+        // from a cancellation and would be filed at `debug` — the same
+        // swallowing this branch exists to prevent, just relocated.
+        if (run.signal.aborted && isAbortShaped(error, run.signal)) {
           getLogger().debug("Trigger tick aborted during stop", {
             triggerId: this.id,
             kind: this.kind,

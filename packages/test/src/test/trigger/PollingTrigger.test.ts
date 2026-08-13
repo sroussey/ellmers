@@ -600,9 +600,17 @@ describe("PollingTrigger", () => {
         poll: (signal) => {
           observed ??= signal;
           return new Promise<string>((_resolve, reject) => {
-            signal.addEventListener("abort", () => reject(new Error("poll aborted")), {
-              once: true,
-            });
+            // An AbortError, not a plain one: quieting a stopped tick keys on
+            // the error's SHAPE as well as the run's state, so that a genuine
+            // failure during shutdown — a flush or a commit, the work most
+            // likely to fail there — is still reported rather than filed at
+            // debug alongside the cancellations. This is the convention the
+            // rest of the repo already constructs.
+            signal.addEventListener(
+              "abort",
+              () => reject(new DOMException("poll aborted", "AbortError")),
+              { once: true }
+            );
           });
         },
       });

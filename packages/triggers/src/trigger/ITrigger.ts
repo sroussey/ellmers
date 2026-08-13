@@ -61,7 +61,20 @@ export interface ITriggerFireContext {
   readonly payload: unknown;
 }
 
-/** Invoked on every fire. A rejection never stops the trigger loop. */
+/**
+ * Invoked on every fire. A rejection never stops the trigger loop.
+ *
+ * A handler cancelled by {@link ITrigger.stop} should reject with an
+ * `AbortError` (or re-throw `context.signal.reason`, which is what
+ * `throwIfAborted()` does) rather than a plain `Error`. Only those shapes are
+ * recognised as a cancellation and logged at `debug`; anything else is
+ * reported on the `error` event even when a stop is in flight.
+ *
+ * The asymmetry is deliberate. Shutdown is when a handler flushes buffers,
+ * commits and closes connections — the work most likely to fail for real — so
+ * treating every rejection during a stop as graceful would file exactly those
+ * failures at `debug` and report a clean shutdown over the top of them.
+ */
 export type TriggerHandler = (context: ITriggerFireContext) => void | Promise<void>;
 
 export type TriggerEventListeners = {

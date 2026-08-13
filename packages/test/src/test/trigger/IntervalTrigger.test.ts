@@ -680,6 +680,35 @@ describe("IntervalTrigger", () => {
       expect(trigger.running).toBe(false);
     });
 
+    test("a handler that fails for its own reasons DURING stop is still reported", async () => {
+      // The gap the run-state check alone leaves open, and the reason the guard
+      // tests the error's shape as well: shutdown is exactly when a handler
+      // flushes buffers, closes connections and commits — the work most likely
+      // to fail for real. Keying only on `run.signal.aborted` files every one of
+      // those at `debug`, so the trigger reports a clean stop while the flush
+      // that lost data goes unmentioned. The test below covers a failure with no
+      // stop in flight; this one covers a failure racing it.
+      const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+      const errors: Error[] = [];
+      trigger.on("error", (error) => errors.push(error));
+
+      const gate = createGate();
+      trigger.start(async () => {
+        await gate.promise;
+        throw new Error("flush failed");
+      });
+
+      await advanceFakeTimers(PERIOD);
+      const stopping = trigger.stop();
+      // The handler is in flight and the signal is now aborted, so the failure
+      // below lands in precisely the window the guard has to tell apart.
+      gate.open();
+      await stopping;
+
+      expect(errors.map((error) => error.message)).toEqual(["flush failed"]);
+      expect(trigger.running).toBe(false);
+    });
+
     test("a handler that throws for its own reasons is still reported", async () => {
       // The guard above keys on the run's signal, so it must not blanket
       // everything: a real failure before any stop() is still a failure.
