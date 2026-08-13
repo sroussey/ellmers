@@ -193,9 +193,6 @@
     "dist",
     "src/**/*.md"
   ],
-  "sideEffects": [
-    "./dist/auto-bootstrap.js"
-  ],
   "publishConfig": {
     "access": "public"
   },
