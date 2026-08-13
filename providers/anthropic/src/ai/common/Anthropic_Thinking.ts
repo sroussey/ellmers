@@ -5,6 +5,7 @@
  */
 
 import { isModelEffort, type ModelEffort } from "@workglow/ai";
+import { getLogger } from "@workglow/util/worker";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { parseAnthropicModelId } from "./Anthropic_RequestParams";
 
@@ -17,6 +18,13 @@ const EFFORT_TO_BUDGET: Record<ModelEffort, number> = {
   extra: 4096,
   ultra: 8192,
 };
+
+/**
+ * Anthropic rejects `thinking.budget_tokens` below 1024 with a 400. The coarse
+ * `low` effort maps to 512, which is legal headroom on the adaptive path but
+ * not a legal legacy budget.
+ */
+const MIN_LEGACY_THINKING_BUDGET = 1024;
 
 /** Maps coarse effort onto Anthropic adaptive `output_config.effort`. */
 const EFFORT_TO_ADAPTIVE: Record<Exclude<ModelEffort, "none">, string> = {
@@ -102,14 +110,17 @@ export function buildAnthropicThinkingParams(
     };
   }
 
+  const legacyBudget = Math.max(budget, MIN_LEGACY_THINKING_BUDGET);
   return {
-    thinking: { type: "enabled", budget_tokens: budget },
-    max_tokens: padMaxTokens(maxTokens, budget),
+    thinking: { type: "enabled", budget_tokens: legacyBudget },
+    max_tokens: padMaxTokens(maxTokens, legacyBudget),
   };
 }
 
 /**
- * Merges thinking / output_config / padded max_tokens onto an Anthropic request body.
+ * Merges thinking / output_config / padded max_tokens onto an Anthropic request
+ * body. Call this after `tool_choice` is on `params` and before sampling params
+ * — both of the guards below read what has already been built.
  */
 export function applyAnthropicThinkingParams(
   params: Record<string, unknown>,
@@ -117,6 +128,21 @@ export function applyAnthropicThinkingParams(
 ): void {
   if (typeof params.max_tokens !== "number") return;
   const built = buildAnthropicThinkingParams(model, params.max_tokens);
+
+  // Legacy `thinking.type = "enabled"` cannot be combined with a forced tool
+  // choice. `{type:"auto"}` is not forced, and the adaptive path is unaffected.
+  // Testing the built result rather than the model version also covers a
+  // native `provider_config.thinking`.
+  const choice = params.tool_choice as { type?: string } | undefined;
+  const forcedTool = choice?.type === "tool" || choice?.type === "any";
+  if (forcedTool && (built.thinking as { type?: string } | undefined)?.type === "enabled") {
+    getLogger().warn("Anthropic forced tool choice cannot carry extended thinking; skipping it.", {
+      model: (model?.provider_config as AnthropicThinkingProviderConfig | undefined)?.model_name,
+      tool_choice: choice?.type,
+    });
+    return;
+  }
+
   params.max_tokens = built.max_tokens;
   if (built.thinking !== undefined) params.thinking = built.thinking;
   if (built.output_config !== undefined) params.output_config = built.output_config;
