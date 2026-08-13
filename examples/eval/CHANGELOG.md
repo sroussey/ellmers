@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.3.39
+
+### Features
+
+#### models
+
+- update pricing and add new model for DeepSeek
+
+#### eval-example
+
+- record and rank token usage and cost
+
+### Bug Fixes
+
+#### eval
+
+- price the gpt-5.6 family, drop the bogus Anthropic max_tokens
+
+### Tests
+
+- run tests through Turbo and per-package vitest projects
+
+#### eval-example
+
+- cover the token-accounting logic the crux review flagged
+
+### Documentation
+
+#### eval-example
+
+- stop the rate card asserting a provenance it lacks
+
+### Chores
+
+- update CodeMirror dependencies and improve TypeScript configuration
+- upgrade to catalog for many deps and update the deps themselves
+
+### Updated Dependencies
+
+- `commander`: catalog:
+- `hyparquet`: ^1.28.1
+
 ## 0.3.38
 
 ## 0.3.37

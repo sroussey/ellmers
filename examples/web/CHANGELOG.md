@@ -1,5 +1,45 @@
 # @workglow/web
 
+## 0.3.39
+
+### Features
+
+#### web-example
+
+- show the run's cumulative token total
+
+### Bug Fixes
+
+- improve usage tracking
+
+#### task-graph,ai
+
+- route a checkpoint's storage charge into the run total
+
+#### task-graph
+
+- roll usage up by task and by model, not one slice each
+
+### Chores
+
+- untrack examples/web/tsconfig.norefs.tsbuildinfo
+- update deps
+- add Lezer dependencies and update Vite configuration
+- update CodeMirror dependencies and improve TypeScript configuration
+- upgrade to catalog for many deps and update the deps themselves
+- update deps
+
+#### eslint
+
+- enforce consistent-type-imports and apply the repo-wide autofix (#683)
+
+### Updated Dependencies
+
+- `@xyflow/react`: ^12.11.3
+- `react`: catalog:
+- `@types/react`: catalog:
+- `vite`: ^8.2.1
+
 ## 0.3.38
 
 ## 0.3.37

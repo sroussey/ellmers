@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.39
+
+### Bug Fixes
+
+#### ai
+
+- require explicit ModelPricing rates and make the type assertion enforceable
+
+### Tests
+
+- discover test files instead of enumerating sections
+
+### Chores
+
+#### eslint
+
+- enforce consistent-type-imports and apply the repo-wide autofix (#683)
+
 ## 0.3.38
 
 ## 0.3.37

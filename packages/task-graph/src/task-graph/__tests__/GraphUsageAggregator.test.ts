@@ -257,3 +257,58 @@ describe("a throwing retire subscriber", () => {
     expect(seen).toHaveLength(1);
   });
 });
+
+/**
+ * An estimate is display feedback, not accounting. It is worth showing in the
+ * live total while a call is in flight, but folding it into `retired` is what
+ * makes a character-count guess reach `run_usage` and every cost figure derived
+ * from it — indistinguishable, at that point, from a provider-stated number.
+ */
+describe("GraphUsageAggregator and estimated usage", () => {
+  const estimate = (input: number, output: number): Usage => ({
+    ...usage(input, output),
+    estimated: true,
+  });
+
+  it("counts an estimated bucket in the live total", () => {
+    const agg = new GraphUsageAggregator();
+    agg.observe("t1", estimate(30, 2), "m");
+
+    // The whole point of the estimate is the moving ↑↓ counter during a call.
+    expect(agg.total).toEqual(estimate(30, 2));
+  });
+
+  it("drops an estimated bucket on retire instead of accumulating it", () => {
+    const agg = new GraphUsageAggregator();
+    const seen: RetiredUsage[] = [];
+    agg.onRetire((row) => seen.push(row));
+
+    agg.observe("t1", estimate(30, 2), "m");
+    agg.retire("t1");
+
+    expect(agg.total).toBeUndefined();
+    expect(agg.byTask().get("t1")).toBeUndefined();
+    // No retirement row either: `attachUsageRecorder` writes one per retire, so
+    // firing here would persist the guess.
+    expect(seen).toEqual([]);
+  });
+
+  it("keeps a stated bucket for the same task", () => {
+    const agg = new GraphUsageAggregator();
+    agg.observe("t1", estimate(30, 2), "estimating-model");
+    agg.observe("t2", usage(10, 1), "stating-model");
+    agg.sweep();
+
+    // Scope guard: the drop is per row, not per sweep.
+    expect(agg.total).toEqual(usage(10, 1));
+  });
+
+  it("still accepts an estimated late charge through chargeLate", () => {
+    const agg = new GraphUsageAggregator();
+    agg.chargeLate("t1", estimate(5, 0), "m");
+
+    // `chargeLate` is untouched: it is a delta reported by a caller that owns
+    // the decision, not a live bucket this class retires.
+    expect(agg.total?.input).toBe(5);
+  });
+});

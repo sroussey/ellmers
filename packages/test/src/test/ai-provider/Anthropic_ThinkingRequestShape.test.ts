@@ -1,0 +1,164 @@
+/**
+ * @license
+ * Copyright 2026 Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import type { AiProviderRunFn } from "@workglow/ai";
+import { ANTHROPIC, _testOnly } from "@workglow/anthropic/ai";
+import { _testOnly as runtimeTestOnly } from "@workglow/anthropic/ai-runtime";
+import { getLogger } from "@workglow/util";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const { ANTHROPIC_RUN_FNS, setAnthropicClientForTests } = _testOnly;
+
+/**
+ * The three legacy-thinking constraints are enforced across two helpers and the
+ * order in which each run-fn calls them, so unit-testing the helpers alone
+ * cannot prove the request that actually goes on the wire is well formed. This
+ * suite captures the params object handed to the SDK client.
+ */
+function findRunFn(serves: readonly string[]): AiProviderRunFn {
+  const registration = ANTHROPIC_RUN_FNS.find(
+    ({ serves: candidate }) =>
+      (candidate as readonly string[]).length === serves.length &&
+      serves.every((capability) => (candidate as readonly string[]).includes(capability))
+  );
+  expect(registration).toBeDefined();
+  return registration!.runFn as AiProviderRunFn;
+}
+
+/** `claude-haiku-4-5` is on the legacy thinking path AND accepts sampling. */
+const modelConfig = (effort: string, modelName = "claude-haiku-4-5") =>
+  ({
+    model_id: modelName,
+    title: modelName,
+    description: "",
+    provider: ANTHROPIC,
+    effort,
+    provider_config: { model_name: modelName, api_key: "test-key" },
+    capabilities: ["text.generation"],
+    metadata: {},
+  }) as never;
+
+describe("Anthropic legacy thinking request shape", () => {
+  let captured: Record<string, unknown>[];
+
+  beforeEach(() => {
+    captured = [];
+    vi.spyOn(getLogger(), "warn").mockImplementation(() => {});
+    const fakeClient = {
+      messages: {
+        stream: (params: Record<string, unknown>) => {
+          captured.push(params);
+          return {
+            async *[Symbol.asyncIterator]() {
+              // No events: every run-fn tolerates an empty stream and finishes.
+            },
+          };
+        },
+      },
+    };
+    setAnthropicClientForTests(fakeClient);
+    runtimeTestOnly.setAnthropicClientForTests?.(fakeClient);
+  });
+
+  afterEach(() => {
+    setAnthropicClientForTests(undefined);
+    runtimeTestOnly.setAnthropicClientForTests?.(undefined);
+    vi.restoreAllMocks();
+  });
+
+  it("sends a legal budget and no temperature for effort low with temperature pinned", async () => {
+    const runFn = findRunFn(["text.generation"]);
+    const model = modelConfig("low");
+    await runFn(
+      { model, prompt: "hi", temperature: 0 } as never,
+      model,
+      undefined as never,
+      (() => {}) as never
+    );
+
+    expect(captured).toHaveLength(1);
+    const params = captured[0]!;
+    // 512 (the `low` budget) is below Anthropic's 1024 minimum and is a 400.
+    expect(params.thinking).toEqual({ type: "enabled", budget_tokens: 1024 });
+    // Extended thinking rejects sampling parameters even on a model that
+    // otherwise accepts them.
+    expect("temperature" in params).toBe(false);
+    expect("top_p" in params).toBe(false);
+  });
+
+  it("omits thinking entirely on the structured-generation path", async () => {
+    const runFn = findRunFn(["text.generation", "json-mode"]);
+    const model = modelConfig("high");
+    await runFn(
+      { model, prompt: "hi" } as never,
+      model,
+      undefined as never,
+      (() => {}) as never,
+      { type: "object", properties: { a: { type: "string" } } } as never
+    );
+
+    expect(captured).toHaveLength(1);
+    const params = captured[0]!;
+    // Structured generation always forces `tool_choice: {type: "tool"}`, which
+    // cannot carry legacy extended thinking.
+    expect(params.tool_choice).toEqual({ type: "tool", name: "structured_output" });
+    expect("thinking" in params).toBe(false);
+  });
+
+  it("omits thinking on a tool-calling run that forces a tool", async () => {
+    const runFn = findRunFn(["text.generation", "tool-use"]);
+    const model = modelConfig("high");
+    const tools = [{ name: "lookup", description: "Look up", inputSchema: { type: "object" } }];
+    await runFn(
+      { model, prompt: "hi", tools, toolChoice: "required", temperature: 0 } as never,
+      model,
+      undefined as never,
+      (() => {}) as never
+    );
+
+    expect(captured).toHaveLength(1);
+    const params = captured[0]!;
+    expect(params.tool_choice).toEqual({ type: "any" });
+    expect("thinking" in params).toBe(false);
+    // No thinking on the request, so sampling is legal again on this model.
+    expect(params.temperature).toBe(0);
+  });
+
+  it("keeps thinking and drops sampling on an auto tool-calling run", async () => {
+    const runFn = findRunFn(["text.generation", "tool-use"]);
+    const model = modelConfig("high");
+    const tools = [{ name: "lookup", description: "Look up", inputSchema: { type: "object" } }];
+    await runFn(
+      { model, prompt: "hi", tools, toolChoice: "auto", temperature: 0 } as never,
+      model,
+      undefined as never,
+      (() => {}) as never
+    );
+
+    const params = captured[0]!;
+    // `auto` is not a forced choice, so thinking survives — and suppresses
+    // sampling in turn.
+    expect(params.tool_choice).toEqual({ type: "auto" });
+    expect(params.thinking).toEqual({ type: "enabled", budget_tokens: 2048 });
+    expect("temperature" in params).toBe(false);
+  });
+
+  it("leaves an adaptive-thinking model's sampling parameters alone", async () => {
+    const runFn = findRunFn(["text.generation"]);
+    // `claude-sonnet-4-6` is on the adaptive path and still accepts sampling.
+    const model = modelConfig("high", "claude-sonnet-4-6");
+    await runFn(
+      { model, prompt: "hi", temperature: 0.5 } as never,
+      model,
+      undefined as never,
+      (() => {}) as never
+    );
+
+    const params = captured[0]!;
+    expect(params.thinking).toEqual({ type: "adaptive" });
+    expect(params.temperature).toBe(0.5);
+  });
+});

@@ -1,5 +1,34 @@
 # @workglow/job-queue
 
+## 0.3.39
+
+### Bug Fixes
+
+#### test
+
+- close the gaps the Turbo/projects wiring opened
+
+#### job-queue
+
+- retry promptly when an idle peek finds a ready job
+
+### Refactors
+
+#### job-queue
+
+- collapse per-backend queue adapters onto wrapQueueStorage (#684)
+
+### Tests
+
+- run tests through Turbo and per-package vitest projects
+- move 174 more unit tests into their owning packages
+
+### Chores
+
+#### eslint
+
+- enforce consistent-type-imports and apply the repo-wide autofix (#683)
+
 ## 0.3.38
 
 ### Features

@@ -94,6 +94,7 @@ export class IteratorTaskRunner<
       : [];
     const completionOrderResults: TaskOutput[] = [];
 
+    this.task.clearIterationGraphs();
     this.aggregatingParentMapProgress = true;
     this.mapPartialIterationCount = iterationCount;
     this.mapPartialProgress = new Array(iterationCount).fill(0);
@@ -166,6 +167,7 @@ export class IteratorTaskRunner<
   }
 
   protected async executeReduceIterations(analysis: IterationAnalysisResult): Promise<Output> {
+    this.task.clearIterationGraphs();
     const iterationCount = analysis.iterationCount;
     let accumulator = this.task.getInitialAccumulator();
 
@@ -273,8 +275,9 @@ export class IteratorTaskRunner<
     }
 
     const graphClone = this.cloneGraph(this.task.subGraph);
+    this.task.trackIterationGraph(index, graphClone);
 
-    this.task.emit("iteration_start", index, iterationCount);
+    this.task.emit("iteration_start", index, iterationCount, graphClone);
 
     /**
      * Subscribe to the iteration subgraph's aggregate `graph_progress` rather than individual
@@ -287,7 +290,7 @@ export class IteratorTaskRunner<
      * subgraphs where `contributors.length === 0`.
      */
     const onGraphProgress = (p: number | undefined, message?: string): void => {
-      this.task.emit("iteration_progress", index, iterationCount, p, message);
+      this.task.emit("iteration_progress", index, iterationCount, p, message, graphClone);
       if (
         p !== undefined &&
         this.aggregatingParentMapProgress &&
@@ -331,6 +334,7 @@ export class IteratorTaskRunner<
         this.mapPartialProgress[index] = 100;
         this.emitMapParentProgressFromPartials();
       }
+      this.task.completeIterationGraph(index);
       this.task.emit("iteration_complete", index, iterationCount);
     }
   }

@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.3.39
+
+### Features
+
+#### storage
+
+- enhance query operators to support null handling and inequality checks
+
+### Bug Fixes
+
+#### indexeddb
+
+- keep a null equality criterion out of IDBKeyRange
+
+#### test
+
+- close the gaps the Turbo/projects wiring opened
+
+### Refactors
+
+#### job-queue
+
+- collapse per-backend queue adapters onto wrapQueueStorage (#684)
+
+### Chores
+
+- upgrade to catalog for many deps and update the deps themselves
+
+#### eslint
+
+- enforce consistent-type-imports and apply the repo-wide autofix (#683)
+
+### Updated Dependencies
+
+- `fake-indexeddb`: catalog:
+
 ## 0.3.38
 
 ## 0.3.37
