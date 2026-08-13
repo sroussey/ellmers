@@ -1,5 +1,5 @@
-import type { IExecuteContext, TaskOutput } from "@workglow/task-graph";
-import { Task, TaskGraph, Workflow } from "@workglow/task-graph";
+import type { IExecuteContext, TaskConfig, TaskOutput } from "@workglow/task-graph";
+import { Task, TaskConfigurationError, TaskGraph, Workflow } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
 import { TaskCreatorTask } from "@workglow/task-graph/test";
@@ -92,6 +92,63 @@ describe("Task own functionality", () => {
         "Own[Graph]",
         "Own[Workflow]",
       ]);
+    });
+
+    // An already-constructed task has nowhere to put a second config: applying it
+    // would skip the constructor's schema validation, desync `originalConfig`,
+    // and (for `id`) rename a node the DAG has already keyed. The signature types
+    // the argument away, so reaching this needs a cast — and a cast that silently
+    // did nothing is what this guards.
+    it("refuses config for an argument that is already a task", async () => {
+      class RelabelTask extends Task {
+        public static override readonly type = "RelabelTask";
+        public static override readonly title = "Relabel";
+
+        public caught: unknown;
+
+        override async execute(_input: TaskOutput, context: IExecuteContext): Promise<TaskOutput> {
+          const child = new SimpleTask();
+          try {
+            (context.own as (i: Task, config: TaskConfig) => Task)(child, {
+              title: "Fetch facts for CIK 320193",
+            });
+          } catch (error) {
+            this.caught = error;
+          }
+          // Nothing was owned, and the child kept the config it was built with.
+          expect(this.subGraph.getTasks()).toHaveLength(0);
+          expect(child.title).toBe("Simple");
+          return {};
+        }
+      }
+
+      const task = new RelabelTask();
+      await task.run();
+
+      expect(task.caught).toBeInstanceOf(TaskConfigurationError);
+      expect((task.caught as Error).message).toContain("SimpleOwnedTask");
+      expect((task.caught as Error).message).toContain("title");
+      expect((task.caught as Error).message).toContain("setTitle()");
+    });
+
+    // The empty config `own` itself injects (`isOwned`) is not a caller config,
+    // so owning a plain task with no config of its own still works.
+    it("owns a plain task with no config", async () => {
+      class PlainOwnerTask extends Task {
+        public static override readonly type = "PlainOwnerTask";
+        public static override readonly title = "Plain owner";
+
+        override async execute(_input: TaskOutput, context: IExecuteContext): Promise<TaskOutput> {
+          const child = context.own(new SimpleTask());
+          await child.run();
+          return {};
+        }
+      }
+
+      const task = new PlainOwnerTask();
+      await task.run();
+
+      expect(task.subGraph.getTasks().map((t) => t.title)).toEqual(["Simple"]);
     });
   });
 
@@ -323,7 +380,9 @@ describe("Task own functionality", () => {
 
     // `Taskish` admits a pipe function, and `ensureTask` wraps one in a task like
     // any other — but the wrapper is nameable only if `own` records it, and a
-    // function is not `typeof "object"`.
+    // function is not `typeof "object"`. `IExecuteContext.own` does not admit a
+    // pipe function at all, hence the casts: this exercises the runner's wider
+    // `Taskish` contract, not the interface's.
     it("owns and disowns a pipe function", async () => {
       class FnOwnerTask extends Task {
         public static override readonly type = "FnOwnerTask";
@@ -333,8 +392,9 @@ describe("Task own functionality", () => {
 
         override async execute(_input: TaskOutput, context: IExecuteContext): Promise<TaskOutput> {
           const fn = async (input: TaskOutput): Promise<TaskOutput> => input;
+          const ownTaskish = context.own as (i: unknown, config?: TaskConfig) => unknown;
           for (let i = 0; i < 3; i++) {
-            context.own(fn as never, { title: `Pass ${i}` });
+            ownTaskish(fn, { title: `Pass ${i}` });
             this.counts.push(this.subGraph.getTasks().length);
             context.disown(fn as never);
             this.counts.push(this.subGraph.getTasks().length);

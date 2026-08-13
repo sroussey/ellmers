@@ -23,7 +23,7 @@ import type { Taskish } from "../task-graph/Conversions";
 import { ensureTask } from "../task-graph/Conversions";
 import { CacheCoordinator } from "./CacheCoordinator";
 import { resolveSchemaInputs, schemaHasFormatAnnotations } from "./InputResolver";
-import type { IRunConfig, ITask } from "./ITask";
+import type { ConfigNotApplicableToAnExistingTask, IRunConfig, ITask } from "./ITask";
 import type { ITaskRunner } from "./ITaskRunner";
 import type { BinaryRefSink, StreamSink } from "./StreamProcessor";
 import { StreamProcessor } from "./StreamProcessor";
@@ -947,7 +947,14 @@ export class TaskRunner<
     return this.task.subGraph.getTask(wrapper.id) !== undefined;
   }
 
-  protected own<T extends Taskish<any, any>>(i: T, config: TaskConfig = {}): T {
+  // Wider than the {@link IExecuteContext.own} signature callers see, which
+  // refuses a config for an argument that is already an `ITask` (nothing would
+  // apply it). This one stays uniform over `Taskish` so the runner has a single
+  // body; `ensureTask` enforces the rule for whatever reaches here past a cast.
+  protected own<T extends Taskish<any, any>>(
+    i: T,
+    config: TaskConfig | ConfigNotApplicableToAnExistingTask = {}
+  ): T {
     const trackable = isOwnTrackable(i);
     if (trackable) {
       // `ensureTask` returns a plain ITask as-is, so owning one twice throws on
