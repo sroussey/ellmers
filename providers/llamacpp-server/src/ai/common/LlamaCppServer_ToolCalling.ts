@@ -24,7 +24,8 @@ import {
   sanitizeToolArgs,
   toTextFlatMessages,
 } from "@workglow/ai/worker";
-import { parsePartialJson } from "@workglow/util/worker";
+import type { PartialJsonStream } from "@workglow/util/worker";
+import { createPartialJsonStream } from "@workglow/util/worker";
 import {
   acquireBaseUrl,
   buildServerUrl,
@@ -35,6 +36,19 @@ import type { LlamaCppServerModelConfig } from "./LlamaCppServer_ModelSchema";
 import { getLlamaCppServerModelName } from "./LlamaCppServer_ModelUtil";
 
 type AcquireFn = typeof acquireBaseUrl;
+
+/**
+ * Per-tool-call streaming state. `args` is fed each argument fragment as it
+ * arrives, so a delta costs O(fragment) rather than re-parsing that call's whole
+ * accumulated argument string; `parsed` caches the parser's live root so
+ * rebuilding the tool-call list leaves calls that did not change untouched.
+ */
+interface ToolCallAccumulator {
+  id: string | undefined;
+  name: string | undefined;
+  readonly args: PartialJsonStream;
+  parsed: Record<string, unknown>;
+}
 
 function mapTools(tools: readonly ToolDefinition[]) {
   return tools.map((t) => ({
@@ -92,10 +106,8 @@ export function createLlamaCppServerToolCallingStream(
       }
 
       let accumulatedText = "";
-      const accumulatedArgs = new Map<number, string>();
-      const callMeta = new Map<number, { id?: string; name?: string }>();
+      const calls = new Map<number, ToolCallAccumulator>();
       let nextSyntheticIndex = 0;
-      let lastEmittedToolCalls: ToolCalls = [];
       let usage: Usage | undefined;
 
       for await (const delta of readChatCompletionDeltas(response, signal)) {
@@ -109,21 +121,33 @@ export function createLlamaCppServerToolCallingStream(
         if (delta.toolCallDeltas?.length) {
           for (const tc of delta.toolCallDeltas) {
             const idx = typeof tc.index === "number" ? tc.index : nextSyntheticIndex++;
-            const meta = callMeta.get(idx) ?? {};
-            if (tc.id) meta.id = tc.id;
-            if (tc.function?.name) meta.name = tc.function.name;
-            callMeta.set(idx, meta);
+            let call = calls.get(idx);
+            if (call === undefined) {
+              call = {
+                id: undefined,
+                name: undefined,
+                args: createPartialJsonStream(),
+                parsed: {},
+              };
+              calls.set(idx, call);
+            }
+            if (tc.id) call.id = tc.id;
+            if (tc.function?.name) call.name = tc.function.name;
             if (tc.function?.arguments) {
               provisionalUsage.onText(tc.function.arguments);
-              accumulatedArgs.set(idx, (accumulatedArgs.get(idx) ?? "") + tc.function.arguments);
+              call.parsed = call.args.push(tc.function.arguments) ?? call.parsed;
             }
           }
-          lastEmittedToolCalls = buildToolCalls(accumulatedArgs, callMeta);
-          emit({ type: "object-delta", port: "toolCalls", objectDelta: [...lastEmittedToolCalls] });
+          emit({ type: "object-delta", port: "toolCalls", objectDelta: buildToolCalls(calls) });
         }
       }
       provisionalUsage.flush();
-      const finalToolCalls = filterValidToolCalls(lastEmittedToolCalls, input.tools);
+      // Close each parser so a truncated argument stream is repaired once, at
+      // the end, instead of on every delta.
+      for (const call of calls.values()) {
+        call.parsed = call.args.finishObject();
+      }
+      const finalToolCalls = filterValidToolCalls(buildToolCalls(calls), input.tools);
       emit({
         type: "finish",
         data: { text: accumulatedText, toolCalls: finalToolCalls } as ToolCallingTaskOutput,
@@ -135,30 +159,17 @@ export function createLlamaCppServerToolCallingStream(
   };
 }
 
-function buildToolCalls(
-  argsByIndex: Map<number, string>,
-  metaByIndex: Map<number, { id?: string; name?: string }>
-): ToolCalls {
+function buildToolCalls(callsByIndex: ReadonlyMap<number, ToolCallAccumulator>): ToolCalls {
   const result: ToolCalls = [];
-  const indices = [...argsByIndex.keys(), ...metaByIndex.keys()];
-  const unique = Array.from(new Set(indices)).sort((a, b) => a - b);
-  for (const idx of unique) {
-    const meta = metaByIndex.get(idx) ?? {};
-    if (!meta.name) continue;
-    const raw = argsByIndex.get(idx) ?? "";
-    let parsed: Record<string, unknown> = {};
-    if (raw.length > 0) {
-      try {
-        parsed = JSON.parse(raw) as Record<string, unknown>;
-      } catch {
-        const partial = parsePartialJson(raw);
-        parsed = (partial as Record<string, unknown>) ?? {};
-      }
-    }
+  for (const idx of [...callsByIndex.keys()].sort((a, b) => a - b)) {
+    const call = callsByIndex.get(idx)!;
+    if (!call.name) continue;
+    // `sanitizeToolArgs` copies, so the emitted call is detached from the
+    // parser's live root and unaffected by later fragments.
     result.push({
-      id: meta.id ?? `call_${idx}`,
-      name: meta.name,
-      input: sanitizeToolArgs(parsed) as Record<string, unknown>,
+      id: call.id ?? `call_${idx}`,
+      name: call.name,
+      input: sanitizeToolArgs(call.parsed) as Record<string, unknown>,
     });
   }
   return result;
