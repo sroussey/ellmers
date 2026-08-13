@@ -1,5 +1,19 @@
 # @workglow/ai
 
+## 0.3.40
+
+### Bug Fixes
+
+#### ai
+
+- refuse to settle an estimated usage snapshot in the accumulator (#754)
+
+### Performance
+
+#### ai
+
+- stream tool-call argument JSON instead of re-parsing the buffer
+
 ## 0.3.39
 
 ### Features

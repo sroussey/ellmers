@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.40
+
+### Performance
+
+#### ai
+
+- stream tool-call argument JSON instead of re-parsing the buffer
+
+### Chores
+
+- format changes
+
 ## 0.3.39
 
 ### Features

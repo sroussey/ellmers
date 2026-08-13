@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.40
+
+### Bug Fixes
+
+#### hft
+
+- encode background-removal output without RawImage.toBase64
+
 ## 0.3.39
 
 ### Features

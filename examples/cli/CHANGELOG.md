@@ -1,5 +1,29 @@
 # @workglow/cli
 
+## 0.3.40
+
+### Features
+
+#### cli
+
+- add tests for live iteration graphs in WorkflowRunApp
+
+### Bug Fixes
+
+#### task-graph
+
+- reject own() config for an already-constructed task
+
+### Refactors
+
+#### tests
+
+- replace pipe with addTask in workflow tests
+
+### Chores
+
+- format changes
+
 ## 0.3.39
 
 ### Features

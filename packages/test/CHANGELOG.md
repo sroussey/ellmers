@@ -1,5 +1,33 @@
 # @workglow/test
 
+## 0.3.40
+
+### Features
+
+#### cli
+
+- add tests for live iteration graphs in WorkflowRunApp
+
+### Bug Fixes
+
+#### test
+
+- add the six missing provider references to packages/test tsconfig
+
+#### hft
+
+- encode background-removal output without RawImage.toBase64
+
+#### task-graph
+
+- reject own() config for an already-constructed task
+
+### Performance
+
+#### ai
+
+- stream tool-call argument JSON instead of re-parsing the buffer
+
 ## 0.3.39
 
 ### Features

@@ -1,5 +1,7 @@
 # @workglow/job-queue
 
+## 0.3.40
+
 ## 0.3.39
 
 ### Bug Fixes

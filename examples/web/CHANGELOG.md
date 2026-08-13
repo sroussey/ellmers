@@ -1,5 +1,11 @@
 # @workglow/web
 
+## 0.3.40
+
+### Chores
+
+- format changes
+
 ## 0.3.39
 
 ### Features
