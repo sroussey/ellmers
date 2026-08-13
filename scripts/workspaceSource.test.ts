@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { stubSpecsFor, type PackageManifest } from "./lib/sourceStubs";
 import { ROOT } from "./lib/testDiscovery";
-import { distToSource, listWorkspacePackages } from "./lib/workspaceSource";
+import { distToSource, listWorkspacePackages, WORKSPACE_GROUPS } from "./lib/workspaceSource";
 
 const packages = listWorkspacePackages(ROOT);
 
@@ -60,5 +60,28 @@ describe("workspace source resolution", () => {
     expect(existsSync(invented)).toBe(false);
     expect(distToSource(invented)).toBeUndefined();
     expect(distToSource(join(ROOT, "packages/ai/src/node.ts"))).toBeUndefined();
+  });
+
+  /**
+   * The invariant that actually broke: the resolver covers all three workspace
+   * groups, but the coverage denominator listed only two, so `examples/*`
+   * source was rewritten to `src`, executed by its own tests, and then left out
+   * of the denominator entirely. All three example packages are published and
+   * none is `private`, so there is no "not really shipped" argument for the
+   * omission — and a missing group is invisible in a coverage report, which
+   * shows a smaller file list rather than an error.
+   *
+   * Reads the ACTUAL config rather than re-deriving it, so the two cannot drift
+   * back apart.
+   */
+  it("counts every workspace group in the coverage denominator", async () => {
+    const mod = (await import("../vitest.config.ts")) as {
+      default: { test?: { coverage?: { include?: string[] } } };
+    };
+    const include = mod.default.test?.coverage?.include ?? [];
+    const missing = WORKSPACE_GROUPS.filter(
+      (group) => !include.some((glob) => glob.startsWith(`${group}/`))
+    );
+    expect(missing).toEqual([]);
   });
 });
