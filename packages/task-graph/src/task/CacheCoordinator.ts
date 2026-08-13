@@ -473,9 +473,9 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
    *
    * Returns `undefined` when any of the conditions for the ref path are not
    * met: no cache is configured by policy, the cache does not implement
-   * `saveOutputStream`, the task is not cacheable, or the output schema has
-   * no `x-stream: "binary"` port. v1 supports single-binary-port tasks only;
-   * tasks with multiple binary ports fall back to the accumulation path.
+   * `saveOutputStreamPort`, the task is not cacheable, or the output schema has
+   * no `x-stream: "binary"` port. This path supports single-binary-port tasks
+   * only; tasks with multiple binary ports fall back to the accumulation path.
    *
    * The threshold ({@link IRunConfig.referenceThresholdBytes}) controls
    * whether the ref *survives* in the final Output, not whether the sink
@@ -493,20 +493,33 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     if (!this.task.cacheable) return undefined;
     const cache = this.repoFor(registry, policy);
     if (!cache || !cache.supportsStreaming()) return undefined;
-    // The sink keys bytes by (taskType, inputs) with no port axis, so two
-    // binary ports would overwrite each other in the backing. Enforce the
-    // single-binary-port restriction here as well as in the accumulation
-    // decision (StreamPump.canStreamBinaryToCache) — multi-port tasks fall
-    // back to pure accumulation.
+    // Without the no-accumulation flag the runner drives at most one sink per
+    // task, so a second binary port would have neither a sink nor an
+    // accumulator. Enforce the single-binary-port restriction here as well as
+    // in the accumulation decision (StreamPump.canStreamBinaryToCache) —
+    // multi-port tasks fall back to pure accumulation.
     const binaryPorts = getStreamingPorts(outputSchema).filter((p) => p.mode === "binary");
     if (binaryPorts.length !== 1) return undefined;
     const port = binaryPorts[0].port;
     const taskType = this.task.type;
-    // Re-wrap the backing's CacheRef so legacy `saveOutputStream` implementations
-    // that pre-date the `kind` brand still produce a discriminator-bearing ref.
-    // Branded refs pass through unchanged (preserving size/mime hints).
+    // The single-binary case IS the port-aware writer with one binary port, so
+    // it adapts here rather than in the repository: this is the one call site
+    // that has to synthesize nothing (the port id is already in hand), and a
+    // base-class shim would have to invent a port name for a portless
+    // signature — reintroducing the second writer this collapsed away.
+    //
+    // Re-wrap the backing's CacheRef so an implementation that pre-dates the
+    // `kind` brand still produces a discriminator-bearing ref. Branded refs
+    // pass through unchanged (preserving size/mime hints).
     const sink: BinaryRefSink = async (chunks) => {
-      const raw = await cache.saveOutputStream!(taskType, keyInputs, chunks, {});
+      const raw = await cache.saveOutputStreamPort!(
+        taskType,
+        keyInputs,
+        port,
+        "binary",
+        chunks,
+        {}
+      );
       return isCacheRef(raw) ? raw : makeCacheRef(raw);
     };
     return new Map([[port, sink]]);
@@ -521,9 +534,8 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
    * port's deltas with the mode codec before handing the bytes to the sink.
    *
    * Returns `undefined` when no cache is configured by policy, the cache does
-   * not implement `saveOutputStreamPort` (legacy backings keep the single
-   * binary path via {@link getBinaryRefSinksByPolicy}), the task is not
-   * cacheable, or the schema has no streamable port. `replace`-mode ports are
+   * not implement `saveOutputStreamPort`, the task is not cacheable, or the
+   * schema has no streamable port. `replace`-mode ports are
    * excluded — a snapshot-driven port has no single-port delta byte stream and
    * stays on the accumulation path.
    */
@@ -535,7 +547,7 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
   ): ReadonlyMap<string, StreamSink> | undefined {
     if (!this.task.cacheable) return undefined;
     const cache = this.repoFor(registry, policy);
-    if (!cache || !cache.supportsStreamingPorts()) return undefined;
+    if (!cache || !cache.supportsStreaming()) return undefined;
     const ports = getStreamingPorts(outputSchema).filter(
       (p) => p.mode === "append" || p.mode === "object" || p.mode === "binary"
     );
@@ -578,7 +590,7 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
    * Refs without a known `size` are kept as-is (the writer didn't measure;
    * conservatively assume "large enough to keep as ref"). Backings that want
    * threshold-based rehydration MUST populate `size` on the CacheRef they
-   * return from `saveOutputStream`.
+   * return from `saveOutputStreamPort`.
    */
   public async hydrateRefsBelowThreshold(
     output: Output,

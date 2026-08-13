@@ -59,8 +59,8 @@ function runScopePrefix(runId: string): string {
  *
  * JSON output rows are stored through {@link FsFolderTabularStorage} (one file
  * per row, compression and TTL pruning inherited from
- * {@link TaskOutputTabularRepository}). Binary payloads written via
- * `saveOutputStream` live as sidecar files under `<folder>/blobs/`, written
+ * {@link TaskOutputTabularRepository}). Port payloads written via
+ * `saveOutputStreamPort` live as sidecar files under `<folder>/blobs/`, written
  * incrementally (never materialized) to a `.tmp` file and atomically renamed
  * on completion — a crash mid-write never publishes a readable partial blob.
  * The temp handle is `sync()`'d before rename so a power loss between the
@@ -73,9 +73,9 @@ function runScopePrefix(runId: string): string {
  * that reject opening a directory for fsync (`EPERM` / `EINVAL` / `ENOTSUP`
  * / `EISDIR`) fall through silently.
  *
- * Each `saveOutputStream` call mints a unique blob filename of the form
- * `<sanitized-taskType>_<fingerprint>_<uuid>.bin`. Two concurrent writers
- * computing the same `(taskType, inputs)` therefore land at distinct paths,
+ * Each `saveOutputStreamPort` call mints a unique blob filename of the form
+ * `<sanitized-taskType>_<fingerprint>_<port>_<uuid>.bin`. Two concurrent writers
+ * computing the same `(taskType, inputs, port)` therefore land at distinct paths,
  * so a failed-row-commit cleanup on one writer cannot remove the published
  * blob the other writer's row still points at. Stale blobs from crashes
  * between rename and row commit are reclaimed by `clearOlderThan` (which prunes
@@ -103,20 +103,6 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
       ),
     });
     this.blobsDir = join(folderPath, "blobs");
-  }
-
-  override async saveOutputStream(
-    taskType: string,
-    inputs: TaskInput,
-    chunks: AsyncIterable<Uint8Array>,
-    metadata: Record<string, unknown>
-  ): Promise<CacheRef> {
-    const fingerprint = await makeFingerprint({ __taskType: taskType, inputs });
-    const name = `${mintRefKey(taskType, fingerprint)}.bin`;
-    const size = await this.writeSidecar(name, chunks);
-    this.emit("output_saved", taskType);
-    const mime = typeof metadata.mime === "string" ? metadata.mime : undefined;
-    return makeCacheRef({ $ref: `fsfolder://blobs/${name}`, size, mime });
   }
 
   override async saveOutputStreamPort(
@@ -164,16 +150,6 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     inputs: TaskInput
   ): Promise<TaskOutput | undefined> {
     return this.getOutput(runScopedType(runId, taskType), inputs);
-  }
-
-  override async saveOutputStreamForRun(
-    runId: string,
-    taskType: string,
-    inputs: TaskInput,
-    chunks: AsyncIterable<Uint8Array>,
-    metadata: Record<string, unknown>
-  ): Promise<CacheRef> {
-    return this.saveOutputStream(runScopedType(runId, taskType), inputs, chunks, metadata);
   }
 
   override async saveOutputStreamPortForRun(

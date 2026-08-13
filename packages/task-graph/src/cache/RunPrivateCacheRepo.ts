@@ -59,17 +59,11 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
 
     // Streaming is a per-backing capability: only backings with a sidecar
     // (today `FsFolderTaskOutputRepository`) implement the run-scoped stream
-    // writers. Forward each stream writer ONLY when the backing declares its
-    // `*ForRun` counterpart, so the inherited `supportsStreaming*()` probes
-    // (and the CacheCoordinator's direct `typeof cache.X` checks) report this
-    // wrapper's true capability — a tabular run-private backing leaves these
+    // writer. Forward it ONLY when the backing declares its `*ForRun`
+    // counterpart, so the inherited `supportsStreaming()` probe reports this
+    // wrapper's true capability — a tabular run-private backing leaves it
     // undefined and the private tier degrades to accumulation, unchanged.
-    const canStreamForRun = typeof backing.saveOutputStreamForRun === "function";
     const canStreamPortForRun = typeof backing.saveOutputStreamPortForRun === "function";
-    if (canStreamForRun) {
-      this.saveOutputStream = (taskType, inputs, chunks, metadata) =>
-        backing.saveOutputStreamForRun!(this.runId, taskType, inputs, chunks, metadata);
-    }
     if (canStreamPortForRun) {
       this.saveOutputStreamPort = (taskType, inputs, port, mode, chunks, metadata) =>
         backing.saveOutputStreamPortForRun!(
@@ -91,10 +85,10 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     // agnostic surface is the leak this wrapper exists to close.
     //
     // Gate them on the backing being a run-scoped STREAM backing: a ref can
-    // only exist here if it was written through one of the stream writers above,
-    // so a backing that can stream-read but not stream-write-for-run exposes no
+    // only exist here if it was written through the stream writer above, so a
+    // backing that can stream-read but not stream-write-for-run exposes no
     // readable refs through this wrapper and reports no read capability.
-    if (canStreamForRun || canStreamPortForRun) {
+    if (canStreamPortForRun) {
       if (typeof backing.getOutputByRefForRun === "function") {
         this.getOutputByRef = (ref) => backing.getOutputByRefForRun!(ref, this.runId);
       }

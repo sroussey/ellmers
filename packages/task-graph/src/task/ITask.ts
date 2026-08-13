@@ -199,7 +199,7 @@ export interface IRunConfig {
    * values and `undefined` fall back to
    * {@link REFERENCE_THRESHOLD_BYTES_DEFAULT} (64 KB).
    *
-   * Only applied when the cache backing implements `saveOutputStream` and the
+   * Only applied when the cache backing implements `saveOutputStreamPort` and the
    * port carries binary stream events; otherwise the value is always inlined
    * regardless of this setting.
    */
