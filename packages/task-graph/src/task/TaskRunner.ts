@@ -73,7 +73,10 @@ const OWNED_SINK_KEYS = ["lateUsageSink", "usageSink", "usageRetireSink"] as con
  */
 interface OwnUsageEventSource {
   subscribe(name: "usage", fn: (usage: Usage, modelId: string | undefined) => void): () => void;
-  subscribe(name: "complete" | "error" | "abort", fn: (...args: never[]) => void): () => void;
+  subscribe(
+    name: "start" | "complete" | "error" | "abort",
+    fn: (...args: never[]) => void
+  ): () => void;
 }
 
 /** Type guard for values that expose task lifecycle / usage events. */
@@ -1014,18 +1017,33 @@ export class TaskRunner<
       const previousOff = trackable ? this.ownedUsageUnsubs.get(i) : undefined;
       previousOff?.();
       const offs: Array<() => void> = [];
+      // Installed before the `usage` subscription so the flag is already set
+      // when a charge settling after completion re-emits the child's total.
+      let retired = false;
+      const onDone = (): void => {
+        retired = true;
+        retire?.(childId);
+      };
+      offs.push(events.subscribe("complete", onDone));
+      offs.push(events.subscribe("error", onDone));
+      offs.push(events.subscribe("abort", onDone));
+      // A reused owned child's next execution opens a fresh live bucket.
+      offs.push(
+        events.subscribe("start", () => {
+          retired = false;
+        })
+      );
       if (sink) {
         offs.push(
           events.subscribe("usage", (usage: Usage, modelId: string | undefined) => {
+            // Past retirement the charge already reaches the run total as a
+            // delta through the late-usage sink. Republishing the child's new
+            // cumulative total here would add its whole execution a second
+            // time alongside it.
+            if (retired) return;
             sink(childId, usage, modelId);
           })
         );
-      }
-      if (retire) {
-        const onDone = (): void => retire(childId);
-        offs.push(events.subscribe("complete", onDone));
-        offs.push(events.subscribe("error", onDone));
-        offs.push(events.subscribe("abort", onDone));
       }
       if (trackable && offs.length > 0) {
         this.ownedUsageUnsubs.set(i, () => {
