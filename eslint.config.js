@@ -92,6 +92,20 @@ export default defineConfig(
               message:
                 "Main-thread-only state is unavailable in workers. Resolve it in the task class (e.g. AiTask.getJobInput()) and pass it through the serialized job input.",
             },
+            // Blocked WHOLESALE rather than by importNames: every export of
+            // this package registers services into the global registry, so a
+            // name list would be the whole surface and would drift the moment
+            // one was added.
+            {
+              name: "@workglow/bootstrap",
+              message:
+                "A run-fn executes in a worker with its own globalServiceRegistry, so bootstrapWorkglow mutates a registry the main thread never sees. Resolve the services in the task class (e.g. AiTask.getJobInput()) and pass them through the serialized job input.",
+            },
+            {
+              name: "workglow/bootstrap",
+              message:
+                "A run-fn executes in a worker with its own globalServiceRegistry, so bootstrapWorkglow mutates a registry the main thread never sees. Resolve the services in the task class (e.g. AiTask.getJobInput()) and pass them through the serialized job input.",
+            },
           ],
         },
       ],
