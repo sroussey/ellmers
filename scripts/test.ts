@@ -28,6 +28,7 @@ import {
   matchesKind,
   ROOT,
 } from "./lib/testDiscovery";
+import { resolveTestTarget } from "./lib/workspaceSource";
 
 const KNOWN_RUNNERS = ["bun", "vitest"] as const;
 
@@ -119,7 +120,7 @@ function buildVitestArgs(files: string[]): string[] {
   // A `dist`-targeted run measures the bundles, not the sources the coverage
   // denominator names, so every one of the ~1286 `src` files would be reported
   // at 0%. Skip coverage there rather than merging a fragment that says nothing.
-  if (process.env.CI && process.env.WORKGLOW_TEST_TARGET !== "dist") {
+  if (process.env.CI && resolveTestTarget(process.env.WORKGLOW_TEST_TARGET) !== "dist") {
     args.push("--coverage");
   }
   args.push(...relFiles);

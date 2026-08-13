@@ -4,7 +4,7 @@ import { configDefaults, defineConfig } from "vitest/config";
 // Extension is required: Vite's native config loader cannot resolve an
 // extensionless relative import here.
 import { discoverTestFiles, listTestProjects } from "./scripts/lib/testDiscovery.ts";
-import { workspaceSourcePlugin } from "./scripts/lib/workspaceSource.ts";
+import { resolveTestTarget, workspaceSourcePlugin } from "./scripts/lib/workspaceSource.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const abs = (p: string): string => path.join(__dirname, p);
@@ -69,7 +69,7 @@ const shared = {
  * informational and never blocks a merge, so the blocking guard is the
  * `test-vitest-dist` CI job, which sets this variable.
  */
-const testsRunAgainstSource = (process.env.WORKGLOW_TEST_TARGET ?? "source") !== "dist";
+const testsRunAgainstSource = resolveTestTarget(process.env.WORKGLOW_TEST_TARGET) !== "dist";
 
 const discovered = discoverTestFiles();
 

@@ -39,11 +39,74 @@ export const WORKSPACE_GROUPS = ["packages", "providers", "examples"] as const;
 /** Source extensions a dist entry can have come from, in resolution order. */
 const SOURCE_EXTENSIONS = [".ts", ".tsx"] as const;
 
+/**
+ * What a test run resolves `@workglow/*` specifiers to. `source` is the
+ * default; `dist` restores `exports` resolution so the built bundles are what
+ * gets exercised.
+ */
+export const TEST_TARGETS = ["source", "dist"] as const;
+
+export type TestTarget = (typeof TEST_TARGETS)[number];
+
+/**
+ * `WORKGLOW_TEST_TARGET` as a value both readers agree on.
+ *
+ * Every consumer previously compared against the literal `"dist"` and treated
+ * anything else as `source`, silently and independently. A workflow edited to
+ * `"dist "` or `Dist` therefore turned the dist job into a byte-identical rerun
+ * of the source job: green, a full runner slot spent, and zero coverage of the
+ * bundles it exists to check. Nothing anywhere said so.
+ *
+ * Unset and empty mean `source`, since that is the default a caller who set
+ * nothing is asking for. Everything else THROWS naming the value: no
+ * lowercasing and no prefix matching, because both turn a typo into a silent
+ * reinterpretation, which is the failure being fixed rather than a fix for it.
+ */
+export function resolveTestTarget(raw: string | undefined): TestTarget {
+  const value = raw ?? "";
+  // Trimmed only to decide "nothing was set"; the comparison below is against
+  // the raw value, so `"dist "` is a typo that fails rather than a target.
+  if (value.trim() === "") return "source";
+  const match = TEST_TARGETS.find((target) => target === value);
+  if (match !== undefined) return match;
+  throw new Error(
+    `WORKGLOW_TEST_TARGET="${raw}" is not a known test target. ` +
+      `Expected one of: ${TEST_TARGETS.join(", ")} (or unset for "source").`
+  );
+}
+
 export interface WorkspacePackage {
   /** Package name as published, e.g. `@workglow/util`. */
   readonly name: string;
   /** Absolute workspace directory. */
   readonly dir: string;
+  /**
+   * The manifest's `exports` field, verbatim, or `undefined` when it declares
+   * none. Read here because the manifest is already parsed — a diagnostic that
+   * has to re-read it would be one more thing to keep in step.
+   */
+  readonly exports: unknown;
+  /** Every name this package lists in any dependency block. */
+  readonly dependencies: ReadonlySet<string>;
+}
+
+/** Dependency blocks that make a package resolvable from another one. */
+const DEPENDENCY_BLOCKS = [
+  "dependencies",
+  "devDependencies",
+  "peerDependencies",
+  "optionalDependencies",
+] as const;
+
+/** Every package name a manifest declares in any dependency block. */
+function declaredDependencies(manifest: Record<string, unknown>): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const block of DEPENDENCY_BLOCKS) {
+    const value = manifest[block];
+    if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
+    for (const name of Object.keys(value)) names.add(name);
+  }
+  return names;
 }
 
 /**
@@ -67,8 +130,16 @@ export function listWorkspacePackages(root: string): WorkspacePackage[] {
       try {
         const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as {
           name?: unknown;
+          exports?: unknown;
         };
-        if (typeof manifest.name === "string") found.push({ name: manifest.name, dir });
+        if (typeof manifest.name === "string") {
+          found.push({
+            name: manifest.name,
+            dir,
+            exports: manifest.exports,
+            dependencies: declaredDependencies(manifest),
+          });
+        }
       } catch {
         // Not a package directory (or unreadable manifest) — nothing to map.
       }
@@ -110,6 +181,28 @@ export function ownerOf(
   return packages.find((pkg) => source === pkg.name || source.startsWith(`${pkg.name}/`));
 }
 
+/** Everything the unresolved-specifier diagnostic reasons from. */
+export interface UnresolvedWorkspaceContext {
+  /** The specifier that resolved to nothing. */
+  readonly source: string;
+  /** The workspace package that owns {@link source}. */
+  readonly owner: WorkspacePackage;
+  /** The importing file, when Vite reported one. */
+  readonly importer: string | undefined;
+  /** The workspace package the importer lives in, or `undefined` outside one. */
+  readonly importerPackage: WorkspacePackage | undefined;
+  /**
+   * Whether {@link importerPackage} lists {@link owner} in any dependency
+   * block. `undefined` when the importer is outside a workspace package, where
+   * the question does not apply rather than answering "no".
+   */
+  readonly importerDeclaresDependency: boolean | undefined;
+  /** Whether the owner's `exports` declares the subpath the specifier asks for. */
+  readonly ownerDeclaresSubpath: boolean;
+  /** Whether the owner's `dist` holds anything at all. */
+  readonly distHasBuiltEntries: boolean;
+}
+
 /**
  * The diagnostic for a workspace specifier that resolved to nothing.
  *
@@ -119,33 +212,110 @@ export function ownerOf(
  * entry there, resolution fails before the rewrite can happen and the error
  * blames the manifest, naming neither this plugin nor anything to do about it.
  *
- * `distHasBuiltEntries` is passed in rather than probed here so the message
- * stays a pure function of its inputs. The two branches need opposite
- * responses, which is why they are not one sentence: an empty or absent `dist`
- * means the package has simply never been built, whereas a POPULATED `dist`
- * that still does not carry this entry is the "added an `exports` subpath and
- * did not rebuild" case — where "run build" on its own reads as wrong advice to
- * someone looking at a directory full of bundles.
+ * Every input is passed in rather than probed here so the message stays a pure
+ * function of its inputs.
+ *
+ * The causes are RANKED, because resolution fails from the IMPORTER's
+ * `node_modules` and only the last two are about the owner's `dist` at all.
+ * With `linker = "isolated"` an importer sees only what it declares, so an
+ * undeclared workspace dependency — or a subpath the owner's `exports` never
+ * published — fails while the owner's `dist` is fully populated. Offering only
+ * "never built" or "stale dist" there is confident, wrong advice: rebuilding
+ * changes nothing, and the reader is sent to look at a directory that is fine.
  */
-export function unresolvedWorkspaceMessage(
-  source: string,
-  owner: WorkspacePackage,
-  distHasBuiltEntries: boolean,
-  importer: string | undefined
-): string {
+export function unresolvedWorkspaceMessage(context: UnresolvedWorkspaceContext): string {
+  const {
+    source,
+    owner,
+    importer,
+    importerPackage,
+    importerDeclaresDependency,
+    ownerDeclaresSubpath,
+    distHasBuiltEntries,
+  } = context;
   const from = importer === undefined ? "" : ` (imported from ${importer})`;
-  const remedy = distHasBuiltEntries
-    ? `${owner.dir}/dist carries built entries but none for this specifier. A new "exports" ` +
-      `subpath was most likely added without rebuilding, so dist is stale rather than absent: ` +
-      `re-run \`bun run build\` (or \`bun run use-source\`).`
-    : `${owner.dir}/dist is missing or empty — ${owner.name} has never been built in this ` +
-      `checkout. Run \`bun run build\`, or \`bun run use-source\` to write source stubs into dist.`;
+
+  let remedy: string;
+  if (importerDeclaresDependency === false && importerPackage !== undefined) {
+    remedy =
+      `${importerPackage.name} does not list ${owner.name} in any of its dependency blocks. ` +
+      `bunfig sets linker = "isolated", so a workspace package resolves only what it ` +
+      `declares: nothing is linked into ${importerPackage.dir}/node_modules for this ` +
+      `specifier no matter what ${owner.name} has built. Add ${owner.name} to ` +
+      `${importerPackage.name}'s package.json and re-run \`bun i\`.`;
+  } else if (!ownerDeclaresSubpath) {
+    remedy =
+      `${owner.name}'s "exports" does not declare this subpath, so resolution fails at the ` +
+      `manifest and never reaches dist. Add the subpath to ${owner.dir}/package.json — this ` +
+      `one is missing from the manifest, not from the build output.`;
+  } else if (distHasBuiltEntries) {
+    remedy =
+      `The remaining likely cause: ${owner.dir}/dist carries built entries but none for this ` +
+      `specifier. A new "exports" subpath was most likely added without rebuilding, so dist ` +
+      `is stale rather than absent: re-run \`bun run build\` (or \`bun run use-source\`).`;
+  } else {
+    remedy =
+      `The remaining likely cause: ${owner.dir}/dist is missing or empty — ${owner.name} has ` +
+      `never been built in this checkout. Run \`bun run build\`, or \`bun run use-source\` to ` +
+      `write source stubs into dist.`;
+  }
+
   return (
     `[workglow:workspace-source] cannot resolve "${source}"${from}. ` +
     `It is owned by the workspace package ${owner.name}. Resolution goes through that ` +
     `package's "exports", which point at ./dist/*, so the built entry has to exist even ` +
     `though this plugin then rewrites it to src. ${remedy}`
   );
+}
+
+/**
+ * The workspace package a file belongs to — the DEEPEST directory containing
+ * it, so a nested workspace is not attributed to an ancestor.
+ */
+export function importerPackageOf(
+  packages: readonly WorkspacePackage[],
+  importer: string | undefined
+): WorkspacePackage | undefined {
+  if (importer === undefined) return undefined;
+  let best: WorkspacePackage | undefined;
+  for (const pkg of packages) {
+    if (!importer.startsWith(`${pkg.dir}/`)) continue;
+    if (best === undefined || pkg.dir.length > best.dir.length) best = pkg;
+  }
+  return best;
+}
+
+/** The `exports` subpath key a specifier asks its owner for (`.`, `./worker`, …). */
+export function subpathOf(owner: WorkspacePackage, source: string): string {
+  return source === owner.name ? "." : `.${source.slice(owner.name.length)}`;
+}
+
+/**
+ * Whether an owner's `exports` publishes a subpath.
+ *
+ * A manifest with no `exports` at all publishes its whole directory, so the
+ * question does not apply and the answer is yes — reporting "not exported"
+ * there would send the reader to add a field the package deliberately omits.
+ */
+export function declaresSubpath(owner: WorkspacePackage, subpath: string): boolean {
+  const map = owner.exports;
+  if (map === undefined || map === null) return true;
+  // A string or a bare condition map IS the "." entry and publishes nothing else.
+  if (typeof map !== "object" || Array.isArray(map)) return subpath === ".";
+  const keys = Object.keys(map as Record<string, unknown>);
+  if (!keys.some((key) => key === "." || key.startsWith("./"))) return subpath === ".";
+  return keys.some((key) => {
+    if (key === subpath) return true;
+    const star = key.indexOf("*");
+    if (star === -1) return false;
+    const prefix = key.slice(0, star);
+    const suffix = key.slice(star + 1);
+    return (
+      subpath.length >= prefix.length + suffix.length &&
+      subpath.startsWith(prefix) &&
+      subpath.endsWith(suffix)
+    );
+  });
 }
 
 /**
@@ -185,8 +355,17 @@ export function workspaceSourcePlugin(root: string): Plugin {
       if (!resolved) {
         // Throwing, not warning: an unresolvable @workglow/* specifier already
         // fails the run a moment later. This only replaces the message.
+        const importerPackage = importerPackageOf(packages, importer);
         throw new Error(
-          unresolvedWorkspaceMessage(source, owner, hasBuiltEntries(owner.dir), importer)
+          unresolvedWorkspaceMessage({
+            source,
+            owner,
+            importer,
+            importerPackage,
+            importerDeclaresDependency: importerPackage?.dependencies.has(owner.name),
+            ownerDeclaresSubpath: declaresSubpath(owner, subpathOf(owner, source)),
+            distHasBuiltEntries: hasBuiltEntries(owner.dir),
+          })
         );
       }
       if (resolved.external) return resolved;
