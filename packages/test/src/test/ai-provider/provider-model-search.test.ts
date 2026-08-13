@@ -5,7 +5,7 @@
  */
 
 import type { AiProviderRunFn } from "@workglow/ai";
-import { collectStream, createEmitQueue, ModelSearchTask } from "@workglow/ai";
+import { collectStream, createEmitQueue, MODEL_EFFORTS, ModelSearchTask } from "@workglow/ai";
 import { Anthropic_ModelSearch_Stream as Anthropic_ModelSearch } from "@workglow/anthropic/ai";
 import { DeepSeek_ModelSearch_Stream as DeepSeek_ModelSearch } from "@workglow/deepseek/ai";
 import { Gemini_ModelSearch_Stream as Gemini_ModelSearch } from "@workglow/google-gemini/ai";
@@ -58,6 +58,16 @@ describe("provider model search samples", () => {
 
   test("OpenAI fallback includes the latest flagship sample", async () => {
     await expect(modelIdsForSearch(OpenAI_ModelSearch, "gpt-5.5")).resolves.toContain("gpt-5.5");
+  });
+
+  test("OpenAI fallback stamps effort_options by class", async () => {
+    const { results } = (await collectStream(
+      await runFnToIterable(OpenAI_ModelSearch, { query: "" })
+    )) as { results: Array<{ id: string; record?: { effort_options?: string[] } }> };
+    const sol = results.find((r) => r.id === "gpt-5.6-sol");
+    const image = results.find((r) => r.id === "gpt-image-2");
+    expect(sol?.record?.effort_options).toEqual([...MODEL_EFFORTS]);
+    expect(image?.record?.effort_options).toEqual([]);
   });
 
   test("Anthropic fallback includes the latest Claude samples", async () => {

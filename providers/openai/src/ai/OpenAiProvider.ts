@@ -5,10 +5,11 @@
  */
 
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
-import type { Capability, ModelRecord } from "@workglow/ai/worker";
+import type { Capability, ModelEffortPolicy, ModelRecord } from "@workglow/ai/worker";
 import { AiProvider } from "@workglow/ai/worker";
 import { inferOpenAiCapabilities, openAiWorkerRunFnSpecs } from "./common/OpenAI_Capabilities";
 import { OPENAI } from "./common/OpenAI_Constants";
+import { openaiEffortPolicy } from "./common/OpenAI_EffortPolicy";
 import type { OpenAiModelConfig } from "./common/OpenAI_ModelSchema";
 
 /**
@@ -26,6 +27,10 @@ export class OpenAiProvider extends createCloudProviderClass<OpenAiModelConfig>(
 }) {
   override inferCapabilities(model: ModelRecord): readonly Capability[] {
     return inferOpenAiCapabilities(model);
+  }
+
+  override effortPolicy(model: OpenAiModelConfig): ModelEffortPolicy | undefined {
+    return openaiEffortPolicy(model);
   }
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
