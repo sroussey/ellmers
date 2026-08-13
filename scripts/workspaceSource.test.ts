@@ -9,10 +9,13 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { stubSpecsFor, type PackageManifest } from "./lib/sourceStubs";
 import { ROOT } from "./lib/testDiscovery";
+import type { UnresolvedWorkspaceContext, WorkspacePackage } from "./lib/workspaceSource";
 import {
   distToSource,
   listWorkspacePackages,
   ownerOf,
+  resolveTestTarget,
+  TEST_TARGETS,
   unresolvedWorkspaceMessage,
   WORKSPACE_GROUPS,
 } from "./lib/workspaceSource";
@@ -91,14 +94,36 @@ describe("workspace source resolution", () => {
   });
 
   describe("unresolved specifier diagnostic", () => {
-    const owner = { name: "@workglow/ai", dir: "/repo/packages/ai" };
+    const owner: WorkspacePackage = {
+      name: "@workglow/ai",
+      dir: "/repo/packages/ai",
+      exports: { ".": "./dist/node.js", "./worker": "./dist/worker.js" },
+      dependencies: new Set<string>(),
+    };
+    const importerPackage: WorkspacePackage = {
+      name: "@workglow/huggingface-transformers",
+      dir: "/repo/providers/hft",
+      exports: { "./ai": "./dist/ai.js" },
+      dependencies: new Set(["@workglow/ai"]),
+    };
+
+    /** The healthy case for every input the ranking does not exercise. */
+    function context(overrides: Partial<UnresolvedWorkspaceContext>): UnresolvedWorkspaceContext {
+      return {
+        source: "@workglow/ai/worker",
+        owner,
+        importer: undefined,
+        importerPackage: undefined,
+        importerDeclaresDependency: undefined,
+        ownerDeclaresSubpath: true,
+        distHasBuiltEntries: false,
+        ...overrides,
+      };
+    }
 
     it("names the specifier, the owning package and the importer", () => {
       const message = unresolvedWorkspaceMessage(
-        "@workglow/ai/worker",
-        owner,
-        false,
-        "/repo/providers/hft/src/x.ts"
+        context({ importer: "/repo/providers/hft/src/x.ts" })
       );
       expect(message).toContain("@workglow/ai/worker");
       expect(message).toContain("@workglow/ai");
@@ -108,8 +133,8 @@ describe("workspace source resolution", () => {
 
     // The two cases need opposite responses, so they must not read the same.
     it("distinguishes a never-built package from a stale dist", () => {
-      const neverBuilt = unresolvedWorkspaceMessage("@workglow/ai/worker", owner, false, undefined);
-      const staleDist = unresolvedWorkspaceMessage("@workglow/ai/worker", owner, true, undefined);
+      const neverBuilt = unresolvedWorkspaceMessage(context({ distHasBuiltEntries: false }));
+      const staleDist = unresolvedWorkspaceMessage(context({ distHasBuiltEntries: true }));
 
       expect(neverBuilt).toContain("missing or empty");
       expect(neverBuilt).toContain("never been built");
@@ -121,9 +146,97 @@ describe("workspace source resolution", () => {
     });
 
     it("omits the importer clause when there is no importer", () => {
-      expect(unresolvedWorkspaceMessage("@workglow/ai", owner, true, undefined)).not.toContain(
+      expect(unresolvedWorkspaceMessage(context({ distHasBuiltEntries: true }))).not.toContain(
         "imported from"
       );
+    });
+
+    /**
+     * Resolution fails from the IMPORTER's `node_modules`, and under isolated
+     * linking that is a different question from whether the owner is built. A
+     * fully populated dist is the normal state in these two cases, so offering
+     * the built/stale pair is confident, wrong advice: it names a directory
+     * that is fine and a rebuild that changes nothing.
+     */
+    it("blames an undeclared dependency before the owner's dist", () => {
+      const message = unresolvedWorkspaceMessage(
+        context({
+          importer: "/repo/providers/hft/src/x.ts",
+          importerPackage: { ...importerPackage, dependencies: new Set<string>() },
+          importerDeclaresDependency: false,
+          // The owner is built and exports the subpath — nothing to fix there.
+          distHasBuiltEntries: true,
+        })
+      );
+
+      expect(message).toContain("isolated");
+      expect(message).toContain("@workglow/huggingface-transformers");
+      expect(message).toContain("bun i");
+      expect(message).not.toContain("stale rather than absent");
+      expect(message).not.toContain("never been built");
+    });
+
+    it("blames an undeclared subpath before the owner's dist", () => {
+      const message = unresolvedWorkspaceMessage(
+        context({
+          source: "@workglow/ai/capability",
+          importerPackage,
+          importerDeclaresDependency: true,
+          ownerDeclaresSubpath: false,
+          distHasBuiltEntries: true,
+        })
+      );
+
+      expect(message).toContain('"exports" does not declare this subpath');
+      expect(message).toContain("missing from the manifest, not from the build output");
+      expect(message).not.toContain("stale rather than absent");
+    });
+
+    it("falls back to the built/stale pair once the earlier causes are ruled out", () => {
+      const message = unresolvedWorkspaceMessage(
+        context({
+          importerPackage,
+          importerDeclaresDependency: true,
+          ownerDeclaresSubpath: true,
+          distHasBuiltEntries: true,
+        })
+      );
+      expect(message).toContain("The remaining likely cause");
+      expect(message).toContain("stale rather than absent");
+    });
+
+    it("does not read an importer outside any workspace as an undeclared dependency", () => {
+      // `undefined` is "the question does not apply", not "no".
+      const message = unresolvedWorkspaceMessage(
+        context({ importer: "/repo/vitest.config.ts", distHasBuiltEntries: true })
+      );
+      expect(message).not.toContain("isolated");
+      expect(message).toContain("stale rather than absent");
+    });
+  });
+
+  /**
+   * `WORKGLOW_TEST_TARGET` had two independent readers, each treating anything
+   * that was not literally `"dist"` as source. A workflow edited to `"dist "`
+   * or `Dist` turned the dist job into a byte-identical rerun of the source
+   * job — green, a runner slot spent, and no bundle coverage at all.
+   */
+  describe("resolveTestTarget", () => {
+    it("defaults to source when unset or empty", () => {
+      expect(resolveTestTarget(undefined)).toBe("source");
+      expect(resolveTestTarget("")).toBe("source");
+    });
+
+    it("accepts every declared target", () => {
+      for (const target of TEST_TARGETS) expect(resolveTestTarget(target)).toBe(target);
+    });
+
+    it("throws on anything else, naming the offending value", () => {
+      // No lowercasing and no prefix matching: reinterpreting a typo is the
+      // failure being fixed, not a fix for it.
+      for (const raw of ["dist ", "Dist", "1"]) {
+        expect(() => resolveTestTarget(raw)).toThrow(`WORKGLOW_TEST_TARGET="${raw}"`);
+      }
     });
   });
 
