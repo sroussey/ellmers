@@ -11,8 +11,10 @@ import type {
   ModelSearchTaskOutput,
 } from "@workglow/ai";
 import { filterLabeledModelsByQuery } from "@workglow/ai/provider-utils";
+import { stampEffortOptions } from "@workglow/ai/worker";
 import { getClient } from "./Anthropic_Client";
 import { ANTHROPIC } from "./Anthropic_Constants";
+import { anthropicEffortPolicy } from "./Anthropic_EffortPolicy";
 
 interface AnthropicModelListItem {
   readonly label: string;
@@ -55,15 +57,21 @@ function mapModelList(models: AnthropicModelListItem[]): ModelSearchResultItem[]
     id: m.value,
     label: m.label,
     description: m.description ?? "",
-    record: {
-      model_id: m.value,
-      provider: ANTHROPIC,
-      title: m.value,
-      description: "",
-      capabilities: [],
-      provider_config: { model_name: m.value },
-      metadata: {},
-    },
+    record: stampEffortOptions(
+      {
+        model_id: m.value,
+        provider: ANTHROPIC,
+        title: m.value,
+        description: "",
+        capabilities: [],
+        provider_config: { model_name: m.value },
+        metadata: {},
+      },
+      anthropicEffortPolicy({
+        provider: ANTHROPIC,
+        provider_config: { model_name: m.value },
+      })
+    ),
     raw: m,
   }));
 }

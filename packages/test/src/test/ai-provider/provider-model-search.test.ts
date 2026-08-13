@@ -11,6 +11,7 @@ import { DeepSeek_ModelSearch_Stream as DeepSeek_ModelSearch } from "@workglow/d
 import { Gemini_ModelSearch_Stream as Gemini_ModelSearch } from "@workglow/google-gemini/ai";
 import { HFI_ModelSearch } from "@workglow/huggingface-inference/ai";
 import { OpenAI_ModelSearch_Stream as OpenAI_ModelSearch } from "@workglow/openai/ai";
+import { mapOpenRouterModels, OPENROUTER_FALLBACK_MODELS } from "@workglow/openrouter/ai";
 import { TENSORFLOW_MEDIAPIPE, TFMP_ModelSearch } from "@workglow/tf-mediapipe/ai";
 import { afterEach, describe, expect, test } from "vitest";
 
@@ -68,6 +69,37 @@ describe("provider model search samples", () => {
     const image = results.find((r) => r.id === "gpt-image-2");
     expect(sol?.record?.effort_options).toEqual([...MODEL_EFFORTS]);
     expect(image?.record?.effort_options).toEqual([]);
+  });
+
+  test("Anthropic fallback stamps effort_options for Claude", async () => {
+    const { results } = (await collectStream(
+      await runFnToIterable(Anthropic_ModelSearch, { query: "claude-sonnet-5" })
+    )) as { results: Array<{ id: string; record?: { effort_options?: string[] } }> };
+    const sonnet = results.find((r) => r.id === "claude-sonnet-5");
+    expect(sonnet?.record?.effort_options).toEqual([...MODEL_EFFORTS]);
+  });
+
+  test("Gemini fallback stamps effort_options by class", async () => {
+    const { results } = (await collectStream(
+      await runFnToIterable(Gemini_ModelSearch, { query: "" })
+    )) as { results: Array<{ id: string; record?: { effort_options?: string[] } }> };
+    const flash = results.find((r) => r.id === "gemini-3.5-flash");
+    const embedding = results.find((r) => r.id === "gemini-embedding-2");
+    expect(flash?.record?.effort_options).toEqual([...MODEL_EFFORTS]);
+    expect(embedding?.record?.effort_options).toEqual([]);
+  });
+
+  test("DeepSeek fallback stamps effort_options for v4", async () => {
+    const { results } = (await collectStream(
+      await runFnToIterable(DeepSeek_ModelSearch, { query: "deepseek-v4-flash" })
+    )) as { results: Array<{ id: string; record?: { effort_options?: string[] } }> };
+    const flash = results.find((r) => r.id === "deepseek-v4-flash");
+    expect(flash?.record?.effort_options).toEqual([...MODEL_EFFORTS]);
+  });
+
+  test("OpenRouter mapper stamps all six effort_options", () => {
+    const [first] = mapOpenRouterModels(OPENROUTER_FALLBACK_MODELS);
+    expect(first?.record?.effort_options).toEqual([...MODEL_EFFORTS]);
   });
 
   test("Anthropic fallback includes the latest Claude samples", async () => {

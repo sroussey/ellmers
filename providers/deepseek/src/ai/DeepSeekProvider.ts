@@ -5,13 +5,14 @@
  */
 
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
-import type { Capability, ModelRecord } from "@workglow/ai/worker";
+import type { Capability, ModelEffortPolicy, ModelRecord } from "@workglow/ai/worker";
 import { AiProvider } from "@workglow/ai/worker";
 import {
   deepSeekWorkerRunFnSpecs,
   inferDeepSeekCapabilities,
 } from "./common/DeepSeek_Capabilities";
 import { DEEPSEEK } from "./common/DeepSeek_Constants";
+import { deepseekEffortPolicy } from "./common/DeepSeek_EffortPolicy";
 import type { DeepSeekModelConfig } from "./common/DeepSeek_ModelSchema";
 
 /**
@@ -29,6 +30,10 @@ export class DeepSeekProvider extends createCloudProviderClass<DeepSeekModelConf
 }) {
   override inferCapabilities(model: ModelRecord): readonly Capability[] {
     return inferDeepSeekCapabilities(model);
+  }
+
+  override effortPolicy(model: DeepSeekModelConfig): ModelEffortPolicy | undefined {
+    return deepseekEffortPolicy(model);
   }
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
