@@ -61,14 +61,9 @@ describe("DeepSeek_ModelInfo", () => {
     const runFn = findModelInfoRunFn();
     const model = modelConfig("deepseek-v4-flash");
     let data: ModelInfoTaskOutput | undefined;
-    await runFn(
-      { model } as never,
-      model,
-      undefined as never,
-      ((ev) => {
-        if (ev.type === "finish") data = ev.data as ModelInfoTaskOutput;
-      }) as never
-    );
+    await runFn({ model }, model, undefined as never, (ev) => {
+      if (ev.type === "finish") data = ev.data as ModelInfoTaskOutput;
+    });
 
     expect(retrieved).toEqual(["deepseek-v4-flash"]);
     expect(data?.is_remote).toBe(true);
@@ -77,8 +72,8 @@ describe("DeepSeek_ModelInfo", () => {
   it("throws naming the id and provider when retrieve 404s", async () => {
     const runFn = findModelInfoRunFn();
     const model = modelConfig("missing-model");
-    await expect(
-      runFn({ model } as never, model, undefined as never, (() => {}) as never)
-    ).rejects.toThrow(/DEEPSEEK.*missing-model/i);
+    await expect(runFn({ model }, model, undefined as never, (() => {}) as never)).rejects.toThrow(
+      /DEEPSEEK.*missing-model/i
+    );
   });
 });

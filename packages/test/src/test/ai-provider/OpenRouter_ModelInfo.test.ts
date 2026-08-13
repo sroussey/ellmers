@@ -52,14 +52,9 @@ describe("OpenRouter_ModelInfo", () => {
     const runFn = findModelInfoRunFn();
     const model = modelConfig("anthropic/claude-sonnet-4");
     let data: ModelInfoTaskOutput | undefined;
-    await runFn(
-      { model } as never,
-      model,
-      undefined as never,
-      ((ev) => {
-        if (ev.type === "finish") data = ev.data as ModelInfoTaskOutput;
-      }) as never
-    );
+    await runFn({ model }, model, undefined as never, (ev) => {
+      if (ev.type === "finish") data = ev.data as ModelInfoTaskOutput;
+    });
 
     expect(fetch).toHaveBeenCalled();
     expect(data?.is_remote).toBe(true);
@@ -68,9 +63,9 @@ describe("OpenRouter_ModelInfo", () => {
   it("throws when the id is absent from the live catalog (not FALLBACK)", async () => {
     const runFn = findModelInfoRunFn();
     const model = modelConfig("missing/model");
-    await expect(
-      runFn({ model } as never, model, undefined as never, (() => {}) as never)
-    ).rejects.toThrow(/OPENROUTER.*missing\/model/i);
+    await expect(runFn({ model }, model, undefined as never, (() => {}) as never)).rejects.toThrow(
+      /OPENROUTER.*missing\/model/i
+    );
   });
 
   it("throws when the catalog request fails instead of using FALLBACK", async () => {
@@ -80,8 +75,8 @@ describe("OpenRouter_ModelInfo", () => {
     );
     const runFn = findModelInfoRunFn();
     const model = modelConfig("openai/gpt-5");
-    await expect(
-      runFn({ model } as never, model, undefined as never, (() => {}) as never)
-    ).rejects.toThrow(/OPENROUTER.*503/i);
+    await expect(runFn({ model }, model, undefined as never, (() => {}) as never)).rejects.toThrow(
+      /OPENROUTER.*503/i
+    );
   });
 });

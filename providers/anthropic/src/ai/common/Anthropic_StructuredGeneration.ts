@@ -54,7 +54,10 @@ export const Anthropic_StructuredGeneration_Stream: AiProviderRunFn<
   };
   applyAnthropicThinkingParams(params, model);
 
-  const stream = client.messages.stream(params, { signal });
+  const stream = (client.messages.stream as (p: unknown, o: unknown) => AsyncIterable<unknown>)(
+    params,
+    { signal }
+  );
 
   const json = createPartialJsonStream();
   const usageCollector = createAnthropicUsageCollector();
@@ -63,8 +66,12 @@ export const Anthropic_StructuredGeneration_Stream: AiProviderRunFn<
     usageCollector.observe(event);
     snapshotUsage(usageCollector.result());
     maybeEmitAnthropicRefusal(event, emit);
-    if (event.type === "content_block_delta" && event.delta.type === "input_json_delta") {
-      const partial = json.push(event.delta.partial_json);
+    const e = event as {
+      type: string;
+      delta?: { type?: string; partial_json?: string };
+    };
+    if (e.type === "content_block_delta" && e.delta?.type === "input_json_delta") {
+      const partial = json.push(e.delta.partial_json ?? "");
       if (partial !== undefined) {
         emit({ type: "object-delta", port: "object", objectDelta: partial });
       }
