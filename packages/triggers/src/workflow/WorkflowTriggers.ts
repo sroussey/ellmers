@@ -7,7 +7,7 @@
 import type { DataPorts, WorkflowRunConfig } from "@workglow/task-graph";
 import { Workflow } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util";
-import type { ITrigger, ITriggerFireContext } from "../trigger/ITrigger";
+import type { ITrigger, ITriggerFireContext, TriggerStopOptions } from "../trigger/ITrigger";
 import { WorkflowTriggerError } from "../trigger/TriggerError";
 
 /** Options for a single {@link Workflow.trigger} binding. */
@@ -39,8 +39,25 @@ export interface WorkflowTriggerOptions {
 
 /** Options for {@link Workflow.listen}. */
 export interface WorkflowListenOptions {
-  /** Caller-owned cancellation; aborting it stops every bound trigger. */
+  /**
+   * Caller-owned cancellation; aborting it stops every bound trigger.
+   *
+   * An ALREADY-aborted signal makes `listen()` reject instead of handing back
+   * an inert handle: nothing would have been scheduled, so returning normally
+   * reports a success that never happened.
+   */
   readonly signal?: AbortSignal | undefined;
+  /**
+   * Default deadline for {@link ITriggerListenerHandle.stop}, in milliseconds.
+   * Unbounded by default; see {@link TriggerStopOptions.timeoutMs}.
+   *
+   * Forwarded to each trigger's own `stop()` AND applied again around the whole
+   * set, because a trigger is an interface: a third-party `ITrigger` that
+   * ignores the option would otherwise wedge `handle.stop()`,
+   * `workflow.stopListening()` and an `await using` scope exit for every other
+   * trigger bound to this workflow.
+   */
+  readonly stopTimeoutMs?: number | undefined;
 }
 
 /**
@@ -52,8 +69,14 @@ export interface WorkflowListenOptions {
 export interface ITriggerListenerHandle extends AsyncDisposable {
   /** The triggers this handle started, in binding order. */
   readonly triggers: readonly ITrigger[];
-  /** Stops every trigger and resolves once in-flight runs have settled. */
-  stop(): Promise<void>;
+  /**
+   * Stops every trigger and resolves once in-flight runs have settled.
+   *
+   * Pass {@link TriggerStopOptions.timeoutMs} (or `stopTimeoutMs` on
+   * {@link Workflow.listen}) to bound that wait; unbounded by default, so a
+   * handler that never settles never lets this resolve.
+   */
+  stop(options?: TriggerStopOptions): Promise<void>;
 }
 
 interface TriggerBinding {
@@ -74,6 +97,27 @@ const workflowHandles = new WeakMap<Workflow, ITriggerListenerHandle>();
  */
 const workflowRunChains = new WeakMap<Workflow, Promise<void>>();
 const workflowPendingFires = new WeakMap<Workflow, number>();
+
+/**
+ * Resolves what `settling` resolved to, or `undefined` once `timeoutMs` passes.
+ *
+ * `settling` is an `allSettled`, so it never rejects and `undefined` is
+ * unambiguously the deadline. The timer is cleared in `finally` — an
+ * un-cleared one keeps a Node host alive past the shutdown it was timing.
+ */
+async function settleWithin<T>(settling: Promise<T>, timeoutMs: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      settling,
+      new Promise<undefined>((resolve) => {
+        timer = setTimeout(() => resolve(undefined), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
 
 /** The triggers bound to `workflow` via {@link Workflow.trigger}, in binding order. */
 export function getWorkflowTriggers(workflow: Workflow): readonly ITrigger[] {
@@ -100,10 +144,17 @@ declare module "@workglow/task-graph" {
      *
      * Calling it again while already listening returns the same handle rather
      * than starting a second set of timers.
+     *
+     * @throws the signal's abort reason when `options.signal` is already
+     *   aborted — checked before any state is touched, so the workflow is left
+     *   exactly as it was and stays free to bind and listen later.
      */
     listen(options?: WorkflowListenOptions): Promise<ITriggerListenerHandle>;
 
-    /** Stops every trigger started by {@link Workflow.listen}. A no-op when not listening. */
+    /**
+     * Stops every trigger started by {@link Workflow.listen}. A no-op when not
+     * listening. Bounded only if `listen()` was given a `stopTimeoutMs`.
+     */
     stopListening(): Promise<void>;
   }
 }
@@ -128,6 +179,13 @@ Workflow.prototype.listen = async function (
   this: Workflow,
   options: WorkflowListenOptions = {}
 ): Promise<ITriggerListenerHandle> {
+  // FIRST, before the handle lookup and before any state is touched. An
+  // already-aborted signal starts nothing (`BaseTrigger.start` bails on one),
+  // so the old path returned a handle that had already been removed from
+  // `workflowHandles` and whose triggers were never scheduled: a listen() that
+  // looked successful and was inert.
+  options.signal?.throwIfAborted();
+
   const existing = workflowHandles.get(this);
   if (existing) return existing;
 
@@ -147,11 +205,41 @@ Workflow.prototype.listen = async function (
     if (workflowHandles.get(this) === handle) workflowHandles.delete(this);
   };
 
-  const stop = async (): Promise<void> => {
+  const stop = async (stopOptions: TriggerStopOptions = {}): Promise<void> => {
+    const timeoutMs = stopOptions.timeoutMs ?? options.stopTimeoutMs;
+    const triggerStopOptions: TriggerStopOptions = timeoutMs === undefined ? {} : { timeoutMs };
+
+    // Which triggers are still draining, so an expiry can name them.
+    const outstanding = new Set(triggers);
     // `allSettled`, not `all`: a trigger whose stop rejects must not leave the
-    // rest of them scheduling forever.
-    const results = await Promise.allSettled(triggers.map((trigger) => trigger.stop()));
+    // rest of them scheduling forever. The `async` wrapper matters too — an
+    // `ITrigger` whose `stop()` throws synchronously would otherwise take the
+    // whole `map` down before a single sibling was asked to stop.
+    const settling = Promise.allSettled(
+      triggers.map(async (trigger) => {
+        try {
+          await trigger.stop(triggerStopOptions);
+        } finally {
+          outstanding.delete(trigger);
+        }
+      })
+    );
+
+    const results =
+      timeoutMs === undefined ? await settling : await settleWithin(settling, timeoutMs);
+
+    // Released either way: leaving the handle installed after a timed-out stop
+    // locks `workflow.trigger(...)` forever and makes `listen()` keep handing
+    // back triggers that are on their way out.
     releaseHandle();
+
+    if (results === undefined) {
+      getLogger().warn("Timed out stopping workflow triggers", {
+        timeoutMs,
+        triggerIds: [...outstanding].map((trigger) => trigger.id),
+      });
+      return;
+    }
     for (const result of results) {
       if (result.status === "rejected") {
         getLogger().error("Trigger failed to stop", { error: String(result.reason) });
@@ -161,7 +249,9 @@ Workflow.prototype.listen = async function (
   const handle: ITriggerListenerHandle = {
     triggers,
     stop,
-    [Symbol.asyncDispose]: stop,
+    // `AsyncDisposable` passes no arguments, so a scope exit uses the listen()
+    // default rather than picking up whatever the runtime hands the method.
+    [Symbol.asyncDispose]: () => stop(),
   };
 
   // Registered BEFORE the triggers start, so the rollback path below (and a
@@ -178,8 +268,6 @@ Workflow.prototype.listen = async function (
     };
     signal.addEventListener("abort", onAbort, { once: true });
     detachAbort = () => signal.removeEventListener("abort", onAbort);
-    // An already-aborted signal never fires the listener; nothing will start.
-    if (signal.aborted) void stop();
   }
 
   const started: ITrigger[] = [];

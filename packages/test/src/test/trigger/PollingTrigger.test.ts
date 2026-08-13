@@ -600,13 +600,26 @@ describe("PollingTrigger", () => {
         poll: (signal) => {
           observed ??= signal;
           return new Promise<string>((_resolve, reject) => {
-            signal.addEventListener("abort", () => reject(new Error("poll aborted")), {
-              once: true,
-            });
+            // An AbortError, not a plain one: quieting a stopped tick keys on
+            // the error's SHAPE as well as the run's state, so that a genuine
+            // failure during shutdown — a flush or a commit, the work most
+            // likely to fail there — is still reported rather than filed at
+            // debug alongside the cancellations. This is the convention the
+            // rest of the repo already constructs.
+            signal.addEventListener(
+              "abort",
+              () => reject(new DOMException("poll aborted", "AbortError")),
+              { once: true }
+            );
           });
         },
       });
-      trigger.on("error", () => {});
+      // A COLLECTING listener, not an absorbing one. The poll rejects because
+      // stop() aborted it, which is the graceful path — reporting it on `error`
+      // makes every orderly shutdown look like a failure, and the absorbing
+      // listener this test used to need was the evidence.
+      const errors: Error[] = [];
+      trigger.on("error", (error) => errors.push(error));
       trigger.start(() => {});
 
       await advanceFakeTimers(PERIOD);
@@ -618,6 +631,7 @@ describe("PollingTrigger", () => {
 
       await stopping;
       expect(trigger.running).toBe(false);
+      expect(errors).toEqual([]);
       // The deadline timer was cleared rather than left to fire on a dead run.
       expect(vi.getTimerCount()).toBe(0);
     });
