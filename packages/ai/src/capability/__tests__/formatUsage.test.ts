@@ -7,8 +7,8 @@
 import type { Usage } from "@workglow/task-graph";
 import { CACHE_HIT_USAGE } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
-import { formatCost, formatUsage, formatUsageWithCost } from "../formatUsage";
 import type { ModelPricing } from "../../model/ModelSchema";
+import { formatCost, formatUsage, formatUsageWithCost } from "../formatUsage";
 
 const usage = (over: Partial<Usage>): Usage => ({
   input: undefined,
@@ -133,9 +133,9 @@ const pricing: ModelPricing = {
 
 describe("formatUsageWithCost", () => {
   it("appends a priced figure when rates are known", () => {
-    expect(formatUsageWithCost(usage({ input: 1_000_000, output: 1_000_000 }), "directional", pricing)).toBe(
-      "↑1,000,000 ↓1,000,000 $18.0000"
-    );
+    expect(
+      formatUsageWithCost(usage({ input: 1_000_000, output: 1_000_000 }), "directional", pricing)
+    ).toBe("↑1,000,000 ↓1,000,000 $18.0000");
   });
 
   it("stays tokens-only when nothing can be priced", () => {
@@ -156,5 +156,18 @@ describe("formatUsageWithCost", () => {
         undefined
       )
     ).toBe("↑100 ↓20 $0.0004");
+  });
+
+  it("marks heuristic counters and shows no cost", () => {
+    // The counters are still worth showing — that live ↑↓ movement is why the
+    // estimate exists — but a reader must not take them for what was billed,
+    // and a dollar amount derived from them would say exactly that.
+    expect(
+      formatUsageWithCost(
+        usage({ input: 100, output: 20, estimated: true }),
+        "directional",
+        pricing
+      )
+    ).toBe("~↑100 ↓20");
   });
 });

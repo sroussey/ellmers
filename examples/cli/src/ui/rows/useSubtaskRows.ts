@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ITask } from "@workglow/task-graph";
+import type { ITask, TaskGraph } from "@workglow/task-graph";
 import { useEffect, useState } from "react";
 import { sortCliTaskLinesForDisplay, startGraphTaskPoll } from "../cliTaskUi";
 import type { CliTaskLine, IterationSlotRow } from "../taskGraphCliSubscriptions";
-import { subscribeTaskGraphForCli } from "../taskGraphCliSubscriptions";
+import { cliTaskLabel, subscribeTaskGraphForCli } from "../taskGraphCliSubscriptions";
 
 export interface SubtaskRowsState {
   /** Owned subtasks in display order (completed → running → pending, then graph order). */
@@ -30,6 +30,79 @@ function isSettled(status: string): boolean {
   return status === "COMPLETED" || status === "FAILED" || status === "ABORTED";
 }
 
+const EMPTY_SUBTASK_ROWS: SubtaskRowsState = {
+  rows: [],
+  tasks: new Map(),
+  overallProgress: undefined,
+  iterationSlots: new Map(),
+};
+
+/**
+ * MapTask / ReduceTask / ForEachTask: the subgraph is the idle template, not the
+ * live iteration clones. Those clones arrive via `iteration_start` and are
+ * rendered as ordinary task rows.
+ */
+export function isIteratorTask(task: ITask): boolean {
+  return typeof (task as { analyzeIterationInput?: unknown }).analyzeIterationInput === "function";
+}
+
+function concurrencyLimitOf(task: ITask): number | undefined {
+  const limit = (task as { concurrencyLimit?: number }).concurrencyLimit;
+  return typeof limit === "number" && limit >= 1 ? limit : undefined;
+}
+
+export { concurrencyLimitOf };
+
+function taskToCliLine(task: ITask): CliTaskLine {
+  return {
+    id: String(task.id),
+    type: (task as { type?: string }).type ?? "Unknown",
+    label: cliTaskLabel(task),
+    status: String(task.status),
+  };
+}
+
+function linesFromTasks(tasks: readonly ITask[]): Map<string, CliTaskLine> {
+  return new Map(tasks.map((t) => [String(t.id), taskToCliLine(t)]));
+}
+
+/**
+ * Subscribe to an already-populated graph (a Map iteration clone) the same way
+ * {@link useSubtaskRows} subscribes to a task's owned subgraph.
+ */
+export function useGraphTaskRows(graph: TaskGraph): SubtaskRowsState {
+  const children = graph.getTasks();
+  const [taskInfos, setTaskInfos] = useState<Map<string, CliTaskLine>>(() => linesFromTasks(children));
+  const [overallProgress, setOverallProgress] = useState<number | undefined>(undefined);
+  const [iterationSlots, setIterationSlots] = useState<Map<string, IterationSlotRow[]>>(new Map());
+
+  useEffect(() => {
+    const unsub = subscribeTaskGraphForCli(
+      graph,
+      setTaskInfos,
+      undefined,
+      setOverallProgress,
+      setIterationSlots
+    );
+    const stopPoll = startGraphTaskPoll(graph, setTaskInfos);
+    return () => {
+      unsub();
+      stopPoll();
+    };
+  }, [graph]);
+
+  const order = new Map(children.map((t, i) => [String(t.id), i]));
+  const tasks = new Map(children.map((t) => [String(t.id), t]));
+  const rowsSource = taskInfos.size > 0 ? Array.from(taskInfos.values()) : children.map(taskToCliLine);
+
+  return {
+    rows: sortCliTaskLinesForDisplay(rowsSource, order),
+    tasks,
+    overallProgress,
+    iterationSlots,
+  };
+}
+
 /**
  * Tracks the tasks a running task owns via `context.own()`.
  *
@@ -41,11 +114,13 @@ function isSettled(status: string): boolean {
  * graph uses.
  */
 export function useSubtaskRows(task: ITask): SubtaskRowsState {
+  const skipTemplate = isIteratorTask(task);
   const [taskInfos, setTaskInfos] = useState<Map<string, CliTaskLine>>(new Map());
   const [overallProgress, setOverallProgress] = useState<number | undefined>(undefined);
   const [iterationSlots, setIterationSlots] = useState<Map<string, IterationSlotRow[]>>(new Map());
 
   useEffect(() => {
+    if (skipTemplate) return;
     let unsub: (() => void) | undefined;
     let stopPoll: (() => void) | undefined;
     let attachInterval: ReturnType<typeof setInterval> | undefined;
@@ -80,7 +155,9 @@ export function useSubtaskRows(task: ITask): SubtaskRowsState {
       unsub?.();
       stopPoll?.();
     };
-  }, [task]);
+  }, [task, skipTemplate]);
+
+  if (skipTemplate) return EMPTY_SUBTASK_ROWS;
 
   const children = task.hasChildren() && task.subGraph ? task.subGraph.getTasks() : [];
   const order = new Map(children.map((t, i) => [String(t.id), i]));

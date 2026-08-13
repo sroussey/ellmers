@@ -1,6 +1,6 @@
 node_modules/
 .DS_Store
-tsconfig.tsbuildinfo
+*.tsbuildinfo
 dist
 .nx/cache
 *.d.ts

@@ -12,8 +12,10 @@ import type { CliTaskLine, IterationSlotRow } from "../ui/taskGraphCliSubscripti
 import {
   FULL_SLOT_TRACKING_MAX,
   MAX_RUNNING_ROWS,
+  mergeLiveIterationGraphs,
   registerIterationListeners,
   subscribeTaskGraphForCli,
+  visibleIterationSlots,
 } from "../ui/taskGraphCliSubscriptions";
 
 // Minimal task stub: registerIterationListeners only touches `task.events`.
@@ -30,6 +32,41 @@ function makeSink<V>() {
   };
   return { setter, get: () => state };
 }
+
+describe("visibleIterationSlots", () => {
+  it("shows only running slots, capped at concurrencyLimit", () => {
+    const slots: IterationSlotRow[] = [
+      { index: 0, status: "completed" },
+      { index: 1, status: "running" },
+      { index: 2, status: "running" },
+      { index: 3, status: "running" },
+      { index: 4, status: "pending" },
+    ];
+    const visible = visibleIterationSlots(slots, 2);
+    expect(visible).toHaveLength(2);
+    expect(visible.map((s) => s.index)).toEqual([1, 2]);
+    expect(visible.every((s) => s.status === "running")).toBe(true);
+  });
+
+  it("fills the cap with the most recently completed slots when none are running", () => {
+    const slots: IterationSlotRow[] = [
+      { index: 0, status: "completed" },
+      { index: 1, status: "completed" },
+      { index: 2, status: "completed" },
+      { index: 3, status: "pending" },
+    ];
+    expect(visibleIterationSlots(slots, 1).map((s) => s.index)).toEqual([2]);
+    expect(visibleIterationSlots(slots, 2).map((s) => s.index)).toEqual([1, 2]);
+  });
+
+  it("shows every running slot when concurrencyLimit is unset, up to the render cap", () => {
+    const slots: IterationSlotRow[] = Array.from({ length: 5 }, (_, i) => ({
+      index: i,
+      status: "running" as const,
+    }));
+    expect(visibleIterationSlots(slots, undefined)).toHaveLength(5);
+  });
+});
 
 describe("registerIterationListeners", () => {
   it("keeps full completed/running/pending slots for small loops", () => {
@@ -49,6 +86,64 @@ describe("registerIterationListeners", () => {
     task.events.emit("iteration_complete", 2 as never, N as never);
     slots = sink.get().get("t1")!;
     expect(slots[2]).toMatchObject({ index: 2, status: "completed" });
+  });
+
+  it("retains the cloned subgraph from iteration_start so the row can render live tasks", () => {
+    const task = makeTask();
+    const sink = makeSink<IterationSlotRow[]>();
+    registerIterationListeners(task as unknown as ITask, "t1", sink.setter as never);
+
+    const graph = new TaskGraph();
+    task.events.emit("iteration_start", 0 as never, 3 as never, graph as never);
+
+    const slots = sink.get().get("t1")!;
+    expect(slots[0]?.graph).toBe(graph);
+
+    task.events.emit("iteration_complete", 0 as never, 3 as never);
+    expect(sink.get().get("t1")![0]?.graph).toBe(graph);
+  });
+
+  it("picks up a clone graph when listeners attach after iteration_start", () => {
+    const task = makeTask();
+    const graph = new TaskGraph();
+    (
+      task as unknown as {
+        getVisibleIterationGraphs: () => Array<{ index: number; graph: TaskGraph }>;
+      }
+    ).getVisibleIterationGraphs = () => [{ index: 0, graph }];
+
+    const sink = makeSink<IterationSlotRow[]>();
+    registerIterationListeners(task as unknown as ITask, "late", sink.setter as never);
+
+    const slots = sink.get().get("late") ?? [];
+    expect(slots.some((s) => s.graph === graph)).toBe(true);
+  });
+
+  it("fills empty slots from the iterator's live clone graphs", () => {
+    const graph = new TaskGraph();
+    const task = {
+      getVisibleIterationGraphs: () => [{ index: 2, graph }],
+    } as unknown as ITask;
+    const merged = mergeLiveIterationGraphs(undefined, task);
+    expect(merged).toEqual([{ index: 2, status: "running", graph }]);
+  });
+
+  it("attaches the clone graph from a later progress event if start was missed", () => {
+    const task = makeTask();
+    const sink = makeSink<IterationSlotRow[]>();
+    registerIterationListeners(task as unknown as ITask, "t1", sink.setter as never);
+
+    const graph = new TaskGraph();
+    task.events.emit(
+      "iteration_progress",
+      0 as never,
+      3 as never,
+      40 as never,
+      "working" as never,
+      graph as never
+    );
+
+    expect(sink.get().get("t1")![0]?.graph).toBe(graph);
   });
 
   it("tracks only running iterations (bounded) for huge loops", () => {

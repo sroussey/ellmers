@@ -1,5 +1,31 @@
 # @workglow/tasks
 
+## 0.3.39
+
+### Bug Fixes
+
+#### tasks
+
+- handle the SafeFetch body-pipe rejection instead of crashing the process
+- keep resolved credentials out of queued job payloads, add credential schemes (#677)
+
+#### test
+
+- close the gaps the Turbo/projects wiring opened
+
+### Chores
+
+- update deps
+
+#### eslint
+
+- enforce consistent-type-imports and apply the repo-wide autofix (#683)
+
+### Updated Dependencies
+
+- `ipaddr.js`: ^2.5.0
+- `undici`: ^8.10.0
+
 ## 0.3.38
 
 ## 0.3.37
