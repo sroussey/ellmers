@@ -123,6 +123,29 @@ describe("applyAnthropicSamplingParams", () => {
     expect(meta.model).toBe("claude-opus-5");
     expect(meta.dropped).toEqual(["temperature", "top_p"]);
   });
+
+  // A model can accept sampling parameters in general and still reject them on
+  // a request carrying legacy extended thinking. `claude-haiku-4-5` is exactly
+  // that case: it is on the accepting list, so before this guard a
+  // thinking-configured run with a pinned temperature sent both and got a 400.
+  it("drops sampling parameters when extended thinking is enabled", () => {
+    const warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => {});
+    const params: Record<string, unknown> = {
+      thinking: { type: "enabled", budget_tokens: 1024 },
+    };
+    applyAnthropicSamplingParams(params, { temperature: 0, topP: 0.9 }, model("claude-haiku-4-5"));
+    expect("temperature" in params).toBe(false);
+    expect("top_p" in params).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  // Scope guard: adaptive thinking on 4.6+ is the recommended configuration and
+  // does accept sampling, so the suppression must key on "enabled" alone.
+  it("keeps sampling parameters under adaptive thinking", () => {
+    const params: Record<string, unknown> = { thinking: { type: "adaptive" } };
+    applyAnthropicSamplingParams(params, { temperature: 0.4 }, model("claude-haiku-4-5"));
+    expect(params.temperature).toBe(0.4);
+  });
 });
 
 /**

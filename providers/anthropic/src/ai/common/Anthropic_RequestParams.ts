@@ -137,6 +137,9 @@ interface AnthropicSamplingInput {
  * model accepts them. On a rejecting model the keys are left absent (rather
  * than set to `undefined`) and a single warning names everything dropped, so
  * the user's setting becoming a no-op is visible without failing the request.
+ *
+ * Call this after {@link applyAnthropicThinkingParams}: whether the request
+ * carries extended thinking decides whether sampling is legal at all.
  */
 export function applyAnthropicSamplingParams(
   params: Record<string, unknown>,
@@ -147,6 +150,19 @@ export function applyAnthropicSamplingParams(
   if (input.temperature !== undefined) supplied.push(["temperature", input.temperature]);
   if (input.topP !== undefined) supplied.push(["top_p", input.topP]);
   if (supplied.length === 0) return;
+
+  // Extended thinking (`thinking.type = "enabled"`) rejects sampling parameters.
+  // Scoped to "enabled" on purpose: `{type:"adaptive"}` on 4.6+ is the
+  // recommended configuration and does accept them. Requires that thinking has
+  // already been merged onto `params`.
+  const thinking = params.thinking as { type?: string } | undefined;
+  if (thinking?.type === "enabled") {
+    getLogger().warn("Anthropic extended thinking is on; dropping sampling parameters.", {
+      model: model?.provider_config?.model_name ?? "",
+      dropped: supplied.map(([wireName]) => wireName),
+    });
+    return;
+  }
 
   if (anthropicAcceptsSamplingParams(model)) {
     for (const [wireName, value] of supplied) params[wireName] = value;
