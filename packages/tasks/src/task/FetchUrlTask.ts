@@ -25,6 +25,7 @@ import {
   Workflow,
 } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { retryDateFromRetryAfterHeader } from "../util/RetryAfter";
 import { safeFetch } from "../util/SafeFetch";
 import { classifyUrl, urlResourcePattern } from "../util/UrlClassifier";
 import { applyCredentialToHeaders } from "./FetchUrlCredentials";
@@ -331,25 +332,10 @@ export class FetchUrlJob<
         );
       }
     } else {
-      let retryDate: Date | undefined;
-      if (
-        response.status === 429 ||
-        response.status === 503 ||
-        response.headers.get("Retry-After")
-      ) {
-        const retryAfterStr = response.headers.get("Retry-After");
-        if (retryAfterStr) {
-          const seconds = Number(retryAfterStr);
-          if (Number.isFinite(seconds) && seconds > 0) {
-            retryDate = new Date(Date.now() + seconds * 1000);
-          } else {
-            const parsedDate = new Date(retryAfterStr);
-            if (!isNaN(parsedDate.getTime()) && parsedDate > new Date()) {
-              retryDate = parsedDate;
-            }
-          }
-        }
-      }
+      // The header is remote-controlled, so the bounded parser owns the
+      // arithmetic: an unbounded value either parks the job for millennia or
+      // overflows into an Invalid Date the queue cannot reschedule from.
+      const retryDate = retryDateFromRetryAfterHeader(response.headers.get("Retry-After"));
 
       throw createFetchUrlHttpError(input.url!, response.status, response.statusText, retryDate);
     }
