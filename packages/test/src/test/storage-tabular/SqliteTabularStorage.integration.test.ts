@@ -583,7 +583,10 @@ describe("SqliteTabularStorage entity prototypes", () => {
     // The driver hands back null-prototype rows; anything that reaches a caller
     // has to look like the plain objects every other backend returns.
     expect(Object.getPrototypeOf(got)).toBe(Object.prototype);
-    expect(got).toStrictEqual({ ...row, kind: null });
+    // Every nullable column SearchSchema declares comes back as an explicit
+    // null, `tag` included -- a column added to the schema has to be listed
+    // here or toStrictEqual fails on the extra key.
+    expect(got).toStrictEqual({ ...row, kind: null, tag: null });
     storage.destroy();
   });
 
@@ -592,7 +595,7 @@ describe("SqliteTabularStorage entity prototypes", () => {
     await storage.put(row);
     const updated = await storage.updateWhere({ id: "p1" }, { value: 42 });
     expect(Object.getPrototypeOf(updated)).toBe(Object.prototype);
-    expect(updated).toStrictEqual({ ...row, kind: null, value: 42 });
+    expect(updated).toStrictEqual({ ...row, kind: null, tag: null, value: 42 });
     storage.destroy();
   });
 });
