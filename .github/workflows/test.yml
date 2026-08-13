@@ -107,6 +107,35 @@ jobs:
           path: vitest-unit-coverage.json
           retention-days: 1
 
+  # The one blocking job that resolves `@workglow/*` through `exports` rather
+  # than through the source-rewrite plugin. Every other vitest job here now
+  # runs against `src`, and there is no `bun test` job in this workflow at all,
+  # so without this a `bun build` entry that silently dropped a re-export would
+  # reach main and only surface in the nightly parity run, which never blocks.
+  # No coverage fragment is produced (scripts/test.ts skips `--coverage` when
+  # targeting dist), so merge-vitest-coverage needs no change.
+  test-vitest-dist:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun i
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: build-output
+          path: .
+      - name: Run unit tests against the built bundles
+        env:
+          WORKGLOW_TEST_TARGET: dist
+        run: bun run test:vitest:unit
+
   test-vitest-integration:
     runs-on: ubuntu-latest
     needs: build
@@ -344,6 +373,7 @@ jobs:
     needs:
       [
         test-vitest-unit,
+        test-vitest-dist,
         test-vitest-integration,
         test-vitest-rag,
         test-vitest-ai-provider-hft,
