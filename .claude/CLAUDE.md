@@ -404,9 +404,16 @@ source also collapses the two module identities a mixed package/relative import 
 otherwise produces.
 
 `WORKGLOW_TEST_TARGET=dist` restores the old behavior for a check that the built bundles
-themselves are wired correctly. Bundle integrity is not left unguarded by the default: the
-Bun runner resolves `exports` natively, so the nightly parity workflow runs the whole suite
-against `dist` either way.
+themselves are wired correctly. The plugin is attached to every project unconditionally,
+not only to coverage runs, so with the default in force NO vitest job resolves a
+`@workglow/*` specifier through `exports` — and there is no `bun test` job in the blocking
+workflow at all. The nightly Bun parity run does resolve `exports` natively, but it is
+explicitly informational, never blocks a merge, runs on a cron, and excludes six sections.
+So the `test-vitest-dist` job in `.github/workflows/test.yml` is what keeps bundle
+integrity blocking: it reuses the `build-output` artifact and runs the unit tier with
+`WORKGLOW_TEST_TARGET=dist`. It produces no coverage fragment — `scripts/test.ts` skips
+`--coverage` when targeting `dist`, since measuring bundles against a `src` denominator
+reports every source file at 0% — so `merge-vitest-coverage` is unaffected.
 
 The coverage denominator is stated explicitly (`packages/*/src/**/*.{ts,tsx}`, same for
 `providers/`) rather than left to vitest's default of "files loaded during the run" — that
