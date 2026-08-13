@@ -133,6 +133,13 @@ interface AnthropicSamplingInput {
 }
 
 /**
+ * Extended thinking bounds `top_p` rather than forbidding it: the API rejects
+ * anything below this with a 400 and accepts everything at or above it, so a
+ * value in range is worth passing through instead of discarding.
+ */
+const THINKING_MIN_TOP_P = 0.95;
+
+/**
  * Copies the caller's sampling fields onto an Anthropic request body when the
  * model accepts them. On a rejecting model the keys are left absent (rather
  * than set to `undefined`) and a single warning names everything dropped, so
@@ -151,26 +158,43 @@ export function applyAnthropicSamplingParams(
   if (input.topP !== undefined) supplied.push(["top_p", input.topP]);
   if (supplied.length === 0) return;
 
-  // Extended thinking (`thinking.type = "enabled"`) rejects sampling parameters.
-  // Scoped to "enabled" on purpose: `{type:"adaptive"}` on 4.6+ is the
-  // recommended configuration and does accept them. Requires that thinking has
-  // already been merged onto `params`.
+  // Extended thinking (`thinking.type = "enabled"`) narrows sampling rather
+  // than forbidding it, so an in-range `top_p` is passed through instead of
+  // discarded. `temperature` is always dropped: its only legal value under
+  // thinking is the default `1`, so sending it can never change the result,
+  // and omitting it also keeps the request clear of the separate rule that
+  // `temperature` and `top_p` may not both be specified. Scoped to "enabled"
+  // on purpose: `{type:"adaptive"}` on 4.6+ is the recommended configuration
+  // and accepts the full range. Requires that thinking has already been merged
+  // onto `params`.
   const thinking = params.thinking as { type?: string } | undefined;
+  let permitted = supplied;
   if (thinking?.type === "enabled") {
-    getLogger().warn("Anthropic extended thinking is on; dropping sampling parameters.", {
-      model: model?.provider_config?.model_name ?? "",
-      dropped: supplied.map(([wireName]) => wireName),
+    const dropped: string[] = [];
+    permitted = supplied.filter(([wireName, value]) => {
+      if (wireName === "top_p" && value >= THINKING_MIN_TOP_P) return true;
+      dropped.push(wireName);
+      return false;
     });
-    return;
+    if (dropped.length > 0) {
+      getLogger().warn(
+        "Anthropic extended thinking constrains sampling; dropping unsupported parameters.",
+        {
+          model: model?.provider_config?.model_name ?? "",
+          dropped,
+        }
+      );
+    }
+    if (permitted.length === 0) return;
   }
 
   if (anthropicAcceptsSamplingParams(model)) {
-    for (const [wireName, value] of supplied) params[wireName] = value;
+    for (const [wireName, value] of permitted) params[wireName] = value;
     return;
   }
 
   getLogger().warn("Anthropic model rejects sampling parameters; dropping them.", {
     model: model?.provider_config?.model_name ?? "",
-    dropped: supplied.map(([wireName]) => wireName),
+    dropped: permitted.map(([wireName]) => wireName),
   });
 }

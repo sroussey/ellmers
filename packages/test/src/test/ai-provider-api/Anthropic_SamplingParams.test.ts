@@ -139,6 +139,36 @@ describe("applyAnthropicSamplingParams", () => {
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
+  // Thinking bounds `top_p` rather than forbidding it: the API accepts
+  // `>= 0.95`. Dropping such a value would discard a setting the request was
+  // entitled to send, and with nothing dropped there is nothing to warn about.
+  it("keeps an in-range top_p when extended thinking is enabled", () => {
+    const warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => {});
+    const params: Record<string, unknown> = {
+      thinking: { type: "enabled", budget_tokens: 1024 },
+    };
+    applyAnthropicSamplingParams(params, { topP: 0.98 }, model("claude-haiku-4-5"));
+    expect(params.top_p).toBe(0.98);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  // `temperature` goes even when in range. Its only legal value under thinking
+  // is the default, so dropping it cannot change the result — and keeping it
+  // beside a surviving `top_p` would trip the separate rule that the two may
+  // not both be specified, turning a legal request into a 400.
+  it("drops temperature but keeps an in-range top_p under extended thinking", () => {
+    const warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => {});
+    const params: Record<string, unknown> = {
+      thinking: { type: "enabled", budget_tokens: 1024 },
+    };
+    applyAnthropicSamplingParams(params, { temperature: 1, topP: 0.98 }, model("claude-haiku-4-5"));
+    expect("temperature" in params).toBe(false);
+    expect(params.top_p).toBe(0.98);
+    expect(warn).toHaveBeenCalledTimes(1);
+    const meta = warn.mock.calls[0]![1] as { dropped: string[] };
+    expect(meta.dropped).toEqual(["temperature"]);
+  });
+
   // Scope guard: adaptive thinking on 4.6+ is the recommended configuration and
   // does accept sampling, so the suppression must key on "enabled" alone.
   it("keeps sampling parameters under adaptive thinking", () => {
