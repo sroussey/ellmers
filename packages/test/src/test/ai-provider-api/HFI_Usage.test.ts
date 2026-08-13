@@ -133,6 +133,30 @@ describe("HFI text run-fns forward provider-stated usage", () => {
 
         expect(events.some((e) => e.type === "usage")).toBe(true);
       });
+
+      /**
+       * Where the two halves meet. Mid-stream snapshots are character-count
+       * guesses and carry `estimated`, which keeps them out of the retired
+       * total and out of every cost figure derived from it. The provider's own
+       * total carries no such marker, so forwarding it is what puts a real
+       * figure back into accounting — without it this run would show a live
+       * counter and then record nothing at all.
+       */
+      it("marks the provisional snapshots estimated but not the stated total", async () => {
+        chunkQueue = [{ choices: [{ delta: { content: text } }] }, usageChunk];
+
+        const events: any[] = [];
+        await findRunFn(serves)(input as any, model, new AbortController().signal, (e) =>
+          events.push(e)
+        );
+
+        const provisional = events.filter((e) => e.type === "usage");
+        expect(provisional.length).toBeGreaterThan(0);
+        for (const event of provisional) {
+          expect(event.usage?.estimated).toBe(true);
+        }
+        expect(events.at(-1)?.usage?.estimated).toBeUndefined();
+      });
     });
   }
 });
