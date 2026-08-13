@@ -41,39 +41,36 @@ export interface IterationSlotRow {
   /** 0–100 from `iteration_progress` (inner cloned graph). */
   progress?: number;
   message?: string;
+  /** Live clone for this iteration; render its tasks as ordinary rows. */
+  readonly graph?: TaskGraph;
 }
 
-export function iterationSlotToTaskStatus(slot: IterationSlotRow["status"]): string {
-  switch (slot) {
-    case "pending":
-      return "PENDING";
-    case "running":
-      return "PROCESSING";
-    case "completed":
-      return "COMPLETED";
-  }
-}
-
-/** Same tier order as workflow rows: completed → running → pending; then by iteration index. */
-export function sortIterationSlotsForDisplay(
-  slots: readonly IterationSlotRow[]
+/**
+ * Map/Reduce children in the CLI: at most `concurrencyLimit` rows — the number
+ * the iterator actually has in flight. Prefer currently-running iterations;
+ * when fewer than the cap are running (including after the map finishes), fill
+ * with the most recently completed so the tree is not an empty parent.
+ */
+export function visibleIterationSlots(
+  slots: readonly IterationSlotRow[],
+  concurrencyLimit: number | undefined
 ): IterationSlotRow[] {
-  const order = (s: IterationSlotRow["status"]): number => {
-    switch (s) {
-      case "completed":
-        return 0;
-      case "running":
-        return 1;
-      case "pending":
-        return 2;
-    }
-  };
-  return [...slots].sort((a, b) => {
-    const ta = order(a.status);
-    const tb = order(b.status);
-    if (ta !== tb) return ta - tb;
-    return a.index - b.index;
-  });
+  const running = slots.filter((s) => s.status === "running").sort((a, b) => a.index - b.index);
+  const cap =
+    concurrencyLimit !== undefined
+      ? Math.max(1, Math.min(concurrencyLimit, MAX_RUNNING_ROWS))
+      : Math.min(Math.max(running.length, 1), MAX_RUNNING_ROWS);
+  if (running.length >= cap) return running.slice(0, cap);
+
+  const completed = slots
+    .filter((s) => s.status === "completed")
+    .sort((a, b) => b.index - a.index);
+  const out = [...running];
+  for (const slot of completed) {
+    if (out.length >= cap) break;
+    out.push(slot);
+  }
+  return out.sort((a, b) => a.index - b.index);
 }
 
 /** Returns an unsubscribe: a task released with `disown` must not keep its listeners. */
@@ -134,13 +131,47 @@ export const FULL_SLOT_TRACKING_MAX = 200;
 /** Hard cap on running rows rendered/retained, independent of concurrency. */
 export const MAX_RUNNING_ROWS = 64;
 
+function visibleIterationGraphsOf(
+  task: ITask
+): Array<{ index: number; graph: TaskGraph }> {
+  const getter = (
+    task as { getVisibleIterationGraphs?: () => Array<{ index: number; graph: TaskGraph }> }
+  ).getVisibleIterationGraphs;
+  return typeof getter === "function" ? getter.call(task) : [];
+}
+
+/**
+ * Overlay live clone graphs from the iterator onto event-driven slots. Nested
+ * Maps often fire `iteration_start` before the CLI poll attaches listeners;
+ * the iterator keeps those clones so a late row can still render them.
+ */
+export function mergeLiveIterationGraphs(
+  slots: readonly IterationSlotRow[] | undefined,
+  task: ITask
+): IterationSlotRow[] {
+  const live = visibleIterationGraphsOf(task);
+  if (live.length === 0) return slots ? [...slots] : [];
+  const byIndex = new Map((slots ?? []).map((s) => [s.index, s]));
+  for (const { index, graph } of live) {
+    const existing = byIndex.get(index);
+    byIndex.set(index, {
+      index,
+      status: existing?.status ?? "running",
+      progress: existing?.progress,
+      message: existing?.message,
+      graph: existing?.graph ?? graph,
+    });
+  }
+  return [...byIndex.values()];
+}
+
 export function registerIterationListeners(
   task: ITask,
   taskId: string,
   setIterationSlots: Dispatch<SetStateAction<Map<string, IterationSlotRow[]>>>
 ): () => void {
   // --- Full per-index tracking (small loops, ≤ FULL_SLOT_TRACKING_MAX). ---
-  const onStartFull = (index: number, iterationCount: number): void => {
+  const onStartFull = (index: number, iterationCount: number, subgraph?: TaskGraph): void => {
     setIterationSlots((prev) => {
       const next = new Map(prev);
       let slots = next.get(taskId);
@@ -152,7 +183,7 @@ export function registerIterationListeners(
       } else {
         slots = [...slots];
       }
-      slots[index] = { index, status: "running" };
+      slots[index] = { index, status: "running", graph: subgraph };
       next.set(taskId, slots);
       return next;
     });
@@ -165,7 +196,12 @@ export function registerIterationListeners(
       while (slots.length < iterationCount) {
         slots.push({ index: slots.length, status: "pending" });
       }
-      slots[index] = { index, status: "completed", progress: 100 };
+      slots[index] = {
+        index,
+        status: "completed",
+        progress: 100,
+        graph: slots[index]?.graph,
+      };
       next.set(taskId, slots);
       return next;
     });
@@ -175,7 +211,8 @@ export function registerIterationListeners(
     index: number,
     iterationCount: number,
     prog: number | undefined,
-    message?: string
+    message?: string,
+    subgraph?: TaskGraph
   ): void => {
     setIterationSlots((prev) => {
       const next = new Map(prev);
@@ -185,7 +222,13 @@ export function registerIterationListeners(
       }
       const cur = slots[index];
       if (cur?.status === "completed") return prev;
-      slots[index] = { index, status: "running", progress: prog, message };
+      slots[index] = {
+        index,
+        status: "running",
+        progress: prog,
+        message,
+        graph: subgraph ?? cur?.graph,
+      };
       next.set(taskId, slots);
       return next;
     });
@@ -197,7 +240,8 @@ export function registerIterationListeners(
       const next = new Map(prev);
       const cur = next.get(taskId) ?? [];
       const at = cur.findIndex((s) => s.index === index);
-      const row: IterationSlotRow = { index, status: "running", ...patch };
+      const existing = at >= 0 ? cur[at] : undefined;
+      const row: IterationSlotRow = { ...existing, index, status: "running", ...patch };
       let arr: IterationSlotRow[];
       if (at >= 0) {
         arr = cur.slice();
@@ -228,9 +272,9 @@ export function registerIterationListeners(
     });
   };
 
-  const onStart = (index: number, iterationCount: number): void => {
-    if (iterationCount <= FULL_SLOT_TRACKING_MAX) onStartFull(index, iterationCount);
-    else upsertRunning(index, {});
+  const onStart = (index: number, iterationCount: number, subgraph?: TaskGraph): void => {
+    if (iterationCount <= FULL_SLOT_TRACKING_MAX) onStartFull(index, iterationCount, subgraph);
+    else upsertRunning(index, subgraph ? { graph: subgraph } : {});
   };
   const onComplete = (index: number, iterationCount: number): void => {
     if (iterationCount <= FULL_SLOT_TRACKING_MAX) onCompleteFull(index, iterationCount);
@@ -240,16 +284,40 @@ export function registerIterationListeners(
     index: number,
     iterationCount: number,
     prog: number | undefined,
-    message?: string
+    message?: string,
+    subgraph?: TaskGraph
   ): void => {
     if (iterationCount <= FULL_SLOT_TRACKING_MAX)
-      onProgressFull(index, iterationCount, prog, message);
-    else upsertRunning(index, { progress: prog, message });
+      onProgressFull(index, iterationCount, prog, message, subgraph);
+    else upsertRunning(index, { progress: prog, message, ...(subgraph ? { graph: subgraph } : {}) });
   };
 
   task.events.on("iteration_start", onStart);
   task.events.on("iteration_complete", onComplete);
   task.events.on("iteration_progress", onIterProgress);
+
+  const live = visibleIterationGraphsOf(task);
+  if (live.length > 0) {
+    setIterationSlots((prev) => {
+      const next = new Map(prev);
+      const cur = [...(next.get(taskId) ?? [])];
+      for (const { index, graph } of live) {
+        const at = cur.findIndex((s) => s.index === index);
+        const existing = at >= 0 ? cur[at] : undefined;
+        const row: IterationSlotRow = {
+          index,
+          status: existing?.status ?? "running",
+          progress: existing?.progress,
+          message: existing?.message,
+          graph: existing?.graph ?? graph,
+        };
+        if (at >= 0) cur[at] = row;
+        else cur.push(row);
+      }
+      next.set(taskId, cur);
+      return next;
+    });
+  }
 
   return () => {
     task.events.off("iteration_start", onStart);

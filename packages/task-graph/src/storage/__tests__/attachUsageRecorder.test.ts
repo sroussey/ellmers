@@ -99,4 +99,22 @@ describe("attachUsageRecorder", () => {
     expect(rows).toHaveLength(2);
     expect(rows.map((r) => r.sequence).sort()).toEqual([0, 1]);
   });
+
+  it("writes no row for an estimated execution", async () => {
+    const storage = new InMemoryTabularStorage(RunUsageSchema, RunUsagePrimaryKeyNames);
+    const aggregator = new GraphUsageAggregator();
+    const detach = attachUsageRecorder(aggregator, storage, { runId: "run-4" });
+
+    aggregator.observe("t1", { ...usage(30, 2), estimated: true as const }, "m");
+    aggregator.observe("t2", usage(10, 1), "m");
+    aggregator.sweep();
+    await detach();
+
+    const rows = (await storage.getAll()) ?? [];
+    // `run_usage` has no column that could say "this figure is a guess", so a
+    // recorded estimate is indistinguishable from billed spend forever after.
+    // The recorder is not changed to filter — it writes one row per retirement,
+    // and an estimated bucket is never retired.
+    expect(rows.map((r) => r.taskId)).toEqual(["t2"]);
+  });
 });

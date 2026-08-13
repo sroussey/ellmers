@@ -10,21 +10,25 @@ import { lookupModelPricing } from "./lookupModelPricing";
 
 /** Async rate-card lookup for a model id, suitable for render-time cost lines. */
 export function useModelPricing(modelId: string | undefined): ModelPricing | undefined {
-  const [pricing, setPricing] = useState<ModelPricing | undefined>(undefined);
+  const [result, setResult] = useState<{
+    readonly modelId: string | undefined;
+    readonly pricing: ModelPricing | undefined;
+  }>({ modelId, pricing: undefined });
+
+  if (result.modelId !== modelId) {
+    setResult({ modelId, pricing: undefined });
+  }
 
   useEffect(() => {
+    if (!modelId) return;
     let cancelled = false;
-    if (!modelId) {
-      setPricing(undefined);
-      return;
-    }
     void lookupModelPricing(modelId).then((next) => {
-      if (!cancelled) setPricing(next);
+      if (!cancelled) setResult({ modelId, pricing: next });
     });
     return () => {
       cancelled = true;
     };
   }, [modelId]);
 
-  return pricing;
+  return result.modelId === modelId ? result.pricing : undefined;
 }

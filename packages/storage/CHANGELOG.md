@@ -1,5 +1,34 @@
 # @workglow/storage
 
+## 0.3.39
+
+### Features
+
+#### storage
+
+- enhance query operators to support null handling and inequality checks
+
+### Bug Fixes
+
+#### test
+
+- close the gaps the Turbo/projects wiring opened
+
+### Refactors
+
+- decompose BaseTabularStorage.ts and Task.ts along functional seams (#682)
+
+### Tests
+
+- run tests through Turbo and per-package vitest projects
+- move 174 more unit tests into their owning packages
+
+### Chores
+
+#### eslint
+
+- enforce consistent-type-imports and apply the repo-wide autofix (#683)
+
 ## 0.3.38
 
 ## 0.3.37

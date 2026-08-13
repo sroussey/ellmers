@@ -1,5 +1,77 @@
 # @workglow/ai
 
+## 0.3.39
+
+### Features
+
+- enhance provisional usage reporting in AI provider streams
+- implement CLI duration formatting and enhance task usage tracking
+
+#### ai
+
+- add ModelConfig.effort coarse thinking dial
+- add a shared usage and cost formatter
+- charge checkpoint cache storage at disposal
+- add estimateCost over disjoint usage buckets
+- add optional per-model pricing to the model schema
+- fold usage snapshots in the accumulator and publish from AiTask
+- add a ./test entry and drop _testOnly from the public API
+
+#### providers
+
+- emit cumulative usage snapshots mid-stream
+
+### Bug Fixes
+
+- improve usage tracking
+- make the ./test entries survive a real build
+
+#### ai,task-graph
+
+- keep heuristic usage estimates out of accounting
+
+#### task-graph,ai
+
+- route a checkpoint's storage charge into the run total
+
+#### ai
+
+- delete the CheckpointEntry fields nothing reads
+- attribute chat spend to the chat model
+- charge every checkpoint's storage cost, not just the last link
+- count the whole prompt in the usage arrow
+- keep checkpoint teardown from stranding registry entries
+- require explicit ModelPricing rates and make the type assertion enforceable
+- make the OpenAI-shaped usage mappers report disjoint input
+
+#### task-graph
+
+- detach the run's usage listeners at run end
+
+#### test
+
+- close the gaps the Turbo/projects wiring opened
+
+### Tests
+
+- run tests through Turbo and per-package vitest projects
+- move 174 more unit tests into their owning packages
+
+#### ai
+
+- verify OpenAI cache counters are portions of input_tokens
+- drop the unused binding without gutting the pricing check
+- pin the cumulative detail level and the detailed cached counter
+- drop the non-falsifiable ModelPricing round-trip
+
+### Chores
+
+- add Lezer dependencies and update Vite configuration
+
+#### eslint
+
+- enforce consistent-type-imports and apply the repo-wide autofix (#683)
+
 ## 0.3.38
 
 ### Features

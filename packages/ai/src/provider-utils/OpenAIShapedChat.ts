@@ -158,10 +158,12 @@ export async function accumulateOpenAIChatStream(
 ): Promise<Usage | undefined> {
   const toolCallAccumulator = new Map<number, ToolCallAccumulatorEntry>();
   // Chat-completions shape only reports billed usage on the final empty-choices
-  // chunk; estimate ↓ from content deltas so the CLI counter moves during the
-  // call. The caller still attaches the provider total to `finish.usage`.
-  const provisionalUsage = createEstimatedOutputUsageReporter(emit);
-  if (options.promptText !== undefined) {
+  // chunk; when the caller supplies promptText, estimate ↑ before the first
+  // delta and ↓ from content / tool-arg deltas so the CLI counter moves during
+  // the call. The caller still attaches the provider total to `finish.usage`.
+  const provisionalUsage =
+    options.promptText !== undefined ? createEstimatedOutputUsageReporter(emit) : undefined;
+  if (provisionalUsage && options.promptText !== undefined) {
     provisionalUsage.onPrompt(options.promptText);
   }
   let usage: Usage | undefined;
@@ -174,7 +176,7 @@ export async function accumulateOpenAIChatStream(
 
     const contentDelta: string = choice.delta?.content ?? "";
     if (contentDelta) {
-      provisionalUsage.onText(contentDelta);
+      provisionalUsage?.onText(contentDelta);
       emit({ type: "text-delta", port: "text", textDelta: contentDelta });
     }
 
@@ -211,7 +213,7 @@ export async function accumulateOpenAIChatStream(
       // Argument JSON is also generated text — count it so a tools-only reply
       // still ticks the ↓ counter (content deltas alone would stay silent).
       if (tcDelta.function?.arguments) {
-        provisionalUsage.onText(tcDelta.function.arguments);
+        provisionalUsage?.onText(tcDelta.function.arguments);
       }
       emit({
         type: "object-delta",
@@ -221,6 +223,6 @@ export async function accumulateOpenAIChatStream(
     }
   }
 
-  provisionalUsage.flush();
+  provisionalUsage?.flush();
   return usage;
 }
