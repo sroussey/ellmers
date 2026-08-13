@@ -36,10 +36,10 @@ const ANTHROPIC_PRICING: Record<string, ModelPricing | undefined> = {
   },
   "claude-sonnet-5": {
     currency: "USD",
-    input: 3,
-    output: 15,
-    cached: 0.3,
-    cacheWrite: 3.75,
+    input: 2,
+    output: 10,
+    cached: 0.2,
+    cacheWrite: 2.5,
     cacheStoragePerHour: undefined,
   },
   "claude-opus-5": {
@@ -130,11 +130,11 @@ const GEMINI_PRICING: Record<string, ModelPricing | undefined> = {
 };
 
 const XAI_PRICING: Record<string, ModelPricing | undefined> = {
-  "grok-4.5": {
+  "grok-4.6": {
     currency: "USD",
-    input: 3,
-    output: 15,
-    cached: 0.75,
+    input: 2,
+    output: 6,
+    cached: 0.5,
     cacheWrite: undefined,
     cacheStoragePerHour: undefined,
   },
@@ -155,6 +155,14 @@ const DEEPSEEK_PRICING: Record<string, ModelPricing | undefined> = {
     input: 0.56,
     output: 1.68,
     cached: 0.07,
+    cacheWrite: undefined,
+    cacheStoragePerHour: undefined,
+  },
+  "deepseek-v4-pro-0813": {
+    currency: "USD",
+    input: 0.435,
+    output: 0.87,
+    cached: 0.0435,
     cacheWrite: undefined,
     cacheStoragePerHour: undefined,
   },

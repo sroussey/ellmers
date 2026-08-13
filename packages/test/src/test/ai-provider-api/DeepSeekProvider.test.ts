@@ -33,7 +33,7 @@ describe("DeepSeekQueuedProvider.inferCapabilities", () => {
   const provider = new DeepSeekQueuedProvider(DEEPSEEK_RUN_FNS);
 
   it("infers chat + tool-use + json-mode for the deepseek-v4 family", () => {
-    for (const id of ["deepseek-v4-flash", "deepseek-v4-pro"]) {
+    for (const id of ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v4-pro-0813"]) {
       const caps = provider.inferCapabilities(model(id));
       expect(caps).toContain("text.generation");
       expect(caps).toContain("tool-use");

@@ -59,7 +59,7 @@ describe("Xai_ModelInfo", () => {
 
   it("retrieves the model and emits a remote info finish on success", async () => {
     const runFn = findModelInfoRunFn();
-    const model = modelConfig("grok-4.5");
+    const model = modelConfig("grok-4.6");
     let data: ModelInfoTaskOutput | undefined;
     await runFn(
       { model } as never,
@@ -70,7 +70,7 @@ describe("Xai_ModelInfo", () => {
       }) as never
     );
 
-    expect(retrieved).toEqual(["grok-4.5"]);
+    expect(retrieved).toEqual(["grok-4.6"]);
     expect(data?.is_remote).toBe(true);
   });
 
