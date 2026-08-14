@@ -1,5 +1,14 @@
 # @workglow/ai
 
+## 0.3.42
+
+### Bug Fixes
+
+#### ai
+
+- drop readonly from effort_options on ModelConfig/ModelRecord
+- report the tokens a fully-failed structured generation billed
+
 ## 0.3.41
 
 ### Features

@@ -1,5 +1,17 @@
 # @workglow/test
 
+## 0.3.42
+
+### Bug Fixes
+
+#### tasks
+
+- stop a response body deciding whether a fetch decode failure retries
+
+#### hft
+
+- choose the background-removal encoder by runtime, not by method existence
+
 ## 0.3.41
 
 ### Features

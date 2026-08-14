@@ -1,5 +1,7 @@
 # @workglow/web
 
+## 0.3.42
+
 ## 0.3.41
 
 ### Chores

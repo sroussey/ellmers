@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.42
+
+### Refactors
+
+#### providers
+
+- import effort helpers from @workglow/ai/worker, and lint it
+
 ## 0.3.41
 
 ### Features

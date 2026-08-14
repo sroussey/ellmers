@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.42
+
+### Bug Fixes
+
+#### xai
+
+- update import for ModelEffort from @workglow/ai/worker
+
+### Refactors
+
+#### providers
+
+- import effort helpers from @workglow/ai/worker, and lint it
+
 ## 0.3.41
 
 ### Features

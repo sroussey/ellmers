@@ -1,5 +1,17 @@
 # @workglow/tasks
 
+## 0.3.42
+
+### Bug Fixes
+
+#### tasks
+
+- stop a response body deciding whether a fetch decode failure retries
+
+### Chores
+
+- update deps
+
 ## 0.3.41
 
 ### Features
