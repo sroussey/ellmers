@@ -425,27 +425,31 @@ export class TaskRunner<
               : undefined);
 
           // A streamable task with delta-mode output ports, a cache in play,
-          // and no sink resolved has nowhere to route those deltas UNLESS a
-          // live downstream consumer takes the raw stream directly — the same
-          // "every consumer takes the live stream" contract the cache-off case
-          // below already relies on. Without such a consumer, the graph opted
-          // the task out expecting a sink, but the policy resolved to none
-          // here (a private policy without a usable slot, a stream-wired run
-          // downgraded above, or a non-cacheable task for which no sink is
-          // ever built): the deltas would be silently discarded and the task
-          // would return (and cache!) an empty output. Force accumulation so
-          // the task still materializes its own output. Cache-off runs keep
-          // the documented raw-finish contract: with no cache configured,
-          // shouldAccumulate=false means every consumer takes the live stream
-          // and the raw `{}` finish is intentional — and a present cache with
-          // a live streaming consumer keeps that same contract rather than
-          // buffering solely because a cache happens to be configured.
+          // and no sink resolved has nowhere to route those deltas — UNLESS
+          // nobody actually wants the value. Nobody wants it when no
+          // downstream edge needs the materialized value AND the task itself
+          // is not cacheable (so no row will ever be written from it either);
+          // that's the same "every consumer takes the live stream" contract
+          // the cache-off case below already relies on. Otherwise — a
+          // materializing consumer exists, or the task IS cacheable and would
+          // otherwise write an empty row (a private policy without a usable
+          // slot, a stream-wired run downgraded above, or a backing that
+          // doesn't implement `saveOutputStreamPort` all resolve refSinks to
+          // undefined here) — the deltas would be silently discarded and the
+          // task would return (and cache!) an empty output. Force
+          // accumulation so the task still materializes its own output.
+          // Cache-off runs keep the documented raw-finish contract untouched:
+          // with no cache configured, shouldAccumulate=false means every
+          // consumer takes the live stream and the raw `{}` finish is
+          // intentional. A downstream STREAMING consumer alone does not
+          // excuse a cacheable task from this: the row still gets written,
+          // streaming consumer or not.
           if (
             isStreamable &&
             refSinks === undefined &&
             this.cacheRegistry !== undefined &&
             !ctx.shouldAccumulate &&
-            config.hasStreamingConsumers !== true &&
+            (config.hasMaterializingConsumers === true || this.task.cacheable) &&
             getStreamingPorts(this.task.outputSchema()).some((p) => isDeltaStreamMode(p.mode))
           ) {
             ctx.shouldAccumulate = true;
