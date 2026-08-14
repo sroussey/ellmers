@@ -4,8 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { globalServiceRegistry } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
+import { CACHE_REGISTRY, DefaultCacheRegistry } from "../../cache/CacheRegistry";
+import { GraphAsTask } from "../../task/GraphAsTask";
 import type { IExecuteContext } from "../../task/ITask";
 import type { StreamEvent } from "../../task/StreamTypes";
 import { Task } from "../../task/Task";
@@ -61,6 +64,27 @@ class CacheableProducerTask extends Task<Record<string, never>, { bytes?: unknow
   }
   override async *executeStream(): AsyncIterable<StreamEvent<{ bytes?: unknown }>> {
     yield { type: "binary-delta", port: "bytes", binaryDelta: new Uint8Array([4, 5, 6, 7]) };
+    yield { type: "finish", data: {} };
+  }
+  override async execute(): Promise<{ bytes?: unknown }> {
+    throw new Error("unreachable");
+  }
+}
+
+/** A non-cacheable streaming leaf: no dataflow edges when run alone in a subgraph. */
+class LeafStreamTask extends Task<Record<string, never>, { bytes?: unknown }> {
+  public static override type = "LeafStreamTask";
+  public static override category = "Test";
+  public static override title = "Leaf stream";
+  public static override cacheable = false;
+  public static override inputSchema(): DataPortSchema {
+    return { type: "object", properties: {}, additionalProperties: false };
+  }
+  public static override outputSchema(): DataPortSchema {
+    return binOut;
+  }
+  override async *executeStream(): AsyncIterable<StreamEvent<{ bytes?: unknown }>> {
+    yield { type: "binary-delta", port: "bytes", binaryDelta: new Uint8Array([8, 9]) };
     yield { type: "finish", data: {} };
   }
   override async execute(): Promise<{ bytes?: unknown }> {
@@ -156,5 +180,61 @@ describe("TaskRunner force-accumulate safety net: cacheable task, no sink, strea
     const bytes = (result as { bytes?: unknown }).bytes;
     expect(bytes).toBeDefined();
     expect(new Uint8Array(bytes as ArrayBuffer)).toEqual(new Uint8Array([4, 5, 6, 7]));
+  });
+});
+
+describe("GraphAsTask leaf accumulation: non-cacheable streaming leaf, cache registry present", () => {
+  it("still accumulates the leaf so its own output is not written empty", async () => {
+    // GraphAsTask.executeStream unconditionally passes `accumulateLeafOutputs: false`
+    // into its subgraph run, and deliberately threads neither `registry` nor
+    // `outputCache` into that call (documented on TaskRunner.streamRunOptions) — so
+    // the ONLY way a cache registry reaches the leaf's own TaskRunner is the ambient
+    // default, globalServiceRegistry. `hasMaterializingConsumers` /
+    // `hasStreamingConsumers` are both computed from dataflow edges
+    // (StreamPump.anyConsumerNeedsMaterialized / anyConsumerAcceptsStream), and a
+    // leaf has zero outgoing edges, so BOTH read false regardless of whether a cache
+    // is actually in play — a consumer-edge analysis cannot see this cache at all.
+    //
+    // Asserted on `leaf.runOutputData` directly rather than on `group.run()`'s
+    // return value: GraphAsTask.executeStream separately forwards every ending
+    // node's raw stream_chunk events (including the leaf's own binary-delta) as
+    // its OWN stream, and the outer group's own `shouldAccumulate` (true by
+    // default for this standalone run) re-accumulates those forwarded deltas
+    // independently of whatever the leaf's own TaskRunner decided — which can
+    // paper over a missing inner value non-deterministically (observed while
+    // instrumenting this exact branch with a synchronous console.log: slowing
+    // the run just enough visibly changed the outer merged result). The leaf's
+    // own `runOutputData` is what the safety net actually controls, so it's the
+    // only assertion this test needs.
+    const leaf = new LeafStreamTask({ id: "leaf" });
+    const sub = new TaskGraph();
+    sub.addTask(leaf);
+    const group = new GraphAsTask({ id: "group", subGraph: sub });
+
+    const hadCacheRegistry = globalServiceRegistry.has(CACHE_REGISTRY);
+    const previousCacheRegistry = hadCacheRegistry
+      ? globalServiceRegistry.get(CACHE_REGISTRY)
+      : undefined;
+    globalServiceRegistry.registerInstance(
+      CACHE_REGISTRY,
+      new DefaultCacheRegistry({ deterministic: new NonStreamingMemoryRepo({}) })
+    );
+    try {
+      await group.run({});
+
+      // The leaf's own output must not be written empty just because a cache
+      // registry happens to be resolvable — no row is ever written for it (it
+      // is non-cacheable), so the cache is irrelevant, and it is a LEAF (no
+      // consumer at all), so nothing downstream takes the raw stream either.
+      const bytes = (leaf.runOutputData as { bytes?: unknown }).bytes;
+      expect(bytes).toBeDefined();
+      expect(new Uint8Array(bytes as ArrayBuffer)).toEqual(new Uint8Array([8, 9]));
+    } finally {
+      if (hadCacheRegistry) {
+        globalServiceRegistry.registerInstance(CACHE_REGISTRY, previousCacheRegistry!);
+      } else {
+        globalServiceRegistry.container.remove(CACHE_REGISTRY.id);
+      }
+    }
   });
 });
