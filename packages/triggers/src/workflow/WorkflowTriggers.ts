@@ -25,14 +25,20 @@ export interface WorkflowTriggerOptions {
   /** Run configuration forwarded to {@link Workflow.run} on every fire. */
   readonly runConfig?: WorkflowRunConfig | undefined;
   /**
-   * How many fires may wait for the workflow's current run before one is
-   * dropped. Defaults to `1`.
+   * How many of THIS binding's fires may wait for the workflow's current run
+   * before one is dropped. Defaults to `1`.
    *
    * One `Workflow` owns one task graph, which can only be running once, so
    * fires against a workflow are run one at a time no matter what overlap
    * policy the trigger uses. This is the bound on that backlog: a fire arriving
    * past it is dropped and reported on the trigger's `error` event rather than
    * queued forever behind a handler that cannot keep up.
+   *
+   * Counted per binding, matching where the option lives. A workflow-global
+   * count would let a fast trigger's backlog drop a slow trigger's first-ever
+   * fire against a ceiling the slow trigger never approached — so two bindings
+   * on one workflow do not share this budget, and the aggregate backlog is
+   * bounded by the sum rather than by any single binding's value.
    */
   readonly maxPendingFires?: number | undefined;
 }
@@ -82,6 +88,16 @@ export interface ITriggerListenerHandle extends AsyncDisposable {
 interface TriggerBinding {
   readonly trigger: ITrigger;
   readonly options: WorkflowTriggerOptions;
+  /**
+   * How many of THIS binding's fires are waiting on the workflow's run chain.
+   *
+   * Deliberately mutable, and deliberately on the binding rather than in a
+   * workflow-keyed map: `maxPendingFires` is a per-binding option, so charging
+   * every binding's backlog against one workflow-global counter let a fast
+   * trigger's queue drop a slow trigger's first-ever fire — and quote the slow
+   * trigger's limit while doing it.
+   */
+  pending: number;
 }
 
 /** Backlog bound applied when a binding does not set {@link WorkflowTriggerOptions.maxPendingFires}. */
@@ -92,11 +108,12 @@ const DEFAULT_MAX_PENDING_FIRES = 1;
 const workflowBindings = new WeakMap<Workflow, TriggerBinding[]>();
 const workflowHandles = new WeakMap<Workflow, ITriggerListenerHandle>();
 /**
- * Tail of the serialized run chain per workflow, and the number of fires
- * waiting on it. See {@link runWorkflowForFire}.
+ * Tail of the serialized run chain per workflow. Fires against one workflow are
+ * serialized no matter which binding they came from — one `Workflow` owns one
+ * task graph — but the BACKLOG on that chain is counted per binding
+ * ({@link TriggerBinding.pending}). See {@link runWorkflowForFire}.
  */
 const workflowRunChains = new WeakMap<Workflow, Promise<void>>();
-const workflowPendingFires = new WeakMap<Workflow, number>();
 
 /**
  * Resolves what `settling` resolved to, or `undefined` once `timeoutMs` passes.
@@ -206,7 +223,7 @@ export function bindWorkflowTrigger<W extends Workflow>(
         `binding: bind a second trigger instance instead of re-binding this one.`
     );
   }
-  bindings.push({ trigger, options });
+  bindings.push({ trigger, options, pending: 0 });
   workflowBindings.set(workflow, bindings);
   return workflow;
 }
@@ -429,18 +446,23 @@ async function runWorkflowForFire(
 
   if (predecessor !== undefined) {
     const limit = binding.options.maxPendingFires ?? DEFAULT_MAX_PENDING_FIRES;
-    const waiting = workflowPendingFires.get(workflow) ?? 0;
+    // This binding's own backlog. The limit and the count must come from the
+    // same binding or the message is a lie: a workflow-global count charged a
+    // fast binding's queue against a slow binding's ceiling and then reported
+    // "5 fire(s) are already waiting ... (maxPendingFires: 1)" for a trigger
+    // that had never queued a fire.
+    const waiting = binding.pending;
     if (waiting >= limit) {
       // Thrown rather than dropped in silence: this is the one place the old
       // "Graph is already running" failure was observable, and a backlog the
       // workflow cannot work off is worth reporting on the `error` event.
       throw new WorkflowTriggerError(
-        `Dropped a trigger fire scheduled for ${new Date(context.scheduledAt).toISOString()}: ` +
-          `${waiting} fire(s) are already waiting for this workflow's run to finish ` +
-          `(maxPendingFires: ${limit}).`
+        `Dropped a fire from trigger "${binding.trigger.id}" scheduled for ` +
+          `${new Date(context.scheduledAt).toISOString()}: ${waiting} fire(s) from that trigger ` +
+          `are already waiting for this workflow's run to finish (maxPendingFires: ${limit}).`
       );
     }
-    workflowPendingFires.set(workflow, waiting + 1);
+    binding.pending = waiting + 1;
   }
 
   const chain = (async (): Promise<void> => {
@@ -448,7 +470,7 @@ async function runWorkflowForFire(
       // `catch`, not a bare await: a fire whose run rejected must not take the
       // fires queued behind it down with it.
       await predecessor.catch(() => {});
-      workflowPendingFires.set(workflow, (workflowPendingFires.get(workflow) ?? 1) - 1);
+      binding.pending -= 1;
       // The wait can outlast the trigger. A fire that queued behind a slow run
       // must not start a new one after `stop()`.
       if (context.signal.aborted) return;
