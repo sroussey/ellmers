@@ -282,6 +282,10 @@ key = sha256(taskType + getCacheVersion() + fingerprint(inputs))
 
 Failed tasks are never cached — only `Ok` results reach `saveOutput`. `saveOutput` is upsert by primary key (last writer wins) — the underlying `TaskOutputTabularRepository` calls `put()` on its tabular storage, so a same-key write replaces the existing row.
 
+**`clearRun()` costs what the run wrote, not what the store holds.** It fires after every successful run, so it must not scale with the cache. A backing with a runId-leading primary key (`RunPrivateTaskOutputRepository`) answers with one indexed `deleteSearch({ runId })`. A backing that can only find a run's rows by scanning — `FsFolderTaskOutputRepository`, whose rows are keyed `(taskType, fingerprint)` one file each — is instead handed the rows to delete: `RunPrivateCacheRepo` mediates every private row write, so it records each `(taskType, key)` it wrote and passes that write-set to `deleteRunEntries(runId, entries)`. Cleanup is then one unlink per row plus one readdir of the blobs directory, and a run that wrote nothing does essentially nothing (previously: a full read-and-parse of every row file in the folder, per run, including unrelated runs' cached values).
+
+The write-set covers the current process only. Rows left under the same `runId` by a previous attempt (a crash-resume) are not in it and survive `clearRun()`; the age sweep (`CacheJanitor` / `clearOlderThan` → `deleteRunOlderThan`) reclaims those and **still scans**, because it is reached with no knowledge of what the run wrote. A backing declaring neither `deleteRunEntries` nor `keyFromInputs`, and any run whose write-set could not be recorded in full, fall back to the exhaustive `deleteRun`.
+
 ### Binary cache stream-out (refs on the read path)
 
 Binary output ports whose bytes were piped into a stream-capable cache carry a branded `CacheRef` in the cached row. On a **cache hit**, the runner mirrors the fresh-run event contract, driven by two graph-computed consumer hints (`IRunConfig.hasStreamingConsumers` / `hasMaterializingConsumers`):
