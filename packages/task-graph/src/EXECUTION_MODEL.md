@@ -296,9 +296,9 @@ Binary output ports whose bytes were piped into a stream-capable cache carry a b
 
 **Rows store the wire form**: the cached row always carries the `CacheRef`, never inline bytes — JSON-row backings would destroy an inline `Blob`/`ArrayBuffer` (`JSON.stringify(Blob)` is `{}`). Below-threshold hydration to inline bytes applies to the value **returned to the caller**, identically on fresh runs and cache hits.
 
-**Single binary port**: outside the per-port path below the runner drives a single binary sink, so this path supports exactly one binary output port. Tasks with multiple binary ports take the accumulation path (enforced in both `StreamPump.canStreamBinaryToCache` and `CacheCoordinator.getBinaryRefSinksByPolicy`) — unless the run opts into the per-port sink path below, which has no such limit.
+**Binary-only, any number of ports**: this path takes one _or more_ binary output ports — each gets its own sink and its own `CacheRef`, and `mintRefKey(taskType, fingerprint, port)` keeps the blobs distinct. What it does not take is a **mix**: a task whose streaming ports are not all binary falls back to accumulation (enforced in both `StreamPump.canStreamBinaryToCache` and `CacheCoordinator.getBinaryRefSinksByPolicy`), because only the binary ports get sinks here, so an `append` / `object` port alongside them would have neither a sink nor — with accumulation skipped — an accumulator, and its deltas would be dropped into an empty finish payload. Such mixed tasks stream every port only under the per-port path below.
 
-**One writer, two gating rules**: a backing declares exactly one streaming writer, `saveOutputStreamPort(taskType, inputs, port, mode, chunks, metadata)`, probed by `supportsStreaming()`. The single-binary case is that writer called with the task's one binary port and `mode: "binary"`; `CacheCoordinator.getBinaryRefSinksByPolicy` adapts it there, since that is the one place the port id is already known. What still differs between the two paths is when the runner _uses_ the writer, not what a backing has to implement: a single binary port streams to the cache unconditionally, while `append` / `object` ports stream only under `noAccumulation`.
+**One writer, two gating rules**: a backing declares exactly one streaming writer, `saveOutputStreamPort(taskType, inputs, port, mode, chunks, metadata)`, probed by `supportsStreaming()`. The binary case is that writer called per binary port with `mode: "binary"`; `CacheCoordinator.getBinaryRefSinksByPolicy` selects those ports and shares one writer closure with the all-mode builder, so the two paths differ in which ports they select, never in how a port's bytes are written. What still differs is when the runner _uses_ the writer, not what a backing has to implement: binary ports stream to the cache unconditionally, while `append` / `object` ports stream only under `noAccumulation`.
 
 **Self-healing dangling refs**: when a ref needed for replay or hydration no longer resolves (blob evicted, cache cleared), the hit converts into a **miss** — the task re-executes and rewrites both the row and the bytes. No events are emitted before all refs are validated.
 
@@ -346,7 +346,7 @@ The **SQL** backings share one implementation. `TabularBlobChunkStore` persists 
 
 ### Per-port stream sinks and the no-accumulation passthrough
 
-Everything above generalizes from "one binary port" to **every delta stream mode**
+Everything above generalizes from "binary ports only" to **every delta stream mode**
 (`append`, `object`, `binary`) behind an opt-in run flag,
 `TaskGraphRunConfig.noAccumulation` (default off — off is byte-identical to the
 accumulation path).

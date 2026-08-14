@@ -98,9 +98,9 @@ function isOwnTrackable(i: unknown): i is object {
 }
 
 /**
- * Adapts the legacy single-binary-port sink map to the unified per-port
- * {@link StreamSink} shape: a binary-mode sink is exactly a
- * {@link BinaryRefSink} with its mode named.
+ * Adapts the binary-only sink map to the unified per-port {@link StreamSink}
+ * shape: a binary-mode sink is exactly a {@link BinaryRefSink} with its mode
+ * named.
  */
 function wrapBinarySinks(
   sinks: ReadonlyMap<string, BinaryRefSink> | undefined
@@ -397,10 +397,10 @@ export class TaskRunner<
         if (outputs === undefined) {
           // Under the no-accumulation opt-in, build per-port sinks for EVERY
           // streamable mode (append/object/binary) via the port-aware backing;
-          // otherwise fall back to the legacy single-binary-port sink (adapted
-          // to the same StreamSink shape). Both run memory-bounded; the runtime
-          // threshold controls whether the resulting CacheRef survives in
-          // Output or is rehydrated inline below.
+          // otherwise build them for the binary ports only (adapted to the same
+          // StreamSink shape) — that mode streams to cache unflagged. Both run
+          // memory-bounded; the runtime threshold controls whether the
+          // resulting CacheRef survives in Output or is rehydrated inline below.
           const portSinks =
             isStreamable && this.noAccumulation === true
               ? this.cacheCoordinator.getRefSinksByPolicy(
