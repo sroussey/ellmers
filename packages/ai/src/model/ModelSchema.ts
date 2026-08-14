@@ -151,7 +151,7 @@ export type ModelConfig = {
   metadata?: { [x: string]: unknown } | undefined;
   pricing?: ModelPricing | undefined;
   effort?: ModelEffort | undefined;
-  effort_options?: readonly ModelEffort[] | undefined;
+  effort_options?: ModelEffort[] | undefined;
   provider: string;
   provider_config: {
     [x: string]: unknown;
@@ -167,7 +167,7 @@ export type ModelRecord = {
   capabilities: string[];
   pricing?: ModelPricing | undefined;
   effort?: ModelEffort | undefined;
-  effort_options?: readonly ModelEffort[] | undefined;
+  effort_options?: ModelEffort[] | undefined;
   provider: string;
   provider_config: {
     [x: string]: unknown;
