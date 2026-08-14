@@ -34,6 +34,7 @@ import {
   getPortStreamMode,
   getStreamingPorts,
   isDeltaStreamMode,
+  isStreamConsumer,
   isTaskStreamable,
   portForcesStreamValidation,
 } from "./StreamTypes";
@@ -319,7 +320,7 @@ export class TaskRunner<
           throw new TaskAbortedError("Promise for task created and aborted before run");
         }
 
-        const isStreamable = isTaskStreamable(this.task);
+        const isStreamable = isTaskStreamable(this.task) || isStreamConsumer(this.task);
 
         // Warn if schema declares streaming but executeStream is not implemented
         if (!isStreamable && typeof this.task.executeStream !== "function") {
