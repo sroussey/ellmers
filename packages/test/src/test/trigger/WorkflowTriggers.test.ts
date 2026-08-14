@@ -17,6 +17,7 @@ import {
   CronTrigger,
   CronUnsatisfiableError,
   getWorkflowTriggers,
+  installWorkflowTriggers,
   IntervalTrigger,
   PollingTrigger,
   WorkflowTriggerError,
@@ -200,6 +201,10 @@ async function drainUntil(predicate: () => boolean): Promise<void> {
   }
 }
 
+// The fluent methods this suite exercises are opt-in: importing the package
+// installs nothing (see TriggerInstall.test.ts). Install once for the file.
+installWorkflowTriggers();
+
 describe("Workflow trigger bindings", () => {
   beforeEach(() => {
     executions.length = 0;
@@ -217,7 +222,7 @@ describe("Workflow trigger bindings", () => {
     vi.useRealTimers();
   });
 
-  test("augments the Workflow prototype with lifecycle methods", () => {
+  test("installWorkflowTriggers() adds the lifecycle methods to the prototype", () => {
     expect(typeof Workflow.prototype.trigger).toBe("function");
     expect(typeof Workflow.prototype.listen).toBe("function");
     expect(typeof Workflow.prototype.stopListening).toBe("function");
@@ -382,6 +387,86 @@ describe("Workflow trigger bindings", () => {
     await handle.stop();
   });
 
+  test("one binding's backlog is not charged against another binding's limit", async () => {
+    // The counter used to be workflow-global while the limit came from the
+    // arriving fire's binding. The fast trigger filled the shared count to 5,
+    // and the slow trigger's FIRST fire was then dropped with a message reading
+    // "5 fire(s) are already waiting ... (maxPendingFires: 1)" — quoting a
+    // limit belonging to a trigger that had never queued anything.
+    const workflow = createWorkflow();
+    const fast = new IntervalTrigger({ intervalMs: PERIOD, id: "fast", overlap: "concurrent" });
+    // Fires once, well after the fast trigger has filled its own backlog.
+    const slow = new IntervalTrigger({ intervalMs: PERIOD * 4, id: "slow", overlap: "concurrent" });
+
+    const errors: Error[] = [];
+    fast.on("error", (error) => errors.push(error));
+    slow.on("error", (error) => errors.push(error));
+
+    workflow.trigger(fast, {
+      input: (context) => ({ label: `fast@${context.scheduledAt - START}` }),
+      maxPendingFires: 5,
+    });
+    // Default (1): its own first fire queues, and must not see the fast
+    // trigger's backlog at all.
+    workflow.trigger(slow, { input: () => ({ label: "slow" }) });
+
+    const gate = createGate();
+    holdGate = gate;
+    const handle = await workflow.listen();
+
+    await advanceFakeTimers(PERIOD * 4);
+
+    // The fast trigger queued 3 fires behind the running one, under its own
+    // limit of 5, and the slow trigger's single fire queued under its own 1.
+    expect(executions).toEqual(["fast@100"]);
+    expect(
+      errors.map((error) => error.message).filter((message) => message.includes("slow"))
+    ).toEqual([]);
+    expect(errors).toEqual([]);
+
+    holdGate = undefined;
+    gate.open();
+    await drainUntil(() => completed.length >= 5);
+
+    expect(completed).toContain("slow");
+    expect(errors).toEqual([]);
+
+    await handle.stop();
+  });
+
+  test("a dropped fire names the trigger it came from", async () => {
+    const workflow = createWorkflow();
+    const trigger = new IntervalTrigger({
+      intervalMs: PERIOD,
+      id: "chatty",
+      overlap: "concurrent",
+    });
+    const errors: Error[] = [];
+    trigger.on("error", (error) => errors.push(error));
+    workflow.trigger(trigger, {
+      input: (context) => ({ label: `fire@${context.scheduledAt - START}` }),
+      maxPendingFires: 1,
+    });
+
+    const gate = createGate();
+    holdGate = gate;
+    const handle = await workflow.listen();
+
+    await advanceFakeTimers(PERIOD * 3);
+
+    expect(errors).toHaveLength(1);
+    // Trigger and count in one message, so the quoted limit can never belong to
+    // a different trigger than the backlog.
+    expect(errors[0]?.message).toContain('trigger "chatty"');
+    expect(errors[0]?.message).toContain("1 fire(s) from that trigger");
+    expect(errors[0]?.message).toContain("maxPendingFires: 1");
+
+    holdGate = undefined;
+    gate.open();
+    await drainUntil(() => completed.length >= 2);
+    await handle.stop();
+  });
+
   test("stopListening() halts further runs", async () => {
     const workflow = createWorkflow();
     workflow.trigger(new IntervalTrigger({ intervalMs: PERIOD }), {
@@ -472,6 +557,77 @@ describe("Workflow trigger bindings", () => {
     await handle.stop();
     // Once stopped, binding is allowed again.
     expect(() => workflow.trigger(new IntervalTrigger({ intervalMs: PERIOD }))).not.toThrow();
+  });
+
+  test("binding the same trigger twice to one workflow throws", () => {
+    // Not catchable by a `running` check: neither binding is running yet. One
+    // `ITrigger` holds one handler, so the second `start()` is a no-op and the
+    // second binding's `input` mapper would never run.
+    const workflow = createWorkflow();
+    const trigger = new IntervalTrigger({ intervalMs: PERIOD, id: "shared" });
+    workflow.trigger(trigger);
+
+    expect(() => workflow.trigger(trigger, { input: () => ({ label: "never" }) })).toThrow(
+      WorkflowTriggerError
+    );
+    expect(() => workflow.trigger(trigger)).toThrow(/shared/);
+    // The rejected binding was not recorded.
+    expect(getWorkflowTriggers(workflow)).toEqual([trigger]);
+  });
+
+  test("listen() with a trigger already running for another workflow throws", async () => {
+    const a = createWorkflow();
+    const b = createWorkflow();
+    const shared = new IntervalTrigger({ intervalMs: PERIOD, id: "shared" });
+    a.trigger(shared, { input: () => ({ label: "a" }) });
+    b.trigger(shared, { input: () => ({ label: "b" }) });
+
+    const handleA = await a.listen();
+    await expect(b.listen()).rejects.toBeInstanceOf(WorkflowTriggerError);
+
+    // Rejected BEFORE any state was touched, so b is unchanged and still
+    // bindable — the point of checking ahead of the handle registration.
+    expect(() => b.trigger(new IntervalTrigger({ intervalMs: PERIOD, id: "other" }))).not.toThrow();
+
+    await handleA.stop();
+  });
+
+  test("a rejected listen() leaves the other workflow's schedule intact", async () => {
+    // Previously b.listen() resolved with a handle listing the shared trigger
+    // while the handler stayed a's — and `b.stopListening()` then killed a's
+    // schedule, from a workflow that had never run once.
+    const a = createWorkflow();
+    const b = createWorkflow();
+    const shared = new IntervalTrigger({ intervalMs: PERIOD, id: "shared" });
+    a.trigger(shared, { input: () => ({ label: "a" }) });
+    b.trigger(shared, { input: () => ({ label: "b" }) });
+
+    const handleA = await a.listen();
+    await expect(b.listen()).rejects.toBeInstanceOf(WorkflowTriggerError);
+
+    await b.stopListening();
+    expect(shared.running).toBe(true);
+
+    await advanceFakeTimers(PERIOD * 2);
+    expect(executions).toEqual(["a", "a"]);
+
+    await handleA.stop();
+  });
+
+  test("a trigger is bindable again once the workflow using it has stopped", async () => {
+    const a = createWorkflow();
+    const b = createWorkflow();
+    const shared = new IntervalTrigger({ intervalMs: PERIOD, id: "shared" });
+    a.trigger(shared, { input: () => ({ label: "a" }) });
+    b.trigger(shared, { input: () => ({ label: "b" }) });
+
+    await (await a.listen()).stop();
+    const handleB = await b.listen();
+
+    await advanceFakeTimers(PERIOD);
+    expect(executions).toEqual(["b"]);
+
+    await handleB.stop();
   });
 
   test("a caller signal passed to listen() stops every trigger", async () => {

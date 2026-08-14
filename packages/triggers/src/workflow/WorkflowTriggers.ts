@@ -25,14 +25,20 @@ export interface WorkflowTriggerOptions {
   /** Run configuration forwarded to {@link Workflow.run} on every fire. */
   readonly runConfig?: WorkflowRunConfig | undefined;
   /**
-   * How many fires may wait for the workflow's current run before one is
-   * dropped. Defaults to `1`.
+   * How many of THIS binding's fires may wait for the workflow's current run
+   * before one is dropped. Defaults to `1`.
    *
    * One `Workflow` owns one task graph, which can only be running once, so
    * fires against a workflow are run one at a time no matter what overlap
    * policy the trigger uses. This is the bound on that backlog: a fire arriving
    * past it is dropped and reported on the trigger's `error` event rather than
    * queued forever behind a handler that cannot keep up.
+   *
+   * Counted per binding, matching where the option lives. A workflow-global
+   * count would let a fast trigger's backlog drop a slow trigger's first-ever
+   * fire against a ceiling the slow trigger never approached — so two bindings
+   * on one workflow do not share this budget, and the aggregate backlog is
+   * bounded by the sum rather than by any single binding's value.
    */
   readonly maxPendingFires?: number | undefined;
 }
@@ -82,6 +88,16 @@ export interface ITriggerListenerHandle extends AsyncDisposable {
 interface TriggerBinding {
   readonly trigger: ITrigger;
   readonly options: WorkflowTriggerOptions;
+  /**
+   * How many of THIS binding's fires are waiting on the workflow's run chain.
+   *
+   * Deliberately mutable, and deliberately on the binding rather than in a
+   * workflow-keyed map: `maxPendingFires` is a per-binding option, so charging
+   * every binding's backlog against one workflow-global counter let a fast
+   * trigger's queue drop a slow trigger's first-ever fire — and quote the slow
+   * trigger's limit while doing it.
+   */
+  pending: number;
 }
 
 /** Backlog bound applied when a binding does not set {@link WorkflowTriggerOptions.maxPendingFires}. */
@@ -92,11 +108,12 @@ const DEFAULT_MAX_PENDING_FIRES = 1;
 const workflowBindings = new WeakMap<Workflow, TriggerBinding[]>();
 const workflowHandles = new WeakMap<Workflow, ITriggerListenerHandle>();
 /**
- * Tail of the serialized run chain per workflow, and the number of fires
- * waiting on it. See {@link runWorkflowForFire}.
+ * Tail of the serialized run chain per workflow. Fires against one workflow are
+ * serialized no matter which binding they came from — one `Workflow` owns one
+ * task graph — but the BACKLOG on that chain is counted per binding
+ * ({@link TriggerBinding.pending}). See {@link runWorkflowForFire}.
  */
 const workflowRunChains = new WeakMap<Workflow, Promise<void>>();
-const workflowPendingFires = new WeakMap<Workflow, number>();
 
 /**
  * Resolves what `settling` resolved to, or `undefined` once `timeoutMs` passes.
@@ -124,6 +141,15 @@ export function getWorkflowTriggers(workflow: Workflow): readonly ITrigger[] {
   return (workflowBindings.get(workflow) ?? []).map((binding) => binding.trigger);
 }
 
+/**
+ * These three methods exist only after {@link installWorkflowTriggers} has run
+ * — importing this package no longer patches the prototype. TypeScript cannot
+ * express that, so the augmentation declares them unconditionally and an app
+ * that never installs them gets a `TypeError` the compiler did not warn about.
+ * `workglow/auto-bootstrap` installs them; the free functions
+ * ({@link bindWorkflowTrigger}, {@link listenWorkflow},
+ * {@link stopWorkflowListening}) need no install at all.
+ */
 declare module "@workglow/task-graph" {
   interface Workflow {
     /**
@@ -133,6 +159,10 @@ declare module "@workglow/task-graph" {
      * Returns `this`, not `Workflow`: a declared return type would collapse a
      * `Workflow<Input, Output>` to the default `Workflow<DataPorts, DataPorts>`
      * on the first chained call and lose both port types.
+     *
+     * @throws {@link WorkflowTriggerError} when this workflow is already
+     *   listening, or when `trigger` is already bound to it — the second
+     *   binding's options would never be used.
      */
     trigger(trigger: ITrigger, options?: WorkflowTriggerOptions): this;
 
@@ -148,6 +178,10 @@ declare module "@workglow/task-graph" {
      * @throws the signal's abort reason when `options.signal` is already
      *   aborted — checked before any state is touched, so the workflow is left
      *   exactly as it was and stays free to bind and listen later.
+     * @throws {@link WorkflowTriggerError} when a bound trigger is already
+     *   running (it is driving another workflow, and a trigger holds one
+     *   handler). Checked before any state is touched too, so a rejected
+     *   `listen()` leaves BOTH workflows exactly as they were.
      */
     listen(options?: WorkflowListenOptions): Promise<ITriggerListenerHandle>;
 
@@ -159,24 +193,47 @@ declare module "@workglow/task-graph" {
   }
 }
 
-Workflow.prototype.trigger = function (
-  this: Workflow,
+/**
+ * Binds `trigger` to `workflow`. The free-function form of
+ * {@link Workflow.trigger}, and the one that always exists: the method is only
+ * present after {@link installWorkflowTriggers}.
+ *
+ * Returns the workflow it was given, generically, so a chain preserves
+ * `Workflow<Input, Output>` rather than collapsing to the defaults.
+ */
+export function bindWorkflowTrigger<W extends Workflow>(
+  workflow: W,
   trigger: ITrigger,
   options: WorkflowTriggerOptions = {}
-): Workflow {
-  if (workflowHandles.has(this)) {
+): W {
+  if (workflowHandles.has(workflow)) {
     throw new WorkflowTriggerError(
       "Cannot bind a trigger while the workflow is listening. Call stopListening() first."
     );
   }
-  const bindings = workflowBindings.get(this) ?? [];
-  bindings.push({ trigger, options });
-  workflowBindings.set(this, bindings);
-  return this;
-};
+  const bindings = workflowBindings.get(workflow) ?? [];
+  // Rejected HERE rather than at listen(): neither binding is running yet, so a
+  // `trigger.running` check cannot see this. `wf.trigger(t).trigger(t, {input})`
+  // used to be accepted and then silently honour only the first binding's
+  // options — one `ITrigger` holds one handler, so the second `start()` is a
+  // no-op and that input mapper never runs.
+  if (bindings.some((binding) => binding.trigger === trigger)) {
+    throw new WorkflowTriggerError(
+      `Trigger "${trigger.id}" is already bound to this workflow. One trigger drives one ` +
+        `binding: bind a second trigger instance instead of re-binding this one.`
+    );
+  }
+  bindings.push({ trigger, options, pending: 0 });
+  workflowBindings.set(workflow, bindings);
+  return workflow;
+}
 
-Workflow.prototype.listen = async function (
-  this: Workflow,
+/**
+ * Starts every trigger bound to `workflow`. The free-function form of
+ * {@link Workflow.listen}; see that declaration for the semantics.
+ */
+export async function listenWorkflow(
+  workflow: Workflow,
   options: WorkflowListenOptions = {}
 ): Promise<ITriggerListenerHandle> {
   // FIRST, before the handle lookup and before any state is touched. An
@@ -186,13 +243,34 @@ Workflow.prototype.listen = async function (
   // looked successful and was inert.
   options.signal?.throwIfAborted();
 
-  const existing = workflowHandles.get(this);
+  const existing = workflowHandles.get(workflow);
   if (existing) return existing;
 
-  const bindings = workflowBindings.get(this) ?? [];
+  const bindings = workflowBindings.get(workflow) ?? [];
   if (bindings.length === 0) {
     throw new WorkflowTriggerError(
       "listen() requires at least one trigger. Bind one with workflow.trigger(...) first."
+    );
+  }
+
+  // Also before any state is touched, for the same reason the abort check is:
+  // `BaseTrigger.start` is a silent no-op on a running trigger, so a trigger
+  // already listening for ANOTHER workflow would be reported in this handle's
+  // `triggers` while its handler stayed the other workflow's — a listen() that
+  // looks successful and never fires. Worse, this handle's `stop()` would then
+  // stop the other workflow's schedule.
+  //
+  // There is deliberately no ownership map (`WeakMap<ITrigger, Workflow>`): the
+  // trigger is the long-lived object and the workflow the disposable one, so
+  // that mapping is a strong reference from a trigger to every workflow it was
+  // ever bound to. `running` is the property that actually matters, and it is
+  // already on the interface.
+  const running = bindings.filter((binding) => binding.trigger.running);
+  if (running.length > 0) {
+    throw new WorkflowTriggerError(
+      `Cannot listen: trigger(s) ${running.map((binding) => `"${binding.trigger.id}"`).join(", ")} ` +
+        `are already running. A trigger holds one handler, so it drives one workflow at a time — ` +
+        `stop the workflow already listening on it, or bind a separate trigger instance.`
     );
   }
 
@@ -202,7 +280,7 @@ Workflow.prototype.listen = async function (
   const releaseHandle = (): void => {
     detachAbort?.();
     detachAbort = undefined;
-    if (workflowHandles.get(this) === handle) workflowHandles.delete(this);
+    if (workflowHandles.get(workflow) === handle) workflowHandles.delete(workflow);
   };
 
   const stop = async (stopOptions: TriggerStopOptions = {}): Promise<void> => {
@@ -256,7 +334,7 @@ Workflow.prototype.listen = async function (
 
   // Registered BEFORE the triggers start, so the rollback path below (and a
   // caller-signal abort) can always find the handle to release.
-  workflowHandles.set(this, handle);
+  workflowHandles.set(workflow, handle);
 
   if (options.signal) {
     const signal = options.signal;
@@ -274,7 +352,7 @@ Workflow.prototype.listen = async function (
   try {
     for (const binding of bindings) {
       binding.trigger.start(
-        (context) => runWorkflowForFire(this, binding, context),
+        (context) => runWorkflowForFire(workflow, binding, context),
         options.signal ? { signal: options.signal } : {}
       );
       started.push(binding.trigger);
@@ -289,11 +367,61 @@ Workflow.prototype.listen = async function (
   }
 
   return handle;
-};
+}
 
-Workflow.prototype.stopListening = async function (this: Workflow): Promise<void> {
-  await workflowHandles.get(this)?.stop();
-};
+/**
+ * Stops every trigger {@link listenWorkflow} started for `workflow`. The
+ * free-function form of {@link Workflow.stopListening}; a no-op when the
+ * workflow is not listening.
+ */
+export async function stopWorkflowListening(workflow: Workflow): Promise<void> {
+  await workflowHandles.get(workflow)?.stop();
+}
+
+/**
+ * Installs `trigger()` / `listen()` / `stopListening()` on `Workflow.prototype`,
+ * so the fluent form in this package's README works.
+ *
+ * **Importing this package does not call it.** A module body that patched a
+ * foreign prototype would make every entry point re-exporting it side-effectful,
+ * and the meta-package `workglow` re-exports it from a barrel that also reaches
+ * `@workglow/duckdb`, `postgres`, `sqlite`, `mcp`, `storage`, `task-graph` and
+ * `util` — none of which declare `sideEffects` at all, so a bundler must keep
+ * every one of them once the barrel cannot be elided. Naming the barrel in
+ * `sideEffects` does not help: the flag is consulted per package, and those
+ * dependencies have already forfeited the claim. The patch therefore has to be
+ * something a consumer asks for.
+ *
+ * `workglow/auto-bootstrap` calls it, so the batteries-included path is
+ * unchanged. Everyone else either calls this once at startup, or uses
+ * {@link bindWorkflowTrigger} / {@link listenWorkflow} /
+ * {@link stopWorkflowListening} directly and never patches anything.
+ *
+ * Idempotent, and cheap to call defensively: it returns early once the methods
+ * are own properties of the prototype.
+ */
+export function installWorkflowTriggers(): void {
+  if (Object.prototype.hasOwnProperty.call(Workflow.prototype, "trigger")) return;
+
+  Workflow.prototype.trigger = function (
+    this: Workflow,
+    trigger: ITrigger,
+    options?: WorkflowTriggerOptions
+  ): Workflow {
+    return bindWorkflowTrigger(this, trigger, options);
+  };
+
+  Workflow.prototype.listen = function (
+    this: Workflow,
+    options?: WorkflowListenOptions
+  ): Promise<ITriggerListenerHandle> {
+    return listenWorkflow(this, options);
+  };
+
+  Workflow.prototype.stopListening = function (this: Workflow): Promise<void> {
+    return stopWorkflowListening(this);
+  };
+}
 
 /**
  * Runs the workflow for one fire, serialized against every other fire on the
@@ -318,18 +446,23 @@ async function runWorkflowForFire(
 
   if (predecessor !== undefined) {
     const limit = binding.options.maxPendingFires ?? DEFAULT_MAX_PENDING_FIRES;
-    const waiting = workflowPendingFires.get(workflow) ?? 0;
+    // This binding's own backlog. The limit and the count must come from the
+    // same binding or the message is a lie: a workflow-global count charged a
+    // fast binding's queue against a slow binding's ceiling and then reported
+    // "5 fire(s) are already waiting ... (maxPendingFires: 1)" for a trigger
+    // that had never queued a fire.
+    const waiting = binding.pending;
     if (waiting >= limit) {
       // Thrown rather than dropped in silence: this is the one place the old
       // "Graph is already running" failure was observable, and a backlog the
       // workflow cannot work off is worth reporting on the `error` event.
       throw new WorkflowTriggerError(
-        `Dropped a trigger fire scheduled for ${new Date(context.scheduledAt).toISOString()}: ` +
-          `${waiting} fire(s) are already waiting for this workflow's run to finish ` +
-          `(maxPendingFires: ${limit}).`
+        `Dropped a fire from trigger "${binding.trigger.id}" scheduled for ` +
+          `${new Date(context.scheduledAt).toISOString()}: ${waiting} fire(s) from that trigger ` +
+          `are already waiting for this workflow's run to finish (maxPendingFires: ${limit}).`
       );
     }
-    workflowPendingFires.set(workflow, waiting + 1);
+    binding.pending = waiting + 1;
   }
 
   const chain = (async (): Promise<void> => {
@@ -337,7 +470,7 @@ async function runWorkflowForFire(
       // `catch`, not a bare await: a fire whose run rejected must not take the
       // fires queued behind it down with it.
       await predecessor.catch(() => {});
-      workflowPendingFires.set(workflow, (workflowPendingFires.get(workflow) ?? 1) - 1);
+      binding.pending -= 1;
       // The wait can outlast the trigger. A fire that queued behind a slow run
       // must not start a new one after `stop()`.
       if (context.signal.aborted) return;
