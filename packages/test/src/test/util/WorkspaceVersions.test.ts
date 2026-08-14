@@ -90,4 +90,54 @@ describe("workspace versions", () => {
     }));
     expect(byVersion.length, JSON.stringify(byVersion, null, 2)).toBe(1);
   });
+
+  /**
+   * The manifests agreeing with each other is not enough: `bun.lock` records a
+   * `version` per workspace of its own, and a version bump committed without a
+   * regenerated lockfile leaves the two out of step. That is what happened to
+   * `packages/bootstrap` — manifest at 0.3.39, lockfile still at 0.3.38, 41 of
+   * 42 lock entries correct — and it is invisible to the check above, which
+   * reads manifests only.
+   *
+   * The consequence is not cosmetic: `bun install --frozen-lockfile` (any
+   * consumer CI, any reproducible install) fails outright, while a plain
+   * `bun i` succeeds and rewrites `bun.lock`, so every developer gets an
+   * unexplained dirty lockfile on first install and repo CI never reports it.
+   */
+  const lockWorkspaceVersions = (root: string): ManifestVersion[] => {
+    // bun.lock is JSONC: comment-free in practice, but trailing commas
+    // everywhere. Strip those before parsing rather than pulling in a parser.
+    const text = readFileSync(join(root, "bun.lock"), "utf8");
+    const lock = JSON.parse(text.replace(/,(\s*[}\]])/g, "$1")) as {
+      workspaces?: Record<string, { version?: unknown }>;
+    };
+    return Object.entries(lock.workspaces ?? {})
+      .filter(([relative]) => relative !== "")
+      .filter(
+        (entry): entry is [string, { version: string }] => typeof entry[1].version === "string"
+      )
+      .map(([relative, entry]) => ({
+        manifest: `${relative}/package.json`,
+        version: entry.version,
+      }));
+  };
+
+  it("records the same version for every workspace in bun.lock", () => {
+    const locked = lockWorkspaceVersions(root);
+
+    // Anti-vacuity: a degraded parse (or a `workspaces` key that moved) must
+    // fail loudly rather than compare an empty set and pass.
+    expect(locked.length).toBeGreaterThan(40);
+
+    const byManifest = new Map(versions.map((v) => [v.manifest, v.version]));
+    const mismatched = locked
+      .filter(({ manifest, version }) => byManifest.get(manifest) !== version)
+      .map(
+        ({ manifest, version }) =>
+          `${manifest}: bun.lock ${version} vs manifest ${byManifest.get(manifest) ?? "(absent)"}`
+      );
+    // Named, so a failure says which entry is stale — the fix is `bun install`,
+    // never a hand-edit of the lockfile.
+    expect(mismatched, mismatched.join("\n")).toEqual([]);
+  });
 });
