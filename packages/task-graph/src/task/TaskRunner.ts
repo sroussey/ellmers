@@ -1078,6 +1078,13 @@ export class TaskRunner<
    * {@link ownedWrappers}. A value this runner never owned is a no-op, so
    * disowning after an `own` that was an identity no-op against a stub context
    * is harmless.
+   *
+   * Every per-child record `own` created is dropped here, not just the subgraph
+   * node — {@link ownedSinkStamps} is a strong Map keyed by the child, so a
+   * stamp left behind pins that child (and its whole subgraph) until the
+   * PARENT's run ends. For a sweep that owns one child per work item that is
+   * the entire worklist retained in memory, which is precisely the retention
+   * `disown` exists to prevent.
    */
   protected disown<T extends Taskish<any, any>>(i: T): void {
     if (!isOwnTrackable(i)) return;
@@ -1090,6 +1097,16 @@ export class TaskRunner<
     if (off) {
       off();
       this.ownedUsageUnsubs.delete(i);
+    }
+    // Restore before dropping, exactly as `run()`'s `finally` does: the child
+    // is no longer owned, so it must not keep carrying this run's sinks into a
+    // later standalone `child.run()`.
+    if (hasRunConfig(i)) {
+      const prior = this.ownedSinkStamps.get(i);
+      if (prior !== undefined) {
+        Object.assign(i.runConfig, prior);
+        this.ownedSinkStamps.delete(i);
+      }
     }
     if (!this.isStillOwned(wrapper)) return;
     this.task.subGraph.removeTask(wrapper.id);
