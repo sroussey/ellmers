@@ -479,6 +479,77 @@ describe("Workflow trigger bindings", () => {
     expect(() => workflow.trigger(new IntervalTrigger({ intervalMs: PERIOD }))).not.toThrow();
   });
 
+  test("binding the same trigger twice to one workflow throws", () => {
+    // Not catchable by a `running` check: neither binding is running yet. One
+    // `ITrigger` holds one handler, so the second `start()` is a no-op and the
+    // second binding's `input` mapper would never run.
+    const workflow = createWorkflow();
+    const trigger = new IntervalTrigger({ intervalMs: PERIOD, id: "shared" });
+    workflow.trigger(trigger);
+
+    expect(() => workflow.trigger(trigger, { input: () => ({ label: "never" }) })).toThrow(
+      WorkflowTriggerError
+    );
+    expect(() => workflow.trigger(trigger)).toThrow(/shared/);
+    // The rejected binding was not recorded.
+    expect(getWorkflowTriggers(workflow)).toEqual([trigger]);
+  });
+
+  test("listen() with a trigger already running for another workflow throws", async () => {
+    const a = createWorkflow();
+    const b = createWorkflow();
+    const shared = new IntervalTrigger({ intervalMs: PERIOD, id: "shared" });
+    a.trigger(shared, { input: () => ({ label: "a" }) });
+    b.trigger(shared, { input: () => ({ label: "b" }) });
+
+    const handleA = await a.listen();
+    await expect(b.listen()).rejects.toBeInstanceOf(WorkflowTriggerError);
+
+    // Rejected BEFORE any state was touched, so b is unchanged and still
+    // bindable — the point of checking ahead of the handle registration.
+    expect(() => b.trigger(new IntervalTrigger({ intervalMs: PERIOD, id: "other" }))).not.toThrow();
+
+    await handleA.stop();
+  });
+
+  test("a rejected listen() leaves the other workflow's schedule intact", async () => {
+    // Previously b.listen() resolved with a handle listing the shared trigger
+    // while the handler stayed a's — and `b.stopListening()` then killed a's
+    // schedule, from a workflow that had never run once.
+    const a = createWorkflow();
+    const b = createWorkflow();
+    const shared = new IntervalTrigger({ intervalMs: PERIOD, id: "shared" });
+    a.trigger(shared, { input: () => ({ label: "a" }) });
+    b.trigger(shared, { input: () => ({ label: "b" }) });
+
+    const handleA = await a.listen();
+    await expect(b.listen()).rejects.toBeInstanceOf(WorkflowTriggerError);
+
+    await b.stopListening();
+    expect(shared.running).toBe(true);
+
+    await advanceFakeTimers(PERIOD * 2);
+    expect(executions).toEqual(["a", "a"]);
+
+    await handleA.stop();
+  });
+
+  test("a trigger is bindable again once the workflow using it has stopped", async () => {
+    const a = createWorkflow();
+    const b = createWorkflow();
+    const shared = new IntervalTrigger({ intervalMs: PERIOD, id: "shared" });
+    a.trigger(shared, { input: () => ({ label: "a" }) });
+    b.trigger(shared, { input: () => ({ label: "b" }) });
+
+    await (await a.listen()).stop();
+    const handleB = await b.listen();
+
+    await advanceFakeTimers(PERIOD);
+    expect(executions).toEqual(["b"]);
+
+    await handleB.stop();
+  });
+
   test("a caller signal passed to listen() stops every trigger", async () => {
     const workflow = createWorkflow();
     const trigger = new IntervalTrigger({ intervalMs: PERIOD });

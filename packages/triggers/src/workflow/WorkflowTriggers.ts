@@ -142,6 +142,10 @@ declare module "@workglow/task-graph" {
      * Returns `this`, not `Workflow`: a declared return type would collapse a
      * `Workflow<Input, Output>` to the default `Workflow<DataPorts, DataPorts>`
      * on the first chained call and lose both port types.
+     *
+     * @throws {@link WorkflowTriggerError} when this workflow is already
+     *   listening, or when `trigger` is already bound to it — the second
+     *   binding's options would never be used.
      */
     trigger(trigger: ITrigger, options?: WorkflowTriggerOptions): this;
 
@@ -157,6 +161,10 @@ declare module "@workglow/task-graph" {
      * @throws the signal's abort reason when `options.signal` is already
      *   aborted — checked before any state is touched, so the workflow is left
      *   exactly as it was and stays free to bind and listen later.
+     * @throws {@link WorkflowTriggerError} when a bound trigger is already
+     *   running (it is driving another workflow, and a trigger holds one
+     *   handler). Checked before any state is touched too, so a rejected
+     *   `listen()` leaves BOTH workflows exactly as they were.
      */
     listen(options?: WorkflowListenOptions): Promise<ITriggerListenerHandle>;
 
@@ -187,6 +195,17 @@ export function bindWorkflowTrigger<W extends Workflow>(
     );
   }
   const bindings = workflowBindings.get(workflow) ?? [];
+  // Rejected HERE rather than at listen(): neither binding is running yet, so a
+  // `trigger.running` check cannot see this. `wf.trigger(t).trigger(t, {input})`
+  // used to be accepted and then silently honour only the first binding's
+  // options — one `ITrigger` holds one handler, so the second `start()` is a
+  // no-op and that input mapper never runs.
+  if (bindings.some((binding) => binding.trigger === trigger)) {
+    throw new WorkflowTriggerError(
+      `Trigger "${trigger.id}" is already bound to this workflow. One trigger drives one ` +
+        `binding: bind a second trigger instance instead of re-binding this one.`
+    );
+  }
   bindings.push({ trigger, options });
   workflowBindings.set(workflow, bindings);
   return workflow;
@@ -214,6 +233,27 @@ export async function listenWorkflow(
   if (bindings.length === 0) {
     throw new WorkflowTriggerError(
       "listen() requires at least one trigger. Bind one with workflow.trigger(...) first."
+    );
+  }
+
+  // Also before any state is touched, for the same reason the abort check is:
+  // `BaseTrigger.start` is a silent no-op on a running trigger, so a trigger
+  // already listening for ANOTHER workflow would be reported in this handle's
+  // `triggers` while its handler stayed the other workflow's — a listen() that
+  // looks successful and never fires. Worse, this handle's `stop()` would then
+  // stop the other workflow's schedule.
+  //
+  // There is deliberately no ownership map (`WeakMap<ITrigger, Workflow>`): the
+  // trigger is the long-lived object and the workflow the disposable one, so
+  // that mapping is a strong reference from a trigger to every workflow it was
+  // ever bound to. `running` is the property that actually matters, and it is
+  // already on the interface.
+  const running = bindings.filter((binding) => binding.trigger.running);
+  if (running.length > 0) {
+    throw new WorkflowTriggerError(
+      `Cannot listen: trigger(s) ${running.map((binding) => `"${binding.trigger.id}"`).join(", ")} ` +
+        `are already running. A trigger holds one handler, so it drives one workflow at a time — ` +
+        `stop the workflow already listening on it, or bind a separate trigger instance.`
     );
   }
 
