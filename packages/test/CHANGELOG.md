@@ -1,5 +1,17 @@
 # @workglow/test
 
+## 0.3.43
+
+### Breaking Changes
+
+- **refactors(task-graph)**: collapse the dual streaming writer surfaces
+
+### Refactors
+
+#### task-graph
+
+- collapse the dual streaming writer surfaces
+
 ## 0.3.42
 
 ### Bug Fixes
