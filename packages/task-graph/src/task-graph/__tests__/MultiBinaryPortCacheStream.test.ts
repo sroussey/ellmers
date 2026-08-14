@@ -187,7 +187,7 @@ class BinarySink extends Task<{ bytes: Blob | ArrayBuffer }, BinarySinkOut> {
       additionalProperties: false,
     } as const satisfies DataPortSchema;
   }
-  async execute(input: { bytes: Blob | ArrayBuffer }): Promise<BinarySinkOut> {
+  override async execute(input: { bytes: Blob | ArrayBuffer }): Promise<BinarySinkOut> {
     const blob = input.bytes as Blob;
     return { size: (await blob.arrayBuffer()).byteLength };
   }
