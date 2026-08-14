@@ -148,6 +148,12 @@ const multiRouter = new ConditionalTask(
 
 ## Output Behavior
 
+There are two output shapes, selected by how the branches were supplied. The
+instance `outputSchema()` describes whichever one applies, so dataflows wired
+off either shape pass the graph's compatibility check.
+
+### Function branches (`config.branches` with `ConditionFn`)
+
 For each active branch, the task passes through its entire input to that branch's output port:
 
 ```typescript
@@ -160,7 +166,52 @@ For each active branch, the task passes through its entire input to that branch'
 }
 ```
 
-The `_activeBranches` property is always present and contains the IDs of all active branches.
+The `_activeBranches` property is always present and contains the IDs of all
+active branches. It is metadata, not a branch port: an edge wired off it follows
+the task's own status and is never disabled.
+
+### Serialized `conditionConfig` (from `config` or the input port)
+
+The UI condition builder supplies branches as data rather than functions. In that
+mode each **input port** is re-emitted with a branch suffix — `<port>_<n>` for
+branch _n_ (1-based), and `<port>_else` when the config is exclusive — and there
+is **no** `_activeBranches` property:
+
+```typescript
+const gate = new ConditionalTask({
+  inputSchema: {
+    type: "object",
+    properties: {
+      categories: { type: "array", items: { type: "string" } },
+      message: { type: "string" },
+    },
+  },
+  conditionConfig: {
+    branches: [{ id: "confident", field: "score", operator: "greater_or_equal", value: "0.8" }],
+    exclusive: true,
+  },
+});
+
+// Ports: categories_1, message_1, categories_else, message_else
+
+// Input: { score: 0.9, categories: ["billing"], message: "hello" }
+// Output (the "confident" branch matched):
+{
+  categories_1: ["billing"],
+  message_1: "hello"
+}
+// Input: { score: 0.2, ... } -> { categories_else: [...], message_else: "..." }
+```
+
+Each derived port carries its input port's own schema, so types survive the gate.
+The `conditionConfig` input is control data and is never routed to an output port.
+In non-exclusive mode the `_else` ports do not exist and every matching branch's
+ports activate independently.
+
+Declaring `config.inputSchema` is what makes these ports derivable. When it is
+absent — or when the `conditionConfig` arrives only on the input port at runtime —
+the output schema stays fully open, so edges still resolve (as `"runtime"`
+compatibility) but carry no static type.
 
 ## Dataflow Wiring
 
@@ -210,6 +261,11 @@ for (const [port, isActive] of portStatus) {
   console.log(`Port ${port}: ${isActive ? "active" : "inactive"}`);
 }
 ```
+
+`getPortActiveStatus()` covers both output shapes and is what the scheduler reads
+to decide which outgoing dataflows are `COMPLETED` and which are `DISABLED`. It
+lists every port the run could have written, not just the ones it did — a port
+missing from the map is not a branch port and follows the task's own status.
 
 ## Events
 

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ConditionalTask, Dataflow, TaskGraph, TaskStatus } from "@workglow/task-graph";
+import { ConditionalTask, Dataflow, Task, TaskGraph, TaskStatus } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 
@@ -16,6 +16,65 @@ import {
 } from "@workglow/task-graph/test";
 import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
+
+/** Emits the two ports a serialized `conditionConfig` gate routes on. */
+class GateSourceTask extends Task<
+  { score: number; value: string },
+  { score: number; value: string }
+> {
+  static override type = "GateSourceTask";
+  static override category = "Test";
+  static override title = "Gate Source";
+
+  static override inputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { score: { type: "number" }, value: { type: "string" } },
+    } as const satisfies DataPortSchema;
+  }
+
+  static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { score: { type: "number" }, value: { type: "string" } },
+    } as const satisfies DataPortSchema;
+  }
+
+  override async execute(input: {
+    score: number;
+    value: string;
+  }): Promise<{ score: number; value: string }> {
+    return { score: input.score, value: input.value };
+  }
+}
+
+/** Records whether it ran and what it received, so a disabled branch is observable. */
+class GateSinkTask extends Task<{ received: string }, { seen: string }> {
+  static override type = "GateSinkTask";
+  static override category = "Test";
+  static override title = "Gate Sink";
+
+  public calls = 0;
+
+  static override inputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { received: { type: "string" } },
+    } as const satisfies DataPortSchema;
+  }
+
+  static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { seen: { type: "string" } },
+    } as const satisfies DataPortSchema;
+  }
+
+  override async execute(input: { received: string }): Promise<{ seen: string }> {
+    this.calls++;
+    return { seen: input.received };
+  }
+}
 
 // ============================================================================
 // Basic Tests
@@ -597,6 +656,108 @@ describe("ConditionalTask", () => {
 
         expect(activeDataflow.status).toBe(TaskStatus.COMPLETED);
         expect(inactiveDataflow.status).toBe(TaskStatus.DISABLED);
+      });
+    });
+
+    describe("Serialized conditionConfig Gates", () => {
+      const gateInputSchema = {
+        type: "object",
+        properties: {
+          score: { type: "number" },
+          value: { type: "string" },
+        },
+        additionalProperties: true,
+      } as const satisfies DataPortSchema;
+
+      it("delivers data through the suffixed ports of a conditionConfig gate", async () => {
+        const source = new GateSourceTask({ id: "source" });
+        const gate = new ConditionalTask({
+          id: "gate",
+          inputSchema: gateInputSchema,
+          conditionConfig: {
+            branches: [
+              { id: "confident", field: "score", operator: "greater_or_equal", value: "0.8" },
+            ],
+            exclusive: true,
+          },
+        });
+        const sink = new GateSinkTask({ id: "sink" });
+
+        const graph = new TaskGraph();
+        graph.addTasks([source, gate, sink]);
+        graph.addDataflow(new Dataflow(source.id, "score", gate.id, "score"));
+        graph.addDataflow(new Dataflow(source.id, "value", gate.id, "value"));
+        graph.addDataflow(new Dataflow(gate.id, "value_1", sink.id, "received"));
+
+        await graph.run({ score: 0.9, value: "payload" });
+
+        expect(sink.calls).toBe(1);
+        expect(sink.status).toBe(TaskStatus.COMPLETED);
+        expect(sink.runOutputData.seen).toBe("payload");
+      });
+
+      it("disables the branch edge and cascades when a conditionConfig gate falls to else", async () => {
+        const source = new GateSourceTask({ id: "source" });
+        const gate = new ConditionalTask({
+          id: "gate",
+          inputSchema: gateInputSchema,
+          conditionConfig: {
+            branches: [
+              { id: "confident", field: "score", operator: "greater_or_equal", value: "0.8" },
+            ],
+            exclusive: true,
+          },
+        });
+        const sink = new GateSinkTask({ id: "sink" });
+
+        const graph = new TaskGraph();
+        graph.addTasks([source, gate, sink]);
+        graph.addDataflow(new Dataflow(source.id, "score", gate.id, "score"));
+        graph.addDataflow(new Dataflow(source.id, "value", gate.id, "value"));
+        const branchDataflow = new Dataflow(gate.id, "value_1", sink.id, "received");
+        graph.addDataflow(branchDataflow);
+
+        await graph.run({ score: 0.2, value: "payload" });
+
+        expect(branchDataflow.status).toBe(TaskStatus.DISABLED);
+        expect(sink.status).toBe(TaskStatus.DISABLED);
+        expect(sink.calls).toBe(0);
+      });
+
+      it("activates matching ports independently in non-exclusive mode", async () => {
+        const source = new GateSourceTask({ id: "source" });
+        const gate = new ConditionalTask({
+          id: "gate",
+          inputSchema: gateInputSchema,
+          conditionConfig: {
+            branches: [
+              { id: "one", field: "score", operator: "greater_than", value: "0.1" },
+              { id: "two", field: "score", operator: "greater_than", value: "0.2" },
+              { id: "three", field: "score", operator: "greater_than", value: "0.9" },
+            ],
+            exclusive: false,
+          },
+        });
+        const sinkOne = new GateSinkTask({ id: "sinkOne" });
+        const sinkTwo = new GateSinkTask({ id: "sinkTwo" });
+        const sinkThree = new GateSinkTask({ id: "sinkThree" });
+
+        const graph = new TaskGraph();
+        graph.addTasks([source, gate, sinkOne, sinkTwo, sinkThree]);
+        graph.addDataflow(new Dataflow(source.id, "score", gate.id, "score"));
+        graph.addDataflow(new Dataflow(source.id, "value", gate.id, "value"));
+        graph.addDataflow(new Dataflow(gate.id, "value_1", sinkOne.id, "received"));
+        graph.addDataflow(new Dataflow(gate.id, "value_2", sinkTwo.id, "received"));
+        graph.addDataflow(new Dataflow(gate.id, "value_3", sinkThree.id, "received"));
+
+        await graph.run({ score: 0.5, value: "payload" });
+
+        expect(sinkOne.status).toBe(TaskStatus.COMPLETED);
+        expect(sinkOne.runOutputData.seen).toBe("payload");
+        expect(sinkTwo.status).toBe(TaskStatus.COMPLETED);
+        expect(sinkTwo.runOutputData.seen).toBe("payload");
+        expect(sinkThree.status).toBe(TaskStatus.DISABLED);
+        expect(sinkThree.calls).toBe(0);
       });
     });
   });

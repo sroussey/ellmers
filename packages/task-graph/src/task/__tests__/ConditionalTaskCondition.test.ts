@@ -7,6 +7,7 @@
 import type { UIConditionConfig } from "@workglow/task-graph";
 import { ConditionalTask } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { getTestingLogger } from "@workglow/util/test";
 import { describe, expect, it } from "vitest";
 
@@ -352,6 +353,145 @@ describe("ConditionalTask with serialized conditionConfig", () => {
 
       // Function branch should win
       expect(task.isBranchActive("fn-branch")).toBe(true);
+    });
+  });
+
+  describe("derived output schema", () => {
+    const triageInputSchema = {
+      type: "object",
+      properties: {
+        categories: { type: "array", items: { type: "string" } },
+        message: { type: "string" },
+      },
+      additionalProperties: true,
+    } as const satisfies DataPortSchema;
+
+    const triageConditionConfig: UIConditionConfig = {
+      branches: [{ id: "confident", field: "score", operator: "greater_or_equal", value: "0.8" }],
+      exclusive: true,
+    };
+
+    it("derives suffixed ports from conditionConfig and the declared input ports", () => {
+      const task = new ConditionalTask({
+        inputSchema: triageInputSchema,
+        conditionConfig: triageConditionConfig,
+      });
+
+      const schema = task.outputSchema();
+      expect(typeof schema).toBe("object");
+      const properties = (schema as Exclude<DataPortSchema, boolean>).properties as Record<
+        string,
+        any
+      >;
+
+      expect(properties).toHaveProperty("categories_1");
+      expect(properties).toHaveProperty("message_1");
+      expect(properties).toHaveProperty("categories_else");
+      expect(properties).toHaveProperty("message_else");
+
+      // buildConditionConfigOutput never emits `_activeBranches` in this mode.
+      expect(properties).not.toHaveProperty("_activeBranches");
+      // `conditionConfig` is control data, not a routed port.
+      expect(properties).not.toHaveProperty("conditionConfig_1");
+
+      // Each derived port reuses its input port's schema, so types survive.
+      expect(properties.categories_1.type).toBe("array");
+      expect(properties.categories_else.type).toBe("array");
+      expect(properties.message_1.type).toBe("string");
+    });
+
+    it("omits the _else ports when the conditionConfig is not exclusive", () => {
+      const task = new ConditionalTask({
+        inputSchema: triageInputSchema,
+        conditionConfig: {
+          branches: [
+            { id: "a", field: "score", operator: "greater_than", value: "0.8" },
+            { id: "b", field: "score", operator: "less_or_equal", value: "0.8" },
+          ],
+          exclusive: false,
+        },
+      });
+
+      const properties = (task.outputSchema() as Exclude<DataPortSchema, boolean>)
+        .properties as Record<string, any>;
+
+      expect(properties).toHaveProperty("categories_1");
+      expect(properties).toHaveProperty("categories_2");
+      expect(properties).not.toHaveProperty("categories_else");
+      expect(properties).not.toHaveProperty("message_else");
+    });
+
+    it("keeps the function-branch output shape unchanged", () => {
+      const task = new ConditionalTask({
+        branches: [
+          { id: "high", condition: (i: any) => i.value > 5, outputPort: "high" },
+          { id: "low", condition: (i: any) => i.value <= 5, outputPort: "low" },
+        ],
+      });
+
+      const schema = task.outputSchema() as Exclude<DataPortSchema, boolean>;
+      const properties = schema.properties as Record<string, any>;
+
+      expect(properties).toHaveProperty("_activeBranches");
+      expect(properties).toHaveProperty("high");
+      expect(properties).toHaveProperty("low");
+      expect(schema.additionalProperties).toBe(false);
+    });
+
+    it("falls back to an open schema when the conditionConfig arrives only via the port", () => {
+      const task = new ConditionalTask({});
+
+      const schema = task.outputSchema() as Exclude<DataPortSchema, boolean>;
+
+      // Nothing is derivable, so the schema must stay open — an open source port
+      // resolves to "runtime" compatibility rather than "incompatible".
+      expect(schema.additionalProperties).toBe(true);
+      expect(Object.keys((schema.properties ?? {}) as Record<string, any>)).toHaveLength(0);
+    });
+
+    it("widens the declared input schema rather than replacing it", () => {
+      const task = new ConditionalTask({
+        inputSchema: {
+          type: "object",
+          properties: { message: { type: "string" } },
+          additionalProperties: false,
+        },
+        conditionConfig: triageConditionConfig,
+      });
+
+      const schema = task.inputSchema() as Exclude<DataPortSchema, boolean>;
+      expect((schema.properties as Record<string, any>).message.type).toBe("string");
+      // Forced open so no existing graph's input edge can regress to incompatible.
+      expect(schema.additionalProperties).toBe(true);
+    });
+
+    it("reports per-port activation after a run", async () => {
+      const task = new ConditionalTask({
+        inputSchema: triageInputSchema,
+        conditionConfig: triageConditionConfig,
+      });
+
+      await task.run({ score: 0.9, categories: ["billing"], message: "hello" });
+
+      const status = task.getPortActiveStatus();
+      expect(status.get("categories_1")).toBe(true);
+      expect(status.get("message_1")).toBe(true);
+      expect(status.get("categories_else")).toBe(false);
+      expect(status.get("message_else")).toBe(false);
+    });
+
+    it("reports the else ports active when no branch matches", async () => {
+      const task = new ConditionalTask({
+        inputSchema: triageInputSchema,
+        conditionConfig: triageConditionConfig,
+      });
+
+      await task.run({ score: 0.1, categories: ["billing"], message: "hello" });
+
+      const status = task.getPortActiveStatus();
+      expect(status.get("categories_1")).toBe(false);
+      expect(status.get("categories_else")).toBe(true);
+      expect(status.get("message_else")).toBe(true);
     });
   });
 });
