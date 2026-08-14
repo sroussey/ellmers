@@ -32,6 +32,8 @@ import {
   FetchUrlJob,
   FetchUrlTask,
   isFetchUrlJobError,
+  isFetchUrlNetworkCause,
+  isFetchUrlRetryableErrorCode,
   registerSafeFetch,
   type SafeFetchFn,
 } from "@workglow/tasks";
@@ -857,6 +859,81 @@ describe("FetchUrlTask", () => {
       expect((jobErr as { code?: string }).code).toBe(FetchUrlErrorCode.NETWORK_ERROR);
       expect(jobErr).toBeInstanceOf(RetryableJobError);
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // A decode failure's message embeds SERVER-CONTROLLED BYTES — V8 quotes a
+  // snippet of the body into the SyntaxError. Matching the network-message
+  // heuristic against it lets the response decide whether the job is retryable.
+  // -------------------------------------------------------------------------
+  describe("isFetchUrlNetworkCause", () => {
+    test("returns false for a SyntaxError quoting a network-looking response body", () => {
+      const decodeFailure = new SyntaxError(
+        `Unexpected token 'G', "Gateway timeout at: https://registry.example/pkg" is not valid JSON`
+      );
+
+      expect(isFetchUrlNetworkCause(decodeFailure)).toBe(false);
+    });
+
+    test("still returns true for a SyntaxError carrying a network errno code", () => {
+      const withCode = new SyntaxError("network timeout") as NodeJS.ErrnoException;
+      withCode.code = "ECONNRESET";
+
+      expect(isFetchUrlNetworkCause(withCode)).toBe(true);
+    });
+
+    test("still returns true for a SyntaxError whose cause is a socket error", () => {
+      const withCause = new SyntaxError("not valid JSON");
+      withCause.cause = Object.assign(new Error("terminated"), { code: "UND_ERR_SOCKET" });
+
+      expect(isFetchUrlNetworkCause(withCause)).toBe(true);
+    });
+
+    test("keeps message matching for non-SyntaxError decode failures", () => {
+      // The Bun body-abort shape: a bare Error with no code and no cause.
+      expect(
+        isFetchUrlNetworkCause(new Error("The socket connection was closed unexpectedly"))
+      ).toBe(true);
+    });
+
+    test("returns true for the undici terminated/UND_ERR_SOCKET shape", () => {
+      const terminated = new TypeError("terminated");
+      terminated.cause = Object.assign(new Error("other side closed"), {
+        code: "UND_ERR_SOCKET",
+      });
+
+      expect(isFetchUrlNetworkCause(terminated)).toBe(true);
+    });
+  });
+
+  describe("decode failures whose body reads like a network error", () => {
+    const decodeBodies: ReadonlyArray<string> = [
+      "network timeout at: https://registry.example/pkg",
+      "Gateway timeout",
+      "ECONNRESET while proxying",
+    ];
+
+    for (const body of decodeBodies) {
+      test(`"${body}" served as 200 JSON is a permanent parse error`, async () => {
+        mockFetch.mockImplementation(() =>
+          Promise.resolve(
+            new Response(body, {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            })
+          )
+        );
+
+        const error = await fetchUrl({ url: "https://api.example.com/decode-fail" }).catch(
+          (e: unknown) => e
+        );
+        const jobErr = (error as { jobError?: unknown }).jobError ?? error;
+
+        expect((jobErr as { code?: string }).code).toBe(FetchUrlErrorCode.RESPONSE_PARSE_ERROR);
+        expect(jobErr).toBeInstanceOf(PermanentJobError);
+        expect(isFetchUrlRetryableErrorCode((jobErr as { code?: string }).code)).toBe(false);
+      });
+    }
   });
 
   describe("credentials", () => {
