@@ -17,6 +17,7 @@ import {
   CronTrigger,
   CronUnsatisfiableError,
   getWorkflowTriggers,
+  installWorkflowTriggers,
   IntervalTrigger,
   PollingTrigger,
   WorkflowTriggerError,
@@ -200,6 +201,10 @@ async function drainUntil(predicate: () => boolean): Promise<void> {
   }
 }
 
+// The fluent methods this suite exercises are opt-in: importing the package
+// installs nothing (see TriggerInstall.test.ts). Install once for the file.
+installWorkflowTriggers();
+
 describe("Workflow trigger bindings", () => {
   beforeEach(() => {
     executions.length = 0;
@@ -217,7 +222,7 @@ describe("Workflow trigger bindings", () => {
     vi.useRealTimers();
   });
 
-  test("augments the Workflow prototype with lifecycle methods", () => {
+  test("installWorkflowTriggers() adds the lifecycle methods to the prototype", () => {
     expect(typeof Workflow.prototype.trigger).toBe("function");
     expect(typeof Workflow.prototype.listen).toBe("function");
     expect(typeof Workflow.prototype.stopListening).toBe("function");

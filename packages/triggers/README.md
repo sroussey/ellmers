@@ -31,19 +31,47 @@ await trigger.stop();
 
 ## Driving a workflow
 
+Two forms, same behavior. The free functions always work; the fluent methods
+exist only after `installWorkflowTriggers()`.
+
 ```ts
-import { IntervalTrigger, PollingTrigger } from "@workglow/triggers"; // also patches Workflow.prototype
+import { bindWorkflowTrigger, IntervalTrigger, listenWorkflow, PollingTrigger } from "@workglow/triggers";
 import { Workflow } from "@workglow/task-graph";
 
 const workflow = new Workflow().addTask(MyTask);
 
-workflow.trigger(new IntervalTrigger({ intervalMs: 60_000 }));
-workflow.trigger(new PollingTrigger({ intervalMs: 5_000, poll: () => fetchPendingIds() }), {
+bindWorkflowTrigger(workflow, new IntervalTrigger({ intervalMs: 60_000 }));
+bindWorkflowTrigger(workflow, new PollingTrigger({ intervalMs: 5_000, poll: () => fetchPendingIds() }), {
   input: (context) => ({ ids: context.payload }),
 });
 
+await using handle = await listenWorkflow(workflow);
+```
+
+**Importing this package installs nothing.** A module body that patched
+`Workflow.prototype` would make every barrel re-exporting it side-effectful —
+including `workglow`'s, which also reaches `@workglow/duckdb`, `postgres`,
+`sqlite` and `mcp`, none of which declare `sideEffects`, so a bundler would have
+to keep all of them in the app's bundle. Ask for the patch instead:
+
+```ts
+import { installWorkflowTriggers } from "@workglow/triggers";
+
+installWorkflowTriggers(); // once, at startup; idempotent
+
+workflow.trigger(new IntervalTrigger({ intervalMs: 60_000 }));
 await using handle = await workflow.listen();
 ```
+
+`import "workglow/auto-bootstrap"` already calls it, so the batteries-included
+path keeps the fluent API. Anything else that bootstraps by hand — including
+`bootstrapWorkglow()` from `workglow/bootstrap` — does not: `workflow.trigger`
+is `undefined` there until you install it, and TypeScript will not warn you,
+because the method declaration is a module augmentation with no way to say
+"after install".
+
+`stopWorkflowListening(workflow)` is the free-function form of
+`workflow.stopListening()`.
 
 `listen()` **resolves as soon as the triggers are scheduled — it does not block
 until the process is interrupted.** It does not, however, leave the process free

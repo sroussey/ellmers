@@ -124,6 +124,15 @@ export function getWorkflowTriggers(workflow: Workflow): readonly ITrigger[] {
   return (workflowBindings.get(workflow) ?? []).map((binding) => binding.trigger);
 }
 
+/**
+ * These three methods exist only after {@link installWorkflowTriggers} has run
+ * — importing this package no longer patches the prototype. TypeScript cannot
+ * express that, so the augmentation declares them unconditionally and an app
+ * that never installs them gets a `TypeError` the compiler did not warn about.
+ * `workglow/auto-bootstrap` installs them; the free functions
+ * ({@link bindWorkflowTrigger}, {@link listenWorkflow},
+ * {@link stopWorkflowListening}) need no install at all.
+ */
 declare module "@workglow/task-graph" {
   interface Workflow {
     /**
@@ -159,24 +168,36 @@ declare module "@workglow/task-graph" {
   }
 }
 
-Workflow.prototype.trigger = function (
-  this: Workflow,
+/**
+ * Binds `trigger` to `workflow`. The free-function form of
+ * {@link Workflow.trigger}, and the one that always exists: the method is only
+ * present after {@link installWorkflowTriggers}.
+ *
+ * Returns the workflow it was given, generically, so a chain preserves
+ * `Workflow<Input, Output>` rather than collapsing to the defaults.
+ */
+export function bindWorkflowTrigger<W extends Workflow>(
+  workflow: W,
   trigger: ITrigger,
   options: WorkflowTriggerOptions = {}
-): Workflow {
-  if (workflowHandles.has(this)) {
+): W {
+  if (workflowHandles.has(workflow)) {
     throw new WorkflowTriggerError(
       "Cannot bind a trigger while the workflow is listening. Call stopListening() first."
     );
   }
-  const bindings = workflowBindings.get(this) ?? [];
+  const bindings = workflowBindings.get(workflow) ?? [];
   bindings.push({ trigger, options });
-  workflowBindings.set(this, bindings);
-  return this;
-};
+  workflowBindings.set(workflow, bindings);
+  return workflow;
+}
 
-Workflow.prototype.listen = async function (
-  this: Workflow,
+/**
+ * Starts every trigger bound to `workflow`. The free-function form of
+ * {@link Workflow.listen}; see that declaration for the semantics.
+ */
+export async function listenWorkflow(
+  workflow: Workflow,
   options: WorkflowListenOptions = {}
 ): Promise<ITriggerListenerHandle> {
   // FIRST, before the handle lookup and before any state is touched. An
@@ -186,10 +207,10 @@ Workflow.prototype.listen = async function (
   // looked successful and was inert.
   options.signal?.throwIfAborted();
 
-  const existing = workflowHandles.get(this);
+  const existing = workflowHandles.get(workflow);
   if (existing) return existing;
 
-  const bindings = workflowBindings.get(this) ?? [];
+  const bindings = workflowBindings.get(workflow) ?? [];
   if (bindings.length === 0) {
     throw new WorkflowTriggerError(
       "listen() requires at least one trigger. Bind one with workflow.trigger(...) first."
@@ -202,7 +223,7 @@ Workflow.prototype.listen = async function (
   const releaseHandle = (): void => {
     detachAbort?.();
     detachAbort = undefined;
-    if (workflowHandles.get(this) === handle) workflowHandles.delete(this);
+    if (workflowHandles.get(workflow) === handle) workflowHandles.delete(workflow);
   };
 
   const stop = async (stopOptions: TriggerStopOptions = {}): Promise<void> => {
@@ -256,7 +277,7 @@ Workflow.prototype.listen = async function (
 
   // Registered BEFORE the triggers start, so the rollback path below (and a
   // caller-signal abort) can always find the handle to release.
-  workflowHandles.set(this, handle);
+  workflowHandles.set(workflow, handle);
 
   if (options.signal) {
     const signal = options.signal;
@@ -274,7 +295,7 @@ Workflow.prototype.listen = async function (
   try {
     for (const binding of bindings) {
       binding.trigger.start(
-        (context) => runWorkflowForFire(this, binding, context),
+        (context) => runWorkflowForFire(workflow, binding, context),
         options.signal ? { signal: options.signal } : {}
       );
       started.push(binding.trigger);
@@ -289,11 +310,61 @@ Workflow.prototype.listen = async function (
   }
 
   return handle;
-};
+}
 
-Workflow.prototype.stopListening = async function (this: Workflow): Promise<void> {
-  await workflowHandles.get(this)?.stop();
-};
+/**
+ * Stops every trigger {@link listenWorkflow} started for `workflow`. The
+ * free-function form of {@link Workflow.stopListening}; a no-op when the
+ * workflow is not listening.
+ */
+export async function stopWorkflowListening(workflow: Workflow): Promise<void> {
+  await workflowHandles.get(workflow)?.stop();
+}
+
+/**
+ * Installs `trigger()` / `listen()` / `stopListening()` on `Workflow.prototype`,
+ * so the fluent form in this package's README works.
+ *
+ * **Importing this package does not call it.** A module body that patched a
+ * foreign prototype would make every entry point re-exporting it side-effectful,
+ * and the meta-package `workglow` re-exports it from a barrel that also reaches
+ * `@workglow/duckdb`, `postgres`, `sqlite`, `mcp`, `storage`, `task-graph` and
+ * `util` — none of which declare `sideEffects` at all, so a bundler must keep
+ * every one of them once the barrel cannot be elided. Naming the barrel in
+ * `sideEffects` does not help: the flag is consulted per package, and those
+ * dependencies have already forfeited the claim. The patch therefore has to be
+ * something a consumer asks for.
+ *
+ * `workglow/auto-bootstrap` calls it, so the batteries-included path is
+ * unchanged. Everyone else either calls this once at startup, or uses
+ * {@link bindWorkflowTrigger} / {@link listenWorkflow} /
+ * {@link stopWorkflowListening} directly and never patches anything.
+ *
+ * Idempotent, and cheap to call defensively: it returns early once the methods
+ * are own properties of the prototype.
+ */
+export function installWorkflowTriggers(): void {
+  if (Object.prototype.hasOwnProperty.call(Workflow.prototype, "trigger")) return;
+
+  Workflow.prototype.trigger = function (
+    this: Workflow,
+    trigger: ITrigger,
+    options?: WorkflowTriggerOptions
+  ): Workflow {
+    return bindWorkflowTrigger(this, trigger, options);
+  };
+
+  Workflow.prototype.listen = function (
+    this: Workflow,
+    options?: WorkflowListenOptions
+  ): Promise<ITriggerListenerHandle> {
+    return listenWorkflow(this, options);
+  };
+
+  Workflow.prototype.stopListening = function (this: Workflow): Promise<void> {
+    return stopWorkflowListening(this);
+  };
+}
 
 /**
  * Runs the workflow for one fire, serialized against every other fire on the

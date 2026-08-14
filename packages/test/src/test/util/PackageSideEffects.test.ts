@@ -75,29 +75,61 @@ const workspaces = readWorkspaces();
  * patch, a registry entry — must be listed, or the bundler is entitled to elide
  * the import chain that would have run it.
  *
- * `workglow` got this wrong: it listed only `./dist/auto-bootstrap.js` while its
- * `.` entry re-exports `@workglow/triggers`, whose module body patches
- * `Workflow.prototype.trigger`. `@workglow/triggers` deliberately omits
- * `sideEffects: false` to protect that patch, but webpack re-routes
- * `import { Workflow } from "workglow"` straight to `@workglow/task-graph` and
- * never consults the intermediary's own dependencies — so the patch was dropped
- * in production bundles while dev and Node kept working.
+ * The fixture below is deliberately EXACT and fails in both directions, because
+ * both directions are silent bugs:
  *
- * Omitting the field entirely (the conservative default every other package here
- * relies on) is what this asserts back to: an entry point a consumer imports
- * from must either be listed, or the package must not make the claim at all.
+ * - an entry point that gained a side effect but was not listed is dropped from
+ *   production bundles while dev and Node keep working; and
+ * - a listed entry point that no longer has one (or, worse, whose dist file was
+ *   renamed) leaves a stale path in the allow-list. The stale entry protects
+ *   nothing — it names a file the bundler never sees — so the real entry point
+ *   silently reverts to "safe to drop". That is why the second test requires
+ *   every listed path to be a real runtime target of the same `exports` map.
+ *
+ * `workglow` carries the only interesting entry: `./dist/auto-bootstrap.js`, the
+ * one module in the meta-package whose body runs anything (it bootstraps the
+ * global registry and calls `installWorkflowTriggers()`). Its barrel must stay
+ * ELIDABLE — it re-exports `@workglow/duckdb`, `postgres`, `sqlite` and `mcp`
+ * among others, none of which declare `sideEffects` at all, so a bundler that
+ * cannot drop the barrel must keep every one of them. That is what
+ * `@workglow/triggers` giving up its import-time `Workflow.prototype` patch
+ * bought.
  */
+const EXPECTED_SIDE_EFFECTS: Readonly<Record<string, readonly string[]>> = {
+  workglow: ["./dist/auto-bootstrap.js"],
+  "@workglow/javascript": ["./dist/task.js"],
+};
+
 describe("package sideEffects declarations", () => {
-  it("cover every exported entry point of the packages that declare them", () => {
-    const uncovered = workspaces.flatMap(({ name, manifest }) => {
+  it("are declared by exactly the packages that need them, with exactly these entries", () => {
+    const declared = Object.fromEntries(
+      workspaces
+        .filter(({ manifest }) => Array.isArray(manifest.sideEffects))
+        .map(({ name, manifest }) => [name, manifest.sideEffects as readonly string[]])
+    );
+    expect(declared).toEqual(EXPECTED_SIDE_EFFECTS);
+  });
+
+  it("list only real runtime export targets, so a renamed dist file cannot leave a stale entry", () => {
+    const stale = workspaces.flatMap(({ name, manifest }) => {
       const { sideEffects } = manifest;
       if (!Array.isArray(sideEffects)) return [];
       const targets = collectRuntimeTargets(manifest.exports, new Set<string>());
-      return [...targets]
-        .filter((target) => !sideEffects.includes(target))
-        .map((target) => `${name} ${target}`);
+      return sideEffects
+        .filter((entry: unknown) => typeof entry !== "string" || !targets.has(entry))
+        .map((entry: unknown) => `${name} ${String(entry)}`);
     });
-    expect(uncovered).toEqual([]);
+    expect(stale).toEqual([]);
+  });
+
+  it("are the only allow-lists: every other package claims purity or stays silent", () => {
+    const unexpected = workspaces
+      .filter(({ name }) => !(name in EXPECTED_SIDE_EFFECTS))
+      .filter(
+        ({ manifest }) => manifest.sideEffects !== undefined && manifest.sideEffects !== false
+      )
+      .map(({ name, manifest }) => `${name}: ${JSON.stringify(manifest.sideEffects)}`);
+    expect(unexpected).toEqual([]);
   });
 
   it("scans every workspace, so an empty result cannot pass vacuously", () => {
