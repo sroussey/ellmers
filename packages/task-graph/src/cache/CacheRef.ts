@@ -38,10 +38,21 @@ export interface ICacheRef {
   readonly kind: typeof CACHE_REF_KIND;
   readonly $ref: string;
   /**
-   * Which output port produced these bytes. Optional because a backing is free
-   * to leave it off (a `$ref` alone resolves); when present, it lets a row
-   * carry more than one ref unambiguously and the resolver pick the right one
-   * without a schema lookup.
+   * Which output port produced these bytes, letting a row carry more than one
+   * ref unambiguously and the resolver pick the right one without a schema
+   * lookup.
+   *
+   * Every ref minted today carries it: the sole streaming writer
+   * (`saveOutputStreamPort`, and its run-scoped counterpart) takes `port` as a
+   * required argument, so a backing has nothing to leave off.
+   *
+   * It stays OPTIONAL for readers, not writers. This type describes persisted
+   * data of unknown vintage: `@workglow/task-graph` 0.3.39 through 0.3.42 also
+   * shipped a portless writer (`saveOutputStream`, removed in 0.3.43) whose
+   * refs carry no port, so a cache folder written by any of those releases
+   * still holds them. Reading must keep working against those rows — a `$ref`
+   * alone resolves — so do not make this required on the strength of what the
+   * current writer guarantees.
    */
   readonly port?: string;
   /**

@@ -134,6 +134,7 @@ export function runStreamingTaskOutputRepositoryContract(
         codec.encode(fromArray(events), "items"),
         {}
       );
+      expect(ref.port).toBe("items");
       expect(ref.mode).toBe("object");
       expect(await codec.materialize((await repo.getOutputStreamByRef(ref))!, "items")).toEqual([
         { id: 1, v: "b" },
@@ -156,6 +157,8 @@ export function runStreamingTaskOutputRepositoryContract(
         codec.encode(fromArray(events), "file"),
         {}
       );
+      expect(ref.port).toBe("file");
+      expect(ref.mode).toBe("binary");
       const blob = await repo.getOutputByRef(ref);
       expect(Array.from(new Uint8Array(await blob!.arrayBuffer()))).toEqual([10, 20, 30]);
       expect(await collect((await repo.getOutputStreamByRef(ref))!)).toEqual([10, 20, 30]);
@@ -200,6 +203,10 @@ export function runStreamingTaskOutputRepositoryContract(
         {}
       );
       expect(a.$ref).not.toBe(b.$ref);
+      // The writer takes the port, so a multi-port row's refs are each
+      // self-describing — the resolver picks one without a schema lookup.
+      expect(a.port).toBe("text");
+      expect(b.port).toBe("file");
       expect(await text.materialize((await repo.getOutputStreamByRef(a))!, "text")).toBe("x");
       const blob = await repo.getOutputByRef(b);
       expect(Array.from(new Uint8Array(await blob!.arrayBuffer()))).toEqual([1]);
