@@ -36,7 +36,7 @@ import { TaskStatus } from "./TaskTypes";
  * places into `Output` at the port slot.
  *
  * Implementations are typically thin wrappers around
- * `TaskOutputRepository.saveOutputStream` — the runner supplies the wrapper
+ * `TaskOutputRepository.saveOutputStreamPort` — the runner supplies the wrapper
  * once it knows the cache key.
  */
 export type BinaryRefSink = (chunks: AsyncIterable<Uint8Array>) => Promise<CacheRef>;

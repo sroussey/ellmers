@@ -56,7 +56,6 @@ describe("run-private streaming over an FsFolder backing", () => {
   it("reports streaming capability only for a sidecar-capable backing", () => {
     const streamable = new RunPrivateCacheRepo({ backing, runId: "run-A" });
     expect(streamable.supportsStreaming()).toBe(true);
-    expect(streamable.supportsStreamingPorts()).toBe(true);
     expect(typeof streamable.getOutputStreamByRef).toBe("function");
 
     const tabular = new RunPrivateCacheRepo({
@@ -64,7 +63,6 @@ describe("run-private streaming over an FsFolder backing", () => {
       runId: "run-A",
     });
     expect(tabular.supportsStreaming()).toBe(false);
-    expect(tabular.supportsStreamingPorts()).toBe(false);
     expect(typeof tabular.getOutputStreamByRef).toBe("undefined");
   });
 

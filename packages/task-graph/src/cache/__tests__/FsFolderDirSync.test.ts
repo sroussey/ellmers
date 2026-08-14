@@ -45,12 +45,19 @@ describe("FsFolderTaskOutputRepository dir fsync (integration)", () => {
     } catch {}
   });
 
-  it("saveOutputStream resolves and bytes round-trip with dir-sync enabled", async () => {
+  it("saveOutputStreamPort resolves and bytes round-trip with dir-sync enabled", async () => {
     const repo = new FsFolderTaskOutputRepository(folder);
     const payload = new Uint8Array([1, 2, 3, 4, 5]);
-    const ref = await repo.saveOutputStream("RoundTrip", { k: 1 }, once(payload), {
-      mime: "application/octet-stream",
-    });
+    const ref = await repo.saveOutputStreamPort(
+      "RoundTrip",
+      { k: 1 },
+      "file",
+      "binary",
+      once(payload),
+      {
+        mime: "application/octet-stream",
+      }
+    );
     expect(ref.$ref).toMatch(/^fsfolder:\/\/blobs\/RoundTrip_/);
     const blob = await repo.getOutputByRef(ref);
     expect(blob).toBeDefined();
@@ -62,7 +69,14 @@ describe("FsFolderTaskOutputRepository dir fsync (integration)", () => {
     const repo = new FsFolderTaskOutputRepository(folder);
     const refs = await Promise.all(
       Array.from({ length: 16 }, (_, i) =>
-        repo.saveOutputStream("Concurrent", { i }, once(new Uint8Array([i])), {})
+        repo.saveOutputStreamPort(
+          "Concurrent",
+          { i },
+          "file",
+          "binary",
+          once(new Uint8Array([i])),
+          {}
+        )
       )
     );
     expect(refs).toHaveLength(16);
