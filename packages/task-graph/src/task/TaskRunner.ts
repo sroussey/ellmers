@@ -425,21 +425,27 @@ export class TaskRunner<
               : undefined);
 
           // A streamable task with delta-mode output ports, a cache in play,
-          // and no sink resolved has nowhere to route those deltas. If
-          // accumulation is also off — the graph opted the task out expecting
-          // a sink, but the policy resolved to none here (a private policy
-          // without a usable slot, or a stream-wired run downgraded above) —
-          // the deltas would be silently discarded and the task would return
-          // (and cache!) an empty output. Force accumulation so the task
-          // still materializes its own output. Cache-off runs keep the
-          // documented raw-finish contract: with no cache configured,
+          // and no sink resolved has nowhere to route those deltas UNLESS a
+          // live downstream consumer takes the raw stream directly — the same
+          // "every consumer takes the live stream" contract the cache-off case
+          // below already relies on. Without such a consumer, the graph opted
+          // the task out expecting a sink, but the policy resolved to none
+          // here (a private policy without a usable slot, a stream-wired run
+          // downgraded above, or a non-cacheable task for which no sink is
+          // ever built): the deltas would be silently discarded and the task
+          // would return (and cache!) an empty output. Force accumulation so
+          // the task still materializes its own output. Cache-off runs keep
+          // the documented raw-finish contract: with no cache configured,
           // shouldAccumulate=false means every consumer takes the live stream
-          // and the raw `{}` finish is intentional.
+          // and the raw `{}` finish is intentional — and a present cache with
+          // a live streaming consumer keeps that same contract rather than
+          // buffering solely because a cache happens to be configured.
           if (
             isStreamable &&
             refSinks === undefined &&
             this.cacheRegistry !== undefined &&
             !ctx.shouldAccumulate &&
+            config.hasStreamingConsumers !== true &&
             getStreamingPorts(this.task.outputSchema()).some((p) => isDeltaStreamMode(p.mode))
           ) {
             ctx.shouldAccumulate = true;

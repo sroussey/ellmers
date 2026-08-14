@@ -403,7 +403,12 @@ export class StreamPump {
     accumulateLeafOutputs: boolean,
     noAccumulation: boolean = false
   ): boolean {
-    if (outputCache) {
+    // A non-cacheable task writes no row, so the cache is irrelevant to its
+    // accumulation decision — the edge analysis below owns it. Without this
+    // guard both relaxations refuse (each requires `cacheable`) and control
+    // reaches the trailing `return true`, so declaring a large streaming task
+    // non-cacheable made it buffer its entire output.
+    if (outputCache && task.cacheable) {
       // Relaxation: when the cache can ingest a byte stream, the task streams
       // ONLY binary (any number of such ports), and no downstream edge needs
       // the materialized value, the bytes are piped straight to one cache sink
