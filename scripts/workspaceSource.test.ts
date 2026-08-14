@@ -6,18 +6,27 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { stubSpecsFor, type PackageManifest } from "./lib/sourceStubs";
 import { ROOT } from "./lib/testDiscovery";
-import type { UnresolvedWorkspaceContext, WorkspacePackage } from "./lib/workspaceSource";
+import type {
+  UnresolvedWorkspaceContext,
+  WorkspacePackage,
+  WorkspaceResolveContext,
+  WorkspaceResolvedId,
+  WorkspaceResolveOptions,
+} from "./lib/workspaceSource";
 import {
   distToSource,
   listWorkspacePackages,
   ownerOf,
   resolveTestTarget,
+  resolveWorkspaceSourceId,
   TEST_TARGETS,
   unresolvedWorkspaceMessage,
   WORKSPACE_GROUPS,
+  WORKSPACE_SOURCE_PLUGIN_NAME,
+  workspaceSourcePlugin,
 } from "./lib/workspaceSource";
 
 const packages = listWorkspacePackages(ROOT);
@@ -92,6 +101,201 @@ describe("workspace source resolution", () => {
       (group) => !include.some((glob) => glob.startsWith(`${group}/`))
     );
     expect(missing).toEqual([]);
+  });
+
+  /**
+   * The hook the whole module exists for. Every case below was previously
+   * unreachable from any test: `resolveId` lived inside a `Plugin` object
+   * literal, so driving it needed a Vite build, and both CI modes pass under
+   * either resolution — `test-vitest-unit` and `test-vitest-dist` run the same
+   * files and the same assertions, differing only in which files load. Nothing
+   * distinguished "resolved to src" from "resolved to dist".
+   *
+   * `resolveWorkspaceSourceId` takes the plugin context as a parameter for
+   * exactly this reason, so a recording stub can stand in for Vite.
+   */
+  describe("resolveId", () => {
+    interface RecordedResolve {
+      readonly source: string;
+      readonly importer: string | undefined;
+      readonly options: WorkspaceResolveOptions;
+    }
+
+    /** A plugin context that answers with `result` and records every call. */
+    function recordingContext(result: WorkspaceResolvedId | null): {
+      readonly calls: RecordedResolve[];
+      readonly context: WorkspaceResolveContext;
+    } {
+      const calls: RecordedResolve[] = [];
+      return {
+        calls,
+        context: {
+          async resolve(source, importer, options) {
+            calls.push({ source, importer, options });
+            return result;
+          },
+        },
+      };
+    }
+
+    it("rewrites a resolved dist entry to its source twin", async () => {
+      const { calls, context } = recordingContext({ id: join(ROOT, "packages/ai/dist/node.js") });
+
+      const resolved = await resolveWorkspaceSourceId(
+        packages,
+        context,
+        "@workglow/ai",
+        undefined,
+        {}
+      );
+
+      expect(resolved?.id).toBe(join(ROOT, "packages/ai/src/node.ts"));
+      expect(calls).toHaveLength(1);
+    });
+
+    it("passes a non-workspace specifier through without resolving it", async () => {
+      // Resolving every third-party specifier a second time would tax the whole
+      // run for nothing, so the owner lookup has to short-circuit BEFORE the
+      // `this.resolve` round trip rather than after it.
+      const { calls, context } = recordingContext({ id: "/elsewhere/vitest.js" });
+
+      expect(await resolveWorkspaceSourceId(packages, context, "vitest", undefined, {})).toBeNull();
+      expect(calls).toEqual([]);
+    });
+
+    it("leaves an external resolution as it was resolved", async () => {
+      // A source twin exists for this id, so only the externality check stops
+      // the rewrite: rewriting an external id to an absolute source path would
+      // pull a module the resolver deliberately left out back into the graph.
+      const external = { id: join(ROOT, "packages/ai/dist/node.js"), external: true };
+      const { context } = recordingContext(external);
+
+      expect(await resolveWorkspaceSourceId(packages, context, "@workglow/ai", undefined, {})).toBe(
+        external
+      );
+    });
+
+    it("leaves build output with no source twin on the built file", async () => {
+      const generated = { id: join(ROOT, "packages/ai/dist/not-a-real-entry.js") };
+      expect(existsSync(generated.id)).toBe(false);
+      const { context } = recordingContext(generated);
+
+      expect(await resolveWorkspaceSourceId(packages, context, "@workglow/ai", undefined, {})).toBe(
+        generated
+      );
+    });
+
+    it("throws the workspace diagnostic when resolution yields nothing", async () => {
+      // The branch the diagnostic exists for, and the one with zero execution
+      // anywhere else: `unresolvedWorkspaceMessage` is unit-tested on its
+      // inputs, but nothing proved the hook ever calls it.
+      const { context } = recordingContext(null);
+
+      await expect(
+        resolveWorkspaceSourceId(
+          packages,
+          context,
+          "@workglow/ai/not-exported",
+          join(ROOT, "packages/test/src/x.ts"),
+          {}
+        )
+      ).rejects.toThrow(
+        /\[workglow:workspace-source\] cannot resolve "@workglow\/ai\/not-exported"/
+      );
+    });
+
+    it("forwards the hook's options and adds skipSelf", async () => {
+      // Without `skipSelf` this plugin re-enters itself and resolution never
+      // terminates; the rest of the options (`kind`, `isEntry`, `custom`) steer
+      // which conditional export is picked, so dropping them silently changes
+      // the target that then gets rewritten.
+      const { calls, context } = recordingContext({ id: join(ROOT, "packages/ai/dist/node.js") });
+      const importer = join(ROOT, "packages/test/src/x.ts");
+
+      await resolveWorkspaceSourceId(packages, context, "@workglow/ai", importer, {
+        isEntry: false,
+        kind: "import-statement",
+      });
+
+      expect(calls).toEqual([
+        {
+          source: "@workglow/ai",
+          importer,
+          options: { isEntry: false, kind: "import-statement", skipSelf: true },
+        },
+      ]);
+    });
+  });
+
+  /**
+   * The rewrite only takes effect where the plugin is ATTACHED, and it has to
+   * be attached per project: projects are standalone Vite configs, so a
+   * root-level `plugins` entry never reaches them. Hoisting the plugin to the
+   * root `defineConfig` — a natural "one instance instead of N" cleanup — is
+   * silent: every project resolves through `exports` to dist again, all tests
+   * still pass, and the only symptom is entry-point behavior reading as
+   * uncovered.
+   *
+   * Both directions stub the variable EXPLICITLY. `test-vitest-dist` runs this
+   * file with `WORKGLOW_TEST_TARGET=dist` ambient, so a test that read the
+   * ambient value would pass in one CI job and fail in the other.
+   */
+  describe("plugin attachment", () => {
+    interface ConfiguredProject {
+      readonly plugins?: readonly { readonly name?: string }[];
+    }
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    });
+
+    async function projectsForTarget(target: string): Promise<readonly ConfiguredProject[]> {
+      vi.stubEnv("WORKGLOW_TEST_TARGET", target);
+      // The config reads the variable at module scope, so a cached evaluation
+      // would answer for whichever target ran first.
+      vi.resetModules();
+      const mod = (await import("../vitest.config.ts")) as {
+        default: { test?: { projects?: readonly ConfiguredProject[] } };
+      };
+      const projects = mod.default.test?.projects ?? [];
+      // A zero-project config would satisfy "none is missing the plugin".
+      expect(projects.length).toBeGreaterThan(0);
+      return projects;
+    }
+
+    const carriesPlugin = (project: ConfiguredProject): boolean =>
+      (project.plugins ?? []).some((plugin) => plugin?.name === WORKSPACE_SOURCE_PLUGIN_NAME);
+
+    it("attaches the source rewrite to every project under the default target", async () => {
+      const projects = await projectsForTarget("source");
+      expect(projects.filter((project) => !carriesPlugin(project))).toEqual([]);
+    });
+
+    it("attaches it to no project when the target is dist", async () => {
+      const projects = await projectsForTarget("dist");
+      expect(projects.filter(carriesPlugin)).toEqual([]);
+    });
+
+    it("names the plugin the same thing the diagnostic does", () => {
+      expect(workspaceSourcePlugin(ROOT).name).toBe(WORKSPACE_SOURCE_PLUGIN_NAME);
+      expect(
+        unresolvedWorkspaceMessage({
+          source: "@workglow/ai",
+          owner: {
+            name: "@workglow/ai",
+            dir: "/repo/packages/ai",
+            exports: undefined,
+            dependencies: new Set(),
+          },
+          importer: undefined,
+          importerPackage: undefined,
+          importerDeclaresDependency: undefined,
+          ownerDeclaresSubpath: true,
+          distHasBuiltEntries: true,
+        })
+      ).toContain(`[${WORKSPACE_SOURCE_PLUGIN_NAME}]`);
+    });
   });
 
   /**

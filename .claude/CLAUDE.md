@@ -426,6 +426,28 @@ integrity blocking: it reuses the `build-output` artifact and runs the unit tier
 `--coverage` when targeting `dist`, since measuring bundles against a `src` denominator
 reports every source file at 0% — so `merge-vitest-coverage` is unaffected.
 
+That job runs the UNIT tier only, which on its own would make the blocking check
+**tier-shaped**: a bundle reachable only from an `.integration.test.ts` file would be
+loaded by no blocking job at all. Two entries were in exactly that position
+(`@workglow/openrouter/ai-runtime` and `@workglow/huggingface-inference/ai-runtime`,
+imported only by provider-api integration files, whose section the nightly Bun run also
+excludes) — a `bun build` change dropping a re-export from either would have left the file
+in place, satisfied every check, and broken consumers only after publish. What closes that
+gap, and what makes the unit tier sufficient, is
+`packages/test/src/test/util/PublishedEntryImports.test.ts`: a unit-tier file that
+enumerates every workspace manifest's `exports`, resolves each subpath under the Node
+conditions, and dynamically imports the resulting specifier, asserting the module is
+non-empty. Under `WORKGLOW_TEST_TARGET=dist` that one file loads every published bundle
+regardless of which tier a suite happens to exercise it from; under the default target it
+costs nothing, because it loads the same source files the rest of the suite already does.
+Its two exemption maps are deliberately tiny and each entry states its reason, so a new
+package defaults to being checked, and a stale exemption fails the test rather than
+silently exempting nothing.
+
+Adding a new published `exports` subpath therefore needs no CI change, and importing
+`workglow` — the meta-package `packages/test` now devDepends on — is what brings the
+provider bundles into that sweep transitively.
+
 The coverage denominator is stated explicitly (`packages/*/src/**/*.{ts,tsx}`, same for
 `providers/`) rather than left to vitest's default of "files loaded during the run" — that
 default omits the modules no test imports at all, which are exactly the ones a coverage
@@ -434,6 +456,16 @@ happened to run. `dist`, `packages/test`, `__tests__`, `testing/`, `bench/` and 
 are excluded. `scripts/workspaceSource.test.ts` fails if any published runtime entry lacks
 a source counterpart: such an entry keeps resolving to its bundle, and the only symptom is
 one package's coverage collapsing back onto `dist/*`.
+
+That file also drives the hook itself. `resolveId`'s body lives in
+`resolveWorkspaceSourceId`, which takes the plugin context as a PARAMETER so a recording
+stub can stand in for Vite, and a separate check reads the real `vitest.config.ts` back and
+asserts every project carries the `workglow:workspace-source` plugin under the default
+target and none does under `dist`. Both are there because the failure is silent: hoisting
+`plugins` from the per-project object to the root `defineConfig` — projects are standalone
+Vite configs, so a root-level entry never reaches them — leaves every test passing and only
+makes coverage numbers quietly worse. Both directions stub `WORKGLOW_TEST_TARGET`
+explicitly, since `test-vitest-dist` runs this file with that variable already set.
 
 ### Developing without building
 
