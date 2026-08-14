@@ -435,6 +435,16 @@ are excluded. `scripts/workspaceSource.test.ts` fails if any published runtime e
 a source counterpart: such an entry keeps resolving to its bundle, and the only symptom is
 one package's coverage collapsing back onto `dist/*`.
 
+That file also drives the hook itself. `resolveId`'s body lives in
+`resolveWorkspaceSourceId`, which takes the plugin context as a PARAMETER so a recording
+stub can stand in for Vite, and a separate check reads the real `vitest.config.ts` back and
+asserts every project carries the `workglow:workspace-source` plugin under the default
+target and none does under `dist`. Both are there because the failure is silent: hoisting
+`plugins` from the per-project object to the root `defineConfig` — projects are standalone
+Vite configs, so a root-level entry never reaches them — leaves every test passing and only
+makes coverage numbers quietly worse. Both directions stub `WORKGLOW_TEST_TARGET`
+explicitly, since `test-vitest-dist` runs this file with that variable already set.
+
 ### Developing without building
 
 `bun run use-source` (or `./scripts/bunsrc-workspace.ts source`) makes every package resolve to its source files instead of its built files, so you can develop without rebuilding. It does **not** touch `package.json`: `exports` keeps pointing at `./dist/*`, and the script writes tiny re-export stubs into each package's (gitignored) `dist` folder — `dist/node.js` becomes `export * from "../src/node.ts"`, `dist/node.d.ts` the declaration equivalent. Source mode therefore leaves `git status` clean and there is nothing to revert before committing.
