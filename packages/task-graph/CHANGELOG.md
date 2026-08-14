@@ -1,5 +1,14 @@
 # @workglow/task-graph
 
+## 0.3.44
+
+### Bug Fixes
+
+#### task-graph
+
+- stop caching ConditionalTask and cover unfed branch ports
+- derive branch ports for conditionConfig-driven ConditionalTask
+
 ## 0.3.43
 
 ### Breaking Changes
