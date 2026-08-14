@@ -302,6 +302,17 @@ Binary output ports whose bytes were piped into a stream-capable cache carry a b
 
 **Self-healing dangling refs**: when a ref needed for replay or hydration no longer resolves (blob evicted, cache cleared), the hit converts into a **miss** — the task re-executes and rewrites both the row and the bytes. No events are emitted before all refs are validated.
 
+**A row's refs resolve all-or-nothing.** A row carries one ref per streamed port, so a partially resolvable entry is representable: port A's blob survives an eviction that took port B's. It is never served as one. `CacheCoordinator.replayStreamRefs` resolves _every_ ref before emitting a single event and returns `"miss"` if any one of them dangles, so the caller re-executes and rewrites all ports; the streams that did open are closed first, so no file handle is stranded by the degradation. A half-resolved output — a value at one port and `undefined` at another the row claims has bytes — would be worse than a recompute: the consumer cannot tell that hole from a task that legitimately produced nothing, and nothing downstream would ever report the eviction. Recomputing costs time; the hole costs correctness.
+
+The other two ref-reading paths reach the same guarantee differently, and neither substitutes `undefined` for missing bytes:
+
+- **Input hydration** (`TaskRunner.hydrateInputRefs`) _throws_ rather than missing. By then the bytes were expected to exist and there is no cheaper option to fall back to, so it fails the task with an error naming the port.
+- **Below-threshold hydration** (`CacheCoordinator.hydrateRefsBelowThreshold`) leaves an unresolvable ref in place. The port then holds a ref rather than a hole, and the ref fails loudly at the next consumer's input hydration.
+
+The one place a miss does become `undefined` at a port is `resolveOutput` / `resolveJobOutput` — the opt-in, explicitly best-effort resolver an external consumer drives over a completed job's output. It is not on the engine's cache-hit path, and its per-ref behavior is documented on the function.
+
+Refs are validated only when a consumer needs their bytes: with neither consumer hint set, no read is performed and the ref rides out in the finish payload unchecked (that is the "No consumers" row above). Such a ref is not a hole either — it is a pointer whose resolution the caller drives.
+
 **Input-side hydration**: any branded ref that reaches a task's resolved inputs is hydrated against the run's `CacheRegistry` (private first, then deterministic) before validation and cache-key computation, so ref-bearing inputs fingerprint identically to materialized ones. Binary-streaming input ports with a live input stream are skipped — those consumers take bytes from the stream. An unresolvable input ref fails the task with an error naming the port.
 
 **Queue consumers**: `JobHandle.outputStream(port?)` (present only when the `JobQueueClient` was configured with an `outputStreamResolver`, typically `makeJobOutputStreamResolver(repo, schema)`) awaits completion and streams the binary result out of the cache without materializing it; omitting `port` (portless discovery) requires the resolver to have been built with the task's `outputSchema`, which scopes discovery to declared streamable ports — a schema-less resolver rejects portless calls.
