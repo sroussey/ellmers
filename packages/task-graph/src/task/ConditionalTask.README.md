@@ -266,6 +266,20 @@ for (const [port, isActive] of portStatus) {
 to decide which outgoing dataflows are `COMPLETED` and which are `DISABLED`. It
 lists every port the run could have written, not just the ones it did — a port
 missing from the map is not a branch port and follows the task's own status.
+That list is the declared input ports union the ones that actually arrived, and
+activation follows the **branch**: a declared port that arrived empty still
+belongs to the taken branch, so its edge stays enabled.
+
+## Caching
+
+`ConditionalTask` declares `cacheable = false`, and must stay that way. Its real
+product is the routing decision the scheduler reads back off the instance, and a
+cache hit returns the output without entering `execute`, so that state is never
+populated. A cached gate mis-routes in both modes: a `conditionConfig` gate
+reports no branch ports at all (nothing is disabled, so the untaken branch runs)
+and a function-branch gate reports every port inactive (everything is disabled,
+so the taken branch does not run). Evaluating a condition is cheap — there is
+nothing here worth caching.
 
 ## Events
 

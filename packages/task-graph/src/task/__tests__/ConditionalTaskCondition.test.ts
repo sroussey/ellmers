@@ -493,5 +493,41 @@ describe("ConditionalTask with serialized conditionConfig", () => {
       expect(status.get("categories_else")).toBe(true);
       expect(status.get("message_else")).toBe(true);
     });
+
+    it("covers a declared input port that carried no data", async () => {
+      const task = new ConditionalTask({
+        inputSchema: triageInputSchema,
+        conditionConfig: triageConditionConfig,
+      });
+
+      // `categories` is declared but never arrives.
+      await task.run({ score: 0.1, message: "hello" });
+
+      const status = task.getPortActiveStatus();
+      // Present in the map at all: a port missing from it reads as "not a
+      // branch port" and its edge is left enabled.
+      expect(status.get("categories_1")).toBe(false);
+      expect(status.get("categories_else")).toBe(true);
+    });
+
+    it("keeps an empty port of the TAKEN branch active", async () => {
+      const task = new ConditionalTask({
+        inputSchema: triageInputSchema,
+        conditionConfig: triageConditionConfig,
+      });
+
+      await task.run({ score: 0.9, message: "hello" });
+
+      const status = task.getPortActiveStatus();
+      // Branch 1 matched, so its ports are active even where no data flowed —
+      // activation belongs to the branch, not to the presence of a value.
+      expect(status.get("categories_1")).toBe(true);
+      expect(status.get("message_1")).toBe(true);
+      expect(status.get("categories_else")).toBe(false);
+    });
+
+    it("is never cached: the routing decision lives in instance state", () => {
+      expect(ConditionalTask.cacheable).toBe(false);
+    });
   });
 });

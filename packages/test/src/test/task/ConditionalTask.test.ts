@@ -4,7 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ConditionalTask, Dataflow, Task, TaskGraph, TaskStatus } from "@workglow/task-graph";
+import {
+  ConditionalTask,
+  Dataflow,
+  Task,
+  TaskGraph,
+  TaskGraphRunner,
+  TaskStatus,
+} from "@workglow/task-graph";
+import { InMemoryTaskOutputRepository } from "@workglow/task-graph/test";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 
@@ -758,6 +766,53 @@ describe("ConditionalTask", () => {
         expect(sinkTwo.runOutputData.seen).toBe("payload");
         expect(sinkThree.status).toBe(TaskStatus.DISABLED);
         expect(sinkThree.calls).toBe(0);
+      });
+
+      it("routes the same way on a second run sharing an output cache", async () => {
+        // A cache hit returns the output without entering `execute`, so the
+        // gate's in-memory routing state is never populated. Fresh task
+        // instances (a reloaded graph) are what expose it: the gate must still
+        // disable the untaken branch rather than serve a cached completion.
+        const repo = new InMemoryTaskOutputRepository();
+
+        const build = () => {
+          const source = new GateSourceTask({ id: "source" });
+          const gate = new ConditionalTask({
+            id: "gate",
+            inputSchema: gateInputSchema,
+            conditionConfig: {
+              branches: [
+                { id: "confident", field: "score", operator: "greater_or_equal", value: "0.8" },
+              ],
+              exclusive: true,
+            },
+          });
+          const sink = new GateSinkTask({ id: "sink" });
+          const graph = new TaskGraph();
+          graph.addTasks([source, gate, sink]);
+          graph.addDataflow(new Dataflow(source.id, "score", gate.id, "score"));
+          graph.addDataflow(new Dataflow(source.id, "value", gate.id, "value"));
+          const branch = new Dataflow(gate.id, "value_1", sink.id, "received");
+          graph.addDataflow(branch);
+          return { graph, sink, branch };
+        };
+
+        const first = build();
+        await new TaskGraphRunner(first.graph).runGraph(
+          { score: 0.2, value: "payload" },
+          { outputCache: repo }
+        );
+        expect(first.branch.status).toBe(TaskStatus.DISABLED);
+        expect(first.sink.calls).toBe(0);
+
+        const second = build();
+        await new TaskGraphRunner(second.graph).runGraph(
+          { score: 0.2, value: "payload" },
+          { outputCache: repo }
+        );
+        expect(second.branch.status).toBe(TaskStatus.DISABLED);
+        expect(second.sink.status).toBe(TaskStatus.DISABLED);
+        expect(second.sink.calls).toBe(0);
       });
     });
   });

@@ -85,6 +85,19 @@ export class ConditionalTask<
    * check keeps `instanceof` semantics.
    */
   static readonly isConditionalTask = true;
+
+  /**
+   * Never cached. The routing decision this task makes lives in instance state
+   * ({@link activeBranches} / {@link getPortActiveStatus}) that the scheduler
+   * reads to enable and disable outgoing dataflows — and a cache hit returns the
+   * output without ever entering `execute`, so that state is never populated. A
+   * cached gate therefore mis-routes in both modes: a `conditionConfig` gate
+   * reports no branch ports at all (nothing is disabled, so the untaken branch
+   * runs) and a function-branch gate reports every port inactive (everything is
+   * disabled, so the taken branch does not run). Evaluating a condition is
+   * cheap; there is nothing here worth caching.
+   */
+  static override cacheable = false;
   static override type: TaskTypeName = "ConditionalTask";
   static override category = "Flow Control";
   static override title = "Condition";
@@ -291,20 +304,34 @@ export class ConditionalTask<
       }
     }
 
-    // Full port universe: every branch port for every pass-through key, plus
-    // the `_else` ports when exclusive. Ports written into `output` are active;
-    // the rest are inactive and their edges must be disabled.
-    const portStatus = new Map<string, boolean>();
-    for (const key of inputKeys) {
+    // Which branch suffixes this run activated. Activation is a property of the
+    // BRANCH, not of whether a given key carried data: a declared port that
+    // arrived empty still belongs to the taken branch, and disabling its edge
+    // would stop a downstream task the condition actually selected.
+    const activeSuffixes = new Set<string>();
+    if (isExclusive) {
+      activeSuffixes.add(matchedBranchNumber !== null ? String(matchedBranchNumber) : "else");
+    } else {
       for (let i = 0; i < branches.length; i++) {
-        portStatus.set(`${key}_${i + 1}`, false);
-      }
-      if (isExclusive) {
-        portStatus.set(`${key}_else`, false);
+        if (this.activeBranches.has(branches[i].id)) activeSuffixes.add(String(i + 1));
       }
     }
-    for (const key of Object.keys(output)) {
-      portStatus.set(key, true);
+
+    // Full port universe: every branch port for every routed key, plus the
+    // `_else` ports when exclusive. The keys are the DECLARED input ports union
+    // the ones that actually arrived — deriving them from the arrived data
+    // alone leaves a declared-but-unfed port missing from the map, and a
+    // missing port reads to the scheduler as "not a branch port", which is
+    // exactly the undisabled edge this map exists to prevent.
+    const routedKeys = new Set([...Object.keys(this.routedInputPorts()), ...inputKeys]);
+    const portStatus = new Map<string, boolean>();
+    for (const key of routedKeys) {
+      for (let i = 0; i < branches.length; i++) {
+        portStatus.set(`${key}_${i + 1}`, activeSuffixes.has(String(i + 1)));
+      }
+      if (isExclusive) {
+        portStatus.set(`${key}_else`, activeSuffixes.has("else"));
+      }
     }
     this.portActiveStatus = portStatus;
 
