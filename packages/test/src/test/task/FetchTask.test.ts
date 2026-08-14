@@ -59,6 +59,21 @@ const createMockResponse = (jsonData: any = {}): Response => {
   });
 };
 
+/** 200 whose body stream errors — the shape of a peer closing mid-read. */
+function erroredBodyResponse(error: Error): Response {
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.error(error);
+      },
+    }),
+    {
+      status: 200,
+      headers: { "Content-Type": "text/plain" },
+    }
+  );
+}
+
 // Mock fetch for testing — stubbed into SafeFetch so we bypass the real
 // server impl (DNS + undici) during unit tests. These tests cover retry,
 // progress, and response-type logic, not SSRF policy.
@@ -240,6 +255,53 @@ describe("FetchUrlTask", () => {
     expect(jobFailed.code).toBe(FetchUrlErrorCode.RESPONSE_PARSE_ERROR);
 
     expect(mockFetch.mock.calls.length).toBe(1);
+  });
+
+  test("treats a socket close while reading the body as a retryable network error", async () => {
+    const socketError = new Error("The socket connection was closed unexpectedly");
+    mockFetch.mockImplementation(() => Promise.resolve(erroredBodyResponse(socketError)));
+
+    const error = await fetchUrl({
+      url: "https://www.sec.gov/Archives/edgar/data/1/a.txt",
+      response_type: "text",
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(JobTaskFailedError);
+    const jobFailed = error as JobTaskFailedError;
+    expect(jobFailed.code).toBe(FetchUrlErrorCode.NETWORK_ERROR);
+    expect(jobFailed.jobError).toBeInstanceOf(RetryableJobError);
+    expect(jobFailed.message).toContain("socket");
+    expect(mockFetch.mock.calls.length).toBe(1);
+  });
+
+  test("treats an ECONNRESET while reading the body as a retryable network error", async () => {
+    const reset = new Error("read failed") as NodeJS.ErrnoException;
+    reset.code = "ECONNRESET";
+    mockFetch.mockImplementation(() => Promise.resolve(erroredBodyResponse(reset)));
+
+    const error = await fetchUrl({
+      url: "https://www.sec.gov/Archives/edgar/data/1/a.txt",
+      response_type: "text",
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(JobTaskFailedError);
+    expect((error as JobTaskFailedError).code).toBe(FetchUrlErrorCode.NETWORK_ERROR);
+    expect((error as JobTaskFailedError).jobError).toBeInstanceOf(RetryableJobError);
+  });
+
+  test("treats a nested socket cause while reading the body as a retryable network error", async () => {
+    const wrapped = new Error("Unable to decode");
+    wrapped.cause = new Error("other side closed");
+    mockFetch.mockImplementation(() => Promise.resolve(erroredBodyResponse(wrapped)));
+
+    const error = await fetchUrl({
+      url: "https://www.sec.gov/Archives/edgar/data/1/a.txt",
+      response_type: "text",
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(JobTaskFailedError);
+    expect((error as JobTaskFailedError).code).toBe(FetchUrlErrorCode.NETWORK_ERROR);
+    expect((error as JobTaskFailedError).jobError).toBeInstanceOf(RetryableJobError);
   });
 
   test("handles mixed success and failure responses", async () => {

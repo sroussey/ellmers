@@ -34,6 +34,7 @@ import {
   createFetchUrlJobError,
   FetchUrlErrorCode,
   isFetchUrlJobError,
+  isFetchUrlNetworkCause,
   wrapFetchUrlNetworkError,
 } from "./FetchUrlJobError";
 
@@ -322,6 +323,11 @@ export class FetchUrlJob<
       } catch (err) {
         if (isFetchUrlJobError(err) || err instanceof AbortSignalJobError) {
           throw err;
+        }
+        // A 200 whose body is still on the wire can throw here when the peer
+        // resets the socket. That is a network failure, not a decode failure.
+        if (isFetchUrlNetworkCause(err)) {
+          throw wrapFetchUrlNetworkError(input.url!, err);
         }
         const detail = err instanceof Error ? err.message : String(err);
         throw createFetchUrlJobError(
