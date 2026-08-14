@@ -27,9 +27,33 @@ describe("scripts/test.ts", () => {
     expect(stdout).not.toContain(".integration.test.ts");
   });
 
-  test("provider-nodellama vitest dry-run disables file parallelism", async () => {
+  test("provider-nodellama vitest dry-run does not serialize the whole suite", async () => {
+    // Llama integration files are serialized by a dedicated vitest project
+    // (`fileParallelism: false`), not by a global --no-file-parallelism that
+    // would also serialize every other file in a mixed run.
     const proc = Bun.spawn(
       ["bun", "scripts/test.ts", "integration", "provider-nodellama", "vitest", "--dry-run"],
+      {
+        cwd: import.meta.dir + "/..",
+        stdout: "pipe",
+        stderr: "pipe",
+      }
+    );
+
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout).not.toContain("--no-file-parallelism");
+  });
+
+  test("rag vitest dry-run disables file parallelism to avoid OOM", async () => {
+    const proc = Bun.spawn(
+      ["bun", "scripts/test.ts", "integration", "rag", "vitest", "--dry-run"],
       {
         cwd: import.meta.dir + "/..",
         stdout: "pipe",

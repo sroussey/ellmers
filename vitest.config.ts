@@ -53,6 +53,16 @@ const shared = {
 const discovered = discoverTestFiles();
 
 /**
+ * node-llama-cpp/ipull writes a shared `*.gguf.ipull` under ./models. Parallel
+ * vitest file workers downloading the same URI race on rename(.ipull → .gguf).
+ * Split those integration files into a project with `fileParallelism: false`
+ * so a full `vitest run` (no file list — e.g. `bun run test vitest`) still
+ * serializes them. They must also be excluded from the parallel `test` project
+ * or they would run twice.
+ */
+const NODELLAMA_INTEGRATION_GLOB = "**/ai-provider-nodellama/**/*.integration.test.ts";
+
+/**
  * One project per workspace that actually holds tests, derived from the same
  * discovery the runner and the reachability guard use. Deriving rather than
  * enumerating is the point: a hand-written list drifts, and a test file under
@@ -66,14 +76,26 @@ const discovered = discoverTestFiles();
  * own selection, but `vitest run --project <name>` bypasses the runner, so the
  * exclusion has to live here too or that command fails on a healthy tree.
  */
-const projects = listTestProjects(discovered).map((p) => {
+const projects = listTestProjects(discovered).flatMap((p) => {
   const root = abs(p.dir);
   const bunOnly = discovered
     .filter((f) => f.runner === "bun" && f.path.startsWith(root + "/"))
     .map((f) => f.path.slice(root.length + 1));
-  return {
-    test: { ...shared, name: p.name, root, exclude: [...shared.exclude, ...bunOnly] },
-  };
+  const base = { ...shared, root, exclude: [...shared.exclude, ...bunOnly] };
+  if (p.name !== "test") {
+    return [{ test: { ...base, name: p.name } }];
+  }
+  return [
+    { test: { ...base, name: p.name, exclude: [...base.exclude, NODELLAMA_INTEGRATION_GLOB] } },
+    {
+      test: {
+        ...base,
+        name: "test-nodellama",
+        include: [NODELLAMA_INTEGRATION_GLOB],
+        fileParallelism: false,
+      },
+    },
+  ];
 });
 
 export default defineConfig({

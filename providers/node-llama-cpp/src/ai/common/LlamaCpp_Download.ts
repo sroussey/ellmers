@@ -10,6 +10,12 @@ import type {
   ModelDownloadTaskRunOutput,
 } from "@workglow/ai";
 import { LLAMACPP_DEFAULT_MODELS_DIR } from "./LlamaCpp_Constants";
+import {
+  ggufDownloadLockDir,
+  ipullRenameDest,
+  isBenignIpullRenameRace,
+  withGgufDownloadLock,
+} from "./LlamaCpp_DownloadLock";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import { getConfigKey, loadSdk, resolvedPaths } from "./LlamaCpp_Runtime";
 
@@ -17,46 +23,33 @@ export const LlamaCpp_Download: AiProviderRunFn<
   ModelDownloadTaskRunInput,
   ModelDownloadTaskRunOutput,
   LlamaCppModelConfig
-> = async (input, model, _signal, emit) => {
+> = async (input, model, signal, emit) => {
   if (!model) throw new Error("Model config is required for ModelDownloadTask.");
 
-  const { createModelDownloader } = await loadSdk();
+  const { resolveModelFile } = await loadSdk();
   const config = model.provider_config;
   const modelUri = config.model_url ?? config.model_path;
   const dirPath = config.models_dir ?? LLAMACPP_DEFAULT_MODELS_DIR;
 
-  const downloader = await createModelDownloader({ modelUri, dirPath });
-
-  const downloadPromise = downloader.download();
-  let modelPath: string | undefined;
-  let downloadError: unknown;
-  downloadPromise.then(
-    (p) => {
-      modelPath = p;
-    },
-    (e) => {
-      downloadError = e;
+  const modelPath = await withGgufDownloadLock(ggufDownloadLockDir(dirPath, modelUri), async () => {
+    try {
+      return await resolveModelFile(modelUri, {
+        directory: dirPath,
+        cli: false,
+        signal,
+        onProgress: ({ totalSize, downloadedSize }) => {
+          if (totalSize > 0) {
+            const pct = Math.min(99, Math.round((downloadedSize / totalSize) * 100));
+            emit({ type: "phase", message: "Downloading model", progress: pct });
+          }
+        },
+      });
+    } catch (err) {
+      const dest = ipullRenameDest(err);
+      if (dest !== undefined && isBenignIpullRenameRace(err)) return dest;
+      throw err;
     }
-  );
-
-  let settled = false;
-  downloadPromise.finally(() => {
-    settled = true;
   });
-
-  while (!settled) {
-    await new Promise<void>((resolve) => setTimeout(resolve, 500));
-    if (settled) break;
-    const total = downloader.totalSize;
-    const downloaded = downloader.downloadedSize;
-    if (total && total > 0 && downloaded !== undefined) {
-      const pct = Math.min(99, Math.round((downloaded / total) * 100));
-      emit({ type: "phase", message: "Downloading model", progress: pct });
-    }
-  }
-
-  if (downloadError) throw downloadError;
-  if (modelPath === undefined) throw new Error("Model download failed: no path returned");
 
   resolvedPaths.set(getConfigKey(model), modelPath);
 

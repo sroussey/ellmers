@@ -133,4 +133,39 @@ describe("test discovery", () => {
     const dangling = Object.keys(SECTION_GROUPS).filter((s) => !sections.has(s));
     expect(dangling).toEqual([]);
   });
+
+  it("serializes node-llama-cpp integration files so parallel ipull downloads cannot share a .gguf.ipull", async () => {
+    // node-llama-cpp/ipull writes a shared `*.gguf.ipull` partial under ./models.
+    // Two vitest file workers downloading the same URI race on rename(.ipull → .gguf)
+    // (ENOENT). A dedicated project with fileParallelism: false serializes those
+    // files even when `bun run test vitest` passes no file list (the runner's
+    // --no-file-parallelism flag never fires in that case). They must also be
+    // excluded from the parallel `test` project or they would run twice.
+    const mod = await import("../vitest.config.ts");
+    const projects: ReadonlyArray<{
+      test: {
+        name: string;
+        fileParallelism?: boolean;
+        include?: string[];
+        exclude?: string[];
+      };
+    }> = mod.default.test?.projects ?? [];
+
+    const sequential = projects.find((p) => p.test.fileParallelism === false);
+    expect(sequential).toBeDefined();
+    expect(
+      sequential!.test.include?.some(
+        (g) => g.includes("ai-provider-nodellama") && g.includes("integration")
+      )
+    ).toBe(true);
+
+    const parallelTest = projects.find((p) => p.test.name === "test");
+    expect(parallelTest).toBeDefined();
+    expect(parallelTest!.test.fileParallelism).not.toBe(false);
+    expect(
+      parallelTest!.test.exclude?.some(
+        (g) => g.includes("ai-provider-nodellama") && g.includes("integration")
+      )
+    ).toBe(true);
+  });
 });

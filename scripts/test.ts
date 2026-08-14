@@ -41,21 +41,12 @@ function isRagOnnxIntegrationFile(filePath: string): boolean {
 }
 
 function shouldLimitParallelismForHeavyIntegration(files: string[]): boolean {
-  return (
-    shouldRunLlamaCppIntegrationFilesSequentially(files) || files.some(isRagOnnxIntegrationFile)
-  );
-}
-
-/** node-llama-cpp/ipull downloads use shared ./models paths; parallel test files corrupt the same .gguf.ipull partial. */
-function isLlamaCppProviderIntegrationFile(filePath: string): boolean {
-  const normalized = filePath.replace(/\\/g, "/");
-  const base = normalized.split("/").pop() ?? normalized;
-  return normalized.includes("/ai-provider-nodellama/") && base.includes(".integration.test.ts");
-}
-
-function shouldRunLlamaCppIntegrationFilesSequentially(files: string[]): boolean {
-  const n = files.filter(isLlamaCppProviderIntegrationFile).length;
-  return n > 1;
+  // Llama integration files are serialized by the `test-nodellama` vitest
+  // project (`fileParallelism: false` in vitest.config.ts), not by this global
+  // flag — applying --no-file-parallelism here would also serialize every other
+  // file in a mixed run, and would not fire at all for `bun run test vitest`
+  // (empty file list).
+  return files.some(isRagOnnxIntegrationFile);
 }
 
 function showHelp(sections: readonly string[]): void {
