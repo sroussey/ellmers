@@ -1,5 +1,13 @@
 # @workglow/task-graph
 
+## 0.3.41
+
+### Bug Fixes
+
+#### task-graph
+
+- drop the owned-sink stamp on disown
+
 ## 0.3.40
 
 ### Features

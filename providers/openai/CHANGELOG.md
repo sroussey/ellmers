@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.41
+
+### Features
+
+#### openai
+
+- report effort policy and stamp listing records
+
 ## 0.3.40
 
 ## 0.3.39
