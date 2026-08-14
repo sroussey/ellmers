@@ -5,8 +5,8 @@
  */
 
 import type { GoogleGenAI } from "@google/genai";
-import { isModelEffort, type ModelEffort } from "@workglow/ai";
 import { resolveApiKey } from "@workglow/ai/provider-utils";
+import { isModelEffort, type ModelEffort } from "@workglow/ai/worker";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 
 /** Maps coarse {@link ModelEffort} to Gemini thinkingBudget tokens. */
