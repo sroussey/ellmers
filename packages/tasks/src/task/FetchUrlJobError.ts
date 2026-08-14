@@ -179,7 +179,7 @@ export function createFetchUrlHttpError(
  */
 export function isFetchUrlNetworkCause(error: unknown, depth = 0): boolean {
   if (error === null || typeof error !== "object" || depth > 4) return false;
-  const e = error as NodeJS.ErrnoException & { cause?: unknown; name?: string };
+  const e = error as { code?: unknown; cause?: unknown; name?: string; message?: unknown };
   if (e.name === "AbortError" || e.name === "AbortSignalJobError") return false;
   const code = e.code;
   if (typeof code === "string") {
