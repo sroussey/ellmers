@@ -5,13 +5,14 @@
  */
 
 import { rawImageToImageValue } from "@workglow/huggingface-transformers/ai-runtime";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 /**
- * `RawImage` carries different encoders per runtime — `toBlob()` is
- * canvas-backed and browser-only, `toSharp()` is node-only — and transformers.js
- * has changed which of them exist. The run-fn probes rather than assuming, so
- * the probe order and the failure message are pinned here.
+ * A real `RawImage` carries BOTH encoders on its prototype in every runtime —
+ * `toBlob()` throws "only supported in browser environments" off-web and
+ * `toSharp()` throws the mirror on-web. Method existence therefore says nothing
+ * about usability, so what is pinned here is the runtime-ordered attempt and the
+ * recovery when the first guess is the wrong one.
  */
 describe("rawImageToImageValue", () => {
   // A 1x1 transparent PNG — the smallest thing sharp will accept.
@@ -22,30 +23,88 @@ describe("rawImageToImageValue", () => {
     (c) => c.charCodeAt(0)
   );
 
-  it("prefers toBlob when the runtime provides it", async () => {
-    const toBlob = vi.fn(async () => new Blob([PNG_1X1], { type: "image/png" }));
-    const toSharp = vi.fn();
-
-    const value = await rawImageToImageValue({ toBlob, toSharp });
-
-    expect(toBlob).toHaveBeenCalledWith("image/png");
-    expect(toSharp).not.toHaveBeenCalled();
-    expect(value).toBeDefined();
-  });
-
-  it("falls back to toSharp when toBlob is absent", async () => {
+  const workingToBlob = () => vi.fn(async () => new Blob([PNG_1X1], { type: "image/png" }));
+  const workingToSharp = () => {
     const toBuffer = vi.fn(async () => PNG_1X1);
     const toSharp = vi.fn(() => ({ png: () => ({ toBuffer }) }));
+    return { toSharp, toBuffer };
+  };
 
-    const value = await rawImageToImageValue({ toSharp });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("uses toSharp when toBlob throws the browser-only error (the real 4.2.0 Node shape)", async () => {
+    const toBlob = vi.fn(async () => {
+      throw new Error("toBlob() is only supported in browser environments.");
+    });
+    const { toSharp, toBuffer } = workingToSharp();
+
+    const value = await rawImageToImageValue({ toBlob, toSharp });
 
     expect(toBuffer).toHaveBeenCalled();
     expect(value).toBeDefined();
   });
 
+  it("uses toBlob when toSharp throws the server-only error (the real 4.2.0 browser shape)", async () => {
+    const toBlob = workingToBlob();
+    const toSharp = vi.fn(() => {
+      throw new Error("toSharp() is only supported in server-side environments.");
+    }) as unknown as () => { png: () => { toBuffer: () => Promise<Uint8Array> } };
+
+    const value = await rawImageToImageValue({ toBlob, toSharp });
+
+    expect(toBlob).toHaveBeenCalledWith("image/png");
+    expect(value).toBeDefined();
+  });
+
+  it("tries toSharp first off-web so the browser encoder is never probed", async () => {
+    const toBlob = workingToBlob();
+    const { toSharp, toBuffer } = workingToSharp();
+
+    const value = await rawImageToImageValue({ toBlob, toSharp });
+
+    expect(toBuffer).toHaveBeenCalled();
+    expect(toBlob).not.toHaveBeenCalled();
+    expect(value).toBeDefined();
+  });
+
+  it("tries toBlob first on web", async () => {
+    const toBlob = workingToBlob();
+    const { toSharp } = workingToSharp();
+
+    vi.stubGlobal("OffscreenCanvas", class {});
+    try {
+      const value = await rawImageToImageValue({ toBlob, toSharp });
+
+      expect(toBlob).toHaveBeenCalledWith("image/png");
+      expect(toSharp).not.toHaveBeenCalled();
+      expect(value).toBeDefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("reports both encoder failures when neither works", async () => {
+    const toBlob = vi.fn(async () => {
+      throw new Error("toBlob() is only supported in browser environments.");
+    });
+    const toSharp = vi.fn(() => {
+      throw new Error("Could not load the sharp module");
+    }) as unknown as () => { png: () => { toBuffer: () => Promise<Uint8Array> } };
+
+    const error = await rawImageToImageValue({ toBlob, toSharp }).then(
+      () => undefined,
+      (e: unknown) => e as Error
+    );
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error!.message).toContain("only supported in browser environments");
+    expect(error!.message).toContain("Could not load the sharp module");
+  });
+
   it("throws a diagnosable error when neither encoder exists", async () => {
-    // The transformers 4.2.0 shape that made the previous `toBase64` call fail:
-    // a RawImage with neither encoder must name both, not just one.
+    // A transformers version shipping neither encoder must name both, not just one.
     await expect(rawImageToImageValue({})).rejects.toThrow(/toBlob\(\) nor toSharp\(\)/);
   });
 });

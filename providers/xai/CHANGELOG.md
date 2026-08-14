@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.41
+
+### Features
+
+#### xai
+
+- map model.effort and stamp Grok listing policies
+
+### Chores
+
+- update deps
+
 ## 0.3.40
 
 ## 0.3.39

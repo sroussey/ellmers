@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { isModelEffort, type ModelEffort } from "@workglow/ai";
 import { isBrowserLike, resolveApiKey, validateProviderBaseUrl } from "@workglow/ai/provider-utils";
-import { isModelEffort, type ModelEffort } from "@workglow/ai/worker";
 import type { XaiModelConfig } from "./Xai_ModelSchema";
 
 /** Default base URL for the xAI (Grok) OpenAI-compatible API. */

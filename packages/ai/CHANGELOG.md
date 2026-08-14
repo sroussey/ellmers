@@ -1,5 +1,14 @@
 # @workglow/ai
 
+## 0.3.41
+
+### Features
+
+#### ai
+
+- add AiProvider.effortPolicy hook
+- add ModelEffortPolicy and effort_options helpers
+
 ## 0.3.40
 
 ### Bug Fixes

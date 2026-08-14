@@ -184,6 +184,46 @@ describe("Task own functionality", () => {
       expect(task.subGraph.getTasks()).toHaveLength(0);
     });
 
+    // The subgraph is only half of what `own` records. `ownedSinkStamps` is a
+    // strong Map keyed by the child, cleared only when the PARENT's run ends —
+    // so a `disown` that left its entry behind still pinned every child (and
+    // everything each child's own subgraph held) for the whole sweep. An owner
+    // that disowns per item would then grow exactly as if it never disowned at
+    // all, which is the one thing `disown` is for.
+    it("drops every per-child record, not just the subgraph node", async () => {
+      class StampLoopTask extends Task {
+        public static override readonly type = "StampLoopTask";
+        public static override readonly title = "Stamp loop";
+
+        public peakStamps = 0;
+        public sinkAfterDisown: unknown = "unset";
+
+        override async execute(_input: TaskOutput, context: IExecuteContext): Promise<TaskOutput> {
+          const stamps = (): number =>
+            (this.runner as unknown as { ownedSinkStamps: Map<unknown, unknown> }).ownedSinkStamps
+              .size;
+          for (let i = 0; i < 5; i++) {
+            const child = context.own(new SimpleTask({ title: `Item ${i}` }));
+            await child.run();
+            this.peakStamps = Math.max(this.peakStamps, stamps());
+            context.disown(child);
+            // Restored at disown, not deferred to the parent's `finally`: the
+            // child is no longer owned and must not carry this run's sinks into
+            // a later standalone `child.run()`.
+            this.sinkAfterDisown = child.runConfig.usageSink;
+          }
+          return { stampsAtEnd: stamps() };
+        }
+      }
+
+      const task = new StampLoopTask();
+      const result = (await task.run()) as { stampsAtEnd: number };
+
+      expect(task.peakStamps).toBe(1);
+      expect(result.stampsAtEnd).toBe(0);
+      expect(task.sinkAfterDisown).toBeUndefined();
+    });
+
     it("resolves a workflow to the wrapper task the subgraph actually holds", async () => {
       class DisownWorkflowTask extends Task {
         public static override readonly type = "DisownWorkflowTask";

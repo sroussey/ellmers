@@ -176,22 +176,33 @@ export function createFetchUrlHttpError(
  * not be classified as {@link FetchUrlErrorCode.RESPONSE_PARSE_ERROR}.
  *
  * Abort is excluded: a cancelled fetch is not a transient network blip.
+ *
+ * A `SyntaxError` is excluded from the MESSAGE heuristic — never from the
+ * `code` / `cause` checks — because a decode failure's message embeds
+ * server-controlled bytes: V8 quotes a snippet of the body into it
+ * (`Unexpected token 'G', "Gateway timeout..." is not valid JSON`), so a
+ * response could otherwise choose its own error code and keep the queue
+ * retrying a URL that can never decode. A body that reached `JSON.parse` at all
+ * arrived complete — the stream errors before the parser runs when the peer
+ * drops mid-body — so a `SyntaxError`'s message is never network evidence.
+ * Discriminated by `name` rather than `instanceof` because this classifier is
+ * reachable from worker-hosted job code, where realms differ.
  */
 export function isFetchUrlNetworkCause(error: unknown, depth = 0): boolean {
   if (error === null || typeof error !== "object" || depth > 4) return false;
-  const e = error as NodeJS.ErrnoException & { cause?: unknown; name?: string };
+  const e = error as { code?: unknown; cause?: unknown; name?: string; message?: unknown };
   if (e.name === "AbortError" || e.name === "AbortSignalJobError") return false;
   const code = e.code;
   if (typeof code === "string") {
     if (NETWORK_ERRNO_PATTERN.test(code) || NETWORK_UNDICI_CODES.has(code)) return true;
   }
   const message = typeof e.message === "string" ? e.message : "";
-  if (NETWORK_MESSAGE_PATTERN.test(message)) return true;
+  if (e.name !== "SyntaxError" && NETWORK_MESSAGE_PATTERN.test(message)) return true;
   return e.cause !== undefined ? isFetchUrlNetworkCause(e.cause, depth + 1) : false;
 }
 
 const NETWORK_ERRNO_PATTERN =
-  /^E(CONNRESET|TIMEDOUT|PIPE|AI_AGAIN|NOTFOUND|HOSTUNREACH|NETUNREACH|CONNREFUSED)$/;
+  /^E(?:CONNRESET|TIMEDOUT|PIPE|AI_AGAIN|NOTFOUND|HOSTUNREACH|NETUNREACH|CONNREFUSED)$/;
 
 const NETWORK_UNDICI_CODES: ReadonlySet<string> = new Set([
   "UND_ERR_SOCKET",

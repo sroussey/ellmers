@@ -1,5 +1,17 @@
 # @workglow/tasks
 
+## 0.3.41
+
+### Features
+
+#### task
+
+- add network error handling for fetch URL tasks
+
+### Chores
+
+- update deps
+
 ## 0.3.40
 
 ## 0.3.39

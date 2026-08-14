@@ -1,5 +1,39 @@
 # @workglow/test
 
+## 0.3.41
+
+### Features
+
+#### task
+
+- add network error handling for fetch URL tasks
+
+#### xai
+
+- map model.effort and stamp Grok listing policies
+
+#### ai-providers
+
+- stamp effort_options from class policies
+
+#### openai
+
+- report effort policy and stamp listing records
+
+### Bug Fixes
+
+#### task-graph
+
+- drop the owned-sink stamp on disown
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `miniflare`: ^5.20260811.1-alpha
+
 ## 0.3.40
 
 ### Features

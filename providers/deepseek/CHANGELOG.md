@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.41
+
+### Features
+
+#### ai-providers
+
+- stamp effort_options from class policies
+
 ## 0.3.40
 
 ## 0.3.39
