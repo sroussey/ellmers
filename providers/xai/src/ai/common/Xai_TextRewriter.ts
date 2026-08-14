@@ -15,7 +15,7 @@ import {
   mapOpenAIChatUsage,
   OPENAI_STREAM_USAGE_OPTIONS,
 } from "@workglow/ai/provider-utils";
-import { getClient, getModelName } from "./Xai_Client";
+import { getClient, getModelName, getXaiReasoningEffort } from "./Xai_Client";
 import type { XaiModelConfig } from "./Xai_ModelSchema";
 
 /**
@@ -35,6 +35,8 @@ export const Xai_TextRewriter_Stream: AiProviderRunFn<
     `${typeof input.prompt === "string" ? input.prompt : ""}\n${typeof input.text === "string" ? input.text : ""}`
   );
 
+  const reasoningEffort = getXaiReasoningEffort(model);
+
   const stream = await client.chat.completions.create(
     {
       model: modelName,
@@ -43,6 +45,7 @@ export const Xai_TextRewriter_Stream: AiProviderRunFn<
         { role: "user", content: input.text },
       ],
       stream: true,
+      ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
       ...OPENAI_STREAM_USAGE_OPTIONS,
     },
     { signal }

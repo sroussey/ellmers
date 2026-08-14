@@ -17,7 +17,7 @@ import {
   OPENAI_STREAM_USAGE_OPTIONS,
 } from "@workglow/ai/provider-utils";
 import { createPartialJsonStream } from "@workglow/util/worker";
-import { getClient, getModelName } from "./Xai_Client";
+import { getClient, getModelName, getXaiReasoningEffort } from "./Xai_Client";
 import type { XaiModelConfig } from "./Xai_ModelSchema";
 
 /**
@@ -42,6 +42,7 @@ export const Xai_StructuredGeneration_Stream: AiProviderRunFn<
   // finish.usage below still carries the provider total.
   const provisionalUsage = createEstimatedOutputUsageReporter(emit);
   provisionalUsage.onPrompt(input.prompt);
+  const reasoningEffort = getXaiReasoningEffort(model);
 
   const stream = await client.chat.completions.create(
     {
@@ -58,6 +59,7 @@ export const Xai_StructuredGeneration_Stream: AiProviderRunFn<
       max_completion_tokens: input.maxTokens,
       temperature: input.temperature,
       stream: true,
+      ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
       ...OPENAI_STREAM_USAGE_OPTIONS,
     },
     { signal }

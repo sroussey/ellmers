@@ -9,6 +9,7 @@
 export { OPENROUTER_ALLOWED_HOSTS } from "./common/OpenRouter_Client";
 export * from "./common/OpenRouter_Constants";
 export * from "./common/OpenRouter_Capabilities";
+export { openrouterEffortPolicy } from "./common/OpenRouter_EffortPolicy";
 export * from "./common/OpenRouter_ModelSchema";
 export * from "./common/OpenRouter_ModelSearch";
 export * from "./registerOpenRouter";

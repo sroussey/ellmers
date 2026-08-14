@@ -15,5 +15,6 @@
 
 export * from "./common/Anthropic_CacheCheckpoint";
 export * from "./common/Anthropic_Client";
+export * from "./common/Anthropic_EffortPolicy";
 export * from "./registerAnthropicInline";
 export * from "./registerAnthropicWorker";

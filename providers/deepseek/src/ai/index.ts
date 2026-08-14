@@ -14,6 +14,7 @@ export {
   resolveMaxTokens,
 } from "./common/DeepSeek_Client";
 export * from "./common/DeepSeek_Constants";
+export { deepseekEffortPolicy } from "./common/DeepSeek_EffortPolicy";
 export * from "./common/DeepSeek_ModelSchema";
 export * from "./common/DeepSeek_ModelSearch";
 export {
