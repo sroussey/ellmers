@@ -17,7 +17,7 @@ import { getStreamPortCodec } from "../cache/streamCodec";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ITask } from "./ITask";
 import type { BinaryRefSink, StreamSink } from "./StreamProcessor";
-import type { StreamEvent } from "./StreamTypes";
+import type { StreamEvent, StreamMode } from "./StreamTypes";
 import {
   assertBinaryFormat,
   CACHE_HIT_USAGE,
@@ -474,8 +474,9 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
    * Returns `undefined` when any of the conditions for the ref path are not
    * met: no cache is configured by policy, the cache does not implement
    * `saveOutputStreamPort`, the task is not cacheable, or the output schema has
-   * no `x-stream: "binary"` port. This path supports single-binary-port tasks
-   * only; tasks with multiple binary ports fall back to the accumulation path.
+   * no `x-stream: "binary"` port. Every binary port gets its own sink and its
+   * own {@link CacheRef}; non-binary streaming ports (`append` / `object`) are
+   * excluded here and stay flag-gated on {@link getRefSinksByPolicy}.
    *
    * The threshold ({@link IRunConfig.referenceThresholdBytes}) controls
    * whether the ref *survives* in the final Output, not whether the sink
@@ -493,36 +494,36 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     if (!this.task.cacheable) return undefined;
     const cache = this.repoFor(registry, policy);
     if (!cache || !cache.supportsStreaming()) return undefined;
-    // Without the no-accumulation flag the runner drives at most one sink per
-    // task, so a second binary port would have neither a sink nor an
-    // accumulator. Enforce the single-binary-port restriction here as well as
-    // in the accumulation decision (StreamPump.canStreamBinaryToCache) —
-    // multi-port tasks fall back to pure accumulation.
     const binaryPorts = getStreamingPorts(outputSchema).filter((p) => p.mode === "binary");
-    if (binaryPorts.length !== 1) return undefined;
-    const port = binaryPorts[0].port;
+    if (binaryPorts.length === 0) return undefined;
+    const sinks = new Map<string, BinaryRefSink>();
+    for (const { port } of binaryPorts) {
+      sinks.set(port, this.makeStreamWriter(cache, keyInputs, port, "binary"));
+    }
+    return sinks;
+  }
+
+  /**
+   * One port's writer closure: hand the encoded bytes to the port-aware backing
+   * and normalize what comes back.
+   *
+   * Re-wraps the backing's `CacheRef` so an implementation that pre-dates the
+   * `kind` brand still produces a discriminator-bearing ref; branded refs pass
+   * through unchanged (preserving size/mime hints). Shared by the binary and
+   * all-mode sink builders so the two paths differ only in which ports they
+   * select, never in how a port's bytes are written.
+   */
+  private makeStreamWriter(
+    cache: TaskOutputRepository,
+    keyInputs: Input,
+    port: string,
+    mode: StreamMode
+  ): BinaryRefSink {
     const taskType = this.task.type;
-    // The single-binary case IS the port-aware writer with one binary port, so
-    // it adapts here rather than in the repository: this is the one call site
-    // that has to synthesize nothing (the port id is already in hand), and a
-    // base-class shim would have to invent a port name for a portless
-    // signature — reintroducing the second writer this collapsed away.
-    //
-    // Re-wrap the backing's CacheRef so an implementation that pre-dates the
-    // `kind` brand still produces a discriminator-bearing ref. Branded refs
-    // pass through unchanged (preserving size/mime hints).
-    const sink: BinaryRefSink = async (chunks) => {
-      const raw = await cache.saveOutputStreamPort!(
-        taskType,
-        keyInputs,
-        port,
-        "binary",
-        chunks,
-        {}
-      );
+    return async (chunks) => {
+      const raw = await cache.saveOutputStreamPort!(taskType, keyInputs, port, mode, chunks, {});
       return isCacheRef(raw) ? raw : makeCacheRef(raw);
     };
-    return new Map([[port, sink]]);
   }
 
   /**
@@ -552,23 +553,9 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
       (p) => p.mode === "append" || p.mode === "object" || p.mode === "binary"
     );
     if (ports.length === 0) return undefined;
-    const taskType = this.task.type;
     const sinks = new Map<string, StreamSink>();
     for (const { port, mode } of ports) {
-      sinks.set(port, {
-        mode,
-        write: async (chunks) => {
-          const raw = await cache.saveOutputStreamPort!(
-            taskType,
-            keyInputs,
-            port,
-            mode,
-            chunks,
-            {}
-          );
-          return isCacheRef(raw) ? raw : makeCacheRef(raw);
-        },
-      });
+      sinks.set(port, { mode, write: this.makeStreamWriter(cache, keyInputs, port, mode) });
     }
     return sinks;
   }

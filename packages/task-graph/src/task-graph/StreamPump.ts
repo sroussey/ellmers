@@ -404,10 +404,10 @@ export class StreamPump {
   ): boolean {
     if (outputCache) {
       // Relaxation: when the cache can ingest a byte stream, the task streams
-      // ONLY binary, and no downstream edge needs the materialized value, the
-      // bytes are piped straight to the cache sink instead of being buffered
-      // into an enriched finish event. This is the memory win for large binary
-      // outputs (e.g. file/image producers).
+      // ONLY binary (any number of such ports), and no downstream edge needs
+      // the materialized value, the bytes are piped straight to one cache sink
+      // per port instead of being buffered into an enriched finish event. This
+      // is the memory win for large binary outputs (e.g. file/image producers).
       if (StreamPump.canStreamBinaryToCache(this.graph, task, outputCache)) return false;
       // No-accumulation passthrough: under the opt-in flag, a cacheable task
       // whose streamable ports can each be sunk per-port (and no consumer needs
@@ -454,7 +454,9 @@ export class StreamPump {
    *    `RunPrivateCacheRepo` may expose a concrete writer while its
    *    `supportsStreaming()` reflects the BACKING repo, so the duck-type would
    *    falsely report `true` over a non-streaming backing store).
-   * 2. The task's only streaming output port(s) are binary.
+   * 2. The task's streaming output ports are ALL binary — one or many. Each
+   *    gets its own sink and its own {@link CacheRef}, so a two-artifact
+   *    producer is not pushed back onto full in-memory accumulation.
    * 3. No downstream dataflow edge needs the materialized value (every consumer
    *    accepts the raw binary stream, or there are no consumers).
    *
@@ -479,12 +481,16 @@ export class StreamPump {
 
     const outSchema = task.outputSchema();
     const streamingPorts = getStreamingPorts(outSchema);
-    // Exactly ONE binary port: outside the no-accumulation path the runner
-    // drives a single binary sink, so only one port can pipe to the cache.
-    // With accumulation skipped, any additional binary port would have neither
-    // a sink nor an accumulator and its chunks would be silently dropped —
-    // multi-port tasks must take the accumulation path instead.
-    if (streamingPorts.length !== 1 || streamingPorts[0].mode !== "binary") return false;
+    // At least one streaming port, and EVERY one of them binary. The count is
+    // free (each binary port gets its own sink and its own CacheRef), but the
+    // binary-only half is load-bearing: `getBinaryRefSinksByPolicy` builds
+    // sinks for binary ports only, so an `append`/`object` port alongside them
+    // would have neither a sink nor — with accumulation skipped — an
+    // accumulator, and its deltas would be silently dropped. Such mixed tasks
+    // take the accumulation path unless the caller opts into `noAccumulation`,
+    // where `canStreamAllPortsToCache` sinks every delta-mode port.
+    if (streamingPorts.length === 0) return false;
+    if (!streamingPorts.every((p) => p.mode === "binary")) return false;
 
     return !StreamPump.anyConsumerNeedsMaterialized(graph, task);
   }
@@ -492,8 +498,8 @@ export class StreamPump {
   /**
    * All-mode analogue of {@link canStreamBinaryToCache} for the opt-in
    * no-accumulation path. The two share a capability probe but NOT a gating
-   * rule: a single binary port streams to the cache unconditionally, while
-   * append / object ports only do so under the flag. True when the flag is on,
+   * rule: binary ports stream to the cache unconditionally, while append /
+   * object ports only do so under the flag. True when the flag is on,
    * the task is cacheable, the cache reports `supportsStreaming()`, every streaming
    * output port is a delta mode (`append` / `object` / `binary`), and no
    * downstream edge needs a materialized value. Then each port is sunk
