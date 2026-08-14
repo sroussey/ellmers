@@ -823,8 +823,8 @@ If the registered `private` slot is present and the graph contains any task whos
 
 #### Cleanup
 
-- On `succeeded`, the runner awaits `privateRepo.clearRun()` before resolving so that a restart with the same `runId` cannot accidentally hit stale entries from the previous attempt. The wrapper already knows its `runId`, so the method takes no arguments.
-- On crash (no terminal status reached), nothing happens at the cache layer — the entries stay on disk so the restart can find them.
+- On `succeeded`, the runner awaits `privateRepo.clearRun()` before resolving so that a restart with the same `runId` cannot accidentally hit stale entries from the previous attempt. The wrapper already knows its `runId`, so the method takes no arguments. It also knows which rows it wrote, so cleanup deletes exactly those rather than searching the store for them — see [EXECUTION_MODEL.md](./src/EXECUTION_MODEL.md#lifecycle-of-cache-rows).
+- On crash (no terminal status reached), nothing happens at the cache layer — the entries stay on disk so the restart can find them. A resumed run's `clearRun()` does not remove the previous attempt's rows (it never wrote them); the `CacheJanitor` below is what reclaims those.
 - For abandoned runs (crashed and never restarted), schedule the `CacheJanitor`:
 
 ```typescript

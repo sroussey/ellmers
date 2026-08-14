@@ -13,7 +13,9 @@ import type { CacheRef } from "../cache/CacheRef";
 import { makeCacheRef, makeRefPattern, mintRefKey } from "../cache/CacheRef";
 import type { StreamMode } from "../task/StreamTypes";
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
+import type { TaskOutputRowPrimaryKey } from "./ITaskOutputStorage";
 import { tabularTaskOutputStorage } from "./TabularTaskOutputStorage";
+import type { RunCacheEntryKey } from "./TaskOutputRepository";
 import {
   TaskOutputPrimaryKeyNames,
   TaskOutputSchema,
@@ -52,6 +54,34 @@ function runScopePrefix(runId: string): string {
   let hex = "";
   for (const byte of bytes) hex += byte.toString(16).padStart(2, "0");
   return `__run.${hex}.`;
+}
+
+/**
+ * How many row deletions are in flight at once. Each is a separate `unlink`, so
+ * issuing them one after the other makes cleanup latency the row count times a
+ * syscall round-trip; issuing all of them at once would hand a run that wrote
+ * thousands of rows an unbounded fan-out of open file operations.
+ */
+const ROW_DELETE_CONCURRENCY = 16;
+
+/** Delete rows with at most {@link ROW_DELETE_CONCURRENCY} unlinks in flight. */
+async function deleteRowsBounded(
+  keys: readonly TaskOutputRowPrimaryKey[],
+  deleteOne: (key: TaskOutputRowPrimaryKey) => Promise<void>
+): Promise<void> {
+  let next = 0;
+  const workers: Promise<void>[] = [];
+  const width = Math.min(ROW_DELETE_CONCURRENCY, keys.length);
+  for (let i = 0; i < width; i++) {
+    workers.push(
+      (async () => {
+        while (next < keys.length) {
+          await deleteOne(keys[next++]);
+        }
+      })()
+    );
+  }
+  await Promise.all(workers);
 }
 
 /**
@@ -171,13 +201,24 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     );
   }
 
+  /**
+   * Exhaustive run cleanup. Rows are keyed `(taskType, key)` with the key a
+   * fingerprint hash, so a run's rows are not recoverable from the filenames
+   * and finding them means reading every row in the folder. That cost is the
+   * reason {@link deleteRunEntries} exists for the common case; this method
+   * stays the honest primitive for a caller that cannot enumerate what a run
+   * wrote (a resumed run reclaiming a previous process's rows, an operator
+   * clearing a run id by hand).
+   */
   override async deleteRun(runId: string): Promise<void> {
     const nsPrefix = runScopePrefix(runId);
+    const doomed: TaskOutputRowPrimaryKey[] = [];
     for await (const row of this.storage.records()) {
       if (typeof row.taskType === "string" && row.taskType.startsWith(nsPrefix)) {
-        await this.storage.delete({ key: row.key, taskType: row.taskType });
+        doomed.push({ key: row.key, taskType: row.taskType });
       }
     }
+    await deleteRowsBounded(doomed, (key) => this.storage.delete(key));
     this.emit("output_pruned");
     // Blob names lead with `sanitize(taskType)` and `sanitize` is the identity
     // on the hex run-scope prefix, so `nsPrefix` itself is the shared prefix of
@@ -185,16 +226,47 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     await this.deleteBlobsByPrefix(nsPrefix);
   }
 
+  /**
+   * Delete the listed rows of `runId` and sweep the run's sidecar blobs.
+   *
+   * The scan {@link deleteRun} performs is what this avoids: the caller states
+   * which rows it wrote, so cleanup costs one unlink per row plus one readdir
+   * of the blobs directory, independent of how much unrelated data the folder
+   * holds. Rows of `runId` that the caller did not list are LEFT IN PLACE —
+   * {@link deleteRunOlderThan} reclaims those.
+   */
+  override async deleteRunEntries(
+    runId: string,
+    entries: readonly RunCacheEntryKey[]
+  ): Promise<void> {
+    const nsPrefix = runScopePrefix(runId);
+    const doomed = entries.map((entry) => ({
+      key: entry.key,
+      taskType: `${nsPrefix}${entry.taskType}`,
+    }));
+    await deleteRowsBounded(doomed, (key) => this.storage.delete(key));
+    this.emit("output_pruned");
+    await this.deleteBlobsByPrefix(nsPrefix);
+  }
+
+  /**
+   * Age-bounded run cleanup — the crash-recovery reclaim path, and deliberately
+   * still a full scan. It is reached with no knowledge of what the run wrote
+   * (that is exactly the state a crashed or abandoned run leaves behind), so
+   * the rows have to be found rather than named.
+   */
   override async deleteRunOlderThan(runId: string, olderThanInMs: number): Promise<void> {
     const cutoff = Date.now() - olderThanInMs;
     const nsPrefix = runScopePrefix(runId);
+    const doomed: TaskOutputRowPrimaryKey[] = [];
     for await (const row of this.storage.records()) {
       if (typeof row.taskType !== "string" || !row.taskType.startsWith(nsPrefix)) continue;
       const ts = typeof row.createdAt === "string" ? new Date(row.createdAt).getTime() : NaN;
       if (!isNaN(ts) && ts < cutoff) {
-        await this.storage.delete({ key: row.key, taskType: row.taskType });
+        doomed.push({ key: row.key, taskType: row.taskType });
       }
     }
+    await deleteRowsBounded(doomed, (key) => this.storage.delete(key));
     this.emit("output_pruned");
     await this.deleteBlobsByPrefix(nsPrefix, cutoff);
   }

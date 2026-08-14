@@ -32,6 +32,20 @@ export type TaskOutputEventParameters<Event extends TaskOutputEvents> = EventPar
 >;
 
 /**
+ * Primary key of a single cached row, as a repository addresses it: the
+ * `taskType` axis value the writer passed and the row `key` the repository
+ * derived from the inputs via {@link TaskOutputRepository.keyFromInputs}.
+ *
+ * Run scoping is NOT baked into `taskType` here — a run-scoped delete takes the
+ * `runId` separately and applies whatever namespacing it uses internally, so a
+ * caller holding these pairs never has to know how a backing scopes runs.
+ */
+export interface RunCacheEntryKey {
+  readonly taskType: string;
+  readonly key: string;
+}
+
+/**
  * Abstract class for managing task outputs in a repository
  * Provides methods for saving, retrieving, and clearing task outputs
  */
@@ -223,6 +237,33 @@ export abstract class TaskOutputRepository {
   async deleteRun(_runId: string): Promise<void> {
     throw new Error(`${this.constructor.name}: deleteRun is not supported by this repository.`);
   }
+
+  /**
+   * OPTIONAL targeted counterpart of {@link deleteRun}: delete exactly the
+   * listed rows of `runId`, plus whatever run-scoped side storage the backing
+   * reclaims wholesale (e.g. sidecar blobs selected by a name prefix).
+   *
+   * Declared only by backings whose {@link deleteRun} cannot select a run's
+   * rows without scanning — the win is skipping that scan, so a backing with an
+   * indexed run-scoped delete should NOT declare this. `entries` are the raw
+   * (unscoped) `taskType` and row `key` pairs; the backing applies its own run
+   * namespacing.
+   *
+   * The caller is responsible for the list being COMPLETE: any row of `runId`
+   * not listed survives, and is reclaimed later by {@link deleteRunOlderThan}.
+   * {@link RunPrivateCacheRepo} therefore falls back to {@link deleteRun}
+   * whenever it cannot vouch for its recorded write-set.
+   */
+  deleteRunEntries?(runId: string, entries: readonly RunCacheEntryKey[]): Promise<void>;
+
+  /**
+   * OPTIONAL derivation of a row `key` from a task's cache-key inputs — the
+   * same function the backing's own write path uses. Exposed so a wrapper can
+   * record the exact key a write landed under (see {@link deleteRunEntries})
+   * instead of re-deriving it from an assumed hash, which would silently stop
+   * matching if a backing changed its keying.
+   */
+  keyFromInputs?(inputs: TaskInput): Promise<string>;
 
   /**
    * Delete entries for `runId` created more than `olderThanMs` ago. Used by

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { RunCacheEntryKey } from "../storage/TaskOutputRepository";
 import { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
 
@@ -52,10 +53,45 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
   private readonly runId: string;
   private observedFallback: boolean = false;
 
+  /**
+   * Rows this wrapper has written, so {@link clearRun} can delete exactly them
+   * instead of asking the backing to go find them. Keyed by `taskType` + row
+   * key so a task re-saving the same entry records one row, which is also all
+   * that exists on the backing: the set is bounded by the run's DISTINCT cache
+   * entries, not by its write count. Long-lived runs (a `while` loop writing a
+   * fresh entry per iteration) still grow it linearly — it holds two short
+   * strings per entry and no values, but it is not free.
+   *
+   * Every private row write is mediated by {@link saveOutput}, so this is the
+   * complete set for the current process. It cannot cover rows written under
+   * this `runId` by a PREVIOUS process (a crash-resume): those are reclaimed by
+   * the age sweep {@link clearOlderThan} / `CacheJanitor`, which still scans.
+   */
+  private writeSet = new Map<string, RunCacheEntryKey>();
+
+  /**
+   * False once anything could have been written without being recorded, which
+   * makes {@link writeSet} an incomplete answer and sends {@link clearRun} back
+   * to the backing's exhaustive `deleteRun`. Leaving a private row behind is
+   * worse than paying for one scan.
+   */
+  private writeSetComplete: boolean = true;
+
+  /**
+   * Whether the backing can act on a write-set at all. It has to expose both
+   * halves — the key derivation its own writes use, and the targeted delete —
+   * so the keys recorded here and the keys deleted later are the same function
+   * by construction. A backing whose `deleteRun` is already an indexed delete
+   * declares neither, and tracking would be pure overhead.
+   */
+  private readonly tracksWrites: boolean;
+
   constructor({ backing, runId }: RunPrivateCacheRepoOptions) {
     super({ outputCompression: backing.outputCompression });
     this._backing = backing;
     this.runId = runId;
+    this.tracksWrites =
+      typeof backing.deleteRunEntries === "function" && typeof backing.keyFromInputs === "function";
 
     // Streaming is a per-backing capability: only backings with a sidecar
     // (today `FsFolderTaskOutputRepository`) implement the run-scoped stream
@@ -128,7 +164,35 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     output: TaskOutput,
     createdAt?: Date
   ): Promise<void> {
-    await this._backing.saveOutputForRun(this.runId, cacheIdentity, inputs, output, createdAt);
+    const save = this._backing.saveOutputForRun(
+      this.runId,
+      cacheIdentity,
+      inputs,
+      output,
+      createdAt
+    );
+    if (!this.tracksWrites) {
+      await save;
+      return;
+    }
+    // Derive the key alongside the write rather than after it: the two are
+    // independent, and the recording must not add a round-trip to the hot path.
+    // Record even when the write then fails — a targeted delete of a row that
+    // does not exist is a no-op, whereas failing to record a row that DID land
+    // leaks it. A key derivation that itself fails is the one case nothing can
+    // be recorded from, so it downgrades the whole run to the scanning path.
+    const record = this._backing.keyFromInputs!(inputs).then(
+      (key) => {
+        // NUL joins the two halves: it cannot occur in a fingerprint key, so no
+        // taskType can spell another entry's composite and displace it from the
+        // set — which would silently leave that row behind on cleanup.
+        this.writeSet.set(`${cacheIdentity}\u0000${key}`, { taskType: cacheIdentity, key });
+      },
+      () => {
+        this.writeSetComplete = false;
+      }
+    );
+    await Promise.all([save, record]);
   }
 
   public async getOutput(
@@ -149,11 +213,31 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
 
   /**
    * Delete every entry written through this wrapper's `runId`. Called by the
-   * graph runner after a successful run. An indexed `deleteSearch({ runId })`
-   * on the backing's runId-leading primary key — not a table scan.
+   * graph runner after every successful run, so its cost has to scale with what
+   * the run wrote, not with what the store holds.
+   *
+   * A backing with a runId-leading primary key answers that with an indexed
+   * `deleteSearch({ runId })` and this delegates straight to `deleteRun`. A
+   * backing that can only find a run's rows by scanning gets handed the
+   * write-set instead: the rows are named, so a run that wrote nothing does
+   * essentially nothing and a run that wrote three rows deletes three rows —
+   * where the scan cost a full read of every row in the store, on every run.
+   *
+   * The write-set only covers THIS process. Rows left by a previous attempt at
+   * the same `runId` (a crash-resume) are not in it and survive here; the age
+   * sweep (`CacheJanitor` / {@link clearOlderThan}) is what reclaims those, and
+   * it still scans precisely because it cannot be told what to delete.
    */
   public async clearRun(): Promise<void> {
-    await this._backing.deleteRun(this.runId);
+    if (!this.tracksWrites || !this.writeSetComplete) {
+      await this._backing.deleteRun(this.runId);
+      return;
+    }
+    const entries = [...this.writeSet.values()];
+    await this._backing.deleteRunEntries!(this.runId, entries);
+    // Cleared only after the delete settles: a throw leaves the set intact so a
+    // retry still knows what to remove.
+    this.writeSet.clear();
   }
 
   /**
