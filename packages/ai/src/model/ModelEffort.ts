@@ -32,7 +32,9 @@ export function sanitizeEffortOptions(value: unknown): ModelEffort[] | undefined
 
 export function readEffortOptions(model: object): ModelEffort[] | undefined {
   if (!("effort_options" in model)) return undefined;
-  return sanitizeEffortOptions((model as { effort_options?: unknown }).effort_options) ?? [];
+  const value = (model as { effort_options?: unknown }).effort_options;
+  if (!Array.isArray(value)) return undefined;
+  return sanitizeEffortOptions(value) ?? [];
 }
 
 export function stampEffortOptions<T extends object>(

@@ -5,7 +5,7 @@
  */
 
 import { isBrowserLike, resolveApiKey, validateProviderBaseUrl } from "@workglow/ai/provider-utils";
-import { isModelEffort, type ModelEffort } from "@workglow/ai/worker";
+import { isModelEffort, type ModelEffort } from "@workglow/ai";
 import type { XaiModelConfig } from "./Xai_ModelSchema";
 
 /** Default base URL for the xAI (Grok) OpenAI-compatible API. */
@@ -115,6 +115,8 @@ const EFFORT_TO_XAI: Record<ModelEffort, string> = {
   ultra: "high",
 };
 
+const XAI_REASONING_EFFORTS = new Set(["none", "low", "medium", "high"]);
+
 /**
  * Native `provider_config.reasoning_effort` wins over coarse `model.effort`.
  * Extra/ultra collapse to xAI's highest documented value (`high`).
@@ -122,7 +124,10 @@ const EFFORT_TO_XAI: Record<ModelEffort, string> = {
 export function getXaiReasoningEffort(model: XaiModelConfig | undefined): string | undefined {
   const native = (model?.provider_config as { reasoning_effort?: unknown } | undefined)
     ?.reasoning_effort;
-  if (typeof native === "string") return native;
+  if (typeof native === "string") {
+    const trimmed = native.trim();
+    if (XAI_REASONING_EFFORTS.has(trimmed)) return trimmed;
+  }
   if (model && isModelEffort(model.effort)) return EFFORT_TO_XAI[model.effort];
   return undefined;
 }
