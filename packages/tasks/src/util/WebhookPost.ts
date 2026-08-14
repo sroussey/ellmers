@@ -49,6 +49,23 @@ const MAX_RESPONSE_BODY_CHARS = 1024;
 /** Maximum characters of a failure body surfaced in an error message. */
 const MAX_ERROR_BODY_CHARS = 256;
 
+/**
+ * Largest request timeout the platform timer honors, in milliseconds.
+ *
+ * `AbortSignal.timeout` validates its delay as a uint32 and accepts up to
+ * 2^32-1, but anything above the SIGNED 32-bit range is stored in a 32-bit int
+ * and clamped to 1 ms with a `TimeoutOverflowWarning` — so a caller asking to
+ * "effectively never time out" would abort instantly and the failure would be
+ * reported against the endpoint. Accepted-but-silently-wrong is worse than
+ * rejected, so the bound is the signed maximum rather than the unsigned one.
+ *
+ * Deliberately not part of `SECURITY_LIMITS`: that object holds hard ceilings
+ * against resource exhaustion and injection, and this is a platform-timer
+ * bound. Keeping it here lets the three task schemas import the same literal,
+ * so the schema bound and the runtime guard below cannot drift.
+ */
+export const MAX_REQUEST_TIMEOUT_MS = 2147483647;
+
 function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max)}...`;
 }
@@ -259,21 +276,30 @@ export interface WebhookPostRequest {
   readonly payload: unknown;
   /** Extra request headers merged over the JSON content type. */
   readonly headers: Readonly<Record<string, string>> | undefined;
-  /** Request timeout in milliseconds. */
+  /**
+   * Request timeout in milliseconds: a whole number from 1 to
+   * {@link MAX_REQUEST_TIMEOUT_MS}. Anything else is a permanent configuration
+   * error, raised before the timer is armed.
+   *
+   * `undefined` means no timer at all, which only a direct caller can ask for
+   * — all three notify task schemas carry `default: 30000`.
+   */
   readonly timeout: number | undefined;
   readonly signal: AbortSignal;
   /**
    * Read and return the success body. Endpoints replying 204 pass `false`.
    *
-   * A ceiling, not a switch: {@link postWebhookJson} forces it to `false` for a
-   * private/internal destination, whose body is never surfaced.
+   * A ceiling, not a switch: {@link postWebhookJson} forces it to `false`
+   * whenever {@link allowPrivateDestination} is set, because a DECLARED private
+   * destination's body is never surfaced.
    */
   readonly readSuccessBody: boolean;
   /**
    * Include a truncated failure body in the thrown error message.
    *
-   * A ceiling, not a switch: {@link postWebhookJson} forces it to `false` for a
-   * private/internal destination, whose body is never surfaced.
+   * A ceiling, not a switch: {@link postWebhookJson} forces it to `false`
+   * whenever {@link allowPrivateDestination} is set, because a DECLARED private
+   * destination's body is never surfaced.
    */
   readonly includeBodyInError: boolean;
   /** Also read `retry_after` (seconds) from a JSON failure body. */
@@ -286,6 +312,12 @@ export interface WebhookPostRequest {
    * URL happened to resolve to. The `network:private` grant is what authorizes
    * the post, and it is re-checked against the resolved URL via
    * {@link assertPrivateDestinationGranted}.
+   *
+   * It governs the transport whatever the URL's spelling, so it also covers a
+   * public-looking hostname that resolves into private space. The invariant
+   * that follows: A CALLER WHO DECLARED THE DESTINATION MAY BE PRIVATE NEVER
+   * GETS ITS REPLY BACK — neither body nor reason phrase — because the URL
+   * alone cannot say whether it was.
    */
   readonly allowPrivateDestination: boolean;
   /**
@@ -542,6 +574,11 @@ async function readBodyText(
  * credential-backed URL does not exist yet at that point either. The
  * declaration is therefore advisory; this is the check that binds.
  *
+ * It runs for every DECLARED private destination, not only for one whose URL
+ * classifies private as a string — so it also guards a destination that merely
+ * RESOLVES private, which is the case the static classification cannot see and
+ * the one `network:private` exists to authorize.
+ *
  * No enforcer registered means no policy to satisfy, and the post proceeds.
  */
 export async function assertPrivateDestinationGranted(
@@ -579,12 +616,21 @@ export async function assertPrivateDestinationGranted(
  * granted against — and, when an enforcer is registered, that grant is
  * re-checked here against the URL actually resolved
  * ({@link assertPrivateDestinationGranted}), because the declaration graded at
- * entitlement-evaluation time need not be the one `execute()` receives. A
- * permitted private destination additionally overrides
- * `readSuccessBody` and `includeBodyInError` to `false`: those flags
- * are a ceiling set by the calling task, and no reply from an internal host is
- * ever surfaced — otherwise a notification task doubles as an SSRF read
- * primitive with the answer smuggled out through an error message.
+ * entitlement-evaluation time need not be the one `execute()` receives.
+ *
+ * The declaration — not the URL's static classification — is what widens the
+ * transport, so a public-looking hostname resolving into private space is
+ * reachable exactly when the grant covers it. Every request receiving the
+ * widened transport is therefore entitlement-checked, which the classification
+ * could not do for a name it reads as public.
+ *
+ * A declared private destination additionally overrides `readSuccessBody` and
+ * `includeBodyInError` to `false`, and withholds the reason phrase: those flags
+ * are a ceiling set by the calling task, and no reply from a possibly-internal
+ * host is ever surfaced — otherwise a notification task doubles as an SSRF read
+ * primitive with the answer smuggled out through an error message. The
+ * suppression follows the declaration for the same reason the transport does:
+ * the URL alone cannot say whether the host was internal.
  *
  * Redirects are refused rather than followed. Following one would re-issue this
  * exact request — method, serialized payload and caller headers — at whatever
@@ -603,8 +649,17 @@ export async function postWebhookJson(request: WebhookPostRequest): Promise<Webh
     );
   }
 
-  const isPrivate = classification.kind === "private";
-  if (isPrivate && !request.allowPrivateDestination) {
+  const staticallyPrivate = classification.kind === "private";
+  // The DECLARATION governs the transport, not the URL's spelling. A hostname
+  // that is no literal IP and matches no reserved suffix classifies public even
+  // when it resolves into private space (split-horizon DNS), so deriving this
+  // from the classification leaves the declaration unable to reach the
+  // destination it declares — with no configuration short of hard-coding the
+  // address that makes the post work. The `network:private` GRANT is what
+  // authorizes the widening, and it is re-checked below against the URL
+  // actually resolved.
+  const allowPrivate = request.allowPrivateDestination;
+  if (staticallyPrivate && !allowPrivate) {
     throw createFetchUrlJobError(
       FetchUrlErrorCode.PRIVATE_DENIED,
       `Refusing to post ${label} to a private/internal destination. ` +
@@ -612,13 +667,31 @@ export async function postWebhookJson(request: WebhookPostRequest): Promise<Webh
       { url: redactWebhookUrl(url) }
     );
   }
-  if (isPrivate) {
+  // Computed ONCE: the pattern the enforcer grades and the scope the transport
+  // re-enforces have to be the same string, or the grant that was checked and
+  // the reachability that was handed out can diverge.
+  const privateScope = urlResourcePattern(url);
+  if (allowPrivate) {
     await assertPrivateDestinationGranted(request.registry, url, label);
   }
-  const timeoutSignal =
-    request.timeout !== undefined && request.timeout > 0
-      ? AbortSignal.timeout(request.timeout)
-      : undefined;
+  // Validated BEFORE the signal is armed, for the same reason the
+  // `JSON.stringify` guard below exists: `AbortSignal.timeout` throws a bare
+  // `RangeError` for a non-integer delay, which is not a `FetchUrlJobError`, so
+  // a queued consumer cannot classify it and retries a permanent configuration
+  // mistake forever.
+  const timeout = request.timeout;
+  if (
+    timeout !== undefined &&
+    (!Number.isInteger(timeout) || timeout < 1 || timeout > MAX_REQUEST_TIMEOUT_MS)
+  ) {
+    throw createFetchUrlJobError(
+      FetchUrlErrorCode.CONFIGURATION,
+      `Cannot post ${label} to ${redactWebhookUrl(url)}: 'timeout' must be a whole number of ` +
+        `milliseconds between 1 and ${MAX_REQUEST_TIMEOUT_MS}; received ${String(timeout)}.`,
+      { url: redactWebhookUrl(url) }
+    );
+  }
+  const timeoutSignal = timeout === undefined ? undefined : AbortSignal.timeout(timeout);
   const signal = timeoutSignal ? AbortSignal.any([request.signal, timeoutSignal]) : request.signal;
 
   // Built BEFORE the request `try`. A payload carrying a circular reference or
@@ -648,15 +721,15 @@ export async function postWebhookJson(request: WebhookPostRequest): Promise<Webh
       body,
       signal,
       redirect: "error",
-      allowPrivate: isPrivate,
-      privateResourceScopes: isPrivate ? [urlResourcePattern(url)] : undefined,
+      allowPrivate,
+      privateResourceScopes: allowPrivate ? [privateScope] : undefined,
     });
   } catch (err) {
     throw toRedactedWebhookError(err, url, label, request.signal);
   }
 
   if (response.ok) {
-    if (!request.readSuccessBody || isPrivate) {
+    if (!request.readSuccessBody || allowPrivate) {
       // Slack answers 200 with a short `ok` body even though we don't want it.
       // An unconsumed body keeps the underlying connection out of the agent's
       // pool until GC, so cancel it explicitly instead of dropping it.
@@ -690,14 +763,14 @@ export async function postWebhookJson(request: WebhookPostRequest): Promise<Webh
   // The status is still reported for a private destination — the reply BODY is
   // what would turn a POST at an internal service into a read of it.
   const bodySuffix =
-    request.includeBodyInError && !isPrivate && failureBody.length > 0
+    request.includeBodyInError && !allowPrivate && failureBody.length > 0
       ? `: ${truncate(redactWebhookUrlIn(failureBody, url), MAX_ERROR_BODY_CHARS)}`
       : "";
   // The reason phrase is caller-controlled text like the body, so it gets the
   // same two treatments: withheld entirely for a private destination, and
   // redacted otherwise. A server is free to put anything in it, and the well
   // known phrases ("Not Found", "Bad Request") survive redaction unchanged.
-  const statusText = isPrivate ? "" : redactWebhookUrlIn(response.statusText, url);
+  const statusText = allowPrivate ? "" : redactWebhookUrlIn(response.statusText, url);
 
   throw createFetchUrlJobError(
     httpStatusToFetchUrlErrorCode(response.status),
