@@ -331,46 +331,111 @@ function hasBuiltEntries(packageDir: string): boolean {
   }
 }
 
+/** The part of a resolution result the rewrite reads. */
+export interface WorkspaceResolvedId {
+  /** Absolute path (or external id) resolution landed on. */
+  readonly id: string;
+  /** Externality, when the resolver reported any. */
+  readonly external?: boolean | string | undefined;
+}
+
+/** The only `this.resolve` option this forwards deliberately. */
+export interface WorkspaceResolveOptions {
+  readonly skipSelf?: boolean | undefined;
+}
+
 /**
- * Redirect workspace package imports from `dist` to `src`.
+ * The one capability {@link resolveWorkspaceSourceId} needs from Vite's plugin
+ * context, so the hook body is drivable by a plain object in a test.
+ *
+ * `resolve` is declared with METHOD syntax on purpose. Under
+ * `strictFunctionTypes` a property-syntax function is checked
+ * contravariantly in its parameters, and Vite's real `PluginContext.resolve`
+ * — whose `importer`/`options` are optional and whose options type is its own
+ * — would then need a cast at the one call site that matters. Method syntax
+ * keeps parameters bivariant, so `PluginContext` satisfies this interface
+ * structurally and the adapter below passes `this` through untouched.
+ *
+ * Generic in the result so the adapter's return type stays the resolver's own
+ * (`ResolvedId`), which is what Vite's `resolveId` hook is declared to return;
+ * widening it here would push a cast back into the plugin.
+ */
+export interface WorkspaceResolveContext<
+  TResolved extends WorkspaceResolvedId = WorkspaceResolvedId,
+> {
+  resolve(
+    source: string,
+    importer: string | undefined,
+    options: WorkspaceResolveOptions
+  ): Promise<TResolved | null | undefined>;
+}
+
+/**
+ * Resolve one specifier, rewriting a workspace package's built entry to its
+ * source file.
  *
  * Resolution runs normally first (so conditional exports still pick the
  * node/browser/bun target the runtime asked for) and only the RESULT is
  * rewritten. That ordering is the whole trick — replicating condition
  * resolution in an alias table is what a per-package fix would have to do.
+ *
+ * Extracted from the plugin so it can be driven directly: the hook is the one
+ * function this whole module exists for, and inside a `Plugin` object literal
+ * it is reachable only through a Vite build.
+ */
+export async function resolveWorkspaceSourceId<TResolved extends WorkspaceResolvedId>(
+  packages: readonly WorkspacePackage[],
+  context: WorkspaceResolveContext<TResolved>,
+  source: string,
+  importer: string | undefined,
+  // Forwarded verbatim (`kind`, `isEntry`, `custom` all steer resolution);
+  // only `skipSelf` is this function's own contribution.
+  options: object
+): Promise<TResolved | null> {
+  // Bare workspace specifiers only: a relative import already points at
+  // source, and resolving every third-party specifier twice would tax the
+  // whole run for nothing.
+  const owner = ownerOf(packages, source);
+  if (owner === undefined) return null;
+  const resolved = await context.resolve(source, importer, { ...options, skipSelf: true });
+  if (!resolved) {
+    // Throwing, not warning: an unresolvable @workglow/* specifier already
+    // fails the run a moment later. This only replaces the message.
+    const importerPackage = importerPackageOf(packages, importer);
+    throw new Error(
+      unresolvedWorkspaceMessage({
+        source,
+        owner,
+        importer,
+        importerPackage,
+        importerDeclaresDependency: importerPackage?.dependencies.has(owner.name),
+        ownerDeclaresSubpath: declaresSubpath(owner, subpathOf(owner, source)),
+        distHasBuiltEntries: hasBuiltEntries(owner.dir),
+      })
+    );
+  }
+  if (resolved.external) return resolved;
+  const sourceFile = distToSource(resolved.id);
+  return sourceFile === undefined ? resolved : { ...resolved, id: sourceFile };
+}
+
+/** The plugin name, so a test can assert attachment without repeating a literal. */
+export const WORKSPACE_SOURCE_PLUGIN_NAME = "workglow:workspace-source";
+
+/**
+ * Redirect workspace package imports from `dist` to `src`.
+ *
+ * A one-line adapter over {@link resolveWorkspaceSourceId}: the package list is
+ * read once, and every decision lives in that function.
  */
 export function workspaceSourcePlugin(root: string): Plugin {
   const packages = listWorkspacePackages(root);
 
   return {
-    name: "workglow:workspace-source",
+    name: WORKSPACE_SOURCE_PLUGIN_NAME,
     enforce: "pre",
     async resolveId(source, importer, options) {
-      // Bare workspace specifiers only: a relative import already points at
-      // source, and resolving every third-party specifier twice would tax the
-      // whole run for nothing.
-      const owner = ownerOf(packages, source);
-      if (owner === undefined) return null;
-      const resolved = await this.resolve(source, importer, { ...options, skipSelf: true });
-      if (!resolved) {
-        // Throwing, not warning: an unresolvable @workglow/* specifier already
-        // fails the run a moment later. This only replaces the message.
-        const importerPackage = importerPackageOf(packages, importer);
-        throw new Error(
-          unresolvedWorkspaceMessage({
-            source,
-            owner,
-            importer,
-            importerPackage,
-            importerDeclaresDependency: importerPackage?.dependencies.has(owner.name),
-            ownerDeclaresSubpath: declaresSubpath(owner, subpathOf(owner, source)),
-            distHasBuiltEntries: hasBuiltEntries(owner.dir),
-          })
-        );
-      }
-      if (resolved.external) return resolved;
-      const sourceFile = distToSource(resolved.id);
-      return sourceFile === undefined ? resolved : { ...resolved, id: sourceFile };
+      return resolveWorkspaceSourceId(packages, this, source, importer, options);
     },
   };
 }
