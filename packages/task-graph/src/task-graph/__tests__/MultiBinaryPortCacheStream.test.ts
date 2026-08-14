@@ -151,6 +151,15 @@ class MixedModeSource extends Task<Record<string, never>, MixedOut> {
   }
 }
 
+/**
+ * Same two binary ports, but NOT cacheable — so no sink is ever built for
+ * either port and accumulation must stay on.
+ */
+class UncacheableTwoBinaryPortSource extends TwoBinaryPortSource {
+  public static override type = "MultiBinaryPortCacheStream_TwoPortUncacheable";
+  public static override cacheable = false;
+}
+
 type BinarySinkOut = { size: number };
 
 /**
@@ -246,6 +255,18 @@ describe("canStreamBinaryToCache — one or more binary ports", () => {
 
   it("still rejects a binary port mixed with a non-binary streaming port", () => {
     expect(decisionFor(new MixedModeSource({ id: "source" }))).toBe(false);
+  });
+
+  it("still rejects a non-cacheable task, whatever its binary port count", () => {
+    // No sinks are built for a non-cacheable task, so every port must keep its
+    // accumulator — the "neither sink nor accumulator" hole this guards.
+    expect(decisionFor(new UncacheableTwoBinaryPortSource({ id: "source" }))).toBe(false);
+  });
+
+  it("still rejects a cache that cannot report supportsStreaming()", () => {
+    const source = new TwoBinaryPortSource({ id: "source" });
+    const partial = {} as unknown as Parameters<typeof StreamPump.canStreamBinaryToCache>[2];
+    expect(StreamPump.canStreamBinaryToCache(leafGraph(source), source, partial)).toBe(false);
   });
 });
 
@@ -352,6 +373,17 @@ describe("multi-binary-port cache streaming (no noAccumulation flag)", () => {
     // The append port keeps its accumulated value — no silently dropped deltas.
     expect(data.t).toBe("hello");
     expect(await blobBytes(data.a)).toEqual([1, 2]);
+  });
+
+  it("keeps every port's bytes when the task is not cacheable (no sinks at all)", async () => {
+    const results = await new TaskGraphRunner(
+      leafGraph(new UncacheableTwoBinaryPortSource({ id: "source" }))
+    ).runGraph({}, { outputCache: cache });
+
+    expect(cache.streamed.size).toBe(0);
+    const data = sourceData(results);
+    expect(await blobBytes(data.a)).toEqual(A_BYTES);
+    expect(await blobBytes(data.b)).toEqual(B_BYTES);
   });
 
   it("leaves the single-binary-port path byte-identical", async () => {
