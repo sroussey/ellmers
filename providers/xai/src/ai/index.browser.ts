@@ -9,4 +9,5 @@
 export { XAI_ALLOWED_HOSTS, XAI_DEFAULT_BASE_URL } from "./common/Xai_Client";
 export * from "./common/Xai_Constants";
 export * from "./common/Xai_ModelSchema";
+export * from "./common/Xai_ModelSearch";
 export * from "./registerXai";
