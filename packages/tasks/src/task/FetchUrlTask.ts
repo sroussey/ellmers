@@ -154,13 +154,16 @@ export type FetchUrlTaskOutput = FromSchema<typeof outputSchema>;
  * garbage ("123abc" -> 123), which would let a malformed header defeat the
  * truncation check this feeds. RFC 9112 §6.3 permits repeated headers to be
  * combined as "v1, v2": equal duplicates are valid, mismatched values are a
- * protocol error. Returns `undefined` when the header is absent (chunked
- * transfer), which skips the size assertion.
+ * protocol error. Returns `undefined` when the header states no size, which
+ * skips the size assertion: either absent (chunked transfer), or present and
+ * empty — `Headers.get` answers `""` rather than `null` for a proxy that emits
+ * a bare `Content-Length:`, and reading "the origin stated nothing" as a
+ * malformed value would fail such a fetch permanently.
  */
 export function parseContentLength(header: string | null, url: string): number | undefined {
-  if (header === null) return undefined;
+  if (header === null || header.trim() === "") return undefined;
   const parts = header.split(",").map((p) => p.trim());
-  if (parts.length === 0 || parts.some((p) => !/^\d+$/.test(p))) {
+  if (parts.some((p) => !/^\d+$/.test(p))) {
     throw createFetchUrlJobError(
       FetchUrlErrorCode.CONTENT_LENGTH_MISMATCH,
       `Invalid Content-Length header ${JSON.stringify(header)} for ${url}`,
@@ -186,9 +189,31 @@ export function parseContentLength(header: string | null, url: string): number |
 }
 
 /**
+ * True when the body arrived under a content coding, so what the runtime hands
+ * back is not what the origin measured.
+ *
+ * Nothing here sets `Accept-Encoding`, and both undici and browsers send
+ * `gzip, deflate, br` on their own and then transparently decode. The origin's
+ * `Content-Length` describes the ENCODED octets while `response.body` yields
+ * the decoded ones, so comparing the two fails every compressed response that
+ * states a length — and drives progress far past 100% on the way. Fetch leaves
+ * `Content-Encoding` on the response after decoding, which is the only signal
+ * that the stated size measures something else.
+ *
+ * `identity` names no coding, so it does not disqualify the length.
+ */
+export function isContentEncoded(header: string | null): boolean {
+  if (header === null) return false;
+  return header
+    .split(",")
+    .map((coding) => coding.trim().toLowerCase())
+    .some((coding) => coding.length > 0 && coding !== "identity");
+}
+
+/**
  * Issues the request and yields the body in arrival order, reporting progress
- * against `Content-Length` when the origin states one, and asserting the
- * advertised size at end of stream.
+ * against `Content-Length` when the origin states one that measures the bytes
+ * we actually receive, and asserting the advertised size at end of stream.
  *
  * There is no wrapper stream: the previous implementation rebuilt a second
  * ReadableStream (and a second Response around it) solely so a byte counter
@@ -214,8 +239,13 @@ async function* streamResponseBody(
   try {
     // Parsed inside the try (reader already acquired) so an invalid/conflicting
     // header cancels the body via the finally below instead of leaking an
-    // undrained response.
-    totalBytes = parseContentLength(response.headers.get("content-length"), url);
+    // undrained response. A content-encoded body is left unmeasured entirely:
+    // its stated length counts the encoded octets, so neither the assertion nor
+    // the progress denominator has anything to say about the decoded bytes this
+    // loop counts.
+    totalBytes = isContentEncoded(response.headers.get("content-encoding"))
+      ? undefined
+      : parseContentLength(response.headers.get("content-length"), url);
     while (true) {
       if (signal.aborted) throw createFetchUrlAbortedError();
       const { done, value } = await reader.read();

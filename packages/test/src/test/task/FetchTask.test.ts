@@ -727,6 +727,60 @@ describe("FetchUrlTask", () => {
       expect(String(error)).toMatch(/content-length/i);
     });
 
+    // A `Content-Length` under a content coding measures the encoded octets,
+    // which is not what the loop counts — see the real-transport suite for the
+    // round trip. What is pinned here is that the exemption is keyed on the
+    // coding and nothing else: `identity` names no coding, so the length still
+    // has to be asserted.
+    test("a content coding exempts the body from its stated length", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(new Blob([new Uint8Array([1, 2])]), {
+            status: 200,
+            headers: { "content-length": "9", "content-encoding": "gzip" },
+          })
+        )
+      );
+      const result = await fetchUrl({
+        url: "https://example.com/e.bin",
+        response_type: "stream",
+      });
+      expect(result.metadata?.status).toBe(200);
+    });
+
+    test("Content-Encoding: identity keeps the length assertion", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(new Blob([new Uint8Array([1, 2])]), {
+            status: 200,
+            headers: { "content-length": "9", "content-encoding": "identity" },
+          })
+        )
+      );
+      const error = await fetchUrl({
+        url: "https://example.com/i.bin",
+        response_type: "stream",
+      }).catch((e) => e);
+      expect(String(error)).toMatch(/content-length/i);
+    });
+
+    // `Headers.get` answers `""`, not `null`, for a header present with no
+    // value — so a proxy emitting a bare `Content-Length:` states no size
+    // rather than a malformed one, and refusing it would fail the fetch
+    // permanently (FETCH_CONTENT_LENGTH_MISMATCH is not retryable).
+    test("an empty Content-Length states no size rather than a bad one", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(new Blob([new Uint8Array([1, 2])]), {
+            status: 200,
+            headers: { "content-length": "" },
+          })
+        )
+      );
+      const result = await fetchUrl({ url: "https://example.com/p.bin", response_type: "stream" });
+      expect(result.metadata?.status).toBe(200);
+    });
+
     // -----------------------------------------------------------------------
     // Regression: executeStream() is what TaskRunner actually calls for a
     // FetchUrlTask run (isTaskStreamable is permanently true once
