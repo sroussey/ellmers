@@ -27,7 +27,12 @@ import {
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { safeFetch } from "../util/SafeFetch";
 import { classifyUrl, urlResourcePattern } from "../util/UrlClassifier";
-import { applyCredentialToHeaders } from "./FetchUrlCredentials";
+import {
+  applyCredentialToHeaders,
+  credentialHeaderName,
+  CredentialSchemes,
+  DEFAULT_CREDENTIAL_SCHEME,
+} from "./FetchUrlCredentials";
 import {
   createFetchUrlAbortedError,
   createFetchUrlHttpError,
@@ -149,6 +154,7 @@ async function fetchWithProgress(
   options: RequestInit & {
     allowPrivate?: boolean;
     privateResourceScopes?: readonly string[];
+    sensitiveHeaders?: readonly string[];
   } = {},
   onProgress?: (progress: number) => Promise<void>
 ): Promise<Response> {
@@ -229,6 +235,21 @@ export class FetchUrlJob<
   Output = FetchUrlTaskOutput,
 > extends Job<Input, Output> {
   static readonly type: string = "FetchUrlJob";
+
+  /**
+   * Header names holding a resolved credential, so safeFetch can drop them on a
+   * cross-origin redirect. `Authorization` is covered by safeFetch's own
+   * strip-set; this exists for `credential_scheme: "header"`, whose header name
+   * is caller-chosen and is stripped from the job input before the request is
+   * issued — nothing downstream could otherwise know which header is secret.
+   *
+   * Set by {@link FetchUrlTask} on the inline path only. It is deliberately not
+   * a data port: job inputs are persisted durably by the queued path, and this
+   * names a credential header. The queued path refuses credentials outright, so
+   * there is nothing for it to carry.
+   */
+  public sensitiveHeaders: readonly string[] | undefined = undefined;
+
   override async execute(input: Input, context: IJobExecuteContext): Promise<Output> {
     const classification = classifyUrl(input.url!);
     if (classification.kind === "invalid") {
@@ -265,6 +286,7 @@ export class FetchUrlJob<
           signal: context.signal,
           allowPrivate: isPrivate,
           privateResourceScopes: isPrivate ? [urlResourcePattern(input.url!)] : undefined,
+          sensitiveHeaders: this.sensitiveHeaders,
         },
         async (progress: number) => await context.updateProgress(progress)
       );
@@ -549,11 +571,21 @@ export class FetchUrlTask<
     });
     const jobInput: FetchUrlTaskInput = headers ? { ...rest, headers } : rest;
 
+    // The header the credential landed on, so safeFetch can drop it when a
+    // redirect crosses origins. Only the `header` scheme needs telling: the
+    // others write Authorization, which is always stripped cross-origin.
+    const credentialScheme = input.credential_scheme ?? DEFAULT_CREDENTIAL_SCHEME;
+    const sensitiveHeaders =
+      credential && credentialScheme !== CredentialSchemes.NONE
+        ? [credentialHeaderName(credentialScheme, input.credential_header)]
+        : undefined;
+
     let cleanup: () => void = () => {};
 
     try {
       if (queuePref === false) {
         const job = new FetchUrlJob<FetchUrlTaskInput, Output>({ input: jobInput });
+        job.sensitiveHeaders = sensitiveHeaders;
         cleanup = job.onJobProgress(
           (progress: number, message: string, details: Record<string, any> | null) => {
             executeContext.updateProgress(progress, message, details);
