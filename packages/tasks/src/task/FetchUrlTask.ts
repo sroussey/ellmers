@@ -73,8 +73,9 @@ const inputSchema = {
       description:
         "What to materialize from the response. 'stream' materializes nothing — the bytes " +
         "reach the 'body' port and the cache; read metadata.contentType to decide. The other " +
-        "values additionally populate the matching derived port.",
-      default: "stream",
+        "values additionally populate the matching derived port. Required, with no default: " +
+        "whether a caller wants bytes buffered into memory is theirs to state, and a default " +
+        "would silently pick one for a caller who never considered the question.",
     },
     timeout: {
       type: "number",
