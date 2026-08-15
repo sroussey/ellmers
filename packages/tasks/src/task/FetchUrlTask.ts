@@ -369,6 +369,47 @@ async function discardBody(response: Response): Promise<void> {
   await response.body?.cancel().catch(() => {});
 }
 
+/**
+ * The `response_type` values that name a derived port. `"stream"` is
+ * deliberately absent: it materializes nothing, so it is handled before this
+ * set is ever consulted.
+ */
+const DERIVED_RESPONSE_TYPES: ReadonlySet<string> = new Set([
+  "text",
+  "json",
+  "blob",
+  "arraybuffer",
+]);
+
+/**
+ * Fails closed on a `response_type` the schema would have rejected.
+ *
+ * The task layer validates its input, but `JobQueueWorker` calls
+ * `job.execute()` on a *persisted* payload with no validation at all — so a job
+ * enqueued before `response_type` became required, drained by a worker running
+ * the code that requires it, arrives here carrying `undefined`. Treating that
+ * as `"stream"` would let it complete successfully with neither `text` nor
+ * `json` in its output: a caller that asked for a value gets a silent success
+ * with no value, which is worse than any failure.
+ */
+function assertResponseType(
+  value: FetchUrlResponseType | undefined,
+  url: string
+): asserts value is FetchUrlResponseType {
+  if (value === "stream" || (typeof value === "string" && DERIVED_RESPONSE_TYPES.has(value))) {
+    return;
+  }
+  throw createFetchUrlJobError(
+    FetchUrlErrorCode.INVALID_RESPONSE_TYPE,
+    value === undefined
+      ? `Fetch of ${url} carries no response_type. It is required and has no default; a job ` +
+          `enqueued before it became required cannot be run — re-enqueue it with an explicit ` +
+          `response_type ('stream' reproduces the previous byte-level behaviour).`
+      : `Invalid response type: ${String(value)} for ${url}`,
+    { url }
+  );
+}
+
 function buildHttpError(url: string, response: Response): Error {
   let retryDate: Date | undefined;
   if (response.status === 429 || response.status === 503 || response.headers.get("Retry-After")) {
@@ -395,10 +436,11 @@ function buildHttpError(url: string, response: Response): Error {
  * `responseType` is typed as possibly `undefined` (rather than trusting the
  * schema's `required` + enum) because `JobQueueWorker` calls `job.execute()`
  * on a *persisted* input with no schema validation — a queued job can carry
- * any string here. An unrecognized non-empty string throws
- * `INVALID_RESPONSE_TYPE` rather than falling through to `JSON.parse`;
- * `undefined` is not treated that way — it is read as `"stream"`, so a payload
- * that lost the field yields the body with no derived port instead of failing.
+ * any string here. Fails closed via {@link assertResponseType}, so an
+ * unrecognized value throws `INVALID_RESPONSE_TYPE` instead of falling through
+ * to `JSON.parse`, and merges no bytes for a type it is about to reject.
+ * `executeStream` asserts the same thing before issuing the request; this stays
+ * independently fail-closed because it is reachable from any future caller.
  */
 function materializeDerivedPort(
   responseType: FetchUrlResponseType | undefined,
@@ -406,7 +448,8 @@ function materializeDerivedPort(
   metadata: FetchUrlMetadata,
   url: string
 ): Record<string, unknown> {
-  if (responseType === "stream" || responseType === undefined) return {};
+  if (responseType === "stream") return {};
+  assertResponseType(responseType, url);
   let total = 0;
   for (const c of chunks) total += c.byteLength;
   const merged = new Uint8Array(total);
@@ -530,6 +573,11 @@ export class FetchUrlJob<
     input: Input,
     context: IJobExecuteContext
   ): AsyncIterable<StreamEvent<Output>> {
+    // Before the request, not after: a payload this job cannot produce a result
+    // for should not spend a network call, and failing ahead of the first delta
+    // keeps the retry rule in `classifyBodyFailure` out of it entirely.
+    assertResponseType(input.response_type, input.url!);
+
     const response = await this.issueRequest(input, context);
     const metadata = buildMetadata(response);
 
@@ -972,10 +1020,20 @@ export class FetchUrlTask<
    * followed by a `finish`. Credential resolution is handled by the input
    * resolver system — credential_key arrives already resolved to the secret.
    *
-   * Invariant: a resolved secret never leaves this method. Job queues persist
-   * their payloads durably (SQLite/Postgres/SQS), so the secret is only ever
-   * placed on the in-process request headers of the inline path, and the
-   * queued path refuses to run at all when a credential is present.
+   * Invariant, scoped to PERSISTENCE: a resolved secret is never written
+   * anywhere durable. Job queues persist their payloads (SQLite/Postgres/SQS),
+   * so the secret is only ever placed on the in-process request headers of the
+   * inline path, and the queued path refuses to run at all when a credential is
+   * present.
+   *
+   * It does leave this method over the wire, which is a different question. The
+   * request carries it to the origin the caller named, and if that origin
+   * redirects, `safeFetch` follows the chain — dropping `Authorization` /
+   * `Cookie` / `Proxy-Authorization` on any hop that crosses origins, plus
+   * whatever {@link FetchUrlJob.sensitiveHeaders} names for the `header`
+   * scheme, whose header is caller-chosen and unrecognizable otherwise. A
+   * stripped header stays stripped for the rest of the chain, so a
+   * vendor -> attacker -> vendor redirect cannot launder it back.
    */
   // No `override`: `executeStream` is an optional member of ITask, not a
   // declared member of Task, so marking it override fails TS4113.
