@@ -5,9 +5,10 @@
  */
 
 import type { IJobExecuteContext, JobHandle, StreamEventLike } from "@workglow/job-queue";
-import { AbortSignalJobError, Job } from "@workglow/job-queue";
+import { AbortSignalJobError, Job, RetryableJobError } from "@workglow/job-queue";
 import type {
   IExecuteContext,
+  IRunConfig,
   RegisteredQueue,
   StreamEvent,
   TaskConfig,
@@ -23,6 +24,7 @@ import {
   Task,
   TaskConfigSchema,
   TaskConfigurationError,
+  TaskFailedError,
   Workflow,
 } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
@@ -236,6 +238,42 @@ async function* streamResponseBody(
   }
 }
 
+/**
+ * Classifies a failure raised while the response body was in flight.
+ *
+ * Retry is safe only while nothing has been delivered. The consumer's stream
+ * subscription outlives an attempt, so a second attempt's deltas land on the
+ * same listener as the first attempt's: the two bodies concatenate, the job
+ * then completes, and the run reports success over corrupt bytes. A
+ * `Content-Length` check cannot catch that — it is evaluated per attempt, and
+ * the retry attempt passes it.
+ *
+ * So once a delta has been emitted, no failure may stay retryable: a
+ * retryable classification is replaced by
+ * {@link FetchUrlErrorCode.BODY_TRUNCATED}, which the worker fails rather than
+ * reschedules. An already-terminal error keeps its own code — it is not going
+ * to be retried, and its diagnosis is worth more than a uniform label. Before
+ * the first delta everything is unchanged, which is what keeps 429 /
+ * 5xx / DNS / connect-timeout retries — the case a rate-limited caller depends
+ * on — working exactly as before.
+ */
+function classifyBodyFailure(err: unknown, url: string, emittedDelta: boolean): unknown {
+  if (err instanceof AbortSignalJobError) return err;
+  let classified = err;
+  if (!isFetchUrlJobError(classified) && isFetchUrlNetworkCause(classified)) {
+    // A 200 whose body is still on the wire throws here when the peer resets
+    // the socket. That is a network failure, not a decode failure.
+    classified = wrapFetchUrlNetworkError(url, classified);
+  }
+  if (!emittedDelta || !(classified instanceof RetryableJobError)) return classified;
+  const detail = classified instanceof Error ? classified.message : String(classified);
+  return createFetchUrlJobError(
+    FetchUrlErrorCode.BODY_TRUNCATED,
+    `Body truncated for ${url} after bytes were already delivered: ${detail}`,
+    { url }
+  );
+}
+
 interface FetchUrlMetadata {
   readonly contentType: string;
   readonly headers: Record<string, string>;
@@ -409,6 +447,7 @@ export class FetchUrlJob<
 
     const chunks: Uint8Array[] = [];
     const wantsValue = input.response_type !== "stream";
+    let emittedDelta = false;
     try {
       for await (const chunk of streamResponseBody(
         response,
@@ -417,6 +456,11 @@ export class FetchUrlJob<
         async (p) => await context.updateProgress(p)
       )) {
         if (wantsValue) chunks.push(chunk);
+        // Latched before the emit rather than after it: from the moment a
+        // chunk is handed to the consumer this attempt is unrepeatable, and a
+        // failure raised during the emit itself is on the far side of that
+        // line. See {@link classifyBodyFailure}.
+        emittedDelta = true;
         const emitted = context.emitStreamEvent?.({
           type: "binary-delta",
           port: "body",
@@ -426,11 +470,7 @@ export class FetchUrlJob<
         yield { type: "binary-delta", port: "body", binaryDelta: chunk } as StreamEvent<Output>;
       }
     } catch (err) {
-      if (isFetchUrlJobError(err) || err instanceof AbortSignalJobError) throw err;
-      // A 200 whose body is still on the wire can throw here when the peer
-      // resets the socket. That is a network failure, not a decode failure.
-      if (isFetchUrlNetworkCause(err)) throw wrapFetchUrlNetworkError(input.url!, err);
-      throw err;
+      throw classifyBodyFailure(err, input.url!, emittedDelta);
     }
 
     let data: Record<string, unknown>;
@@ -456,11 +496,18 @@ export class FetchUrlJob<
   }
 
   override async execute(input: Input, context: IJobExecuteContext): Promise<Output> {
-    let out: Record<string, unknown> = {};
+    let out: Output | undefined;
     for await (const event of this.executeStream(input, context)) {
-      if (event.type === "finish") out = event.data as Record<string, unknown>;
+      if (event.type === "finish") out = event.data as Output;
     }
-    return out as Output;
+    if (out === undefined) {
+      throw createFetchUrlJobError(
+        FetchUrlErrorCode.RESPONSE_PARSE_ERROR,
+        `Fetch of ${input.url} produced no result: the stream ended without a finish payload`,
+        { url: input.url }
+      );
+    }
+    return out;
   }
 }
 
@@ -481,6 +528,23 @@ export type FetchUrlTaskConfig = TaskConfig & {
   queue?: boolean | string;
 };
 
+/**
+ * Rebuilds the `Error` carried by a stream `error` event. The event may have
+ * crossed a serializing carrier, where the `Error` arrives as a plain object
+ * (or a bare string), so this never assumes an instance survived the trip — it
+ * only guarantees the caller gets something throwable that keeps the reported
+ * message.
+ */
+function toStreamEventError(event: StreamEventLike): Error {
+  const raw = (event as { error?: unknown }).error;
+  if (raw instanceof Error) return raw;
+  if (raw && typeof raw === "object") {
+    const message = (raw as { message?: unknown }).message;
+    return new Error(typeof message === "string" ? message : JSON.stringify(raw));
+  }
+  return new Error(raw === undefined ? "Queued fetch reported a stream error" : String(raw));
+}
+
 export class FetchUrlTask<
   Input extends FetchUrlTaskInput = FetchUrlTaskInput,
   Output extends FetchUrlTaskOutput = FetchUrlTaskOutput,
@@ -493,6 +557,40 @@ export class FetchUrlTask<
     "Fetches data from a URL with progress tracking and automatic retry handling";
   public static override hasDynamicSchemas: boolean = true;
   public static override hasDynamicEntitlements: boolean = true;
+
+  /**
+   * Ready events held for the consumer before the producer is parked, bounding
+   * {@link consumeJobStream}'s queue. See that method for what the bound does
+   * and does not buy on each carrier.
+   */
+  private static readonly STREAM_READ_AHEAD = 4;
+
+  /**
+   * Refuses a subclass that overrides `execute()`.
+   *
+   * {@link executeStream} is the sole implementation, and `TaskRunner`
+   * dispatches a streamable task there — it never calls `execute()`, so an
+   * override of it runs on no path a `run()` takes. That silence is the
+   * hazard: a subclass overriding `execute()` to derive the real URL from a
+   * domain input would have its rewrite skipped and would fetch whatever
+   * unresolved `url` the input happened to carry, with no type error and no
+   * runtime signal. Failing at construction turns an invisible wrong fetch
+   * into an immediate, addressable error.
+   *
+   * {@link resolveFetchInput} is the supported seam for that rewrite, and it
+   * runs on every path.
+   */
+  constructor(config: NoInfer<Partial<Config>> = {}, runConfig: NoInfer<Partial<IRunConfig>> = {}) {
+    super(config, runConfig);
+    if (this.execute !== FetchUrlTask.prototype.execute) {
+      throw new TaskConfigurationError(
+        `${this.type}: overriding execute() on a FetchUrlTask has no effect — a streamable ` +
+          `task is dispatched to executeStream(), which does not call execute(). Override ` +
+          `resolveFetchInput() to rewrite the request (URL, headers, response_type), or ` +
+          `executeStream() to change how the fetch itself runs.`
+      );
+    }
+  }
 
   public static override entitlements(): TaskEntitlements {
     return {
@@ -585,22 +683,52 @@ export class FetchUrlTask<
 
   /**
    * Collects {@link executeStream} into a single value for callers that want
-   * one. `isTaskStreamable` is permanently true for this task (the dynamic
-   * output schema always emits the `x-stream` `body` port), so `TaskRunner`
-   * dispatches to `executeStream` and never here — making `executeStream` the
-   * sole implementation and this a thin drain over it. A second implementation
+   * one. `isTaskStreamable` is true for this task whenever its dynamic output
+   * schema keeps the `x-stream` `body` port, so `TaskRunner` dispatches to
+   * `executeStream` and normally never here — making `executeStream` the sole
+   * implementation and this a thin drain over it. A second implementation
    * would be dead code that no run ever exercises, which is exactly how the
-   * queue branch previously became unreachable without a test noticing.
+   * queue branch previously became unreachable without a test noticing; the
+   * constructor refuses a subclass that writes one.
+   *
+   * A `finish` is mandatory: without one there is no output, and returning the
+   * `{}` an absent finish leaves behind would hand the caller an object with
+   * no `metadata` and no derived port, typed as if the fetch had succeeded.
    */
   override async execute(
     input: FetchUrlTaskInput,
     executeContext: IExecuteContext
   ): Promise<Output> {
-    let out: Record<string, unknown> = {};
+    let out: Output | undefined;
     for await (const event of this.executeStream(input, executeContext)) {
-      if (event.type === "finish") out = event.data as Record<string, unknown>;
+      if (event.type === "finish") out = event.data as Output;
     }
-    return out as Output;
+    if (out === undefined) {
+      throw new TaskFailedError(
+        `FetchUrlTask: the fetch stream ended without a finish payload, so there is no output ` +
+          `for ${input.url ?? "the request"}`
+      );
+    }
+    return out;
+  }
+
+  /**
+   * Resolves the request this run will actually issue. The default returns
+   * `input` unchanged; a subclass whose input is a domain key (a CIK, an
+   * accession number) rather than a `url` overrides this to build the request
+   * from it.
+   *
+   * Runs first in {@link executeStream} — ahead of the conditional-request
+   * guard, so the guard inspects the headers that will really be sent — and
+   * everything downstream (default queue name, credential refusal, the job
+   * payload handed to the queue) reads the value returned here.
+   */
+  protected async resolveFetchInput(
+    input: FetchUrlTaskInput,
+    context: IExecuteContext
+  ): Promise<FetchUrlTaskInput> {
+    void context;
+    return input;
   }
 
   /**
@@ -617,9 +745,11 @@ export class FetchUrlTask<
   // No `override`: `executeStream` is an optional member of ITask, not a
   // declared member of Task, so marking it override fails TS4113.
   async *executeStream(
-    input: FetchUrlTaskInput,
+    rawInput: FetchUrlTaskInput,
     executeContext: IExecuteContext
   ): AsyncIterable<StreamEvent<Output>> {
+    const input = await this.resolveFetchInput(rawInput, executeContext);
+
     // A 304 carries no body, so a cache save would write a row whose `body` is
     // empty — destroying the cached copy the 304 just certified as still good.
     // Making that safe means reading the stored validator and reissuing, which
@@ -723,37 +853,73 @@ export class FetchUrlTask<
    * Adapts `handle.onStream`'s pushed callbacks into the pulled async iterable
    * `executeStream` has to be.
    *
-   * The listener's promise resolves only once the event it carried has been
-   * pulled off this generator, which is what carries the consumer's real read
-   * rate back to the worker: `JobQueueClient` awaits every stream listener and
-   * the worker awaits that dispatch, so a slow sink parks the job mid-body
-   * instead of letting the whole download pile up in `pending`.
+   * **Where the listener promise actually paces the worker.** It resolves only
+   * once the event it carried has been pulled off this generator, and on the
+   * channel-less fast path that reaches the producer: `JobQueueClient`'s
+   * `handleJobStream` awaits every listener, the worker awaits that dispatch,
+   * and a slow sink therefore parks the job mid-body. When a stream *channel*
+   * subscription is open for the job the fast path is suppressed and the
+   * channel replays the row with its dispatch deliberately unawaited (the
+   * event is already durably published, so on a cross-process carrier there is
+   * no live producer left to pace) — nothing on that path observes this
+   * promise, so the worker runs ahead of the consumer no matter what this
+   * method does.
+   *
+   * `STREAM_READ_AHEAD` therefore bounds what it can: the ready queue this
+   * method hands the consumer. Admission is chained so a producer parked for
+   * room cannot be overtaken by the next event — binary deltas are
+   * position-dependent and reordering them corrupts the body silently — and
+   * nothing is ever dropped. On a fire-and-forget carrier the bound is not a
+   * memory guarantee: the events that carrier has already delivered wait in
+   * the admission chain instead of in `pending`, and the carrier's own log
+   * holds whatever it published. Backpressure across the job boundary exists
+   * only where the dispatch is awaited.
    *
    * The job's settled output is the authority for the final value, so a
-   * terminal event arriving over the channel is released without being
-   * re-yielded — `waitFor()` produces the one `finish`, and the two can never
-   * disagree or arrive twice.
+   * `finish` arriving over the channel is released without being re-yielded —
+   * `waitFor()` produces the one `finish`, and the two can never disagree or
+   * arrive twice. An `error` event is not decoration on that: it is the only
+   * in-band report of a failure the completion signal may not carry, so it is
+   * queued in order and raised as a throw when the consumer reaches it.
    */
   private async *consumeJobStream(handle: JobHandle<Output>): AsyncIterable<StreamEvent<Output>> {
     const pending: Array<{ readonly event: StreamEventLike; readonly release: () => void }> = [];
     let wake: (() => void) | undefined;
+    let room: (() => void) | undefined;
+    let closed = false;
     const notify = (): void => {
       const waiting = wake;
       wake = undefined;
       waiting?.();
     };
+    const notifyRoom = (): void => {
+      const waiting = room;
+      room = undefined;
+      waiting?.();
+    };
 
-    const unsubscribe = handle.onStream!(
-      (event: StreamEventLike) =>
-        new Promise<void>((release) => {
-          if (event.type === "finish" || event.type === "error") {
-            release();
-            return;
-          }
-          pending.push({ event, release });
-          notify();
-        })
-    );
+    let admission: Promise<void> = Promise.resolve();
+    const unsubscribe = handle.onStream!((event: StreamEventLike) => {
+      if (event.type === "finish") return Promise.resolve();
+      let consumed!: () => void;
+      const pulled = new Promise<void>((resolve) => {
+        consumed = resolve;
+      });
+      admission = admission.then(async () => {
+        while (!closed && pending.length >= FetchUrlTask.STREAM_READ_AHEAD) {
+          await new Promise<void>((resolve) => {
+            room = resolve;
+          });
+        }
+        if (closed) {
+          consumed();
+          return;
+        }
+        pending.push({ event, release: consumed });
+        notify();
+      });
+      return admission.then(() => pulled);
+    });
 
     let settled = false;
     let output: Output | undefined;
@@ -774,16 +940,30 @@ export class FetchUrlTask<
     );
 
     try {
+      let drainedAfterSettle = false;
       while (true) {
         while (pending.length > 0) {
           const next = pending.shift()!;
+          notifyRoom();
           try {
+            if (next.event.type === "error") throw toStreamEventError(next.event);
             yield next.event as StreamEvent<Output>;
           } finally {
             next.release();
           }
         }
-        if (settled) break;
+        if (settled) {
+          if (drainedAfterSettle) break;
+          // The completion signal and the stream are independent transports,
+          // so an event dispatched asynchronously can land just after
+          // `waitFor()` resolved. Give it one turn of the event loop rather
+          // than ending here: the `finally` below would unpark its producer
+          // but the event itself would never be yielded, which on a body port
+          // is silent truncation.
+          drainedAfterSettle = true;
+          await new Promise<void>((resolve) => setTimeout(resolve, 0));
+          continue;
+        }
         await new Promise<void>((resolve) => {
           wake = resolve;
         });
@@ -791,10 +971,13 @@ export class FetchUrlTask<
       if (failure) throw failure;
       yield { type: "finish", data: output } as StreamEvent<Output>;
     } finally {
+      closed = true;
       unsubscribe();
       // An abandoned generator (abort, or a consumer that stopped pulling)
       // would otherwise leave the worker parked forever on a dispatch nobody
-      // is going to resolve.
+      // is going to resolve — including one parked in the admission chain
+      // waiting for room that is never going to be freed.
+      notifyRoom();
       for (const leftover of pending.splice(0)) leftover.release();
     }
   }

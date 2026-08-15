@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IQueueStorage } from "@workglow/job-queue";
+import type { IQueueStorage, JobHandle, JobStreamListener } from "@workglow/job-queue";
 import {
   InMemoryQueueStorage,
   JobQueueClient,
@@ -14,7 +14,7 @@ import {
 } from "@workglow/job-queue";
 import { SqliteQueueStorage } from "@workglow/sqlite/job-queue";
 import { Sqlite } from "@workglow/sqlite/storage";
-import type { StreamEvent } from "@workglow/task-graph";
+import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";
 import { InMemoryTaskOutputRepository } from "@workglow/task-graph/test";
 import type { FetchUrlTaskInput, FetchUrlTaskOutput } from "@workglow/tasks";
@@ -32,7 +32,66 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 const BODY = new Uint8Array([1, 2, 3, 4, 5]);
 
-const mockFetch = vi.fn((_url: string, _options: RequestInit & { allowPrivate?: boolean }) =>
+/**
+ * A body that arrives in several chunks, each carrying a distinct byte value.
+ * A single-chunk body cannot show that the drain loop preserves arrival order
+ * (or that it drains at all), which is the property the whole binary port
+ * depends on: a reordered body is corrupt in a way no length check notices.
+ */
+const CHUNKED_BODY: readonly Uint8Array[] = Array.from({ length: 8 }, (_, i) =>
+  Uint8Array.from([i * 4, i * 4 + 1, i * 4 + 2, i * 4 + 3])
+);
+
+function concatBytes(chunks: readonly Uint8Array[]): Uint8Array {
+  const total = chunks.reduce((n, c) => n + c.byteLength, 0);
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    merged.set(c, offset);
+    offset += c.byteLength;
+  }
+  return merged;
+}
+
+interface ChunkedResponseOptions {
+  /** Error the body after this many chunks have been enqueued. */
+  readonly failAfterChunks?: number;
+  /** Counter incremented as each chunk leaves the source. */
+  readonly onProduce?: () => void;
+}
+
+function chunkedResponse(
+  chunks: readonly Uint8Array[],
+  options: ChunkedResponseOptions = {}
+): Response {
+  let index = 0;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (options.failAfterChunks !== undefined && index >= options.failAfterChunks) {
+        controller.error(new Error("socket hang up"));
+        return;
+      }
+      if (index >= chunks.length) {
+        controller.close();
+        return;
+      }
+      options.onProduce?.();
+      controller.enqueue(chunks[index++]);
+    },
+  });
+  const headers: Record<string, string> = { "content-type": "application/octet-stream" };
+  if (options.failAfterChunks === undefined) {
+    headers["content-length"] = String(chunks.reduce((n, c) => n + c.byteLength, 0));
+  }
+  return new Response(stream, { status: 200, headers });
+}
+
+type Responder = (
+  url: string,
+  options: RequestInit & { allowPrivate?: boolean }
+) => Promise<Response>;
+
+const singleChunkResponder: Responder = () =>
   Promise.resolve(
     new Response(new Blob([BODY]), {
       status: 200,
@@ -41,7 +100,12 @@ const mockFetch = vi.fn((_url: string, _options: RequestInit & { allowPrivate?: 
         "content-length": String(BODY.length),
       },
     })
-  )
+  );
+
+let responder: Responder = singleChunkResponder;
+
+const mockFetch = vi.fn((url: string, options: RequestInit & { allowPrivate?: boolean }) =>
+  responder(url, options)
 );
 const mockSafeFetch: SafeFetchFn = (url, options) => mockFetch(url, options);
 
@@ -78,10 +142,74 @@ async function registerQueue(
   return { storage, server, client };
 }
 
+/**
+ * Registers a queue whose `send` hands back `handle`, so a test drives the
+ * stream/settlement interleaving of `consumeJobStream` directly. The real
+ * queue can produce neither an in-band `error` event (`FetchUrlJob` emits only
+ * deltas) nor an event that lands after the job settled, and both are hazards
+ * the adapter has to answer for.
+ */
+function registerStubQueue(queueName: string, handle: JobHandle<FetchUrlTaskOutput>): void {
+  const server = {
+    queueName,
+    isRunning: () => true,
+    start: async () => {},
+    stop: async () => {},
+  };
+  const client = { send: async () => handle };
+  const storage = { deleteAll: async () => {} };
+  getTaskQueueRegistry().registerQueue({ server, client, storage } as any);
+}
+
+interface StubHandle {
+  readonly handle: JobHandle<FetchUrlTaskOutput>;
+  /** Resolves once the task has subscribed. */
+  readonly listening: Promise<JobStreamListener>;
+  readonly output: Promise<FetchUrlTaskOutput>;
+  settle(value: FetchUrlTaskOutput): void;
+}
+
+function makeStubHandle(): StubHandle {
+  let announceListener!: (listener: JobStreamListener) => void;
+  const listening = new Promise<JobStreamListener>((resolve) => {
+    announceListener = resolve;
+  });
+  let settle!: (value: FetchUrlTaskOutput) => void;
+  const output = new Promise<FetchUrlTaskOutput>((resolve) => {
+    settle = resolve;
+  });
+  const handle: JobHandle<FetchUrlTaskOutput> = {
+    id: "stub-job",
+    waitFor: () => output,
+    abort: async () => {},
+    onProgress: () => () => {},
+    onStream: (listener: JobStreamListener) => {
+      announceListener(listener);
+      return () => {};
+    },
+  };
+  return { handle, listening, output, settle };
+}
+
+function executeContext(): IExecuteContext {
+  return {
+    signal: new AbortController().signal,
+    updateProgress: async () => {},
+  } as unknown as IExecuteContext;
+}
+
 function totalDeltaBytes(events: readonly StreamEvent[]): number {
   return events
     .filter((e) => e.type === "binary-delta")
     .reduce((n, e) => n + (e as { binaryDelta: Uint8Array }).binaryDelta.byteLength, 0);
+}
+
+function deltaBytes(events: readonly StreamEvent[]): Uint8Array {
+  return concatBytes(
+    events
+      .filter((e) => e.type === "binary-delta")
+      .map((e) => (e as { binaryDelta: Uint8Array }).binaryDelta)
+  );
 }
 
 describe("queued fetch streams over the job channel", () => {
@@ -99,6 +227,7 @@ describe("queued fetch streams over the job channel", () => {
 
   beforeEach(async () => {
     mockFetch.mockClear();
+    responder = singleChunkResponder;
     await setTaskQueueRegistry(null);
   });
 
@@ -135,6 +264,7 @@ describe("queued fetch streams over the job channel", () => {
       const queueName = `queued-stream-${backend.name}`;
       const { storage, server, client } = await registerQueue(queueName, backend.make(queueName));
       const sendSpy = vi.spyOn(client, "send");
+      responder = () => Promise.resolve(chunkedResponse(CHUNKED_BODY));
 
       try {
         await server.start();
@@ -154,8 +284,11 @@ describe("queued fetch streams over the job channel", () => {
         expect(await storage.size(JobStatus.COMPLETED)).toBe(1);
 
         const deltas = seen.filter((e) => e.type === "binary-delta");
-        expect(deltas.length).toBeGreaterThan(0);
-        expect(totalDeltaBytes(seen)).toBe(BODY.length);
+        expect(deltas.length).toBeGreaterThan(1);
+        expect(totalDeltaBytes(seen)).toBe(concatBytes(CHUNKED_BODY).length);
+        // Bytes AND their order: a drain that shuffled the queue would still
+        // satisfy the byte count.
+        expect(Array.from(deltaBytes(seen))).toEqual(Array.from(concatBytes(CHUNKED_BODY)));
         expect(deltas.every((e) => e.port === "body")).toBe(true);
         expect(out.metadata?.status).toBe(200);
       } finally {
@@ -235,6 +368,415 @@ describe("queued fetch streams over the job channel", () => {
 
       expect(String(error)).toMatch(/conditional request/i);
       expect(sendSpy).not.toHaveBeenCalled();
+    } finally {
+      await server.stop();
+      await storage.deleteAll();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A subclass that derives the real request from its input rather than fetching
+// the input verbatim — the shape of every consumer whose task input is a
+// domain key. `resolveFetchInput` is the only seam that runs on every dispatch
+// path; the queued run below is the one that used to be served by an
+// `execute()` override.
+// ---------------------------------------------------------------------------
+class RewrittenUrlFetchTask extends FetchUrlTask {
+  public static override type = "RewrittenUrlFetchTask";
+  protected override async resolveFetchInput(input: FetchUrlTaskInput): Promise<FetchUrlTaskInput> {
+    const key = input.url!.split("/").pop();
+    return {
+      url: `https://example.com/resolved/${key}.bin`,
+      method: "GET",
+      response_type: "stream",
+      headers: { "X-Resolved": "yes" },
+    };
+  }
+}
+
+class LegacyExecuteTask extends FetchUrlTask {
+  public static override type = "LegacyExecuteTask";
+  override async execute(
+    input: FetchUrlTaskInput,
+    context: IExecuteContext
+  ): Promise<FetchUrlTaskOutput> {
+    return super.execute(input, context);
+  }
+}
+
+class LegacyExecuteGrandchildTask extends LegacyExecuteTask {
+  public static override type = "LegacyExecuteGrandchildTask";
+}
+
+describe("FetchUrlTask subclass dispatch", () => {
+  setLogger(getTestingLogger());
+  let prevSafeFetch: SafeFetchFn;
+
+  beforeAll(async () => {
+    prevSafeFetch = registerSafeFetch(mockSafeFetch);
+    await Sqlite.init();
+  });
+
+  afterAll(() => {
+    registerSafeFetch(prevSafeFetch);
+  });
+
+  beforeEach(async () => {
+    mockFetch.mockClear();
+    responder = singleChunkResponder;
+    await setTaskQueueRegistry(null);
+  });
+
+  afterEach(async () => {
+    await setTaskQueueRegistry(null);
+  });
+
+  test("honors a subclass's resolveFetchInput on a queued run", async () => {
+    const queueName = "queued-stream-resolve-input";
+    const { storage, server, client } = await registerQueue(
+      queueName,
+      new InMemoryQueueStorage<FetchUrlTaskInput, FetchUrlTaskOutput>(queueName)
+    );
+    const sendSpy = vi.spyOn(client, "send");
+    responder = () => Promise.resolve(chunkedResponse(CHUNKED_BODY));
+
+    try {
+      await server.start();
+
+      const task = new RewrittenUrlFetchTask({ queue: queueName });
+      const seen: StreamEvent[] = [];
+      task.on("stream_chunk", (e: StreamEvent) => seen.push(e));
+
+      const out = (await task.run({
+        url: "https://example.com/keys/abc",
+        response_type: "stream",
+      })) as FetchUrlTaskOutput;
+
+      // Resolution has to happen before the payload is enqueued, not inside the
+      // worker: the job input IS the persisted request.
+      expect(sendSpy).toHaveBeenCalledTimes(1);
+      expect(sendSpy.mock.calls[0]?.[0]).toMatchObject({
+        url: "https://example.com/resolved/abc.bin",
+        headers: { "X-Resolved": "yes" },
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch.mock.calls[0]?.[0]).toBe("https://example.com/resolved/abc.bin");
+      expect(out.metadata?.status).toBe(200);
+      expect(totalDeltaBytes(seen)).toBe(concatBytes(CHUNKED_BODY).length);
+    } finally {
+      await server.stop();
+      await storage.deleteAll();
+    }
+  });
+
+  // An override that no dispatch path calls is worse than a compile error: the
+  // task fetches whatever unresolved input it was handed and writes the result
+  // under the wrong key, silently.
+  test("refuses a subclass that overrides execute()", () => {
+    expect(() => new LegacyExecuteTask({})).toThrow(/execute\(\)/);
+    expect(() => new LegacyExecuteTask({})).toThrow(/resolveFetchInput/);
+    // Two levels down is the real shape of the consumers that do this, and a
+    // check comparing only the immediate prototype would miss it.
+    expect(() => new LegacyExecuteGrandchildTask({})).toThrow(/execute\(\)/);
+    // The base class and a subclass that leaves execute() alone stay usable.
+    expect(() => new FetchUrlTask({})).not.toThrow();
+    expect(() => new RewrittenUrlFetchTask({})).not.toThrow();
+  });
+});
+
+describe("queued fetch retry safety", () => {
+  setLogger(getTestingLogger());
+  let prevSafeFetch: SafeFetchFn;
+
+  beforeAll(async () => {
+    prevSafeFetch = registerSafeFetch(mockSafeFetch);
+    await Sqlite.init();
+  });
+
+  afterAll(() => {
+    registerSafeFetch(prevSafeFetch);
+  });
+
+  beforeEach(async () => {
+    mockFetch.mockClear();
+    responder = singleChunkResponder;
+    await setTaskQueueRegistry(null);
+  });
+
+  afterEach(async () => {
+    await setTaskQueueRegistry(null);
+  });
+
+  // A retry re-issues from byte 0 while the consumer's subscription survives
+  // the attempt, so a second attempt would append a whole body onto a partial
+  // one and the run would report success over the concatenation.
+  test("does not retry after body bytes have been delivered", async () => {
+    const queueName = "queued-stream-truncated";
+    const { storage, server, client } = await registerQueue(
+      queueName,
+      new InMemoryQueueStorage<FetchUrlTaskInput, FetchUrlTaskOutput>(queueName)
+    );
+    responder = () => Promise.resolve(chunkedResponse(CHUNKED_BODY, { failAfterChunks: 3 }));
+
+    try {
+      await server.start();
+
+      const task = new FetchUrlTask({ queue: queueName });
+      const seen: StreamEvent[] = [];
+      task.on("stream_chunk", (e: StreamEvent) => seen.push(e));
+
+      const error = await task
+        .run({ url: "https://example.com/truncated.bin", response_type: "stream" })
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(Error);
+      // One attempt, not ten: the request was issued exactly once.
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [failed] = await client.peek(JobStatus.FAILED, 10);
+      expect(failed?.errorCode).toBe("FETCH_BODY_TRUNCATED");
+      expect(failed?.attempts).toBe(0);
+      expect(await storage.size(JobStatus.COMPLETED)).toBe(0);
+      // The partial body reached the consumer once, and only once — a second
+      // attempt would have doubled this.
+      expect(totalDeltaBytes(seen)).toBe(3 * CHUNKED_BODY[0]!.byteLength);
+    } finally {
+      await server.stop();
+      await storage.deleteAll();
+    }
+  });
+
+  // The other half of the rule: a failure that lands before the first byte is
+  // still retried, which is what a rate-limited caller depends on.
+  test("still retries a failure that lands before the first byte", async () => {
+    const queueName = "queued-stream-retry-before-body";
+    const { storage, server } = await registerQueue(
+      queueName,
+      new InMemoryQueueStorage<FetchUrlTaskInput, FetchUrlTaskOutput>(queueName)
+    );
+    let attempt = 0;
+    responder = () => {
+      attempt += 1;
+      if (attempt === 1) {
+        return Promise.resolve(new Response("slow down", { status: 429 }));
+      }
+      return Promise.resolve(chunkedResponse(CHUNKED_BODY));
+    };
+
+    try {
+      await server.start();
+
+      const task = new FetchUrlTask({ queue: queueName });
+      const seen: StreamEvent[] = [];
+      task.on("stream_chunk", (e: StreamEvent) => seen.push(e));
+
+      const out = (await task.run({
+        url: "https://example.com/rate-limited.bin",
+        response_type: "stream",
+      })) as FetchUrlTaskOutput;
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(out.metadata?.status).toBe(200);
+      expect(await storage.size(JobStatus.COMPLETED)).toBe(1);
+      // The 429 emitted nothing, so the surviving attempt's body stands alone.
+      expect(Array.from(deltaBytes(seen))).toEqual(Array.from(concatBytes(CHUNKED_BODY)));
+    } finally {
+      await server.stop();
+      await storage.deleteAll();
+    }
+  });
+});
+
+describe("queued fetch stream adapter", () => {
+  setLogger(getTestingLogger());
+  let prevSafeFetch: SafeFetchFn;
+
+  beforeAll(async () => {
+    prevSafeFetch = registerSafeFetch(mockSafeFetch);
+    await Sqlite.init();
+  });
+
+  afterAll(() => {
+    registerSafeFetch(prevSafeFetch);
+  });
+
+  beforeEach(async () => {
+    mockFetch.mockClear();
+    responder = singleChunkResponder;
+    await setTaskQueueRegistry(null);
+  });
+
+  afterEach(async () => {
+    await setTaskQueueRegistry(null);
+  });
+
+  test("raises a stream error event instead of reporting success", async () => {
+    const queueName = "queued-stream-error-event";
+    const stub = makeStubHandle();
+    registerStubQueue(queueName, stub.handle);
+
+    const task = new FetchUrlTask({ queue: queueName });
+    const seen: StreamEvent[] = [];
+    const run = (async () => {
+      for await (const event of task.executeStream(
+        { url: "https://example.com/a.bin", response_type: "stream" },
+        executeContext()
+      )) {
+        seen.push(event as StreamEvent);
+      }
+    })();
+    const failure = run.catch((e: unknown) => e);
+
+    const listener = await stub.listening;
+    void listener({ type: "binary-delta", port: "body", binaryDelta: new Uint8Array([1, 2]) });
+    void listener({ type: "error", error: new Error("worker exploded") });
+    // The job's own completion signal says success — the in-band error is the
+    // only report of the failure, so it has to be the one that wins.
+    stub.settle({ metadata: { status: 200 } } as FetchUrlTaskOutput);
+
+    const error = await failure;
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).toMatch(/worker exploded/);
+    expect(seen.some((e) => e.type === "finish")).toBe(false);
+    expect(seen.filter((e) => e.type === "binary-delta")).toHaveLength(1);
+  });
+
+  test("yields an event that lands after the job settled", async () => {
+    const queueName = "queued-stream-late-event";
+    const stub = makeStubHandle();
+    registerStubQueue(queueName, stub.handle);
+
+    const task = new FetchUrlTask({ queue: queueName });
+    const seen: StreamEvent[] = [];
+    let listener: JobStreamListener | undefined;
+    const run = (async () => {
+      for await (const event of task.executeStream(
+        { url: "https://example.com/a.bin", response_type: "stream" },
+        executeContext()
+      )) {
+        seen.push(event as StreamEvent);
+        if (seen.length === 1) {
+          // The job has already settled by the time this first delta is
+          // delivered, so the loop is about to reach its termination check.
+          // Scheduling the next event on a timer registered HERE puts it
+          // strictly after that check and strictly before any turn the loop
+          // itself takes — the exact window a settled-means-stop loop drops.
+          setTimeout(() => {
+            void listener?.({
+              type: "binary-delta",
+              port: "body",
+              binaryDelta: new Uint8Array([9, 9]),
+            });
+          }, 0);
+        }
+      }
+    })();
+
+    listener = await stub.listening;
+    void listener({ type: "binary-delta", port: "body", binaryDelta: new Uint8Array([1, 2]) });
+    stub.settle({ metadata: { status: 200 } } as FetchUrlTaskOutput);
+
+    await run;
+    expect(Array.from(deltaBytes(seen))).toEqual([1, 2, 9, 9]);
+    expect(seen.at(-1)?.type).toBe("finish");
+  });
+
+  // `execute()` drains the stream for callers that want one value. A job that
+  // settles on nothing has produced no output, and the `{}` a missing finish
+  // would leave behind reads as a successful fetch with no metadata.
+  test("execute() refuses to return an output the stream never produced", async () => {
+    const queueName = "queued-stream-empty-finish";
+    const stub = makeStubHandle();
+    registerStubQueue(queueName, stub.handle);
+
+    const task = new FetchUrlTask({ queue: queueName });
+    const failure = task
+      .execute({ url: "https://example.com/a.bin", response_type: "stream" }, executeContext())
+      .catch((e: unknown) => e);
+
+    await stub.listening;
+    stub.settle(undefined as unknown as FetchUrlTaskOutput);
+
+    const error = await failure;
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).toMatch(/finish payload/);
+  });
+
+  // A carrier that never awaits its dispatch can hand the adapter a whole body
+  // faster than the consumer reads it. Nothing may be dropped or reordered when
+  // that overruns the ready queue and parks the producer.
+  test("keeps a flood of unawaited events complete and in order", async () => {
+    const queueName = "queued-stream-flood";
+    const stub = makeStubHandle();
+    registerStubQueue(queueName, stub.handle);
+
+    const task = new FetchUrlTask({ queue: queueName });
+    const seen: StreamEvent[] = [];
+    const run = (async () => {
+      for await (const event of task.executeStream(
+        { url: "https://example.com/a.bin", response_type: "stream" },
+        executeContext()
+      )) {
+        seen.push(event as StreamEvent);
+        // A consumer slower than the producer, which is the only condition
+        // under which the ready queue can fill at all.
+        await new Promise<void>((resolve) => setTimeout(resolve, 1));
+      }
+    })();
+
+    const listener = await stub.listening;
+    const flood = Array.from({ length: 30 }, (_, i) => Uint8Array.from([i]));
+    for (const chunk of flood) {
+      void listener({ type: "binary-delta", port: "body", binaryDelta: chunk });
+    }
+    stub.settle({ metadata: { status: 200 } } as FetchUrlTaskOutput);
+
+    await run;
+    expect(Array.from(deltaBytes(seen))).toEqual(flood.map((c) => c[0]));
+  });
+
+  // Where the dispatch IS awaited (the channel-less fast path), the listener
+  // promise is a real gate: the worker cannot run away from the consumer. The
+  // measurement is the source's own production count, since the job pulls the
+  // socket only as fast as it can hand a chunk over.
+  test("paces the producer on the channel-less fast path", async () => {
+    const queueName = "queued-stream-pacing";
+    const { storage, server } = await registerQueue(
+      queueName,
+      new SqliteQueueStorage<FetchUrlTaskInput, FetchUrlTaskOutput>(
+        new Sqlite.Database(":memory:"),
+        queueName
+      )
+    );
+    let produced = 0;
+    const body = Array.from({ length: 20 }, (_, i) => Uint8Array.from([i]));
+    responder = () =>
+      Promise.resolve(
+        chunkedResponse(body, {
+          onProduce: () => {
+            produced += 1;
+          },
+        })
+      );
+
+    try {
+      await server.start();
+      const task = new FetchUrlTask({ queue: queueName });
+      let consumed = 0;
+      let maxReadAhead = 0;
+      for await (const event of task.executeStream(
+        { url: "https://example.com/paced.bin", response_type: "stream" },
+        executeContext()
+      )) {
+        if (event.type !== "binary-delta") continue;
+        consumed += 1;
+        maxReadAhead = Math.max(maxReadAhead, produced - consumed);
+        await new Promise<void>((resolve) => setTimeout(resolve, 2));
+      }
+      expect(consumed).toBe(body.length);
+      // One chunk in flight plus the source stream's own one-chunk high-water
+      // mark. Unpaced, this would reach the whole body.
+      expect(maxReadAhead).toBeLessThanOrEqual(3);
     } finally {
       await server.stop();
       await storage.deleteAll();

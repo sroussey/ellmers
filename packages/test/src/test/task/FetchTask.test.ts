@@ -782,10 +782,9 @@ describe("FetchUrlTask", () => {
 
         // The fetch succeeding proves nothing about *how* it ran — the inline
         // path would produce the identical result. This is the assertion that
-        // proves the job travelled through the queue: FetchUrlTask.execute()'s
-        // queued branch is the only code path that calls the registered
-        // client's send(), and executeStream()'s `queuePref !== false`
-        // delegation is the only way a `.run()` call reaches execute() at all.
+        // proves the job travelled through the queue: `executeStream`'s
+        // `queuePref !== false` branch is the only code path that calls the
+        // registered client's send().
         expect(sendSpy).toHaveBeenCalledTimes(1);
         expect(sendSpy.mock.calls[0]?.[0]).toMatchObject({
           url: "https://api.example.com/queued-success",
