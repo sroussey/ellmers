@@ -90,8 +90,10 @@ export * from "./task/vector/VectorScaleTask";
 export * from "./task/vector/VectorSubtractTask";
 export * from "./task/vector/VectorSumTask";
 export * from "./task/WebhookNotifyTask";
+export * from "./util/RetryAfter";
 export * from "./util/SafeFetch";
 export * from "./util/UrlClassifier";
+export * from "./util/WebhookPost";
 export { applyFilter, hasFilterOp, registerFilterOp } from "@workglow/util/media";
 export type { FilterOpFn } from "@workglow/util/media";
 
