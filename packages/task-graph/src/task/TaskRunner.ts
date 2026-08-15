@@ -215,6 +215,46 @@ export class TaskRunner<
   private readonly ownedUsageUnsubs = new Map<object, () => void>();
 
   /**
+   * What {@link resolveSchemas} rewrote on `task.runInputData` last run, per
+   * port: the value it wrote and the value it read.
+   *
+   * Input resolution writes back **in place** — the resolved value replaces the
+   * reference id on the very port it was read from — and `run()` *merges*
+   * overrides into `runInputData` rather than resetting it (`Task.setInput`
+   * skips `undefined` and leaves absent keys untouched; nothing in
+   * `run()`/`runPreview()` calls `resetInputData`). So a second standalone run
+   * of the same instance re-resolves whatever the first run left behind.
+   *
+   * That is harmless for every resolver but one, because they are idempotent:
+   * `model` / `mcp-server` / storage resolvers turn a string id into an object
+   * and ignore a non-string on the next pass. `format: "credential"` is the
+   * lossy exception — it resolves string → string, and a store miss yields
+   * `undefined` rather than the id (deliberately: echoing the id would send a
+   * credential's *name* as its *value*). Re-resolving a secret therefore looks
+   * the secret up as if it were a key, misses, and blanks the port — a
+   * fail-closed task then throws on run 2, and `FetchUrlTask` silently sends
+   * the request with no `Authorization` header at all.
+   *
+   * The config path escapes this by re-resolving from the frozen
+   * `originalConfig` snapshot. Inputs have no frozen original — direct
+   * `task.runInputData = {...}` assignment and `copyInputFromEdgesToNode` both
+   * write it between runs — so instead of restoring a whole snapshot, each
+   * rewritten port remembers its source and is reverted **only when it still
+   * holds exactly the value this runner put there** (`Object.is`). A graph run
+   * (whose `resetGraph` → `resetTask` → `resetInputData` already put the raw id
+   * back), an override supplied to `run()`, and a caller's own assignment all
+   * fail that identity check and are left alone.
+   *
+   * A store miss is memoized too (`{ resolved: undefined, original: "key" }`),
+   * so a store that was locked during run 1 and unlocked before run 2 resolves
+   * on run 2 instead of failing identically forever.
+   */
+  private readonly resolvedInputOrigins = new Map<
+    string,
+    { resolved: unknown; original: unknown }
+  >();
+
+  /**
    * True when `this.resourceScope` was auto-created by `run()` (caller did not
    * pass one in `config`). The flag is used by `own()` so that an auto-owned
    * scope is not stamped into a child task's long-lived `runConfig` — that
@@ -1143,7 +1183,9 @@ export class TaskRunner<
    * Resolves config and input schema annotations (e.g. mcp-server references)
    * by mutating task.config and task.runInputData. Always resolves config from
    * originalConfig so re-runs use the original string IDs, not previously resolved
-   * objects. Shared between run() and runPreview() to avoid duplication.
+   * objects; inputs get the same guarantee from the per-port revert memo in
+   * {@link resolvedInputOrigins}. Shared between run() and runPreview() to avoid
+   * duplication.
    */
   private async resolveSchemas(): Promise<void> {
     const configSchema = (this.task.constructor as typeof Task).configSchema();
@@ -1162,11 +1204,26 @@ export class TaskRunner<
     // the instance; the static schema has no format annotations and would skip hydration.
     const ctor = this.task.constructor as typeof Task;
     const schema = ctor.hasDynamicSchemas ? this.task.inputSchema() : ctor.inputSchema();
-    this.task.runInputData = (await resolveSchemaInputs(
-      this.task.runInputData as Record<string, unknown>,
-      schema,
-      { registry: this.registry }
-    )) as Input;
+
+    // Revert the ports this runner rewrote last time, but only where they still
+    // hold exactly the value it put there — see {@link resolvedInputOrigins}.
+    const source = { ...(this.task.runInputData as Record<string, unknown>) };
+    for (const [port, memo] of this.resolvedInputOrigins) {
+      if (Object.is(source[port], memo.resolved)) source[port] = memo.original;
+    }
+
+    const resolved = (await resolveSchemaInputs(source, schema, {
+      registry: this.registry,
+    })) as Record<string, unknown>;
+
+    this.resolvedInputOrigins.clear();
+    for (const port of Object.keys(source)) {
+      if (!Object.is(resolved[port], source[port])) {
+        this.resolvedInputOrigins.set(port, { resolved: resolved[port], original: source[port] });
+      }
+    }
+
+    this.task.runInputData = resolved as Input;
   }
 
   /**

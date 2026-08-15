@@ -1186,6 +1186,40 @@ describe("FetchUrlTask", () => {
       expect(headers.Authorization).toBe(`Bearer ${SECRET}`);
       expect(headers["X-Trace"]).toBe("keep-me");
     });
+
+    /**
+     * The silent half of the re-run credential bug, and the reason it is fixed
+     * in `TaskRunner` rather than in any one task.
+     *
+     * Input resolution writes the resolved secret back onto `credential_key`
+     * itself, and `run()` merges overrides into `runInputData` rather than
+     * resetting it — so a second standalone run of the same instance used to
+     * look the SECRET up as if it were a key, miss, and leave the port
+     * `undefined`. `applyCredentialToHeaders` returns the headers unchanged for
+     * a falsy credential, so run 2 went out over the wire with NO
+     * `Authorization` header and no error anywhere: an authenticated request
+     * silently downgraded to an anonymous one.
+     *
+     * The key lives in `defaults` here, which is the broken shape. Supplying it
+     * as a `run()` override was always safe (`setInput` rewrites that port every
+     * run), as was any graph run (`resetGraph` restores the raw id first).
+     */
+    test("a defaults-configured credential key still authenticates on a re-run", async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(createMockResponse({ ok: true })));
+
+      const registry = await createCredentialRegistry();
+      const task = new FetchUrlTask({
+        defaults: { url: "https://api.example.com/data", credential_key: CREDENTIAL_KEY },
+      });
+
+      await task.run({}, { registry });
+      expect(lastRequestHeaders().Authorization).toBe(`Bearer ${SECRET}`);
+
+      await task.run({}, { registry });
+      expect(lastRequestHeaders().Authorization).toBe(`Bearer ${SECRET}`);
+
+      expect(mockFetch.mock.calls.length).toBe(2);
+    });
   });
 
   describe("applyCredentialToHeaders", () => {
