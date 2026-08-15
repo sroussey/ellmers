@@ -67,11 +67,13 @@ const inputSchema = {
       description: "The body of the request",
     },
     response_type: {
-      anyOf: [{ type: "null" }, { enum: ["json", "text", "blob", "arraybuffer"] }],
+      enum: ["stream", "text", "json", "blob", "arraybuffer"],
       title: "Response Type",
       description:
-        "The forced type of response to return. If null, the response type is inferred from the Content-Type header.",
-      default: null,
+        "What to materialize from the response. 'stream' materializes nothing — the bytes " +
+        "reach the 'body' port and the cache; read metadata.contentType to decide. The other " +
+        "values additionally populate the matching derived port.",
+      default: "stream",
     },
     timeout: {
       type: "number",
@@ -103,44 +105,42 @@ const inputSchema = {
       "x-ui-hidden": true,
     },
   },
-  required: ["url"],
+  required: ["url", "response_type"],
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
 const outputSchema = {
   type: "object",
   properties: {
-    json: {
-      title: "JSON",
-      description: "The JSON response",
+    body: {
+      title: "Body",
+      description:
+        "The raw response body as an ordered byte stream. Always present; the cache sink " +
+        "and any streaming consumer read this port.",
+      "x-stream": "binary",
+      format: "binary",
     },
-    text: {
-      type: "string",
-      title: "Text",
-      description: "The text response",
-    },
-    blob: {
-      title: "Blob",
-      description: "The blob response",
-    },
-    arraybuffer: {
-      title: "ArrayBuffer",
-      description: "The arraybuffer response",
-    },
+    json: { title: "JSON", description: "The JSON response" },
+    text: { type: "string", title: "Text", description: "The text response" },
+    blob: { title: "Blob", description: "The blob response" },
+    arraybuffer: { title: "ArrayBuffer", description: "The arraybuffer response" },
     metadata: {
       type: "object",
       properties: {
         contentType: { type: "string" },
         headers: { type: "object", additionalProperties: { type: "string" } },
+        status: { type: "number" },
+        notModified: { type: "boolean" },
       },
       additionalProperties: false,
       title: "Response Metadata",
-      description: "HTTP response metadata including content type and headers",
+      description: "HTTP response metadata: content type, headers, status, and 304 state",
     },
   },
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
+export type FetchUrlResponseType = "stream" | "text" | "json" | "blob" | "arraybuffer";
 export type FetchUrlTaskInput = FromSchema<typeof inputSchema>;
 export type FetchUrlTaskOutput = FromSchema<typeof outputSchema>;
 
@@ -458,49 +458,27 @@ export class FetchUrlTask<
   }
 
   /**
-   * Computes output schema dynamically based on the current response_type:
-   * null → all output types available; specific value → only that output type.
+   * Computes output schema dynamically based on the current response_type.
+   * `body` and `metadata` are always present; `response_type` additionally
+   * narrows in the matching derived port (json/text/blob/arraybuffer).
    */
   public override outputSchema(): DataPortSchema {
-    const responseType = this.runInputData?.response_type ?? this.defaults?.response_type ?? null;
-
-    if (responseType === null || responseType === undefined) {
-      return (this.constructor as typeof FetchUrlTask).outputSchema();
-    }
-
+    const responseType =
+      this.runInputData?.response_type ?? this.defaults?.response_type ?? "stream";
     const staticSchema = (this.constructor as typeof FetchUrlTask).outputSchema();
-    if (typeof staticSchema === "boolean") {
-      return staticSchema;
+    if (typeof staticSchema === "boolean" || !staticSchema.properties) return staticSchema;
+
+    const all = staticSchema.properties as Record<string, any>;
+    // `body` and `metadata` are unconditional: `body` is the transport for
+    // every response type (and the only streaming port, which is what keeps
+    // the unflagged cache-sink path available), `metadata` is how a "stream"
+    // caller learns what it fetched.
+    const properties: Record<string, any> = { body: all.body, metadata: all.metadata };
+    if (responseType !== "stream" && all[responseType]) {
+      properties[responseType] = all[responseType];
     }
 
-    if (!staticSchema.properties) {
-      return staticSchema;
-    }
-
-    const properties: Record<string, any> = {};
-    if (responseType === "json" && staticSchema.properties.json) {
-      properties.json = staticSchema.properties.json;
-    } else if (responseType === "text" && staticSchema.properties.text) {
-      properties.text = staticSchema.properties.text;
-    } else if (responseType === "blob" && staticSchema.properties.blob) {
-      properties.blob = staticSchema.properties.blob;
-    } else if (responseType === "arraybuffer" && staticSchema.properties.arraybuffer) {
-      properties.arraybuffer = staticSchema.properties.arraybuffer;
-    }
-
-    if (staticSchema.properties.metadata) {
-      properties.metadata = staticSchema.properties.metadata;
-    }
-
-    if (Object.keys(properties).length === 0) {
-      return staticSchema;
-    }
-
-    return {
-      type: "object",
-      properties,
-      additionalProperties: false,
-    } as const satisfies DataPortSchema;
+    return { type: "object", properties, additionalProperties: false } as DataPortSchema;
   }
 
   /**
@@ -665,7 +643,7 @@ export class FetchUrlTask<
     }
 
     const getCurrentResponseType = () => {
-      return this.runInputData?.response_type ?? this.defaults?.response_type ?? null;
+      return this.runInputData?.response_type ?? this.defaults?.response_type ?? "stream";
     };
 
     const previousResponseType = getCurrentResponseType();
