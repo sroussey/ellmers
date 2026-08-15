@@ -286,21 +286,21 @@ describe("run-private clearRun cost over an FsFolder backing", () => {
 
     // (c) This process's own pair is gone — row and blob both.
     expect(await resumed.getOutput("T", { p: "after" })).toBeUndefined();
-    expect(resumed.getOutputStreamByRef!(ownRef)).toBeUndefined();
+    expect(await resumed.getOutputStreamByRef!(ownRef)).toBeUndefined();
 
     // (b) NO DANGLING BLOB. The pre-crash ROW survives (it was never named),
     // so its blob must survive with it. A prefix sweep of the run's blobs
     // deletes the blob while leaving the row readable, and the reference only
     // fails much later — when a consumer's `hydrateInputRefs` throws.
     expect(await resumed.getOutput("T", { p: "before" })).toBeDefined();
-    expect(resumed.getOutputStreamByRef!(preCrashRef)).toBeDefined();
+    expect(await resumed.getOutputStreamByRef!(preCrashRef)).toBeDefined();
 
     // (d) The leftover pair is reclaimed together by the age sweep, which is
     // the reclaim story the surviving ROW already relied on.
     await new Promise((resolve) => setTimeout(resolve, 5));
     await resumed.clearOlderThan(0);
     expect(await resumed.getOutput("T", { p: "before" })).toBeUndefined();
-    expect(resumed.getOutputStreamByRef!(preCrashRef)).toBeUndefined();
+    expect(await resumed.getOutputStreamByRef!(preCrashRef)).toBeUndefined();
   });
 
   it("a run that wrote nothing announces no prune", async () => {

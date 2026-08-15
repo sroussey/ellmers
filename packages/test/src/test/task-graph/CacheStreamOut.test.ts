@@ -182,7 +182,7 @@ function runCacheStreamOutContractTests(name: string, setup: () => Promise<Contr
       const { repo } = await setup();
       const ref = makeCacheRef({ $ref: "fsfolder://blobs/never-written.bin" });
       expect(await repo.getOutputByRef!(ref)).toBeUndefined();
-      expect(repo.getOutputStreamByRef!(ref)).toBeUndefined();
+      expect(await repo.getOutputStreamByRef!(ref)).toBeUndefined();
     });
 
     it("clear() makes previously written refs dangle", async () => {
@@ -197,7 +197,7 @@ function runCacheStreamOutContractTests(name: string, setup: () => Promise<Contr
       );
       await repo.clear();
       expect(await repo.getOutputByRef!(ref)).toBeUndefined();
-      expect(repo.getOutputStreamByRef!(ref)).toBeUndefined();
+      expect(await repo.getOutputStreamByRef!(ref)).toBeUndefined();
     });
 
     it("a sibling instance over the same backing resolves the ref (cross-process)", async () => {
@@ -258,7 +258,7 @@ describe("FsFolderTaskOutputRepository specifics", () => {
     const repo = new FsFolderTaskOutputRepository(folder);
     const evil = makeCacheRef({ $ref: "fsfolder://blobs/../../etc/passwd.bin" });
     expect(await repo.getOutputByRef!(evil)).toBeUndefined();
-    expect(repo.getOutputStreamByRef!(evil)).toBeUndefined();
+    expect(await repo.getOutputStreamByRef!(evil)).toBeUndefined();
   });
 
   it("clearOlderThan prunes blob files alongside rows", async () => {
@@ -274,7 +274,7 @@ describe("FsFolderTaskOutputRepository specifics", () => {
     );
     // Negative age puts the cutoff in the future: everything is "older".
     await repo.clearOlderThan(-60_000);
-    expect(repo.getOutputStreamByRef!(ref)).toBeUndefined();
+    expect(await repo.getOutputStreamByRef!(ref)).toBeUndefined();
   });
 
   it("task types with colliding sanitized names get distinct blobs", async () => {
