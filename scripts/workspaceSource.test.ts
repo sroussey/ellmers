@@ -4,11 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { stubSpecsFor, type PackageManifest } from "./lib/sourceStubs";
 import { ROOT } from "./lib/testDiscovery";
+import { coverageIncludeGlobs, workspaceGroups } from "./lib/workspaceGroups";
 import type {
   UnresolvedWorkspaceContext,
   WorkspacePackage,
@@ -24,7 +26,6 @@ import {
   resolveWorkspaceSourceId,
   TEST_TARGETS,
   unresolvedWorkspaceMessage,
-  WORKSPACE_GROUPS,
   WORKSPACE_SOURCE_PLUGIN_NAME,
   workspaceSourcePlugin,
 } from "./lib/workspaceSource";
@@ -81,26 +82,156 @@ describe("workspace source resolution", () => {
   });
 
   /**
-   * The invariant that actually broke: the resolver covers all three workspace
-   * groups, but the coverage denominator listed only two, so `examples/*`
-   * source was rewritten to `src`, executed by its own tests, and then left out
-   * of the denominator entirely. All three example packages are published and
-   * none is `private`, so there is no "not really shipped" argument for the
-   * omission — and a missing group is invisible in a coverage report, which
-   * shows a smaller file list rather than an error.
+   * The workspace groups, and what the coverage denominator is built from.
    *
-   * Reads the ACTUAL config rather than re-deriving it, so the two cannot drift
-   * back apart.
+   * The invariant that actually broke: the resolver covered all three groups
+   * while the denominator listed two, so `examples/*` source was rewritten to
+   * `src`, executed by its own tests, and then left out of the report entirely
+   * — invisible, because a coverage report shows a shorter file list rather
+   * than an error. The same list was written out by hand in four places.
+   *
+   * The guard that used to sit here ("every group in `WORKSPACE_GROUPS` appears
+   * in `coverage.include`") is tautological now that both sides derive from the
+   * root manifest, and its stated goal — fail when a group is added to
+   * `package.json` and nowhere else — is no longer satisfiable in the literal
+   * sense: with derivation, nowhere else NEEDS the change. What is still worth
+   * guarding is that the derivation is real and reaches something: that nobody
+   * hardcodes the list back, that every declared group actually holds packages,
+   * and that the denominator is built from those same groups and not from a
+   * hand-edited glob.
    */
-  it("counts every workspace group in the coverage denominator", async () => {
-    const mod = (await import("../vitest.config.ts")) as {
-      default: { test?: { coverage?: { include?: string[] } } };
-    };
-    const include = mod.default.test?.coverage?.include ?? [];
-    const missing = WORKSPACE_GROUPS.filter(
-      (group) => !include.some((glob) => glob.startsWith(`${group}/`))
-    );
-    expect(missing).toEqual([]);
+  describe("workspace groups", () => {
+    it("derives the groups from the root workspaces field, not from a list", () => {
+      // Parsed independently HERE, so the test does not merely re-run the code
+      // it is checking. Hardcoding the array back into `workspaceGroups` — the
+      // exact regression this file exists to prevent — fails the moment a
+      // fourth group is declared, and reads as a deliberate contradiction now.
+      const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
+        workspaces: string[];
+      };
+      const expected = manifest.workspaces.map((pattern) =>
+        pattern.replace(/^\.\//, "").replace(/\/?\*.*$/, "")
+      );
+      expect(workspaceGroups(ROOT)).toEqual(expected);
+    });
+
+    it("finds at least one package in every declared workspace group", () => {
+      // Catches the other half: a pattern the reduction mishandles, or a
+      // directory renamed in the tree but not in the manifest, yields a group
+      // name that scans to nothing. Every walk downstream then silently covers
+      // one group fewer.
+      const empty = workspaceGroups(ROOT).filter(
+        (group) => !packages.some((pkg) => pkg.dir.startsWith(join(ROOT, group) + "/"))
+      );
+      expect(empty).toEqual([]);
+    });
+
+    it("builds the coverage denominator from those same groups", async () => {
+      // Compared EXACTLY, not by prefix: a hand-edited or hand-appended glob is
+      // precisely how the two drifted apart the first time, and a `startsWith`
+      // check passes over a narrowed one.
+      const mod = (await import("../vitest.config.ts")) as {
+        default: { test?: { coverage?: { include?: string[] } } };
+      };
+      expect(mod.default.test?.coverage?.include).toEqual(
+        coverageIncludeGlobs(workspaceGroups(ROOT))
+      );
+    });
+
+    /**
+     * The reduction's own contract, on a fixture rather than on this repo — the
+     * real manifest exercises exactly one pattern shape, so nothing here would
+     * otherwise pin what happens to the others.
+     */
+    it("reduces each declared pattern to one scannable directory", () => {
+      const root = mkdtempSync(join(tmpdir(), "workglow-groups-"));
+      try {
+        writeFileSync(
+          join(root, "package.json"),
+          JSON.stringify({ workspaces: ["./packages/*", "./integrations/*"] })
+        );
+        expect(workspaceGroups(root)).toEqual(["packages", "integrations"]);
+
+        // A recursive pattern names no single directory to read. Guessing its
+        // prefix would walk the wrong tree and report nothing missing, which is
+        // the same silent no-op the derivation exists to remove.
+        writeFileSync(join(root, "package.json"), JSON.stringify({ workspaces: ["./a/**/c"] }));
+        expect(() => workspaceGroups(root)).toThrow(/more than one directory depth/);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("distinguishes a malformed manifest from a non-package directory", () => {
+      // `listWorkspacePackages` swallowed every read failure alike. A directory
+      // with no `package.json` is the ordinary case and must stay silent; a
+      // manifest that fails to parse is a real fault, and dropping the package
+      // silently makes the source rewrite no-op for it — whose only symptom is
+      // that one package's coverage collapses back onto `dist/*`.
+      const root = mkdtempSync(join(tmpdir(), "workglow-manifest-"));
+      try {
+        writeFileSync(join(root, "package.json"), JSON.stringify({ workspaces: ["./packages/*"] }));
+
+        // Declared group that does not exist on disk: no packages, no error.
+        expect(listWorkspacePackages(root)).toEqual([]);
+
+        const brokenDir = join(root, "packages", "broken");
+        mkdirSync(brokenDir, { recursive: true });
+        writeFileSync(join(brokenDir, "package.json"), "{ not json");
+        expect(() => listWorkspacePackages(root)).toThrow(join(brokenDir, "package.json"));
+
+        // And a sibling with no manifest at all is still just "not a package".
+        rmSync(join(brokenDir, "package.json"));
+        expect(listWorkspacePackages(root)).toEqual([]);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  });
+
+  /**
+   * Which PACKAGES the denominator counts, as opposed to which groups it walks.
+   *
+   * `examples/web` declares `publishConfig.access: "none"`, `exports: {}`, and
+   * neither `main` nor `bin`: it is a Vite app, and none of its ~34 non-test
+   * modules is reachable as published API. Counting them moves the repo's
+   * headline number without saying anything about the libraries. (The comment
+   * that used to sit here claimed all three example packages were published,
+   * which was simply false.)
+   */
+  describe("coverage denominator membership", () => {
+    async function coverageExclude(): Promise<string[]> {
+      const mod = (await import("../vitest.config.ts")) as {
+        default: { test?: { coverage?: { exclude?: string[] } } };
+      };
+      return mod.default.test?.coverage?.exclude ?? [];
+    }
+
+    it("keeps packages that publish nothing out of the denominator", async () => {
+      const exclude = await coverageExclude();
+      expect(exclude).toContain("examples/web/src/**");
+
+      // Pinned to the PROPERTY that justifies the exclusion, re-read from the
+      // manifest, so the exception dies with its reason: publish `@workglow/web`
+      // for real and this test demands the exclusion be removed.
+      const manifest = JSON.parse(
+        readFileSync(join(ROOT, "examples/web/package.json"), "utf8")
+      ) as { publishConfig?: { access?: string } };
+      expect(manifest.publishConfig?.access).toBe("none");
+    });
+
+    it("counts every package that does publish", async () => {
+      // The gate is `access: "none"`, NOT `private`. `packages/test`,
+      // `providers/aws` and `providers/cloudflare` are `private: true`, and the
+      // last two carry real suites whose source has to stay counted — gating on
+      // `private` would silently drop them.
+      const exclude = await coverageExclude();
+      const wronglyExcluded = packages
+        .filter((pkg) => pkg.publishes)
+        .map((pkg) => `${pkg.dir.slice(ROOT.length + 1)}/src/**`)
+        .filter((glob) => exclude.includes(glob));
+      expect(wronglyExcluded).toEqual([]);
+    });
   });
 
   /**
@@ -275,6 +406,21 @@ describe("workspace source resolution", () => {
     it("attaches it to no project when the target is dist", async () => {
       const projects = await projectsForTarget("dist");
       expect(projects.filter(carriesPlugin)).toEqual([]);
+    });
+
+    it("attaches one plugin instance to every project", async () => {
+      // The only thing stopping the hoist being undone. Constructing the plugin
+      // inside the project `.map()` re-scanned every workspace manifest once
+      // per project — 12 projects x 41 manifests today, ~500 file reads at
+      // config load, for an answer that cannot differ between projects — and
+      // nothing about the result changes, so nothing else would catch it.
+      //
+      // Reference equality, not "same name": a per-project instance passes any
+      // name-based check.
+      const projects = await projectsForTarget("source");
+      const instances = new Set(projects.map((project) => project.plugins?.[0]));
+      expect(instances.size).toBe(1);
+      expect([...instances][0]).toBeDefined();
     });
 
     it("names the plugin the same thing the diagnostic does", () => {

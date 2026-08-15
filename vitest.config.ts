@@ -1,10 +1,15 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { configDefaults, defineConfig } from "vitest/config";
+import { configDefaults, coverageConfigDefaults, defineConfig } from "vitest/config";
 // Extension is required: Vite's native config loader cannot resolve an
 // extensionless relative import here.
 import { discoverTestFiles, listTestProjects } from "./scripts/lib/testDiscovery.ts";
-import { resolveTestTarget, workspaceSourcePlugin } from "./scripts/lib/workspaceSource.ts";
+import { coverageIncludeGlobs, workspaceGroups } from "./scripts/lib/workspaceGroups.ts";
+import {
+  listWorkspacePackages,
+  resolveTestTarget,
+  workspaceSourcePlugin,
+} from "./scripts/lib/workspaceSource.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const abs = (p: string): string => path.join(__dirname, p);
@@ -74,6 +79,22 @@ const testsRunAgainstSource = resolveTestTarget(process.env.WORKGLOW_TEST_TARGET
 const discovered = discoverTestFiles();
 
 /**
+ * The workspace scan and the plugin are BOTH hoisted out of the project map
+ * below, and shared by every project.
+ *
+ * The plugin is stateless — every decision lives in `resolveWorkspaceSourceId`,
+ * over a package list that cannot differ between projects — so one instance
+ * serves all of them. Constructing it inside the map re-read every workspace
+ * manifest once per project: 12 projects x 41 manifests today, so ~500 file
+ * reads before a single test ran, for an answer identical every time.
+ *
+ * The package list is also what the coverage `exclude` below subtracts
+ * non-publishing workspaces from, so it is read exactly once for both uses.
+ */
+const workspacePackages = listWorkspacePackages(__dirname);
+const sourcePlugin = workspaceSourcePlugin(__dirname, workspacePackages);
+
+/**
  * One project per workspace that actually holds tests, derived from the same
  * discovery the runner and the reachability guard use. Deriving rather than
  * enumerating is the point: a hand-written list drifts, and a test file under
@@ -95,7 +116,7 @@ const projects = listTestProjects(discovered).map((p) => {
   return {
     // Projects are standalone Vite configs, so a root-level `plugins` entry
     // would never reach them — the resolver has to be attached per project.
-    plugins: testsRunAgainstSource ? [workspaceSourcePlugin(__dirname)] : [],
+    plugins: testsRunAgainstSource ? [sourcePlugin] : [],
     test: { ...shared, name: p.name, root, exclude: [...shared.exclude, ...bunOnly] },
   };
 });
@@ -123,18 +144,26 @@ export default defineConfig({
        * report exists to surface — and its file list changes with whichever
        * section CI happened to run.
        *
-       * All THREE workspace groups, matching `WORKSPACE_GROUPS`: `examples/*`
-       * holds published, non-private packages with tests of their own, so
-       * omitting it drops real source from the denominator while still counting
-       * the tests that cover it.
+       * EVERY workspace group, derived from the root manifest's `workspaces`
+       * field — the same derivation the source-resolving plugin and the test
+       * discovery walk use. A group the resolver rewrites to `src` but the
+       * denominator omits has its source executed by its own tests and then
+       * left out of the report, which shows up as a shorter file list rather
+       * than an error. Individual packages are subtracted below, by name, so
+       * every exception carries its own reason instead of being hidden in a
+       * shortened glob.
        */
-      include: [
-        "packages/*/src/**/*.{ts,tsx}",
-        "providers/*/src/**/*.{ts,tsx}",
-        "examples/*/src/**/*.{ts,tsx}",
-      ],
+      include: coverageIncludeGlobs(workspaceGroups(__dirname)),
       exclude: [
-        ...configDefaults.exclude,
+        // `coverageConfigDefaults`, not `configDefaults`: the latter is
+        // vitest's TEST-FILE exclude list, spliced in here for a question it
+        // does not answer. It is empty in vitest 4 — which is precisely why the
+        // two must not be confused, since `configDefaults.exclude` is NOT, and
+        // the difference between them was silently supplying the two entries
+        // restated on the next line.
+        ...coverageConfigDefaults.exclude,
+        "**/node_modules/**",
+        "**/.git/**",
         // Built output is never the unit of measure. Nothing should resolve
         // here now that specifiers land on `src`, but a `use-source` stub or a
         // stale bundle left in a working tree would otherwise be reported as a
@@ -146,12 +175,38 @@ export default defineConfig({
         // odd non-`.test.` helper (`chromeAvailability.ts`) that the filename
         // rules below cannot catch.
         "examples/*/src/test/**",
-        // Tests, fixtures and testing-only helpers: counting them inflates
-        // every package by the coverage of code that exists to be run.
+        /**
+         * Workspaces that publish nothing (`publishConfig.access: "none"`).
+         * Today that is only `examples/web`, a Vite app whose ~34 non-test
+         * modules are UI wiring behind no published entry point: it exports
+         * nothing, has no `main` and no `bin`, so none of that source is API
+         * anyone can consume, and counting it moves the repo's headline number
+         * without saying anything about the libraries.
+         *
+         * The gate is `access: "none"`, deliberately NOT `private`.
+         * `packages/test`, `providers/aws` and `providers/cloudflare` are all
+         * `private: true` and aws/cloudflare carry real suites whose source has
+         * to stay counted.
+         *
+         * Subtracted by package path rather than by shortening the `include`
+         * globs above, so the group list stays derived and this exception
+         * carries its own reason.
+         */
+        ...workspacePackages
+          .filter((pkg) => !pkg.publishes)
+          .map((pkg) => `${path.relative(__dirname, pkg.dir)}/src/**`),
+        // Tests, fixtures and typing-only files: counting them inflates every
+        // package by the coverage of code that exists to be run.
+        //
+        // `**/testing/**` is deliberately NOT here. Those directories are
+        // published API — `@workglow/task-graph/test` and `@workglow/util/test`
+        // ship the repository contracts, the shared fake tasks and the testing
+        // logger that other packages' suites import by specifier — so excluding
+        // them dropped 11 real source files from the denominator. The one test
+        // file among them is removed by `**/__tests__/**` below.
         "**/__tests__/**",
         "**/*.test.*",
         "**/*.test-d.ts",
-        "**/testing/**",
         "**/*.d.ts",
         "**/bench/**",
       ],

@@ -13,14 +13,25 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+// Extension required: this module is in `vitest.config.ts`'s graph, which Vite's
+// native config loader resolves without extension inference.
+import { workspaceGroups } from "./workspaceGroups.ts";
 
 // `import.meta.dir` and `Bun.Glob` are Bun-only; this module is also imported by
 // a vitest (Node) test, so everything here stays on portable node: APIs.
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 /** The legacy monolithic test package: sections come from its subdirectories. */
 export const TEST_BASE = join(ROOT, "packages/test/src/test");
-/** Workspace groups that may hold in-package tests (sectioned by package name). */
-export const PACKAGE_GROUPS = ["packages", "providers", "examples"] as const;
+/**
+ * Workspace groups that may hold in-package tests (sectioned by package name).
+ *
+ * Derived from the root manifest rather than listed: this is the same concept
+ * as the resolver's and the coverage denominator's — "a top-level directory
+ * holding workspace packages" — and a group declared in `package.json` but
+ * missing from a hand-written copy here does not error, it just makes every
+ * test under it invisible to the runner.
+ */
+export const PACKAGE_GROUPS: readonly string[] = workspaceGroups(ROOT);
 /** Non-package directories that also hold tests (e.g. tests for the tooling itself). */
 export const EXTRA_TEST_DIRS = ["scripts"] as const;
 
@@ -237,7 +248,7 @@ export function projectDirOf(filePath: string): string | undefined {
   const rel = filePath.startsWith(ROOT + "/") ? filePath.slice(ROOT.length + 1) : filePath;
   const parts = rel.split("/");
   if ((EXTRA_TEST_DIRS as readonly string[]).includes(parts[0])) return parts[0];
-  if ((PACKAGE_GROUPS as readonly string[]).includes(parts[0]) && parts.length > 1) {
+  if (PACKAGE_GROUPS.includes(parts[0]) && parts.length > 1) {
     return `${parts[0]}/${parts[1]}`;
   }
   return undefined;
