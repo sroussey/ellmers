@@ -886,9 +886,14 @@ describe("queued fetch stream adapter", () => {
     expect(seen.at(-1)?.type).toBe("finish");
   });
 
-  // The stream's own terminal marker is what says the body is whole. Once it
-  // has been seen the loop is done, so a stray event delivered afterwards can
-  // never be appended to a body that was already complete.
+  // The stream's own terminal marker is what says the body is whole, and what
+  // this pins is that the loop ends THERE rather than on settlement plus a
+  // grace turn: the stray is scheduled on a timer, so a grace-turn ending
+  // drains it and an ending on the marker never sees it.
+  //
+  // Not pinned: that nothing can follow the marker. A stray delivered
+  // synchronously after it lands in `pending` before the loop resumes, and the
+  // inner drain still yields it.
   test("ends on the stream's terminal marker rather than an idle turn", async () => {
     const queueName = "queued-stream-terminal-marker";
     const stub = makeStubHandle();
