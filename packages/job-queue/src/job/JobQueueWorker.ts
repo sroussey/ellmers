@@ -234,6 +234,13 @@ export class JobQueueWorker<
   private readonly streamPublishChains: Map<unknown, Promise<void>> = new Map();
 
   /**
+   * Per-job lease-renewal timers armed by {@link armStreamClaimHeartbeat}.
+   * Cleared when the job's `executeJob` returns and again in
+   * {@link cleanupJob}, so a late fire-and-forget emit cannot leave one behind.
+   */
+  private readonly streamClaimHeartbeats: Map<unknown, ReturnType<typeof setInterval>> = new Map();
+
+  /**
    * Recent per-job processing durations (ms) used for
    * {@link getAverageProcessingTime}. Bounded to the most recent
    * {@link JobQueueWorker.maxProcessingTimeSamples} entries so a long-lived worker doesn't
@@ -834,6 +841,7 @@ export class JobQueueWorker<
         if (leaseInterval !== undefined) {
           clearInterval(leaseInterval);
         }
+        this.clearStreamClaimHeartbeat(job.id);
       }
       await this.completeJob(job, output);
 
@@ -960,8 +968,14 @@ export class JobQueueWorker<
    * Neither half can reject the returned promise — a forwarding failure or a
    * publish failure is logged and swallowed — so a slow or misbehaving
    * consumer paces the producing job without ever failing it.
+   *
+   * Emitting is also what makes this job's remaining runtime consumer-paced,
+   * so it is where the claim starts being renewed — see
+   * {@link armStreamClaimHeartbeat}.
    */
   protected emitStreamEvent(jobId: unknown, event: StreamEventLike): Promise<void> {
+    this.armStreamClaimHeartbeat(jobId);
+
     // In-memory fan-out for worker-level observers (mirrored again at the
     // server level) — fire-and-forget, unrelated to the awaitable dispatch
     // below.
@@ -1010,6 +1024,59 @@ export class JobQueueWorker<
 
     if (dispatches.length === 0) return Promise.resolve();
     return Promise.all(dispatches).then(() => undefined);
+  }
+
+  /**
+   * Start renewing this job's claim, once, on its first stream event.
+   *
+   * {@link emitStreamEvent} resolves only after every `onStream` listener has
+   * taken the event, and a graph consumer's listener resolves only when the
+   * consumer pulls — so a slow sink parks the job mid-body for as long as it
+   * likes. Nothing else renews the claim while it is parked: `updateProgress`
+   * deliberately never touches storage, and the only remaining writes are the
+   * terminal ones. A storage that reclaims PROCESSING rows with an expired
+   * lease (`InMemoryQueueStorage.next` and every durable backend that follows
+   * the same `IQueueStorage.next` contract) then hands the job to the
+   * next `next()` caller — this worker's own poll loop included — and the
+   * re-execution replays the whole body onto the subscription still parked on
+   * the first one, concatenating two copies of the payload. That is the
+   * corruption the stream retry ban exists to prevent, arriving by a path the
+   * ban does not cover; the reclaim also burns an attempt each time, so a
+   * parked job can exhaust `maxAttempts` while its first execution is still
+   * running.
+   *
+   * Renewal starts at the first event rather than for every job because that
+   * emit is the moment the job's remaining runtime stops being bounded by its
+   * own work. `extendLeaseWhileRunning` already renews for the whole
+   * execution, so it is left to do the job when enabled.
+   */
+  private armStreamClaimHeartbeat(jobId: unknown): void {
+    if (this.extendLeaseWhileRunning) return;
+    if (this.streamClaimHeartbeats.has(jobId)) return;
+    // No claim means no lease to hold: the emit is arriving outside the
+    // claimed window (a fire-and-forget event landing after the terminal
+    // write) and a timer here would have nothing to clear it.
+    if (!this.activeClaims.has(jobId)) return;
+    const period = Math.max(1, Math.floor(this.leaseMs * 0.5));
+    const timer = setInterval(() => {
+      const claim = this.activeClaims.get(jobId);
+      if (!claim) return;
+      claim.extendLease(this.leaseMs).catch((err) => {
+        getLogger().error("extendLease failed while a stream event was in flight:", {
+          error: err,
+          jobId,
+        });
+      });
+    }, period);
+    this.streamClaimHeartbeats.set(jobId, timer);
+  }
+
+  /** Stop renewing a job's claim. Idempotent. */
+  private clearStreamClaimHeartbeat(jobId: unknown): void {
+    const timer = this.streamClaimHeartbeats.get(jobId);
+    if (timer === undefined) return;
+    clearInterval(timer);
+    this.streamClaimHeartbeats.delete(jobId);
   }
 
   /** Internal — resolve the active claim for a job id, throw if missing. */
@@ -1296,6 +1363,7 @@ export class JobQueueWorker<
     this.activeJobAbortControllers.delete(jobId);
     this.activeClaims.delete(jobId);
     this.streamPublishChains.delete(jobId);
+    this.clearStreamClaimHeartbeat(jobId);
   }
 
   /**

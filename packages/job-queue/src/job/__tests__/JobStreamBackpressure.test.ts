@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { uuid4 } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 import { InMemoryQueueStorage } from "../../queue-storage/InMemoryQueueStorage";
 import { wrapQueueStorage } from "../../queue-storage/wrapQueueStorage";
@@ -11,6 +12,7 @@ import type { IJobExecuteContext } from "../Job";
 import { Job } from "../Job";
 import { JobQueueClient } from "../JobQueueClient";
 import { JobQueueServer } from "../JobQueueServer";
+import { JobQueueWorker } from "../JobQueueWorker";
 
 interface EmitInput {
   readonly count: number;
@@ -153,6 +155,75 @@ describe("emitStreamEvent is awaitable", () => {
       expect(goodReceived.filter((t) => t === "binary-delta").length).toBe(3);
     } finally {
       await server.stop();
+    }
+  });
+});
+
+/** Parks forever on its first stream event, until the test releases it. */
+class ParkingStreamJob extends Job<EmitInput, { emitted: number }> {
+  static readonly type = "ParkingStreamJob";
+  public static executions = 0;
+  override async execute(
+    _input: EmitInput,
+    context: IJobExecuteContext
+  ): Promise<{ emitted: number }> {
+    ParkingStreamJob.executions++;
+    await context.emitStreamEvent?.({ type: "text-delta", port: "p", textDelta: "x" });
+    await context.emitStreamEvent?.({ type: "finish", data: {} });
+    return { emitted: 1 };
+  }
+}
+
+describe("a parked stream dispatch holds the job's claim", () => {
+  it("is not reclaimed and re-executed while a consumer keeps it parked", async () => {
+    // Backpressure makes a job's remaining runtime consumer-paced, so a slow
+    // sink parks it mid-body for an unbounded time. Nothing else writes to
+    // storage in between (updateProgress is in-memory only, the rest are
+    // terminal), so without a claim heartbeat the lease expires, `next()`
+    // reclaims the PROCESSING row — this worker's OWN poll loop is enough, no
+    // second process required — and the re-execution replays the body onto the
+    // subscription still parked on the first one. Measured before the fix:
+    // 7 executions and 6 charged attempts in 400ms on a 60ms lease.
+    ParkingStreamJob.executions = 0;
+    const queueName = `park-lease-${uuid4()}`;
+    const storage = new InMemoryQueueStorage<EmitInput, { emitted: number }>(queueName);
+    await storage.migrate();
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
+
+    const { promise: released, resolve: release } = Promise.withResolvers<void>();
+    const { promise: parked, resolve: markParked } = Promise.withResolvers<void>();
+
+    // Built directly rather than through a server: the lease length is a
+    // worker option, and the park is driven by the same `onStreamEvent` hook a
+    // server injects to reach its attached clients.
+    const worker = new JobQueueWorker<EmitInput, { emitted: number }>(ParkingStreamJob as any, {
+      messageQueue,
+      jobStore,
+      queueName,
+      pollIntervalMs: 1,
+      leaseMs: 60,
+      stopTimeoutMs: 0,
+      onStreamEvent: async (_jobId, event) => {
+        if (event.type !== "text-delta") return;
+        markParked();
+        await released;
+      },
+    });
+
+    await messageQueue.send({ queue: queueName, input: { count: 1 }, status: "NEW" } as any);
+    await worker.start();
+    try {
+      await parked;
+      // Several lease periods' worth of parking.
+      await new Promise((r) => setTimeout(r, 400));
+
+      expect(ParkingStreamJob.executions).toBe(1);
+      const row = (storage as unknown as { jobQueue: Array<Record<string, unknown>> }).jobQueue[0];
+      // A reclaim charges an attempt each time it happens.
+      expect(row.attempts ?? 0).toBe(0);
+    } finally {
+      release();
+      await worker.stop();
     }
   });
 });
