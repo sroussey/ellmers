@@ -30,6 +30,7 @@ export const FetchUrlErrorCode = {
   NETWORK_ERROR: "FETCH_NETWORK_ERROR",
   NO_RESPONSE_BODY: "FETCH_NO_RESPONSE_BODY",
   CONFIGURATION: "FETCH_CONFIGURATION",
+  CONTENT_LENGTH_MISMATCH: "FETCH_CONTENT_LENGTH_MISMATCH",
 } as const;
 
 export type FetchUrlErrorCodeValue = (typeof FetchUrlErrorCode)[keyof typeof FetchUrlErrorCode];

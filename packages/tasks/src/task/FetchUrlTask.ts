@@ -9,6 +9,7 @@ import { AbortSignalJobError, Job } from "@workglow/job-queue";
 import type {
   IExecuteContext,
   RegisteredQueue,
+  StreamEvent,
   TaskConfig,
   TaskEntitlements,
 } from "@workglow/task-graph";
@@ -144,30 +145,58 @@ export type FetchUrlResponseType = "stream" | "text" | "json" | "blob" | "arrayb
 export type FetchUrlTaskInput = FromSchema<typeof inputSchema>;
 export type FetchUrlTaskOutput = FromSchema<typeof outputSchema>;
 
-async function fetchWithProgress(
-  url: string,
-  options: RequestInit & {
-    allowPrivate?: boolean;
-    privateResourceScopes?: readonly string[];
-  } = {},
-  onProgress?: (progress: number) => Promise<void>
-): Promise<Response> {
-  if (!options.signal) {
+/**
+ * Strict `Content-Length` parse, fail-closed. `parseInt` accepts trailing
+ * garbage ("123abc" -> 123), which would let a malformed header defeat the
+ * truncation check this feeds. RFC 9112 §6.3 permits repeated headers to be
+ * combined as "v1, v2": equal duplicates are valid, mismatched values are a
+ * protocol error. Returns `undefined` when the header is absent (chunked
+ * transfer), which skips the size assertion.
+ */
+export function parseContentLength(header: string | null, url: string): number | undefined {
+  if (header === null) return undefined;
+  const parts = header.split(",").map((p) => p.trim());
+  if (parts.length === 0 || parts.some((p) => !/^\d+$/.test(p))) {
     throw createFetchUrlJobError(
-      FetchUrlErrorCode.CONFIGURATION,
-      "An AbortSignal must be provided."
+      FetchUrlErrorCode.CONTENT_LENGTH_MISMATCH,
+      `Invalid Content-Length header ${JSON.stringify(header)} for ${url}`,
+      { url }
     );
   }
-
-  let response: Response;
-  try {
-    response = await safeFetch(url, options);
-  } catch (err) {
-    if (isFetchUrlJobError(err) || err instanceof AbortSignalJobError) {
-      throw err;
-    }
-    throw wrapFetchUrlNetworkError(url, err);
+  if (new Set(parts).size > 1) {
+    throw createFetchUrlJobError(
+      FetchUrlErrorCode.CONTENT_LENGTH_MISMATCH,
+      `Conflicting Content-Length values ${JSON.stringify(header)} for ${url}`,
+      { url }
+    );
   }
+  const parsed = Number(parts[0]);
+  if (parsed > Number.MAX_SAFE_INTEGER) {
+    throw createFetchUrlJobError(
+      FetchUrlErrorCode.CONTENT_LENGTH_MISMATCH,
+      `Content-Length ${parts[0]} exceeds MAX_SAFE_INTEGER for ${url}`,
+      { url }
+    );
+  }
+  return parsed;
+}
+
+/**
+ * Issues the request and yields the body in arrival order, reporting progress
+ * against `Content-Length` when the origin states one, and asserting the
+ * advertised size at end of stream.
+ *
+ * There is no wrapper stream: the previous implementation rebuilt a second
+ * ReadableStream (and a second Response around it) solely so a byte counter
+ * could sit between the socket and `.text()`. The caller owns the loop now, so
+ * the count happens here.
+ */
+async function* streamResponseBody(
+  response: Response,
+  url: string,
+  signal: AbortSignal,
+  onProgress: (progress: number) => Promise<void>
+): AsyncGenerator<Uint8Array> {
   if (!response.body) {
     throw createFetchUrlJobError(
       FetchUrlErrorCode.NO_RESPONSE_BODY,
@@ -175,53 +204,95 @@ async function fetchWithProgress(
       { url }
     );
   }
-
-  const contentLength = response.headers.get("Content-Length");
-  const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+  const totalBytes = parseContentLength(response.headers.get("content-length"), url);
   let receivedBytes = 0;
   const reader = response.body.getReader();
+  try {
+    while (true) {
+      if (signal.aborted) throw createFetchUrlAbortedError();
+      const { done, value } = await reader.read();
+      if (done) break;
+      receivedBytes += value.byteLength;
+      yield value;
+      if (totalBytes) await onProgress((receivedBytes / totalBytes) * 100);
+    }
+  } finally {
+    // Cancelling an already-errored source rejects; the consumer has the
+    // failure either way, so an unhandled rejection here would only crash
+    // the process.
+    void reader.cancel().catch(() => {});
+  }
+  if (totalBytes !== undefined && receivedBytes !== totalBytes) {
+    throw createFetchUrlJobError(
+      FetchUrlErrorCode.CONTENT_LENGTH_MISMATCH,
+      `Content-Length mismatch for ${url}: advertised ${totalBytes} bytes, received ${receivedBytes}`,
+      { url }
+    );
+  }
+}
 
-  const stream = new ReadableStream({
-    start(controller) {
-      async function push() {
-        try {
-          while (true) {
-            if (options.signal?.aborted) {
-              controller.error(createFetchUrlAbortedError());
-              // Cancelling rejects when the source stream is already errored;
-              // the consumer sees the abort through `controller.error` above,
-              // so an unhandled rejection here would only crash the process.
-              void reader.cancel().catch(() => {});
-              return;
-            }
+interface FetchUrlMetadata {
+  readonly contentType: string;
+  readonly headers: Record<string, string>;
+  readonly status: number;
+  readonly notModified: boolean;
+}
 
-            const { done, value } = await reader.read();
-            if (done) {
-              controller.close();
-              break;
-            }
-            controller.enqueue(value);
-            receivedBytes += value.length;
-            if (onProgress && totalBytes) {
-              await onProgress((receivedBytes / totalBytes) * 100);
-            }
-          }
-        } catch (error) {
-          controller.error(error);
-        }
-      }
-      push();
-    },
-    cancel() {
-      void reader.cancel().catch(() => {});
-    },
+function buildMetadata(response: Response): FetchUrlMetadata {
+  const headers: Record<string, string> = {};
+  response.headers.forEach((value, key) => {
+    headers[key] = value;
   });
-
-  return new Response(stream, {
-    headers: response.headers,
+  return {
+    contentType: response.headers.get("content-type") ?? "",
+    headers,
     status: response.status,
-    statusText: response.statusText,
-  });
+    notModified: response.status === 304,
+  };
+}
+
+function buildHttpError(url: string, response: Response): Error {
+  let retryDate: Date | undefined;
+  if (response.status === 429 || response.status === 503 || response.headers.get("Retry-After")) {
+    const retryAfterStr = response.headers.get("Retry-After");
+    if (retryAfterStr) {
+      const seconds = Number(retryAfterStr);
+      if (Number.isFinite(seconds) && seconds > 0) {
+        retryDate = new Date(Date.now() + seconds * 1000);
+      } else {
+        const parsedDate = new Date(retryAfterStr);
+        if (!isNaN(parsedDate.getTime()) && parsedDate > new Date()) retryDate = parsedDate;
+      }
+    }
+  }
+  return createFetchUrlHttpError(url, response.status, response.statusText, retryDate);
+}
+
+/**
+ * Builds the derived port `response_type` named from the collected bytes.
+ * `Response.text()` is an unconditional UTF-8 decode per the Fetch standard —
+ * it ignores the Content-Type charset — so decoding here is byte-identical to
+ * what the previous `.text()` / `.json()` calls produced.
+ */
+function materializeDerivedPort(
+  responseType: string | undefined,
+  chunks: readonly Uint8Array[],
+  metadata: FetchUrlMetadata
+): Record<string, unknown> {
+  if (responseType === "stream" || responseType === undefined) return {};
+  let total = 0;
+  for (const c of chunks) total += c.byteLength;
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    merged.set(c, offset);
+    offset += c.byteLength;
+  }
+  if (responseType === "blob") return { blob: new Blob([merged], { type: metadata.contentType }) };
+  if (responseType === "arraybuffer") return { arraybuffer: merged.buffer };
+  const text = new TextDecoder("utf-8").decode(merged);
+  if (responseType === "text") return { text };
+  return { json: JSON.parse(text) };
 }
 
 export class FetchUrlJob<
@@ -229,7 +300,8 @@ export class FetchUrlJob<
   Output = FetchUrlTaskOutput,
 > extends Job<Input, Output> {
   static readonly type: string = "FetchUrlJob";
-  override async execute(input: Input, context: IJobExecuteContext): Promise<Output> {
+
+  protected async issueRequest(input: Input, context: IJobExecuteContext): Promise<Response> {
     const classification = classifyUrl(input.url!);
     if (classification.kind === "invalid") {
       throw createFetchUrlJobError(
@@ -254,111 +326,86 @@ export class FetchUrlJob<
     // private hosts/ports via Location headers. Least-privilege: the task
     // can only reach the private origin it was specifically authorized for.
     const isPrivate = classification.kind === "private";
-    let response: Response;
     try {
-      response = await fetchWithProgress(
-        input.url!,
-        {
-          method: input.method,
-          headers: input.headers,
-          body: input.body,
-          signal: context.signal,
-          allowPrivate: isPrivate,
-          privateResourceScopes: isPrivate ? [urlResourcePattern(input.url!)] : undefined,
-        },
-        async (progress: number) => await context.updateProgress(progress)
-      );
+      return await safeFetch(input.url!, {
+        method: input.method,
+        headers: input.headers,
+        body: input.body,
+        signal: context.signal,
+        allowPrivate: isPrivate,
+        privateResourceScopes: isPrivate ? [urlResourcePattern(input.url!)] : undefined,
+      });
     } catch (err) {
-      if (isFetchUrlJobError(err) || err instanceof AbortSignalJobError) {
-        throw err;
-      }
+      if (isFetchUrlJobError(err) || err instanceof AbortSignalJobError) throw err;
       throw wrapFetchUrlNetworkError(input.url!, err);
     }
+  }
 
-    if (response.ok) {
-      const contentType = response.headers.get("content-type") ?? "";
-      const responseHeaders: Record<string, string> = {};
-      response.headers.forEach((value, key) => {
-        responseHeaders[key] = value;
-      });
+  /**
+   * Streams the response body as `binary-delta` on the `body` port, then a
+   * `finish` carrying `metadata` plus whichever derived port `response_type`
+   * named. The status is known before the first byte, so a non-2xx throws
+   * before any delta is emitted and no downstream consumer is ever dispatched
+   * on a doomed fetch.
+   */
+  async *executeStream(
+    input: Input,
+    context: IJobExecuteContext
+  ): AsyncIterable<StreamEvent<Output>> {
+    const response = await this.issueRequest(input, context);
+    const metadata = buildMetadata(response);
 
-      const metadata = {
-        contentType,
-        headers: responseHeaders,
-      };
-
-      let resolvedResponseType = input.response_type;
-      if (!resolvedResponseType) {
-        if (contentType.includes("application/json")) {
-          resolvedResponseType = "json";
-        } else if (contentType.includes("text/")) {
-          resolvedResponseType = "text";
-        } else if (contentType.includes("application/octet-stream")) {
-          resolvedResponseType = "arraybuffer";
-        } else if (
-          contentType.includes("application/pdf") ||
-          contentType.includes("image/") ||
-          contentType.includes("application/zip")
-        ) {
-          resolvedResponseType = "blob";
-        } else {
-          resolvedResponseType = "json";
-        }
-      }
-      try {
-        if (resolvedResponseType === "json") {
-          return { json: await response.json(), metadata } as Output;
-        } else if (resolvedResponseType === "text") {
-          return { text: await response.text(), metadata } as Output;
-        } else if (resolvedResponseType === "blob") {
-          return { blob: await response.blob(), metadata } as Output;
-        } else if (resolvedResponseType === "arraybuffer") {
-          return { arraybuffer: await response.arrayBuffer(), metadata } as Output;
-        }
-        throw createFetchUrlJobError(
-          FetchUrlErrorCode.INVALID_RESPONSE_TYPE,
-          `Invalid response type: ${resolvedResponseType}`,
-          { url: input.url }
-        );
-      } catch (err) {
-        if (isFetchUrlJobError(err) || err instanceof AbortSignalJobError) {
-          throw err;
-        }
-        // A 200 whose body is still on the wire can throw here when the peer
-        // resets the socket. That is a network failure, not a decode failure.
-        if (isFetchUrlNetworkCause(err)) {
-          throw wrapFetchUrlNetworkError(input.url!, err);
-        }
-        const detail = err instanceof Error ? err.message : String(err);
-        throw createFetchUrlJobError(
-          FetchUrlErrorCode.RESPONSE_PARSE_ERROR,
-          `Failed to parse ${resolvedResponseType} response from ${input.url}: ${detail}`,
-          { url: input.url }
-        );
-      }
-    } else {
-      let retryDate: Date | undefined;
-      if (
-        response.status === 429 ||
-        response.status === 503 ||
-        response.headers.get("Retry-After")
-      ) {
-        const retryAfterStr = response.headers.get("Retry-After");
-        if (retryAfterStr) {
-          const seconds = Number(retryAfterStr);
-          if (Number.isFinite(seconds) && seconds > 0) {
-            retryDate = new Date(Date.now() + seconds * 1000);
-          } else {
-            const parsedDate = new Date(retryAfterStr);
-            if (!isNaN(parsedDate.getTime()) && parsedDate > new Date()) {
-              retryDate = parsedDate;
-            }
-          }
-        }
-      }
-
-      throw createFetchUrlHttpError(input.url!, response.status, response.statusText, retryDate);
+    if (!response.ok) {
+      throw buildHttpError(input.url!, response);
     }
+
+    const chunks: Uint8Array[] = [];
+    const wantsValue = input.response_type !== "stream";
+    try {
+      for await (const chunk of streamResponseBody(
+        response,
+        input.url!,
+        context.signal,
+        async (p) => await context.updateProgress(p)
+      )) {
+        if (wantsValue) chunks.push(chunk);
+        const emitted = context.emitStreamEvent?.({
+          type: "binary-delta",
+          port: "body",
+          binaryDelta: chunk,
+        });
+        if (emitted) await emitted;
+        yield { type: "binary-delta", port: "body", binaryDelta: chunk } as StreamEvent<Output>;
+      }
+    } catch (err) {
+      if (isFetchUrlJobError(err) || err instanceof AbortSignalJobError) throw err;
+      // A 200 whose body is still on the wire can throw here when the peer
+      // resets the socket. That is a network failure, not a decode failure.
+      if (isFetchUrlNetworkCause(err)) throw wrapFetchUrlNetworkError(input.url!, err);
+      throw err;
+    }
+
+    let data: Record<string, unknown>;
+    try {
+      data = { ...materializeDerivedPort(input.response_type, chunks, metadata), metadata };
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw createFetchUrlJobError(
+        FetchUrlErrorCode.RESPONSE_PARSE_ERROR,
+        `Failed to parse ${input.response_type} response from ${input.url}: ${detail}`,
+        { url: input.url }
+      );
+    }
+
+    yield { type: "finish", data } as StreamEvent<Output>;
+  }
+
+  override async execute(input: Input, context: IJobExecuteContext): Promise<Output> {
+    let out: Record<string, unknown> = {};
+    for await (const event of this.executeStream(input, context)) {
+      if (event.type === "finish") out = event.data as Record<string, unknown>;
+    }
+    return out as Output;
   }
 }
 
@@ -509,23 +556,7 @@ export class FetchUrlTask<
       );
     }
 
-    // Strip the credential ports unconditionally — after input resolution
-    // credential_key holds the secret itself, not the reference id, so it must
-    // never survive as a data port. The scheme decides where (or whether) the
-    // secret is placed; the job only ever sees the resulting headers.
-    const {
-      credential_key: _omitCredential,
-      credential_scheme: _omitScheme,
-      credential_header: _omitHeader,
-      ...rest
-    } = input;
-    const headers = applyCredentialToHeaders({
-      headers: input.headers,
-      credential,
-      scheme: input.credential_scheme,
-      headerName: input.credential_header,
-    });
-    const jobInput: FetchUrlTaskInput = headers ? { ...rest, headers } : rest;
+    const jobInput = this.prepareJobInput(input);
 
     let cleanup: () => void = () => {};
 
@@ -591,6 +622,56 @@ export class FetchUrlTask<
     } finally {
       cleanup();
     }
+  }
+
+  override async *executeStream(
+    input: FetchUrlTaskInput,
+    executeContext: IExecuteContext
+  ): AsyncIterable<StreamEvent<Output>> {
+    const credential = input.credential_key;
+    const queuePref = this.config.queue ?? false;
+
+    // Mirrors execute()'s refusal: queued job payloads are persisted to
+    // durable storage, so a credential can never be handed to the queued
+    // path. The queued path itself is not yet wired into executeStream (that
+    // lands with queued-source support), but this still has to fail closed
+    // rather than let a credentialed request run inline as if queuing had
+    // been honored.
+    if (credential && queuePref !== false) {
+      throw new TaskConfigurationError(
+        "FetchUrlTask: credential_key cannot be combined with the queued path (config.queue), " +
+          "because queued job payloads are persisted to durable storage. Remove config.queue to " +
+          "run inline, or have the queue worker supply the credential itself."
+      );
+    }
+
+    const jobInput = this.prepareJobInput(input);
+    const job = new FetchUrlJob<FetchUrlTaskInput, Output>({ input: jobInput });
+    try {
+      yield* job.executeStream(jobInput, {
+        signal: executeContext.signal,
+        updateProgress: executeContext.updateProgress.bind(executeContext),
+      }) as AsyncIterable<StreamEvent<Output>>;
+    } catch (err: any) {
+      throw new JobTaskFailedError(err);
+    }
+  }
+
+  private prepareJobInput(input: FetchUrlTaskInput): FetchUrlTaskInput {
+    const credential = input.credential_key;
+    const {
+      credential_key: _omitCredential,
+      credential_scheme: _omitScheme,
+      credential_header: _omitHeader,
+      ...rest
+    } = input;
+    const headers = applyCredentialToHeaders({
+      headers: input.headers,
+      credential,
+      scheme: input.credential_scheme,
+      headerName: input.credential_header,
+    });
+    return headers ? { ...rest, headers } : rest;
   }
 
   private async resolveOrCreateQueue(queueName: string): Promise<RegisteredQueue<Input, Output>> {

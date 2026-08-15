@@ -123,7 +123,7 @@ describe("FetchUrlTask", () => {
       "https://api.example.com/3",
     ];
 
-    const results = await Promise.all(urls.map((url) => fetchUrl({ url })));
+    const results = await Promise.all(urls.map((url) => fetchUrl({ url, response_type: "json" })));
     expect(mockFetch.mock.calls.length).toBe(3);
     expect(results).toHaveLength(3);
     const sorted = results
@@ -248,6 +248,7 @@ describe("FetchUrlTask", () => {
 
     const fetchPromise = fetchUrl({
       url: "https://api.example.com/invalid-json",
+      response_type: "json",
     });
 
     const error = await fetchPromise.catch((e: unknown) => e);
@@ -329,7 +330,9 @@ describe("FetchUrlTask", () => {
       "https://api.example.com/not-found",
     ];
 
-    const results = await Promise.allSettled(urls.map((url) => fetchUrl({ url })));
+    const results = await Promise.allSettled(
+      urls.map((url) => fetchUrl({ url, response_type: "json" }))
+    );
 
     expect(mockFetch.mock.calls.length).toBe(3);
     expect(results[0].status).toBe("fulfilled");
@@ -634,9 +637,85 @@ describe("FetchUrlTask", () => {
     });
   });
 
+  describe("streaming body", () => {
+    test("stream response type yields body bytes and no derived port", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(new Blob([new Uint8Array([1, 2, 3, 4])]), {
+            status: 200,
+            headers: { "content-type": "application/octet-stream", "content-length": "4" },
+          })
+        )
+      );
+      const result = await fetchUrl({ url: "https://example.com/f.bin", response_type: "stream" });
+      expect(result.text).toBeUndefined();
+      expect(result.json).toBeUndefined();
+      expect(result.metadata?.status).toBe(200);
+    });
+
+    test("text is byte-identical to a UTF-8 decode of the body", async () => {
+      const body = "héllo wörld";
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(body, {
+            status: 200,
+            headers: { "content-type": "text/plain; charset=utf-8" },
+          })
+        )
+      );
+      const result = await fetchUrl({ url: "https://example.com/t.txt", response_type: "text" });
+      expect(result.text).toBe(body);
+    });
+
+    test("a Content-Length mismatch throws", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(new Blob([new Uint8Array([1, 2])]), {
+            status: 200,
+            headers: { "content-length": "9" },
+          })
+        )
+      );
+      const error = await fetchUrl({
+        url: "https://example.com/short.bin",
+        response_type: "stream",
+      }).catch((e) => e);
+      expect(String(error)).toMatch(/content-length/i);
+    });
+
+    test("a combined Content-Length with equal duplicates is accepted", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(new Blob([new Uint8Array([1, 2])]), {
+            status: 200,
+            headers: { "content-length": "2, 2" },
+          })
+        )
+      );
+      const result = await fetchUrl({ url: "https://example.com/d.bin", response_type: "stream" });
+      expect(result.metadata?.status).toBe(200);
+    });
+
+    test("a combined Content-Length with unequal values throws", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(new Blob([new Uint8Array([1, 2])]), {
+            status: 200,
+            headers: { "content-length": "2, 3" },
+          })
+        )
+      );
+      const error = await fetchUrl({
+        url: "https://example.com/c.bin",
+        response_type: "stream",
+      }).catch((e) => e);
+      expect(String(error)).toMatch(/content-length/i);
+    });
+  });
+
   // -------------------------------------------------------------------------
   // C1 regression: SafeFetch throws permanent FETCH_* errors (SSRF deny, DNS
-  // failure, invalid URL, etc). The outer catches in fetchWithProgress /
+  // failure, invalid URL, etc). The outer catches in the old fetch helper /
   // FetchUrlJob.execute previously rewrote *every* non-Abort throw into a
   // NETWORK_ERROR (retryable) — burning the full retry budget on a permanent
   // SSRF deny. Each case below asserts the original code/class is preserved.
@@ -758,9 +837,10 @@ describe("FetchUrlTask", () => {
           )
         );
 
-        const error = await fetchUrl({ url: "https://api.example.com/decode-fail" }).catch(
-          (e: unknown) => e
-        );
+        const error = await fetchUrl({
+          url: "https://api.example.com/decode-fail",
+          response_type: "json",
+        }).catch((e: unknown) => e);
         const jobErr = (error as { jobError?: unknown }).jobError ?? error;
 
         expect((jobErr as { code?: string }).code).toBe(FetchUrlErrorCode.RESPONSE_PARSE_ERROR);
@@ -812,14 +892,17 @@ describe("FetchUrlTask", () => {
 
     test("keeps the secret out of the request body and off the job input", async () => {
       let seenInput: FetchUrlTaskInput | undefined;
-      const originalExecute = FetchUrlJob.prototype.execute;
-      const spy = vi.spyOn(FetchUrlJob.prototype, "execute").mockImplementation(async function (
+      // executeStream is the sole body producer for the inline path (execute()
+      // just drains it), so the spy has to sit on executeStream to observe what
+      // the job actually receives.
+      const originalExecuteStream = FetchUrlJob.prototype.executeStream;
+      const spy = vi.spyOn(FetchUrlJob.prototype, "executeStream").mockImplementation(function (
         this: FetchUrlJob,
         input: any,
         context: any
       ) {
         seenInput = input;
-        return originalExecute.call(this, input, context) as any;
+        return originalExecuteStream.call(this, input, context);
       });
 
       try {
