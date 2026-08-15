@@ -528,7 +528,15 @@ export class FetchUrlJob<
         context.signal,
         async (p) => await context.updateProgress(p)
       )) {
-        if (wantsValue) chunks.push(chunk);
+        // `emitStreamEvent` may hand the buffer to a carrier that transfers
+        // and detaches it, and a job MUST NOT keep a reference across that
+        // call: the accumulated chunk would read back zero-length and the
+        // yielded delta would carry detached bytes, so an empty `text`/`json`/
+        // `blob` would be reported as a successful fetch. Everything outliving
+        // the emit is therefore a copy. With no emit there is nothing to
+        // detach, and the original travels as-is.
+        const retained = deliversDeltas ? new Uint8Array(chunk) : chunk;
+        if (wantsValue) chunks.push(retained);
         // Latched before the emit rather than after it: from the moment a
         // chunk is handed to the consumer this attempt is unrepeatable, and a
         // failure raised during the emit itself is on the far side of that
@@ -540,7 +548,7 @@ export class FetchUrlJob<
           binaryDelta: chunk,
         });
         if (emitted) await emitted;
-        yield { type: "binary-delta", port: "body", binaryDelta: chunk } as StreamEvent<Output>;
+        yield { type: "binary-delta", port: "body", binaryDelta: retained } as StreamEvent<Output>;
       }
     } catch (err) {
       throw classifyBodyFailure(err, input.url!, emittedDelta);

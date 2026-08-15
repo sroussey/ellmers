@@ -64,6 +64,16 @@ const createMockResponse = (jsonData: any = {}): Response => {
   });
 };
 
+function concatChunks(chunks: readonly Uint8Array[]): Uint8Array {
+  const merged = new Uint8Array(chunks.reduce((n, c) => n + c.byteLength, 0));
+  let offset = 0;
+  for (const c of chunks) {
+    merged.set(c, offset);
+    offset += c.byteLength;
+  }
+  return merged;
+}
+
 /** 200 whose body stream errors — the shape of a peer closing mid-read. */
 function erroredBodyResponse(error: Error): Response {
   return new Response(
@@ -779,6 +789,63 @@ describe("FetchUrlTask", () => {
       );
       const result = await fetchUrl({ url: "https://example.com/p.bin", response_type: "stream" });
       expect(result.metadata?.status).toBe(200);
+    });
+
+    // `Job.ts` forbids retaining a chunk buffer across `emitStreamEvent` —
+    // a carrier may transfer it, which detaches the buffer in this realm. The
+    // accumulation feeding `text`/`json`/`blob` runs on the same chunk, so a
+    // retained reference reads back zero-length and an empty body would be
+    // reported as a successful fetch.
+    test("a carrier that transfers the emitted chunk cannot empty the derived port", async () => {
+      const parts = ["first-", "second-", "third"];
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                // Separately allocated chunks: detaching one buffer must not
+                // reach into the next.
+                for (const part of parts) controller.enqueue(new TextEncoder().encode(part));
+                controller.close();
+              },
+            }),
+            { status: 200, headers: { "content-type": "text/plain" } }
+          )
+        )
+      );
+
+      const input = {
+        url: "https://example.com/transfer.txt",
+        response_type: "text",
+      } as FetchUrlTaskInput;
+      const job = new FetchUrlJob<FetchUrlTaskInput, FetchUrlTaskOutput>({ input });
+      const lengthsAfterEmit: number[] = [];
+      const yielded: Uint8Array[] = [];
+      let finish: FetchUrlTaskOutput | undefined;
+      // Drained rather than run through `execute()`: the yielded delta is the
+      // half that fails SILENTLY. A detached one carries no bytes, so `body`
+      // ends up empty with nothing raised, while the accumulated copy at least
+      // throws on the decode.
+      for await (const event of job.executeStream(input, {
+        signal: new AbortController().signal,
+        updateProgress: async () => {},
+        emitStreamEvent: async (event) => {
+          const delta = (event as { binaryDelta?: Uint8Array }).binaryDelta;
+          if (!delta) return;
+          // What a transferring carrier does to the buffer it was handed.
+          structuredClone(delta.buffer, { transfer: [delta.buffer] });
+          lengthsAfterEmit.push(delta.byteLength);
+        },
+      })) {
+        if (event.type === "binary-delta") yielded.push(event.binaryDelta as Uint8Array);
+        if (event.type === "finish") finish = event.data as FetchUrlTaskOutput;
+      }
+
+      // Without this the test proves nothing: a `structuredClone` that failed
+      // to transfer would leave the buffers intact and every build would pass.
+      expect(lengthsAfterEmit).toEqual(parts.map(() => 0));
+      expect(finish?.text).toBe(parts.join(""));
+      expect(new TextDecoder().decode(concatChunks(yielded))).toBe(parts.join(""));
     });
 
     // -----------------------------------------------------------------------
