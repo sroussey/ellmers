@@ -131,6 +131,16 @@ export interface JobQueueWorkerOptions<Input, Output> {
    * by the limiter.
    */
   readonly prefetch?: number;
+  /**
+   * Direct, awaitable call path from {@link JobQueueWorker.emitStreamEvent} to
+   * the owning `JobQueueServer`'s attached clients. `events.emit` cannot
+   * carry a return value back to its caller, so a server injects this hook
+   * (see `JobQueueServer.createWorker`) rather than the worker maintaining a
+   * second client registry — it reuses the server's existing `clients` set.
+   * Never rejects; a forwarding failure is the injected hook's own concern to
+   * log.
+   */
+  readonly onStreamEvent?: (jobId: unknown, event: StreamEventLike) => Promise<void>;
 }
 
 /**
@@ -157,6 +167,8 @@ export class JobQueueWorker<
   protected readonly events = new EventEmitter<JobQueueWorkerEventListeners<Input, Output>>();
   protected readonly deadLetter: IMessageQueue<DeadLetter<Input>> | "discard";
   protected readonly prefetch: number;
+  protected readonly onStreamEvent:
+    ((jobId: unknown, event: StreamEventLike) => Promise<void>) | undefined;
 
   protected running = false;
 
@@ -253,6 +265,7 @@ export class JobQueueWorker<
       options.maxProcessingTimeSamples ?? DEFAULT_LIMITS.jobQueueMaxProcessingTimeSamples;
     this.deadLetter = options.deadLetter ?? "discard";
     this.prefetch = Math.max(1, options.prefetch ?? 1);
+    this.onStreamEvent = options.onStreamEvent;
   }
 
   /**
@@ -932,15 +945,45 @@ export class JobQueueWorker<
   }
 
   /**
-   * Emit a cross-process stream event for a job.
+   * Emit a stream event for a job, both in-memory to the owning server's
+   * attached clients and best-effort across processes via the message
+   * queue's publish chain.
    *
-   * Mirrors {@link updateProgress}: stream events are delivered in-memory via
-   * the `job_stream` event and forwarded by an attached `JobQueueServer` to
-   * subscribed clients. Storage is not touched.
+   * The returned promise settles once BOTH halves have delivered:
+   *
+   * - the direct, awaitable dispatch to attached clients via
+   *   {@link JobQueueWorkerOptions.onStreamEvent} — injected by the server
+   *   because `this.events.emit` below cannot carry a return value back to
+   *   this caller; and
+   * - the cross-process publish chain (unchanged from before).
+   *
+   * Neither half can reject the returned promise — a forwarding failure or a
+   * publish failure is logged and swallowed — so a slow or misbehaving
+   * consumer paces the producing job without ever failing it.
    */
   protected emitStreamEvent(jobId: unknown, event: StreamEventLike): Promise<void> {
-    // In-memory fast path (same-process attached clients) — unchanged.
+    // In-memory fan-out for worker-level observers (mirrored again at the
+    // server level) — fire-and-forget, unrelated to the awaitable dispatch
+    // below.
     this.events.emit("job_stream", jobId, event);
+
+    const dispatches: Promise<void>[] = [];
+
+    // Direct call path to the owning server's attached clients. This is the
+    // in-process half of the returned promise: without it, a job on a
+    // backend with no `publishStreamChunk` (SQLite, Postgres, Supabase,
+    // IndexedDB) would await nothing and could outrun its consumer without
+    // bound.
+    if (this.onStreamEvent) {
+      dispatches.push(
+        this.onStreamEvent(jobId, event).catch((err) => {
+          getLogger().error("stream event dispatch to attached clients failed", {
+            jobId,
+            error: err,
+          });
+        })
+      );
+    }
 
     // Cross-process side-channel (best-effort). The CARRIER assigns the per-job
     // `seq` from a counter it owns, so the sequence is continuous across
@@ -962,12 +1005,11 @@ export class JobQueueWorker<
           getLogger().error("publishStreamChunk failed", { jobId, error: err });
         });
       this.streamPublishChains.set(jobId, chain);
+      dispatches.push(chain);
     }
 
-    // The in-memory emit above is synchronous; the cross-process publish is
-    // not. Returning the chain lets an emitting job await delivery, which is
-    // the only backpressure signal that crosses the job boundary.
-    return this.streamPublishChains.get(jobId) ?? Promise.resolve();
+    if (dispatches.length === 0) return Promise.resolve();
+    return Promise.all(dispatches).then(() => undefined);
   }
 
   /** Internal — resolve the active claim for a job id, throw if missing. */

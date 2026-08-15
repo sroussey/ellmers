@@ -58,8 +58,17 @@ export type JobProgressListener = (
  */
 export type StreamEventLike = { type: string; port?: string; [k: string]: unknown };
 
-/** Listener for cross-process stream events emitted by an executing job. */
-export type JobStreamListener = (event: StreamEventLike) => void;
+/**
+ * Listener for cross-process stream events emitted by an executing job.
+ *
+ * Returns `Promise<void>` unconditionally — not a `void | Promise<void>`
+ * union — so every dispatch path can `await` it directly instead of sniffing
+ * `typeof result?.then === "function"`. Sync observers become
+ * `async (event) => { ... }`. The dispatcher awaits every listener (see
+ * `JobQueueClient`'s `dispatchStreamEvent`), so the producing job is paced by
+ * the slowest one; a rejecting listener is logged and never fails the job.
+ */
+export type JobStreamListener = (event: StreamEventLike) => Promise<void>;
 
 /**
  * A single {@link StreamEventLike} tagged with its job id and a monotonic,

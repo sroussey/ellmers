@@ -26,13 +26,16 @@ export interface IJobExecuteContext {
    * events. Jobs MUST NOT retain references to chunk buffers after calling
    * this (buffers may be transferred across a worker boundary and detached).
    *
-   * Returns a promise that settles once the event has been delivered to the
-   * in-process listeners. A job producing a large body SHOULD await it: the
-   * emit path is otherwise a synchronous push, so a fast producer outruns a
-   * slow consumer with nothing to pace it. A job that ignores the return
-   * value keeps the previous fire-and-forget behavior.
+   * Returns a promise that settles once the event has been delivered end to
+   * end — both the in-process dispatch to attached listeners and the
+   * cross-process publish chain. A job producing a large body SHOULD await
+   * it: the producer is paced by its slowest consumer, which is the only
+   * backpressure signal that crosses the job boundary. A job that ignores
+   * the return value keeps the previous fire-and-forget behavior. Neither
+   * half can reject — a listener failure or a publish failure is logged, not
+   * propagated.
    */
-  emitStreamEvent?: (event: StreamEventLike) => void | Promise<void>;
+  emitStreamEvent?: (event: StreamEventLike) => Promise<void>;
 }
 
 /**

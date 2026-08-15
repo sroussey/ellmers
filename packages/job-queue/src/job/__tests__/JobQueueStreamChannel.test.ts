@@ -104,7 +104,9 @@ describe("job-queue cross-process stream channel (storage-only client)", () => {
     const handle = await producer.send({ taskType: "stream" });
 
     const received: StreamEventLike[] = [];
-    observer.onJobStream(handle.id, (event) => received.push(event));
+    observer.onJobStream(handle.id, async (event) => {
+      received.push(event);
+    });
 
     await handle.waitFor();
     // Let any queued channel callbacks flush.
@@ -126,13 +128,17 @@ describe("job-queue cross-process stream channel (storage-only client)", () => {
     await storage.publishStreamChunk!(jobId, { type: "text-delta", port: "p", textDelta: "b" }); // seq 2
 
     const first: string[] = [];
-    const unsubA = observer.onJobStream(jobId, (e) => first.push(e.textDelta as string));
+    const unsubA = observer.onJobStream(jobId, async (e) => {
+      first.push(e.textDelta as string);
+    });
     expect(first).toEqual(["a", "b"]); // late subscriber replays 1..2
 
     unsubA(); // last listener removed → subscription torn down, cursor persists
 
     const second: string[] = [];
-    observer.onJobStream(jobId, (e) => second.push(e.textDelta as string));
+    observer.onJobStream(jobId, async (e) => {
+      second.push(e.textDelta as string);
+    });
     expect(second).toEqual([]); // re-subscribe must NOT replay 1..2 again
 
     await storage.publishStreamChunk!(jobId, { type: "text-delta", port: "p", textDelta: "c" }); // seq 3
@@ -142,7 +148,9 @@ describe("job-queue cross-process stream channel (storage-only client)", () => {
   it("tears down the channel subscription once the terminal finish event is delivered", async () => {
     const jobId = "manual-finish-job";
     const received: string[] = [];
-    observer.onJobStream(jobId, (e) => received.push(e.type));
+    observer.onJobStream(jobId, async (e) => {
+      received.push(e.type);
+    });
 
     await storage.publishStreamChunk!(jobId, { type: "text-delta", port: "p", textDelta: "x" });
     await storage.publishStreamChunk!(jobId, { type: "finish", data: {} }); // terminal
@@ -164,7 +172,9 @@ describe("job-queue cross-process stream channel (storage-only client)", () => {
     // SYNCHRONOUSLY inside subscribeToStream, so teardown fires before the
     // unsubscriber can be registered.
     const first: string[] = [];
-    observer.onJobStream(jobId, (e) => first.push(e.type));
+    observer.onJobStream(jobId, async (e) => {
+      first.push(e.type);
+    });
     expect(first).toEqual(["text-delta", "finish"]);
 
     // The mid-subscribe teardown must not leave a zombie unsubscriber behind:
@@ -172,14 +182,18 @@ describe("job-queue cross-process stream channel (storage-only client)", () => {
     // from seq 0 — the cursor was cleared by the teardown), not early-return
     // dead against a stale registration.
     const second: string[] = [];
-    observer.onJobStream(jobId, (e) => second.push(e.type));
+    observer.onJobStream(jobId, async (e) => {
+      second.push(e.type);
+    });
     expect(second).toEqual(["text-delta", "finish"]);
   });
 
   it("disconnect tears down channel stream subscriptions and stream state", async () => {
     const jobId = "disconnect-job";
     const received: string[] = [];
-    observer.onJobStream(jobId, (e) => received.push(e.type));
+    observer.onJobStream(jobId, async (e) => {
+      received.push(e.type);
+    });
 
     await storage.publishStreamChunk!(jobId, { type: "text-delta", port: "p", textDelta: "a" });
     expect(received).toEqual(["text-delta"]);
@@ -199,7 +213,9 @@ describe("job-queue cross-process stream channel (storage-only client)", () => {
     // by publishing straight to the shared carrier.
     const jobId = "remote-worker-job";
     const seen: string[] = [];
-    producer.onJobStream(jobId, (e) => seen.push(e.type)); // producer IS attached
+    producer.onJobStream(jobId, async (e) => {
+      seen.push(e.type);
+    }); // producer IS attached
 
     await storage.publishStreamChunk!(jobId, { type: "text-delta", port: "p", textDelta: "r" });
     await storage.publishStreamChunk!(jobId, { type: "finish", data: {} });
@@ -248,7 +264,9 @@ describe("job-queue stream channel with a server-attached subscriber", () => {
     // the already-delivered event is not replayed; from here the channel is
     // authoritative and the fast path is suppressed (no double delivery).
     const received: string[] = [];
-    handle.onStream!((e) => received.push((e.textDelta as string) ?? e.type));
+    handle.onStream!(async (e) => {
+      received.push((e.textDelta as string) ?? e.type);
+    });
 
     gates.get(gateId)!.release();
     await handle.waitFor();
@@ -297,7 +315,7 @@ describe("job-queue stream channel on an async-seq carrier", () => {
       const handle = await producer.send({ taskType: "stream" });
       const received: StreamEventLike[] = [];
       const done = Promise.withResolvers<void>();
-      observer.onJobStream(handle.id, (event) => {
+      observer.onJobStream(handle.id, async (event) => {
         received.push(event);
         if (event.type === "finish") done.resolve();
       });
@@ -335,7 +353,9 @@ describe("createInMemoryQueue facades carry the stream channel", () => {
       expect(typeof handle.onStream).toBe("function");
 
       const received: StreamEventLike[] = [];
-      handle.onStream!((event) => received.push(event));
+      handle.onStream!(async (event) => {
+        received.push(event);
+      });
 
       await handle.waitFor();
       await new Promise((r) => setTimeout(r, 5));

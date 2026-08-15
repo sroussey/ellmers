@@ -579,7 +579,20 @@ export class JobQueueClient<Input, Output> {
    */
   private ensureStreamSubscription(jobId: unknown): void {
     const subscribe = this.messageQueue.subscribeToStream;
-    if (typeof subscribe !== "function") return;
+    // The channel is a matched pair. A carrier that can replay a stream but
+    // never receives one (no `publishStreamChunk`) can neither deliver a
+    // remotely-processed job's events NOR ever supersede the fast path —
+    // opening a subscription here would instead PERMANENTLY suppress
+    // `handleJobStream` (see there) for this job, with nothing to replace
+    // it. Every channel-capable backend today implements both halves
+    // together; treat one without the other as "no channel" rather than
+    // "half a channel that blacks out delivery".
+    if (
+      typeof subscribe !== "function" ||
+      typeof this.messageQueue.publishStreamChunk !== "function"
+    ) {
+      return;
+    }
     if (this.jobStreamUnsubscribers.has(jobId)) return;
     // Resume from the last seq already delivered so a re-subscribe replays only
     // the gap, not the whole log.
@@ -590,7 +603,14 @@ export class JobQueueClient<Input, Output> {
       // behind the true position forever (re-replaying the skipped range on
       // every re-subscribe).
       this.jobStreamCursor.set(jobId, seq);
-      this.dispatchStreamEvent(jobId, event);
+      // Fire-and-forget: the channel replays an already-durably-published
+      // event, so there is no live producer left to pace through this path
+      // (unlike the fast path's `handleJobStream`, which the emitting job's
+      // promise chain runs through). Still caught so a dispatch failure never
+      // becomes an unhandled rejection now that dispatch is async.
+      this.dispatchStreamEvent(jobId, event).catch((err) => {
+        getLogger().error("channel stream dispatch failed", { jobId, error: err });
+      });
       // A terminal stream event means the stream is genuinely done: tear the
       // channel subscription down now (this is the normal teardown path, driven
       // by the stream itself rather than the racy job-completion signal) and
@@ -790,10 +810,13 @@ export class JobQueueClient<Input, Output> {
 
   /**
    * Called by server when a job emits a stream event (the same-process fast
-   * path).
+   * path). Returns a promise that settles once every `onStream` listener for
+   * this job has been awaited — this is the direct, awaitable call path a
+   * server-attached worker paces itself on; it never rejects (see
+   * {@link dispatchStreamEvent}).
    * @internal
    */
-  public handleJobStream(jobId: unknown, event: StreamEventLike): void {
+  public async handleJobStream(jobId: unknown, event: StreamEventLike): Promise<void> {
     // While a channel subscription is open for this job the channel is
     // authoritative (it replays, orders, and de-dupes by seq): suppress the
     // fast path so events aren't delivered twice. Channel-less carriers never
@@ -804,30 +827,37 @@ export class JobQueueClient<Input, Output> {
     // later detach()/re-subscribe resumes from the true position instead of
     // replaying the whole log.
     this.jobStreamCursor.set(jobId, (this.jobStreamCursor.get(jobId) ?? 0) + 1);
-    this.dispatchStreamEvent(jobId, event);
+    await this.dispatchStreamEvent(jobId, event);
   }
 
   /**
    * Fan a stream event out to the `job_stream` emitter and this job's
-   * listeners. Listener throws are isolated per-listener — one misbehaving
-   * subscriber does not interrupt delivery to the rest or abort the dispatch
-   * itself.
+   * listeners, awaiting every listener before resolving — the producing job
+   * is paced by the slowest one. Listener rejections (and throws) are
+   * isolated per-listener — one misbehaving subscriber never fails the job
+   * or blocks delivery to the rest.
+   *
+   * The `job_stream` emitter fan-out is for OBSERVERS, not consumers: it
+   * stays fire-and-forget and unawaited so an observer can never pace the
+   * producer.
    */
-  private dispatchStreamEvent(jobId: unknown, event: StreamEventLike): void {
+  private async dispatchStreamEvent(jobId: unknown, event: StreamEventLike): Promise<void> {
     this.events.emit("job_stream", this.queueName, jobId, event);
 
     const listeners = this.jobStreamListeners.get(jobId);
     if (!listeners) return;
-    for (const listener of listeners) {
-      try {
-        listener(event);
-      } catch (err) {
-        getLogger().error("JobHandle.onStream listener threw", {
-          jobId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
+    await Promise.all(
+      [...listeners].map(async (listener) => {
+        try {
+          await listener(event);
+        } catch (err) {
+          getLogger().error("JobHandle.onStream listener threw", {
+            jobId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      })
+    );
   }
 
   // ========================================================================
