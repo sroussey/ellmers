@@ -996,10 +996,23 @@ export class FetchUrlTask<
       // durable queue storage implements `subscribeToStream` — so the job's
       // settled output is the whole delivery and becomes the `finish` this
       // generator owes its consumer. A derived-port response (`response_type`
-      // other than "stream") travels intact that way; a "stream" run's bytes do
-      // not travel at all, because the job's finish payload carries `metadata`
-      // alone and there is no delta to accumulate `body` from.
+      // other than "stream") travels intact that way.
+      //
+      // A "stream" run's bytes do not travel at all: the job's finish payload
+      // carries `metadata` alone and there is no delta to accumulate `body`
+      // from, so passing it through would report a successful fetch whose body
+      // is empty. Refuse instead — a body silently replaced by nothing is the
+      // one failure this path must not produce.
       if (typeof handle.onStream !== "function") {
+        if (input.response_type === "stream") {
+          throw new TaskConfigurationError(
+            `FetchUrlTask: the queue serving ${queueName} hands back no stream channel, so a ` +
+              `streaming body cannot cross the process boundary — response_type "stream" would ` +
+              `yield an empty body. Use a materializing response_type (text/json/blob/` +
+              `arraybuffer), which travels in the job's settled output, or run the worker ` +
+              `in-process so the client is attached to it.`
+          );
+        }
         yield { type: "finish", data: await handle.waitFor() } as StreamEvent<Output>;
         return;
       }

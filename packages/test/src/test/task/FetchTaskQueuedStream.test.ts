@@ -361,6 +361,37 @@ describe("queued fetch streams over the job channel", () => {
     expect(seen.at(-1)?.type).toBe("finish");
   });
 
+  // ...but the same carrier cannot serve `response_type: "stream"`. Those bytes
+  // travel only as deltas, and the job's finish payload carries `metadata`
+  // alone — so passing the settled output through would report a successful
+  // fetch whose body is empty, which no length check or status code exposes.
+  test("refuses response_type stream on a carrier with no stream channel", async () => {
+    const queueName = "queued-stream-channelless-stream";
+    const waitFor = vi.fn(async () => ({ metadata: { status: 200 } }) as FetchUrlTaskOutput);
+    registerStubQueue(queueName, {
+      id: "channelless-stream-job",
+      waitFor,
+      abort: async () => {},
+      onProgress: () => () => {},
+    } as unknown as JobHandle<FetchUrlTaskOutput>);
+
+    const task = new FetchUrlTask({ queue: queueName });
+    const seen: StreamEvent[] = [];
+    task.on("stream_chunk", (e: StreamEvent) => seen.push(e));
+
+    const error = await task
+      .run({ url: "https://example.com/f.bin", response_type: "stream" })
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).toMatch(/stream channel/i);
+    expect(String(error)).toMatch(/response_type/);
+    // Refused rather than settled: awaiting the job at all would have produced
+    // the empty-bodied finish this exists to prevent.
+    expect(waitFor).not.toHaveBeenCalled();
+    expect(seen.some((e) => e.type === "finish")).toBe(false);
+  });
+
   // ---------------------------------------------------------------------------
   // SECURITY: `prepareJobInput` bakes the resolved secret into `headers`, and a
   // queued payload is persisted durably. The refusal must therefore fire before
