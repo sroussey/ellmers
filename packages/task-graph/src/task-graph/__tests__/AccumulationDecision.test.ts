@@ -4,17 +4,27 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
+import {
+  CACHE_REGISTRY,
+  Dataflow,
+  DefaultCacheRegistry,
+  GraphAsTask,
+  Task,
+  TaskGraph,
+} from "@workglow/task-graph";
+// Both the test doubles and every class they are handed to must come from the
+// package specifier, never a relative path. `StreamingMemoryRepo` extends
+// `TaskOutputRepository` imported by specifier (as `test-entry` requires), so a
+// relatively-imported copy of it extends the BUILT base while a relatively
+// imported `Task`/`TaskRunner` checks against the SOURCE one — and
+// `TaskRunner`'s `outputCache instanceof TaskOutputRepository` silently reads
+// false, resolving no cache at all. Under `use-source` both specifiers land on
+// the same file and it passes; only a real build separates them.
+import { NonStreamingMemoryRepo, StreamingMemoryRepo } from "@workglow/task-graph/test";
 import { globalServiceRegistry } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
-import { CACHE_REGISTRY, DefaultCacheRegistry } from "../../cache/CacheRegistry";
-import { GraphAsTask } from "../../task/GraphAsTask";
-import type { IExecuteContext } from "../../task/ITask";
-import type { StreamEvent } from "../../task/StreamTypes";
-import { Task } from "../../task/Task";
-import { NonStreamingMemoryRepo, StreamingMemoryRepo } from "../../testing/StreamingMemoryRepo";
-import { Dataflow } from "../Dataflow";
-import { TaskGraph } from "../TaskGraph";
 
 const binOut = {
   type: "object",
