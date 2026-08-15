@@ -441,11 +441,14 @@ export class FetchUrlJob<
    * through here needs to route through one path, not both.
    *
    * The emitted terminal `finish` is the stream's end-of-stream marker, and
-   * awaiting it is what makes it one: the job cannot complete until every
-   * receiver has been handed it, so it is ordered strictly after the last
-   * delta on both the awaited fast path and the seq-ordered channel. That is
-   * the signal {@link FetchUrlTask.consumeJobStream} ends on, instead of
-   * guessing from the job's completion that no more bytes are coming. It
+   * awaiting it is what makes it one — by ordering, not by delivery. On the
+   * awaited fast path the await covers the dispatch to attached listeners; on
+   * the channel path (where that fast path is suppressed and the reassembler's
+   * own dispatch is deliberately unawaited) it covers the durable write, which
+   * fixes the marker's seq after the last delta's. Nothing can overtake it on
+   * either carrier. That is the signal {@link FetchUrlTask.consumeJobStream}
+   * ends on, instead of guessing from the job's completion that no more bytes
+   * are coming. It
    * carries only `metadata`: the derived port is the *value*, which the
    * settled job output already carries, and duplicating a whole body into the
    * carrier's stream log (where a transferable buffer may be detached out from
@@ -799,8 +802,18 @@ export class FetchUrlTask<
    * enqueued).
    *
    * A task whose url is unavailable at declaration time declares an unscoped
-   * `network:private` (fail-closed, see {@link entitlements}), which covers
-   * any private destination — so there is nothing to re-check for it.
+   * `network:private` (see {@link entitlements}), which covers any private
+   * destination — so there is nothing here to re-check it against, and this
+   * returns early.
+   *
+   * That is the whole of the check for such a task, and it is only fail-closed
+   * where the declaration is enforced: `enforceEntitlements` on `IRunConfig`
+   * defaults to **false**, and nothing else in this file re-examines the
+   * resolved destination. On the default path a subclass whose input is a
+   * domain key rather than a url — the shape {@link resolveFetchInput} exists
+   * for — can therefore resolve onto any private/internal destination and
+   * reach it with `allowPrivate: true`. Treat that resolver as the trust
+   * boundary: there is no declared scope to measure its output against.
    */
   private assertResolvedDestinationDeclared(resolved: FetchUrlTaskInput): void {
     const url = resolved.url;
@@ -977,9 +990,11 @@ export class FetchUrlTask<
    * where the dispatch is awaited, and no queue this side keeps can create it.
    *
    * **What ends the loop.** `FetchUrlJob` emits a terminal `finish` and awaits
-   * it, so the job cannot complete until that marker has been handed to every
-   * receiver — it is ordered strictly after the last delta on both carriers,
-   * and reaching it means the body is whole. The loop ends there. The job's
+   * it. That await buys ordering rather than delivery: on the fast path it
+   * covers the dispatch to attached listeners, and on the channel path the
+   * durable write, which fixes the marker's seq after the last delta's. Either
+   * way nothing can overtake it, so a marker arriving here means every delta
+   * ahead of it already did — the body is whole. The loop ends there. The job's
    * settled output remains the authority for the *value*, so the marker is
    * released without being re-yielded: `waitFor()` produces the one `finish`,
    * and the two can never disagree or arrive twice.
@@ -992,8 +1007,10 @@ export class FetchUrlTask<
    * settled stream keeps taking turns of the event loop for as long as each
    * turn actually drains something, and ends on the first turn that does not.
    * A residual remains for that fallback alone: an event landing more than one
-   * idle turn after the last, on a carrier that also never delivers the
-   * marker, is still lost.
+   * idle turn after the last, on a carrier that does not deliver the marker
+   * *within that turn*, is still lost. Delivering both a moment after the
+   * grace turn is spent does not save it — the loop is already gone, so the
+   * marker has nothing left to end.
    *
    * An `error` event is not decoration on any of this: it is the only in-band
    * report of a failure the completion signal may not carry, so it is queued
