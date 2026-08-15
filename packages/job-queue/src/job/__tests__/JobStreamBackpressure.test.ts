@@ -78,10 +78,16 @@ describe("emitStreamEvent is awaitable", () => {
     const storage = new InMemoryQueueStorage<EmitInput, { emitted: number }>("pace-queue");
     await storage.migrate();
     const { messageQueue, jobStore } = wrapQueueStorage(storage);
-    // Strip the cross-process channel so ONLY the in-process dispatch path can
-    // provide pacing — this is the SQLite/Postgres shape, where the old
-    // publish-chain promise resolved instantly and bought nothing.
+    // Strip BOTH halves of the cross-process channel — this is the actual
+    // SQLite/Postgres shape, where neither method exists at all (not "one
+    // stripped, one left behind": that combination exists on no real
+    // backend, and `ensureStreamSubscription` treats it as channel-less
+    // too — see `JobQueueClient.ts`). With no channel, the ONLY possible
+    // pacing signal is the in-process fast-path dispatch this test exists to
+    // cover; the old publish-chain promise resolved instantly here and
+    // bought nothing.
     (messageQueue as { publishStreamChunk?: unknown }).publishStreamChunk = undefined;
+    (messageQueue as { subscribeToStream?: unknown }).subscribeToStream = undefined;
 
     const server = new JobQueueServer<EmitInput, { emitted: number }>(AwaitingEmitJob as any, {
       messageQueue,

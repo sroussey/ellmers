@@ -369,3 +369,51 @@ describe("createInMemoryQueue facades carry the stream channel", () => {
     }
   });
 });
+
+describe("a half-configured channel (subscribeToStream without publishStreamChunk) behaves as channel-less", () => {
+  it("the same-process fast path still delivers to a server-attached onStream listener", async () => {
+    // `subscribeToStream` present, `publishStreamChunk` absent: no real
+    // backend is shaped this way (channel-capable backends implement both;
+    // SQLite/Postgres/AWS/Cloudflare implement neither), but a carrier that
+    // advertises replay with nothing to ever publish to it must not be
+    // treated as channel-capable — `ensureStreamSubscription` would
+    // otherwise open a subscription that permanently suppresses
+    // `handleJobStream`'s fast path for every job, with nothing to replace
+    // it (see `JobQueueClient.ts`). This is the direct regression test for
+    // that gate: reverting it to check `subscribeToStream` alone reproduces
+    // a silent zero-event delivery here.
+    const queueName = `stream-half-channel-${uuid4()}`;
+    const storage = new InMemoryQueueStorage<SInput, SOutput>(queueName);
+    await storage.migrate();
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
+    (messageQueue as { publishStreamChunk?: unknown }).publishStreamChunk = undefined;
+
+    const server = new JobQueueServer<SInput, SOutput, StreamEmittingJob>(StreamEmittingJob, {
+      messageQueue,
+      jobStore,
+      queueName,
+      pollIntervalMs: 1,
+      stopTimeoutMs: 0,
+    });
+    const client = new JobQueueClient<SInput, SOutput>({ messageQueue, jobStore, queueName });
+    client.attach(server);
+    await server.start();
+
+    try {
+      const handle = await client.send({ taskType: "stream" });
+      const received: StreamEventLike[] = [];
+      handle.onStream?.(async (event) => {
+        received.push(event);
+      });
+
+      const output = await handle.waitFor();
+
+      expect(output).toEqual({ ok: true });
+      // The fast path must have delivered every event — a reverted gate
+      // opens a dead channel subscription instead and this stays empty.
+      expect(received.map((e) => e.type)).toEqual(["binary-delta", "binary-delta", "finish"]);
+    } finally {
+      await server.stop();
+    }
+  });
+});
