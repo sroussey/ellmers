@@ -678,7 +678,9 @@ export class FetchUrlTask<
     }
   }
 
-  override async *executeStream(
+  // No `override`: `executeStream` is an optional member of ITask, not a
+  // declared member of Task, so marking it override fails TS4113.
+  async *executeStream(
     input: FetchUrlTaskInput,
     executeContext: IExecuteContext
   ): AsyncIterable<StreamEvent<Output>> {
