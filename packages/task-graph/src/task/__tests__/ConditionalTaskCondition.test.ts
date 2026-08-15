@@ -529,5 +529,61 @@ describe("ConditionalTask with serialized conditionConfig", () => {
     it("is never cached: the routing decision lives in instance state", () => {
       expect(ConditionalTask.cacheable).toBe(false);
     });
+
+    it("records the else ports as INACTIVE in non-exclusive mode, rather than omitting them", async () => {
+      // Non-exclusive mode produces no `_else` output port. Absence and `false`
+      // are NOT the same answer to the scheduler: a port missing from this map
+      // is "not a branch port", so an edge wired off `score_else` stays
+      // COMPLETED and delivers `undefined` downstream. Assert both that the key
+      // is present and that its value is false — the presence is the bug.
+      const task = new ConditionalTask({
+        inputSchema: triageInputSchema,
+        conditionConfig: { ...triageConditionConfig, exclusive: false },
+      });
+
+      await task.run({ score: 0.1, categories: ["billing"], message: "hello" });
+
+      const status = task.getPortActiveStatus();
+      expect(status.has("message_else")).toBe(true);
+      expect(status.get("message_else")).toBe(false);
+      // No branch matched, so the real branch port is inactive too.
+      expect(status.get("message_1")).toBe(false);
+    });
+
+    it("keeps the else ports inactive in non-exclusive mode when a branch DOES match", async () => {
+      const task = new ConditionalTask({
+        inputSchema: triageInputSchema,
+        conditionConfig: { ...triageConditionConfig, exclusive: false },
+      });
+
+      await task.run({ score: 0.9, categories: ["billing"], message: "hello" });
+
+      const status = task.getPortActiveStatus();
+      expect(status.get("message_1")).toBe(true);
+      expect(status.get("message_else")).toBe(false);
+    });
+  });
+
+  describe("cacheability is not overridable per instance", () => {
+    // `Task.cacheable` lets `config.cacheable` / `runConfig.cacheable` win over
+    // the class-static flag, so without the instance overrides a caller could
+    // re-enable caching on a gate — and a cache hit never enters `execute`, so
+    // the port-activation state the scheduler reads is never populated and the
+    // graph mis-routes. Both readers are asserted because they are consulted by
+    // different callers: `task.cacheable` by StreamPump / CacheCoordinator,
+    // `getCachePolicy(inputs)` by TaskRunner.
+    it("ignores a config.cacheable override", () => {
+      const task = new ConditionalTask({ branches: [], cacheable: true });
+
+      expect(task.cacheable).toBe(false);
+      expect(task.getCachePolicy({}).kind).toBe("none");
+    });
+
+    it("ignores a runConfig.cacheable override", () => {
+      const task = new ConditionalTask({ branches: [] }, { cacheable: true });
+
+      expect(task.cacheable).toBe(false);
+      expect(task.getCachePolicy({}).kind).toBe("none");
+    });
   });
 });

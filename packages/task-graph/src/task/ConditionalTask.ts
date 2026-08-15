@@ -6,6 +6,7 @@
 
 import { getLogger } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
+import type { CachePolicy } from "../cache/CachePolicy";
 import type { UIConditionConfig } from "./ConditionUtils";
 import { evaluateCondition, getNestedValue } from "./ConditionUtils";
 import type { IExecuteContext } from "./ITask";
@@ -98,6 +99,24 @@ export class ConditionalTask<
    * cheap; there is nothing here worth caching.
    */
   static override cacheable = false;
+
+  /**
+   * Both halves of the cacheability surface are pinned, because the class-static
+   * flag above is not the last word: {@link Task.cacheable} returns
+   * `runConfig.cacheable` / `config.cacheable` BEFORE consulting
+   * {@link getCachePolicy}, so a caller passing `{ cacheable: true }` would turn
+   * the gate back on. Overriding only one is not enough either — `StreamPump`
+   * and `CacheCoordinator` read `task.cacheable`, while `TaskRunner` reads
+   * `task.getCachePolicy(inputs)`.
+   */
+  public override get cacheable(): boolean {
+    return false;
+  }
+
+  public override getCachePolicy(): CachePolicy {
+    return { kind: "none" };
+  }
+
   static override type: TaskTypeName = "ConditionalTask";
   static override category = "Flow Control";
   static override title = "Condition";
@@ -329,9 +348,12 @@ export class ConditionalTask<
       for (let i = 0; i < branches.length; i++) {
         portStatus.set(`${key}_${i + 1}`, activeSuffixes.has(String(i + 1)));
       }
-      if (isExclusive) {
-        portStatus.set(`${key}_else`, activeSuffixes.has("else"));
-      }
+      // Recorded in BOTH modes. Non-exclusive mode produces no `_else` port, so
+      // an edge wired off one can never carry data — but omitting the port from
+      // this map reads to the scheduler as "not a branch port", which leaves
+      // that edge COMPLETED and hands the downstream task `undefined`. INACTIVE
+      // is the honest answer: the port does not exist, so it is never active.
+      portStatus.set(`${key}_else`, isExclusive && activeSuffixes.has("else"));
     }
     this.portActiveStatus = portStatus;
 
