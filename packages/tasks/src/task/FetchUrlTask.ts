@@ -263,10 +263,16 @@ async function* streamResponseBody(
  * 5xx / DNS / connect-timeout retries — the case a rate-limited caller depends
  * on — working exactly as before.
  *
- * `emittedDelta` means *delivered to a stream receiver*, not merely produced.
- * A run with no `emitStreamEvent` hands its bytes to nobody, so a retry has
- * nothing to concatenate onto — and banning retry there would spend a large
- * download's whole retry policy on the first mid-body reset.
+ * `emittedDelta` means *a receiver could exist*, not that bytes reached one.
+ * Its source is whether the job context carries `emitStreamEvent` at all, and
+ * `JobQueueWorker` supplies that unconditionally — so a queued run with zero
+ * subscribers still forfeits its mid-body retry budget. That is the deliberate
+ * direction: the alternative is counting live subscribers, and a subscription
+ * that arrives between the check and the emit turns a correct retry into a
+ * concatenated body. The inline path, where the context genuinely carries no
+ * `emitStreamEvent`, is the one that keeps retrying mid-body — which is what
+ * stops a large download from spending its whole retry policy on the first
+ * reset.
  */
 function classifyBodyFailure(err: unknown, url: string, emittedDelta: boolean): unknown {
   if (err instanceof AbortSignalJobError) return err;
@@ -345,8 +351,10 @@ function buildHttpError(url: string, response: Response): Error {
  * `responseType` is typed as possibly `undefined` (rather than trusting the
  * schema's `required` + enum) because `JobQueueWorker` calls `job.execute()`
  * on a *persisted* input with no schema validation — a queued job can carry
- * any string here. Fails closed: an unrecognized value throws
- * `INVALID_RESPONSE_TYPE` instead of falling through to `JSON.parse`.
+ * any string here. An unrecognized non-empty string throws
+ * `INVALID_RESPONSE_TYPE` rather than falling through to `JSON.parse`;
+ * `undefined` is not treated that way — it is read as `"stream"`, so a payload
+ * that lost the field yields the body with no derived port instead of failing.
  */
 function materializeDerivedPort(
   responseType: FetchUrlResponseType | undefined,
@@ -481,9 +489,11 @@ export class FetchUrlJob<
 
     const chunks: Uint8Array[] = [];
     const wantsValue = input.response_type !== "stream";
-    // Bytes only become unrepeatable once something can receive them. With no
-    // `emitStreamEvent` there is no subscription outliving the attempt, so a
-    // retry cannot concatenate onto a partial body.
+    // Whether a receiver COULD exist, not whether one does: the carrier's
+    // subscriber count is not knowable here, and a subscription arriving
+    // between a count and the emit would make a retry concatenate onto a
+    // partial body. With no `emitStreamEvent` at all there is no subscription
+    // to outlive the attempt, so that path retries.
     const deliversDeltas = context.emitStreamEvent !== undefined;
     let emittedDelta = false;
     try {
@@ -1134,6 +1144,16 @@ export class FetchUrlTask<
    * and fails loudly — bytes demonstrably exist and this process cannot reach
    * them, so a `finish` carrying neither them nor the ref would report a
    * successful fetch of an empty body.
+   *
+   * **Nothing in this repository mints that ref yet.** `FetchUrlJob` finishes
+   * with `materializeDerivedPort(...)` plus `metadata`, and that helper returns
+   * `{}` for `response_type: "stream"` — so on a real channel-less worker
+   * `body` is `undefined`, the passthrough above is the branch that runs, and
+   * neither loud failure below is reachable in production. The ref half is the
+   * consumer side of a contract whose producer is a separate piece of work: it
+   * is exercised only by tests constructing a ref directly, and any claim it
+   * makes about a real out-of-process worker is unverified until such a worker
+   * exists.
    */
   private async *streamSettledBody(
     handle: JobHandle<Output>,
