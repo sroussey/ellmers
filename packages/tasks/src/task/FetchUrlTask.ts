@@ -9,6 +9,7 @@ import { AbortSignalJobError, Job, RetryableJobError } from "@workglow/job-queue
 import type {
   IExecuteContext,
   IRunConfig,
+  RefStreamBacking,
   RegisteredQueue,
   StreamEvent,
   TaskConfig,
@@ -19,15 +20,19 @@ import {
   Entitlements,
   getJobQueueFactory,
   getTaskQueueRegistry,
+  isCacheRef,
   JobTaskFailedError,
   mergeEntitlements,
+  resolveJobOutputStream,
   Task,
+  TASK_OUTPUT_REPOSITORY,
   TaskConfigSchema,
   TaskConfigurationError,
   TaskEntitlementError,
   TaskFailedError,
   Workflow,
 } from "@workglow/task-graph";
+import { globalServiceRegistry } from "@workglow/util";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { safeFetch } from "../util/SafeFetch";
 import { classifyUrl, urlMatchesScope, urlResourcePattern } from "../util/UrlClassifier";
@@ -952,10 +957,7 @@ export class FetchUrlTask<
       }
 
       if (typeof handle.onStream !== "function") {
-        // No event carrier: the worker is out of process, so the bytes never
-        // reach this process as events. Settle on the whole value.
-        const output = await handle.waitFor();
-        yield { type: "finish", data: output } as StreamEvent<Output>;
+        yield* this.streamSettledBody(handle);
         return;
       }
 
@@ -1102,6 +1104,89 @@ export class FetchUrlTask<
       // is going to resolve.
       for (const leftover of pending.splice(0)) leftover.release();
     }
+  }
+
+  /**
+   * Yields the body of a job whose carrier gave back no event channel.
+   *
+   * No durable queue storage implements `subscribeToStream`, so a genuinely
+   * out-of-process worker has nowhere to publish deltas: it sinks the bytes to
+   * a backing both sides can read and puts a {@link isCacheRef} placeholder at
+   * `body` in the settled output. Re-reading those bytes here and re-emitting
+   * them as `binary-delta` is what makes the event sequence a consumer sees
+   * identical across all three byte sources — inline, in-process worker, and
+   * this one — so nothing downstream has to know which produced its input.
+   *
+   * The ref is stripped from the `finish` payload afterwards. It has to be:
+   * `StreamProcessor` treats a port present in the finish payload as an
+   * explicit artifact that outranks both the accumulator and the run's own
+   * cache-sink ref, so leaving it there would pin `body` to a handle into the
+   * WORKER's backing — which the consumer may not be able to read, and which
+   * the run's own cache row would then reference instead of the bytes it just
+   * wrote. With the slot free, accumulation refills `body` from the deltas
+   * emitted above.
+   *
+   * An output with nothing at `body` is passed through untouched: that is a
+   * derived-port response (`response_type` other than `stream`) or a 304,
+   * where the settled value IS the whole result and there is no second copy of
+   * anything. A ref that cannot be turned back into bytes is the opposite case
+   * and fails loudly — bytes demonstrably exist and this process cannot reach
+   * them, so a `finish` carrying neither them nor the ref would report a
+   * successful fetch of an empty body.
+   */
+  private async *streamSettledBody(handle: JobHandle<Output>): AsyncIterable<StreamEvent<Output>> {
+    const output = (await handle.waitFor()) as Record<string, unknown> | undefined;
+    if (output === undefined || output["body"] === undefined) {
+      yield { type: "finish", data: output } as StreamEvent<Output>;
+      return;
+    }
+    const carried = output["body"];
+
+    const backing = this.resolveBodyRefBacking();
+    if (isCacheRef(carried) && backing === undefined) {
+      throw new TaskConfigurationError(
+        "FetchUrlTask: the queued worker returned a cache reference for the response body, but " +
+          "this run has no output cache to read it from. The worker and the caller must share a " +
+          "cache backing — set runConfig.outputCache to the repository the worker writes to."
+      );
+    }
+
+    const bytes = await resolveJobOutputStream(
+      { waitFor: async () => output as Output },
+      backing ?? {},
+      "body"
+    );
+    if (bytes === undefined) {
+      throw new TaskFailedError(
+        "FetchUrlTask: the queued worker's response body could not be read back from the output " +
+          "cache. The referenced entry is gone (evicted, or written by a run this cache does not " +
+          "serve), so the fetched bytes are unreachable."
+      );
+    }
+
+    for await (const chunk of bytes) {
+      yield { type: "binary-delta", port: "body", binaryDelta: chunk } as StreamEvent<Output>;
+    }
+    const { body: _omitRef, ...rest } = output;
+    yield { type: "finish", data: rest } as StreamEvent<Output>;
+  }
+
+  /**
+   * The backing a {@link isCacheRef} at `body` is read through, resolved from
+   * `runConfig.outputCache` the same two ways `TaskRunner` resolves it — an
+   * explicit repository, or `true` meaning the globally registered one. The
+   * repository is matched structurally rather than by `instanceof`: the only
+   * members consulted are the two optional by-ref readers, and a duplicated
+   * class identity across package instances would otherwise silently read as
+   * "no cache" and turn a readable ref into the loud failure above.
+   */
+  private resolveBodyRefBacking(): RefStreamBacking | undefined {
+    const configured = this.runConfig.outputCache;
+    if (typeof configured === "object" && configured !== null) return configured;
+    if (configured !== true) return undefined;
+    return globalServiceRegistry.has(TASK_OUTPUT_REPOSITORY)
+      ? globalServiceRegistry.get(TASK_OUTPUT_REPOSITORY)
+      : undefined;
   }
 
   private prepareJobInput(input: FetchUrlTaskInput): FetchUrlTaskInput {
