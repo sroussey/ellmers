@@ -327,6 +327,39 @@ describe("queued fetch streams over the job channel", () => {
     });
   }
 
+  // A cross-process carrier hands back a handle with no `onStream` at all — no
+  // durable queue storage implements `subscribeToStream` — so there is no
+  // channel to adapt and the job's settled output is the entire delivery. It
+  // still has to reach the consumer as the `finish`: dropping it would report a
+  // fetch that produced nothing.
+  test("passes a channel-less carrier's settled output through as the finish", async () => {
+    const queueName = "queued-stream-channelless";
+    const settled = {
+      text: "hello",
+      metadata: { status: 200, contentType: "text/plain" },
+    } as FetchUrlTaskOutput;
+    registerStubQueue(queueName, {
+      id: "channelless-job",
+      waitFor: async () => settled,
+      abort: async () => {},
+      onProgress: () => () => {},
+    } as unknown as JobHandle<FetchUrlTaskOutput>);
+
+    const task = new FetchUrlTask({ queue: queueName });
+    const seen: StreamEvent[] = [];
+    task.on("stream_chunk", (e: StreamEvent) => seen.push(e));
+
+    const out = (await task.run({
+      url: "https://example.com/f.txt",
+      response_type: "text",
+    })) as FetchUrlTaskOutput;
+
+    expect(out.text).toBe("hello");
+    expect(out.metadata?.status).toBe(200);
+    expect(seen.filter((e) => e.type === "binary-delta")).toHaveLength(0);
+    expect(seen.at(-1)?.type).toBe("finish");
+  });
+
   // ---------------------------------------------------------------------------
   // SECURITY: `prepareJobInput` bakes the resolved secret into `headers`, and a
   // queued payload is persisted durably. The refusal must therefore fire before
