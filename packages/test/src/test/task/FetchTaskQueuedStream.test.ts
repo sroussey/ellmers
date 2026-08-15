@@ -169,6 +169,8 @@ interface StubHandle {
   readonly listening: Promise<JobStreamListener>;
   readonly output: Promise<FetchUrlTaskOutput>;
   settle(value: FetchUrlTaskOutput): void;
+  /** Rejects the settlement, with any reason — a falsy one included. */
+  fail(reason: unknown): void;
 }
 
 function makeStubHandle(): StubHandle {
@@ -177,9 +179,15 @@ function makeStubHandle(): StubHandle {
     announceListener = resolve;
   });
   let settle!: (value: FetchUrlTaskOutput) => void;
-  const output = new Promise<FetchUrlTaskOutput>((resolve) => {
+  let fail!: (reason: unknown) => void;
+  const output = new Promise<FetchUrlTaskOutput>((resolve, reject) => {
     settle = resolve;
+    fail = reject;
   });
+  // Only `waitFor()` awaits this, and the adapter attaches its handler a turn
+  // later; without a handler here a `fail()` would be an unhandled rejection
+  // that terminates the run under Node's default policy.
+  output.catch(() => {});
   const handle: JobHandle<FetchUrlTaskOutput> = {
     id: "stub-job",
     waitFor: () => output,
@@ -190,7 +198,7 @@ function makeStubHandle(): StubHandle {
       return () => {};
     },
   };
-  return { handle, listening, output, settle };
+  return { handle, listening, output, settle, fail };
 }
 
 function executeContext(): IExecuteContext {
@@ -1140,6 +1148,30 @@ describe("queued fetch stream adapter", () => {
     const error = await failure;
     expect(error).toBeInstanceOf(Error);
     expect(String(error)).toMatch(/finish payload/);
+  });
+
+  // A rejection is not guaranteed to carry an `Error`: a carrier rebuilding one
+  // from an empty persisted column, or a bare `Promise.reject()`, settles with a
+  // falsy reason. Deciding "did it fail" from the reason's truthiness skips the
+  // rethrow, yields a finish carrying `undefined`, and reports the run as having
+  // ended without a payload — the real failure replaced by a wrong diagnosis.
+  test("a job that rejects with a falsy reason fails the run rather than reporting no payload", async () => {
+    const queueName = "queued-stream-falsy-rejection";
+    const stub = makeStubHandle();
+    registerStubQueue(queueName, stub.handle);
+
+    const task = new FetchUrlTask({ queue: queueName });
+    const failure = task
+      .execute({ url: "https://example.com/a.bin", response_type: "stream" }, executeContext())
+      .catch((e: unknown) => e);
+
+    await stub.listening;
+    stub.fail(undefined);
+
+    const error = await failure;
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).not.toMatch(/finish payload/);
+    expect(String(error)).toMatch(/rejected without a reason/i);
   });
 
   // A carrier that never awaits its dispatch can hand the adapter a whole body

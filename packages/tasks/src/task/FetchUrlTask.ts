@@ -656,6 +656,21 @@ function toStreamEventError(event: StreamEventLike): Error {
   return new Error(raw === undefined ? "Queued fetch reported a stream error" : String(raw));
 }
 
+/**
+ * Makes a job's rejection reason throwable.
+ *
+ * A rejection is not guaranteed to carry an `Error`: a carrier that rebuilds
+ * one from an empty persisted column, or a bare `Promise.reject()`, settles
+ * with `undefined`. Passing that on reaches `JobTaskFailedError`, which reads
+ * `.code` off the reason and would fail with a `TypeError` naming nothing about
+ * the fetch — so a reason that says nothing is replaced by one that at least
+ * says the job rejected.
+ */
+function toJobFailure(reason: unknown): unknown {
+  if (reason) return reason;
+  return new Error(`Queued fetch job rejected without a reason (${String(reason)})`);
+}
+
 export class FetchUrlTask<
   Input extends FetchUrlTaskInput = FetchUrlTaskInput,
   Output extends FetchUrlTaskOutput = FetchUrlTaskOutput,
@@ -1160,6 +1175,13 @@ export class FetchUrlTask<
 
     let settled = false;
     let output: Output | undefined;
+    // Rejection is tracked by a flag rather than by the reason's truthiness: a
+    // carrier rebuilding an error from an empty persisted column — or a bare
+    // `Promise.reject()` — settles with a falsy reason, and reading that as
+    // "no failure" would yield an undefined `finish` and report the run as
+    // having ended without a payload, hiding the failure behind a wrong
+    // diagnosis.
+    let failed = false;
     let failure: unknown;
     // Both branches handled, so this never rejects. It is awaited after the
     // loop rather than raced against it: the loop can end on the stream's own
@@ -1172,6 +1194,7 @@ export class FetchUrlTask<
       },
       (err: unknown) => {
         failure = err;
+        failed = true;
         settled = true;
         notify();
       }
@@ -1204,7 +1227,7 @@ export class FetchUrlTask<
         });
       }
       await settlement;
-      if (failure) throw failure;
+      if (failed) throw toJobFailure(failure);
       yield { type: "finish", data: output } as StreamEvent<Output>;
     } finally {
       closed = true;
