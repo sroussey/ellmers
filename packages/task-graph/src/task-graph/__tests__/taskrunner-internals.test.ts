@@ -130,6 +130,7 @@ describe("StreamProcessor", () => {
 
     await sp.run({ text: "ignored" }, ctx, {
       registry: globalServiceRegistry,
+      cacheRegistry: undefined,
       resourceScope: undefined,
       inputStreams: undefined,
       onProgress: async () => {},
@@ -148,6 +149,7 @@ describe("StreamProcessor", () => {
 
     const result = await sp.run({ q: "ignored" }, ctx, {
       registry: globalServiceRegistry,
+      cacheRegistry: undefined,
       resourceScope: undefined,
       inputStreams: undefined,
       onProgress: async () => {},

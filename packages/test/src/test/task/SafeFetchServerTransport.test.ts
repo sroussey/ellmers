@@ -17,6 +17,7 @@
 import { FetchUrlTask, getSafeFetchImpl, safeFetch } from "@workglow/tasks";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import { gzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 interface TestServer {
@@ -185,6 +186,66 @@ describe("SafeFetch server transport (real node:http, no mocks)", () => {
 
     const response = await safeFetch(`${origin}/`, { allowPrivate: true });
     await expect(response.text()).rejects.toThrow();
+
+    await drainRejections();
+    expect(unhandled).toEqual([]);
+  });
+
+  // Nothing sets `Accept-Encoding`, so undici sends `gzip, deflate` on its own,
+  // transparently decodes, and leaves the origin's `Content-Length` — which
+  // counts the COMPRESSED octets — on the response. Only a real transport shows
+  // this: every mocked fixture builds an uncompressed `new Response(...)`, where
+  // the stated length and the delivered bytes are the same number by
+  // construction.
+  test("a content-encoded body is not measured against the compressed Content-Length", async () => {
+    const payload = "compressible payload ".repeat(300);
+    const gz = gzipSync(Buffer.from(payload, "utf8"));
+    // The whole point is that the two counts differ; equal ones would make the
+    // assertion below pass on a build that still compares them.
+    expect(gz.byteLength).toBeLessThan(payload.length / 10);
+
+    const { origin } = await withServer((_req, res) => {
+      res.writeHead(200, {
+        "content-type": "text/plain",
+        "content-encoding": "gzip",
+        "content-length": String(gz.byteLength),
+      });
+      res.end(gz);
+    });
+
+    const task = new FetchUrlTask();
+    const reported: number[] = [];
+    task.on("progress", (progress: number | undefined) => {
+      if (typeof progress === "number") reported.push(progress);
+    });
+
+    const out = await task.run({ url: `${origin}/`, response_type: "text" });
+
+    expect(out.text).toBe(payload);
+    // The compressed length as a denominator would have put this at ~1200%.
+    for (const progress of reported) expect(progress).toBeLessThanOrEqual(100);
+
+    await drainRejections();
+    expect(unhandled).toEqual([]);
+  });
+
+  // Throwing on the status alone leaves the body unread, and undici holds the
+  // connection until GC gets to it — one socket per attempt, on a path whose
+  // 429/5xx are retried up to `maxAttempts`.
+  test("a non-2xx response frees its connection instead of leaking it", async () => {
+    const body = "x".repeat(200_000);
+    const { origin, server } = await withServer((_req, res) => {
+      res.writeHead(503, {
+        "content-type": "text/plain",
+        "content-length": String(body.length),
+      });
+      res.end(body);
+    });
+
+    const task = new FetchUrlTask();
+    await expect(task.run({ url: `${origin}/`, response_type: "text" })).rejects.toThrow(/503/);
+
+    expect(await waitForNoConnections(server, 5000)).toBe(0);
 
     await drainRejections();
     expect(unhandled).toEqual([]);

@@ -18,6 +18,7 @@ import {
   getPortStreamMode,
   getStreamingPorts,
   isDeltaStreamMode,
+  isStreamConsumer,
   isTaskStreamable,
   portForcesStreamValidation,
   streamEventCost,
@@ -402,7 +403,12 @@ export class StreamPump {
     accumulateLeafOutputs: boolean,
     noAccumulation: boolean = false
   ): boolean {
-    if (outputCache) {
+    // A non-cacheable task writes no row, so the cache is irrelevant to its
+    // accumulation decision — the edge analysis below owns it. Without this
+    // guard both relaxations refuse (each requires `cacheable`) and control
+    // reaches the trailing `return true`, so declaring a large streaming task
+    // non-cacheable made it buffer its entire output.
+    if (outputCache && task.cacheable) {
       // Relaxation: when the cache can ingest a byte stream, the task streams
       // ONLY binary (any number of such ports), and no downstream edge needs
       // the materialized value, the bytes are piped straight to one cache sink
@@ -545,12 +551,14 @@ export class StreamPump {
     const target = graph.getTask(df.targetTaskId);
     if (!source || !target) return false;
     // The consumer must actually take its data from the live stream: only
-    // streamable tasks receive ctx.inputStreams (prepareStreamingInputs is
-    // gated on isTaskStreamable), so a non-streamable target with a matching
-    // input mode still needs the drain to materialize its value. Subgraph
+    // tasks that produce a stream OR consume one receive ctx.inputStreams
+    // (prepareStreamingInputs is gated on the same pair), so a target that
+    // does neither still needs the drain to materialize its value. Subgraph
     // hosts (GraphAsTask etc.) also need the drain — their inner tasks read
     // the settled input slot, which the passthrough leaves unmaterialized.
-    if (!isTaskStreamable(target) || target.hasChildren()) return false;
+    if ((!isTaskStreamable(target) && !isStreamConsumer(target)) || target.hasChildren()) {
+      return false;
+    }
     const srcMode = getPortStreamMode(source.outputSchema(), df.sourceTaskPortId);
     if (!isDeltaStreamMode(srcMode)) return false;
     if (getPortStreamMode(target.inputSchema(), df.targetTaskPortId) !== srcMode) return false;

@@ -30,6 +30,17 @@ export const FetchUrlErrorCode = {
   NETWORK_ERROR: "FETCH_NETWORK_ERROR",
   NO_RESPONSE_BODY: "FETCH_NO_RESPONSE_BODY",
   CONFIGURATION: "FETCH_CONFIGURATION",
+  CONTENT_LENGTH_MISMATCH: "FETCH_CONTENT_LENGTH_MISMATCH",
+  /**
+   * The request failed after body bytes had already been delivered to the
+   * consumer. Deliberately absent from {@link FETCH_URL_RETRYABLE_ERROR_CODES}:
+   * a retry re-issues from byte 0 while the consumer's stream subscription
+   * survives the attempt, so the partial body and the retry's full body would
+   * concatenate into a corrupt result the job then reports as success. Distinct
+   * from {@link FetchUrlErrorCode.NETWORK_ERROR}, which is the same wire failure
+   * before the first byte reached anyone and stays retryable.
+   */
+  BODY_TRUNCATED: "FETCH_BODY_TRUNCATED",
 } as const;
 
 export type FetchUrlErrorCodeValue = (typeof FetchUrlErrorCode)[keyof typeof FetchUrlErrorCode];

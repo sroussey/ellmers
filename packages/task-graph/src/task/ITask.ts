@@ -12,6 +12,7 @@ import type {
 } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import type { CachePolicy } from "../cache/CachePolicy";
+import type { CacheRegistry } from "../cache/CacheRegistry";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ITaskGraph } from "../task-graph/ITaskGraph";
 import type { IWorkflow } from "../task-graph/IWorkflow";
@@ -96,6 +97,29 @@ export interface IExecuteContext {
    */
   disown: <T extends ITask | ITaskGraph | IWorkflow>(i: T) => void;
   registry: ServiceRegistry;
+  /**
+   * The cache this run resolved, or `undefined` when it resolved none.
+   *
+   * `TaskRunner` reaches its answer three ways — `IRunConfig.outputCache` on
+   * the run, `task.runConfig.outputCache` on the instance, and a
+   * `CACHE_REGISTRY` binding on the run's {@link registry} — and only the
+   * runner sees the precedence between them. A task that re-derives the answer
+   * from any single source is right for that shape and blind to the other two,
+   * which for a task whose correctness depends on whether its output will be
+   * stored (a conditional HTTP request whose bodiless `304` must not overwrite
+   * the copy it just validated) is a silent data-integrity hole rather than a
+   * missing feature.
+   *
+   * This grants no reach a task lacked: `registry.get(CACHE_REGISTRY)` on the
+   * already-exposed {@link registry} returns the same repositories. What it
+   * publishes is the *resolution* — one value, read from the runner's own
+   * field, so a second derivation cannot drift from it.
+   *
+   * Both slots are individually optional, so a registry-supplied instance may
+   * carry neither; "a cache is in play" means a slot is actually populated.
+   * Absent on a hand-built context that never went through a runner.
+   */
+  readonly cacheRegistry?: CacheRegistry;
   /**
    * Input streams for pass-through streaming tasks. Keyed by input port name.
    * Provided when the graph runner detects that a task has streaming input edges

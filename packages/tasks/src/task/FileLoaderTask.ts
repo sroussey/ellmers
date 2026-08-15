@@ -7,7 +7,7 @@
 import type { IExecuteContext, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Task, TaskAbortedError, Workflow } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import type { FetchUrlTaskOutput } from "./FetchUrlTask";
+import type { FetchUrlResponseType, FetchUrlTaskOutput } from "./FetchUrlTask";
 import { FetchUrlTask } from "./FetchUrlTask";
 
 let _papaParse: typeof import("papaparse").parse | undefined;
@@ -467,8 +467,8 @@ export class FileLoaderTask extends Task<FileLoaderTaskInput, FileLoaderTaskOutp
     };
   }
 
-  protected detectResponseType(detectedFormat: string): "text" | "json" | "blob" | "arraybuffer" {
-    let responseType: "text" | "json" | "blob" | "arraybuffer" = "text";
+  protected detectResponseType(detectedFormat: string): FetchUrlResponseType {
+    let responseType: FetchUrlResponseType = "text";
     if (detectedFormat === "json") {
       responseType = "json";
     } else if (detectedFormat === "image" || detectedFormat === "pdf") {
