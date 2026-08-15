@@ -32,9 +32,9 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Plugin } from "vite";
-
-/** Workspace groups from the root `workspaces` globs. */
-export const WORKSPACE_GROUPS = ["packages", "providers", "examples"] as const;
+// Extension required: this module is in `vitest.config.ts`'s graph, which Vite's
+// native config loader resolves without extension inference.
+import { workspaceGroups } from "./workspaceGroups.ts";
 
 /** Source extensions a dist entry can have come from, in resolution order. */
 const SOURCE_EXTENSIONS = [".ts", ".tsx"] as const;
@@ -88,6 +88,16 @@ export interface WorkspacePackage {
   readonly exports: unknown;
   /** Every name this package lists in any dependency block. */
   readonly dependencies: ReadonlySet<string>;
+  /**
+   * Whether this workspace ships anything to a registry — `false` only for a
+   * manifest that opts out with `publishConfig.access: "none"`.
+   *
+   * Deliberately NOT `private`. `packages/test`, `providers/aws` and
+   * `providers/cloudflare` are all `private: true` and all carry real tests
+   * whose source belongs in the coverage denominator; `access: "none"` is the
+   * narrower statement that a workspace publishes no API at all.
+   */
+  readonly publishes: boolean;
 }
 
 /** Dependency blocks that make a package resolvable from another one. */
@@ -118,7 +128,7 @@ function declaredDependencies(manifest: Record<string, unknown>): ReadonlySet<st
  */
 export function listWorkspacePackages(root: string): WorkspacePackage[] {
   const found: WorkspacePackage[] = [];
-  for (const group of WORKSPACE_GROUPS) {
+  for (const group of workspaceGroups(root)) {
     let entries: string[];
     try {
       entries = readdirSync(join(root, group));
@@ -127,22 +137,35 @@ export function listWorkspacePackages(root: string): WorkspacePackage[] {
     }
     for (const entry of entries) {
       const dir = join(root, group, entry);
+      const manifestPath = join(dir, "package.json");
+      let manifest: { name?: unknown; exports?: unknown; publishConfig?: unknown };
       try {
-        const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as {
-          name?: unknown;
-          exports?: unknown;
-        };
-        if (typeof manifest.name === "string") {
-          found.push({
-            name: manifest.name,
-            dir,
-            exports: manifest.exports,
-            dependencies: declaredDependencies(manifest),
-          });
-        }
-      } catch {
-        // Not a package directory (or unreadable manifest) — nothing to map.
+        manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as typeof manifest;
+      } catch (error) {
+        // A directory with no manifest is the ordinary case — build output,
+        // `.turbo`, an editor scratch folder — and is simply not a package.
+        // Anything else (malformed JSON, unreadable file) is a real fault, and
+        // swallowing it drops a package from the resolver silently: the plugin
+        // then no-ops for that package and its coverage collapses back onto
+        // `dist/*`, which is exactly the symptom this module exists to remove.
+        if ((error as NodeJS.ErrnoException | null)?.code === "ENOENT") continue;
+        throw new Error(`Cannot read workspace manifest ${manifestPath}: ${String(error)}`, {
+          cause: error,
+        });
       }
+      if (typeof manifest.name !== "string") continue;
+      const publishConfig = manifest.publishConfig;
+      const access =
+        typeof publishConfig === "object" && publishConfig !== null
+          ? (publishConfig as { access?: unknown }).access
+          : undefined;
+      found.push({
+        name: manifest.name,
+        dir,
+        exports: manifest.exports,
+        dependencies: declaredDependencies(manifest as Record<string, unknown>),
+        publishes: access !== "none",
+      });
     }
   }
   return found.sort((a, b) => a.name.localeCompare(b.name));
@@ -427,10 +450,19 @@ export const WORKSPACE_SOURCE_PLUGIN_NAME = "workglow:workspace-source";
  *
  * A one-line adapter over {@link resolveWorkspaceSourceId}: the package list is
  * read once, and every decision lives in that function.
+ *
+ * `packages` is accepted so a caller building MANY projects can scan once and
+ * share the result. `vitest.config.ts` builds one project per workspace that
+ * holds tests and every one needs the plugin attached (projects are standalone
+ * Vite configs, so a root-level `plugins` entry never reaches them); scanning
+ * per project re-read every workspace manifest once per project at config load,
+ * for an answer that cannot differ between them.
+ * The plugin holds no per-project state, so one instance serves them all.
  */
-export function workspaceSourcePlugin(root: string): Plugin {
-  const packages = listWorkspacePackages(root);
-
+export function workspaceSourcePlugin(
+  root: string,
+  packages: readonly WorkspacePackage[] = listWorkspacePackages(root)
+): Plugin {
   return {
     name: WORKSPACE_SOURCE_PLUGIN_NAME,
     enforce: "pre",

@@ -11,8 +11,21 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../..");
 
-/** The root `workspaces` globs, in the order a manifest scan walks them. */
-const WORKSPACE_GROUPS = ["packages", "providers", "examples"] as const;
+/**
+ * The workspace groups, derived from the root manifest's `workspaces` field:
+ * `"./packages/*"` → `"packages"`.
+ *
+ * This is duplicated DERIVATION CODE, not a duplicated list.
+ * `scripts/lib/workspaceGroups.ts` owns the same reduction and every other
+ * caller imports it from there; this file cannot, for the reason spelled out on
+ * the `describe` below — `packages/test` is a `composite` project rooted at
+ * `./src`, so importing from `scripts/` would put those files in its program
+ * and break `build-types`. Re-deriving still beats copying the list: a group
+ * added to `package.json` is picked up here instead of being silently skipped.
+ */
+const WORKSPACE_GROUPS: readonly string[] = (
+  JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as { workspaces: string[] }
+).workspaces.map((pattern) => pattern.replace(/^\.\//, "").replace(/\/?\*.*$/, ""));
 
 /**
  * The conditions a plain `import` from Node activates, and only those.
