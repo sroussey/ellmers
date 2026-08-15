@@ -23,6 +23,7 @@ import {
   setTaskQueueRegistry,
   TaskConfigurationError,
 } from "@workglow/task-graph";
+import { InMemoryTaskOutputRepository } from "@workglow/task-graph/test";
 import type { FetchUrlTaskInput, FetchUrlTaskOutput } from "@workglow/tasks";
 import {
   applyCredentialToHeaders,
@@ -784,6 +785,54 @@ describe("FetchUrlTask", () => {
         await server.stop();
         await storage.deleteAll();
       }
+    });
+  });
+
+  describe("conditional requests", () => {
+    test("a 304 answering a conditional request finishes notModified with no body", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(new Response(null, { status: 304, headers: { etag: '"v1"' } }))
+      );
+      const result = await fetchUrl({
+        url: "https://example.com/big.zip",
+        response_type: "stream",
+        headers: { "If-None-Match": '"v1"' },
+      });
+      expect(result.metadata?.notModified).toBe(true);
+      expect(result.metadata?.status).toBe(304);
+      expect(result.blob).toBeUndefined();
+    });
+
+    test("an unsolicited 304 throws", async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(new Response(null, { status: 304 })));
+      const error = await fetchUrl({
+        url: "https://example.com/big.zip",
+        response_type: "stream",
+      }).catch((e) => e);
+      expect(error).toBeInstanceOf(Error);
+    });
+
+    test("If-Modified-Since also counts as conditional", async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(new Response(null, { status: 304 })));
+      const result = await fetchUrl({
+        url: "https://example.com/big.zip",
+        response_type: "stream",
+        headers: { "if-modified-since": "Wed, 01 Jan 2025 00:00:00 GMT" },
+      });
+      expect(result.metadata?.notModified).toBe(true);
+    });
+
+    test("a conditional request plus an output cache is refused", async () => {
+      const task = new FetchUrlTask({ queue: false });
+      task.runConfig.outputCache = new InMemoryTaskOutputRepository();
+      const error = await task
+        .run({
+          url: "https://example.com/big.zip",
+          response_type: "stream",
+          headers: { "If-None-Match": '"v1"' },
+        })
+        .catch((e) => e);
+      expect(String(error)).toMatch(/conditional request/i);
     });
   });
 

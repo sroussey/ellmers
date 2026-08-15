@@ -255,6 +255,20 @@ function buildMetadata(response: Response): FetchUrlMetadata {
   };
 }
 
+/**
+ * True when the request carries a validator, which is what makes a `304` a
+ * meaningful answer. An unsolicited `304` is a server protocol error —
+ * "unmodified relative to what?" has no answer a caller can act on — so it
+ * stays an error rather than being reported as `notModified`.
+ */
+export function hasConditionalHeader(headers: Record<string, string> | undefined): boolean {
+  if (!headers) return false;
+  return Object.keys(headers).some((k) => {
+    const lower = k.toLowerCase();
+    return lower === "if-none-match" || lower === "if-modified-since";
+  });
+}
+
 function buildHttpError(url: string, response: Response): Error {
   let retryDate: Date | undefined;
   if (response.status === 429 || response.status === 503 || response.headers.get("Retry-After")) {
@@ -379,6 +393,14 @@ export class FetchUrlJob<
   ): AsyncIterable<StreamEvent<Output>> {
     const response = await this.issueRequest(input, context);
     const metadata = buildMetadata(response);
+
+    if (response.status === 304 && hasConditionalHeader(input.headers)) {
+      // No body, no derived port, no delta — so no router opens and no cache
+      // ref is minted. The caller reads metadata.notModified and keeps
+      // whatever artifact it already had.
+      yield { type: "finish", data: { metadata } } as StreamEvent<Output>;
+      return;
+    }
 
     if (!response.ok) {
       throw buildHttpError(input.url!, response);
@@ -660,6 +682,19 @@ export class FetchUrlTask<
     input: FetchUrlTaskInput,
     executeContext: IExecuteContext
   ): AsyncIterable<StreamEvent<Output>> {
+    // A 304 carries no body, so a cache save would write a row whose `body` is
+    // empty — destroying the cached copy the 304 just certified as still good.
+    // Making that safe means reading the stored validator and reissuing, which
+    // is a conditional-cache feature. Conditional requests are for callers
+    // managing their own artifact.
+    if (hasConditionalHeader(input.headers) && this.runConfig.outputCache) {
+      throw new TaskConfigurationError(
+        "FetchUrlTask: a conditional request (If-None-Match / If-Modified-Since) cannot be " +
+          "combined with an output cache — a 304 has no body and the save would overwrite the " +
+          "cached copy the 304 just validated. Remove the output cache, or drop the validator."
+      );
+    }
+
     const jobInput = this.prepareJobInput(input);
 
     // Queued sources aren't wired into executeStream yet — delegate to
