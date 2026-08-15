@@ -350,6 +350,20 @@ export function hasConditionalHeader(headers: Record<string, string> | undefined
   });
 }
 
+/**
+ * Releases a response nothing is going to read.
+ *
+ * An undrained body keeps the connection checked out of the agent's pool until
+ * GC gets to it, so a path that throws on the status alone leaks one socket per
+ * attempt — and 429/5xx are retryable, so the queued path spends its whole
+ * `maxAttempts` budget opening connections it never closes. Cancelling an
+ * already-errored or absent body rejects or is a no-op; either way the caller
+ * has its own failure to report.
+ */
+async function discardBody(response: Response): Promise<void> {
+  await response.body?.cancel().catch(() => {});
+}
+
 function buildHttpError(url: string, response: Response): Error {
   let retryDate: Date | undefined;
   if (response.status === 429 || response.status === 503 || response.headers.get("Retry-After")) {
@@ -503,12 +517,14 @@ export class FetchUrlJob<
       // No body, no derived port, no delta — so no router opens and no cache
       // ref is minted. The caller reads metadata.notModified and keeps
       // whatever artifact it already had.
+      await discardBody(response);
       await this.emitStreamEnd(metadata, context);
       yield { type: "finish", data: { metadata } } as StreamEvent<Output>;
       return;
     }
 
     if (!response.ok) {
+      await discardBody(response);
       throw buildHttpError(input.url!, response);
     }
 

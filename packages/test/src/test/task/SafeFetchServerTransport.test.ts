@@ -226,6 +226,28 @@ describe("SafeFetch server transport (real node:http, no mocks)", () => {
     expect(unhandled).toEqual([]);
   });
 
+  // Throwing on the status alone leaves the body unread, and undici holds the
+  // connection until GC gets to it — one socket per attempt, on a path whose
+  // 429/5xx are retried up to `maxAttempts`.
+  test("a non-2xx response frees its connection instead of leaking it", async () => {
+    const body = "x".repeat(200_000);
+    const { origin, server } = await withServer((_req, res) => {
+      res.writeHead(503, {
+        "content-type": "text/plain",
+        "content-length": String(body.length),
+      });
+      res.end(body);
+    });
+
+    const task = new FetchUrlTask();
+    await expect(task.run({ url: `${origin}/`, response_type: "text" })).rejects.toThrow(/503/);
+
+    expect(await waitForNoConnections(server, 5000)).toBe(0);
+
+    await drainRejections();
+    expect(unhandled).toEqual([]);
+  });
+
   test("aborting FetchUrlTask mid-body raises no unhandled rejection", async () => {
     const { origin } = await withServer((_req, res) => {
       // A stated content-length makes FetchUrlTask report progress per chunk,
