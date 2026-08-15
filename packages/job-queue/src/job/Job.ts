@@ -25,8 +25,14 @@ export interface IJobExecuteContext {
    * OPTIONAL. Present only when the worker's transport can deliver stream
    * events. Jobs MUST NOT retain references to chunk buffers after calling
    * this (buffers may be transferred across a worker boundary and detached).
+   *
+   * Returns a promise that settles once the event has been delivered to the
+   * in-process listeners. A job producing a large body SHOULD await it: the
+   * emit path is otherwise a synchronous push, so a fast producer outruns a
+   * slow consumer with nothing to pace it. A job that ignores the return
+   * value keeps the previous fire-and-forget behavior.
    */
-  emitStreamEvent?: (event: StreamEventLike) => void;
+  emitStreamEvent?: (event: StreamEventLike) => void | Promise<void>;
 }
 
 /**

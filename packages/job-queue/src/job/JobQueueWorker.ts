@@ -938,7 +938,7 @@ export class JobQueueWorker<
    * the `job_stream` event and forwarded by an attached `JobQueueServer` to
    * subscribed clients. Storage is not touched.
    */
-  protected emitStreamEvent(jobId: unknown, event: StreamEventLike): void {
+  protected emitStreamEvent(jobId: unknown, event: StreamEventLike): Promise<void> {
     // In-memory fast path (same-process attached clients) — unchanged.
     this.events.emit("job_stream", jobId, event);
 
@@ -963,6 +963,11 @@ export class JobQueueWorker<
         });
       this.streamPublishChains.set(jobId, chain);
     }
+
+    // The in-memory emit above is synchronous; the cross-process publish is
+    // not. Returning the chain lets an emitting job await delivery, which is
+    // the only backpressure signal that crosses the job boundary.
+    return this.streamPublishChains.get(jobId) ?? Promise.resolve();
   }
 
   /** Internal — resolve the active claim for a job id, throw if missing. */
