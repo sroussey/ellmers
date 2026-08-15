@@ -1,8 +1,9 @@
 {
   "name": "@workglow/triggers",
   "type": "module",
-  "version": "0.3.38",
+  "version": "0.3.44",
   "license": "Apache-2.0",
+  "sideEffects": false,
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",

@@ -373,7 +373,7 @@
     },
     "packages/triggers": {
       "name": "@workglow/triggers",
-      "version": "0.3.38",
+      "version": "0.3.44",
       "devDependencies": {
         "@workglow/task-graph": "workspace:*",
         "@workglow/util": "workspace:*",

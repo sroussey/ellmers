@@ -6,6 +6,7 @@
 
 import { TaskAbortedError } from "@workglow/task-graph";
 import { EventEmitter, getLogger, uuid4 } from "@workglow/util";
+import { assertPositiveInteger } from "./assertions";
 import type {
   ITrigger,
   ITriggerFireContext,
@@ -56,15 +57,6 @@ function isAbortShaped(error: unknown, signal: AbortSignal): boolean {
   if (error !== undefined && error === signal.reason) return true;
   if (error instanceof TaskAbortedError) return true;
   return error instanceof Error && error.name === "AbortError";
-}
-
-function assertPositiveInteger(value: number, name: string): number {
-  if (!Number.isInteger(value) || value < 1) {
-    throw new TriggerConfigurationError(
-      `${name} must be a positive integer, received ${String(value)}.`
-    );
-  }
-  return value;
 }
 
 /** Options common to every built-in trigger. */
@@ -564,6 +556,16 @@ export abstract class BaseTrigger implements ITrigger {
    * would keep every queued frame alive for the lifetime of the trigger.
    */
   private async runTickChain(run: TriggerRun, first: number): Promise<void> {
+    // The chain reaches here one microtask after `dispatch` registered it in
+    // `run.pending`, and a `stop()` in that window clears `run.active` but
+    // still AWAITS this chain through `releaseWhenIdle` — so without this
+    // check the first tick runs anyway, emitting `fire` and invoking the
+    // handler with an already-aborted signal. The loop's own `run.active`
+    // test is at the bottom, after that first tick has happened.
+    //
+    // Returning immediately keeps the drain correct: the chain is still in
+    // `pending`, so `stop()` still awaits it; it simply resolves at once.
+    if (!run.active) return;
     let scheduledAt: number | undefined = first;
     while (scheduledAt !== undefined) {
       run.inFlight += 1;

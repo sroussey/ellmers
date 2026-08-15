@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { CachePolicy, IExecuteContext } from "@workglow/task-graph";
+import type { CachePolicy, IExecuteContext, WorkflowRunConfig } from "@workglow/task-graph";
 import { Task, Workflow } from "@workglow/task-graph";
 import type {
   ITrigger,
@@ -20,10 +20,11 @@ import {
   installWorkflowTriggers,
   IntervalTrigger,
   PollingTrigger,
+  TriggerConfigurationError,
   WorkflowTriggerError,
 } from "@workglow/triggers";
 import type { ILogger } from "@workglow/util";
-import { EventEmitter, getLogger, setLogger } from "@workglow/util";
+import { EventEmitter, getLogger, ResourceScope, setLogger } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -143,6 +144,40 @@ class WedgedTrigger implements ITrigger {
 
   public stop(): Promise<void> {
     return new Promise<void>(() => {});
+  }
+
+  public on<Event extends TriggerEvents>(name: Event, fn: TriggerEventListener<Event>): void {
+    this.events.on(name, fn);
+  }
+
+  public off<Event extends TriggerEvents>(name: Event, fn: TriggerEventListener<Event>): void {
+    this.events.off(name, fn);
+  }
+
+  public once<Event extends TriggerEvents>(name: Event, fn: TriggerEventListener<Event>): void {
+    this.events.once(name, fn);
+  }
+}
+
+/**
+ * A trigger whose `stop()` REJECTS. `listenWorkflow`'s stop path reports each
+ * rejection through the logger, so this is what puts a logger call on the
+ * caller-abort listener's path — where a throw has no caller left to catch it.
+ */
+class RejectingStopTrigger implements ITrigger {
+  public readonly kind = "rejecting-stop";
+  public readonly events = new EventEmitter<TriggerEventListeners>();
+  public running = false;
+
+  constructor(public readonly id: string) {}
+
+  public start(): void {
+    this.running = true;
+  }
+
+  public stop(): Promise<void> {
+    this.running = false;
+    return Promise.reject(new Error("stop boom"));
   }
 
   public on<Event extends TriggerEvents>(name: Event, fn: TriggerEventListener<Event>): void {
@@ -385,6 +420,167 @@ describe("Workflow trigger bindings", () => {
     expect(errors).toHaveLength(1);
 
     await handle.stop();
+  });
+
+  test("maxPendingFires is validated at bind time", () => {
+    // It was the only numeric bound in the package read raw, and it breaks in
+    // BOTH directions:
+    //
+    //   NaN / Infinity — the drop test is `waiting >= limit`, and both
+    //   `NaN >= NaN` and `n >= Infinity` are false, so the drop branch is
+    //   UNREACHABLE. Every overlapping fire queues instead, each retaining a
+    //   chain closure and its captured `input` — the unbounded backlog the
+    //   default of 1 exists to prevent, silently reintroduced by a typo.
+    //
+    //   0 / negative — `0 >= 0` is true, so EVERY overlapping fire is dropped,
+    //   and the error message interpolates the bogus limit back at the caller
+    //   ("maxPendingFires: 0"), reading like a deliberate configuration.
+    //
+    // 1.5 is here because a fractional bound is meaningless for a count and
+    // the other five bounds reject it; `Number.isInteger` covers all five
+    // cases in one test.
+    for (const value of [Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5]) {
+      const workflow = createWorkflow();
+      const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+
+      expect(() => workflow.trigger(trigger, { maxPendingFires: value })).toThrow(
+        TriggerConfigurationError
+      );
+      expect(() => workflow.trigger(trigger, { maxPendingFires: value })).toThrow(
+        /maxPendingFires/
+      );
+      // Rejected BEFORE the binding is recorded, so a failed bind leaves the
+      // workflow exactly as it was and free to bind properly afterwards.
+      expect(getWorkflowTriggers(workflow)).toEqual([]);
+    }
+  });
+
+  test("a valid maxPendingFires still binds, and so does omitting it", () => {
+    // Guards the validation against over-rejecting: the point is to catch the
+    // five shapes above, not to narrow what callers may legitimately pass.
+    const workflow = createWorkflow();
+    const bounded = new IntervalTrigger({ intervalMs: PERIOD, id: "bounded" });
+    const defaulted = new IntervalTrigger({ intervalMs: PERIOD, id: "defaulted" });
+    const explicitlyUndefined = new IntervalTrigger({ intervalMs: PERIOD, id: "undef" });
+
+    workflow.trigger(bounded, { maxPendingFires: 5 });
+    workflow.trigger(defaulted);
+    workflow.trigger(explicitlyUndefined, { maxPendingFires: undefined });
+
+    expect(getWorkflowTriggers(workflow).map((trigger) => trigger.id)).toEqual([
+      "bounded",
+      "defaulted",
+      "undef",
+    ]);
+  });
+
+  test("a runConfig carrying a signal is rejected at bind time", () => {
+    // `runConfig` is captured ONCE and reused for every fire forever, while an
+    // AbortSignal is one-shot: once the caller aborts, every later fire would
+    // start a run that is born cancelled while the schedule kept ticking —
+    // one error event per period, indefinitely. Rejecting is better than
+    // silently dropping it, and better than bridging it per fire (which leaks
+    // one composite signal per fire, retained by the long-lived source).
+    const workflow = createWorkflow();
+    const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+    const controller = new AbortController();
+
+    expect(() =>
+      workflow.trigger(trigger, {
+        runConfig: { signal: controller.signal } as WorkflowRunConfig,
+      })
+    ).toThrow(WorkflowTriggerError);
+    // The message must name the SUPPORTED alternative: a caller reaching for
+    // `runConfig.signal` wants to cancel something, and a bare refusal leaves
+    // them without the answer.
+    expect(() =>
+      workflow.trigger(trigger, {
+        runConfig: { signal: controller.signal } as WorkflowRunConfig,
+      })
+    ).toThrow(/listen\(\{ signal \}\)/);
+    expect(getWorkflowTriggers(workflow)).toEqual([]);
+  });
+
+  test("a runConfig without a signal is still forwarded, and the fire's own signal wins", async () => {
+    // The rejection above must not have cost the option its actual job.
+    const workflow = createWorkflow();
+    const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+    const resourceScope = new ResourceScope();
+    const runSpy = vi.spyOn(workflow, "run");
+
+    workflow.trigger(trigger, { runConfig: { resourceScope } });
+    const handle = await workflow.listen();
+
+    await advanceFakeTimers(PERIOD);
+    expect(runSpy).toHaveBeenCalledTimes(1);
+
+    const config = runSpy.mock.calls[0]?.[1];
+    expect(config?.resourceScope).toBe(resourceScope);
+    // The trigger supplies the run's cancellation, unconditionally — cheap
+    // defense against a `runConfig` object mutated after binding.
+    const signal = config?.signal;
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal?.aborted).toBe(false);
+
+    await handle.stop();
+    expect(signal?.aborted).toBe(true);
+
+    runSpy.mockRestore();
+  });
+
+  test("a rejecting stop() on caller abort produces no unhandled rejection", async () => {
+    // The caller-signal listener stops the triggers from an event handler,
+    // where there is no caller left to observe a rejected promise: `stop()`
+    // reports its own failures through the logger, and a logger that throws
+    // used to turn that into a process-killing unhandledRejection.
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown): void => {
+      rejections.push(reason);
+    };
+    process.on("unhandledRejection", onRejection);
+    const previousLogger = getLogger();
+    try {
+      const workflow = createWorkflow();
+      const trigger = new RejectingStopTrigger("rejects-on-stop");
+      workflow.trigger(trigger);
+
+      const controller = new AbortController();
+      const handle = await workflow.listen({ signal: controller.signal });
+      expect(handle.triggers).toHaveLength(1);
+
+      // `stop()` logs each rejected trigger stop at `error`; this logger turns
+      // that report into a throw, which is what escapes the listener.
+      const noop = (): void => {};
+      const throwingLogger: ILogger = {
+        debug: noop,
+        info: noop,
+        warn: noop,
+        error: () => {
+          throw new Error("logger boom");
+        },
+        fatal: noop,
+        child: () => throwingLogger,
+        time: noop,
+        timeEnd: noop,
+        group: noop,
+        groupEnd: noop,
+      };
+      setLogger(throwingLogger);
+
+      controller.abort();
+      await flushAsyncWork();
+      setLogger(previousLogger);
+
+      expect(rejections).toEqual([]);
+      // And the handle was released, so the workflow is usable again — an
+      // abort must not lock `trigger()` out forever.
+      expect(() =>
+        workflow.trigger(new IntervalTrigger({ intervalMs: PERIOD, id: "after-abort" }))
+      ).not.toThrow();
+    } finally {
+      setLogger(previousLogger);
+      process.off("unhandledRejection", onRejection);
+    }
   });
 
   test("one binding's backlog is not charged against another binding's limit", async () => {
