@@ -55,8 +55,11 @@ export interface JobHandle<Output> {
   onProgress(callback: JobProgressListener): () => void;
   /**
    * OPTIONAL — present only when this handle's transport can deliver stream
-   * events (a same-process server-attached queue). Absent on storage-only
-   * backends; callers branch on `typeof handle.onStream === "function"`.
+   * events: a same-process server-attached queue (the fast path), or a carrier
+   * implementing BOTH halves of the stream channel. Absent on carriers with
+   * neither, and on one implementing only half a channel — a subscription
+   * there can never receive anything. Callers branch on
+   * `typeof handle.onStream === "function"`.
    */
   onStream?(callback: JobStreamListener): () => void;
   /**
@@ -569,6 +572,31 @@ export class JobQueueClient<Input, Output> {
   }
 
   /**
+   * Whether the carrier gives us a usable cross-process stream channel.
+   *
+   * The channel is a matched pair. A carrier that can replay a stream but
+   * never receives one (no `publishStreamChunk`) can neither deliver a
+   * remotely-processed job's events NOR ever supersede the fast path —
+   * subscribing would instead PERMANENTLY suppress {@link handleJobStream}
+   * for that job, with nothing to replace it. Every channel-capable backend
+   * today implements both halves together; treat one without the other as
+   * "no channel" rather than "half a channel that blacks out delivery".
+   *
+   * This is the single predicate behind BOTH the capability advertised on a
+   * {@link JobHandle} and the subscription that backs it. Splitting them is
+   * what let a half-channel carrier hand out an `onStream` whose listener
+   * could never fire: `createJobHandle` advertised on the read half alone
+   * while this gate refused, so nothing ever delivered and callers that probe
+   * `typeof handle.onStream === "function"` read the queue as stream-capable.
+   */
+  private hasStreamChannel(): boolean {
+    return (
+      typeof this.messageQueue.subscribeToStream === "function" &&
+      typeof this.messageQueue.publishStreamChunk === "function"
+    );
+  }
+
+  /**
    * On a channel-capable queue, open a stream subscription for `jobId` and
    * feed rows through a {@link StreamReassembler} into the same dispatch path
    * the same-process fast path uses. Server-attached clients subscribe too —
@@ -578,21 +606,10 @@ export class JobQueueClient<Input, Output> {
    * is delivered twice. Channel-less carriers stay fast-path only.
    */
   private ensureStreamSubscription(jobId: unknown): void {
-    const subscribe = this.messageQueue.subscribeToStream;
-    // The channel is a matched pair. A carrier that can replay a stream but
-    // never receives one (no `publishStreamChunk`) can neither deliver a
-    // remotely-processed job's events NOR ever supersede the fast path —
-    // opening a subscription here would instead PERMANENTLY suppress
-    // `handleJobStream` (see there) for this job, with nothing to replace
-    // it. Every channel-capable backend today implements both halves
-    // together; treat one without the other as "no channel" rather than
-    // "half a channel that blacks out delivery".
-    if (
-      typeof subscribe !== "function" ||
-      typeof this.messageQueue.publishStreamChunk !== "function"
-    ) {
-      return;
-    }
+    if (!this.hasStreamChannel()) return;
+    // Proven a function by the gate above; the local read cannot narrow
+    // through the call.
+    const subscribe = this.messageQueue.subscribeToStream!;
     if (this.jobStreamUnsubscribers.has(jobId)) return;
     // Resume from the last seq already delivered so a re-subscribe replays only
     // the gap, not the whole log.
@@ -872,10 +889,19 @@ export class JobQueueClient<Input, Output> {
       onProgress: (callback: JobProgressListener) => this.onJobProgress(id, callback),
     };
     // Stream delivery requires either a same-process server-attached transport
-    // (direct in-memory fast path) or a channel-capable message queue (the
-    // cross-process side-stream). Backends with neither omit `onStream`, so
+    // (direct in-memory fast path) or a carrier implementing BOTH halves of the
+    // stream channel (the cross-process side-stream — see
+    // {@link hasStreamChannel}). Backends with neither omit `onStream`, so
     // callers branch on `typeof handle.onStream === "function"`.
-    if (this.server || typeof this.messageQueue.subscribeToStream === "function") {
+    //
+    // The server half remains a *possibility* of delivery rather than a
+    // guarantee: on a durable queue shared with other processes, a job this
+    // client sent may be claimed by a worker the attached server does not own,
+    // and the fast path can never observe that. Which process claims a job is
+    // not knowable at send time, so the alternative — withholding `onStream`
+    // from every durable-storage queue — would refuse streaming for the
+    // ordinary single-process deployment that works today.
+    if (this.server || this.hasStreamChannel()) {
       handle.onStream = (callback: JobStreamListener) => this.onJobStream(id, callback);
     }
     // Streaming result reads require a cache backing reachable from this

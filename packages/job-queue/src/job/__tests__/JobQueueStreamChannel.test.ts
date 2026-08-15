@@ -416,4 +416,48 @@ describe("a half-configured channel (subscribeToStream without publishStreamChun
       await server.stop();
     }
   });
+
+  it("an unattached client over the same carrier does not advertise onStream at all", async () => {
+    // No server attached, so the fast path is gone and the half-channel is the
+    // only candidate transport — and it delivers nothing. `createJobHandle`
+    // must therefore withhold `onStream` rather than hand out a listener that
+    // can never fire: callers probe `typeof handle.onStream === "function"` as
+    // THE signal for whether the queue can stream (FetchUrlTask refuses
+    // `response_type: "stream"` on its absence), and an inert-but-present
+    // `onStream` turns that refusal into an empty body reported as a
+    // successful fetch.
+    const queueName = `stream-half-channel-unattached-${uuid4()}`;
+    const storage = new InMemoryQueueStorage<SInput, SOutput>(queueName);
+    await storage.migrate();
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
+    (messageQueue as { publishStreamChunk?: unknown }).publishStreamChunk = undefined;
+
+    const server = new JobQueueServer<SInput, SOutput, StreamEmittingJob>(StreamEmittingJob, {
+      messageQueue,
+      jobStore,
+      queueName,
+      pollIntervalMs: 1,
+      stopTimeoutMs: 0,
+    });
+    const client = new JobQueueClient<SInput, SOutput>({ messageQueue, jobStore, queueName });
+    client.connect(); // storage-only — deliberately NOT attached to the server
+    await server.start();
+
+    try {
+      const handle = await client.send({ taskType: "stream" });
+      expect(handle.onStream).toBeUndefined();
+
+      // And the reason it must be withheld: subscribing would deliver nothing.
+      const received: StreamEventLike[] = [];
+      client.onJobStream(handle.id, async (event) => {
+        received.push(event);
+      });
+      await handle.waitFor();
+      await new Promise((r) => setTimeout(r, 20));
+      expect(received).toEqual([]);
+    } finally {
+      await server.stop();
+      client.disconnect();
+    }
+  });
 });
