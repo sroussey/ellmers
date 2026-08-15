@@ -14,6 +14,8 @@ import {
   invertShrinkage,
   magnitude,
   turboDequantize,
+  turboPrepareQuery,
+  turboPreparedCosineSimilarity,
   turboQuantize,
   turboQuantizeCompressionRatio,
   turboQuantizeStorageBytes,
@@ -1004,6 +1006,169 @@ describe("TurboQuantize", () => {
       for (const ratio of [0.1, 0.37, 0.8, 0.99] as const) {
         expect(invertShrinkage(1, -ratio)).toBeCloseTo(-invertShrinkage(1, ratio), 12);
       }
+    });
+  });
+
+  describe("turboPrepareQuery / turboPreparedCosineSimilarity", () => {
+    /**
+     * BIT-FOR-BIT, at every width, is the whole contract.
+     *
+     * The prepared path exists so a search loop can decode its query once instead of once
+     * per candidate. That is only a safe substitution if it is a PURE speedup — if the two
+     * routes could return even slightly different numbers, swapping one for the other would
+     * silently move every score in an index, and a caller comparing against a stored
+     * threshold or a recorded result would see the change with nothing to attribute it to.
+     *
+     * `toBe`, not `toBeCloseTo`, and that is not pedantry. The obvious implementation of a
+     * prepared query pre-divides the query's coordinates by their own norm, turning
+     * `dot / (normA * normB)` into `sum((a_i/normA) * b_i) / normB` — a different
+     * floating-point expression that disagrees in the last bits on ~96% of random pairs.
+     * `toBeCloseTo` passes for both implementations, so it would not be testing anything
+     * this cares about. Exact equality is what forces the arithmetic to stay identical.
+     *
+     * Widths 1-8, deliberately including the CORRECTED ones (1-4). Those route through
+     * `finishCosine`, which at 2-4 bits runs a table binary search and a linear
+     * interpolation — the step most likely to amplify a small ratio difference into a
+     * visible score difference, and the step that would drift first if the two entry
+     * points ever grew separate copies of the correction.
+     */
+    test("matches turboQuantizedCosineSimilarity bit-for-bit at every bit width", () => {
+      const d = 768; // not a power of two, so the padding path is exercised too
+      const rnd = makeRandom(4242);
+      const query = new Float32Array(d);
+      for (let i = 0; i < d; i++) query[i] = rnd() - 0.5;
+
+      // A spread of true cosines, so the comparison covers the shallow part of the
+      // correction map near orthogonality as well as the steep part near 1.
+      const candidates: Float32Array[] = [];
+      for (const t of [-0.9, -0.3, 0, 0.3, 0.6, 0.8, 0.95, 0.999] as const) {
+        const noise = new Float32Array(d);
+        for (let i = 0; i < d; i++) noise[i] = rnd() - 0.5;
+        const k = Math.sqrt(1 - t * t);
+        const c = new Float32Array(d);
+        for (let i = 0; i < d; i++) c[i] = t * query[i]! + k * noise[i]!;
+        candidates.push(c);
+      }
+      // Plus the query itself: self-similarity is 1 by construction on the pairwise route,
+      // so it pins the endpoint where the correction table hits its clamp.
+      candidates.push(query);
+
+      for (let bits = 1; bits <= 8; bits++) {
+        const qq = turboQuantize(query, { bits, seed: 42 });
+        const prepared = turboPrepareQuery(qq);
+
+        for (let c = 0; c < candidates.length; c++) {
+          const qc = turboQuantize(candidates[c]!, { bits, seed: 42 });
+          expect(turboPreparedCosineSimilarity(prepared, qc), `bits=${bits} candidate=${c}`).toBe(
+            turboQuantizedCosineSimilarity(qq, qc)
+          );
+        }
+      }
+    });
+
+    /**
+     * A prepared query keeps only `(bits, seed, dimensions)` from the record it was built
+     * from, and those three are precisely what `assertComparablePair` checks. They have to
+     * be re-checked per candidate rather than assumed: a prepared query is a plain object a
+     * caller can hold across a heterogeneous index, and the dot product would happily
+     * consume a candidate encoded under a different rotation basis and return a number that
+     * looks like a similarity.
+     *
+     * Each case is asserted against the SAME message the pairwise helper throws, so the two
+     * entry points stay indistinguishable to a caller reading the error — a mismatch is the
+     * same mistake whichever route found it.
+     */
+    test("rejects a candidate with mismatched bits, seed or dimensions", () => {
+      const v = new Float32Array(64);
+      for (let i = 0; i < 64; i++) v[i] = Math.sin(i * 0.3);
+      const wider = new Float32Array(128);
+      for (let i = 0; i < 128; i++) wider[i] = Math.sin(i * 0.3);
+
+      const prepared = turboPrepareQuery(turboQuantize(v, { bits: 4, seed: 1 }));
+
+      expect(() =>
+        turboPreparedCosineSimilarity(prepared, turboQuantize(wider, { bits: 4, seed: 1 }))
+      ).toThrow("same dimensions");
+      expect(() =>
+        turboPreparedCosineSimilarity(prepared, turboQuantize(v, { bits: 8, seed: 1 }))
+      ).toThrow("same bit width");
+      expect(() =>
+        turboPreparedCosineSimilarity(prepared, turboQuantize(v, { bits: 4, seed: 2 }))
+      ).toThrow("same rotation seed");
+
+      // The matching candidate still works, so the three throws above are the guard firing
+      // and not the prepared query being broken outright.
+      expect(
+        turboPreparedCosineSimilarity(prepared, turboQuantize(v, { bits: 4, seed: 1 }))
+      ).toBeCloseTo(1, 10);
+    });
+
+    /**
+     * Zero vectors take an early return on both routes — the pairwise helper checks
+     * `norm === 0` before decoding anything — so the prepared route has to agree there too,
+     * in both directions. A zero QUERY is the interesting one: it is the only case where
+     * `turboPrepareQuery` skips the decode entirely, so it is the only case where the
+     * prepared object is built by a different code path than every other query.
+     */
+    test("agrees with the pairwise helper on zero vectors, in both positions", () => {
+      const zero = turboQuantize(new Float32Array([0, 0, 0, 0]), { bits: 4, seed: 42 });
+      const nonZero = turboQuantize(new Float32Array([1, 2, 3, 4]), { bits: 4, seed: 42 });
+
+      expect(turboPreparedCosineSimilarity(turboPrepareQuery(zero), nonZero)).toBe(
+        turboQuantizedCosineSimilarity(zero, nonZero)
+      );
+      expect(turboPreparedCosineSimilarity(turboPrepareQuery(nonZero), zero)).toBe(
+        turboQuantizedCosineSimilarity(nonZero, zero)
+      );
+      expect(turboPreparedCosineSimilarity(turboPrepareQuery(zero), zero)).toBe(0);
+    });
+
+    /**
+     * The point of preparing a query is reuse, so a prepared query must be immutable in
+     * effect: scoring against it must not consume or alter it. Nothing in the
+     * implementation writes to it, but "nothing currently writes to it" is exactly the kind
+     * of property that a later optimisation (scratch buffers, in-place normalisation)
+     * quietly breaks, and the failure would look like results that depend on iteration
+     * order.
+     */
+    test("a prepared query is reusable across many candidates", () => {
+      const d = 256;
+      const rnd = makeRandom(777);
+      const q = new Float32Array(d);
+      for (let i = 0; i < d; i++) q[i] = rnd() - 0.5;
+      const prepared = turboPrepareQuery(turboQuantize(q, { bits: 3, seed: 42 }));
+
+      const first: number[] = [];
+      const candidates: ReturnType<typeof turboQuantize>[] = [];
+      for (let c = 0; c < 25; c++) {
+        const v = new Float32Array(d);
+        for (let i = 0; i < d; i++) v[i] = rnd() - 0.5;
+        candidates.push(turboQuantize(v, { bits: 3, seed: 42 }));
+      }
+
+      for (const c of candidates) first.push(turboPreparedCosineSimilarity(prepared, c));
+      // Second pass, same prepared query, reverse order — a stateful implementation would
+      // diverge on one or the other.
+      for (let i = candidates.length - 1; i >= 0; i--) {
+        expect(turboPreparedCosineSimilarity(prepared, candidates[i]!)).toBe(first[i]!);
+      }
+    });
+
+    /**
+     * A prepared query built from a record that has been through JSON has no usable
+     * `codes`, and the validation that catches it lives in `assertQuantizeResultShape`.
+     * Preparing is the one entry point where that check happens ahead of any use, so it is
+     * worth confirming it happens at all — otherwise a malformed query would decode to
+     * zeroes and score 0 against every candidate, which reads as "nothing matched" rather
+     * than as an error.
+     */
+    test("validates the query record it is given", () => {
+      const good = turboQuantize(new Float32Array([1, 2, 3, 4]), { bits: 4, seed: 42 });
+      const viaJson = { ...good, codes: JSON.parse(JSON.stringify(good.codes)) };
+
+      expect(() => turboPrepareQuery(viaJson as unknown as typeof good)).toThrow(
+        "must be a Uint8Array"
+      );
     });
   });
 
