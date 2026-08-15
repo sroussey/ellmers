@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IJobExecuteContext } from "@workglow/job-queue";
+import type { IJobExecuteContext, JobHandle, StreamEventLike } from "@workglow/job-queue";
 import { AbortSignalJobError, Job } from "@workglow/job-queue";
 import type {
   IExecuteContext,
@@ -584,8 +584,29 @@ export class FetchUrlTask<
   }
 
   /**
-   * Executes the fetch task, either directly or via a job queue depending on
-   * the `queue` config/input. Credential resolution is handled by the input
+   * Collects {@link executeStream} into a single value for callers that want
+   * one. `isTaskStreamable` is permanently true for this task (the dynamic
+   * output schema always emits the `x-stream` `body` port), so `TaskRunner`
+   * dispatches to `executeStream` and never here — making `executeStream` the
+   * sole implementation and this a thin drain over it. A second implementation
+   * would be dead code that no run ever exercises, which is exactly how the
+   * queue branch previously became unreachable without a test noticing.
+   */
+  override async execute(
+    input: FetchUrlTaskInput,
+    executeContext: IExecuteContext
+  ): Promise<Output> {
+    let out: Record<string, unknown> = {};
+    for await (const event of this.executeStream(input, executeContext)) {
+      if (event.type === "finish") out = event.data as Record<string, unknown>;
+    }
+    return out as Output;
+  }
+
+  /**
+   * Runs the fetch, either inline or through a job queue depending on the
+   * `queue` config, and yields the body as `binary-delta` events on `body`
+   * followed by a `finish`. Credential resolution is handled by the input
    * resolver system — credential_key arrives already resolved to the secret.
    *
    * Invariant: a resolved secret never leaves this method. Job queues persist
@@ -593,92 +614,6 @@ export class FetchUrlTask<
    * placed on the in-process request headers of the inline path, and the
    * queued path refuses to run at all when a credential is present.
    */
-  override async execute(
-    input: FetchUrlTaskInput,
-    executeContext: IExecuteContext
-  ): Promise<Output> {
-    const credential = input.credential_key;
-    const queuePref = this.config.queue ?? false;
-
-    // Refuse rather than silently downgrading to the inline path: a downgrade
-    // would quietly drop the queue's rate limiting, which is the reason the
-    // caller asked for a queue in the first place.
-    if (credential && queuePref !== false) {
-      throw new TaskConfigurationError(
-        "FetchUrlTask: credential_key cannot be combined with the queued path (config.queue), " +
-          "because queued job payloads are persisted to durable storage. Remove config.queue to " +
-          "run inline, or have the queue worker supply the credential itself."
-      );
-    }
-
-    const jobInput = this.prepareJobInput(input);
-
-    let cleanup: () => void = () => {};
-
-    try {
-      if (queuePref === false) {
-        const job = new FetchUrlJob<FetchUrlTaskInput, Output>({ input: jobInput });
-        cleanup = job.onJobProgress(
-          (progress: number, message: string, details: Record<string, any> | null) => {
-            executeContext.updateProgress(progress, message, details);
-          }
-        );
-        return await job.execute(jobInput, {
-          signal: executeContext.signal,
-          updateProgress: executeContext.updateProgress.bind(this),
-        });
-      }
-
-      const queueName =
-        typeof queuePref === "string" ? queuePref : await this.getDefaultQueueName(input);
-
-      if (!queueName) {
-        throw new TaskConfigurationError("FetchUrlTask: Unable to determine queue name");
-      }
-
-      const registeredQueue = await this.resolveOrCreateQueue(queueName);
-
-      // Bail early to avoid enqueuing work that has already been cancelled.
-      if (executeContext.signal.aborted) {
-        throw executeContext.signal.reason ?? new AbortSignalJobError("The operation was aborted");
-      }
-
-      const handle = await registeredQueue.client.send(jobInput as Input, {
-        jobRunId: this.runConfig.runnerId,
-        maxAttempts: 10,
-      });
-
-      const onAbort = () => {
-        handle.abort().catch((err) => {
-          console.warn(`Failed to abort queued fetch job`, err);
-        });
-      };
-      executeContext.signal.addEventListener("abort", onAbort);
-
-      cleanup = handle.onProgress(
-        (progress: number, message: string | undefined, details: Record<string, any> | null) => {
-          executeContext.updateProgress(progress, message, details);
-        }
-      );
-
-      try {
-        if (executeContext.signal.aborted) {
-          throw (
-            executeContext.signal.reason ?? new AbortSignalJobError("The operation was aborted")
-          );
-        }
-        const output = await handle.waitFor();
-        return output as Output;
-      } finally {
-        executeContext.signal.removeEventListener("abort", onAbort);
-      }
-    } catch (err: any) {
-      throw new JobTaskFailedError(err);
-    } finally {
-      cleanup();
-    }
-  }
-
   // No `override`: `executeStream` is an optional member of ITask, not a
   // declared member of Task, so marking it override fails TS4113.
   async *executeStream(
@@ -698,29 +633,169 @@ export class FetchUrlTask<
       );
     }
 
+    const credential = input.credential_key;
+    const queuePref = this.config.queue ?? false;
+
+    // Ordered before anything that could enqueue: `prepareJobInput` bakes the
+    // resolved secret into `headers`, and a queued payload is written to
+    // durable storage. Refuse rather than silently downgrading to the inline
+    // path, which would quietly drop the queue's rate limiting — the reason the
+    // caller asked for a queue in the first place.
+    if (credential && queuePref !== false) {
+      throw new TaskConfigurationError(
+        "FetchUrlTask: credential_key cannot be combined with the queued path (config.queue), " +
+          "because queued job payloads are persisted to durable storage. Remove config.queue to " +
+          "run inline, or have the queue worker supply the credential itself."
+      );
+    }
+
     const jobInput = this.prepareJobInput(input);
 
-    // Queued sources aren't wired into executeStream yet — delegate to
-    // execute(), which owns queue resolution, retries, abort propagation, and
-    // (crucially) the credential+queue refusal check, so none of that has to
-    // be duplicated here. A later task replaces this with real queued-source
-    // streaming; until then a queued run just reports as one big `finish`
-    // instead of incremental deltas.
-    const queuePref = this.config.queue ?? false;
-    if (queuePref !== false) {
-      const out = await this.execute(input, executeContext);
-      yield { type: "finish", data: out } as StreamEvent<Output>;
+    if (queuePref === false) {
+      const job = new FetchUrlJob<FetchUrlTaskInput, Output>({ input: jobInput });
+      try {
+        yield* job.executeStream(jobInput, {
+          signal: executeContext.signal,
+          updateProgress: executeContext.updateProgress.bind(executeContext),
+        }) as AsyncIterable<StreamEvent<Output>>;
+      } catch (err: any) {
+        throw new JobTaskFailedError(err);
+      }
       return;
     }
 
-    const job = new FetchUrlJob<FetchUrlTaskInput, Output>({ input: jobInput });
+    const queueName =
+      typeof queuePref === "string" ? queuePref : await this.getDefaultQueueName(input);
+    if (!queueName) {
+      throw new TaskConfigurationError("FetchUrlTask: Unable to determine queue name");
+    }
+
+    let cleanup: () => void = () => {};
+    let onAbort: (() => void) | undefined;
     try {
-      yield* job.executeStream(jobInput, {
-        signal: executeContext.signal,
-        updateProgress: executeContext.updateProgress.bind(executeContext),
-      }) as AsyncIterable<StreamEvent<Output>>;
+      const registeredQueue = await this.resolveOrCreateQueue(queueName);
+
+      // Bail early to avoid enqueuing work that has already been cancelled.
+      if (executeContext.signal.aborted) {
+        throw executeContext.signal.reason ?? new AbortSignalJobError("The operation was aborted");
+      }
+
+      const handle = await registeredQueue.client.send(jobInput as Input, {
+        jobRunId: this.runConfig.runnerId,
+        maxAttempts: 10,
+      });
+
+      onAbort = () => {
+        handle.abort().catch((err) => {
+          console.warn(`Failed to abort queued fetch job`, err);
+        });
+      };
+      executeContext.signal.addEventListener("abort", onAbort);
+
+      cleanup = handle.onProgress(
+        (progress: number, message: string | undefined, details: Record<string, any> | null) => {
+          executeContext.updateProgress(progress, message, details);
+        }
+      );
+
+      if (executeContext.signal.aborted) {
+        throw executeContext.signal.reason ?? new AbortSignalJobError("The operation was aborted");
+      }
+
+      if (typeof handle.onStream !== "function") {
+        // No event carrier: the worker is out of process, so the bytes never
+        // reach this process as events. Settle on the whole value.
+        const output = await handle.waitFor();
+        yield { type: "finish", data: output } as StreamEvent<Output>;
+        return;
+      }
+
+      yield* this.consumeJobStream(handle);
     } catch (err: any) {
       throw new JobTaskFailedError(err);
+    } finally {
+      if (onAbort) executeContext.signal.removeEventListener("abort", onAbort);
+      cleanup();
+    }
+  }
+
+  /**
+   * Adapts `handle.onStream`'s pushed callbacks into the pulled async iterable
+   * `executeStream` has to be.
+   *
+   * The listener's promise resolves only once the event it carried has been
+   * pulled off this generator, which is what carries the consumer's real read
+   * rate back to the worker: `JobQueueClient` awaits every stream listener and
+   * the worker awaits that dispatch, so a slow sink parks the job mid-body
+   * instead of letting the whole download pile up in `pending`.
+   *
+   * The job's settled output is the authority for the final value, so a
+   * terminal event arriving over the channel is released without being
+   * re-yielded — `waitFor()` produces the one `finish`, and the two can never
+   * disagree or arrive twice.
+   */
+  private async *consumeJobStream(handle: JobHandle<Output>): AsyncIterable<StreamEvent<Output>> {
+    const pending: Array<{ readonly event: StreamEventLike; readonly release: () => void }> = [];
+    let wake: (() => void) | undefined;
+    const notify = (): void => {
+      const waiting = wake;
+      wake = undefined;
+      waiting?.();
+    };
+
+    const unsubscribe = handle.onStream!(
+      (event: StreamEventLike) =>
+        new Promise<void>((release) => {
+          if (event.type === "finish" || event.type === "error") {
+            release();
+            return;
+          }
+          pending.push({ event, release });
+          notify();
+        })
+    );
+
+    let settled = false;
+    let output: Output | undefined;
+    let failure: unknown;
+    // Both branches handled, so this never rejects and never needs awaiting;
+    // it is the loop's termination signal, not a value to return.
+    void handle.waitFor().then(
+      (value) => {
+        output = value;
+        settled = true;
+        notify();
+      },
+      (err: unknown) => {
+        failure = err;
+        settled = true;
+        notify();
+      }
+    );
+
+    try {
+      while (true) {
+        while (pending.length > 0) {
+          const next = pending.shift()!;
+          try {
+            yield next.event as StreamEvent<Output>;
+          } finally {
+            next.release();
+          }
+        }
+        if (settled) break;
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+        });
+      }
+      if (failure) throw failure;
+      yield { type: "finish", data: output } as StreamEvent<Output>;
+    } finally {
+      unsubscribe();
+      // An abandoned generator (abort, or a consumer that stopped pulling)
+      // would otherwise leave the worker parked forever on a dispatch nobody
+      // is going to resolve.
+      for (const leftover of pending.splice(0)) leftover.release();
     }
   }
 
