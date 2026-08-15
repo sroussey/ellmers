@@ -32,7 +32,14 @@ import {
   type SafeFetchFn,
   type SafeFetchOptions,
 } from "@workglow/tasks";
-import { Container, ServiceRegistry, setLogger } from "@workglow/util";
+import {
+  Container,
+  InMemoryCredentialStore,
+  registerCredentialDefaults,
+  ServiceRegistry,
+  setGlobalCredentialStore,
+  setLogger,
+} from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -449,6 +456,253 @@ describe("SafeFetch redirect scope enforcement (real redirect loop)", () => {
     });
     expect(response.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("defaultSafeFetch cross-origin redirect header strip", () => {
+  // The browser implementation is a second, independent redirect loop: a fix in
+  // SafeFetch.server.ts is not a fix here. These exercise the real
+  // defaultSafeFetch by resetting to it and mocking globalThis.fetch, and all of
+  // them use PUBLIC origins — `privateResourceScopes` never applies there, so
+  // the header strip is the only thing standing between a compromised vendor
+  // and the caller's credential.
+
+  const redirect = (location: string, status = 302): Response =>
+    new Response(null, { status, headers: { location } });
+
+  let prevSafeFetch: SafeFetchFn;
+  let fetchMock: ReturnType<typeof vi.fn>;
+  let realFetch: typeof globalThis.fetch;
+
+  /** Headers the mock received on call `index` (0-based), keyed lower-case. */
+  const headersOnCall = (index: number): Record<string, string> => {
+    const init = fetchMock.mock.calls[index]?.[1] as { headers?: Record<string, string> };
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(init?.headers ?? {})) {
+      out[key.toLowerCase()] = value;
+    }
+    return out;
+  };
+
+  beforeEach(() => {
+    prevSafeFetch = getSafeFetchImpl();
+    resetSafeFetch();
+    realFetch = globalThis.fetch;
+    fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    registerSafeFetch(prevSafeFetch);
+  });
+
+  test("cross-origin 302 drops Authorization and keeps unrelated headers", async () => {
+    // The finding itself: without the strip the attacker origin receives the
+    // bearer token. The surviving X-Trace-Id proves the strip is targeted.
+    fetchMock
+      .mockResolvedValueOnce(redirect("https://attacker.example/"))
+      .mockResolvedValueOnce(ok());
+
+    await safeFetch("https://api.vendor.example/x", {
+      headers: { Authorization: "Bearer super-secret-token", "X-Trace-Id": "trace-1" },
+    });
+
+    expect(headersOnCall(0).authorization).toBe("Bearer super-secret-token");
+    expect(headersOnCall(1).authorization).toBeUndefined();
+    expect(headersOnCall(1)["x-trace-id"]).toBe("trace-1");
+  });
+
+  test("same-origin 302 keeps Authorization", async () => {
+    // Guards the opposite failure: an unconditional strip would break every
+    // authenticated API that redirects within its own origin.
+    fetchMock
+      .mockResolvedValueOnce(redirect("https://api.vendor.example/x/v2"))
+      .mockResolvedValueOnce(ok());
+
+    await safeFetch("https://api.vendor.example/x", {
+      headers: { Authorization: "Bearer super-secret-token" },
+    });
+
+    expect(headersOnCall(1).authorization).toBe("Bearer super-secret-token");
+  });
+
+  test("a sensitiveHeaders-named custom header is dropped cross-origin", async () => {
+    // credential_scheme "header" puts the secret on a caller-chosen header that
+    // safeFetch cannot recognize on its own.
+    fetchMock
+      .mockResolvedValueOnce(redirect("https://attacker.example/"))
+      .mockResolvedValueOnce(ok());
+
+    await safeFetch("https://api.vendor.example/x", {
+      headers: { "X-Api-Key": "sk-secret", "X-Trace-Id": "trace-1" },
+      sensitiveHeaders: ["x-api-key"],
+    });
+
+    expect(headersOnCall(1)["x-api-key"]).toBeUndefined();
+    expect(headersOnCall(1)["x-trace-id"]).toBe("trace-1");
+  });
+
+  test("a differing port on the same host counts as cross-origin", async () => {
+    // A hostname comparison would call these same-origin and replay the token.
+    fetchMock
+      .mockResolvedValueOnce(redirect("https://api.vendor.example:8443/x"))
+      .mockResolvedValueOnce(ok());
+
+    await safeFetch("https://api.vendor.example/x", {
+      headers: { Authorization: "Bearer super-secret-token" },
+    });
+
+    expect(headersOnCall(1).authorization).toBeUndefined();
+  });
+
+  test("a differing scheme on the same host counts as cross-origin", async () => {
+    // https -> http is a downgrade onto the wire; the token must not follow.
+    fetchMock
+      .mockResolvedValueOnce(redirect("http://api.vendor.example/x"))
+      .mockResolvedValueOnce(ok());
+
+    await safeFetch("https://api.vendor.example/x", {
+      headers: { Authorization: "Bearer super-secret-token" },
+    });
+
+    expect(headersOnCall(1).authorization).toBeUndefined();
+  });
+
+  test("cookie and proxy-authorization are dropped with no sensitiveHeaders supplied", async () => {
+    // The fixed strip-set must not depend on the caller opting in.
+    fetchMock
+      .mockResolvedValueOnce(redirect("https://attacker.example/"))
+      .mockResolvedValueOnce(ok());
+
+    await safeFetch("https://api.vendor.example/x", {
+      headers: { Cookie: "session=abc123", "Proxy-Authorization": "Basic cHJveHk6cHc=" },
+    });
+
+    expect(headersOnCall(1).cookie).toBeUndefined();
+    expect(headersOnCall(1)["proxy-authorization"]).toBeUndefined();
+  });
+
+  test("a Headers instance is stripped too, not just a plain record", async () => {
+    // Direct callers may pass any HeadersInit shape; a record-only strip would
+    // pass a Headers object straight through to the attacker origin.
+    fetchMock
+      .mockResolvedValueOnce(redirect("https://attacker.example/"))
+      .mockResolvedValueOnce(ok());
+
+    await safeFetch("https://api.vendor.example/x", {
+      headers: new Headers({ Authorization: "Bearer super-secret-token", Accept: "text/plain" }),
+    });
+
+    const sent = fetchMock.mock.calls[1]?.[1] as { headers?: Headers };
+    expect(sent?.headers).toBeInstanceOf(Headers);
+    expect(sent!.headers!.get("authorization")).toBeNull();
+    expect(sent!.headers!.get("accept")).toBe("text/plain");
+  });
+
+  test("once stripped the header stays stripped when the chain returns home", async () => {
+    // Laundering guard: vendor -> attacker -> vendor must not restore the token
+    // on the final hop merely because that origin matches the original.
+    fetchMock
+      .mockResolvedValueOnce(redirect("https://attacker.example/bounce"))
+      .mockResolvedValueOnce(redirect("https://api.vendor.example/final"))
+      .mockResolvedValueOnce(ok());
+
+    await safeFetch("https://api.vendor.example/x", {
+      headers: { Authorization: "Bearer super-secret-token" },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("https://api.vendor.example/final");
+    expect(headersOnCall(2).authorization).toBeUndefined();
+  });
+});
+
+describe("FetchUrlTask end-to-end: a resolved credential never reaches a redirect target", () => {
+  // The whole path is real here — credential resolution, header placement,
+  // FetchUrlJob, and the defaultSafeFetch redirect loop — with only the socket
+  // mocked. Public origins are used deliberately: the private-scope guard does
+  // not apply to them, so nothing but the header strip protects the secret.
+  const SECRET = "sk-super-secret-value-1234567890";
+  const CREDENTIAL_KEY = "vendor-api-credential";
+
+  const redirect = (location: string): Response =>
+    new Response(null, { status: 302, headers: { location } });
+
+  let prevSafeFetch: SafeFetchFn;
+  let fetchMock: ReturnType<typeof vi.fn>;
+  let realFetch: typeof globalThis.fetch;
+
+  const createCredentialRegistry = async (): Promise<ServiceRegistry> => {
+    const credentialRegistry = new ServiceRegistry(new Container());
+    registerCredentialDefaults(credentialRegistry);
+    const store = new InMemoryCredentialStore();
+    await store.put(CREDENTIAL_KEY, SECRET);
+    setGlobalCredentialStore(store, credentialRegistry);
+    return credentialRegistry;
+  };
+
+  /** Every header value the mock ever received, flattened for a secret scan. */
+  const allSentHeaderValues = (): string[] =>
+    fetchMock.mock.calls.flatMap((call) => {
+      const init = call[1] as { headers?: Record<string, string> };
+      return Object.values(init?.headers ?? {});
+    });
+
+  beforeEach(() => {
+    prevSafeFetch = getSafeFetchImpl();
+    resetSafeFetch();
+    realFetch = globalThis.fetch;
+    fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    registerSafeFetch(prevSafeFetch);
+  });
+
+  test("a bearer credential is not replayed to a cross-origin redirect target", async () => {
+    fetchMock
+      .mockResolvedValueOnce(redirect("https://attacker.example/"))
+      .mockResolvedValueOnce(ok());
+
+    const credentialRegistry = await createCredentialRegistry();
+    await new FetchUrlTask().run(
+      { url: "https://api.vendor.example/x", credential_key: CREDENTIAL_KEY },
+      { registry: credentialRegistry }
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("https://attacker.example/");
+    const attackerInit = fetchMock.mock.calls[1]?.[1] as { headers?: Record<string, string> };
+    expect(JSON.stringify(attackerInit?.headers ?? {})).not.toContain(SECRET);
+    // The vendor origin did receive it — otherwise this would pass on a
+    // credential that was never applied to the request in the first place.
+    expect(JSON.stringify(fetchMock.mock.calls[0]?.[1])).toContain(SECRET);
+  });
+
+  test("a credential_scheme 'header' secret is not replayed either", async () => {
+    // This is the case that forced the SafeFetchOptions API change: the secret
+    // sits on X-Api-Key, a name the redirect loop cannot infer from the request.
+    fetchMock
+      .mockResolvedValueOnce(redirect("https://attacker.example/"))
+      .mockResolvedValueOnce(ok());
+
+    const credentialRegistry = await createCredentialRegistry();
+    await new FetchUrlTask().run(
+      {
+        url: "https://api.vendor.example/x",
+        credential_key: CREDENTIAL_KEY,
+        credential_scheme: "header",
+        credential_header: "X-Api-Key",
+      },
+      { registry: credentialRegistry }
+    );
+
+    const attackerInit = fetchMock.mock.calls[1]?.[1] as { headers?: Record<string, string> };
+    expect(attackerInit?.headers?.["X-Api-Key"]).toBeUndefined();
+    expect(allSentHeaderValues().filter((value) => value.includes(SECRET))).toHaveLength(1);
   });
 });
 

@@ -31,7 +31,12 @@ import {
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { safeFetch } from "../util/SafeFetch";
 import { classifyUrl, urlMatchesScope, urlResourcePattern } from "../util/UrlClassifier";
-import { applyCredentialToHeaders } from "./FetchUrlCredentials";
+import {
+  applyCredentialToHeaders,
+  credentialHeaderName,
+  CredentialSchemes,
+  DEFAULT_CREDENTIAL_SCHEME,
+} from "./FetchUrlCredentials";
 import {
   createFetchUrlAbortedError,
   createFetchUrlHttpError,
@@ -429,6 +434,20 @@ export class FetchUrlJob<
 > extends Job<Input, Output> {
   static readonly type: string = "FetchUrlJob";
 
+  /**
+   * Header names holding a resolved credential, so safeFetch can drop them on a
+   * cross-origin redirect. `Authorization` is covered by safeFetch's own
+   * strip-set; this exists for `credential_scheme: "header"`, whose header name
+   * is caller-chosen and is stripped from the job input before the request is
+   * issued — nothing downstream could otherwise know which header is secret.
+   *
+   * Set by {@link FetchUrlTask} on the inline path only. It is deliberately not
+   * a data port: job inputs are persisted durably by the queued path, and this
+   * names a credential header. The queued path refuses credentials outright, so
+   * there is nothing for it to carry.
+   */
+  public sensitiveHeaders: readonly string[] | undefined = undefined;
+
   protected async issueRequest(input: Input, context: IJobExecuteContext): Promise<Response> {
     const classification = classifyUrl(input.url!);
     if (classification.kind === "invalid") {
@@ -470,6 +489,7 @@ export class FetchUrlJob<
         signal: context.signal,
         allowPrivate: isPrivate,
         privateResourceScopes: isPrivate ? [urlResourcePattern(input.url!)] : undefined,
+        sensitiveHeaders: this.sensitiveHeaders,
       });
     } catch (err) {
       if (isFetchUrlJobError(err) || err instanceof AbortSignalJobError) throw err;
@@ -1012,6 +1032,16 @@ export class FetchUrlTask<
 
     if (queuePref === false) {
       const job = new FetchUrlJob<FetchUrlTaskInput, Output>({ input: jobInput });
+      // The header the credential landed on, so safeFetch can drop it when a
+      // redirect crosses origins. Only the `header` scheme needs telling: the
+      // others write Authorization, which is always stripped cross-origin.
+      // Inline-only by construction — the refusal above means a credential and
+      // the queued path never coexist, so there is no queued case to carry.
+      const credentialScheme = input.credential_scheme ?? DEFAULT_CREDENTIAL_SCHEME;
+      job.sensitiveHeaders =
+        credential && credentialScheme !== CredentialSchemes.NONE
+          ? [credentialHeaderName(credentialScheme, input.credential_header)]
+          : undefined;
       try {
         yield* job.executeStream(jobInput, {
           signal: executeContext.signal,
