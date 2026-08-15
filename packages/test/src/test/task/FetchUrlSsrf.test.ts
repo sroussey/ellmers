@@ -474,7 +474,14 @@ describe("FetchUrlJob threads privateResourceScopes from declared entitlement sc
   test("private URL input passes privateResourceScopes matching urlResourcePattern", async () => {
     const url = "http://localhost:3000/api";
     const task = new FetchUrlTask({ queue: false });
-    await task.run({ url });
+    // `response_type` is listed in the schema's `required`. Omitting it does
+    // not currently fail here — `Task`'s constructor synthesizes an enum
+    // property as its first member, so the run silently becomes "stream" — but
+    // relying on that leaves the assertion below reading as if the request
+    // shape were incidental. State it: "stream" materializes nothing, so the
+    // mocked body is never decoded and these assertions stay about the options
+    // handed to safeFetch rather than about what came back.
+    await task.run({ url, response_type: "stream" });
     expect(capturedOptions?.allowPrivate).toBe(true);
     expect(capturedOptions?.privateResourceScopes).toEqual([urlResourcePattern(url)]);
     expect(capturedOptions?.privateResourceScopes).toEqual(["http://localhost:3000/*"]);
@@ -482,7 +489,7 @@ describe("FetchUrlJob threads privateResourceScopes from declared entitlement sc
 
   test("public URL input does not pass privateResourceScopes", async () => {
     const task = new FetchUrlTask({ queue: false });
-    await task.run({ url: "https://example.com/" });
+    await task.run({ url: "https://example.com/", response_type: "stream" });
     expect(capturedOptions?.allowPrivate).toBe(false);
     expect(capturedOptions?.privateResourceScopes).toBeUndefined();
   });
@@ -559,7 +566,19 @@ describe("FetchUrlTask end-to-end entitlement enforcement", () => {
 
   function makeGraphForUrl(url: string): TaskGraph {
     const graph = new TaskGraph();
-    graph.addTask(new FetchUrlTask({ id: "fetch-node", queue: false, defaults: { url } }));
+    // `response_type: "stream"` stated explicitly: these tests are about the
+    // entitlement outcome, not the response value, and "stream" materializes
+    // nothing so the mocked body is never decoded. The DENY cases would not
+    // reach input validation at all (the graph-level entitlement preflight
+    // throws first), so stating it keeps the allow and deny halves of this
+    // suite identical apart from the policy under test.
+    graph.addTask(
+      new FetchUrlTask({
+        id: "fetch-node",
+        queue: false,
+        defaults: { url, response_type: "stream" },
+      })
+    );
     return graph;
   }
 

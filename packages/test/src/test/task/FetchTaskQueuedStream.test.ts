@@ -750,6 +750,78 @@ describe("queued fetch retry safety", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Regression (M2): `Job`'s contract says an emitted binary delta belongs to the
+// transport, which may TRANSFER its buffer — and a transferred ArrayBuffer is
+// detached, so every view onto it becomes zero-length. FetchUrlJob pushed the
+// same Uint8Array it emitted onto the retain list, so on such a carrier
+// materializeDerivedPort would merge detached views and hand back an empty
+// `text` alongside a successful `metadata`: silent data loss, not an error.
+//
+// No SHIPPED carrier transfers today (the in-process one hands the view over
+// untouched, the cross-process one serializes rows), so this is a latent
+// violation of a documented invariant rather than a live bug — which is
+// exactly why it needs a test that synthesizes the transferring carrier
+// instead of waiting for one to exist. `structuredClone` with `transfer` is
+// what a postMessage-based host does, and it is verified to detach in Node.
+//
+// The assertion is on the FINISH payload only. The generator's own yielded
+// views are detached too — that is the contract working as intended, not the
+// thing under test.
+// ---------------------------------------------------------------------------
+describe("retained body chunks survive a transferring stream carrier", () => {
+  setLogger(getTestingLogger());
+  let prevSafeFetch: SafeFetchFn;
+
+  beforeAll(async () => {
+    prevSafeFetch = registerSafeFetch(mockSafeFetch);
+  });
+
+  afterAll(() => {
+    registerSafeFetch(prevSafeFetch);
+  });
+
+  beforeEach(() => {
+    mockFetch.mockClear();
+    responder = singleChunkResponder;
+  });
+
+  test("a derived port is built from the bytes, not from detached views", async () => {
+    const text = "the quick brown fox jumps over the lazy dog";
+    const encoded = new TextEncoder().encode(text);
+    // Several chunks, so a partial detach cannot pass by accident.
+    const chunks = [encoded.slice(0, 10), encoded.slice(10, 25), encoded.slice(25)];
+    responder = () => Promise.resolve(chunkedResponse(chunks));
+
+    const input: FetchUrlTaskInput = {
+      url: "https://example.com/transferred.txt",
+      response_type: "text",
+    };
+    const job = new FetchUrlJob<FetchUrlTaskInput, FetchUrlTaskOutput>({ input });
+
+    const detached: number[] = [];
+    let finish: FetchUrlTaskOutput | undefined;
+    for await (const event of job.executeStream(input, {
+      signal: new AbortController().signal,
+      updateProgress: async () => {},
+      emitStreamEvent: async (e) => {
+        if (e.type !== "binary-delta") return;
+        const delta = (e as unknown as { binaryDelta: Uint8Array }).binaryDelta;
+        // What a postMessage-based carrier does: hand the bytes across and
+        // detach the sender's buffer.
+        structuredClone(delta, { transfer: [delta.buffer] });
+        detached.push(delta.byteLength);
+      },
+    })) {
+      if (event.type === "finish") finish = event.data as FetchUrlTaskOutput;
+    }
+
+    // The premise: the emitted views really were detached by the transfer.
+    expect(detached).toEqual([0, 0, 0]);
+    expect(finish?.text).toBe(text);
+  });
+});
+
 describe("queued fetch stream adapter", () => {
   setLogger(getTestingLogger());
   let prevSafeFetch: SafeFetchFn;

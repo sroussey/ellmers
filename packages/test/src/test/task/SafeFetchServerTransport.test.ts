@@ -17,6 +17,7 @@
 import { FetchUrlTask, getSafeFetchImpl, safeFetch } from "@workglow/tasks";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import zlib from "node:zlib";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 interface TestServer {
@@ -205,4 +206,81 @@ describe("SafeFetch server transport (real node:http, no mocks)", () => {
     await drainRejections();
     expect(unhandled).toEqual([]);
   });
+
+  // -------------------------------------------------------------------------
+  // Regression (C1): this is the one test in the repo that can see undici
+  // actually decompress. Every other fetch suite installs a mock through
+  // registerSafeFetch, so none of them exercise the `accept-encoding` undici
+  // appends on the caller's behalf, nor the passthrough that hands the origin's
+  // header list back verbatim alongside the DECODED bytes.
+  //
+  // `Content-Length` counts encoded bytes; FetchUrlTask's read loop counts
+  // decoded ones. Comparing them made every compressed response fail with
+  // CONTENT_LENGTH_MISMATCH — a PermanentJobError, so no retry — raised only
+  // after the correct body had already reached the consumer and the cache
+  // sink. Here 50_000 bytes compress to a few dozen, so the numbers are as far
+  // apart as they can get and the assertion is on the whole payload rather
+  // than on the absence of an error.
+  // -------------------------------------------------------------------------
+  test("a gzipped body is delivered whole, not measured against the encoded length", async () => {
+    const payload = "x".repeat(50_000);
+    const gzipped = zlib.gzipSync(payload);
+    expect(gzipped.byteLength).toBeLessThan(payload.length);
+
+    const { origin } = await withServer((_req, res) => {
+      res.writeHead(200, {
+        "content-type": "text/plain",
+        "content-encoding": "gzip",
+        // The encoded length, which is what a real origin states.
+        "content-length": String(gzipped.byteLength),
+      });
+      res.end(gzipped);
+    });
+
+    const result = await new FetchUrlTask().run({ url: `${origin}/`, response_type: "text" });
+    expect(result.text).toBe(payload);
+
+    await drainRejections();
+    expect(unhandled).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // Regression (H1): a non-2xx carries a body like any other response, and the
+  // passthrough this transport returns parks until that body is read or
+  // cancelled — `new TransformStream()` has a readable HWM of 0, so `pipeTo`
+  // never settles on its own. The `.finally(closeAgent)` hanging off it
+  // therefore never ran for a response the task threw on, leaking an undici
+  // Agent and its socket per attempt (the queued path sends maxAttempts: 10).
+  //
+  // Connection count is the observable: a leaked Agent keeps its keep-alive
+  // socket open, so `getConnections` never reaches 0. Both statuses are
+  // covered because they fail differently — a 404 is permanent, a 500 is the
+  // retryable one a long-lived worker hits over and over.
+  //
+  // `keepAliveTimeout` is raised off its 5s default deliberately. At the
+  // default the SERVER reaps the idle socket at almost exactly the deadline
+  // below, so the count reaches 0 whether or not the client ever released the
+  // Agent — the test passes on the broken code and measures nothing. Holding
+  // the server side open makes the client's release the only thing that can
+  // drop the connection.
+  // -------------------------------------------------------------------------
+  for (const status of [404, 500] as const) {
+    test(`a ${status} with a body still frees the connection`, async () => {
+      const { origin, server } = await withServer((_req, res) => {
+        res.writeHead(status, { "content-type": "text/plain" });
+        res.end("error body");
+      });
+      server.keepAliveTimeout = 120_000;
+      server.headersTimeout = 125_000;
+
+      await expect(
+        new FetchUrlTask().run({ url: `${origin}/`, response_type: "text" })
+      ).rejects.toThrow();
+
+      expect(await waitForNoConnections(server, 5000)).toBe(0);
+
+      await drainRejections();
+      expect(unhandled).toEqual([]);
+    });
+  }
 });

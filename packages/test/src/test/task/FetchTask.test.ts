@@ -22,6 +22,7 @@ import {
   JobTaskFailedError,
   setTaskQueueRegistry,
   TaskConfigurationError,
+  TaskInvalidInputError,
 } from "@workglow/task-graph";
 import { InMemoryTaskOutputRepository } from "@workglow/task-graph/test";
 import type { FetchUrlTaskInput, FetchUrlTaskOutput } from "@workglow/tasks";
@@ -694,6 +695,188 @@ describe("FetchUrlTask", () => {
         response_type: "stream",
       }).catch((e) => e);
       expect(String(error)).toMatch(/content-length/i);
+    });
+
+    // -----------------------------------------------------------------------
+    // Regression (C1): `Content-Length` states the ENCODED size, but every
+    // transport that negotiates `accept-encoding` for us — undici on the
+    // server path, the browser's fetch — decodes transparently and passes the
+    // origin's header list through verbatim. So the read loop counts decoded
+    // bytes while the header describes compressed ones, and comparing them
+    // failed EVERY gzip/br response with a permanent, non-retryable
+    // CONTENT_LENGTH_MISMATCH — raised only after the correct body had already
+    // reached the consumer and the cache sink. This mock is the exact
+    // post-decode shape (a real measurement: content-length 9819 against 33235
+    // decoded bytes).
+    //
+    // The transport-level proof that undici really does this lives in
+    // SafeFetchServerTransport.test.ts; every test in THIS file mocks
+    // safeFetch, so none of them can see a real decompression.
+    // -----------------------------------------------------------------------
+    test("a decoded body is not measured against the encoded Content-Length", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(new Blob([new Uint8Array(8192)]), {
+            status: 200,
+            headers: { "content-encoding": "gzip", "content-length": "1024" },
+          })
+        )
+      );
+      const result = await fetchUrl({
+        url: "https://example.com/compressed.bin",
+        response_type: "stream",
+      });
+      expect(result.metadata?.status).toBe(200);
+    });
+
+    // The two guards that stop the skip above from widening into "we no longer
+    // check Content-Length at all". `identity` is a content-coding token that
+    // means no coding was applied, so the stated size is still the decoded
+    // size and the assertion must still run. (The absent-header half is the
+    // "a Content-Length mismatch throws" test above — it sets no
+    // content-encoding.)
+    test("content-encoding: identity still asserts the Content-Length", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(new Blob([new Uint8Array([1, 2])]), {
+            status: 200,
+            headers: { "content-encoding": "identity", "content-length": "9" },
+          })
+        )
+      );
+      const error = await fetchUrl({
+        url: "https://example.com/identity.bin",
+        response_type: "stream",
+      }).catch((e) => e);
+      expect(String(error)).toMatch(/content-length/i);
+    });
+
+    test("no content-encoding still asserts the Content-Length", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(new Blob([new Uint8Array([1, 2])]), {
+            status: 200,
+            headers: { "content-length": "9" },
+          })
+        )
+      );
+      const error = await fetchUrl({
+        url: "https://example.com/plain.bin",
+        response_type: "stream",
+      }).catch((e) => e);
+      expect(String(error)).toMatch(/content-length/i);
+    });
+
+    // -----------------------------------------------------------------------
+    // Regression (H1): the server transport hands back a passthrough whose
+    // source pipe holds the connection's undici Agent open until that pipe
+    // settles — and an unread TransformStream readable never lets it, because
+    // its readable HWM is 0. Cancelling is what settles it. Abandoning a
+    // non-2xx body without cancelling therefore leaked an Agent and a socket
+    // per attempt, ten per job on the queued path's maxAttempts.
+    //
+    // The socket-level proof is in SafeFetchServerTransport.test.ts; this one
+    // is carrier-independent and pins the INTENT (the body gets cancelled)
+    // rather than the symptom, so it keeps holding if the transport changes.
+    // -----------------------------------------------------------------------
+    test("an HTTP error cancels the response body instead of abandoning it", async () => {
+      let cancelled = false;
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(new Uint8Array([1, 2, 3]));
+              },
+              cancel() {
+                cancelled = true;
+              },
+            }),
+            { status: 500, statusText: "Internal Server Error" }
+          )
+        )
+      );
+
+      await expect(
+        fetchUrl({ url: "https://example.com/boom", response_type: "stream" })
+      ).rejects.toThrow();
+      expect(cancelled).toBe(true);
+    });
+
+    // -----------------------------------------------------------------------
+    // What "required" actually buys at the TASK layer, pinned in both
+    // directions because the two halves disagree and the disagreement is easy
+    // to mis-remember.
+    //
+    // The schema does list `response_type` in `required`, and `validateInput`
+    // rejects a payload without it. But `run()` never presents such a payload:
+    // `Task`'s constructor seeds `defaults` from the input schema via
+    // `getData(..., { addOptionalProps: true })`, and json-schema-library
+    // synthesizes an `enum` property as its FIRST member — which here is
+    // "stream". So `new FetchUrlTask().run({ url })` does not throw; it fetches
+    // with response_type "stream".
+    //
+    // That is a gap in the breaking change, not a property to rely on: the
+    // stated rationale ("a default would silently pick one for a caller who
+    // never considered the question") is met for a persisted job payload — see
+    // the FetchUrlJob test below, which is the case that used to complete
+    // successfully with no value — and not met for a directly constructed
+    // task. Closing it means suppressing the base class's synthesized default,
+    // which is a further behaviour change and belongs to its own review. Both
+    // assertions are here so that change cannot land unnoticed in either
+    // direction.
+    // -----------------------------------------------------------------------
+    test("validateInput rejects a payload with no response_type", async () => {
+      const task = new FetchUrlTask();
+      await expect(
+        task.validateInput({ url: "https://example.com/no-type" } as FetchUrlTaskInput)
+      ).rejects.toThrow(TaskInvalidInputError);
+    });
+
+    test("run() with no response_type still fetches, defaulted to 'stream' by the base class", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(new Response("defaulted", { status: 200 }))
+      );
+      const task = new FetchUrlTask();
+      const result = (await task.run({
+        url: "https://example.com/no-type",
+      } as FetchUrlTaskInput)) as FetchUrlTaskOutput;
+
+      expect(task.runInputData.response_type).toBe("stream");
+      // "stream" materializes nothing, so no derived port is populated.
+      expect(result.text).toBeUndefined();
+      expect(result.json).toBeUndefined();
+      expect(result.metadata?.status).toBe(200);
+    });
+
+    // -----------------------------------------------------------------------
+    // Regression (M1): the task layer validates its input, but JobQueueWorker
+    // calls job.execute() on a PERSISTED payload with no validation at all. A
+    // job enqueued before response_type became required, drained after the
+    // deploy that requires it, therefore reaches the job carrying `undefined`
+    // — and grouping that with "stream" let it stream, complete, and return
+    // `{ metadata }` with no text and no json: a caller that asked for a value
+    // got a silent success with no value. This has to go through FetchUrlJob
+    // directly; the task layer would reject it first, so only the job
+    // reproduces the queued-payload case.
+    // -----------------------------------------------------------------------
+    test("a persisted job payload with no response_type fails before fetching", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(new Response("never reached", { status: 200 }))
+      );
+      const input = { url: "https://example.com/legacy-payload" } as FetchUrlTaskInput;
+      const job = new FetchUrlJob<FetchUrlTaskInput, FetchUrlTaskOutput>({ input });
+
+      const error = await job
+        .execute(input, { signal: new AbortController().signal, updateProgress: async () => {} })
+        .catch((e: unknown) => e);
+
+      expect(isFetchUrlJobError(error)).toBe(true);
+      expect((error as { code?: string }).code).toBe(FetchUrlErrorCode.INVALID_RESPONSE_TYPE);
+      // Before the request, not after: a payload that cannot produce a result
+      // should not spend a network call, and failing ahead of the first delta
+      // keeps classifyBodyFailure's retry rule out of it entirely.
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     test("a combined Content-Length with equal duplicates is accepted", async () => {
