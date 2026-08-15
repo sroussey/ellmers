@@ -77,7 +77,7 @@ Makes HTTP requests with built-in retry logic, progress tracking, and multiple r
 - `method` (string, optional): HTTP method ("GET", "POST", "PUT", "DELETE", "PATCH"). Default: "GET"
 - `headers` (object, optional): Headers to send with the request
 - `body` (string, optional): Request body for POST/PUT requests
-- `response_type` (string, optional): Response format ("json", "text", "blob", "arraybuffer"). Default: "json"
+- `response_type` (string, **required**): What to materialize from the response — `"stream"`, `"json"`, `"text"`, `"blob"`, or `"arraybuffer"`. `"stream"` materializes nothing: the bytes still reach the `body` port and the output cache, and `metadata.contentType` says what they are. The other values additionally populate the matching derived port. The schema declares no default and there is no Content-Type inference — whether a caller wants the body buffered into memory is theirs to state. (A directly constructed task that states nothing falls back to `"stream"`, because `Task` synthesizes an enum's first member as its default; a queued job payload carrying no `response_type` is rejected outright.)
 - `timeout` (number, optional): Request timeout in milliseconds
 - `queue` (boolean|string, optional): Queue handling (`false` runs inline when possible, `true` uses the task's default queue, strings target a specific registered queue). Default: `true`
 
@@ -156,7 +156,7 @@ await new DebugLogTask(
 
 // In workflow with data flow
 const workflow = new Workflow()
-  .fetch({ url: "https://api.example.com/data" })
+  .fetch({ url: "https://api.example.com/data", response_type: "json" })
   .debugLog(undefined, { log_level: "dir" }) // Logs the fetched data
   .delay(undefined, { delay: 1000 });
 ```
@@ -199,7 +199,7 @@ console.log(result); // { message: "Data preserved through delay" }
 
 // In workflow
 const workflow = new Workflow()
-  .fetch({ url: "https://api.example.com/data" })
+  .fetch({ url: "https://api.example.com/data", response_type: "json" })
   .delay(undefined, { delay: 2000 }) // 2 second delay
   .debugLog(undefined, { log_level: "info" });
 ```
@@ -247,7 +247,7 @@ console.log(processed.output); // { sum: 15, average: 3, count: 5 }
 
 // In workflow
 const workflow = new Workflow()
-  .fetch({ url: "https://api.example.com/data" })
+  .fetch({ url: "https://api.example.com/data", response_type: "json" })
   .javaScript({
     code: `
       const data = input.json;
@@ -628,6 +628,7 @@ Tasks support various configuration options:
 const fetchTask = new FetchUrlTask(
   {
     url: "https://api.example.com/data",
+    response_type: "json",
   },
   {
     queue: "api-requests",
