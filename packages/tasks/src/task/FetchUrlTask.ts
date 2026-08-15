@@ -204,10 +204,14 @@ async function* streamResponseBody(
       { url }
     );
   }
-  const totalBytes = parseContentLength(response.headers.get("content-length"), url);
   let receivedBytes = 0;
   const reader = response.body.getReader();
+  let totalBytes: number | undefined;
   try {
+    // Parsed inside the try (reader already acquired) so an invalid/conflicting
+    // header cancels the body via the finally below instead of leaking an
+    // undrained response.
+    totalBytes = parseContentLength(response.headers.get("content-length"), url);
     while (true) {
       if (signal.aborted) throw createFetchUrlAbortedError();
       const { done, value } = await reader.read();
@@ -273,11 +277,18 @@ function buildHttpError(url: string, response: Response): Error {
  * `Response.text()` is an unconditional UTF-8 decode per the Fetch standard —
  * it ignores the Content-Type charset — so decoding here is byte-identical to
  * what the previous `.text()` / `.json()` calls produced.
+ *
+ * `responseType` is typed as possibly `undefined` (rather than trusting the
+ * schema's `required` + enum) because `JobQueueWorker` calls `job.execute()`
+ * on a *persisted* input with no schema validation — a queued job can carry
+ * any string here. Fails closed: an unrecognized value throws
+ * `INVALID_RESPONSE_TYPE` instead of falling through to `JSON.parse`.
  */
 function materializeDerivedPort(
-  responseType: string | undefined,
+  responseType: FetchUrlResponseType | undefined,
   chunks: readonly Uint8Array[],
-  metadata: FetchUrlMetadata
+  metadata: FetchUrlMetadata,
+  url: string
 ): Record<string, unknown> {
   if (responseType === "stream" || responseType === undefined) return {};
   let total = 0;
@@ -290,9 +301,15 @@ function materializeDerivedPort(
   }
   if (responseType === "blob") return { blob: new Blob([merged], { type: metadata.contentType }) };
   if (responseType === "arraybuffer") return { arraybuffer: merged.buffer };
-  const text = new TextDecoder("utf-8").decode(merged);
-  if (responseType === "text") return { text };
-  return { json: JSON.parse(text) };
+  if (responseType === "text" || responseType === "json") {
+    const text = new TextDecoder("utf-8").decode(merged);
+    return responseType === "text" ? { text } : { json: JSON.parse(text) };
+  }
+  throw createFetchUrlJobError(
+    FetchUrlErrorCode.INVALID_RESPONSE_TYPE,
+    `Invalid response type: ${responseType}`,
+    { url }
+  );
 }
 
 export class FetchUrlJob<
@@ -347,6 +364,14 @@ export class FetchUrlJob<
    * named. The status is known before the first byte, so a non-2xx throws
    * before any delta is emitted and no downstream consumer is ever dispatched
    * on a doomed fetch.
+   *
+   * This both calls `context.emitStreamEvent` AND `yield`s every `body`
+   * delta. A caller must pick exactly one delivery path: a job context whose
+   * `emitStreamEvent` fans out to the same listeners that also drain this
+   * generator's yields would double-ship every chunk. The inline `execute()`
+   * below is safe because it only drains yields (its context carries no
+   * `emitStreamEvent`); a future queued-source caller wiring a worker context
+   * through here needs to route through one path, not both.
    */
   async *executeStream(
     input: Input,
@@ -387,8 +412,15 @@ export class FetchUrlJob<
 
     let data: Record<string, unknown>;
     try {
-      data = { ...materializeDerivedPort(input.response_type, chunks, metadata), metadata };
+      data = {
+        ...materializeDerivedPort(input.response_type, chunks, metadata, input.url!),
+        metadata,
+      };
     } catch (err) {
+      // materializeDerivedPort's own INVALID_RESPONSE_TYPE (and any other
+      // FetchUrlJobError) is already correctly classified — only an
+      // undeclared throw (e.g. JSON.parse's SyntaxError) gets rewrapped here.
+      if (isFetchUrlJobError(err)) throw err;
       const detail = err instanceof Error ? err.message : String(err);
       throw createFetchUrlJobError(
         FetchUrlErrorCode.RESPONSE_PARSE_ERROR,
@@ -628,24 +660,21 @@ export class FetchUrlTask<
     input: FetchUrlTaskInput,
     executeContext: IExecuteContext
   ): AsyncIterable<StreamEvent<Output>> {
-    const credential = input.credential_key;
-    const queuePref = this.config.queue ?? false;
+    const jobInput = this.prepareJobInput(input);
 
-    // Mirrors execute()'s refusal: queued job payloads are persisted to
-    // durable storage, so a credential can never be handed to the queued
-    // path. The queued path itself is not yet wired into executeStream (that
-    // lands with queued-source support), but this still has to fail closed
-    // rather than let a credentialed request run inline as if queuing had
-    // been honored.
-    if (credential && queuePref !== false) {
-      throw new TaskConfigurationError(
-        "FetchUrlTask: credential_key cannot be combined with the queued path (config.queue), " +
-          "because queued job payloads are persisted to durable storage. Remove config.queue to " +
-          "run inline, or have the queue worker supply the credential itself."
-      );
+    // Queued sources aren't wired into executeStream yet — delegate to
+    // execute(), which owns queue resolution, retries, abort propagation, and
+    // (crucially) the credential+queue refusal check, so none of that has to
+    // be duplicated here. A later task replaces this with real queued-source
+    // streaming; until then a queued run just reports as one big `finish`
+    // instead of incremental deltas.
+    const queuePref = this.config.queue ?? false;
+    if (queuePref !== false) {
+      const out = await this.execute(input, executeContext);
+      yield { type: "finish", data: out } as StreamEvent<Output>;
+      return;
     }
 
-    const jobInput = this.prepareJobInput(input);
     const job = new FetchUrlJob<FetchUrlTaskInput, Output>({ input: jobInput });
     try {
       yield* job.executeStream(jobInput, {
