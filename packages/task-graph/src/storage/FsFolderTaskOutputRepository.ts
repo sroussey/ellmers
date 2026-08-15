@@ -13,6 +13,7 @@ import type { CacheRef } from "../cache/CacheRef";
 import { makeCacheRef, makeRefPattern, mintRefKey } from "../cache/CacheRef";
 import type { StreamMode } from "../task/StreamTypes";
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
+import { deleteBounded } from "./boundedDelete";
 import type { TaskOutputRowPrimaryKey } from "./ITaskOutputStorage";
 import { tabularTaskOutputStorage } from "./TabularTaskOutputStorage";
 import type { RunCacheEntryKey } from "./TaskOutputRepository";
@@ -54,34 +55,6 @@ function runScopePrefix(runId: string): string {
   let hex = "";
   for (const byte of bytes) hex += byte.toString(16).padStart(2, "0");
   return `__run.${hex}.`;
-}
-
-/**
- * How many row deletions are in flight at once. Each is a separate `unlink`, so
- * issuing them one after the other makes cleanup latency the row count times a
- * syscall round-trip; issuing all of them at once would hand a run that wrote
- * thousands of rows an unbounded fan-out of open file operations.
- */
-const ROW_DELETE_CONCURRENCY = 16;
-
-/** Delete rows with at most {@link ROW_DELETE_CONCURRENCY} unlinks in flight. */
-async function deleteRowsBounded(
-  keys: readonly TaskOutputRowPrimaryKey[],
-  deleteOne: (key: TaskOutputRowPrimaryKey) => Promise<void>
-): Promise<void> {
-  let next = 0;
-  const workers: Promise<void>[] = [];
-  const width = Math.min(ROW_DELETE_CONCURRENCY, keys.length);
-  for (let i = 0; i < width; i++) {
-    workers.push(
-      (async () => {
-        while (next < keys.length) {
-          await deleteOne(keys[next++]);
-        }
-      })()
-    );
-  }
-  await Promise.all(workers);
 }
 
 /**
@@ -218,7 +191,7 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
         doomed.push({ key: row.key, taskType: row.taskType });
       }
     }
-    await deleteRowsBounded(doomed, (key) => this.storage.delete(key));
+    await deleteBounded(doomed, (key) => this.storage.delete(key));
     this.emit("output_pruned");
     // Blob names lead with `sanitize(taskType)` and `sanitize` is the identity
     // on the hex run-scope prefix, so `nsPrefix` itself is the shared prefix of
@@ -227,26 +200,38 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
   }
 
   /**
-   * Delete the listed rows of `runId` and sweep the run's sidecar blobs.
+   * Delete exactly the listed rows of `runId`, and NOTHING else.
    *
    * The scan {@link deleteRun} performs is what this avoids: the caller states
-   * which rows it wrote, so cleanup costs one unlink per row plus one readdir
-   * of the blobs directory, independent of how much unrelated data the folder
-   * holds. Rows of `runId` that the caller did not list are LEFT IN PLACE —
-   * {@link deleteRunOlderThan} reclaims those.
+   * which rows it wrote, so cleanup costs one unlink per row, independent of
+   * how much unrelated data the folder holds. Rows of `runId` that the caller
+   * did not list are LEFT IN PLACE — {@link deleteRunOlderThan} reclaims those.
+   *
+   * Sidecar blobs are deliberately NOT swept here. A blob's name is not
+   * derivable from a {@link RunCacheEntryKey} (the row key fingerprints the
+   * inputs; the blob name fingerprints `{__taskType, inputs}` and carries a
+   * per-write uuid), so the only prefix available is the whole run's — and
+   * deleting by it would take the blob of a row this call is NOT deleting,
+   * leaving a dangling `CacheRef` in a row that still reads back. A consumer
+   * discovers that only when `TaskRunner.hydrateInputRefs` throws, long after
+   * the cleanup that caused it. A caller that streamed ports names its own
+   * blobs through {@link deleteOutputByRefForRun}; whatever neither half names
+   * is reclaimed by {@link deleteRunOlderThan} on age, the same reclaim story
+   * that already governs the surviving rows.
    */
   override async deleteRunEntries(
     runId: string,
     entries: readonly RunCacheEntryKey[]
   ): Promise<void> {
+    // A run that wrote nothing prunes nothing, so it must not announce a prune.
+    if (entries.length === 0) return;
     const nsPrefix = runScopePrefix(runId);
     const doomed = entries.map((entry) => ({
       key: entry.key,
       taskType: `${nsPrefix}${entry.taskType}`,
     }));
-    await deleteRowsBounded(doomed, (key) => this.storage.delete(key));
+    await deleteBounded(doomed, (key) => this.storage.delete(key));
     this.emit("output_pruned");
-    await this.deleteBlobsByPrefix(nsPrefix);
   }
 
   /**
@@ -266,7 +251,7 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
         doomed.push({ key: row.key, taskType: row.taskType });
       }
     }
-    await deleteRowsBounded(doomed, (key) => this.storage.delete(key));
+    await deleteBounded(doomed, (key) => this.storage.delete(key));
     this.emit("output_pruned");
     await this.deleteBlobsByPrefix(nsPrefix, cutoff);
   }

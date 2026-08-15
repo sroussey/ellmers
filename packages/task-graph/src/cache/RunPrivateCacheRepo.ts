@@ -4,9 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { deleteBounded } from "../storage/boundedDelete";
 import type { RunCacheEntryKey } from "../storage/TaskOutputRepository";
 import { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
+import type { CacheRef } from "./CacheRef";
 
 export interface RunPrivateCacheRepoOptions {
   backing: TaskOutputRepository;
@@ -78,6 +80,26 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
   private writeSetComplete: boolean = true;
 
   /**
+   * Sidecar blobs this wrapper's stream writer minted, keyed by `$ref` so a
+   * re-stream of the same port records each distinct blob (every write mints a
+   * fresh uuid-suffixed name, so two writes really are two files).
+   *
+   * A blob name is NOT derivable from a {@link RunCacheEntryKey}: the row key
+   * fingerprints the task inputs, while the blob name fingerprints
+   * `{__taskType, inputs}` and carries a per-write uuid. So the refs the writer
+   * actually returned are the only complete statement of what this run wrote,
+   * and {@link clearRun} deletes from them rather than from a recomputed prefix
+   * (which would reach another attempt's blobs — see
+   * `FsFolderTaskOutputRepository.deleteRunEntries`).
+   *
+   * Same unbounded-growth caveat as {@link writeSet}: a long-lived run that
+   * streams a fresh port per iteration grows this linearly. Entries are
+   * deliberately never evicted — an evicted ref is a blob nothing names, i.e.
+   * exactly the leak this map exists to close.
+   */
+  private streamedRefs = new Map<string, CacheRef>();
+
+  /**
    * Whether the backing can act on a write-set at all. It has to expose both
    * halves — the key derivation its own writes use, and the targeted delete —
    * so the keys recorded here and the keys deleted later are the same function
@@ -85,6 +107,14 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
    * declares neither, and tracking would be pure overhead.
    */
   private readonly tracksWrites: boolean;
+
+  /**
+   * Whether a recorded {@link streamedRefs} entry can actually be deleted —
+   * i.e. the backing declares the run-scoped by-ref delete. Without it a
+   * streamed run has no targeted way to reclaim its blobs and {@link clearRun}
+   * must fall back to the backing's exhaustive `deleteRun`.
+   */
+  private readonly refsReclaimable: boolean;
 
   constructor({ backing, runId }: RunPrivateCacheRepoOptions) {
     super({ outputCompression: backing.outputCompression });
@@ -100,9 +130,10 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     // wrapper's true capability — a tabular run-private backing leaves it
     // undefined and the private tier degrades to accumulation, unchanged.
     const canStreamPortForRun = typeof backing.saveOutputStreamPortForRun === "function";
+    this.refsReclaimable = typeof backing.deleteOutputByRefForRun === "function";
     if (canStreamPortForRun) {
-      this.saveOutputStreamPort = (taskType, inputs, port, mode, chunks, metadata) =>
-        backing.saveOutputStreamPortForRun!(
+      this.saveOutputStreamPort = async (taskType, inputs, port, mode, chunks, metadata) => {
+        const ref = await backing.saveOutputStreamPortForRun!(
           this.runId,
           taskType,
           inputs,
@@ -111,6 +142,11 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
           chunks,
           metadata
         );
+        // Recorded from the ref the writer RETURNED, which is the only place
+        // the minted blob name exists — nothing downstream can recompute it.
+        this.streamedRefs.set(ref.$ref, ref);
+        return ref;
+      };
     }
     // By-ref reads/deletes MUST route through the backing's `*ForRun` variants,
     // threading this wrapper's `runId`. A foreign ref (another run's blob, a
@@ -223,21 +259,39 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
    * essentially nothing and a run that wrote three rows deletes three rows —
    * where the scan cost a full read of every row in the store, on every run.
    *
-   * The write-set only covers THIS process. Rows left by a previous attempt at
-   * the same `runId` (a crash-resume) are not in it and survive here; the age
-   * sweep (`CacheJanitor` / {@link clearOlderThan}) is what reclaims those, and
-   * it still scans precisely because it cannot be told what to delete.
+   * Streamed sidecar blobs are named the same way, from {@link streamedRefs} —
+   * the backing sweeps no blobs of its own, because it cannot tell a blob of a
+   * doomed row from a blob of a row it was told to keep. Rows go FIRST: a crash
+   * between the two halves then leaves orphan blobs, which the age sweep
+   * reclaims, where blobs-first would leave live rows pointing at nothing.
+   *
+   * The write-set only covers THIS process. Rows (and blobs) left by a previous
+   * attempt at the same `runId` (a crash-resume) are not in it and survive here
+   * as a matched pair; the age sweep (`CacheJanitor` / {@link clearOlderThan})
+   * is what reclaims those, and it still scans precisely because it cannot be
+   * told what to delete.
    */
   public async clearRun(): Promise<void> {
-    if (!this.tracksWrites || !this.writeSetComplete) {
+    // A run that streamed blobs a backing cannot delete by ref has no targeted
+    // way to reclaim them, so it buys the scan rather than leaking them.
+    const canName =
+      this.tracksWrites &&
+      this.writeSetComplete &&
+      (this.streamedRefs.size === 0 || this.refsReclaimable);
+    if (!canName) {
       await this._backing.deleteRun(this.runId);
+      this.writeSet.clear();
+      this.streamedRefs.clear();
       return;
     }
     const entries = [...this.writeSet.values()];
     await this._backing.deleteRunEntries!(this.runId, entries);
-    // Cleared only after the delete settles: a throw leaves the set intact so a
-    // retry still knows what to remove.
+    const refs = [...this.streamedRefs.values()];
+    await deleteBounded(refs, (ref) => this._backing.deleteOutputByRefForRun!(ref, this.runId));
+    // Cleared only after the deletes settle: a throw leaves the sets intact so
+    // a retry still knows what to remove.
     this.writeSet.clear();
+    this.streamedRefs.clear();
   }
 
   /**
