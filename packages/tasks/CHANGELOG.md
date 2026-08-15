@@ -1,5 +1,56 @@
 # @workglow/tasks
 
+## 0.3.45
+
+### Breaking Changes
+
+- **features(tasks)**: drop the response_type default
+- **features(tasks)**: FetchUrlTask gains a body stream port, response_type required
+
+### Features
+
+#### tasks
+
+- re-emit an out-of-process worker's CacheRef as deltas
+- stream the queued fetch over the job channel
+- drop the response_type default
+- 304 is a successful outcome carrying notModified
+- stream the fetch body, verify Content-Length
+- FetchUrlTask gains a body stream port, response_type required
+
+### Bug Fixes
+
+#### tasks
+
+- fail a queued fetch carrying no response_type
+- refuse a conditional request only where a row could be written
+- report a queued fetch's falsy rejection as the failure it is
+- release the body of a response the fetch never reads
+- copy the fetch chunk the carrier is free to transfer away
+- stop measuring a decoded body against its encoded Content-Length
+- refuse response_type "stream" on a carrier that cannot stream
+- refuse an undeclared private resolution from a domain-key fetch
+- refuse a conditional request against every cache the run has
+- stop replaying credentials to cross-origin redirect targets
+- end the queued fetch's drain on the stream's own terminal event
+- make the queued fetch's subclass seam and retry rule safe
+- drop invalid override on FetchUrlTask.executeStream
+- route queued FetchUrlTask runs through execute() from executeStream
+
+### Refactors
+
+#### tasks
+
+- drop the speculative CacheRef byte source from the queued fetch
+- pin response_type at every call site
+
+### Documentation
+
+#### tasks
+
+- correct three claims the fetch's own code contradicts
+- correct three overclaims in the queued fetch's stream contract
+
 ## Unreleased
 
 ### Breaking Changes

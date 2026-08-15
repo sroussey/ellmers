@@ -1,5 +1,73 @@
 # @workglow/test
 
+## 0.3.45
+
+### Breaking Changes
+
+- **features(tasks)**: FetchUrlTask gains a body stream port, response_type required
+- **bug fixes(task-graph)**: stop clearRun dangling blob refs; restore the publish test gate (#793)
+- **refactors(task-graph)**: always return a Promise from getOutputStreamByRef
+
+### Features
+
+#### tasks
+
+- re-emit an out-of-process worker's CacheRef as deltas
+- stream the queued fetch over the job channel
+- 304 is a successful outcome carrying notModified
+- stream the fetch body, verify Content-Length
+- FetchUrlTask gains a body stream port, response_type required
+
+#### task-graph
+
+- stream N binary output ports to cache on the unflagged path
+
+### Bug Fixes
+
+#### task-graph
+
+- re-resolve credential inputs on a re-run instead of blanking them (#799)
+- stop clearRun dangling blob refs; restore the publish test gate (#793)
+
+#### tasks
+
+- fail a queued fetch carrying no response_type
+- refuse a conditional request only where a row could be written
+- report a queued fetch's falsy rejection as the failure it is
+- release the body of a response the fetch never reads
+- copy the fetch chunk the carrier is free to transfer away
+- stop measuring a decoded body against its encoded Content-Length
+- refuse response_type "stream" on a carrier that cannot stream
+- refuse an undeclared private resolution from a domain-key fetch
+- refuse a conditional request against every cache the run has
+- stop replaying credentials to cross-origin redirect targets
+- end the queued fetch's drain on the stream's own terminal event
+- make the queued fetch's subclass seam and retry rule safe
+
+### Refactors
+
+#### task-graph
+
+- always return a Promise from getOutputStreamByRef
+
+#### tasks
+
+- drop the speculative CacheRef byte source from the queued fetch
+- pin response_type at every call site
+
+### Performance
+
+#### task-graph
+
+- delete a run's private cache rows by name, not by scanning
+
+### Tests
+
+#### tasks
+
+- say what the terminal-marker test actually pins
+- cover FetchUrlTask's queued executeStream delegation
+
 ## 0.3.44
 
 ### Bug Fixes

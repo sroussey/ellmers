@@ -1,5 +1,66 @@
 # @workglow/task-graph
 
+## 0.3.45
+
+### Breaking Changes
+
+- **bug fixes(task-graph)**: stop clearRun dangling blob refs; restore the publish test gate (#793)
+- **refactors(task-graph)**: always return a Promise from getOutputStreamByRef
+
+### Features
+
+#### task-graph
+
+- publish the run's resolved cache on IExecuteContext
+- recognize stream-consuming sink tasks
+- stream N binary output ports to cache on the unflagged path
+
+### Bug Fixes
+
+#### task-graph
+
+- cover the co-located tests the Promise collapse missed
+- re-resolve credential inputs on a re-run instead of blanking them (#799)
+- stop clearRun dangling blob refs; restore the publish test gate (#793)
+- run a pure stream consumer through the stream pump
+- restore force-accumulate protection for leaf tasks
+- gate force-accumulate on materializing consumers, not streaming ones
+- a non-cacheable task ignores the cache when deciding accumulation
+- add missing override modifier in multi-binary port test
+
+### Refactors
+
+#### task-graph
+
+- always return a Promise from getOutputStreamByRef
+
+#### tasks
+
+- pin response_type at every call site
+
+### Performance
+
+#### task-graph
+
+- delete a run's private cache rows by name, not by scanning
+
+### Tests
+
+#### task-graph
+
+- pin the undeclared-executeStream warning as reachable
+- pin the streaming memory bound
+- resolve accumulation test through the package entry
+- pin the no-sink-and-no-accumulator hole for multi-binary tasks
+- pin the all-or-nothing multi-port cache-ref invariant
+
+### Documentation
+
+#### task-graph
+
+- document cache write ordering, correct the blob-name claim
+- state the ICacheRef.port writer guarantee, and test it
+
 ## Unreleased
 
 ### Breaking Changes

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.45
+
+### Bug Fixes
+
+#### eval
+
+- restore grok-4.5 pricing
+
 ## 0.3.44
 
 ## 0.3.43
