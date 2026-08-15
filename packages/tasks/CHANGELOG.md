@@ -1,5 +1,22 @@
 # @workglow/tasks
 
+## Unreleased
+
+### Security
+
+#### tasks
+
+- stop replaying credentials to cross-origin redirect targets in `safeFetch`.
+  Both redirect loops (`SafeFetch.ts` and `SafeFetch.server.ts`) now drop
+  `authorization`, `proxy-authorization`, and `cookie` on any hop whose target
+  origin differs from the current one — origin comparison, so a differing scheme
+  or port also counts. `SafeFetchOptions.sensitiveHeaders` names additional
+  headers to drop, which `FetchUrlTask` supplies for
+  `credential_scheme: "header"` (the secret sits on a caller-named header such
+  as `X-Api-Key` that `safeFetch` cannot otherwise recognize). Once a header is
+  stripped it stays stripped for the remainder of the chain, so a
+  `vendor -> attacker -> vendor` redirect cannot launder it back.
+
 ## 0.3.44
 
 ## 0.3.43

@@ -24,6 +24,9 @@ interface TestServer {
   readonly server: http.Server;
 }
 
+/** Headers of every request a test server received, in arrival order. */
+type RequestLog = Array<Readonly<Record<string, string | string[] | undefined>>>;
+
 const servers: http.Server[] = [];
 const timers: NodeJS.Timeout[] = [];
 
@@ -204,5 +207,183 @@ describe("SafeFetch server transport (real node:http, no mocks)", () => {
 
     await drainRejections();
     expect(unhandled).toEqual([]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Cross-origin redirect credential strip.
+  //
+  // Two loopback servers on different ephemeral ports give a genuine
+  // cross-origin redirect over the real undici transport, so the second server
+  // reports exactly what bytes reached it. `privateResourceScopes` is left
+  // undefined throughout (the legacy direct-caller mode), because a scope would
+  // reject the cross-origin hop before the header strip is ever reached — these
+  // tests must fail when the strip is removed, not pass because of a different
+  // guard.
+  // ---------------------------------------------------------------------------
+  describe("cross-origin redirect header strip", () => {
+    /** Records every inbound request's headers and answers 200 with "landed". */
+    async function recordingServer(): Promise<{ target: TestServer; seen: RequestLog }> {
+      const seen: RequestLog = [];
+      const target = await withServer((req, res) => {
+        seen.push({ ...req.headers });
+        res.writeHead(200, { "content-type": "text/plain" });
+        res.end("landed");
+      });
+      return { target, seen };
+    }
+
+    /** Answers every request with a 302 to `location`. */
+    async function redirectingServer(location: string): Promise<TestServer> {
+      return withServer((_req, res) => {
+        res.writeHead(302, { location });
+        res.end();
+      });
+    }
+
+    test("a cross-origin 302 drops Authorization before the second hop", async () => {
+      // The finding itself: a vendor that answers 302 to an attacker origin
+      // would otherwise receive the bearer token verbatim.
+      const { target, seen } = await recordingServer();
+      const hop = await redirectingServer(`${target.origin}/landed`);
+
+      const response = await safeFetch(`${hop.origin}/start`, {
+        allowPrivate: true,
+        headers: { Authorization: "Bearer super-secret-token", Accept: "text/plain" },
+      });
+
+      expect(await response.text()).toBe("landed");
+      expect(seen).toHaveLength(1);
+      expect(seen[0]!.authorization).toBeUndefined();
+      // Targeted, not a blanket wipe: an ordinary header still crosses.
+      expect(seen[0]!.accept).toBe("text/plain");
+    });
+
+    test("a same-origin 302 keeps Authorization", async () => {
+      // Guards the opposite failure: a strip that fires on every redirect would
+      // silently break authenticated APIs that redirect within their own origin.
+      const seen: RequestLog = [];
+      const { origin } = await withServer((req, res) => {
+        seen.push({ ...req.headers });
+        if (req.url === "/start") {
+          res.writeHead(302, { location: "/landed" });
+          res.end();
+          return;
+        }
+        res.writeHead(200, { "content-type": "text/plain" });
+        res.end("landed");
+      });
+
+      const response = await safeFetch(`${origin}/start`, {
+        allowPrivate: true,
+        headers: { Authorization: "Bearer super-secret-token" },
+      });
+
+      expect(await response.text()).toBe("landed");
+      expect(seen).toHaveLength(2);
+      expect(seen[1]!.authorization).toBe("Bearer super-secret-token");
+    });
+
+    test("a caller-named credential header passed via sensitiveHeaders is dropped", async () => {
+      // `credential_scheme: "header"` puts the secret on an arbitrary header,
+      // which safeFetch cannot recognize; without the option it would replay.
+      const { target, seen } = await recordingServer();
+      const hop = await redirectingServer(`${target.origin}/landed`);
+
+      await safeFetch(`${hop.origin}/start`, {
+        allowPrivate: true,
+        headers: { "X-Api-Key": "sk-secret", "X-Trace-Id": "trace-1" },
+        sensitiveHeaders: ["x-api-key"],
+      });
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]!["x-api-key"]).toBeUndefined();
+      expect(seen[0]!["x-trace-id"]).toBe("trace-1");
+    });
+
+    test("sensitiveHeaders matching is case-insensitive against the sent header", async () => {
+      // HTTP header names are case-insensitive; a case-sensitive compare would
+      // leak whenever the configured name and the sent name differ in case.
+      const { target, seen } = await recordingServer();
+      const hop = await redirectingServer(`${target.origin}/landed`);
+
+      await safeFetch(`${hop.origin}/start`, {
+        allowPrivate: true,
+        headers: { "x-api-key": "sk-secret" },
+        sensitiveHeaders: ["X-Api-Key"],
+      });
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]!["x-api-key"]).toBeUndefined();
+    });
+
+    test("a differing port on the same host counts as cross-origin and strips", async () => {
+      // A hostname comparison would call these same-origin and replay the token.
+      // Both servers are 127.0.0.1; only the ephemeral ports differ.
+      const { target, seen } = await recordingServer();
+      const hop = await redirectingServer(`${target.origin}/landed`);
+      expect(new URL(hop.origin).hostname).toBe(new URL(target.origin).hostname);
+
+      await safeFetch(`${hop.origin}/start`, {
+        allowPrivate: true,
+        headers: { Authorization: "Bearer super-secret-token" },
+      });
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]!.authorization).toBeUndefined();
+    });
+
+    test("cookie and proxy-authorization are dropped without any sensitiveHeaders", async () => {
+      // The fixed strip-set must not depend on the caller opting in.
+      const { target, seen } = await recordingServer();
+      const hop = await redirectingServer(`${target.origin}/landed`);
+
+      await safeFetch(`${hop.origin}/start`, {
+        allowPrivate: true,
+        headers: {
+          Cookie: "session=abc123",
+          "Proxy-Authorization": "Basic cHJveHk6cHc=",
+          "X-Trace-Id": "trace-1",
+        },
+      });
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]!.cookie).toBeUndefined();
+      expect(seen[0]!["proxy-authorization"]).toBeUndefined();
+      expect(seen[0]!["x-trace-id"]).toBe("trace-1");
+    });
+
+    test("a header stripped on one hop stays stripped when the chain returns home", async () => {
+      // Laundering guard: A -> B -> A must not restore the token on the final
+      // hop just because the last URL happens to share the first URL's origin.
+      const seen: RequestLog = [];
+      // Assigned once the away server has a port; the handler only reads it at
+      // request time, which is after both servers are listening.
+      let awayLocation = "";
+      const home = await withServer((req, res) => {
+        seen.push({ ...req.headers, "x-path": req.url ?? "" });
+        if (req.url === "/start") {
+          res.writeHead(302, { location: awayLocation });
+          res.end();
+          return;
+        }
+        res.writeHead(200, { "content-type": "text/plain" });
+        res.end("home-again");
+      });
+      const away = await withServer((_req, res) => {
+        res.writeHead(302, { location: `${home.origin}/final` });
+        res.end();
+      });
+      awayLocation = `${away.origin}/away`;
+
+      const response = await safeFetch(`${home.origin}/start`, {
+        allowPrivate: true,
+        headers: { Authorization: "Bearer super-secret-token" },
+      });
+
+      expect(await response.text()).toBe("home-again");
+      const finalHop = seen.find((headers) => headers["x-path"] === "/final");
+      expect(finalHop).toBeDefined();
+      expect(finalHop!.authorization).toBeUndefined();
+    });
   });
 });

@@ -26,7 +26,12 @@ import {
   FetchUrlErrorCode,
   isFetchUrlJobError,
 } from "../task/FetchUrlJobError";
-import { registerSafeFetch, type SafeFetchFn, type SafeFetchOptions } from "./SafeFetch";
+import {
+  applyCrossOriginHeaderStrip,
+  registerSafeFetch,
+  type SafeFetchFn,
+  type SafeFetchOptions,
+} from "./SafeFetch";
 import { classifyIpLiteral, classifyUrl, urlMatchesScope } from "./UrlClassifier";
 
 const MAX_REDIRECT_HOPS = SECURITY_LIMITS.safeFetchMaxRedirectHops;
@@ -85,6 +90,12 @@ function isRedirectStatus(status: number): boolean {
   return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
 }
 
+/** The request init actually handed to undici, once SafeFetch-only fields are removed. */
+type HopInit = Omit<
+  SafeFetchOptions,
+  "allowPrivate" | "privateResourceScopes" | "sensitiveHeaders" | "redirect"
+>;
+
 /**
  * Resolve a single hop: classify URL, DNS-resolve if needed, pin connection,
  * execute the request with redirect:manual, and return the raw response.
@@ -93,7 +104,7 @@ function isRedirectStatus(status: number): boolean {
 async function fetchOneHop(
   url: string,
   opts: SafeFetchOptions,
-  fetchInit: Omit<SafeFetchOptions, "allowPrivate" | "privateResourceScopes" | "redirect">
+  fetchInit: HopInit
 ): Promise<{ response: Response; dispatcher: Agent }> {
   const classification = classifyUrl(url);
   if (classification.kind === "invalid") {
@@ -188,11 +199,13 @@ export const serverSafeFetch: SafeFetchFn = async (url, options) => {
   const {
     allowPrivate: _allowPrivate,
     privateResourceScopes: _privateResourceScopes,
+    sensitiveHeaders,
     redirect: _redirect,
-    ...fetchInit
+    ...initialFetchInit
   } = opts;
 
   let currentUrl = url;
+  let fetchInit: HopInit = initialFetchInit;
   let prevDispatcher: Agent | undefined;
 
   for (let hops = 0; hops <= MAX_REDIRECT_HOPS; hops += 1) {
@@ -255,7 +268,11 @@ export const serverSafeFetch: SafeFetchFn = async (url, options) => {
     }
 
     prevDispatcher = dispatcher;
-    currentUrl = new URL(location, currentUrl).toString();
+    const nextUrl = new URL(location, currentUrl).toString();
+    // Credential-bearing headers never survive an origin change; the strip is
+    // carried forward, so it is never undone by a later same-origin hop.
+    fetchInit = applyCrossOriginHeaderStrip(fetchInit, currentUrl, nextUrl, sensitiveHeaders);
+    currentUrl = nextUrl;
   }
 
   throw createFetchUrlJobError(
