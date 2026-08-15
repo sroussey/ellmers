@@ -131,6 +131,27 @@ class ByteProducerTask extends Task<Record<string, never>, { bytes?: unknown }> 
   }
 }
 
+/** Ordinary non-streaming consumer of the sink's summary output. */
+class TotalDoublerTask extends Task<{ total?: number }, { doubled: number }> {
+  public static override type = "TotalDoublerTask";
+  public static override category = "Test";
+  public static override title = "Total doubler";
+  public static override cacheable = false;
+  public static override inputSchema(): DataPortSchema {
+    return sinkOutput;
+  }
+  public static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { doubled: { type: "number", title: "Doubled" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+  override async execute(input: { total?: number }): Promise<{ doubled: number }> {
+    return { doubled: (input.total ?? -1) * 2 };
+  }
+}
+
 describe("a pure sink receives inputStreams", () => {
   it("counts bytes from the live stream rather than a drained value", async () => {
     const graph = new TaskGraph();
@@ -145,5 +166,46 @@ describe("a pure sink receives inputStreams", () => {
     expect(result).toBeDefined();
     const sinkOut = sink.runOutputData as { total?: number };
     expect(sinkOut.total).toBe(5);
+  });
+
+  it("runs through the stream pump, so the graph sees its stream events", async () => {
+    // `runTask` prepares streaming inputs for producers AND consumers but used
+    // to dispatch on producers alone, so a pure sink ran `executeStream()`
+    // with none of the graph-level wiring the pump owns. The data path was
+    // correct either way — this is the observable that says which path it took.
+    const graph = new TaskGraph();
+    const producer = new ByteProducerTask({ id: "producer" });
+    const sink = new ByteCounterSinkTask({ id: "sink" });
+    graph.addTask(producer);
+    graph.addTask(sink);
+    graph.addDataflow(new Dataflow("producer", "bytes", "sink", "bytes"));
+
+    const streamEvents: string[] = [];
+    graph.on("task_stream_start", (id: unknown) => streamEvents.push(`start:${String(id)}`));
+    graph.on("task_stream_end", (id: unknown) => streamEvents.push(`end:${String(id)}`));
+
+    await graph.run(undefined, { noAccumulation: true, outputCache: false });
+
+    expect(streamEvents).toContain("start:sink");
+    expect(streamEvents).toContain("end:sink");
+  });
+
+  it("still hands its summary to a downstream non-streaming task", async () => {
+    // The pump sets streams on a task's outgoing edges; the sink's output port
+    // is not a streaming one, so this pins that routing it through the pump
+    // did not disturb ordinary edge materialization.
+    const graph = new TaskGraph();
+    const producer = new ByteProducerTask({ id: "producer" });
+    const sink = new ByteCounterSinkTask({ id: "sink" });
+    const doubler = new TotalDoublerTask({ id: "doubler" });
+    graph.addTask(producer);
+    graph.addTask(sink);
+    graph.addTask(doubler);
+    graph.addDataflow(new Dataflow("producer", "bytes", "sink", "bytes"));
+    graph.addDataflow(new Dataflow("sink", "total", "doubler", "total"));
+
+    await graph.run(undefined, { noAccumulation: true, outputCache: false });
+
+    expect((doubler.runOutputData as { doubled?: number }).doubled).toBe(10);
   });
 });

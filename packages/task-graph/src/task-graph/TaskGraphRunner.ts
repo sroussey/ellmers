@@ -556,7 +556,18 @@ export class TaskGraphRunner {
       }
     }
 
-    if (isStreamable) {
+    // Anything that runs `executeStream()` goes through the pump — the same
+    // pair that decided the input preparation above. A pure sink (delta-mode
+    // input port, `executeStream`, no streaming output port) still streams: it
+    // just streams inward. Dispatching it to `runner.run` instead left it
+    // running its stream with none of the graph-level wiring the pump owns —
+    // no `task_stream_start` / `_chunk` / `_end` on the graph, no STREAMING
+    // status pushed to its edges, and no `taskNeedsAccumulation` decision
+    // (`accumulateLeafOutputs` was never consulted for it). Its output ports
+    // are non-streaming, so the pump's own output-side work — the passthrough
+    // edge gates, the per-port stream fan-out — finds nothing to do and costs
+    // nothing.
+    if (isStreamable || isConsumer) {
       return this.streamPump.runStreamingTask<T>(task, input, this.currentCtx!, {
         registry: this.registry,
         outputCache: this.outputCache,
