@@ -8,5 +8,6 @@
 
 export { OPENAI_ALLOWED_HOSTS } from "./common/OpenAI_Client";
 export * from "./common/OpenAI_Constants";
+export { openaiEffortPolicy } from "./common/OpenAI_EffortPolicy";
 export * from "./common/OpenAI_ModelSchema";
 export * from "./registerOpenAi";

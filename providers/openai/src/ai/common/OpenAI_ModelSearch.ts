@@ -11,8 +11,10 @@ import type {
   ModelSearchTaskOutput,
 } from "@workglow/ai";
 import { filterLabeledModelsByQuery } from "@workglow/ai/provider-utils";
+import { stampEffortOptions } from "@workglow/ai/worker";
 import { getClient } from "./OpenAI_Client";
 import { OPENAI } from "./OpenAI_Constants";
+import { openaiEffortPolicy } from "./OpenAI_EffortPolicy";
 
 interface OpenAiModelListItem {
   readonly label: string;
@@ -70,15 +72,18 @@ function mapModelList(models: OpenAiModelListItem[]): ModelSearchResultItem[] {
       id: m.value,
       label: m.label,
       description: m.description ?? "",
-      record: {
-        model_id: m.value,
-        provider: OPENAI,
-        title: m.value,
-        description: "",
-        capabilities: imageEntry?.capabilities ?? [],
-        provider_config: { model_name: m.value },
-        metadata: {},
-      },
+      record: stampEffortOptions(
+        {
+          model_id: m.value,
+          provider: OPENAI,
+          title: m.value,
+          description: "",
+          capabilities: imageEntry?.capabilities ?? [],
+          provider_config: { model_name: m.value },
+          metadata: {},
+        },
+        openaiEffortPolicy({ provider: OPENAI, provider_config: { model_name: m.value } })
+      ),
       raw: m,
     };
   });

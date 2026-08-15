@@ -7,6 +7,7 @@
 import type { DataPorts, WorkflowRunConfig } from "@workglow/task-graph";
 import { Workflow } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util";
+import { assertPositiveInteger } from "../trigger/assertions";
 import type { ITrigger, ITriggerFireContext, TriggerStopOptions } from "../trigger/ITrigger";
 import { WorkflowTriggerError } from "../trigger/TriggerError";
 
@@ -22,8 +23,23 @@ export interface WorkflowTriggerOptions {
   readonly input?:
     | ((context: ITriggerFireContext) => Partial<DataPorts> | Promise<Partial<DataPorts>>)
     | undefined;
-  /** Run configuration forwarded to {@link Workflow.run} on every fire. */
-  readonly runConfig?: WorkflowRunConfig | undefined;
+  /**
+   * Run configuration forwarded to {@link Workflow.run} on every fire.
+   *
+   * `signal` is deliberately excluded, and rejected at bind time rather than
+   * silently dropped: this object is captured ONCE and reused for every fire
+   * for the lifetime of the binding, while an `AbortSignal` is one-shot. Once
+   * the caller aborted it, every subsequent fire would start a run that is
+   * born cancelled while the schedule kept ticking — one error event per
+   * period, indefinitely. Composing it per fire with `AbortSignal.any` would
+   * fix the semantics and leak a composite signal per fire instead, retained
+   * by the long-lived source.
+   *
+   * To cancel the schedule itself, pass `listen({ signal })` — which stops
+   * every bound trigger — or call `handle.stop()`. The trigger's own per-fire
+   * signal is forwarded into each run regardless.
+   */
+  readonly runConfig?: Omit<WorkflowRunConfig, "signal"> | undefined;
   /**
    * How many of THIS binding's fires may wait for the workflow's current run
    * before one is dropped. Defaults to `1`.
@@ -223,6 +239,27 @@ export function bindWorkflowTrigger<W extends Workflow>(
         `binding: bind a second trigger instance instead of re-binding this one.`
     );
   }
+  // Validated with the same helper the five bounds on `BaseTrigger` use, so
+  // the invariant reports identically wherever it is stated. Unvalidated, this
+  // was the one numeric option a caller could break both ways: `NaN` and
+  // `Infinity` make the `waiting >= limit` drop test unreachable (`NaN >= NaN`
+  // and `n >= Infinity` are both false), so the backlog this option exists to
+  // bound grows a chain closure and a captured `input` per fire, forever;
+  // while `0` or a negative makes it always true, dropping every overlapping
+  // fire and quoting the bogus limit back in the error message.
+  if (options.maxPendingFires !== undefined) {
+    assertPositiveInteger(options.maxPendingFires, "maxPendingFires");
+  }
+  // `Omit` stops a `runConfig` literal from carrying a `signal`, but not a
+  // widened variable, and nothing at all in plain JS. See the option's docs
+  // for why bridging it is worse than rejecting it.
+  if ((options.runConfig as WorkflowRunConfig | undefined)?.signal !== undefined) {
+    throw new WorkflowTriggerError(
+      "runConfig.signal is not supported on a trigger binding: runConfig is reused for every " +
+        "fire, so a one-shot signal would abort every later run too. Pass listen({ signal }) to " +
+        "stop the schedule, or call handle.stop()."
+    );
+  }
   bindings.push({ trigger, options, pending: 0 });
   workflowBindings.set(workflow, bindings);
   return workflow;
@@ -341,8 +378,12 @@ export async function listenWorkflow(
     // Each trigger already stops itself on this signal, but the HANDLE also has
     // to go: otherwise an aborted listen() leaves `workflow.trigger(...)`
     // throwing forever and a later listen() returning dead triggers.
+    // `.catch` rather than `void`: `stop()` can reject through a logger whose
+    // `warn`/`error` throws, and this listener has no caller left to observe
+    // that — a floating rejection here takes a Node host down with an
+    // unhandledRejection. `stop()` reports its own failures.
     const onAbort = (): void => {
-      void stop();
+      stop().catch(() => {});
     };
     signal.addEventListener("abort", onAbort, { once: true });
     detachAbort = () => signal.removeEventListener("abort", onAbort);

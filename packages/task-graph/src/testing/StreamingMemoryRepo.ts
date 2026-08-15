@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { CacheRef, TaskInput, TaskOutput } from "@workglow/task-graph";
+import type { CacheRef, StreamMode, TaskInput, TaskOutput } from "@workglow/task-graph";
 import { makeCacheRef, TaskOutputRepository } from "@workglow/task-graph";
 
 /**
  * In-memory {@link TaskOutputRepository} implementing the full streaming
- * surface (`saveOutputStream`, `getOutputByRef`, `getOutputStreamByRef`).
+ * surface (`saveOutputStreamPort`, `getOutputByRef`, `getOutputStreamByRef`).
  * Test-only: bytes live in process memory, keyed by `$ref`.
  */
 export class StreamingMemoryRepo extends TaskOutputRepository {
@@ -36,9 +36,11 @@ export class StreamingMemoryRepo extends TaskOutputRepository {
   override isDurable(): boolean {
     return false;
   }
-  override async saveOutputStream(
+  override async saveOutputStreamPort(
     taskType: string,
     inputs: TaskInput,
+    port: string,
+    mode: StreamMode,
     chunks: AsyncIterable<Uint8Array>,
     metadata: Record<string, unknown>
   ): Promise<CacheRef> {
@@ -52,10 +54,10 @@ export class StreamingMemoryRepo extends TaskOutputRepository {
       merged.set(p, off);
       off += p.byteLength;
     }
-    const key = taskType + JSON.stringify(inputs);
+    const key = taskType + JSON.stringify(inputs) + "#" + port;
     this.streamed.set(key, merged);
     this.streamedMetadata.set(key, metadata);
-    return makeCacheRef({ $ref: `inmem://${key}`, size: total });
+    return makeCacheRef({ $ref: `inmem://${key}`, port, mode, size: total });
   }
   override async getOutputByRef(ref: CacheRef): Promise<Blob | undefined> {
     const key = ref.$ref.replace(/^inmem:\/\//, "");

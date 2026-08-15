@@ -85,20 +85,6 @@ export abstract class TabularStreamingTaskOutputRepository extends TaskOutputTab
     await this.blobs.setup();
   }
 
-  override async saveOutputStream(
-    taskType: string,
-    inputs: TaskInput,
-    chunks: AsyncIterable<Uint8Array>,
-    metadata: Record<string, unknown>
-  ): Promise<CacheRef> {
-    const fingerprint = await makeFingerprint({ __taskType: taskType, inputs });
-    const refKey = mintRefKey(taskType, fingerprint);
-    const size = await this.blobs.writeStream(refKey, chunks);
-    this.emit("output_saved", taskType);
-    const mime = typeof metadata.mime === "string" ? metadata.mime : undefined;
-    return makeCacheRef({ $ref: `${this.scheme}://${refKey}`, size, mime });
-  }
-
   override async saveOutputStreamPort(
     taskType: string,
     inputs: TaskInput,

@@ -13,7 +13,9 @@ import type { CacheRef } from "../cache/CacheRef";
 import { makeCacheRef, makeRefPattern, mintRefKey } from "../cache/CacheRef";
 import type { StreamMode } from "../task/StreamTypes";
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
+import type { TaskOutputRowPrimaryKey } from "./ITaskOutputStorage";
 import { tabularTaskOutputStorage } from "./TabularTaskOutputStorage";
+import type { RunCacheEntryKey } from "./TaskOutputRepository";
 import {
   TaskOutputPrimaryKeyNames,
   TaskOutputSchema,
@@ -55,12 +57,40 @@ function runScopePrefix(runId: string): string {
 }
 
 /**
+ * How many row deletions are in flight at once. Each is a separate `unlink`, so
+ * issuing them one after the other makes cleanup latency the row count times a
+ * syscall round-trip; issuing all of them at once would hand a run that wrote
+ * thousands of rows an unbounded fan-out of open file operations.
+ */
+const ROW_DELETE_CONCURRENCY = 16;
+
+/** Delete rows with at most {@link ROW_DELETE_CONCURRENCY} unlinks in flight. */
+async function deleteRowsBounded(
+  keys: readonly TaskOutputRowPrimaryKey[],
+  deleteOne: (key: TaskOutputRowPrimaryKey) => Promise<void>
+): Promise<void> {
+  let next = 0;
+  const workers: Promise<void>[] = [];
+  const width = Math.min(ROW_DELETE_CONCURRENCY, keys.length);
+  for (let i = 0; i < width; i++) {
+    workers.push(
+      (async () => {
+        while (next < keys.length) {
+          await deleteOne(keys[next++]);
+        }
+      })()
+    );
+  }
+  await Promise.all(workers);
+}
+
+/**
  * Filesystem-backed task output repository with full binary streaming support.
  *
  * JSON output rows are stored through {@link FsFolderTabularStorage} (one file
  * per row, compression and TTL pruning inherited from
- * {@link TaskOutputTabularRepository}). Binary payloads written via
- * `saveOutputStream` live as sidecar files under `<folder>/blobs/`, written
+ * {@link TaskOutputTabularRepository}). Port payloads written via
+ * `saveOutputStreamPort` live as sidecar files under `<folder>/blobs/`, written
  * incrementally (never materialized) to a `.tmp` file and atomically renamed
  * on completion — a crash mid-write never publishes a readable partial blob.
  * The temp handle is `sync()`'d before rename so a power loss between the
@@ -73,9 +103,9 @@ function runScopePrefix(runId: string): string {
  * that reject opening a directory for fsync (`EPERM` / `EINVAL` / `ENOTSUP`
  * / `EISDIR`) fall through silently.
  *
- * Each `saveOutputStream` call mints a unique blob filename of the form
- * `<sanitized-taskType>_<fingerprint>_<uuid>.bin`. Two concurrent writers
- * computing the same `(taskType, inputs)` therefore land at distinct paths,
+ * Each `saveOutputStreamPort` call mints a unique blob filename of the form
+ * `<sanitized-taskType>_<fingerprint>_<port>_<uuid>.bin`. Two concurrent writers
+ * computing the same `(taskType, inputs, port)` therefore land at distinct paths,
  * so a failed-row-commit cleanup on one writer cannot remove the published
  * blob the other writer's row still points at. Stale blobs from crashes
  * between rename and row commit are reclaimed by `clearOlderThan` (which prunes
@@ -103,20 +133,6 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
       ),
     });
     this.blobsDir = join(folderPath, "blobs");
-  }
-
-  override async saveOutputStream(
-    taskType: string,
-    inputs: TaskInput,
-    chunks: AsyncIterable<Uint8Array>,
-    metadata: Record<string, unknown>
-  ): Promise<CacheRef> {
-    const fingerprint = await makeFingerprint({ __taskType: taskType, inputs });
-    const name = `${mintRefKey(taskType, fingerprint)}.bin`;
-    const size = await this.writeSidecar(name, chunks);
-    this.emit("output_saved", taskType);
-    const mime = typeof metadata.mime === "string" ? metadata.mime : undefined;
-    return makeCacheRef({ $ref: `fsfolder://blobs/${name}`, size, mime });
   }
 
   override async saveOutputStreamPort(
@@ -166,16 +182,6 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     return this.getOutput(runScopedType(runId, taskType), inputs);
   }
 
-  override async saveOutputStreamForRun(
-    runId: string,
-    taskType: string,
-    inputs: TaskInput,
-    chunks: AsyncIterable<Uint8Array>,
-    metadata: Record<string, unknown>
-  ): Promise<CacheRef> {
-    return this.saveOutputStream(runScopedType(runId, taskType), inputs, chunks, metadata);
-  }
-
   override async saveOutputStreamPortForRun(
     runId: string,
     taskType: string,
@@ -195,13 +201,24 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     );
   }
 
+  /**
+   * Exhaustive run cleanup. Rows are keyed `(taskType, key)` with the key a
+   * fingerprint hash, so a run's rows are not recoverable from the filenames
+   * and finding them means reading every row in the folder. That cost is the
+   * reason {@link deleteRunEntries} exists for the common case; this method
+   * stays the honest primitive for a caller that cannot enumerate what a run
+   * wrote (a resumed run reclaiming a previous process's rows, an operator
+   * clearing a run id by hand).
+   */
   override async deleteRun(runId: string): Promise<void> {
     const nsPrefix = runScopePrefix(runId);
+    const doomed: TaskOutputRowPrimaryKey[] = [];
     for await (const row of this.storage.records()) {
       if (typeof row.taskType === "string" && row.taskType.startsWith(nsPrefix)) {
-        await this.storage.delete({ key: row.key, taskType: row.taskType });
+        doomed.push({ key: row.key, taskType: row.taskType });
       }
     }
+    await deleteRowsBounded(doomed, (key) => this.storage.delete(key));
     this.emit("output_pruned");
     // Blob names lead with `sanitize(taskType)` and `sanitize` is the identity
     // on the hex run-scope prefix, so `nsPrefix` itself is the shared prefix of
@@ -209,16 +226,47 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     await this.deleteBlobsByPrefix(nsPrefix);
   }
 
+  /**
+   * Delete the listed rows of `runId` and sweep the run's sidecar blobs.
+   *
+   * The scan {@link deleteRun} performs is what this avoids: the caller states
+   * which rows it wrote, so cleanup costs one unlink per row plus one readdir
+   * of the blobs directory, independent of how much unrelated data the folder
+   * holds. Rows of `runId` that the caller did not list are LEFT IN PLACE —
+   * {@link deleteRunOlderThan} reclaims those.
+   */
+  override async deleteRunEntries(
+    runId: string,
+    entries: readonly RunCacheEntryKey[]
+  ): Promise<void> {
+    const nsPrefix = runScopePrefix(runId);
+    const doomed = entries.map((entry) => ({
+      key: entry.key,
+      taskType: `${nsPrefix}${entry.taskType}`,
+    }));
+    await deleteRowsBounded(doomed, (key) => this.storage.delete(key));
+    this.emit("output_pruned");
+    await this.deleteBlobsByPrefix(nsPrefix);
+  }
+
+  /**
+   * Age-bounded run cleanup — the crash-recovery reclaim path, and deliberately
+   * still a full scan. It is reached with no knowledge of what the run wrote
+   * (that is exactly the state a crashed or abandoned run leaves behind), so
+   * the rows have to be found rather than named.
+   */
   override async deleteRunOlderThan(runId: string, olderThanInMs: number): Promise<void> {
     const cutoff = Date.now() - olderThanInMs;
     const nsPrefix = runScopePrefix(runId);
+    const doomed: TaskOutputRowPrimaryKey[] = [];
     for await (const row of this.storage.records()) {
       if (typeof row.taskType !== "string" || !row.taskType.startsWith(nsPrefix)) continue;
       const ts = typeof row.createdAt === "string" ? new Date(row.createdAt).getTime() : NaN;
       if (!isNaN(ts) && ts < cutoff) {
-        await this.storage.delete({ key: row.key, taskType: row.taskType });
+        doomed.push({ key: row.key, taskType: row.taskType });
       }
     }
+    await deleteRowsBounded(doomed, (key) => this.storage.delete(key));
     this.emit("output_pruned");
     await this.deleteBlobsByPrefix(nsPrefix, cutoff);
   }

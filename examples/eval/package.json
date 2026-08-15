@@ -1,7 +1,7 @@
 {
   "name": "@workglow/eval",
   "type": "module",
-  "version": "0.3.39",
+  "version": "0.3.44",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
@@ -47,7 +47,7 @@
     "@workglow/xai": "workspace:*",
     "@huggingface/transformers": "catalog:",
     "commander": "catalog:",
-    "hyparquet": "^1.28.1",
+    "hyparquet": "^1.28.2",
     "hyparquet-compressors": "^1.1.1"
   },
   "publishConfig": {

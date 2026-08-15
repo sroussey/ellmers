@@ -11,27 +11,29 @@ async function* gen(...chunks: Uint8Array[]): AsyncIterable<Uint8Array> {
   for (const c of chunks) yield c;
 }
 
-describe("TaskOutputRepository.saveOutputStream", () => {
-  it("supportsStreaming reflects presence of saveOutputStream", () => {
+describe("TaskOutputRepository.saveOutputStreamPort", () => {
+  it("supportsStreaming reflects presence of saveOutputStreamPort", () => {
     expect(new StreamingMemoryRepo({}).supportsStreaming()).toBe(true);
     expect(new NonStreamingMemoryRepo({}).supportsStreaming()).toBe(false);
   });
 
   it("streams chunks and the total equals total bytes streamed", async () => {
     const repo = new StreamingMemoryRepo({});
-    await repo.saveOutputStream(
+    await repo.saveOutputStreamPort(
       "T",
       { k: 1 },
+      "file",
+      "binary",
       gen(new Uint8Array([1, 2]), new Uint8Array([3])),
       {}
     );
-    expect(Array.from(repo.streamed.get('T{"k":1}')!)).toEqual([1, 2, 3]);
+    expect(Array.from(repo.streamed.get('T{"k":1}#file')!)).toEqual([1, 2, 3]);
   });
 
   it("an empty stream stores a zero-length Uint8Array", async () => {
     const repo = new StreamingMemoryRepo({});
-    await repo.saveOutputStream("T", { k: 1 }, gen(), {});
-    const stored = repo.streamed.get('T{"k":1}')!;
+    await repo.saveOutputStreamPort("T", { k: 1 }, "file", "binary", gen(), {});
+    const stored = repo.streamed.get('T{"k":1}#file')!;
     expect(stored).toBeInstanceOf(Uint8Array);
     expect(stored.byteLength).toBe(0);
   });
@@ -39,8 +41,15 @@ describe("TaskOutputRepository.saveOutputStream", () => {
   it("passes the metadata arg through to the repo (side-band contract)", async () => {
     const repo = new StreamingMemoryRepo({});
     const metadata = { contentType: "application/octet-stream", status: 200 };
-    await repo.saveOutputStream("T", { k: 1 }, gen(new Uint8Array([9])), metadata);
-    expect(repo.streamedMetadata.get('T{"k":1}')).toEqual(metadata);
+    await repo.saveOutputStreamPort(
+      "T",
+      { k: 1 },
+      "file",
+      "binary",
+      gen(new Uint8Array([9])),
+      metadata
+    );
+    expect(repo.streamedMetadata.get('T{"k":1}#file')).toEqual(metadata);
   });
 
   it("RunPrivateCacheRepo does not forward streaming (run-private is not stream-capable)", () => {
@@ -50,14 +59,21 @@ describe("TaskOutputRepository.saveOutputStream", () => {
     const backing = new StreamingMemoryRepo({});
     const wrapper = new RunPrivateCacheRepo({ backing, runId: "run-A" });
     expect(wrapper.supportsStreaming()).toBe(false);
-    expect(typeof (wrapper as { saveOutputStream?: unknown }).saveOutputStream).not.toBe(
+    expect(typeof (wrapper as { saveOutputStreamPort?: unknown }).saveOutputStreamPort).not.toBe(
       "function"
     );
   });
 
-  it("saveOutputStream returns a CacheRef the same backing can resolve to bytes", async () => {
+  it("saveOutputStreamPort returns a CacheRef the same backing can resolve to bytes", async () => {
     const repo = new StreamingMemoryRepo({});
-    const ref = await repo.saveOutputStream("T", { k: 1 }, gen(new Uint8Array([7, 8, 9])), {});
+    const ref = await repo.saveOutputStreamPort(
+      "T",
+      { k: 1 },
+      "file",
+      "binary",
+      gen(new Uint8Array([7, 8, 9])),
+      {}
+    );
     expect(typeof ref.$ref).toBe("string");
     expect(ref.size).toBe(3);
     const hydrated = await repo.getOutputByRef(ref);
@@ -68,7 +84,14 @@ describe("TaskOutputRepository.saveOutputStream", () => {
 
   it("getOutputStreamByRef yields bytes for a saved ref", async () => {
     const repo = new StreamingMemoryRepo({});
-    const ref = await repo.saveOutputStream("T", { k: 2 }, gen(new Uint8Array([4, 5])), {});
+    const ref = await repo.saveOutputStreamPort(
+      "T",
+      { k: 2 },
+      "file",
+      "binary",
+      gen(new Uint8Array([4, 5])),
+      {}
+    );
     const stream = repo.getOutputStreamByRef(ref);
     expect(stream).toBeDefined();
     const collected: number[] = [];
@@ -80,7 +103,14 @@ describe("TaskOutputRepository.saveOutputStream", () => {
 
   it("getOutputByRef returns undefined after clear (dangling reference)", async () => {
     const repo = new StreamingMemoryRepo({});
-    const ref = await repo.saveOutputStream("T", { k: 3 }, gen(new Uint8Array([1])), {});
+    const ref = await repo.saveOutputStreamPort(
+      "T",
+      { k: 3 },
+      "file",
+      "binary",
+      gen(new Uint8Array([1])),
+      {}
+    );
     expect(await repo.getOutputByRef(ref)).toBeInstanceOf(Blob);
     await repo.clear();
     expect(await repo.getOutputByRef(ref)).toBeUndefined();

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.44
+
+## 0.3.43
+
+## 0.3.42
+
+### Bug Fixes
+
+#### hft
+
+- choose the background-removal encoder by runtime, not by method existence
+
+## 0.3.41
+
+## 0.3.40
+
+### Bug Fixes
+
+#### hft
+
+- encode background-removal output without RawImage.toBase64
+
 ## 0.3.39
 
 ### Features

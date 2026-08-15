@@ -17,7 +17,7 @@
  * for a downstream edge that needs the materialized value, and (defensively) for
  * a cache that cannot report `supportsStreaming()`.
  *
- * The live byte delivery to `saveOutputStream` during a real run is owned by
+ * The live byte delivery to `saveOutputStreamPort` during a real run is owned by
  * `StreamProcessor`'s `BinaryStreamRouter` and covered by
  * `StreamProcessorBinaryRefSink.test.ts` / `TaskRunnerRefPath.test.ts`.
  */
@@ -26,6 +26,7 @@ import type {
   CacheRef,
   IExecuteContext,
   StreamEvent,
+  StreamMode,
   TaskInput,
   TaskOutput,
 } from "@workglow/task-graph";
@@ -150,8 +151,8 @@ class BinarySinkTask extends Task<SinkInput, SinkOutput> {
 // ============================================================================
 
 /**
- * Records whether `saveOutputStream` (streaming) vs `saveOutput` (buffered) was
- * invoked, and the total bytes seen through the streaming path.
+ * Records whether `saveOutputStreamPort` (streaming) vs `saveOutput` (buffered)
+ * was invoked, and the total bytes seen through the streaming path.
  */
 class StreamingMemoryRepo extends TaskOutputRepository {
   public saveOutputCalls = 0;
@@ -190,9 +191,11 @@ class StreamingMemoryRepo extends TaskOutputRepository {
     return false;
   }
 
-  override async saveOutputStream(
+  override async saveOutputStreamPort(
     taskType: string,
     inputs: TaskInput,
+    port: string,
+    mode: StreamMode,
     chunks: AsyncIterable<Uint8Array>,
     _metadata: Record<string, unknown>
   ): Promise<CacheRef> {
@@ -202,7 +205,12 @@ class StreamingMemoryRepo extends TaskOutputRepository {
       size += c.byteLength;
       for (const b of c) this.streamedBytes.push(b);
     }
-    return makeCacheRef({ $ref: `inmem://${taskType}::${JSON.stringify(inputs)}`, size });
+    return makeCacheRef({
+      $ref: `inmem://${taskType}::${JSON.stringify(inputs)}::${port}`,
+      port,
+      mode,
+      size,
+    });
   }
 }
 
@@ -211,8 +219,8 @@ class StreamingMemoryRepo extends TaskOutputRepository {
  * capability so `supportsStreaming()` returns `false`.
  */
 class BufferedMemoryRepo extends StreamingMemoryRepo {
-  public override saveOutputStream =
-    undefined as unknown as StreamingMemoryRepo["saveOutputStream"];
+  public override saveOutputStreamPort =
+    undefined as unknown as StreamingMemoryRepo["saveOutputStreamPort"];
 }
 
 // ============================================================================
@@ -264,7 +272,7 @@ describe("StreamBinaryPump — C1 binary source → non-binary consumer", () => 
 //
 // These tests assert the DECISION in isolation, not a real-run outcome. We
 // deliberately do NOT run a streaming-cache graph and assert "binary port absent
-// from finish" as correct: with no live sink driving saveOutputStream on a real
+// from finish" as correct: with no live sink driving saveOutputStreamPort on a real
 // run, absent bytes there means SILENT DATA LOSS, not success. The live pipe
 // (cache actually receiving the bytes on a real run) is covered by the
 // per-port sink and cache stream-out suites.
@@ -482,10 +490,12 @@ describe("StreamBinaryPump — repo capability sanity", () => {
     expect(new BufferedMemoryRepo().supportsStreaming()).toBe(false);
   });
 
-  it("saveOutputStream concatenates all delivered bytes", async () => {
-    await repo.saveOutputStream(
+  it("saveOutputStreamPort concatenates all delivered bytes", async () => {
+    await repo.saveOutputStreamPort(
       "T",
       { k: 1 },
+      "bytes",
+      "binary",
       gen(new Uint8Array([1, 2]), new Uint8Array([3])),
       {}
     );

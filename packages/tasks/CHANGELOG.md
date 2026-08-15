@@ -1,5 +1,35 @@
 # @workglow/tasks
 
+## 0.3.44
+
+## 0.3.43
+
+## 0.3.42
+
+### Bug Fixes
+
+#### tasks
+
+- stop a response body deciding whether a fetch decode failure retries
+
+### Chores
+
+- update deps
+
+## 0.3.41
+
+### Features
+
+#### task
+
+- add network error handling for fetch URL tasks
+
+### Chores
+
+- update deps
+
+## 0.3.40
+
 ## 0.3.39
 
 ### Bug Fixes

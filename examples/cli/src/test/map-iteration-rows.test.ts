@@ -56,7 +56,9 @@ class HarvestedFilingTask extends Task<{ item: number }, Record<string, never>> 
     return EMPTY_OUT;
   }
   override async execute(input: { item: number }, context: IExecuteContext) {
-    const child = context.own(new NestedSectionTask(), { title: "Nested section work" });
+    // The row shows the task's own static title; `own` takes no config for an
+    // already-constructed task.
+    const child = context.own(new NestedSectionTask());
     await child.run(input, { signal: context.signal });
     return {};
   }
@@ -78,15 +80,14 @@ const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*[A-Z]/gi, "");
 describe("WorkflowRunApp map iteration rows", () => {
   it("attaches the live clone graph on iteration_start during a real map run", async () => {
     const workflow = new Workflow();
-    workflow
-      .map({ concurrencyLimit: 1, maxIterations: 2 })
-      .addTask(HarvestedFilingTask)
-      .endMap();
+    workflow.map({ concurrencyLimit: 1, maxIterations: 2 }).addTask(HarvestedFilingTask).endMap();
 
     const mapTask = workflow.graph.getTasks()[0] as ITask;
     let state = new Map<string, IterationSlotRow[]>();
     const setter = (
-      updater: Map<string, IterationSlotRow[]> | ((prev: Map<string, IterationSlotRow[]>) => Map<string, IterationSlotRow[]>)
+      updater:
+        | Map<string, IterationSlotRow[]>
+        | ((prev: Map<string, IterationSlotRow[]>) => Map<string, IterationSlotRow[]>)
     ) => {
       state = typeof updater === "function" ? updater(state) : updater;
     };
@@ -147,10 +148,7 @@ describe("WorkflowRunApp map iteration rows", () => {
     }
 
     const workflow = new Workflow();
-    workflow
-      .map({ concurrencyLimit: 1, maxIterations: 1 })
-      .addTask(OuterFilingTask)
-      .endMap();
+    workflow.map({ concurrencyLimit: 1, maxIterations: 1 }).addTask(OuterFilingTask).endMap();
 
     const stdout = new CapturingStdout();
     let finished = false;
@@ -184,10 +182,7 @@ describe("WorkflowRunApp map iteration rows", () => {
 
   it("renders live map children as tasks, not numbered placeholders, and only the in-flight ones", async () => {
     const workflow = new Workflow();
-    workflow
-      .map({ concurrencyLimit: 1, maxIterations: 4 })
-      .addTask(HarvestedFilingTask)
-      .endMap();
+    workflow.map({ concurrencyLimit: 1, maxIterations: 4 }).addTask(HarvestedFilingTask).endMap();
 
     const stdout = new CapturingStdout();
     let finished = false;

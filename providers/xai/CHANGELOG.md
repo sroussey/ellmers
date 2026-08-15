@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.3.44
+
+## 0.3.43
+
+## 0.3.42
+
+### Bug Fixes
+
+#### xai
+
+- update import for ModelEffort from @workglow/ai/worker
+
+### Refactors
+
+#### providers
+
+- import effort helpers from @workglow/ai/worker, and lint it
+
+## 0.3.41
+
+### Features
+
+#### xai
+
+- map model.effort and stamp Grok listing policies
+
+### Chores
+
+- update deps
+
+## 0.3.40
+
 ## 0.3.39
 
 ### Features

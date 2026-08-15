@@ -9,11 +9,7 @@ import { TaskStatus } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 import { appendUsageDuration, usageLineNeedsTick } from "../ui/rows/useTaskUsageLine";
 
-function stubTask(partial: {
-  status?: string;
-  startedAt?: Date;
-  completedAt?: Date;
-}): ITask {
+function stubTask(partial: { status?: string; startedAt?: Date; completedAt?: Date }): ITask {
   return {
     status: partial.status ?? TaskStatus.PROCESSING,
     startedAt: partial.startedAt,

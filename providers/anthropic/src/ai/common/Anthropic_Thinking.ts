@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { isModelEffort, type ModelEffort } from "@workglow/ai";
+import { isModelEffort, type ModelEffort } from "@workglow/ai/worker";
 import { getLogger } from "@workglow/util/worker";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { parseAnthropicModelId } from "./Anthropic_RequestParams";

@@ -8,6 +8,7 @@
 
 export { ANTHROPIC_ALLOWED_HOSTS } from "./common/Anthropic_Client";
 export * from "./common/Anthropic_Constants";
+export { anthropicEffortPolicy } from "./common/Anthropic_EffortPolicy";
 export * from "./common/Anthropic_ModelSchema";
 export * from "./common/Anthropic_ModelSearch";
 export * from "./registerAnthropic";
