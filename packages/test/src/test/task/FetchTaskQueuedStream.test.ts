@@ -28,6 +28,7 @@ import {
   setGlobalCredentialStore,
   setLogger,
 } from "@workglow/util";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { getTestingLogger } from "@workglow/util/test";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -484,6 +485,56 @@ class OtherPrivateOriginFetchTask extends FetchUrlTask {
   }
 }
 
+/**
+ * A domain-key input — a key rather than a url, the shape
+ * `resolveFetchInput` exists for. `entitlements()` finds no url on it, so the
+ * strongest thing it can declare is an UNSCOPED `network:private`, which names
+ * no destination and binds only under `enforceEntitlements`.
+ */
+const domainKeyInputSchema = {
+  type: "object",
+  properties: {
+    key: { type: "string", title: "Key", description: "Domain key the request is built from" },
+  },
+  required: ["key"],
+} as const satisfies DataPortSchema;
+
+interface DomainKeyFetchInput extends FetchUrlTaskInput {
+  readonly key: string;
+}
+
+class DomainKeyFetchTask extends FetchUrlTask<DomainKeyFetchInput> {
+  public static override type = "DomainKeyFetchTask";
+  public override inputSchema(): DataPortSchema {
+    return domainKeyInputSchema;
+  }
+}
+
+/** Resolves a domain key onto loopback, declaring nothing that covers it. */
+class PrivateDomainKeyFetchTask extends DomainKeyFetchTask {
+  public static override type = "PrivateDomainKeyFetchTask";
+  protected override async resolveFetchInput(): Promise<FetchUrlTaskInput> {
+    return { url: "http://127.0.0.1:9/internal/admin", response_type: "stream" };
+  }
+}
+
+/** The same resolver, opted in as its own trust boundary. */
+class TrustedPrivateDomainKeyFetchTask extends PrivateDomainKeyFetchTask {
+  public static override type = "TrustedPrivateDomainKeyFetchTask";
+  protected override allowsPrivateResolution(): boolean {
+    return true;
+  }
+}
+
+/** The ordinary domain-key case: a public destination, nothing to authorize. */
+class PublicDomainKeyFetchTask extends DomainKeyFetchTask {
+  public static override type = "PublicDomainKeyFetchTask";
+  protected override async resolveFetchInput(input: FetchUrlTaskInput): Promise<FetchUrlTaskInput> {
+    const { key } = input as DomainKeyFetchInput;
+    return { url: `https://example.com/resolved/${key}.bin`, response_type: "stream" };
+  }
+}
+
 class LegacyExecuteTask extends FetchUrlTask {
   public static override type = "LegacyExecuteTask";
   override async execute(
@@ -615,6 +666,48 @@ describe("FetchUrlTask subclass dispatch", () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(mockFetch.mock.calls[0]?.[0]).toBe("http://127.0.0.1:9/internal/other");
     expect(mockFetch.mock.calls[0]?.[1]?.allowPrivate).toBe(true);
+  });
+
+  // SECURITY: the declared-url branch above has a scope to measure against. A
+  // domain-key input has none — `entitlements()` declares an unscoped
+  // `network:private`, which binds only under `enforceEntitlements` (default
+  // false). Left permissive, that resolver reaches loopback with
+  // `allowPrivate: true` on the path every run actually takes.
+  test("refuses a domain-key resolution onto a private host", async () => {
+    const task = new PrivateDomainKeyFetchTask({});
+    const error = await task.run({ key: "abc" }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).toMatch(/network:private/);
+    expect(String(error)).toMatch(/allowsPrivateResolution/);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  // The refusal is a default, not a ban: a resolver that IS the trust boundary
+  // says so, and then reaches the destination it chose.
+  test("allows a domain-key private resolution when the subclass opts in", async () => {
+    responder = () => Promise.resolve(chunkedResponse(CHUNKED_BODY));
+    const task = new TrustedPrivateDomainKeyFetchTask({});
+    const out = (await task.run({ key: "abc" })) as FetchUrlTaskOutput;
+
+    expect(out.metadata?.status).toBe(200);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[0]?.[0]).toBe("http://127.0.0.1:9/internal/admin");
+    expect(mockFetch.mock.calls[0]?.[1]?.allowPrivate).toBe(true);
+  });
+
+  // Every domain-key subclass in the workspace resolves into public space, so
+  // the refusal must not touch them: it keys on the resolved classification,
+  // not on the absence of a declared url.
+  test("leaves a domain-key resolution onto a public host alone", async () => {
+    responder = () => Promise.resolve(chunkedResponse(CHUNKED_BODY));
+    const task = new PublicDomainKeyFetchTask({});
+    const out = (await task.run({ key: "abc" })) as FetchUrlTaskOutput;
+
+    expect(out.metadata?.status).toBe(200);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[0]?.[0]).toBe("https://example.com/resolved/abc.bin");
+    expect(mockFetch.mock.calls[0]?.[1]?.allowPrivate).toBe(false);
   });
 
   // A run whose stream produced nothing has to name the request that was

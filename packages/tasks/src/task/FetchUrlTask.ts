@@ -785,8 +785,9 @@ export class FetchUrlTask<
    * resolved destination is therefore re-checked against that declaration (see
    * {@link assertResolvedDestinationDeclared}) and a rewrite onto an
    * undeclared private host fails closed. Keep the private origins a subclass
-   * can produce inside the origin its declared input already names, or declare
-   * the private input up front.
+   * can produce inside the origin its declared input already names, declare
+   * the private input up front, or opt in through
+   * {@link allowsPrivateResolution} when the input names no url at all.
    */
   protected async resolveFetchInput(
     input: FetchUrlTaskInput,
@@ -794,6 +795,25 @@ export class FetchUrlTask<
   ): Promise<FetchUrlTaskInput> {
     void context;
     return input;
+  }
+
+  /**
+   * Whether {@link resolveFetchInput} may return a private/internal
+   * destination when the unresolved input names no url to scope it against.
+   *
+   * Default `false`. A domain-key input (a CIK, an accession number) carries
+   * no url, so {@link entitlements} can only declare an UNSCOPED
+   * `network:private` — a declaration covering every private destination, and
+   * one that is enforced solely when `enforceEntitlements` is set, which it is
+   * not by default. Nothing else states which private host such a resolver is
+   * entitled to, so the default answer is none.
+   *
+   * Returning `true` makes the resolver itself the trust boundary: it may then
+   * reach any private host, and the redirect scope `safeFetch` enforces is
+   * whichever origin the resolver chose.
+   */
+  protected allowsPrivateResolution(): boolean {
+    return false;
   }
 
   /**
@@ -812,18 +832,17 @@ export class FetchUrlTask<
    * enqueued).
    *
    * A task whose url is unavailable at declaration time declares an unscoped
-   * `network:private` (see {@link entitlements}), which covers any private
-   * destination — so there is nothing here to re-check it against, and this
-   * returns early.
-   *
-   * That is the whole of the check for such a task, and it is only fail-closed
-   * where the declaration is enforced: `enforceEntitlements` on `IRunConfig`
-   * defaults to **false**, and nothing else in this file re-examines the
-   * resolved destination. On the default path a subclass whose input is a
-   * domain key rather than a url — the shape {@link resolveFetchInput} exists
-   * for — can therefore resolve onto any private/internal destination and
-   * reach it with `allowPrivate: true`. Treat that resolver as the trust
-   * boundary: there is no declared scope to measure its output against.
+   * `network:private` (see {@link entitlements}), so there is no declared scope
+   * here to measure the resolved destination against. That is not a reason to
+   * permit it: the unscoped declaration is fail-closed only where it is
+   * enforced, and `enforceEntitlements` on `IRunConfig` defaults to **false**.
+   * A subclass whose input is a domain key rather than a url — the shape
+   * {@link resolveFetchInput} exists for — would otherwise resolve onto any
+   * private/internal destination and reach it with `allowPrivate: true` on the
+   * default path, which is the same self-authorizing rewrite the declared-url
+   * branch refuses. Such a resolution is therefore refused too, unless the
+   * subclass declares itself the trust boundary via
+   * {@link allowsPrivateResolution}.
    */
   private assertResolvedDestinationDeclared(resolved: FetchUrlTaskInput): void {
     const url = resolved.url;
@@ -831,7 +850,18 @@ export class FetchUrlTask<
     if (classifyUrl(url).kind !== "private") return;
 
     const declaredUrl = this.runInputData?.url;
-    if (typeof declaredUrl !== "string" || declaredUrl.length === 0) return;
+    if (typeof declaredUrl !== "string" || declaredUrl.length === 0) {
+      if (this.allowsPrivateResolution()) return;
+      throw new TaskEntitlementError(
+        `${this.type}: resolveFetchInput rewrote the request onto the private/internal ` +
+          `destination ${urlResourcePattern(url)}, and the task's input names no url to scope ` +
+          `that against — entitlements are evaluated against the unresolved input, so the only ` +
+          `network:private declaration available covers every private destination and is ` +
+          `enforced only when enforceEntitlements is set. Declare the private destination on ` +
+          `the task input, or override allowsPrivateResolution() to return true if this ` +
+          `resolver is trusted to choose private destinations.`
+      );
+    }
     if (
       classifyUrl(declaredUrl).kind === "private" &&
       urlMatchesScope(url, [urlResourcePattern(declaredUrl)])
