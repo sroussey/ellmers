@@ -15,6 +15,10 @@
  * the scan itself is gone from the happy path (not merely that the right rows
  * end up deleted), and that it is still there on the age-based reclaim path
  * that has no write-set to work from.
+ *
+ * Streamed sidecar blobs are named the same way and for the same reason: a
+ * partial row delete makes a blanket blob sweep of the run WRONG, because it
+ * would take the blob of a row the same call deliberately left in place.
  */
 
 import type { RunCacheEntryKey, TaskInput, TaskOutput } from "@workglow/task-graph";
@@ -27,6 +31,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+async function* fromArray<T>(items: T[]): AsyncIterable<T> {
+  for (const item of items) yield item;
+}
 
 /** Row-level storage calls made by a repository, counted per method. */
 interface StorageCalls {
@@ -229,5 +237,81 @@ describe("run-private clearRun cost over an FsFolder backing", () => {
     expect(calls.records()).toBeGreaterThan(0);
     expect(await resumed.getOutput("T", { p: "before" })).toBeUndefined();
     expect(await backing.getOutput("DeterministicTask", { i: 0 })).toBeDefined();
+  });
+
+  it("a crash-resume clears its own row+blob and never dangles the previous attempt's", async () => {
+    // Both halves of `clearRun()` in one fixture, because they trade against
+    // each other: naming the rows is what makes cleanup cheap, and it is
+    // exactly that partial delete which makes a blanket blob sweep wrong.
+    //
+    // Pre-crash attempt: a row plus the streamed blob its CacheRef points at.
+    // Its write-set died with the process, so `clearRun()` below cannot name
+    // either — and must therefore leave BOTH alone.
+    const crashed = new RunPrivateCacheRepo({ backing, runId: "run-resumed-stream" });
+    const preCrashRef = await crashed.saveOutputStreamPort!(
+      "T",
+      { p: "before" },
+      "bytes",
+      "binary",
+      fromArray([new Uint8Array([1, 2, 3])]),
+      {}
+    );
+    await crashed.saveOutput(
+      "T",
+      { p: "before" },
+      { ok: "pre-crash", bytes: preCrashRef },
+      new Date(Date.now() - 10 * 24 * 3600_000)
+    );
+
+    // The resumed process writes its own pair under the same runId.
+    const resumed = new RunPrivateCacheRepo({ backing, runId: "run-resumed-stream" });
+    const ownRef = await resumed.saveOutputStreamPort!(
+      "T",
+      { p: "after" },
+      "bytes",
+      "binary",
+      fromArray([new Uint8Array([9])]),
+      {}
+    );
+    await resumed.saveOutput("T", { p: "after" }, { ok: "post-crash", bytes: ownRef });
+
+    const calls = countStorageCalls(backing);
+    await resumed.clearRun();
+
+    // (a) NO SCAN: the whole point of the write-set path. `records()` would
+    // read and parse every row file in the folder, neighbours included.
+    expect(calls.records()).toBe(0);
+    expect(calls.get()).toBe(0);
+    expect(calls.delete()).toBe(1);
+
+    // (c) This process's own pair is gone — row and blob both.
+    expect(await resumed.getOutput("T", { p: "after" })).toBeUndefined();
+    expect(resumed.getOutputStreamByRef!(ownRef)).toBeUndefined();
+
+    // (b) NO DANGLING BLOB. The pre-crash ROW survives (it was never named),
+    // so its blob must survive with it. A prefix sweep of the run's blobs
+    // deletes the blob while leaving the row readable, and the reference only
+    // fails much later — when a consumer's `hydrateInputRefs` throws.
+    expect(await resumed.getOutput("T", { p: "before" })).toBeDefined();
+    expect(resumed.getOutputStreamByRef!(preCrashRef)).toBeDefined();
+
+    // (d) The leftover pair is reclaimed together by the age sweep, which is
+    // the reclaim story the surviving ROW already relied on.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await resumed.clearOlderThan(0);
+    expect(await resumed.getOutput("T", { p: "before" })).toBeUndefined();
+    expect(resumed.getOutputStreamByRef!(preCrashRef)).toBeUndefined();
+  });
+
+  it("a run that wrote nothing announces no prune", async () => {
+    // `output_pruned` drives cache observability; firing it for a run that
+    // deleted zero rows reports work that never happened.
+    const repo = new RunPrivateCacheRepo({ backing, runId: "run-empty-pruned" });
+    const pruned = vi.fn();
+    backing.on("output_pruned", pruned);
+
+    await repo.clearRun();
+
+    expect(pruned).not.toHaveBeenCalled();
   });
 });

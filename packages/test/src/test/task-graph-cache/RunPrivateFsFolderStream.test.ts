@@ -142,6 +142,46 @@ describe("run-private streaming over an FsFolder backing", () => {
     expect(await repoB.getOutputStreamByRef!(refA)).toBeUndefined();
   });
 
+  it("leaves a blob it did not write in place, for the age sweep to reclaim", async () => {
+    const codec = getStreamPortCodec("append");
+    const mk = (t: string): AsyncIterable<Uint8Array> =>
+      codec.encode(fromArray([{ type: "text-delta", port: "text", textDelta: t }]), "text");
+
+    // A blob under run-A's namespace that run-A's wrapper never minted: what a
+    // PREVIOUS process's write looks like to a crash-resumed wrapper. Its row
+    // survives `clearRun()` (the write-set is per-process), so its blob has to
+    // survive too — otherwise the surviving row carries a dangling CacheRef.
+    const foreignRef = await backing.saveOutputStreamPortForRun!(
+      "run-A",
+      "T",
+      { p: "pre-crash" },
+      "text",
+      "append",
+      mk("pre-crash"),
+      {}
+    );
+
+    const repoA = new RunPrivateCacheRepo({ backing, runId: "run-A" });
+    await repoA.saveOutput("T", { p: 1 }, { ok: "A" });
+    const ownRef = await repoA.saveOutputStreamPort!("T", { p: 1 }, "text", "append", mk("A"), {});
+    expect(blobNames(folder)).toHaveLength(2);
+
+    await repoA.clearRun();
+
+    // Only the blob this wrapper minted is gone.
+    expect(repoA.getOutputStreamByRef!(ownRef)).toBeUndefined();
+    const survived = repoA.getOutputStreamByRef!(foreignRef);
+    expect(survived).toBeDefined();
+    expect(await codec.materialize(survived!, "text")).toBe("pre-crash");
+    expect(blobNames(folder)).toHaveLength(1);
+
+    // The age sweep is what reclaims it — same story as the surviving rows.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await backing.deleteRunOlderThan("run-A", 0);
+    expect(repoA.getOutputStreamByRef!(foreignRef)).toBeUndefined();
+    expect(blobNames(folder)).toHaveLength(0);
+  });
+
   describe("run-scope enforcement", () => {
     it("does not resolve a ref written by another run", async () => {
       const codec = getStreamPortCodec("append");

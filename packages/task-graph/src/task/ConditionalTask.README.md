@@ -206,7 +206,10 @@ const gate = new ConditionalTask({
 Each derived port carries its input port's own schema, so types survive the gate.
 The `conditionConfig` input is control data and is never routed to an output port.
 In non-exclusive mode the `_else` ports do not exist and every matching branch's
-ports activate independently.
+ports activate independently. An edge wired off a `_else` port in that mode is
+still reported by `getPortActiveStatus()` — as **inactive** — so the scheduler
+DISABLES it. Leaving it out of the map instead would read as "not a branch
+port", and the edge would complete carrying `undefined`.
 
 Declaring `config.inputSchema` is what makes these ports derivable. When it is
 absent — or when the `conditionConfig` arrives only on the input port at runtime —
@@ -280,6 +283,13 @@ reports no branch ports at all (nothing is disabled, so the untaken branch runs)
 and a function-branch gate reports every port inactive (everything is disabled,
 so the taken branch does not run). Evaluating a condition is cheap — there is
 nothing here worth caching.
+
+It is not overridable per instance. `Task.cacheable` normally lets
+`config.cacheable` / `runConfig.cacheable` win over the class-static flag, so
+`new ConditionalTask({ cacheable: true })` would otherwise re-enable exactly the
+mis-routing above. `ConditionalTask` pins both readers — the `cacheable` getter
+(read by `StreamPump` / `CacheCoordinator`) and `getCachePolicy()` (read by
+`TaskRunner`) — so the override is inert in both.
 
 ## Events
 

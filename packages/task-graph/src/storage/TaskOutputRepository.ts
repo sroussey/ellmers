@@ -240,8 +240,7 @@ export abstract class TaskOutputRepository {
 
   /**
    * OPTIONAL targeted counterpart of {@link deleteRun}: delete exactly the
-   * listed rows of `runId`, plus whatever run-scoped side storage the backing
-   * reclaims wholesale (e.g. sidecar blobs selected by a name prefix).
+   * listed rows of `runId`, and nothing else.
    *
    * Declared only by backings whose {@link deleteRun} cannot select a run's
    * rows without scanning — the win is skipping that scan, so a backing with an
@@ -253,6 +252,12 @@ export abstract class TaskOutputRepository {
    * not listed survives, and is reclaimed later by {@link deleteRunOlderThan}.
    * {@link RunPrivateCacheRepo} therefore falls back to {@link deleteRun}
    * whenever it cannot vouch for its recorded write-set.
+   *
+   * Implementations must NOT sweep run-scoped side storage (e.g. sidecar blobs
+   * selected by a name prefix) the caller did not name: a row this call leaves
+   * in place keeps a `CacheRef` into that storage, and a prefix sweep silently
+   * dangles it. The caller names its blobs through
+   * {@link deleteOutputByRefForRun}; the rest is the age sweep's job.
    */
   deleteRunEntries?(runId: string, entries: readonly RunCacheEntryKey[]): Promise<void>;
 
