@@ -172,9 +172,9 @@ describe("FetchUrlTask", () => {
     mockFetch.mockImplementation(() => Promise.resolve(createMockResponse(mockResponse)));
 
     // Add jobs to queue via client
-    await client.send({ url: "https://api.example.com/1" });
-    await client.send({ url: "https://api.example.com/2" });
-    await client.send({ url: "https://api.example.com/3" });
+    await client.send({ url: "https://api.example.com/1", response_type: "stream" });
+    await client.send({ url: "https://api.example.com/2", response_type: "stream" });
+    await client.send({ url: "https://api.example.com/3", response_type: "stream" });
 
     // Start the server and wait for processing
     await server.start();
@@ -200,6 +200,7 @@ describe("FetchUrlTask", () => {
 
     const fetchPromise = fetchUrl({
       url: "https://api.example.com/notfound",
+      response_type: "stream",
     });
 
     const error = await fetchPromise.catch((e: unknown) => e);
@@ -222,6 +223,7 @@ describe("FetchUrlTask", () => {
 
     const fetchPromise = fetchUrl({
       url: "https://api.example.com/network-error",
+      response_type: "stream",
     });
 
     const error = await fetchPromise.catch((e: unknown) => e);
@@ -363,6 +365,7 @@ describe("FetchUrlTask", () => {
 
     const error = await fetchUrl({
       url: "https://api.example.com/rate-limited",
+      response_type: "stream",
     }).catch((e) => e);
 
     expect(error).toBeInstanceOf(JobTaskFailedError);
@@ -392,6 +395,7 @@ describe("FetchUrlTask", () => {
 
     const error = await fetchUrl({
       url: "https://api.example.com/service-unavailable",
+      response_type: "stream",
     }).catch((e) => e);
 
     expect(error).toBeInstanceOf(JobTaskFailedError);
@@ -426,7 +430,10 @@ describe("FetchUrlTask", () => {
       Promise.resolve(new Response("Not Found", { status: 404, statusText: "Not Found" }))
     );
 
-    const handle = await client.send({ url: "https://api.example.com/missing" });
+    const handle = await client.send({
+      url: "https://api.example.com/missing",
+      response_type: "stream",
+    });
     await server.start();
     const queueError = await handle.waitFor().catch((e: unknown) => e);
     expect(queueError).toBeInstanceOf(PermanentJobError);
@@ -456,6 +463,7 @@ describe("FetchUrlTask", () => {
 
     const error = await fetchUrl({
       url: "https://api.example.com/rate-limited-date",
+      response_type: "stream",
     }).catch((e) => e);
 
     expect(error).toBeInstanceOf(JobTaskFailedError);
@@ -485,6 +493,7 @@ describe("FetchUrlTask", () => {
 
     const error = await fetchUrl({
       url: "https://api.example.com/rate-limited-invalid",
+      response_type: "stream",
     }).catch((e) => e);
 
     expect(error).toBeInstanceOf(JobTaskFailedError);
@@ -510,6 +519,7 @@ describe("FetchUrlTask", () => {
 
     const error = await fetchUrl({
       url: "https://api.example.com/rate-limited-past",
+      response_type: "stream",
     }).catch((e) => e);
 
     expect(error).toBeInstanceOf(JobTaskFailedError);
@@ -536,6 +546,7 @@ describe("FetchUrlTask", () => {
 
     const error = await fetchUrl({
       url: "https://api.example.com/rate-limited-rfc1123",
+      response_type: "stream",
     }).catch((e) => e);
 
     expect(error).toBeInstanceOf(JobTaskFailedError);
@@ -568,6 +579,7 @@ describe("FetchUrlTask", () => {
 
     const error = await fetchUrl({
       url: "https://api.example.com/rate-limited-iso8601",
+      response_type: "stream",
     }).catch((e) => e);
 
     expect(error).toBeInstanceOf(JobTaskFailedError);
@@ -871,6 +883,7 @@ describe("FetchUrlTask", () => {
 
         const fetchPromise = fetchUrl({
           url: "https://api.example.com/will-deny",
+          response_type: "stream",
         });
         const error = await fetchPromise.catch((e: unknown) => e);
         // JobTaskFailedError wraps at the task layer; assert on `.jobError`.
@@ -887,9 +900,10 @@ describe("FetchUrlTask", () => {
       mockFetch.mockImplementation(() =>
         Promise.reject(new TypeError("connect ECONNREFUSED 127.0.0.1:443"))
       );
-      const error = await fetchUrl({ url: "https://api.example.com/down" }).catch(
-        (e: unknown) => e
-      );
+      const error = await fetchUrl({
+        url: "https://api.example.com/down",
+        response_type: "stream",
+      }).catch((e: unknown) => e);
       const jobErr = (error as { jobError?: unknown }).jobError ?? error;
       expect(isFetchUrlJobError(jobErr)).toBe(true);
       expect((jobErr as { code?: string }).code).toBe(FetchUrlErrorCode.NETWORK_ERROR);

@@ -40,7 +40,7 @@ class ByteCounterSinkTask extends Task<{ bytes?: unknown }, { total: number }> {
   public static override outputSchema(): DataPortSchema {
     return sinkOutput;
   }
-  override async *executeStream(
+  async *executeStream(
     _input: { bytes?: unknown },
     context: IExecuteContext
   ): AsyncIterable<StreamEvent<{ total: number }>> {
@@ -121,7 +121,7 @@ class ByteProducerTask extends Task<Record<string, never>, { bytes?: unknown }> 
   public static override outputSchema(): DataPortSchema {
     return producerOutput;
   }
-  override async *executeStream(): AsyncIterable<StreamEvent<{ bytes?: unknown }>> {
+  async *executeStream(): AsyncIterable<StreamEvent<{ bytes?: unknown }>> {
     yield { type: "binary-delta", port: "bytes", binaryDelta: new Uint8Array([1, 2, 3]) };
     yield { type: "binary-delta", port: "bytes", binaryDelta: new Uint8Array([4, 5]) };
     yield { type: "finish", data: {} };

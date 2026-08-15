@@ -41,7 +41,7 @@ class NonCacheableProducerTask extends Task<Record<string, never>, { bytes?: unk
   public static override outputSchema(): DataPortSchema {
     return binOut;
   }
-  override async *executeStream(): AsyncIterable<StreamEvent<{ bytes?: unknown }>> {
+  async *executeStream(): AsyncIterable<StreamEvent<{ bytes?: unknown }>> {
     yield { type: "binary-delta", port: "bytes", binaryDelta: new Uint8Array([1, 2, 3]) };
     yield { type: "finish", data: {} };
   }
@@ -62,7 +62,7 @@ class CacheableProducerTask extends Task<Record<string, never>, { bytes?: unknow
   public static override outputSchema(): DataPortSchema {
     return binOut;
   }
-  override async *executeStream(): AsyncIterable<StreamEvent<{ bytes?: unknown }>> {
+  async *executeStream(): AsyncIterable<StreamEvent<{ bytes?: unknown }>> {
     yield { type: "binary-delta", port: "bytes", binaryDelta: new Uint8Array([4, 5, 6, 7]) };
     yield { type: "finish", data: {} };
   }
@@ -83,7 +83,7 @@ class LeafStreamTask extends Task<Record<string, never>, { bytes?: unknown }> {
   public static override outputSchema(): DataPortSchema {
     return binOut;
   }
-  override async *executeStream(): AsyncIterable<StreamEvent<{ bytes?: unknown }>> {
+  async *executeStream(): AsyncIterable<StreamEvent<{ bytes?: unknown }>> {
     yield { type: "binary-delta", port: "bytes", binaryDelta: new Uint8Array([8, 9]) };
     yield { type: "finish", data: {} };
   }
@@ -107,7 +107,7 @@ class BinarySinkTask extends Task<{ bytes?: unknown }, { total: number }> {
       additionalProperties: false,
     };
   }
-  override async *executeStream(
+  async *executeStream(
     _input: { bytes?: unknown },
     context: IExecuteContext
   ): AsyncIterable<StreamEvent<{ total: number }>> {

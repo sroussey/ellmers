@@ -18,7 +18,7 @@ interface EmitInput {
 
 /** Awaits every emit, recording how far it got before each await resolved. */
 class AwaitingEmitJob extends Job<EmitInput, { emitted: number }> {
-  static override readonly type = "AwaitingEmitJob";
+  static readonly type = "AwaitingEmitJob";
   public static observedAwaits = 0;
   override async execute(
     input: EmitInput,
