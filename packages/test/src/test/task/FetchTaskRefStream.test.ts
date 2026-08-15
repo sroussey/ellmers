@@ -7,6 +7,8 @@
 import type { JobHandle } from "@workglow/job-queue";
 import type { CacheRef, StreamEvent } from "@workglow/task-graph";
 import {
+  CACHE_REGISTRY,
+  DefaultCacheRegistry,
   getTaskQueueRegistry,
   isCacheRef,
   makeCacheRef,
@@ -16,7 +18,7 @@ import {
 import { StreamingMemoryRepo } from "@workglow/task-graph/test";
 import type { FetchUrlTaskOutput } from "@workglow/tasks";
 import { FetchUrlTask } from "@workglow/tasks";
-import { globalServiceRegistry, setLogger } from "@workglow/util";
+import { Container, globalServiceRegistry, ServiceRegistry, setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
@@ -143,6 +145,45 @@ describe("out-of-process worker returns a CacheRef", () => {
         globalServiceRegistry.registerInstance(TASK_OUTPUT_REPOSITORY, previous);
       }
     }
+  });
+
+  // The other two ways `TaskRunner` resolves a run's cache. A run configured
+  // either way can reach the worker's bytes, so failing it as "this run has no
+  // output cache" would be a false alarm raised with a perfectly good cache in
+  // hand.
+  test("resolves the ref through the run config passed to run()", async () => {
+    const repo = new StreamingMemoryRepo({});
+    const ref = await saveBody(repo, BODY);
+    registerChannellessQueue("ref-queue-runconfig", { body: ref, metadata: { status: 200 } });
+
+    const task = new FetchUrlTask({ queue: "ref-queue-runconfig" });
+    const seen: StreamEvent[] = [];
+    task.on("stream_chunk", (e: StreamEvent) => seen.push(e));
+
+    await task.run(
+      { url: "https://example.com/f.bin", response_type: "stream" },
+      { outputCache: repo }
+    );
+    expect(deltaBytes(seen)).toEqual(Array.from(BODY));
+  });
+
+  test("resolves the ref through a CACHE_REGISTRY binding", async () => {
+    const repo = new StreamingMemoryRepo({});
+    const ref = await saveBody(repo, BODY);
+    registerChannellessQueue("ref-queue-registry", { body: ref, metadata: { status: 200 } });
+
+    const services = new ServiceRegistry(new Container());
+    services.registerInstance(CACHE_REGISTRY, new DefaultCacheRegistry({ deterministic: repo }));
+
+    const task = new FetchUrlTask({ queue: "ref-queue-registry" });
+    const seen: StreamEvent[] = [];
+    task.on("stream_chunk", (e: StreamEvent) => seen.push(e));
+
+    await task.run(
+      { url: "https://example.com/f.bin", response_type: "stream" },
+      { registry: services }
+    );
+    expect(deltaBytes(seen)).toEqual(Array.from(BODY));
   });
 
   // The bytes exist and this process cannot reach them. Reporting a fetch that

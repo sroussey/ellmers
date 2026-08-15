@@ -18,6 +18,8 @@ import {
   wrapQueueStorage,
 } from "@workglow/job-queue";
 import {
+  CACHE_REGISTRY,
+  DefaultCacheRegistry,
   getTaskQueueRegistry,
   JobTaskFailedError,
   setTaskQueueRegistry,
@@ -833,17 +835,64 @@ describe("FetchUrlTask", () => {
       expect(result.metadata?.notModified).toBe(true);
     });
 
-    test("a conditional request plus an output cache is refused", async () => {
-      const task = new FetchUrlTask({ queue: false });
-      task.runConfig.outputCache = new InMemoryTaskOutputRepository();
-      const error = await task
-        .run({
-          url: "https://example.com/big.zip",
-          response_type: "stream",
-          headers: { "If-None-Match": '"v1"' },
-        })
-        .catch((e) => e);
-      expect(String(error)).toMatch(/conditional request/i);
+    // `TaskRunner` resolves a run's cache three ways — the run config, the
+    // task's own runConfig, and a CACHE_REGISTRY binding — and each one caches
+    // the bodiless 304 outcome and then serves it back to every later run while
+    // the origin moves on to a 200 with different bytes. A guard reading only
+    // one of the three leaves the hazard live on the other two, so all three
+    // are pinned here.
+    describe("a conditional request plus an output cache is refused", () => {
+      const conditionalInput = {
+        url: "https://example.com/big.zip",
+        response_type: "stream",
+        headers: { "If-None-Match": '"v1"' },
+      } as const;
+
+      beforeEach(() => {
+        mockFetch.mockImplementation(() =>
+          Promise.resolve(new Response(null, { status: 304, headers: { etag: '"v1"' } }))
+        );
+      });
+
+      test("via the task's own runConfig", async () => {
+        const task = new FetchUrlTask({ queue: false });
+        task.runConfig.outputCache = new InMemoryTaskOutputRepository();
+        const error = await task.run({ ...conditionalInput }).catch((e) => e);
+        expect(String(error)).toMatch(/conditional request/i);
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      test("via the run config passed to run()", async () => {
+        const task = new FetchUrlTask({ queue: false });
+        const error = await task
+          .run({ ...conditionalInput }, { outputCache: new InMemoryTaskOutputRepository() })
+          .catch((e) => e);
+        expect(String(error)).toMatch(/conditional request/i);
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      test("via a CACHE_REGISTRY binding on the run's ServiceRegistry", async () => {
+        const services = new ServiceRegistry(new Container());
+        services.registerInstance(
+          CACHE_REGISTRY,
+          new DefaultCacheRegistry({ deterministic: new InMemoryTaskOutputRepository() })
+        );
+        const task = new FetchUrlTask({ queue: false });
+        const error = await task
+          .run({ ...conditionalInput }, { registry: services })
+          .catch((e) => e);
+        expect(String(error)).toMatch(/conditional request/i);
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      // The refusal is about a cache being in play, not about the header: a run
+      // with no cache anywhere still answers a conditional request normally.
+      test("but not when the run resolved no cache at all", async () => {
+        const services = new ServiceRegistry(new Container());
+        const task = new FetchUrlTask({ queue: false });
+        const result = await task.run({ ...conditionalInput }, { registry: services });
+        expect(result.metadata?.notModified).toBe(true);
+      });
     });
   });
 

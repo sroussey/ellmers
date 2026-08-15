@@ -875,11 +875,12 @@ export class FetchUrlTask<
     this.assertResolvedDestinationDeclared(input);
 
     // A 304 carries no body, so a cache save would write a row whose `body` is
-    // empty — destroying the cached copy the 304 just certified as still good.
-    // Making that safe means reading the stored validator and reissuing, which
-    // is a conditional-cache feature. Conditional requests are for callers
-    // managing their own artifact.
-    if (hasConditionalHeader(input.headers) && this.runConfig.outputCache) {
+    // empty — destroying the cached copy the 304 just certified as still good,
+    // and then serving that emptiness back to every later run while the origin
+    // moves on. Making that safe means reading the stored validator and
+    // reissuing, which is a conditional-cache feature. Conditional requests are
+    // for callers managing their own artifact.
+    if (hasConditionalHeader(input.headers) && this.hasOutputCache(executeContext)) {
       throw new TaskConfigurationError(
         "FetchUrlTask: a conditional request (If-None-Match / If-Modified-Since) cannot be " +
           "combined with an output cache — a 304 has no body and the save would overwrite the " +
@@ -957,7 +958,7 @@ export class FetchUrlTask<
       }
 
       if (typeof handle.onStream !== "function") {
-        yield* this.streamSettledBody(handle);
+        yield* this.streamSettledBody(handle, executeContext);
         return;
       }
 
@@ -1134,7 +1135,10 @@ export class FetchUrlTask<
    * them, so a `finish` carrying neither them nor the ref would report a
    * successful fetch of an empty body.
    */
-  private async *streamSettledBody(handle: JobHandle<Output>): AsyncIterable<StreamEvent<Output>> {
+  private async *streamSettledBody(
+    handle: JobHandle<Output>,
+    executeContext: IExecuteContext
+  ): AsyncIterable<StreamEvent<Output>> {
     const output = (await handle.waitFor()) as Record<string, unknown> | undefined;
     if (output === undefined || output["body"] === undefined) {
       yield { type: "finish", data: output } as StreamEvent<Output>;
@@ -1142,7 +1146,7 @@ export class FetchUrlTask<
     }
     const carried = output["body"];
 
-    const backing = this.resolveBodyRefBacking();
+    const backing = this.resolveBodyRefBacking(executeContext);
     if (isCacheRef(carried) && backing === undefined) {
       throw new TaskConfigurationError(
         "FetchUrlTask: the queued worker returned a cache reference for the response body, but " +
@@ -1172,15 +1176,45 @@ export class FetchUrlTask<
   }
 
   /**
-   * The backing a {@link isCacheRef} at `body` is read through, resolved from
-   * `runConfig.outputCache` the same two ways `TaskRunner` resolves it — an
-   * explicit repository, or `true` meaning the globally registered one. The
-   * repository is matched structurally rather than by `instanceof`: the only
-   * members consulted are the two optional by-ref readers, and a duplicated
-   * class identity across package instances would otherwise silently read as
-   * "no cache" and turn a readable ref into the loud failure above.
+   * Whether this run will store its output anywhere — the question the
+   * conditional-request guard turns on, since a stored bodiless `304` is what
+   * destroys the artifact it validated.
+   *
+   * The run's own resolution is the authority (see
+   * {@link IExecuteContext.cacheRegistry}): reading `runConfig.outputCache`
+   * alone answered for one of the three ways a cache reaches a run and left the
+   * other two — the config passed to `run()`, and a `CACHE_REGISTRY` binding —
+   * silently unguarded. The legacy field is still consulted afterwards so a
+   * caller driving `executeStream` with a context it built itself keeps today's
+   * refusal; it can only add refusals, which is the safe direction for a guard
+   * protecting data.
    */
-  private resolveBodyRefBacking(): RefStreamBacking | undefined {
+  private hasOutputCache(context: IExecuteContext): boolean {
+    if (this.runConfig.outputCache) return true;
+    const resolved = context.cacheRegistry;
+    return resolved?.deterministic !== undefined || resolved?.private !== undefined;
+  }
+
+  /**
+   * The backing a {@link isCacheRef} at `body` is read through: the cache this
+   * run resolved, else — for a caller that built the context itself — what this
+   * task's own `runConfig.outputCache` names, either an explicit repository or
+   * `true` meaning the globally registered one.
+   *
+   * The deterministic slot is preferred because the bytes came from another
+   * process: the private tier is run-scoped and rejects a foreign-run ref by
+   * design, so reading a worker's ref through it can only miss. It is still
+   * tried, since a registry may populate that slot alone and a plain repository
+   * there reads fine.
+   *
+   * Nothing here inspects the repository. The two by-ref readers are optional
+   * on {@link RefStreamBacking} and are probed downstream by
+   * `streamRefViaBacking`, so a backing exposing neither is indistinguishable
+   * from an evicted entry at this level and the caller reports it as one.
+   */
+  private resolveBodyRefBacking(context: IExecuteContext): RefStreamBacking | undefined {
+    const resolved = context.cacheRegistry?.deterministic ?? context.cacheRegistry?.private;
+    if (resolved !== undefined) return resolved;
     const configured = this.runConfig.outputCache;
     if (typeof configured === "object" && configured !== null) return configured;
     if (configured !== true) return undefined;
