@@ -1244,19 +1244,33 @@ export class FetchUrlTask<
    * conditional-request guard turns on, since a stored bodiless `304` is what
    * destroys the artifact it validated.
    *
-   * The run's own resolution is the authority (see
-   * {@link IExecuteContext.cacheRegistry}): reading `runConfig.outputCache`
+   * Two things have to hold for a row to be written, and both are checked.
+   *
+   * The task has to be cacheable at all. Every write path in `CacheCoordinator`
+   * — the row save, and the stream sinks that mint a `CacheRef` for the `body`
+   * port — returns early on `task.cacheable`, so a `cacheable: false` instance
+   * (or a subclass declaring `static cacheable = false`) can overwrite nothing
+   * and the refusal would cost a caller a working conditional request for a
+   * hazard that cannot occur.
+   *
+   * And a cache has to be in play. The run's own resolution is the authority
+   * (see {@link IExecuteContext.cacheRegistry}): reading `runConfig.outputCache`
    * alone answered for one of the three ways a cache reaches a run and left the
    * other two — the config passed to `run()`, and a `CACHE_REGISTRY` binding —
-   * silently unguarded. The legacy field is still consulted afterwards so a
-   * caller driving `executeStream` with a context it built itself keeps today's
-   * refusal; it can only add refusals, which is the safe direction for a guard
-   * protecting data.
+   * silently unguarded. Reading it FIRST was wrong in the other direction:
+   * `run(input, { outputCache: false })` resolves no cache, and the instance
+   * field it overrides would still have refused the run. A context that went
+   * through a runner always carries the `cacheRegistry` key, `undefined`
+   * included, so the resolution answers whenever there is one; the legacy field
+   * speaks only for a hand-built context, which has no resolution to consult.
    */
   private hasOutputCache(context: IExecuteContext): boolean {
-    if (this.runConfig.outputCache) return true;
-    const resolved = context.cacheRegistry;
-    return resolved?.deterministic !== undefined || resolved?.private !== undefined;
+    if (!this.cacheable) return false;
+    if ("cacheRegistry" in context) {
+      const resolved = context.cacheRegistry;
+      return resolved?.deterministic !== undefined || resolved?.private !== undefined;
+    }
+    return Boolean(this.runConfig.outputCache);
   }
 
   private prepareJobInput(input: FetchUrlTaskInput): FetchUrlTaskInput {

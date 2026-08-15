@@ -1014,6 +1014,31 @@ describe("FetchUrlTask", () => {
         const result = await task.run({ ...conditionalInput }, { registry: services });
         expect(result.metadata?.notModified).toBe(true);
       });
+
+      // The three refusals above each pin a way a cache IS present. The run's
+      // resolution also answers the other direction: `outputCache: false` on
+      // the run overrides the instance field, `TaskRunner` resolves no cache
+      // from it, and a guard consulting the overridden field first would refuse
+      // a run that can write nowhere.
+      test("but not when the run config disables the cache the instance carries", async () => {
+        const task = new FetchUrlTask({ queue: false });
+        task.runConfig.outputCache = new InMemoryTaskOutputRepository();
+        const result = await task.run({ ...conditionalInput }, { outputCache: false });
+        expect(result.metadata?.notModified).toBe(true);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+      });
+
+      // A cache being in play is necessary but not sufficient: every write path
+      // in CacheCoordinator (the row save, and the stream sink that mints the
+      // `body` ref) returns early on `task.cacheable`, so a non-cacheable task
+      // cannot overwrite the copy its 304 validated.
+      test("but not when the task itself is not cacheable", async () => {
+        const task = new FetchUrlTask({ queue: false }, { cacheable: false });
+        task.runConfig.outputCache = new InMemoryTaskOutputRepository();
+        const result = await task.run({ ...conditionalInput });
+        expect(result.metadata?.notModified).toBe(true);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+      });
     });
   });
 
