@@ -64,7 +64,9 @@ export class StreamingMemoryRepo extends TaskOutputRepository {
     const bytes = this.streamed.get(key);
     return bytes === undefined ? undefined : new Blob([bytes as unknown as BlobPart]);
   }
-  override getOutputStreamByRef(ref: CacheRef): AsyncIterable<Uint8Array> | undefined {
+  override async getOutputStreamByRef(
+    ref: CacheRef
+  ): Promise<AsyncIterable<Uint8Array> | undefined> {
     const key = ref.$ref.replace(/^inmem:\/\//, "");
     const bytes = this.streamed.get(key);
     if (bytes === undefined) return undefined;

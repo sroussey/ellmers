@@ -92,7 +92,7 @@ describe("TaskOutputRepository.saveOutputStreamPort", () => {
       gen(new Uint8Array([4, 5])),
       {}
     );
-    const stream = repo.getOutputStreamByRef(ref);
+    const stream = await repo.getOutputStreamByRef(ref);
     expect(stream).toBeDefined();
     const collected: number[] = [];
     for await (const chunk of stream!) {

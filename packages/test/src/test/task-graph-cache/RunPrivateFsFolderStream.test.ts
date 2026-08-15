@@ -130,7 +130,7 @@ describe("run-private streaming over an FsFolder backing", () => {
     // Run A's row and blob are gone; the ref no longer resolves.
     expect(await repoA.getOutput("T", { p: 1 })).toBeUndefined();
     expect(await repoA.size()).toBe(0);
-    expect(repoA.getOutputStreamByRef!(refA)).toBeUndefined();
+    expect(await repoA.getOutputStreamByRef!(refA)).toBeUndefined();
 
     // Run B is untouched: its row still reads and its blob survives.
     expect(await repoB.getOutput("T", { p: 1 })).toEqual({ ok: "B" });
@@ -169,8 +169,8 @@ describe("run-private streaming over an FsFolder backing", () => {
     await repoA.clearRun();
 
     // Only the blob this wrapper minted is gone.
-    expect(repoA.getOutputStreamByRef!(ownRef)).toBeUndefined();
-    const survived = repoA.getOutputStreamByRef!(foreignRef);
+    expect(await repoA.getOutputStreamByRef!(ownRef)).toBeUndefined();
+    const survived = await repoA.getOutputStreamByRef!(foreignRef);
     expect(survived).toBeDefined();
     expect(await codec.materialize(survived!, "text")).toBe("pre-crash");
     expect(blobNames(folder)).toHaveLength(1);
@@ -178,7 +178,7 @@ describe("run-private streaming over an FsFolder backing", () => {
     // The age sweep is what reclaims it — same story as the surviving rows.
     await new Promise((resolve) => setTimeout(resolve, 5));
     await backing.deleteRunOlderThan("run-A", 0);
-    expect(repoA.getOutputStreamByRef!(foreignRef)).toBeUndefined();
+    expect(await repoA.getOutputStreamByRef!(foreignRef)).toBeUndefined();
     expect(blobNames(folder)).toHaveLength(0);
   });
 

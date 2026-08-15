@@ -113,7 +113,12 @@ export class ConditionalTask<
     return false;
   }
 
-  public override getCachePolicy(): CachePolicy {
+  // Keeps the base signature's parameter even though the answer ignores it: an
+  // override declaring zero parameters still satisfies `ITask` structurally,
+  // but it narrows the arity seen through the CONCRETE type, so a caller
+  // holding a `ConditionalTask` (rather than an `ITask`) could no longer pass
+  // the inputs `TaskRunner` passes through the interface.
+  public override getCachePolicy(_inputs: Input): CachePolicy {
     return { kind: "none" };
   }
 

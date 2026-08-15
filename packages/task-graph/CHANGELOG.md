@@ -1,5 +1,31 @@
 # @workglow/task-graph
 
+## Unreleased
+
+### Breaking Changes
+
+- **refactor(task-graph)**: `TaskOutputRepository.getOutputStreamByRef` (and
+  `getOutputStreamByRefForRun`) always return a Promise
+
+  Both were declared as a tri-state union —
+  `AsyncIterable<Uint8Array> | undefined | Promise<AsyncIterable<Uint8Array> | undefined>` —
+  which does not compose with `StreamPortCodec.materialize`, whose parameter is the
+  iterable alone. Every consumer had to decide for itself whether a given backing needed
+  awaiting, and the tree had grown two narrowings of the one interface in opposite
+  directions: the concrete repositories overrode it with the synchronous half, while the
+  streaming contract helper declared its own Promise-only version.
+
+  The union also made the await in `streamRefViaBacking` load-bearing by convention
+  rather than by type. That await is what turns an asynchronous backing's dangling ref
+  into `undefined` — a cache miss — instead of a truthy Promise a caller reads as a live
+  stream, and nothing in the signature required it.
+
+  Migration for an implementor: mark the method `async`. A backing that can answer
+  synchronously still does; the cost is one microtask per ref, not per chunk. Callers
+  that were relying on the synchronous return must `await` it — including in assertions,
+  where `expect(repo.getOutputStreamByRef(ref)).toBeDefined()` previously passed for a
+  dangling ref, because a Promise is always defined.
+
 ## 0.3.44
 
 ### Bug Fixes

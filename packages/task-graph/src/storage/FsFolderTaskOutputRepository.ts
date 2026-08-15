@@ -391,15 +391,17 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     return path === undefined ? undefined : this.readBlobAt(path);
   }
 
-  override getOutputStreamByRef(ref: CacheRef): AsyncIterable<Uint8Array> | undefined {
+  override async getOutputStreamByRef(
+    ref: CacheRef
+  ): Promise<AsyncIterable<Uint8Array> | undefined> {
     const path = this.blobPath(ref);
     return path === undefined ? undefined : this.openBlobStreamAt(path);
   }
 
-  override getOutputStreamByRefForRun(
+  override async getOutputStreamByRefForRun(
     ref: CacheRef,
     runId: string
-  ): AsyncIterable<Uint8Array> | undefined {
+  ): Promise<AsyncIterable<Uint8Array> | undefined> {
     const path = this.blobPathInRunScope(ref, runId);
     return path === undefined ? undefined : this.openBlobStreamAt(path);
   }

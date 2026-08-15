@@ -27,7 +27,9 @@ class CountingRepo extends StreamingMemoryRepo {
     this.byRefReads++;
     return super.getOutputByRef(ref);
   }
-  override getOutputStreamByRef(ref: CacheRef): AsyncIterable<Uint8Array> | undefined {
+  override async getOutputStreamByRef(
+    ref: CacheRef
+  ): Promise<AsyncIterable<Uint8Array> | undefined> {
     this.byRefReads++;
     return super.getOutputStreamByRef(ref);
   }

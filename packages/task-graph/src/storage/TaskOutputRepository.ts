@@ -146,20 +146,23 @@ export abstract class TaskOutputRepository {
    * an async iterable of bytes for the referenced entry, or `undefined` when
    * the entry is absent or this backing does not support streaming retrieval.
    *
-   * Synchronous backings (filesystem `openSync`, in-memory) return the iterable
-   * directly. Asynchronous backings (IndexedDB, SQL) that cannot probe
-   * existence synchronously MAY return a Promise; the runtime's read helper
-   * ({@link streamRefViaBacking}) awaits it, so a dangling ref still resolves to
-   * `undefined` (a cache miss) rather than a silently empty stream.
+   * Always a Promise, even for a backing that can answer synchronously
+   * (filesystem `openSync`, in-memory). Resolving the ref is one await per ref,
+   * not per chunk, so the cost is nil — and the uniform shape is what lets a
+   * caller hand the result straight to a consumer that takes an iterable
+   * (`StreamPortCodec.materialize`), rather than every call site deciding for
+   * itself whether this particular backing needs awaiting. It also keeps the
+   * absent-entry answer honest for asynchronous backings (IndexedDB, SQL) that
+   * cannot probe existence synchronously: a dangling ref resolves to
+   * `undefined` — a cache miss — where an un-awaited Promise would read as a
+   * live stream.
    *
    * Implementations MUST yield bounded-size chunks (e.g. filesystem read
    * chunks): cache-hit replay paces consumers per chunk, so yielding the
    * whole payload as one chunk defeats the memory bound this reader exists
    * to provide.
    */
-  getOutputStreamByRef?(
-    ref: CacheRef
-  ): AsyncIterable<Uint8Array> | undefined | Promise<AsyncIterable<Uint8Array> | undefined>;
+  getOutputStreamByRef?(ref: CacheRef): Promise<AsyncIterable<Uint8Array> | undefined>;
 
   /**
    * OPTIONAL cleanup hook for orphan blobs. Called by the runner when a
@@ -324,13 +327,12 @@ export abstract class TaskOutputRepository {
    * OPTIONAL run-scoped streaming reader counterpart of
    * {@link getOutputStreamByRef}. A `ref` that was NOT produced by a `*ForRun`
    * writer for the given `runId` MUST resolve to `undefined`; foreign refs
-   * never throw. Same synchronous / Promise-returning shape as the unscoped
-   * variant so async backings can probe existence before returning an iterable.
+   * never throw. Same Promise-returning shape as the unscoped variant.
    */
   getOutputStreamByRefForRun?(
     ref: CacheRef,
     runId: string
-  ): AsyncIterable<Uint8Array> | undefined | Promise<AsyncIterable<Uint8Array> | undefined>;
+  ): Promise<AsyncIterable<Uint8Array> | undefined>;
 
   /**
    * OPTIONAL run-scoped counterpart of {@link deleteOutputByRef}. A `ref` that
