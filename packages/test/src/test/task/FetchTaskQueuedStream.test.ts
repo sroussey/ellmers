@@ -10,6 +10,7 @@ import {
   JobQueueClient,
   JobQueueServer,
   JobStatus,
+  RetryableJobError,
   wrapQueueStorage,
 } from "@workglow/job-queue";
 import { SqliteQueueStorage } from "@workglow/sqlite/job-queue";
@@ -296,6 +297,34 @@ describe("queued fetch streams over the job channel", () => {
         await storage.deleteAll();
       }
     });
+
+    // The job publishes an end-of-stream marker and waits for it, so it cannot
+    // complete until every receiver has been handed it. That is what lets the
+    // consumer end on the stream rather than guess from the completion signal
+    // that no more bytes are coming — and it only holds if the marker is
+    // really emitted, last, on this carrier.
+    test(`emits a terminal stream marker after the last delta (${backend.name})`, async () => {
+      const queueName = `queued-stream-marker-${backend.name}`;
+      const { storage, server, client } = await registerQueue(queueName, backend.make(queueName));
+      responder = () => Promise.resolve(chunkedResponse(CHUNKED_BODY));
+      const published: string[] = [];
+      client.on("job_stream", (_queue: string, _jobId: unknown, event: { type: string }) => {
+        published.push(event.type);
+      });
+
+      try {
+        await server.start();
+        const task = new FetchUrlTask({ queue: queueName });
+        await task.run({ url: "https://example.com/f.bin", response_type: "stream" });
+
+        expect(published.filter((t) => t === "binary-delta").length).toBe(CHUNKED_BODY.length);
+        expect(published.filter((t) => t === "finish")).toHaveLength(1);
+        expect(published.at(-1)).toBe("finish");
+      } finally {
+        await server.stop();
+        await storage.deleteAll();
+      }
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -395,6 +424,33 @@ class RewrittenUrlFetchTask extends FetchUrlTask {
   }
 }
 
+/**
+ * The SSRF shape the seam makes reachable: a public input (so `entitlements()`
+ * declares no `network:private`) rewritten onto a loopback admin endpoint.
+ */
+class PrivateRewriteFetchTask extends FetchUrlTask {
+  public static override type = "PrivateRewriteFetchTask";
+  protected override async resolveFetchInput(): Promise<FetchUrlTaskInput> {
+    return { url: "http://127.0.0.1:9/internal/admin", response_type: "stream" };
+  }
+}
+
+/** Rewrites within the private origin the task input already declares. */
+class SamePrivateOriginFetchTask extends FetchUrlTask {
+  public static override type = "SamePrivateOriginFetchTask";
+  protected override async resolveFetchInput(): Promise<FetchUrlTaskInput> {
+    return { url: "http://127.0.0.1:9/internal/other", response_type: "stream" };
+  }
+}
+
+/** Rewrites onto a DIFFERENT private origin than the one declared. */
+class OtherPrivateOriginFetchTask extends FetchUrlTask {
+  public static override type = "OtherPrivateOriginFetchTask";
+  protected override async resolveFetchInput(): Promise<FetchUrlTaskInput> {
+    return { url: "http://192.168.10.4/admin", response_type: "stream" };
+  }
+}
+
 class LegacyExecuteTask extends FetchUrlTask {
   public static override type = "LegacyExecuteTask";
   override async execute(
@@ -482,6 +538,70 @@ describe("FetchUrlTask subclass dispatch", () => {
     // The base class and a subclass that leaves execute() alone stay usable.
     expect(() => new FetchUrlTask({})).not.toThrow();
     expect(() => new RewrittenUrlFetchTask({})).not.toThrow();
+  });
+
+  // SECURITY: entitlements() is evaluated against the UNRESOLVED input, so a
+  // rewrite is invisible to the declaration. The job classifies the RESOLVED
+  // url and passes allowPrivate from that classification, which would let the
+  // rewrite authorize the very access it hid.
+  test("refuses a rewrite onto a private host the task never declared", async () => {
+    const task = new PrivateRewriteFetchTask({});
+    const error = await task
+      .run({ url: "https://public.example.com/report", response_type: "stream" })
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).toMatch(/network:private|never declared/i);
+    // The refusal has to precede the request; a fetch that was issued has
+    // already reached the internal host.
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test("refuses a rewrite onto a different private origin than the declared one", async () => {
+    const task = new OtherPrivateOriginFetchTask({});
+    const error = await task
+      .run({ url: "http://127.0.0.1:9/internal/admin", response_type: "stream" })
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).toMatch(/network:private|never declared/i);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  // The declaration is what authorizes, so a rewrite covered by it still runs:
+  // the check must not turn every private-origin subclass into an error.
+  test("allows a rewrite inside the declared private origin", async () => {
+    responder = () => Promise.resolve(chunkedResponse(CHUNKED_BODY));
+    const task = new SamePrivateOriginFetchTask({});
+    const out = (await task.run({
+      url: "http://127.0.0.1:9/internal/admin",
+      response_type: "stream",
+    })) as FetchUrlTaskOutput;
+
+    expect(out.metadata?.status).toBe(200);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[0]?.[0]).toBe("http://127.0.0.1:9/internal/other");
+    expect(mockFetch.mock.calls[0]?.[1]?.allowPrivate).toBe(true);
+  });
+
+  // A run whose stream produced nothing has to name the request that was
+  // actually issued: a subclass whose input is a domain key carries no url at
+  // all, which is the shape the seam exists for.
+  test("names the resolved request when the stream produced no finish", async () => {
+    const queueName = "queued-stream-resolved-failure-message";
+    const stub = makeStubHandle();
+    registerStubQueue(queueName, stub.handle);
+
+    const task = new RewrittenUrlFetchTask({ queue: queueName });
+    const failure = task
+      .execute({ url: "https://example.com/keys/abc", response_type: "stream" }, executeContext())
+      .catch((e: unknown) => e);
+
+    await stub.listening;
+    stub.settle(undefined as unknown as FetchUrlTaskOutput);
+
+    const error = await failure;
+    expect(String(error)).toContain("https://example.com/resolved/abc.bin");
   });
 });
 
@@ -585,6 +705,49 @@ describe("queued fetch retry safety", () => {
       await storage.deleteAll();
     }
   });
+
+  // The ban exists because a subscription outliving the attempt would
+  // concatenate two bodies. With no `emitStreamEvent` the bytes went nowhere,
+  // so there is nothing to concatenate — and banning retry here would spend a
+  // large download's whole retry policy on the first mid-body reset.
+  test("keeps a mid-body failure retryable when nothing can receive the bytes", async () => {
+    responder = () => Promise.resolve(chunkedResponse(CHUNKED_BODY, { failAfterChunks: 3 }));
+
+    const job = new FetchUrlJob<FetchUrlTaskInput, FetchUrlTaskOutput>({
+      input: { url: "https://example.com/truncated.bin", response_type: "stream" },
+    });
+    const error = await job
+      .execute(
+        { url: "https://example.com/truncated.bin", response_type: "stream" },
+        { signal: new AbortController().signal, updateProgress: async () => {} }
+      )
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(RetryableJobError);
+    expect((error as { code?: string }).code).not.toBe("FETCH_BODY_TRUNCATED");
+  });
+
+  // ...and the same job with a receiver attached still refuses to retry.
+  test("bans retry once a receiver has been handed a delta", async () => {
+    responder = () => Promise.resolve(chunkedResponse(CHUNKED_BODY, { failAfterChunks: 3 }));
+
+    const job = new FetchUrlJob<FetchUrlTaskInput, FetchUrlTaskOutput>({
+      input: { url: "https://example.com/truncated.bin", response_type: "stream" },
+    });
+    const error = await job
+      .execute(
+        { url: "https://example.com/truncated.bin", response_type: "stream" },
+        {
+          signal: new AbortController().signal,
+          updateProgress: async () => {},
+          emitStreamEvent: async () => {},
+        }
+      )
+      .catch((e: unknown) => e);
+
+    expect((error as { code?: string }).code).toBe("FETCH_BODY_TRUNCATED");
+    expect(error).not.toBeInstanceOf(RetryableJobError);
+  });
 });
 
 describe("queued fetch stream adapter", () => {
@@ -679,6 +842,121 @@ describe("queued fetch stream adapter", () => {
     await run;
     expect(Array.from(deltaBytes(seen))).toEqual([1, 2, 9, 9]);
     expect(seen.at(-1)?.type).toBe("finish");
+  });
+
+  // One late event is not the shape a trailing body has: a carrier that runs
+  // ahead of the consumer delivers a RUN of them. A single grace turn drains
+  // the first and drops the rest, and then reports the truncation as a clean
+  // finish — so the turn has to be earned again by each turn that drains
+  // something.
+  test("keeps draining while post-settlement events keep arriving", async () => {
+    const queueName = "queued-stream-late-chain";
+    const stub = makeStubHandle();
+    registerStubQueue(queueName, stub.handle);
+
+    const task = new FetchUrlTask({ queue: queueName });
+    const seen: StreamEvent[] = [];
+    const trailing = [10, 20, 30];
+    let listener: JobStreamListener | undefined;
+    const run = (async () => {
+      for await (const event of task.executeStream(
+        { url: "https://example.com/a.bin", response_type: "stream" },
+        executeContext()
+      )) {
+        seen.push(event as StreamEvent);
+        if (event.type !== "binary-delta") continue;
+        const next = trailing.shift();
+        if (next === undefined) continue;
+        setTimeout(() => {
+          void listener?.({
+            type: "binary-delta",
+            port: "body",
+            binaryDelta: Uint8Array.from([next]),
+          });
+        }, 0);
+      }
+    })();
+
+    listener = await stub.listening;
+    void listener({ type: "binary-delta", port: "body", binaryDelta: Uint8Array.from([1]) });
+    stub.settle({ metadata: { status: 200 } } as FetchUrlTaskOutput);
+
+    await run;
+    expect(Array.from(deltaBytes(seen))).toEqual([1, 10, 20, 30]);
+    expect(seen.at(-1)?.type).toBe("finish");
+  });
+
+  // The stream's own terminal marker is what says the body is whole. Once it
+  // has been seen the loop is done, so a stray event delivered afterwards can
+  // never be appended to a body that was already complete.
+  test("ends on the stream's terminal marker rather than an idle turn", async () => {
+    const queueName = "queued-stream-terminal-marker";
+    const stub = makeStubHandle();
+    registerStubQueue(queueName, stub.handle);
+
+    const task = new FetchUrlTask({ queue: queueName });
+    const seen: StreamEvent[] = [];
+    let strayScheduled = false;
+    let listener: JobStreamListener | undefined;
+    const run = (async () => {
+      for await (const event of task.executeStream(
+        { url: "https://example.com/a.bin", response_type: "stream" },
+        executeContext()
+      )) {
+        seen.push(event as StreamEvent);
+        if (event.type !== "binary-delta" || strayScheduled) continue;
+        strayScheduled = true;
+        // Registered before any turn the loop could take, so a loop that ends
+        // on settlement-plus-a-turn instead of on the marker picks this up.
+        setTimeout(() => {
+          void listener?.({
+            type: "binary-delta",
+            port: "body",
+            binaryDelta: Uint8Array.from([99]),
+          });
+        }, 0);
+      }
+    })();
+
+    listener = await stub.listening;
+    void listener({ type: "binary-delta", port: "body", binaryDelta: Uint8Array.from([1]) });
+    void listener({ type: "finish", data: { metadata: { status: 200 } } });
+    stub.settle({ metadata: { status: 200 } } as FetchUrlTaskOutput);
+
+    await run;
+    expect(Array.from(deltaBytes(seen))).toEqual([1]);
+    expect(seen.at(-1)?.type).toBe("finish");
+  });
+
+  // The loop ends on the stream, but the VALUE is the job's settled output —
+  // so a marker that arrives before the job has settled must not produce a
+  // finish carrying nothing.
+  test("takes the finish payload from the settled job, not the marker", async () => {
+    const queueName = "queued-stream-marker-before-settle";
+    const stub = makeStubHandle();
+    registerStubQueue(queueName, stub.handle);
+
+    const task = new FetchUrlTask({ queue: queueName });
+    const seen: StreamEvent[] = [];
+    const run = (async () => {
+      for await (const event of task.executeStream(
+        { url: "https://example.com/a.bin", response_type: "stream" },
+        executeContext()
+      )) {
+        seen.push(event as StreamEvent);
+      }
+    })();
+
+    const listener = await stub.listening;
+    void listener({ type: "binary-delta", port: "body", binaryDelta: Uint8Array.from([1]) });
+    void listener({ type: "finish", data: { metadata: { status: 999 } } });
+    await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    stub.settle({ metadata: { status: 200 } } as FetchUrlTaskOutput);
+
+    await run;
+    const finish = seen.at(-1) as { type: string; data?: FetchUrlTaskOutput };
+    expect(finish.type).toBe("finish");
+    expect(finish.data?.metadata?.status).toBe(200);
   });
 
   // `execute()` drains the stream for callers that want one value. A job that

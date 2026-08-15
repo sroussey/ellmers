@@ -24,12 +24,13 @@ import {
   Task,
   TaskConfigSchema,
   TaskConfigurationError,
+  TaskEntitlementError,
   TaskFailedError,
   Workflow,
 } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { safeFetch } from "../util/SafeFetch";
-import { classifyUrl, urlResourcePattern } from "../util/UrlClassifier";
+import { classifyUrl, urlMatchesScope, urlResourcePattern } from "../util/UrlClassifier";
 import { applyCredentialToHeaders } from "./FetchUrlCredentials";
 import {
   createFetchUrlAbortedError,
@@ -256,6 +257,11 @@ async function* streamResponseBody(
  * the first delta everything is unchanged, which is what keeps 429 /
  * 5xx / DNS / connect-timeout retries — the case a rate-limited caller depends
  * on — working exactly as before.
+ *
+ * `emittedDelta` means *delivered to a stream receiver*, not merely produced.
+ * A run with no `emitStreamEvent` hands its bytes to nobody, so a retry has
+ * nothing to concatenate onto — and banning retry there would spend a large
+ * download's whole retry policy on the first mid-body reset.
  */
 function classifyBodyFailure(err: unknown, url: string, emittedDelta: boolean): unknown {
   if (err instanceof AbortSignalJobError) return err;
@@ -389,6 +395,14 @@ export class FetchUrlJob<
     // the caller has opted out of enforcement. safeFetch still re-checks DNS
     // on the server path to defeat DNS rebinding regardless.
     //
+    // That "already verified" holds because the URL reaching this job is the
+    // one the task checked against its own declaration — entitlements are
+    // evaluated on the UNRESOLVED input, so `FetchUrlTask` refuses a
+    // `resolveFetchInput` rewrite onto an undeclared private destination
+    // before the payload is built (see assertResolvedDestinationDeclared).
+    // Without that, classifying the resolved URL here would let the rewrite
+    // authorize itself.
+    //
     // privateResourceScopes mirrors the task's declared scope from
     // entitlements() below — see urlResourcePattern(input.url) at the task
     // level. Threading it here makes safeFetch re-enforce the same scope on
@@ -425,6 +439,17 @@ export class FetchUrlJob<
    * below is safe because it only drains yields (its context carries no
    * `emitStreamEvent`); a future queued-source caller wiring a worker context
    * through here needs to route through one path, not both.
+   *
+   * The emitted terminal `finish` is the stream's end-of-stream marker, and
+   * awaiting it is what makes it one: the job cannot complete until every
+   * receiver has been handed it, so it is ordered strictly after the last
+   * delta on both the awaited fast path and the seq-ordered channel. That is
+   * the signal {@link FetchUrlTask.consumeJobStream} ends on, instead of
+   * guessing from the job's completion that no more bytes are coming. It
+   * carries only `metadata`: the derived port is the *value*, which the
+   * settled job output already carries, and duplicating a whole body into the
+   * carrier's stream log (where a transferable buffer may be detached out from
+   * under the job that still has to return it) buys nothing.
    */
   async *executeStream(
     input: Input,
@@ -437,6 +462,7 @@ export class FetchUrlJob<
       // No body, no derived port, no delta — so no router opens and no cache
       // ref is minted. The caller reads metadata.notModified and keeps
       // whatever artifact it already had.
+      await this.emitStreamEnd(metadata, context);
       yield { type: "finish", data: { metadata } } as StreamEvent<Output>;
       return;
     }
@@ -447,6 +473,10 @@ export class FetchUrlJob<
 
     const chunks: Uint8Array[] = [];
     const wantsValue = input.response_type !== "stream";
+    // Bytes only become unrepeatable once something can receive them. With no
+    // `emitStreamEvent` there is no subscription outliving the attempt, so a
+    // retry cannot concatenate onto a partial body.
+    const deliversDeltas = context.emitStreamEvent !== undefined;
     let emittedDelta = false;
     try {
       for await (const chunk of streamResponseBody(
@@ -460,7 +490,7 @@ export class FetchUrlJob<
         // chunk is handed to the consumer this attempt is unrepeatable, and a
         // failure raised during the emit itself is on the far side of that
         // line. See {@link classifyBodyFailure}.
-        emittedDelta = true;
+        if (deliversDeltas) emittedDelta = true;
         const emitted = context.emitStreamEvent?.({
           type: "binary-delta",
           port: "body",
@@ -492,7 +522,21 @@ export class FetchUrlJob<
       );
     }
 
+    await this.emitStreamEnd(metadata, context);
     yield { type: "finish", data } as StreamEvent<Output>;
+  }
+
+  /**
+   * Publishes the end-of-stream marker to whatever receiver the worker wired
+   * up, and waits for it to land. A run with no `emitStreamEvent` delivers to
+   * nobody, so there is nothing to mark.
+   */
+  private async emitStreamEnd(
+    metadata: FetchUrlMetadata,
+    context: IJobExecuteContext
+  ): Promise<void> {
+    const emitted = context.emitStreamEvent?.({ type: "finish", data: { metadata } });
+    if (emitted) await emitted;
   }
 
   override async execute(input: Input, context: IJobExecuteContext): Promise<Output> {
@@ -557,13 +601,6 @@ export class FetchUrlTask<
     "Fetches data from a URL with progress tracking and automatic retry handling";
   public static override hasDynamicSchemas: boolean = true;
   public static override hasDynamicEntitlements: boolean = true;
-
-  /**
-   * Ready events held for the consumer before the producer is parked, bounding
-   * {@link consumeJobStream}'s queue. See that method for what the bound does
-   * and does not buy on each carrier.
-   */
-  private static readonly STREAM_READ_AHEAD = 4;
 
   /**
    * Refuses a subclass that overrides `execute()`.
@@ -696,11 +733,17 @@ export class FetchUrlTask<
    * no `metadata` and no derived port, typed as if the fetch had succeeded.
    */
   override async execute(
-    input: FetchUrlTaskInput,
+    rawInput: FetchUrlTaskInput,
     executeContext: IExecuteContext
   ): Promise<Output> {
+    // Resolved here rather than inside the drained generator so the failure
+    // message names the request that was actually issued. A subclass whose
+    // input is a domain key carries no `url` at all, which is exactly the
+    // shape this seam exists for — reporting "for the request" for it says
+    // nothing.
+    const input = await this.resolveFetchInput(rawInput, executeContext);
     let out: Output | undefined;
-    for await (const event of this.executeStream(input, executeContext)) {
+    for await (const event of this.streamResolved(input, executeContext)) {
       if (event.type === "finish") out = event.data as Output;
     }
     if (out === undefined) {
@@ -722,6 +765,15 @@ export class FetchUrlTask<
    * guard, so the guard inspects the headers that will really be sent — and
    * everything downstream (default queue name, credential refusal, the job
    * payload handed to the queue) reads the value returned here.
+   *
+   * SECURITY: {@link entitlements} is evaluated against the UNRESOLVED input,
+   * so a rewrite is invisible to it — a resolver returning a private/internal
+   * destination declares no `network:private` and would be granted none. The
+   * resolved destination is therefore re-checked against that declaration (see
+   * {@link assertResolvedDestinationDeclared}) and a rewrite onto an
+   * undeclared private host fails closed. Keep the private origins a subclass
+   * can produce inside the origin its declared input already names, or declare
+   * the private input up front.
    */
   protected async resolveFetchInput(
     input: FetchUrlTaskInput,
@@ -729,6 +781,47 @@ export class FetchUrlTask<
   ): Promise<FetchUrlTaskInput> {
     void context;
     return input;
+  }
+
+  /**
+   * Fails closed when {@link resolveFetchInput} rewrote the request onto a
+   * private/internal destination outside what {@link entitlements} declared.
+   *
+   * The declaration is computed from the unresolved `runInputData.url`, while
+   * `FetchUrlJob.issueRequest` classifies the RESOLVED url and passes
+   * `allowPrivate` on the strength of that classification. Left alone, the
+   * rewrite authorizes itself: a task declaring only `network:http` reaches
+   * `http://127.0.0.1/...` with `allowPrivate: true`, and the redirect-scope
+   * enforcement inside `safeFetch` is handed the rewritten origin as its own
+   * scope. The private-network decision has to follow what was declared, so
+   * anything the declaration does not cover is refused before a request is
+   * issued (inline and queued alike — the resolved input is what gets
+   * enqueued).
+   *
+   * A task whose url is unavailable at declaration time declares an unscoped
+   * `network:private` (fail-closed, see {@link entitlements}), which covers
+   * any private destination — so there is nothing to re-check for it.
+   */
+  private assertResolvedDestinationDeclared(resolved: FetchUrlTaskInput): void {
+    const url = resolved.url;
+    if (typeof url !== "string" || url.length === 0) return;
+    if (classifyUrl(url).kind !== "private") return;
+
+    const declaredUrl = this.runInputData?.url;
+    if (typeof declaredUrl !== "string" || declaredUrl.length === 0) return;
+    if (
+      classifyUrl(declaredUrl).kind === "private" &&
+      urlMatchesScope(url, [urlResourcePattern(declaredUrl)])
+    ) {
+      return;
+    }
+    throw new TaskEntitlementError(
+      `${this.type}: resolveFetchInput rewrote the request onto the private/internal ` +
+        `destination ${urlResourcePattern(url)}, which the task never declared — entitlements ` +
+        `are evaluated against the unresolved input (${urlResourcePattern(declaredUrl)}), so ` +
+        `no network:private grant covers it. Declare the private destination on the task input, ` +
+        `or resolve within the declared origin.`
+    );
   }
 
   /**
@@ -749,6 +842,19 @@ export class FetchUrlTask<
     executeContext: IExecuteContext
   ): AsyncIterable<StreamEvent<Output>> {
     const input = await this.resolveFetchInput(rawInput, executeContext);
+    yield* this.streamResolved(input, executeContext);
+  }
+
+  /**
+   * Everything after {@link resolveFetchInput}. Split out so `execute()` can
+   * resolve once and still report the resolved request, rather than resolving
+   * a second time (the seam is a subclass hook and may not be idempotent).
+   */
+  private async *streamResolved(
+    input: FetchUrlTaskInput,
+    executeContext: IExecuteContext
+  ): AsyncIterable<StreamEvent<Output>> {
+    this.assertResolvedDestinationDeclared(input);
 
     // A 304 carries no body, so a cache save would write a row whose `body` is
     // empty — destroying the cached copy the 304 just certified as still good.
@@ -865,68 +971,71 @@ export class FetchUrlTask<
    * promise, so the worker runs ahead of the consumer no matter what this
    * method does.
    *
-   * `STREAM_READ_AHEAD` therefore bounds what it can: the ready queue this
-   * method hands the consumer. Admission is chained so a producer parked for
-   * room cannot be overtaken by the next event — binary deltas are
-   * position-dependent and reordering them corrupts the body silently — and
-   * nothing is ever dropped. On a fire-and-forget carrier the bound is not a
-   * memory guarantee: the events that carrier has already delivered wait in
-   * the admission chain instead of in `pending`, and the carrier's own log
-   * holds whatever it published. Backpressure across the job boundary exists
-   * only where the dispatch is awaited.
+   * Nothing here bounds what a fire-and-forget carrier can hand over: the
+   * events it has already delivered sit in `pending`, and its own log holds
+   * whatever it published. Backpressure across the job boundary exists only
+   * where the dispatch is awaited, and no queue this side keeps can create it.
    *
-   * The job's settled output is the authority for the final value, so a
-   * `finish` arriving over the channel is released without being re-yielded —
-   * `waitFor()` produces the one `finish`, and the two can never disagree or
-   * arrive twice. An `error` event is not decoration on that: it is the only
-   * in-band report of a failure the completion signal may not carry, so it is
-   * queued in order and raised as a throw when the consumer reaches it.
+   * **What ends the loop.** `FetchUrlJob` emits a terminal `finish` and awaits
+   * it, so the job cannot complete until that marker has been handed to every
+   * receiver — it is ordered strictly after the last delta on both carriers,
+   * and reaching it means the body is whole. The loop ends there. The job's
+   * settled output remains the authority for the *value*, so the marker is
+   * released without being re-yielded: `waitFor()` produces the one `finish`,
+   * and the two can never disagree or arrive twice.
+   *
+   * Settlement is the fallback for a stream that produces no marker — a failed
+   * job (`waitFor()` rejects and there is nothing more to wait for), or a
+   * carrier that dropped the terminal row. Because the completion signal and
+   * the stream are independent transports, ending there immediately would drop
+   * an event still in flight, which on a body port is silent truncation. So a
+   * settled stream keeps taking turns of the event loop for as long as each
+   * turn actually drains something, and ends on the first turn that does not.
+   * A residual remains for that fallback alone: an event landing more than one
+   * idle turn after the last, on a carrier that also never delivers the
+   * marker, is still lost.
+   *
+   * An `error` event is not decoration on any of this: it is the only in-band
+   * report of a failure the completion signal may not carry, so it is queued
+   * in order and raised as a throw when the consumer reaches it.
    */
   private async *consumeJobStream(handle: JobHandle<Output>): AsyncIterable<StreamEvent<Output>> {
     const pending: Array<{ readonly event: StreamEventLike; readonly release: () => void }> = [];
     let wake: (() => void) | undefined;
-    let room: (() => void) | undefined;
     let closed = false;
+    let streamEnded = false;
     const notify = (): void => {
       const waiting = wake;
       wake = undefined;
       waiting?.();
     };
-    const notifyRoom = (): void => {
-      const waiting = room;
-      room = undefined;
-      waiting?.();
-    };
 
-    let admission: Promise<void> = Promise.resolve();
     const unsubscribe = handle.onStream!((event: StreamEventLike) => {
-      if (event.type === "finish") return Promise.resolve();
+      if (closed) return Promise.resolve();
+      if (event.type === "finish") {
+        streamEnded = true;
+        notify();
+        return Promise.resolve();
+      }
       let consumed!: () => void;
       const pulled = new Promise<void>((resolve) => {
         consumed = resolve;
       });
-      admission = admission.then(async () => {
-        while (!closed && pending.length >= FetchUrlTask.STREAM_READ_AHEAD) {
-          await new Promise<void>((resolve) => {
-            room = resolve;
-          });
-        }
-        if (closed) {
-          consumed();
-          return;
-        }
-        pending.push({ event, release: consumed });
-        notify();
-      });
-      return admission.then(() => pulled);
+      // Pushed synchronously, in the order the carrier delivered: binary
+      // deltas are position-dependent and anything that defers admission can
+      // only add a way for the order or the timing to go wrong.
+      pending.push({ event, release: consumed });
+      notify();
+      return pulled;
     });
 
     let settled = false;
     let output: Output | undefined;
     let failure: unknown;
-    // Both branches handled, so this never rejects and never needs awaiting;
-    // it is the loop's termination signal, not a value to return.
-    void handle.waitFor().then(
+    // Both branches handled, so this never rejects. It is awaited after the
+    // loop rather than raced against it: the loop can end on the stream's own
+    // marker, before the job has settled, and the value comes from here.
+    const settlement = handle.waitFor().then(
       (value) => {
         output = value;
         settled = true;
@@ -940,11 +1049,13 @@ export class FetchUrlTask<
     );
 
     try {
-      let drainedAfterSettle = false;
+      // The first settled check always earns a turn; later ones are earned by
+      // having drained something on the previous turn.
+      let drainedSinceGraceTurn = true;
       while (true) {
         while (pending.length > 0) {
           const next = pending.shift()!;
-          notifyRoom();
+          drainedSinceGraceTurn = true;
           try {
             if (next.event.type === "error") throw toStreamEventError(next.event);
             yield next.event as StreamEvent<Output>;
@@ -952,15 +1063,10 @@ export class FetchUrlTask<
             next.release();
           }
         }
+        if (streamEnded) break;
         if (settled) {
-          if (drainedAfterSettle) break;
-          // The completion signal and the stream are independent transports,
-          // so an event dispatched asynchronously can land just after
-          // `waitFor()` resolved. Give it one turn of the event loop rather
-          // than ending here: the `finally` below would unpark its producer
-          // but the event itself would never be yielded, which on a body port
-          // is silent truncation.
-          drainedAfterSettle = true;
+          if (!drainedSinceGraceTurn) break;
+          drainedSinceGraceTurn = false;
           await new Promise<void>((resolve) => setTimeout(resolve, 0));
           continue;
         }
@@ -968,6 +1074,7 @@ export class FetchUrlTask<
           wake = resolve;
         });
       }
+      await settlement;
       if (failure) throw failure;
       yield { type: "finish", data: output } as StreamEvent<Output>;
     } finally {
@@ -975,9 +1082,7 @@ export class FetchUrlTask<
       unsubscribe();
       // An abandoned generator (abort, or a consumer that stopped pulling)
       // would otherwise leave the worker parked forever on a dispatch nobody
-      // is going to resolve — including one parked in the admission chain
-      // waiting for room that is never going to be freed.
-      notifyRoom();
+      // is going to resolve.
       for (const leftover of pending.splice(0)) leftover.release();
     }
   }
