@@ -5,7 +5,8 @@
  */
 
 import type { StreamEvent, Usage } from "@workglow/task-graph";
-import { parsePartialJson } from "@workglow/util/worker";
+import type { PartialJsonStream } from "@workglow/util/worker";
+import { createPartialJsonStream, parsePartialJson } from "@workglow/util/worker";
 import type { ToolCallingTaskOutput } from "../task/ToolCallingTask";
 import type { ToolCalls, ToolDefinition } from "../task/ToolCallingUtils";
 import { buildToolDescription, sanitizeToolArgs } from "../task/ToolCallingUtils";
@@ -117,10 +118,17 @@ export function parseOpenAIToolCallMessage(toolCallsRaw: readonly any[] | undefi
   return result;
 }
 
+/**
+ * Per-tool-call streaming state. `args` is fed each argument fragment as it
+ * arrives, so a delta costs O(fragment) rather than re-parsing the call's whole
+ * accumulated argument string; `parsed` caches the parser's live root so a
+ * delta carrying only an id or a name still emits the arguments seen so far.
+ */
 interface ToolCallAccumulatorEntry {
   id: string;
   name: string;
-  arguments: string;
+  readonly args: PartialJsonStream;
+  parsed: Record<string, unknown>;
 }
 
 /**
@@ -195,12 +203,19 @@ export async function accumulateOpenAIChatStream(
       const idx: number = tcDelta.index ?? 0;
       let acc = toolCallAccumulator.get(idx);
       if (!acc) {
-        acc = { id: tcDelta.id ?? "", name: tcDelta.function?.name ?? "", arguments: "" };
+        acc = {
+          id: tcDelta.id ?? "",
+          name: tcDelta.function?.name ?? "",
+          args: createPartialJsonStream(),
+          parsed: {},
+        };
         toolCallAccumulator.set(idx, acc);
       }
       if (tcDelta.id) acc.id = tcDelta.id;
       if (tcDelta.function?.name) acc.name = tcDelta.function.name;
-      if (tcDelta.function?.arguments) acc.arguments += tcDelta.function.arguments;
+      if (tcDelta.function?.arguments) {
+        acc.parsed = acc.args.push(tcDelta.function.arguments) ?? acc.parsed;
+      }
 
       // Synthesise a stable id when the provider doesn't emit one, matching
       // the non-streaming `parseOpenAIToolCallMessage` fallback. Without this,
@@ -208,8 +223,9 @@ export async function accumulateOpenAIChatStream(
       // StreamProcessor's id-based upsert.
       const stableId = acc.id || `call_${idx}`;
 
-      const parsedInput = parseToolArgs(acc.arguments);
-      const sanitizedInput = sanitizeToolArgs(parsedInput) as Record<string, unknown>;
+      // `sanitizeToolArgs` copies, so the emitted delta is detached from the
+      // parser's live root and unaffected by later fragments.
+      const sanitizedInput = sanitizeToolArgs(acc.parsed) as Record<string, unknown>;
       // Argument JSON is also generated text — count it so a tools-only reply
       // still ticks the ↓ counter (content deltas alone would stay silent).
       if (tcDelta.function?.arguments) {

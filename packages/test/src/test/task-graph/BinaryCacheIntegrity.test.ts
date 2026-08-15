@@ -113,27 +113,30 @@ describe("binary cache integrity", () => {
     expect(await blobBytes(out2.bytes)).toEqual([1, 2, 3, 4, 5]);
   });
 
-  it("multi-binary-port tasks fall back to accumulation — no port is dropped", async () => {
+  it("multi-binary-port tasks stream every port — no port is dropped", async () => {
     const repo = new StreamingMemoryRepo({});
 
     const graph = new TaskGraph();
     const source = new TwoPortBinarySource({ id: "source" });
     graph.addTask(source);
     // Legacy direct-cache config: this is the path where taskNeedsAccumulation
-    // consults canStreamBinaryToCache and may skip accumulation entirely.
+    // consults canStreamBinaryToCache and skips accumulation entirely.
     const results = await new TaskGraphRunner(graph).runGraph({}, { outputCache: repo });
 
+    // One blob per port, and both values still reach the caller — under the
+    // default threshold each small ref is rehydrated back to an inline Blob.
+    expect(repo.streamed.size).toBe(2);
     const data = results.find((r) => r.id === "source")!.data as TwoPortOut;
     expect(await blobBytes(data.a)).toEqual([1, 2]);
     expect(await blobBytes(data.b)).toEqual([9, 8, 7]);
   });
 
-  it("canStreamBinaryToCache rejects tasks with more than one binary port", () => {
+  it("canStreamBinaryToCache accepts tasks with more than one binary port", () => {
     const graph = new TaskGraph();
     const source = new TwoPortBinarySource({ id: "source" });
     graph.addTask(source);
     expect(StreamPump.canStreamBinaryToCache(graph, source, new StreamingMemoryRepo({}))).toBe(
-      false
+      true
     );
   });
 });

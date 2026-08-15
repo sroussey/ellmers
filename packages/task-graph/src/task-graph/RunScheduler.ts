@@ -75,32 +75,23 @@ export class RunScheduler {
 
     // Check if this is a ConditionalTask with selective branching
     if (isConditionalTask(node) && effectiveStatus === TaskStatus.COMPLETED) {
-      // Build a map of output port -> branch ID for lookup
-      const branches = node.config.branches ?? [];
-      const portToBranch = new Map<string, string>();
-      for (const branch of branches) {
-        portToBranch.set(branch.outputPort, branch.id);
-      }
-
-      const activeBranches = node.getActiveBranches();
+      // The task is the sole authority on its own port layout. Reconstructing
+      // it here from `config.branches` silently produced an empty map for a
+      // task driven by a serialized `conditionConfig` (which has no
+      // `config.branches`), so every branch edge fell through to the
+      // non-branch-port case and no downstream task was ever disabled.
+      const portActiveStatus = node.getPortActiveStatus();
 
       for (const dataflow of dataflows) {
         // Preserve FAILED edges (e.g. transform chain failure) rather than
         // overwriting with the source task's completion status.
         if (dataflow.status === TaskStatus.FAILED) continue;
-        const branchId = portToBranch.get(dataflow.sourceTaskPortId);
-        if (branchId !== undefined) {
-          // This dataflow is from a branch port
-          if (activeBranches.has(branchId)) {
-            // Branch is active - dataflow gets completed status
-            dataflow.setStatus(TaskStatus.COMPLETED);
-          } else {
-            // Branch is inactive - dataflow gets disabled status
-            dataflow.setStatus(TaskStatus.DISABLED);
-          }
-        } else {
+        const isActive = portActiveStatus.get(dataflow.sourceTaskPortId);
+        if (isActive === undefined) {
           // Not a branch port (e.g., _activeBranches metadata) - use normal status
           dataflow.setStatus(effectiveStatus);
+        } else {
+          dataflow.setStatus(isActive ? TaskStatus.COMPLETED : TaskStatus.DISABLED);
         }
       }
 

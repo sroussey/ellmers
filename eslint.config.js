@@ -96,5 +96,46 @@ export default defineConfig(
         },
       ],
     },
+  },
+  {
+    // Provider `src/ai/common/**` files are re-exported from each provider's
+    // `runtime.ts`, so they are evaluated inside worker bundles.
+    // `@workglow/ai/worker` exists to keep the 50+ task classes out of those
+    // bundles; the effort helpers below resolve identically from it.
+    //
+    // Restricted by NAME rather than by path: several files in this directory
+    // legitimately import error classes and task types the worker barrel does
+    // not re-export yet, and a path-wide restriction would only buy a wall of
+    // eslint-disable comments. `allowTypeImports` keeps `import type
+    // { ModelEffort } from "@workglow/ai"` legal, which matters because those
+    // types sit beside every one of these value imports.
+    files: ["providers/*/src/ai/common/**/*.ts"],
+    rules: {
+      "no-restricted-imports": "off",
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@workglow/ai",
+              importNames: [
+                "MODEL_EFFORTS",
+                "isModelEffort",
+                "sanitizeEffortOptions",
+                "readEffortOptions",
+                "stampEffortOptions",
+                "enabledEffortsForModel",
+                "effortPlaceholder",
+              ],
+              allowTypeImports: true,
+              message:
+                "Import effort helpers from @workglow/ai/worker. The root barrel " +
+                "pulls all task classes and a second copy of AiProviderRegistry / " +
+                "CheckpointRegistry into the worker bundle.",
+            },
+          ],
+        },
+      ],
+    },
   }
 );

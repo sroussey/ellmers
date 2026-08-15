@@ -115,7 +115,14 @@ describe("CacheRef hydration is restricted to ref-admitting ports", () => {
   });
 
   it("still hydrates a ref at a blob-format port (eligible path unchanged)", async () => {
-    const ref = await repo.saveOutputStream("Up", { n: 1 }, gen(new Uint8Array([1, 2, 3])), {});
+    const ref = await repo.saveOutputStreamPort(
+      "Up",
+      { n: 1 },
+      "file",
+      "binary",
+      gen(new Uint8Array([1, 2, 3])),
+      {}
+    );
     const task = new BlobPortTask();
     await task.run({ bytes: ref }, { registry: services });
 

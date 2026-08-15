@@ -119,7 +119,14 @@ export interface StructuredOutputValidationAttempt {
 export class StructuredOutputValidationError extends TaskError {
   public static override readonly type: string = "StructuredOutputValidationError";
   public readonly attempts: ReadonlyArray<StructuredOutputValidationAttempt>;
-  constructor(attempts: ReadonlyArray<StructuredOutputValidationAttempt>) {
+  /**
+   * Tokens billed across every failed attempt, or `undefined` when no attempt
+   * reported any. Every attempt was a real request, so this outcome is the most
+   * expensive one the task has — a caller that only reads usage off a
+   * successful result would price a schema-flaky model as free.
+   */
+  public readonly usage: Usage | undefined;
+  constructor(attempts: ReadonlyArray<StructuredOutputValidationAttempt>, usage?: Usage) {
     const last = attempts[attempts.length - 1];
     const summary = last?.errors.map((e) => `${e.path || "/"}: ${e.message}`).join("; ") ?? "";
     super(
@@ -127,6 +134,7 @@ export class StructuredOutputValidationError extends TaskError {
         `Last errors: ${summary}`
     );
     this.attempts = attempts;
+    this.usage = usage;
   }
 }
 
@@ -178,7 +186,9 @@ export class StructuredGenerationTask extends StreamingAiTask<
    *
    * Throws:
    * - `TaskConfigurationError` if `input.outputSchema` isn't a compilable JSON Schema.
-   * - `StructuredOutputValidationError` if every attempt fails validation.
+   * - `StructuredOutputValidationError` if every attempt fails validation. The
+   *   tokens those attempts billed ride on the error's `usage` and are emitted
+   *   as a final `usage` snapshot before it is thrown.
    */
   override async *executeStream(
     input: StructuredGenerationTaskInput,
@@ -275,7 +285,22 @@ export class StructuredGenerationTask extends StreamingAiTask<
       }
     }
 
-    const err = new StructuredOutputValidationError(attempts);
+    // Every attempt failed, so no `finish` reaches the consumer — and a `finish`
+    // is the only thing that settles a call's tokens. Without this the run that
+    // burned the most requests is the one reporting no spend at all. A `usage`
+    // snapshot carries the total instead: it is the cumulative running figure
+    // for this task by definition (each attempt's own finish was swallowed by
+    // the loop above), so the consumer's replace-never-merge rule lands on
+    // exactly the sum, and it is emitted before the throw so the run's usage
+    // sinks see it while the stream is still open.
+    if (attemptsUsage) {
+      yield {
+        type: "usage",
+        usage: attemptsUsage,
+      } as StreamEvent<StructuredGenerationTaskOutput>;
+    }
+
+    const err = new StructuredOutputValidationError(attempts, attemptsUsage);
     err.taskType = this.type;
     err.taskId = this.id;
     throw err;

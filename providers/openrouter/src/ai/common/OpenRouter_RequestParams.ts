@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { isModelEffort, type ModelEffort, type TextGenerationTaskInput } from "@workglow/ai";
-import { toOpenAIMessages } from "@workglow/ai/worker";
+import type { TextGenerationTaskInput } from "@workglow/ai";
+import { isModelEffort, toOpenAIMessages, type ModelEffort } from "@workglow/ai/worker";
 import type { OpenRouterProviderConfig } from "./OpenRouter_Client";
 import { getModelName } from "./OpenRouter_Client";
 import type { OpenRouterModelConfig } from "./OpenRouter_ModelSchema";

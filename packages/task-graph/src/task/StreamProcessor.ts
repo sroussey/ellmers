@@ -11,7 +11,7 @@ import type { StreamPortCodec } from "../cache/streamCodec";
 import { getStreamPortCodec } from "../cache/streamCodec";
 import type { Taskish } from "../task-graph/Conversions";
 import { BackpressureGate } from "./BackpressureGate";
-import type { ITask } from "./ITask";
+import type { ConfigNotApplicableToAnExistingTask, ITask } from "./ITask";
 import type { StreamEvent, StreamMode, Usage } from "./StreamTypes";
 import {
   assertBinaryFormat,
@@ -36,7 +36,7 @@ import { TaskStatus } from "./TaskTypes";
  * places into `Output` at the port slot.
  *
  * Implementations are typically thin wrappers around
- * `TaskOutputRepository.saveOutputStream` — the runner supplies the wrapper
+ * `TaskOutputRepository.saveOutputStreamPort` — the runner supplies the wrapper
  * once it knows the cache key.
  */
 export type BinaryRefSink = (chunks: AsyncIterable<Uint8Array>) => Promise<CacheRef>;
@@ -73,7 +73,10 @@ export interface StreamProcessorDeps {
     message?: string,
     ...args: any[]
   ) => Promise<void>;
-  readonly own: <T extends Taskish<any, any>>(i: T, config?: TaskConfig) => T;
+  readonly own: <T extends Taskish<any, any>>(
+    i: T,
+    config?: TaskConfig | ConfigNotApplicableToAnExistingTask
+  ) => T;
   readonly disown: <T extends Taskish<any, any>>(i: T) => void;
   /**
    * Per-port stream sinks, one per streamable mode (`append` / `object` /

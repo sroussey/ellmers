@@ -46,8 +46,8 @@ describe("FsFolderTaskOutputRepository concurrent-write safety", () => {
     const payloadA = new Uint8Array([1, 1, 1]);
     const payloadB = new Uint8Array([2, 2, 2]);
     const [refA, refB] = await Promise.all([
-      repo.saveOutputStream(taskType, inputs, once(payloadA), {}),
-      repo.saveOutputStream(taskType, inputs, once(payloadB), {}),
+      repo.saveOutputStreamPort(taskType, inputs, "file", "binary", once(payloadA), {}),
+      repo.saveOutputStreamPort(taskType, inputs, "file", "binary", once(payloadB), {}),
     ]);
     // Distinct paths — no race on a shared blob name.
     expect(refA.$ref).not.toBe(refB.$ref);
@@ -70,11 +70,25 @@ describe("FsFolderTaskOutputRepository concurrent-write safety", () => {
     const inputs = { id: 1 };
     // Writer A runs, gets a ref.
     const payloadA = new Uint8Array([9, 9, 9]);
-    const refA = await repo.saveOutputStream(taskType, inputs, once(payloadA), {});
+    const refA = await repo.saveOutputStreamPort(
+      taskType,
+      inputs,
+      "file",
+      "binary",
+      once(payloadA),
+      {}
+    );
     // Writer B runs (same inputs), gets a different ref because of the
     // per-write UUID suffix.
     const payloadB = new Uint8Array([4, 5, 6]);
-    const refB = await repo.saveOutputStream(taskType, inputs, once(payloadB), {});
+    const refB = await repo.saveOutputStreamPort(
+      taskType,
+      inputs,
+      "file",
+      "binary",
+      once(payloadB),
+      {}
+    );
     expect(refA.$ref).not.toBe(refB.$ref);
     // Simulate A's row-commit failure cleanup: delete A's blob.
     await repo.deleteOutputByRef(refA);
@@ -99,7 +113,14 @@ describe("FsFolderTaskOutputRepository concurrent-write safety", () => {
     const blobsDir = join(folder, "blobs");
     // First, force the repo to lazily create the blobs dir by issuing one
     // write so the directory exists; then drop a legacy file in there.
-    await repo.saveOutputStream("Bootstrap", {}, once(new Uint8Array([0])), {});
+    await repo.saveOutputStreamPort(
+      "Bootstrap",
+      {},
+      "file",
+      "binary",
+      once(new Uint8Array([0])),
+      {}
+    );
     const legacyBytes = new Uint8Array([7, 7, 7, 7]);
     writeFileSync(join(blobsDir, legacyName), legacyBytes);
     const legacyRef = makeCacheRef({

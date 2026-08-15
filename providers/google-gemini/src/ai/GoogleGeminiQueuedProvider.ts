@@ -4,7 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Capability, ModelRecord, SessionDisposalResult } from "@workglow/ai";
+import type {
+  Capability,
+  ModelEffortPolicy,
+  ModelRecord,
+  SessionDisposalResult,
+} from "@workglow/ai";
 import { accumulatingEmit, AiProvider, getAiProviderRegistry } from "@workglow/ai";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
 import type { TaskInput } from "@workglow/task-graph";
@@ -12,6 +17,7 @@ import { getLogger } from "@workglow/util/worker";
 import { deleteGeminiCachedContent } from "./common/Gemini_CacheStore";
 import { geminiWorkerRunFnSpecs, inferGeminiCapabilities } from "./common/Gemini_Capabilities";
 import { GOOGLE_GEMINI } from "./common/Gemini_Constants";
+import { geminiEffortPolicy } from "./common/Gemini_EffortPolicy";
 import type { GeminiModelConfig } from "./common/Gemini_ModelSchema";
 
 /**
@@ -44,6 +50,10 @@ export class GoogleGeminiQueuedProvider extends createCloudProviderClass<GeminiM
 ) {
   override inferCapabilities(model: ModelRecord): readonly Capability[] {
     return inferGeminiCapabilities(model);
+  }
+
+  override effortPolicy(model: GeminiModelConfig): ModelEffortPolicy | undefined {
+    return geminiEffortPolicy(model);
   }
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {

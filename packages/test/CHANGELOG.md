@@ -1,5 +1,100 @@
 # @workglow/test
 
+## 0.3.44
+
+### Bug Fixes
+
+#### task-graph
+
+- stop caching ConditionalTask and cover unfed branch ports
+- derive branch ports for conditionConfig-driven ConditionalTask
+
+## 0.3.43
+
+### Breaking Changes
+
+- **refactors(task-graph)**: collapse the dual streaming writer surfaces
+
+### Refactors
+
+#### task-graph
+
+- collapse the dual streaming writer surfaces
+
+## 0.3.42
+
+### Bug Fixes
+
+#### tasks
+
+- stop a response body deciding whether a fetch decode failure retries
+
+#### hft
+
+- choose the background-removal encoder by runtime, not by method existence
+
+## 0.3.41
+
+### Features
+
+#### task
+
+- add network error handling for fetch URL tasks
+
+#### xai
+
+- map model.effort and stamp Grok listing policies
+
+#### ai-providers
+
+- stamp effort_options from class policies
+
+#### openai
+
+- report effort policy and stamp listing records
+
+### Bug Fixes
+
+#### task-graph
+
+- drop the owned-sink stamp on disown
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `miniflare`: ^5.20260811.1-alpha
+
+## 0.3.40
+
+### Features
+
+#### cli
+
+- add tests for live iteration graphs in WorkflowRunApp
+
+### Bug Fixes
+
+#### test
+
+- add the six missing provider references to packages/test tsconfig
+
+#### hft
+
+- encode background-removal output without RawImage.toBase64
+
+#### task-graph
+
+- reject own() config for an already-constructed task
+
+### Performance
+
+#### ai
+
+- stream tool-call argument JSON instead of re-parsing the buffer
+
 ## 0.3.39
 
 ### Features

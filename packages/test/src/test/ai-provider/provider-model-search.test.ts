@@ -5,13 +5,15 @@
  */
 
 import type { AiProviderRunFn } from "@workglow/ai";
-import { collectStream, createEmitQueue, ModelSearchTask } from "@workglow/ai";
+import { collectStream, createEmitQueue, MODEL_EFFORTS, ModelSearchTask } from "@workglow/ai";
 import { Anthropic_ModelSearch_Stream as Anthropic_ModelSearch } from "@workglow/anthropic/ai";
 import { DeepSeek_ModelSearch_Stream as DeepSeek_ModelSearch } from "@workglow/deepseek/ai";
 import { Gemini_ModelSearch_Stream as Gemini_ModelSearch } from "@workglow/google-gemini/ai";
 import { HFI_ModelSearch } from "@workglow/huggingface-inference/ai";
 import { OpenAI_ModelSearch_Stream as OpenAI_ModelSearch } from "@workglow/openai/ai";
+import { mapOpenRouterModels, OPENROUTER_FALLBACK_MODELS } from "@workglow/openrouter/ai";
 import { TENSORFLOW_MEDIAPIPE, TFMP_ModelSearch } from "@workglow/tf-mediapipe/ai";
+import { Xai_ModelSearch_Stream as Xai_ModelSearch } from "@workglow/xai/ai";
 import { afterEach, describe, expect, test } from "vitest";
 
 const originalFetch = globalThis.fetch;
@@ -58,6 +60,60 @@ describe("provider model search samples", () => {
 
   test("OpenAI fallback includes the latest flagship sample", async () => {
     await expect(modelIdsForSearch(OpenAI_ModelSearch, "gpt-5.5")).resolves.toContain("gpt-5.5");
+  });
+
+  test("OpenAI fallback stamps effort_options by class", async () => {
+    const { results } = (await collectStream(
+      await runFnToIterable(OpenAI_ModelSearch, { query: "" })
+    )) as { results: Array<{ id: string; record?: { effort_options?: string[] } }> };
+    const sol = results.find((r) => r.id === "gpt-5.6-sol");
+    const image = results.find((r) => r.id === "gpt-image-2");
+    expect(sol?.record?.effort_options).toEqual([...MODEL_EFFORTS]);
+    expect(image?.record?.effort_options).toEqual([]);
+  });
+
+  test("Anthropic fallback stamps effort_options for Claude", async () => {
+    const { results } = (await collectStream(
+      await runFnToIterable(Anthropic_ModelSearch, { query: "claude-sonnet-5" })
+    )) as { results: Array<{ id: string; record?: { effort_options?: string[] } }> };
+    const sonnet = results.find((r) => r.id === "claude-sonnet-5");
+    expect(sonnet?.record?.effort_options).toEqual([...MODEL_EFFORTS]);
+  });
+
+  test("Gemini fallback stamps effort_options by class", async () => {
+    const { results } = (await collectStream(
+      await runFnToIterable(Gemini_ModelSearch, { query: "" })
+    )) as { results: Array<{ id: string; record?: { effort_options?: string[] } }> };
+    const flash = results.find((r) => r.id === "gemini-3.5-flash");
+    const embedding = results.find((r) => r.id === "gemini-embedding-2");
+    expect(flash?.record?.effort_options).toEqual([...MODEL_EFFORTS]);
+    expect(embedding?.record?.effort_options).toEqual([]);
+  });
+
+  test("DeepSeek fallback stamps effort_options for v4", async () => {
+    const { results } = (await collectStream(
+      await runFnToIterable(DeepSeek_ModelSearch, { query: "deepseek-v4-flash" })
+    )) as { results: Array<{ id: string; record?: { effort_options?: string[] } }> };
+    const flash = results.find((r) => r.id === "deepseek-v4-flash");
+    expect(flash?.record?.effort_options).toEqual([...MODEL_EFFORTS]);
+  });
+
+  test("OpenRouter mapper stamps all six effort_options", () => {
+    const [first] = mapOpenRouterModels(OPENROUTER_FALLBACK_MODELS);
+    expect(first?.record?.effort_options).toEqual([...MODEL_EFFORTS]);
+  });
+
+  test("xAI fallback stamps effort_options by class", async () => {
+    const { results } = (await collectStream(
+      await runFnToIterable(Xai_ModelSearch, { query: "" })
+    )) as { results: Array<{ id: string; record?: { effort_options?: string[] } }> };
+    expect(results.find((r) => r.id === "grok-4")?.record?.effort_options).toEqual([
+      ...MODEL_EFFORTS,
+    ]);
+    expect(
+      results.find((r) => r.id === "grok-4-fast-non-reasoning")?.record?.effort_options
+    ).toEqual([]);
+    expect(results.find((r) => r.id === "grok-2-image-1212")?.record?.effort_options).toEqual([]);
   });
 
   test("Anthropic fallback includes the latest Claude samples", async () => {

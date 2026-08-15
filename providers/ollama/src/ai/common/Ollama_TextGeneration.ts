@@ -51,7 +51,12 @@ export function createOllamaTextGenerationStream(
     // Ollama only reports counts on the terminal `done: true` chunk; estimate ↑
     // before the request and ↓ from deltas so the CLI counter moves during the call.
     const provisionalUsage = createEstimatedOutputUsageReporter(emit);
-    provisionalUsage.onPrompt(messages.map((m) => m.content).filter(Boolean).join("\n"));
+    provisionalUsage.onPrompt(
+      messages
+        .map((m) => m.content)
+        .filter(Boolean)
+        .join("\n")
+    );
 
     const stream = await client.chat({
       model: modelName,

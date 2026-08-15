@@ -7,5 +7,6 @@
 // organize-imports-ignore
 
 export * from "./common/OpenRouter_Client";
+export * from "./common/OpenRouter_EffortPolicy";
 export * from "./registerOpenRouterInline";
 export * from "./registerOpenRouterWorker";

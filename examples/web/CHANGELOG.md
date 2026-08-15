@@ -1,5 +1,27 @@
 # @workglow/web
 
+## 0.3.44
+
+## 0.3.43
+
+## 0.3.42
+
+## 0.3.41
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `rollup-plugin-visualizer`: ^7.1.1
+
+## 0.3.40
+
+### Chores
+
+- format changes
+
 ## 0.3.39
 
 ### Features

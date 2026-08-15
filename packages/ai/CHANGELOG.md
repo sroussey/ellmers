@@ -1,5 +1,41 @@
 # @workglow/ai
 
+## 0.3.44
+
+## 0.3.43
+
+## 0.3.42
+
+### Bug Fixes
+
+#### ai
+
+- drop readonly from effort_options on ModelConfig/ModelRecord
+- report the tokens a fully-failed structured generation billed
+
+## 0.3.41
+
+### Features
+
+#### ai
+
+- add AiProvider.effortPolicy hook
+- add ModelEffortPolicy and effort_options helpers
+
+## 0.3.40
+
+### Bug Fixes
+
+#### ai
+
+- refuse to settle an estimated usage snapshot in the accumulator (#754)
+
+### Performance
+
+#### ai
+
+- stream tool-call argument JSON instead of re-parsing the buffer
+
 ## 0.3.39
 
 ### Features

@@ -72,9 +72,7 @@ const taskGraphRepo = new IndexedDbTaskGraphRepository();
 // resolvers (registered by @workglow/ai and the provider register*() calls
 // above) stay visible. A bare `new Container()` isolates the run from them
 // and TextClassificationTask.narrowInput fails with "Service not registered".
-const cacheServices = new ServiceRegistry(
-  globalServiceRegistry.container.createChildContainer()
-);
+const cacheServices = new ServiceRegistry(globalServiceRegistry.container.createChildContainer());
 cacheServices.registerInstance(
   CACHE_REGISTRY,
   new DefaultCacheRegistry({ deterministic: taskOutputCache })

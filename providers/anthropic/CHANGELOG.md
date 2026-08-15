@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.3.44
+
+## 0.3.43
+
+## 0.3.42
+
+### Refactors
+
+#### providers
+
+- import effort helpers from @workglow/ai/worker, and lint it
+
+## 0.3.41
+
+### Features
+
+#### ai-providers
+
+- stamp effort_options from class policies
+
+## 0.3.40
+
+### Performance
+
+#### ai
+
+- stream tool-call argument JSON instead of re-parsing the buffer
+
+### Chores
+
+- format changes
+
 ## 0.3.39
 
 ### Features

@@ -23,7 +23,7 @@ import type { Taskish } from "../task-graph/Conversions";
 import { ensureTask } from "../task-graph/Conversions";
 import { CacheCoordinator } from "./CacheCoordinator";
 import { resolveSchemaInputs, schemaHasFormatAnnotations } from "./InputResolver";
-import type { IRunConfig, ITask } from "./ITask";
+import type { ConfigNotApplicableToAnExistingTask, IRunConfig, ITask } from "./ITask";
 import type { ITaskRunner } from "./ITaskRunner";
 import type { BinaryRefSink, StreamSink } from "./StreamProcessor";
 import { StreamProcessor } from "./StreamProcessor";
@@ -98,9 +98,9 @@ function isOwnTrackable(i: unknown): i is object {
 }
 
 /**
- * Adapts the legacy single-binary-port sink map to the unified per-port
- * {@link StreamSink} shape: a binary-mode sink is exactly a
- * {@link BinaryRefSink} with its mode named.
+ * Adapts the binary-only sink map to the unified per-port {@link StreamSink}
+ * shape: a binary-mode sink is exactly a {@link BinaryRefSink} with its mode
+ * named.
  */
 function wrapBinarySinks(
   sinks: ReadonlyMap<string, BinaryRefSink> | undefined
@@ -397,10 +397,10 @@ export class TaskRunner<
         if (outputs === undefined) {
           // Under the no-accumulation opt-in, build per-port sinks for EVERY
           // streamable mode (append/object/binary) via the port-aware backing;
-          // otherwise fall back to the legacy single-binary-port sink (adapted
-          // to the same StreamSink shape). Both run memory-bounded; the runtime
-          // threshold controls whether the resulting CacheRef survives in
-          // Output or is rehydrated inline below.
+          // otherwise build them for the binary ports only (adapted to the same
+          // StreamSink shape) — that mode streams to cache unflagged. Both run
+          // memory-bounded; the runtime threshold controls whether the
+          // resulting CacheRef survives in Output or is rehydrated inline below.
           const portSinks =
             isStreamable && this.noAccumulation === true
               ? this.cacheCoordinator.getRefSinksByPolicy(
@@ -947,7 +947,14 @@ export class TaskRunner<
     return this.task.subGraph.getTask(wrapper.id) !== undefined;
   }
 
-  protected own<T extends Taskish<any, any>>(i: T, config: TaskConfig = {}): T {
+  // Wider than the {@link IExecuteContext.own} signature callers see, which
+  // refuses a config for an argument that is already an `ITask` (nothing would
+  // apply it). This one stays uniform over `Taskish` so the runner has a single
+  // body; `ensureTask` enforces the rule for whatever reaches here past a cast.
+  protected own<T extends Taskish<any, any>>(
+    i: T,
+    config: TaskConfig | ConfigNotApplicableToAnExistingTask = {}
+  ): T {
     const trackable = isOwnTrackable(i);
     if (trackable) {
       // `ensureTask` returns a plain ITask as-is, so owning one twice throws on
@@ -1071,6 +1078,13 @@ export class TaskRunner<
    * {@link ownedWrappers}. A value this runner never owned is a no-op, so
    * disowning after an `own` that was an identity no-op against a stub context
    * is harmless.
+   *
+   * Every per-child record `own` created is dropped here, not just the subgraph
+   * node — {@link ownedSinkStamps} is a strong Map keyed by the child, so a
+   * stamp left behind pins that child (and its whole subgraph) until the
+   * PARENT's run ends. For a sweep that owns one child per work item that is
+   * the entire worklist retained in memory, which is precisely the retention
+   * `disown` exists to prevent.
    */
   protected disown<T extends Taskish<any, any>>(i: T): void {
     if (!isOwnTrackable(i)) return;
@@ -1083,6 +1097,16 @@ export class TaskRunner<
     if (off) {
       off();
       this.ownedUsageUnsubs.delete(i);
+    }
+    // Restore before dropping, exactly as `run()`'s `finally` does: the child
+    // is no longer owned, so it must not keep carrying this run's sinks into a
+    // later standalone `child.run()`.
+    if (hasRunConfig(i)) {
+      const prior = this.ownedSinkStamps.get(i);
+      if (prior !== undefined) {
+        Object.assign(i.runConfig, prior);
+        this.ownedSinkStamps.delete(i);
+      }
     }
     if (!this.isStillOwned(wrapper)) return;
     this.task.subGraph.removeTask(wrapper.id);

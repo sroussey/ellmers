@@ -1,5 +1,50 @@
 # @workglow/task-graph
 
+## 0.3.44
+
+### Bug Fixes
+
+#### task-graph
+
+- stop caching ConditionalTask and cover unfed branch ports
+- derive branch ports for conditionConfig-driven ConditionalTask
+
+## 0.3.43
+
+### Breaking Changes
+
+- **refactors(task-graph)**: collapse the dual streaming writer surfaces
+
+### Refactors
+
+#### task-graph
+
+- collapse the dual streaming writer surfaces
+
+## 0.3.42
+
+## 0.3.41
+
+### Bug Fixes
+
+#### task-graph
+
+- drop the owned-sink stamp on disown
+
+## 0.3.40
+
+### Features
+
+#### cli
+
+- add tests for live iteration graphs in WorkflowRunApp
+
+### Bug Fixes
+
+#### task-graph
+
+- reject own() config for an already-constructed task
+
 ## 0.3.39
 
 ### Features

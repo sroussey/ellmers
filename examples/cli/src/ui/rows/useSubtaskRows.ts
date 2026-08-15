@@ -72,7 +72,9 @@ function linesFromTasks(tasks: readonly ITask[]): Map<string, CliTaskLine> {
  */
 export function useGraphTaskRows(graph: TaskGraph): SubtaskRowsState {
   const children = graph.getTasks();
-  const [taskInfos, setTaskInfos] = useState<Map<string, CliTaskLine>>(() => linesFromTasks(children));
+  const [taskInfos, setTaskInfos] = useState<Map<string, CliTaskLine>>(() =>
+    linesFromTasks(children)
+  );
   const [overallProgress, setOverallProgress] = useState<number | undefined>(undefined);
   const [iterationSlots, setIterationSlots] = useState<Map<string, IterationSlotRow[]>>(new Map());
 
@@ -93,7 +95,8 @@ export function useGraphTaskRows(graph: TaskGraph): SubtaskRowsState {
 
   const order = new Map(children.map((t, i) => [String(t.id), i]));
   const tasks = new Map(children.map((t) => [String(t.id), t]));
-  const rowsSource = taskInfos.size > 0 ? Array.from(taskInfos.values()) : children.map(taskToCliLine);
+  const rowsSource =
+    taskInfos.size > 0 ? Array.from(taskInfos.values()) : children.map(taskToCliLine);
 
   return {
     rows: sortCliTaskLinesForDisplay(rowsSource, order),
