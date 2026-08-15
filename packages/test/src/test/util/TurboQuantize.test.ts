@@ -11,6 +11,7 @@ import {
   clearSignTableCache,
   cosineSimilarity,
   inner,
+  invertShrinkage,
   magnitude,
   turboDequantize,
   turboQuantize,
@@ -634,9 +635,26 @@ describe("TurboQuantize", () => {
       // side of that trade — the noise is symmetric and averages out over a candidate
       // set, and it is worst precisely where the answer is "unrelated" either way, while
       // the bias moved every absolute threshold in one direction.
+      //
+      // THE 2- AND 3-BIT CEILINGS ARE THE SAME TRADE, at a much better exchange rate.
+      // `quantizedCosine` now inverts the shrinkage at 2-4 bits too, through a tabulated
+      // `E[Q(x)Q(y)] / E[Q(x)^2]` map, so those widths pay the same near-orthogonal noise
+      // amplification that THIS regime measures in full and gets none of the benefit of.
+      // The factor is `1/g'(0)` — the reciprocal slope of the map at rho = 0 — which is
+      // 1.13 at 2 bits, 1.04 at 3 and 1.01 at 4, against 1.57 at 1 bit. Measured RMSE
+      // moved 0.0130 -> 0.0142 at 2 bits and 0.0070 -> 0.0074 at 3; the ceilings follow,
+      // 0.016 -> 0.019 and 0.0085 -> 0.0090. At 4 bits it moved 0.0049 -> 0.0048, i.e.
+      // not at all within this sample, because 1.01x of anything is itself; that ceiling
+      // and every one above it is untouched.
+      //
+      // What the 1.13x buys is measured in the signed-bias case below: at rho = 0.8 the
+      // 2-bit mean signed error goes -0.0799 -> -0.0013 and the RMSE of that same cell
+      // 0.081 -> 0.011, an 8x cut in exactly the regime where a caller thresholds. Nine
+      // percent more noise on pairs that are unrelated either way is not a close call
+      // against that.
       const d = 1024;
       const pairs = 24;
-      const ceilings = [0.05, 0.016, 0.0085, 0.006, 0.004, 0.0017, 0.0013, 0.0007];
+      const ceilings = [0.05, 0.019, 0.009, 0.006, 0.004, 0.0017, 0.0013, 0.0007];
 
       for (let bits = 1; bits <= 8; bits++) {
         const rnd = makeRandom(2048 + bits);
@@ -710,28 +728,61 @@ describe("TurboQuantize", () => {
      * would fail these, which is the intent — this is a record of behavior, not
      * a ceiling. Re-measure and re-record when the estimator changes.
      *
-     * What the table shows: shrinkage grows as the bit width falls, and it is
-     * an ordinary quantization effect at 2-8 bits (clipping and rounding shrink
-     * the reconstructed dot product relative to each side's codeNorm). At 1 bit
-     * it is not: a 2-level grid is exactly ±scale, so the estimator degenerates
-     * to the sign-agreement statistic 1 - 2*theta/pi, which is a different
-     * function of the angle rather than a noisy cosine. That one is invertible,
-     * and `quantizedCosine` inverts it — which is why the 1-bit row sits at
-     * zero while the 2-bit row, four times finer, is the worst in the table.
+     * What the table shows NOW: nothing. Every cell sits at the sampling floor,
+     * and that is the result — the ±0.005 floor dominates all 24 of them, where
+     * before it dominated only the 1-bit row and the 6-8 bit tail.
+     *
+     * The 24 numbers it used to hold are worth keeping in view, because they are
+     * what the estimator does WITHOUT its correction. Rows are bit widths, the
+     * three columns are rho = 0.5 / 0.8 / 0.95:
+     *
+     *   1  +0.0015 +0.0014 -0.0001      5  -0.0019 -0.0030 -0.0030
+     *   2  -0.0561 -0.0799 -0.0750      6  -0.0001 -0.0010 -0.0009
+     *   3  -0.0171 -0.0271 -0.0280      7  -0.0001 -0.0003 -0.0003
+     *   4  -0.0055 -0.0075 -0.0094      8   0.0000 -0.0001 -0.0001
+     *
+     * Shrinkage grew as the bit width fell, and it was an ordinary quantization
+     * effect at 2-8 bits (clipping and rounding shrink the reconstructed dot
+     * product relative to each side's codeNorm) — but ordinary is not the same
+     * as unmodellable. What the estimator returns is E[Q(x)Q(y)] / E[Q(x)^2] for
+     * a standard bivariate normal pair at the true cosine, and `quantizedCosine`
+     * now inverts that map at 2-4 bits (tabulated by quadrature) as it already
+     * did at 1 bit (closed form: a 2-level grid is exactly ±scale, so the
+     * estimator degenerates to the sign-agreement statistic 1 - 2*theta/pi).
+     * That is why the 2-bit row, which used to be the worst in the table by an
+     * order of magnitude, is now indistinguishable from the 8-bit one.
+     *
+     * 5-8 bits are left uncorrected and keep their old numbers — their bias was
+     * already at or under the estimator's own per-cell noise, so a correction
+     * there would move a number by less than its error bar while still paying
+     * the near-orthogonal variance amplification the inversion costs.
+     *
+     * A cell reading zero because the estimator is unbiased and a cell reading
+     * zero because the test is broken look identical, so this case is NOT the
+     * evidence that the correction works — it is the record that the bias is
+     * gone. The evidence is two separate cases below: the map reproduces the
+     * 1-bit closed form (the one point where it has an exact reference), and
+     * the corrected bias holds across a 16x range of d.
      */
     /**
-     * The angle correction lives in `quantizedCosine`, so it reaches
+     * The shrinkage correction lives in `quantizedCosine`, so it reaches
      * `turboQuantizedCosineSimilarity` and `turboQuantizedInnerProduct` and NOTHING ELSE.
      * Decoding with `turboDequantize` and running plain `cosineSimilarity` over the
-     * results is a different number at 1 bit — lower, by the sign-statistic shrinkage the
+     * results is a different number at 1-4 bits — lower, by the very shrinkage the
      * correction exists to undo.
      *
-     * That asymmetry is worth pinning rather than leaving to be discovered: the two
-     * routes look interchangeable at every other bit width, and a caller who decodes once
-     * and compares many times (the natural optimisation) would silently drop back to the
-     * biased estimator at exactly the bit width where the bias is largest.
+     * That asymmetry is worth pinning rather than leaving to be discovered: the two routes
+     * look interchangeable at every other bit width, and a caller who decodes once and
+     * compares many times (the natural optimisation) would silently drop back to the
+     * biased estimator at exactly the bit widths where the bias is largest.
+     *
+     * The gap USED to exist only at 1 bit; extending the correction to 2-4 bits widened
+     * the trap rather than closing it, which is why the 4-bit leg below flipped from
+     * "the two routes agree" to "the two routes differ, in the documented direction".
+     * The bit width that now demonstrates agreement has to be an UNCORRECTED one, so it
+     * is 5.
      */
-    test("turboDequantize + plain cosineSimilarity is NOT angle-corrected at 1 bit", () => {
+    test("turboDequantize + plain cosineSimilarity is NOT shrinkage-corrected at 1-4 bits", () => {
       const d = 1024;
       const rnd = makeRandom(31337);
       const a = new Float32Array(d);
@@ -758,9 +809,24 @@ describe("TurboQuantize", () => {
       expect(viaDecode).toBeLessThan(exact - 0.1);
       expect(corrected).toBeGreaterThan(viaDecode + 0.1);
 
-      // At 4 bits there is no correction, so the two routes agree closely.
-      const wa = turboQuantize(a, { bits: 4, seed: 42 });
-      const wb = turboQuantize(b, { bits: 4, seed: 42 });
+      // 2 and 4 bits are corrected too, so the decode route is biased low there as well —
+      // by less than at 1 bit, but in the same direction and for the same reason. Asserted
+      // as a strict inequality rather than a magnitude, because the SIGN is the claim: the
+      // decode route under-reports, always.
+      for (const bits of [2, 4] as const) {
+        const ca = turboQuantize(a, { bits, seed: 42 });
+        const cb = turboQuantize(b, { bits, seed: 42 });
+        const viaHelper = turboQuantizedCosineSimilarity(ca, cb);
+        const viaDecodeAtBits = cosineSimilarity(turboDequantize(ca), turboDequantize(cb));
+        expect(viaHelper, `bits=${bits}`).toBeGreaterThan(viaDecodeAtBits);
+        expect(Math.abs(viaHelper - exact), `bits=${bits}`).toBeLessThan(0.02);
+      }
+
+      // At 5 bits the shrinkage is left uncorrected (see MAX_CORRECTED_BITS), so there the
+      // two routes really are interchangeable — which is what makes the gap above a
+      // property of the CORRECTION and not of the decode path rounding differently.
+      const wa = turboQuantize(a, { bits: 5, seed: 42 });
+      const wb = turboQuantize(b, { bits: 5, seed: 42 });
       expect(
         Math.abs(
           turboQuantizedCosineSimilarity(wa, wb) -
@@ -777,9 +843,9 @@ describe("TurboQuantize", () => {
       /** Measured mean signed error, indexed [bits - 1][correlation]. */
       const measured: readonly (readonly number[])[] = [
         [0.0015, 0.0014, -0.0001],
-        [-0.0561, -0.0799, -0.075],
-        [-0.0171, -0.0271, -0.028],
-        [-0.0055, -0.0075, -0.0094],
+        [-0.0011, -0.0013, 0.0005],
+        [0.0008, -0.0009, 0.0005],
+        [0.0001, 0.0009, -0.0001],
         [-0.0019, -0.003, -0.003],
         [-0.0001, -0.001, -0.0009],
         [-0.0001, -0.0003, -0.0003],
@@ -820,6 +886,123 @@ describe("TurboQuantize", () => {
             expected + tolerance
           );
         }
+      }
+    });
+
+    /**
+     * THE EMPIRICAL CLAIM THAT REPLACES A FALSE ONE.
+     *
+     * `quantizedCosine` used to carry a rationale for leaving 2-8 bits uncorrected: a
+     * fitted gain "would be a constant tuned at one dimensionality, and the shrinkage
+     * varies with d". Both halves were wrong, and the second half is the one a test can
+     * settle. The shrinkage is a function of the STANDARDIZED grid, and
+     * `getQuantizationParams` divides the loading factor by sqrt(paddedLen) — exactly the
+     * factor by which a rotated coordinate's standard deviation shrinks — so the
+     * standardized grid is byte-identical at every dimensionality and the map cannot
+     * depend on d at all.
+     *
+     * That is a structural argument, and this case is the measurement that backs it: one
+     * table, built once, holds the corrected bias inside the ±0.005 sampling floor across
+     * a 16x range of d. It is deliberately run at bits = 2, rho = 0.8 — the single worst
+     * cell in the whole uncorrected table at -0.0799 — because a d-dependence would show
+     * up there first and largest if it existed at all.
+     *
+     * Note what would happen under the old claim: a d-varying shrinkage would need a
+     * per-d table, and one table applied at three dimensionalities would leave a residual
+     * that grows with the distance from whichever d it was fitted at. The three cells
+     * here bracket d = 1024, where nothing was fitted (the map is quadrature, not a fit),
+     * so a d-dependence has nowhere to hide.
+     */
+    test("the shrinkage correction is dimension-free", () => {
+      const bits = 2;
+      const t = 0.8;
+      const pairs = 32;
+      const k = Math.sqrt(1 - t * t);
+
+      for (const d of [256, 1024, 4096] as const) {
+        // Same seeding scheme as the bias table above, so a failure here and a failure
+        // there are comparable numbers rather than two unrelated samples.
+        const rnd = makeRandom(9000 + bits * 31 + Math.round(t * 100));
+        let signedError = 0;
+
+        for (let p = 0; p < pairs; p++) {
+          const a = new Float32Array(d);
+          const noise = new Float32Array(d);
+          for (let i = 0; i < d; i++) {
+            a[i] = rnd() - 0.5;
+            noise[i] = rnd() - 0.5;
+          }
+          const b = new Float32Array(d);
+          for (let i = 0; i < d; i++) b[i] = t * a[i]! + k * noise[i]!;
+
+          signedError +=
+            turboQuantizedCosineSimilarity(
+              turboQuantize(a, { bits, seed: 42 }),
+              turboQuantize(b, { bits, seed: 42 })
+            ) - cosineSimilarity(a, b);
+        }
+
+        const mean = signedError / pairs;
+        expect(Math.abs(mean), `d=${d} mean=${mean.toFixed(5)}`).toBeLessThan(0.005);
+      }
+    });
+
+    /**
+     * THE QUADRATURE'S ONE EXACT REFERENCE.
+     *
+     * `invertShrinkage` inverts a map evaluated by numerical quadrature, and a wrong
+     * quadrature does not announce itself: it returns plausible, monotone, well-behaved
+     * numbers that are simply the wrong ones. Comparing it against measured bias (as the
+     * cases above do) can only tell you the two agree; it cannot tell you either is right,
+     * because the module under test produced both.
+     *
+     * At 1 bit there is an independent answer. A 2-level grid puts its reconstruction
+     * points at exactly ±scale, so E[Q(x)Q(y)] / E[Q(x)^2] reduces to E[sign(x)sign(y)] =
+     * (2/pi)*asin(rho) — Goemans-Williamson, a closed form derived from geometry and owing
+     * nothing to this module. Its inverse is `cos(pi*(1 - r)/2)`, which `quantizedCosine`
+     * has shipped since the 1-bit correction landed.
+     *
+     * So `invertShrinkage(1, ·)` must reproduce that closed form, and the SAME quadrature
+     * code path, the same knot layout, the same binary search and the same interpolation
+     * produce the 2-4 bit tables. Agreement here is the strongest available evidence that
+     * those are right too. Measured worst-case disagreement over the full range is
+     * 2.8e-4, dominated by the 65-knot linear interpolation rather than by the quadrature;
+     * the 1e-3 bound leaves that ~3.5x of headroom.
+     *
+     * The bound is checked at 401 points spanning the CLOSED interval [-1, 1], endpoints
+     * included, because the endpoints are where the two implementations are most likely to
+     * disagree: the closed form is smooth through them while the table hits its clamps.
+     */
+    test("invertShrinkage reproduces the 1-bit Goemans-Williamson closed form", () => {
+      let worst = 0;
+      let worstAt = 0;
+
+      for (let i = -200; i <= 200; i++) {
+        const ratio = i / 200;
+        const viaTable = invertShrinkage(1, ratio);
+        const viaClosedForm = Math.cos((Math.PI * (1 - ratio)) / 2);
+        const error = Math.abs(viaTable - viaClosedForm);
+        if (error > worst) {
+          worst = error;
+          worstAt = ratio;
+        }
+        expect(error, `ratio=${ratio} table=${viaTable} closed=${viaClosedForm}`).toBeLessThan(
+          1e-3
+        );
+      }
+
+      // Reported so a regression that merely creeps up on the bound is visible in the run
+      // output before it starts failing.
+      expect(
+        worst,
+        `worst disagreement ${worst.toExponential(2)} at ratio=${worstAt}`
+      ).toBeLessThan(1e-3);
+
+      // Oddness is a property of the map (negating one side of the pair negates every
+      // Q(y)), and the table only stores the non-negative half — so it is an invariant of
+      // the implementation, not just of the mathematics, and worth its own line.
+      for (const ratio of [0.1, 0.37, 0.8, 0.99] as const) {
+        expect(invertShrinkage(1, -ratio)).toBeCloseTo(-invertShrinkage(1, ratio), 12);
       }
     });
   });
