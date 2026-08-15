@@ -466,6 +466,7 @@ export class TaskRunner<
           outputs = isStreamable
             ? await this.streamProcessor.run(inputs, ctx, {
                 registry: this.registry,
+                cacheRegistry: this.cacheRegistry,
                 resourceScope: this.resourceScope,
                 inputStreams: this.inputStreams,
                 onProgress: this.handleProgress.bind(this),
@@ -1141,6 +1142,7 @@ export class TaskRunner<
       own: this.own,
       disown: this.disown,
       registry: this.registry,
+      cacheRegistry: this.cacheRegistry,
       resourceScope: this.resourceScope,
       runId: this.runId,
     });

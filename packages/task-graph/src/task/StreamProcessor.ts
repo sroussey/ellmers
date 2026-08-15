@@ -7,6 +7,7 @@
 import type { ResourceScope, ServiceRegistry } from "@workglow/util";
 import { getLogger } from "@workglow/util";
 import type { CacheRef } from "../cache/CacheRef";
+import type { CacheRegistry } from "../cache/CacheRegistry";
 import type { StreamPortCodec } from "../cache/streamCodec";
 import { getStreamPortCodec } from "../cache/streamCodec";
 import type { Taskish } from "../task-graph/Conversions";
@@ -66,6 +67,14 @@ export interface StreamSink {
  */
 export interface StreamProcessorDeps {
   readonly registry: ServiceRegistry;
+  /**
+   * The run's resolved cache, forwarded verbatim to
+   * {@link IExecuteContext.cacheRegistry}. Streaming tasks reach it on the same
+   * terms non-streaming ones do — a task whose correctness turns on whether its
+   * output will be stored must not get a different answer for implementing
+   * `executeStream()`.
+   */
+  readonly cacheRegistry: CacheRegistry | undefined;
   readonly resourceScope: ResourceScope | undefined;
   readonly inputStreams: Map<string, ReadableStream<StreamEvent>> | undefined;
   readonly onProgress: (
@@ -242,6 +251,7 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
       own: deps.own,
       disown: deps.disown,
       registry: deps.registry,
+      cacheRegistry: deps.cacheRegistry,
       resourceScope: deps.resourceScope,
       inputStreams: deps.inputStreams,
       backpressure,
