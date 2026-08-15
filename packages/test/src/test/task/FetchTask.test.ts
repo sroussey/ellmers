@@ -711,6 +711,80 @@ describe("FetchUrlTask", () => {
       }).catch((e) => e);
       expect(String(error)).toMatch(/content-length/i);
     });
+
+    // -----------------------------------------------------------------------
+    // Regression: executeStream() is what TaskRunner actually calls for a
+    // FetchUrlTask run (isTaskStreamable is permanently true once
+    // executeStream exists), so the queued branch of execute() — queue
+    // resolution, rate limiting, retries — is only reachable if executeStream
+    // delegates to it. An output-only assertion can't catch a dead delegation:
+    // the inline path produces the identical output. The `sendSpy` assertion
+    // below is the one that actually distinguishes "ran through the queue"
+    // from "ran inline and nobody noticed."
+    // -----------------------------------------------------------------------
+    test("a successful fetch with config.queue set actually travels through the queue", async () => {
+      const queueName = "streaming-success-queue";
+      const storage = new InMemoryQueueStorage<FetchUrlTaskInput, FetchUrlTaskOutput>(queueName);
+      await storage.migrate();
+      const { messageQueue, jobStore } = wrapQueueStorage(storage);
+      const server = new JobQueueServer<FetchUrlTaskInput, FetchUrlTaskOutput>(FetchUrlJob, {
+        messageQueue,
+        jobStore,
+        queueName,
+        pollIntervalMs: 1,
+      });
+      const client = new JobQueueClient<FetchUrlTaskInput, FetchUrlTaskOutput>({
+        messageQueue,
+        jobStore,
+        queueName,
+      });
+      client.attach(server);
+      // Registering under `queueName` is what makes FetchUrlTask's own
+      // resolveOrCreateQueue() find and reuse THIS client/server pair instead
+      // of minting its own — see resolveOrCreateQueue's registry.getQueue lookup.
+      getTaskQueueRegistry().registerQueue({ server, client, storage });
+      const sendSpy = vi.spyOn(client, "send");
+
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response("hello queued world", {
+            status: 200,
+            headers: { "Content-Type": "text/plain" },
+          })
+        )
+      );
+
+      try {
+        await server.start();
+
+        // No credential_key: this must reach the queue, not the
+        // credential+queue refusal.
+        const task = new FetchUrlTask({ queue: queueName });
+        const result = await task.run({
+          url: "https://api.example.com/queued-success",
+          response_type: "text",
+        });
+
+        expect(result.text).toBe("hello queued world");
+
+        // The fetch succeeding proves nothing about *how* it ran — the inline
+        // path would produce the identical result. This is the assertion that
+        // proves the job travelled through the queue: FetchUrlTask.execute()'s
+        // queued branch is the only code path that calls the registered
+        // client's send(), and executeStream()'s `queuePref !== false`
+        // delegation is the only way a `.run()` call reaches execute() at all.
+        expect(sendSpy).toHaveBeenCalledTimes(1);
+        expect(sendSpy.mock.calls[0]?.[0]).toMatchObject({
+          url: "https://api.example.com/queued-success",
+        });
+        expect(await storage.size(JobStatus.COMPLETED)).toBe(1);
+        expect(await storage.size(JobStatus.PENDING)).toBe(0);
+        expect(mockFetch.mock.calls.length).toBe(1);
+      } finally {
+        await server.stop();
+        await storage.deleteAll();
+      }
+    });
   });
 
   // -------------------------------------------------------------------------
