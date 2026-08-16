@@ -7,11 +7,12 @@
 import type { ResourceScope, ServiceRegistry } from "@workglow/util";
 import { getLogger } from "@workglow/util";
 import type { CacheRef } from "../cache/CacheRef";
+import type { CacheRegistry } from "../cache/CacheRegistry";
 import type { StreamPortCodec } from "../cache/streamCodec";
 import { getStreamPortCodec } from "../cache/streamCodec";
 import type { Taskish } from "../task-graph/Conversions";
 import { BackpressureGate } from "./BackpressureGate";
-import type { ITask } from "./ITask";
+import type { ConfigNotApplicableToAnExistingTask, ITask } from "./ITask";
 import type { StreamEvent, StreamMode, Usage } from "./StreamTypes";
 import {
   assertBinaryFormat,
@@ -36,7 +37,7 @@ import { TaskStatus } from "./TaskTypes";
  * places into `Output` at the port slot.
  *
  * Implementations are typically thin wrappers around
- * `TaskOutputRepository.saveOutputStream` — the runner supplies the wrapper
+ * `TaskOutputRepository.saveOutputStreamPort` — the runner supplies the wrapper
  * once it knows the cache key.
  */
 export type BinaryRefSink = (chunks: AsyncIterable<Uint8Array>) => Promise<CacheRef>;
@@ -66,6 +67,14 @@ export interface StreamSink {
  */
 export interface StreamProcessorDeps {
   readonly registry: ServiceRegistry;
+  /**
+   * The run's resolved cache, forwarded verbatim to
+   * {@link IExecuteContext.cacheRegistry}. Streaming tasks reach it on the same
+   * terms non-streaming ones do — a task whose correctness turns on whether its
+   * output will be stored must not get a different answer for implementing
+   * `executeStream()`.
+   */
+  readonly cacheRegistry: CacheRegistry | undefined;
   readonly resourceScope: ResourceScope | undefined;
   readonly inputStreams: Map<string, ReadableStream<StreamEvent>> | undefined;
   readonly onProgress: (
@@ -73,7 +82,10 @@ export interface StreamProcessorDeps {
     message?: string,
     ...args: any[]
   ) => Promise<void>;
-  readonly own: <T extends Taskish<any, any>>(i: T, config?: TaskConfig) => T;
+  readonly own: <T extends Taskish<any, any>>(
+    i: T,
+    config?: TaskConfig | ConfigNotApplicableToAnExistingTask
+  ) => T;
   readonly disown: <T extends Taskish<any, any>>(i: T) => void;
   /**
    * Per-port stream sinks, one per streamable mode (`append` / `object` /
@@ -239,6 +251,7 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
       own: deps.own,
       disown: deps.disown,
       registry: deps.registry,
+      cacheRegistry: deps.cacheRegistry,
       resourceScope: deps.resourceScope,
       inputStreams: deps.inputStreams,
       backpressure,

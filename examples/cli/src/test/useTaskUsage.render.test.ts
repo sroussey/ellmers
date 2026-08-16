@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IExecuteContext, ITask, Usage } from "@workglow/task-graph";
-import { Task, Workflow } from "@workglow/task-graph";
 import {
   getGlobalModelRepository,
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
+import type { IExecuteContext, ITask, Usage } from "@workglow/task-graph";
+import { Task, Workflow } from "@workglow/task-graph";
 import { render } from "ink";
 import { EventEmitter } from "node:events";
 import React from "react";

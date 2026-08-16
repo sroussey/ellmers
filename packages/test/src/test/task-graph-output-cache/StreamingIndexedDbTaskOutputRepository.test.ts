@@ -36,12 +36,11 @@ async function collect(stream: AsyncIterable<Uint8Array>): Promise<number[]> {
 }
 
 describe("StreamingIndexedDbTaskOutputRepository capability probes", () => {
-  it("advertises the full streaming surface", async () => {
+  it("advertises the streaming surface", async () => {
     const repo = new StreamingIndexedDbTaskOutputRepository(`probe_${uuid4().replace(/-/g, "_")}`);
     await repo.setupDatabase();
     expect(repo.supportsStreaming()).toBe(true);
     expect(typeof repo.getOutputStreamByRef).toBe("function");
-    expect(repo.supportsStreamingPorts()).toBe(true);
     expect(repo.isDurable()).toBe(true);
     await repo.clear();
   });
@@ -166,9 +165,11 @@ describe("StreamingIndexedDbTaskOutputRepository stream-out contract", () => {
   });
 
   it("round-trips a multi-chunk write through getOutputStreamByRef", async () => {
-    const ref = await repo.saveOutputStream(
+    const ref = await repo.saveOutputStreamPort(
       "T",
       { k: 1 },
+      "file",
+      "binary",
       gen(new Uint8Array([1, 2]), new Uint8Array([3]), new Uint8Array([4, 5, 6])),
       {}
     );
@@ -178,9 +179,16 @@ describe("StreamingIndexedDbTaskOutputRepository stream-out contract", () => {
   });
 
   it("round-trips through the materializing reader too", async () => {
-    const ref = await repo.saveOutputStream("T", { k: 2 }, gen(new Uint8Array([7, 8])), {
-      mime: "application/octet-stream",
-    });
+    const ref = await repo.saveOutputStreamPort(
+      "T",
+      { k: 2 },
+      "file",
+      "binary",
+      gen(new Uint8Array([7, 8])),
+      {
+        mime: "application/octet-stream",
+      }
+    );
     expect(ref.mime).toBe("application/octet-stream");
     const blob = await repo.getOutputByRef(ref);
     expect(Array.from(new Uint8Array(await blob!.arrayBuffer()))).toEqual([7, 8]);
@@ -202,7 +210,14 @@ describe("StreamingIndexedDbTaskOutputRepository stream-out contract", () => {
   });
 
   it("clear() makes previously written refs dangle (a miss, not empty)", async () => {
-    const ref = await repo.saveOutputStream("T", { k: 4 }, gen(new Uint8Array([1])), {});
+    const ref = await repo.saveOutputStreamPort(
+      "T",
+      { k: 4 },
+      "file",
+      "binary",
+      gen(new Uint8Array([1])),
+      {}
+    );
     await repo.clear();
     expect(await repo.getOutputByRef(ref)).toBeUndefined();
     expect(await repo.getOutputStreamByRef(ref)).toBeUndefined();
@@ -211,14 +226,28 @@ describe("StreamingIndexedDbTaskOutputRepository stream-out contract", () => {
   });
 
   it("clearOlderThan prunes blob payloads alongside rows", async () => {
-    const ref = await repo.saveOutputStream("T", { k: 5 }, gen(new Uint8Array([1])), {});
+    const ref = await repo.saveOutputStreamPort(
+      "T",
+      { k: 5 },
+      "file",
+      "binary",
+      gen(new Uint8Array([1])),
+      {}
+    );
     // Negative age puts the cutoff in the future: everything is "older".
     await repo.clearOlderThan(-60_000);
     expect(await repo.getOutputStreamByRef(ref)).toBeUndefined();
   });
 
   it("a sibling instance over the same dbName resolves the ref (cross-instance)", async () => {
-    const ref = await repo.saveOutputStream("T", { k: 6 }, gen(new Uint8Array([4, 2])), {});
+    const ref = await repo.saveOutputStreamPort(
+      "T",
+      { k: 6 },
+      "file",
+      "binary",
+      gen(new Uint8Array([4, 2])),
+      {}
+    );
     const sibling = new StreamingIndexedDbTaskOutputRepository(dbName);
     await sibling.setupDatabase();
     expect(await collect((await sibling.getOutputStreamByRef(ref))!)).toEqual([4, 2]);

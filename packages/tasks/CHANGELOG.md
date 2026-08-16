@@ -1,5 +1,162 @@
 # @workglow/tasks
 
+## 0.3.45
+
+### Breaking Changes
+
+- **features(tasks)**: drop the response_type default
+- **features(tasks)**: FetchUrlTask gains a body stream port, response_type required
+
+### Features
+
+#### tasks
+
+- re-emit an out-of-process worker's CacheRef as deltas
+- stream the queued fetch over the job channel
+- drop the response_type default
+- 304 is a successful outcome carrying notModified
+- stream the fetch body, verify Content-Length
+- FetchUrlTask gains a body stream port, response_type required
+
+### Bug Fixes
+
+#### tasks
+
+- fail a queued fetch carrying no response_type
+- refuse a conditional request only where a row could be written
+- report a queued fetch's falsy rejection as the failure it is
+- release the body of a response the fetch never reads
+- copy the fetch chunk the carrier is free to transfer away
+- stop measuring a decoded body against its encoded Content-Length
+- refuse response_type "stream" on a carrier that cannot stream
+- refuse an undeclared private resolution from a domain-key fetch
+- refuse a conditional request against every cache the run has
+- stop replaying credentials to cross-origin redirect targets
+- end the queued fetch's drain on the stream's own terminal event
+- make the queued fetch's subclass seam and retry rule safe
+- drop invalid override on FetchUrlTask.executeStream
+- route queued FetchUrlTask runs through execute() from executeStream
+
+### Refactors
+
+#### tasks
+
+- drop the speculative CacheRef byte source from the queued fetch
+- pin response_type at every call site
+
+### Documentation
+
+#### tasks
+
+- correct three claims the fetch's own code contradicts
+- correct three overclaims in the queued fetch's stream contract
+
+## Unreleased
+
+### Breaking Changes
+
+- **feat(tasks)**: `FetchUrlTask` / `FetchUrlJob` require `response_type`, and no longer infer it
+
+  `response_type` was optional and, when absent, the response format was guessed from the
+  `Content-Type` header. Both are gone: the input schema now lists `response_type` in
+  `required`, it declares no default, and there is no Content-Type inference left — so a
+  caller that stated nothing no longer gets whichever format the sniffing would have picked.
+
+  Two caveats on how loudly that lands. A directly constructed `FetchUrlTask` still runs
+  without one: `Task`'s constructor seeds its defaults from the input schema and synthesizes
+  an `enum` property as its first member, which here is `"stream"`. A **persisted job
+  payload** with no `response_type` now fails with `INVALID_RESPONSE_TYPE` before the request
+  is issued, where it previously streamed and completed successfully with no value.
+
+  Migration — state what the consumer actually reads:
+
+  - `"stream"` reproduces the previous byte-level behaviour exactly. The bytes still reach
+    the `body` port and the output cache, `metadata.contentType` reports what they are, and
+    nothing is buffered into memory.
+  - `"json"`, `"text"`, `"blob"`, `"arraybuffer"` additionally populate the matching derived
+    port, replacing whatever the Content-Type sniffing used to pick.
+
+  Re-enqueue any job enqueued before this change with an explicit `response_type`.
+
+### Features
+
+#### tasks
+
+- `FetchUrlTask` streams its response body to the output cache instead of buffering it.
+  The `body` output port is a binary stream port, so a downstream streaming consumer reads
+  bytes as they arrive; the task accumulates only when something actually needs the whole
+  value (a derived `response_type`, or a cache that cannot take a stream). A fetch whose
+  bytes nobody materializes no longer holds the response in memory.
+- `FetchUrlTask` supports conditional requests. Send `If-None-Match` / `If-Modified-Since`
+  and a 304 returns `metadata.notModified` with no body, no derived port and no cache write,
+  so the caller keeps the artifact it already had.
+
+### Security
+
+#### tasks
+
+- stop replaying credentials to cross-origin redirect targets in `safeFetch`.
+  Both redirect loops (`SafeFetch.ts` and `SafeFetch.server.ts`) now drop
+  `authorization`, `proxy-authorization`, and `cookie` on any hop whose target
+  origin differs from the current one — origin comparison, so a differing scheme
+  or port also counts. `SafeFetchOptions.sensitiveHeaders` names additional
+  headers to drop, which `FetchUrlTask` supplies for
+  `credential_scheme: "header"` (the secret sits on a caller-named header such
+  as `X-Api-Key` that `safeFetch` cannot otherwise recognize). Once a header is
+  stripped it stays stripped for the remainder of the chain, so a
+  `vendor -> attacker -> vendor` redirect cannot launder it back.
+
+### Bug Fixes
+
+#### tasks
+
+- stop asserting `Content-Length` against a transparently decompressed body. `Content-Length`
+  states the ENCODED size while the read loop counts DECODED bytes, so every gzip/br response
+  failed `CONTENT_LENGTH_MISMATCH` — a permanent, non-retryable error raised after the correct
+  body had already reached the consumer and the cache sink. A response carrying a
+  content-coding now reports no progress and asserts no total, exactly like a chunked one.
+- release the response body on a non-2xx fetch. The server transport holds an undici `Agent`
+  (and its socket) open until the passthrough pipe carrying the body settles, and an
+  unread `TransformStream` readable never lets it; an HTTP error abandoned the body without
+  cancelling, leaking an Agent per attempt — ten per job on the queued path's `maxAttempts`.
+- fail a queued fetch whose persisted payload carries no `response_type` instead of streaming
+  and returning an output with no value. `JobQueueWorker` runs a persisted input with no schema
+  validation, so the task layer's `required` never sees it; the job now asserts it before
+  issuing the request.
+- copy a retained body chunk rather than aliasing the view handed to the stream transport, which
+  `Job`'s contract lets the carrier transfer (and so detach). Only runs that materialize a
+  derived port pay the copy.
+
+## 0.3.44
+
+## 0.3.43
+
+## 0.3.42
+
+### Bug Fixes
+
+#### tasks
+
+- stop a response body deciding whether a fetch decode failure retries
+
+### Chores
+
+- update deps
+
+## 0.3.41
+
+### Features
+
+#### task
+
+- add network error handling for fetch URL tasks
+
+### Chores
+
+- update deps
+
+## 0.3.40
+
 ## 0.3.39
 
 ### Bug Fixes

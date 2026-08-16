@@ -14,7 +14,8 @@ import type {
 } from "@workglow/ai";
 import { createUsageSnapshotEmitter } from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
-import { parsePartialJson } from "@workglow/util/worker";
+import type { PartialJsonStream } from "@workglow/util/worker";
+import { createPartialJsonStream } from "@workglow/util/worker";
 import {
   annotateLastBlock,
   annotateLastTool,
@@ -109,6 +110,20 @@ export function buildAnthropicMessages(
   return out;
 }
 
+/**
+ * Per content-block streaming state. A tool-use block owns an incremental JSON
+ * parser that is fed one `input_json_delta` at a time, so each delta costs
+ * O(delta) rather than re-parsing the whole accumulated argument buffer.
+ */
+type AnthropicBlockMeta =
+  | {
+      readonly type: "tool_use";
+      readonly id: string;
+      readonly name: string;
+      readonly json: PartialJsonStream;
+    }
+  | { readonly type: "text" };
+
 function mapAnthropicToolChoice(
   toolChoice: string | undefined
 ): { type: "auto" } | { type: "any" } | { type: "tool"; name: string } | undefined {
@@ -190,7 +205,7 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
 
   const stream = client.messages.stream(params, { signal });
 
-  const blockMeta = new Map<number, { type: string; id?: string; name?: string; json: string }>();
+  const blockMeta = new Map<number, AnthropicBlockMeta>();
   /** Keyed by Anthropic content block index — avoids collisions when `id` is missing during early deltas. */
   const toolCallsByBlockIndex = new Map<number, ToolCall>();
 
@@ -219,12 +234,12 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
       if (block.type === "tool_use") {
         blockMeta.set(index, {
           type: "tool_use",
-          id: block.id,
-          name: block.name,
-          json: "",
+          id: block.id ?? "",
+          name: block.name ?? "",
+          json: createPartialJsonStream(),
         });
       } else if (block.type === "text") {
-        blockMeta.set(index, { type: "text", json: "" });
+        blockMeta.set(index, { type: "text" });
       }
     } else if (event.type === "content_block_delta") {
       const index = event.index as number;
@@ -233,18 +248,13 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
         emit({ type: "text-delta", port: "text", textDelta: delta.text });
       } else if (delta.type === "input_json_delta") {
         const meta = blockMeta.get(index);
-        if (meta) {
-          meta.json += delta.partial_json;
-          let parsedInput: Record<string, unknown>;
-          try {
-            parsedInput = JSON.parse(meta.json);
-          } catch {
-            const partial = parsePartialJson(meta.json);
-            parsedInput = (partial as Record<string, unknown>) ?? {};
-          }
+        if (meta?.type === "tool_use") {
+          // `push` returns the parser's live root; `sanitizeToolArgs` copies it,
+          // so the emitted call is detached from later mutations.
+          const parsedInput = meta.json.push(delta.partial_json ?? "") ?? {};
           toolCallsByBlockIndex.set(index, {
-            id: meta.id ?? "",
-            name: meta.name ?? "",
+            id: meta.id,
+            name: meta.name,
             input: sanitizeToolArgs(parsedInput) as Record<string, unknown>,
           });
           emit({
@@ -258,16 +268,10 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
       const index = event.index as number;
       const meta = blockMeta.get(index);
       if (meta?.type === "tool_use") {
-        let finalInput: Record<string, unknown>;
-        try {
-          finalInput = JSON.parse(meta.json);
-        } catch {
-          finalInput = (parsePartialJson(meta.json) as Record<string, unknown>) ?? {};
-        }
-        const id = meta.id ?? "";
+        const finalInput = meta.json.finishObject();
         toolCallsByBlockIndex.set(index, {
-          id,
-          name: meta.name ?? "",
+          id: meta.id,
+          name: meta.name,
           input: sanitizeToolArgs(finalInput) as Record<string, unknown>,
         });
         emit({

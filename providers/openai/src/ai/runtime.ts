@@ -15,5 +15,6 @@
 
 export * from "./common/OpenAI_CacheCheckpoint";
 export * from "./common/OpenAI_Client";
+export * from "./common/OpenAI_EffortPolicy";
 export * from "./registerOpenAiInline";
 export * from "./registerOpenAiWorker";

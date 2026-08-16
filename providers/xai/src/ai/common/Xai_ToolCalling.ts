@@ -18,7 +18,7 @@ import {
   OPENAI_STREAM_USAGE_OPTIONS,
 } from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, toOpenAIMessages } from "@workglow/ai/worker";
-import { getClient, getModelName } from "./Xai_Client";
+import { getClient, getModelName, getXaiReasoningEffort } from "./Xai_Client";
 import type { XaiModelConfig } from "./Xai_ModelSchema";
 
 /**
@@ -42,6 +42,7 @@ export const Xai_ToolCalling_Stream: AiProviderRunFn<
   const tools = buildOpenAITools(input.tools);
   const messages = toOpenAIMessages(input);
   const toolChoice = mapOpenAIToolChoice(input.toolChoice, true);
+  const reasoningEffort = getXaiReasoningEffort(model);
 
   const stream = await client.chat.completions.create(
     {
@@ -52,6 +53,7 @@ export const Xai_ToolCalling_Stream: AiProviderRunFn<
       stream: true,
       tools,
       tool_choice: toolChoice,
+      ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
       ...OPENAI_STREAM_USAGE_OPTIONS,
     },
     { signal }

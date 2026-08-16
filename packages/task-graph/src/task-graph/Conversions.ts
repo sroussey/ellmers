@@ -6,6 +6,7 @@
 
 import type { IExecuteContext, ITask } from "../task/ITask";
 import { Task } from "../task/Task";
+import { TaskConfigurationError } from "../task/TaskError";
 import type { DataPorts } from "../task/TaskTypes";
 import type { ITaskGraph } from "./ITaskGraph";
 import type { IWorkflow } from "./IWorkflow";
@@ -123,13 +124,27 @@ export function ensureTask<I extends DataPorts, O extends DataPorts>(
   arg: Taskish<I, O>,
   config: any = {}
 ): ITask<any, any, any> {
-  if (arg instanceof Task) {
-    return arg;
-  }
   // `isOwned` is a wrapper-construction flag, not task config: every branch
   // below has to keep it out of the config it forwards, or `Task`'s config
   // validation rejects the unknown property.
-  const { isOwned, ...cleanConfig } = config;
+  const { isOwned, ...cleanConfig } = config ?? {};
+  if (arg instanceof Task) {
+    // Only the branches below *construct* a task, so only they have somewhere
+    // to put a config. An instance arrives already built and validated against
+    // its own `configSchema()`, and merging into it afterwards would skip that
+    // validation, desync the frozen `originalConfig` that `toJSON` reads, and —
+    // for `id` — rename a node the DAG has already keyed. So it cannot be
+    // honored; say so instead of dropping it. `own()` and `addTask()` type this
+    // out of reach, but both are reachable through a cast.
+    const ignored = Object.keys(cleanConfig);
+    if (ignored.length > 0) {
+      throw new TaskConfigurationError(
+        `ensureTask(): ${arg.type} is already a task, so config (${ignored.join(", ")}) cannot be applied. ` +
+          `Pass it to the constructor, or use setTitle() to relabel a reused instance.`
+      );
+    }
+    return arg;
+  }
   if (arg instanceof TaskGraph) {
     return graphWrapperFactory()({
       subGraph: arg,

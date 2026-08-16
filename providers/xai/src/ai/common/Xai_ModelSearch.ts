@@ -11,8 +11,10 @@ import type {
   ModelSearchTaskOutput,
 } from "@workglow/ai";
 import { filterLabeledModelsByQuery } from "@workglow/ai/provider-utils";
+import { stampEffortOptions } from "@workglow/ai/worker";
 import { getClient } from "./Xai_Client";
 import { XAI } from "./Xai_Constants";
+import { xaiEffortPolicy } from "./Xai_EffortPolicy";
 
 interface XaiModelListItem {
   readonly label: string;
@@ -58,15 +60,18 @@ function mapModelList(models: XaiModelListItem[]): ModelSearchResultItem[] {
       id: m.value,
       label: m.label,
       description: m.description ?? "",
-      record: {
-        model_id: m.value,
-        provider: XAI,
-        title: m.value,
-        description: "",
-        capabilities: imageEntry?.capabilities ?? [],
-        provider_config: { model_name: m.value },
-        metadata: {},
-      },
+      record: stampEffortOptions(
+        {
+          model_id: m.value,
+          provider: XAI,
+          title: m.value,
+          description: "",
+          capabilities: imageEntry?.capabilities ?? [],
+          provider_config: { model_name: m.value },
+          metadata: {},
+        },
+        xaiEffortPolicy({ provider: XAI, provider_config: { model_name: m.value } })
+      ),
       raw: m,
     };
   });

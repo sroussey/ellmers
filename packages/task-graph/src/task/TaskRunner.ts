@@ -23,7 +23,7 @@ import type { Taskish } from "../task-graph/Conversions";
 import { ensureTask } from "../task-graph/Conversions";
 import { CacheCoordinator } from "./CacheCoordinator";
 import { resolveSchemaInputs, schemaHasFormatAnnotations } from "./InputResolver";
-import type { IRunConfig, ITask } from "./ITask";
+import type { ConfigNotApplicableToAnExistingTask, IRunConfig, ITask } from "./ITask";
 import type { ITaskRunner } from "./ITaskRunner";
 import type { BinaryRefSink, StreamSink } from "./StreamProcessor";
 import { StreamProcessor } from "./StreamProcessor";
@@ -34,6 +34,7 @@ import {
   getPortStreamMode,
   getStreamingPorts,
   isDeltaStreamMode,
+  isStreamConsumer,
   isTaskStreamable,
   portForcesStreamValidation,
 } from "./StreamTypes";
@@ -98,9 +99,9 @@ function isOwnTrackable(i: unknown): i is object {
 }
 
 /**
- * Adapts the legacy single-binary-port sink map to the unified per-port
- * {@link StreamSink} shape: a binary-mode sink is exactly a
- * {@link BinaryRefSink} with its mode named.
+ * Adapts the binary-only sink map to the unified per-port {@link StreamSink}
+ * shape: a binary-mode sink is exactly a {@link BinaryRefSink} with its mode
+ * named.
  */
 function wrapBinarySinks(
   sinks: ReadonlyMap<string, BinaryRefSink> | undefined
@@ -215,6 +216,46 @@ export class TaskRunner<
   private readonly ownedUsageUnsubs = new Map<object, () => void>();
 
   /**
+   * What {@link resolveSchemas} rewrote on `task.runInputData` last run, per
+   * port: the value it wrote and the value it read.
+   *
+   * Input resolution writes back **in place** — the resolved value replaces the
+   * reference id on the very port it was read from — and `run()` *merges*
+   * overrides into `runInputData` rather than resetting it (`Task.setInput`
+   * skips `undefined` and leaves absent keys untouched; nothing in
+   * `run()`/`runPreview()` calls `resetInputData`). So a second standalone run
+   * of the same instance re-resolves whatever the first run left behind.
+   *
+   * That is harmless for every resolver but one, because they are idempotent:
+   * `model` / `mcp-server` / storage resolvers turn a string id into an object
+   * and ignore a non-string on the next pass. `format: "credential"` is the
+   * lossy exception — it resolves string → string, and a store miss yields
+   * `undefined` rather than the id (deliberately: echoing the id would send a
+   * credential's *name* as its *value*). Re-resolving a secret therefore looks
+   * the secret up as if it were a key, misses, and blanks the port — a
+   * fail-closed task then throws on run 2, and `FetchUrlTask` silently sends
+   * the request with no `Authorization` header at all.
+   *
+   * The config path escapes this by re-resolving from the frozen
+   * `originalConfig` snapshot. Inputs have no frozen original — direct
+   * `task.runInputData = {...}` assignment and `copyInputFromEdgesToNode` both
+   * write it between runs — so instead of restoring a whole snapshot, each
+   * rewritten port remembers its source and is reverted **only when it still
+   * holds exactly the value this runner put there** (`Object.is`). A graph run
+   * (whose `resetGraph` → `resetTask` → `resetInputData` already put the raw id
+   * back), an override supplied to `run()`, and a caller's own assignment all
+   * fail that identity check and are left alone.
+   *
+   * A store miss is memoized too (`{ resolved: undefined, original: "key" }`),
+   * so a store that was locked during run 1 and unlocked before run 2 resolves
+   * on run 2 instead of failing identically forever.
+   */
+  private readonly resolvedInputOrigins = new Map<
+    string,
+    { resolved: unknown; original: unknown }
+  >();
+
+  /**
    * True when `this.resourceScope` was auto-created by `run()` (caller did not
    * pass one in `config`). The flag is used by `own()` so that an auto-owned
    * scope is not stamped into a child task's long-lived `runConfig` — that
@@ -319,7 +360,7 @@ export class TaskRunner<
           throw new TaskAbortedError("Promise for task created and aborted before run");
         }
 
-        const isStreamable = isTaskStreamable(this.task);
+        const isStreamable = isTaskStreamable(this.task) || isStreamConsumer(this.task);
 
         // Warn if schema declares streaming but executeStream is not implemented
         if (!isStreamable && typeof this.task.executeStream !== "function") {
@@ -397,10 +438,10 @@ export class TaskRunner<
         if (outputs === undefined) {
           // Under the no-accumulation opt-in, build per-port sinks for EVERY
           // streamable mode (append/object/binary) via the port-aware backing;
-          // otherwise fall back to the legacy single-binary-port sink (adapted
-          // to the same StreamSink shape). Both run memory-bounded; the runtime
-          // threshold controls whether the resulting CacheRef survives in
-          // Output or is rehydrated inline below.
+          // otherwise build them for the binary ports only (adapted to the same
+          // StreamSink shape) — that mode streams to cache unflagged. Both run
+          // memory-bounded; the runtime threshold controls whether the
+          // resulting CacheRef survives in Output or is rehydrated inline below.
           const portSinks =
             isStreamable && this.noAccumulation === true
               ? this.cacheCoordinator.getRefSinksByPolicy(
@@ -424,21 +465,39 @@ export class TaskRunner<
               : undefined);
 
           // A streamable task with delta-mode output ports, a cache in play,
-          // and no sink resolved has nowhere to route those deltas. If
-          // accumulation is also off — the graph opted the task out expecting
-          // a sink, but the policy resolved to none here (a private policy
-          // without a usable slot, or a stream-wired run downgraded above) —
-          // the deltas would be silently discarded and the task would return
-          // (and cache!) an empty output. Force accumulation so the task
-          // still materializes its own output. Cache-off runs keep the
-          // documented raw-finish contract: with no cache configured,
-          // shouldAccumulate=false means every consumer takes the live stream
-          // and the raw `{}` finish is intentional.
+          // and no sink resolved has nowhere to route those deltas. Force
+          // accumulation UNLESS we positively know it's safe to skip: a
+          // downstream edge takes the live raw stream directly
+          // (hasStreamingConsumers === true) AND nothing else needs a
+          // materialized value AND the task itself is not cacheable (so no row
+          // will ever be written from it either) — the same "every consumer
+          // takes the live stream" contract the cache-off case below already
+          // relies on. `hasMaterializingConsumers` / `hasStreamingConsumers`
+          // are both computed from dataflow edges (a leaf task has none, so
+          // BOTH read false) — a task can lack any downstream edge at all and
+          // still have its output read directly (e.g. a leaf inside
+          // GraphAsTask's subgraph, whose finish.data is read straight off the
+          // task result — no consumer edge to analyze) or be cacheable with an
+          // unresolved sink for reasons the edge analysis cannot see (a
+          // private policy without a usable slot, a stream-wired run
+          // downgraded above, or a backing that doesn't implement
+          // `saveOutputStreamPort`). In any of those cases the deltas would be
+          // silently discarded and the task would return (and cache!) an
+          // empty output. Accumulating when uncertain costs memory, which is
+          // recoverable; skipping it when wrong loses data silently, which is
+          // not — so default to accumulating and require an affirmative
+          // "someone is taking the raw stream" signal to skip it. Cache-off
+          // runs keep the documented raw-finish contract untouched: with no
+          // cache configured, shouldAccumulate=false means every consumer
+          // takes the live stream and the raw `{}` finish is intentional.
           if (
             isStreamable &&
             refSinks === undefined &&
             this.cacheRegistry !== undefined &&
             !ctx.shouldAccumulate &&
+            (config.hasMaterializingConsumers === true ||
+              this.task.cacheable ||
+              config.hasStreamingConsumers !== true) &&
             getStreamingPorts(this.task.outputSchema()).some((p) => isDeltaStreamMode(p.mode))
           ) {
             ctx.shouldAccumulate = true;
@@ -447,6 +506,7 @@ export class TaskRunner<
           outputs = isStreamable
             ? await this.streamProcessor.run(inputs, ctx, {
                 registry: this.registry,
+                cacheRegistry: this.cacheRegistry,
                 resourceScope: this.resourceScope,
                 inputStreams: this.inputStreams,
                 onProgress: this.handleProgress.bind(this),
@@ -947,7 +1007,14 @@ export class TaskRunner<
     return this.task.subGraph.getTask(wrapper.id) !== undefined;
   }
 
-  protected own<T extends Taskish<any, any>>(i: T, config: TaskConfig = {}): T {
+  // Wider than the {@link IExecuteContext.own} signature callers see, which
+  // refuses a config for an argument that is already an `ITask` (nothing would
+  // apply it). This one stays uniform over `Taskish` so the runner has a single
+  // body; `ensureTask` enforces the rule for whatever reaches here past a cast.
+  protected own<T extends Taskish<any, any>>(
+    i: T,
+    config: TaskConfig | ConfigNotApplicableToAnExistingTask = {}
+  ): T {
     const trackable = isOwnTrackable(i);
     if (trackable) {
       // `ensureTask` returns a plain ITask as-is, so owning one twice throws on
@@ -1071,6 +1138,13 @@ export class TaskRunner<
    * {@link ownedWrappers}. A value this runner never owned is a no-op, so
    * disowning after an `own` that was an identity no-op against a stub context
    * is harmless.
+   *
+   * Every per-child record `own` created is dropped here, not just the subgraph
+   * node — {@link ownedSinkStamps} is a strong Map keyed by the child, so a
+   * stamp left behind pins that child (and its whole subgraph) until the
+   * PARENT's run ends. For a sweep that owns one child per work item that is
+   * the entire worklist retained in memory, which is precisely the retention
+   * `disown` exists to prevent.
    */
   protected disown<T extends Taskish<any, any>>(i: T): void {
     if (!isOwnTrackable(i)) return;
@@ -1083,6 +1157,16 @@ export class TaskRunner<
     if (off) {
       off();
       this.ownedUsageUnsubs.delete(i);
+    }
+    // Restore before dropping, exactly as `run()`'s `finally` does: the child
+    // is no longer owned, so it must not keep carrying this run's sinks into a
+    // later standalone `child.run()`.
+    if (hasRunConfig(i)) {
+      const prior = this.ownedSinkStamps.get(i);
+      if (prior !== undefined) {
+        Object.assign(i.runConfig, prior);
+        this.ownedSinkStamps.delete(i);
+      }
     }
     if (!this.isStillOwned(wrapper)) return;
     this.task.subGraph.removeTask(wrapper.id);
@@ -1098,6 +1182,7 @@ export class TaskRunner<
       own: this.own,
       disown: this.disown,
       registry: this.registry,
+      cacheRegistry: this.cacheRegistry,
       resourceScope: this.resourceScope,
       runId: this.runId,
     });
@@ -1119,7 +1204,9 @@ export class TaskRunner<
    * Resolves config and input schema annotations (e.g. mcp-server references)
    * by mutating task.config and task.runInputData. Always resolves config from
    * originalConfig so re-runs use the original string IDs, not previously resolved
-   * objects. Shared between run() and runPreview() to avoid duplication.
+   * objects; inputs get the same guarantee from the per-port revert memo in
+   * {@link resolvedInputOrigins}. Shared between run() and runPreview() to avoid
+   * duplication.
    */
   private async resolveSchemas(): Promise<void> {
     const configSchema = (this.task.constructor as typeof Task).configSchema();
@@ -1138,11 +1225,26 @@ export class TaskRunner<
     // the instance; the static schema has no format annotations and would skip hydration.
     const ctor = this.task.constructor as typeof Task;
     const schema = ctor.hasDynamicSchemas ? this.task.inputSchema() : ctor.inputSchema();
-    this.task.runInputData = (await resolveSchemaInputs(
-      this.task.runInputData as Record<string, unknown>,
-      schema,
-      { registry: this.registry }
-    )) as Input;
+
+    // Revert the ports this runner rewrote last time, but only where they still
+    // hold exactly the value it put there — see {@link resolvedInputOrigins}.
+    const source = { ...(this.task.runInputData as Record<string, unknown>) };
+    for (const [port, memo] of this.resolvedInputOrigins) {
+      if (Object.is(source[port], memo.resolved)) source[port] = memo.original;
+    }
+
+    const resolved = (await resolveSchemaInputs(source, schema, {
+      registry: this.registry,
+    })) as Record<string, unknown>;
+
+    this.resolvedInputOrigins.clear();
+    for (const port of Object.keys(source)) {
+      if (!Object.is(resolved[port], source[port])) {
+        this.resolvedInputOrigins.set(port, { resolved: resolved[port], original: source[port] });
+      }
+    }
+
+    this.task.runInputData = resolved as Input;
   }
 
   /**

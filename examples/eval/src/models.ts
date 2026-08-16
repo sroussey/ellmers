@@ -129,15 +129,21 @@ const GEMINI_PRICING: Record<string, ModelPricing | undefined> = {
   },
 };
 
+const XAI_GROK_4_PRICING: ModelPricing = {
+  currency: "USD",
+  input: 2,
+  output: 6,
+  cached: 0.5,
+  cacheWrite: undefined,
+  cacheStoragePerHour: undefined,
+};
+
 const XAI_PRICING: Record<string, ModelPricing | undefined> = {
-  "grok-4.6": {
-    currency: "USD",
-    input: 2,
-    output: 6,
-    cached: 0.5,
-    cacheWrite: undefined,
-    cacheStoragePerHour: undefined,
-  },
+  "grok-4.6": XAI_GROK_4_PRICING,
+  // Same rate card as 4.6. Both are live ids in the provider's fallback list,
+  // and a model the search offers but the table cannot price drops out of the
+  // cost comparison the harness exists to produce.
+  "grok-4.5": XAI_GROK_4_PRICING,
 };
 
 /** Cache-miss input price — every extraction section is a distinct prompt. */

@@ -510,6 +510,104 @@ describe("StructuredGenerationTask — usage aggregation", () => {
     }
   });
 
+  it("reports the tokens every failed attempt billed on the thrown error", async () => {
+    // The all-attempts-failed path is the most expensive outcome the task has:
+    // three billed requests and no result. Reporting nothing for it would make
+    // a schema-flaky model look cheaper than one that answers correctly.
+    const { unregister } = registerUsageProvider([
+      { payload: { name: "Alice", age: "thirty" }, usage: mkUsage({ input: 50, output: 8 }) },
+      { payload: { name: "Alice", age: "forty" }, usage: mkUsage({ input: 60, output: 9 }) },
+      { payload: { name: "Alice", age: "fifty" }, usage: mkUsage({ input: 70, output: 10 }) },
+    ]);
+    try {
+      const input = {
+        model: mkModel(),
+        prompt: "Give me a person",
+        outputSchema: PERSON_SCHEMA,
+        maxRetries: 2, // 3 total attempts, all failing
+      };
+      const task = new StructuredGenerationTask({ defaults: input } as any);
+      let caught: unknown;
+      try {
+        await drain(task.executeStream(input as any, mkContext()));
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(StructuredOutputValidationError);
+      const err = caught as StructuredOutputValidationError;
+      expect(err.attempts).toHaveLength(3);
+      expect(err.usage).toEqual(mkUsage({ input: 180, output: 27 }));
+    } finally {
+      unregister();
+    }
+  });
+
+  it("emits the failed run's total as a usage snapshot before throwing", async () => {
+    // No `finish` reaches the consumer on this path, so the snapshot is the
+    // only thing that puts the spend in front of the run's usage sinks.
+    const { unregister } = registerUsageProvider([
+      { payload: { name: "Alice", age: "thirty" }, usage: mkUsage({ input: 50, output: 8 }) },
+      { payload: { name: "Alice", age: "forty" }, usage: mkUsage({ input: 60, output: 9 }) },
+    ]);
+    try {
+      const input = {
+        model: mkModel(),
+        prompt: "Give me a person",
+        outputSchema: PERSON_SCHEMA,
+        maxRetries: 1, // 2 total attempts, both failing
+      };
+      const task = new StructuredGenerationTask({ defaults: input } as any);
+      const seen: Array<{ type: string; usage?: Usage }> = [];
+      await expect(
+        (async () => {
+          for await (const event of task.executeStream(input as any, mkContext())) {
+            seen.push(event as { type: string; usage?: Usage });
+          }
+        })()
+      ).rejects.toBeInstanceOf(StructuredOutputValidationError);
+
+      expect(seen.some((e) => e.type === "finish")).toBe(false);
+      const snapshots = seen.filter((e) => e.type === "usage");
+      expect(snapshots).toHaveLength(1);
+      // Cumulative, not per-attempt: the consumer replaces on each snapshot.
+      expect(snapshots[0].usage).toEqual(mkUsage({ input: 110, output: 17 }));
+      expect(seen[seen.length - 1]).toBe(snapshots[0]);
+    } finally {
+      unregister();
+    }
+  });
+
+  it("emits no usage snapshot when a failed run reported no tokens", async () => {
+    // `undefined` means "not reported" — a zeroed snapshot would state that the
+    // failed attempts were free.
+    const { unregister } = registerUsageProvider([
+      { payload: { name: "Alice", age: "thirty" }, usage: undefined },
+    ]);
+    try {
+      const input = {
+        model: mkModel(),
+        prompt: "Give me a person",
+        outputSchema: PERSON_SCHEMA,
+        maxRetries: 0,
+      };
+      const task = new StructuredGenerationTask({ defaults: input } as any);
+      const seen: Array<{ type: string }> = [];
+      let caught: unknown;
+      try {
+        for await (const event of task.executeStream(input as any, mkContext())) {
+          seen.push(event as { type: string });
+        }
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(StructuredOutputValidationError);
+      expect((caught as StructuredOutputValidationError).usage).toBeUndefined();
+      expect(seen.some((e) => e.type === "usage")).toBe(false);
+    } finally {
+      unregister();
+    }
+  });
+
   it("leaves no usage key when the provider reported none", async () => {
     const { unregister } = registerUsageProvider([
       { payload: { name: "Alice", age: 30 }, usage: undefined },

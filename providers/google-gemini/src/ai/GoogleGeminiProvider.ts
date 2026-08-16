@@ -5,11 +5,17 @@
  */
 
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
-import type { Capability, ModelRecord, SessionDisposalResult } from "@workglow/ai/worker";
+import type {
+  Capability,
+  ModelEffortPolicy,
+  ModelRecord,
+  SessionDisposalResult,
+} from "@workglow/ai/worker";
 import { AiProvider } from "@workglow/ai/worker";
 import { deleteGeminiCachedContent } from "./common/Gemini_CacheStore";
 import { geminiWorkerRunFnSpecs, inferGeminiCapabilities } from "./common/Gemini_Capabilities";
 import { GOOGLE_GEMINI } from "./common/Gemini_Constants";
+import { geminiEffortPolicy } from "./common/Gemini_EffortPolicy";
 import type { GeminiModelConfig } from "./common/Gemini_ModelSchema";
 
 /**
@@ -28,6 +34,10 @@ export class GoogleGeminiProvider extends createCloudProviderClass<GeminiModelCo
 }) {
   override inferCapabilities(model: ModelRecord): readonly Capability[] {
     return inferGeminiCapabilities(model);
+  }
+
+  override effortPolicy(model: GeminiModelConfig): ModelEffortPolicy | undefined {
+    return geminiEffortPolicy(model);
   }
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
