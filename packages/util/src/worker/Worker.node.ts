@@ -32,8 +32,7 @@ export class WorkerServer extends WorkerServerBase {
     parentPort?.addEventListener("message", async (event) => {
       const msg = {
         type: event.type,
-        // @ts-expect-error - Ignore type mismatch between standard MessageEvent and our message type
-        data: event.data,
+        data: (event as unknown as { readonly data: unknown }).data,
       };
       await this.handleMessage(msg);
     });
