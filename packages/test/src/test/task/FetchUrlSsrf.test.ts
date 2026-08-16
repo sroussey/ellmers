@@ -22,6 +22,7 @@ import {
 } from "@workglow/task-graph";
 import {
   classifyUrl,
+  FetchUrlErrorCode,
   FetchUrlTask,
   getSafeFetchImpl,
   registerSafeFetch,
@@ -484,6 +485,17 @@ describe("defaultSafeFetch cross-origin redirect header strip", () => {
     return out;
   };
 
+  /** The body the mock received on call `index` (0-based). */
+  const bodyOnCall = (index: number): unknown =>
+    (fetchMock.mock.calls[index]?.[1] as { body?: unknown } | undefined)?.body;
+
+  /** The method the mock received on call `index` (0-based). */
+  const methodOnCall = (index: number): string | undefined =>
+    (fetchMock.mock.calls[index]?.[1] as { method?: string } | undefined)?.method;
+
+  /** A body carrying a secret that must never reach a redirect target. */
+  const SECRET_BODY = JSON.stringify({ client_secret: "sk-body-secret-1234567890" });
+
   beforeEach(() => {
     prevSafeFetch = getSafeFetchImpl();
     resetSafeFetch();
@@ -615,6 +627,136 @@ describe("defaultSafeFetch cross-origin redirect header strip", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[2]?.[0]).toBe("https://api.vendor.example/final");
     expect(headersOnCall(2).authorization).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // Method / body handling across a redirect. Stripping the credential HEADER
+  // does nothing for a credential in the request BODY: a POST carrying
+  // `client_secret` was re-POSTed verbatim to whatever origin the Location
+  // named.
+  // -------------------------------------------------------------------------
+
+  test("a 303 downgrades a POST to a bodiless GET and drops the body headers", async () => {
+    // RFC 9110: 303 means "fetch the result with GET". Leaving Content-Length
+    // on a request that now has no body makes the transport state a length no
+    // body satisfies.
+    fetchMock
+      .mockResolvedValueOnce(redirect("https://attacker.example/", 303))
+      .mockResolvedValueOnce(ok());
+
+    await safeFetch("https://api.vendor.example/x", {
+      method: "POST",
+      body: SECRET_BODY,
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": String(SECRET_BODY.length),
+        "X-Trace-Id": "trace-1",
+      },
+    });
+
+    expect(methodOnCall(1)).toBe("GET");
+    expect(bodyOnCall(1)).toBeUndefined();
+    expect(headersOnCall(1)["content-type"]).toBeUndefined();
+    expect(headersOnCall(1)["content-length"]).toBeUndefined();
+    // Targeted, not a blanket wipe.
+    expect(headersOnCall(1)["x-trace-id"]).toBe("trace-1");
+  });
+
+  test("a cross-origin 302 on a POST downgrades to a bodiless GET", async () => {
+    fetchMock
+      .mockResolvedValueOnce(redirect("https://attacker.example/", 302))
+      .mockResolvedValueOnce(ok());
+
+    await safeFetch("https://api.vendor.example/x", {
+      method: "POST",
+      body: SECRET_BODY,
+      headers: { "Content-Type": "application/json" },
+    });
+
+    expect(methodOnCall(1)).toBe("GET");
+    expect(bodyOnCall(1)).toBeUndefined();
+    expect(headersOnCall(1)["content-type"]).toBeUndefined();
+  });
+
+  test("a same-origin 302 on a POST downgrades to a bodiless GET too", async () => {
+    // The POST -> GET rewrite is not a cross-origin defense, it is what the
+    // Fetch spec, browsers, curl -L and undici's own follow mode all do.
+    fetchMock
+      .mockResolvedValueOnce(redirect("https://api.vendor.example/x/v2", 302))
+      .mockResolvedValueOnce(ok());
+
+    await safeFetch("https://api.vendor.example/x", {
+      method: "POST",
+      body: SECRET_BODY,
+      headers: { "Content-Type": "application/json" },
+    });
+
+    expect(methodOnCall(1)).toBe("GET");
+    expect(bodyOnCall(1)).toBeUndefined();
+  });
+
+  test("a cross-origin 307 carrying a body is refused rather than replayed", async () => {
+    // 307/308 preserve method and body by definition, so there is no downgrade
+    // that still performs the caller's write. Refusing is the only answer that
+    // neither leaks the body nor reports a write that never happened.
+    fetchMock.mockResolvedValueOnce(redirect("https://attacker.example/", 307));
+
+    const error = await safeFetch("https://api.vendor.example/x", {
+      method: "POST",
+      body: SECRET_BODY,
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(PermanentJobError);
+    expect((error as { code?: string }).code).toBe(FetchUrlErrorCode.REDIRECT_BODY_NOT_REPLAYED);
+    // The refusal happens before the second hop is issued at all.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("a same-origin 307 still replays method and body", async () => {
+    // Anti-regression: refusing every 307 would break same-origin APIs that
+    // redirect a write within their own origin.
+    fetchMock
+      .mockResolvedValueOnce(redirect("https://api.vendor.example/x/v2", 307))
+      .mockResolvedValueOnce(ok());
+
+    await safeFetch("https://api.vendor.example/x", {
+      method: "POST",
+      body: SECRET_BODY,
+      headers: { "Content-Type": "application/json" },
+    });
+
+    expect(methodOnCall(1)).toBe("POST");
+    expect(bodyOnCall(1)).toBe(SECRET_BODY);
+    expect(headersOnCall(1)["content-type"]).toBe("application/json");
+  });
+
+  for (const status of [301, 302, 303] as const) {
+    test(`a ${status} never replays the request body to the redirect target`, async () => {
+      fetchMock
+        .mockResolvedValueOnce(redirect("https://attacker.example/", status))
+        .mockResolvedValueOnce(ok());
+
+      await safeFetch("https://api.vendor.example/x", {
+        method: "POST",
+        body: SECRET_BODY,
+        headers: { "Content-Type": "application/json" },
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(String(bodyOnCall(1) ?? "")).not.toContain("client_secret");
+      expect(JSON.stringify(fetchMock.mock.calls[1])).not.toContain("client_secret");
+    });
+  }
+
+  test("a 303 on a GET stays a bodiless GET", async () => {
+    fetchMock
+      .mockResolvedValueOnce(redirect("https://api.vendor.example/x/v2", 303))
+      .mockResolvedValueOnce(ok());
+
+    await safeFetch("https://api.vendor.example/x");
+
+    expect(methodOnCall(1)).toBe("GET");
+    expect(bodyOnCall(1)).toBeUndefined();
   });
 });
 
