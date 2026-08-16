@@ -100,7 +100,7 @@
  *
  * 5-8 bits are deliberately left uncorrected: the residual bias is already at or below the
  * estimator's own noise there, and the table build cost scales as `levels^2`. See
- * {@link MAX_CORRECTED_BITS}.
+ * {@link TURBO_MAX_CORRECTED_BITS}.
  *
  * THE COST IS VARIANCE NEAR ORTHOGONALITY. Inverting a map whose slope is below 1 amplifies
  * the estimator's noise by `1/g'(0)`, where that slope is shallowest: 1.57x at 1 bit, 1.13x
@@ -111,15 +111,34 @@
  * answer is "unrelated" either way; the bias moved every absolute threshold in one
  * direction.
  *
- * RANKING was never affected — the shrinkage is monotone in the true cosine, so ordering a
- * candidate set was correct before and is correct now. ABSOLUTE THRESHOLDS AND CALIBRATION
- * were, and are what this fixes: a 2-bit `cos > 0.8` cut (an ordinary RAG threshold) used
- * to drop pairs whose real cosine was 0.87.
+ * RANKING IS UNCHANGED BY THE CORRECTION — the shrinkage is monotone in the true cosine and
+ * so is its inverse, so applying it moves every score and moves none past another; turning
+ * it on or off cannot reorder a candidate set. That is a statement about the CORRECTION,
+ * not about how well the estimator's ordering matches the exact cosine's, which is a
+ * separate, measured question — see the ordering bullet under Properties. ABSOLUTE
+ * THRESHOLDS AND CALIBRATION are what this fixes: a 2-bit `cos > 0.8` cut (an ordinary RAG
+ * threshold) used to drop pairs whose real cosine was 0.87.
  *
  * Properties:
  * - Data-oblivious: no training or codebook construction needed
  * - Per-vector: each vector quantized independently (streaming-friendly)
- * - Preserves the RANKING induced by inner products and cosine similarity
+ * - The shrinkage correction is strictly monotone, so it never reorders a candidate set.
+ *   Ordering fidelity against the EXACT cosine is a property of the quantizer, and is not
+ *   perfect at the low widths. Measured over 500 documents at d=1024 (480 background, 10
+ *   planted at true cosine 0.70-0.88, 10 near-misses at 0.30-0.48), seeded:
+ *
+ *   | bits | recall@10 | top-10 order identical | Kendall tau over the top 20 |
+ *   | ---- | --------- | ---------------------- | --------------------------- |
+ *   | 1    | 1.00      | no                     | 0.9368                      |
+ *   | 2    | 1.00      | yes                    | 0.9789                      |
+ *   | 4    | 1.00      | yes                    | 1.0000                      |
+ *   | 8    | 1.00      | yes                    | 1.0000                      |
+ *
+ *   So retrieval of a shortlist is unaffected at every width — the planted set comes back
+ *   whole even at 1 bit — while the ORDER within it is not: 1 bit transposes documents
+ *   inside the top 10, and 2 bits reproduces the top 10 exactly but still transposes a
+ *   pair further down. Rerank with exact vectors if the presented order matters at 1-2
+ *   bits.
  */
 
 import { TensorType } from "./Tensor";
@@ -638,8 +657,17 @@ function getQuantizationParams(
  * measured cold build is 16/21/22 ms at 2/3/4 bits, 56 ms at 5, 84 ms at 6 and 555 ms at
  * 8. Paying half a second on the first 8-bit comparison to correct a bias of 0.0001 is not
  * a trade worth offering.
+ *
+ * EXPORTED because it is a boundary a caller has to act on, not just read about: at or
+ * below it, {@link turboDequantize} plus a plain `cosineSimilarity` returns the
+ * UNCORRECTED estimator and disagrees with {@link turboQuantizedCosineSimilarity}; above
+ * it the two routes are interchangeable. A caller integrating with a scorer that takes
+ * raw vectors needs to branch on that, and reading a docstring and hoping is not a branch.
  */
-const MAX_CORRECTED_BITS = 4;
+export const TURBO_MAX_CORRECTED_BITS = 4;
+
+/** Internal alias for {@link TURBO_MAX_CORRECTED_BITS}; one literal, two names. */
+const MAX_CORRECTED_BITS = TURBO_MAX_CORRECTED_BITS;
 
 /**
  * Standard normal CDF; the only special function the shrinkage map needs.
@@ -850,10 +878,20 @@ export function invertShrinkage(bits: number, estimate: number): number {
  *
  * A zero vector is not an error — it yields an all-zero `values` buffer and a
  * norm of 0.
+ *
+ * `norm` can still be `Infinity` for a FINITE input: max-scaling keeps the accumulator in
+ * range, but the reconstruction `maxAbs * rootS` overflows once the true L2 norm exceeds
+ * `Number.MAX_VALUE`. `values` is exact in that case, so the direction is intact and the
+ * norm-free encoder is unaffected; only a caller that keeps `norm` has a problem, and it
+ * is that caller's entry point ({@link turboQuantize}) that rejects it.
+ *
+ * `maxAbs` is returned so such a caller can report the coordinate magnitude that produced
+ * the overflow rather than only the `Infinity` it became.
  */
 function normalizeToUnit(vector: TypedArray): {
   readonly values: Float64Array;
   readonly norm: number;
+  readonly maxAbs: number;
 } {
   const d = vector.length;
   let maxAbs = 0;
@@ -868,7 +906,7 @@ function normalizeToUnit(vector: TypedArray): {
 
   const values = new Float64Array(d);
   if (maxAbs === 0) {
-    return { values, norm: 0 };
+    return { values, norm: 0, maxAbs };
   }
 
   let sumSquares = 0;
@@ -880,7 +918,7 @@ function normalizeToUnit(vector: TypedArray): {
   for (let i = 0; i < d; i++) {
     values[i] = vector[i] / maxAbs / rootS;
   }
-  return { values, norm: maxAbs * rootS };
+  return { values, norm: maxAbs * rootS, maxAbs };
 }
 
 /**
@@ -1011,7 +1049,22 @@ export function turboQuantize(
   assertDimensions(d);
 
   // Step 1: Compute norm and normalize
-  const { values, norm } = normalizeToUnit(vector);
+  const { values, norm, maxAbs } = normalizeToUnit(vector);
+  // A finite input can still have a norm no double holds: `normalizeToUnit` keeps the
+  // accumulator in range, but the reconstruction `maxAbs * rootS` overflows above
+  // Number.MAX_VALUE. Rejected here rather than returned, because every read path
+  // (`turboDequantize`, both similarity helpers) checks `norm` and throws on the record
+  // this would otherwise produce — a write that can never be read back.
+  if (!Number.isFinite(norm)) {
+    throw new Error(
+      `TurboQuant cannot encode this vector: its true L2 norm is not representable as a double ` +
+        `(largest absolute coordinate ${maxAbs}, norm overflows to ${norm}), and the record's ` +
+        `\`norm\` field is what every read path rescales by. Prescale the input — cosine ` +
+        `similarity is scale-free, so dividing every coordinate by a constant changes no ` +
+        `similarity — or use turboQuantizeToTypedArray, which records no norm and handles this ` +
+        `input unchanged.`
+    );
+  }
 
   // Step 2: Random rotation — returns all paddedLen coordinates
   const paddedLen = turboPaddedLength(d);
@@ -1027,7 +1080,7 @@ export function turboQuantize(
   // Step 4: Pack into compact representation
   const packed = packCodes(codes, bits);
 
-  return {
+  const result: TurboQuantizeResult = {
     version: TURBO_QUANTIZE_VERSION,
     codes: packed,
     bits,
@@ -1036,6 +1089,12 @@ export function turboQuantize(
     seed,
     norm,
   };
+  // The structural half of the same guarantee: every record this module hands out passes
+  // the check every reader applies. Today that holds only by coincidence — the encoder and
+  // `assertQuantizeResultShape` are two independent statements of the same invariant — and
+  // the check is O(1) on already-computed scalars, so asserting it costs nothing.
+  assertQuantizeResultShape(result);
+  return result;
 }
 
 /**
@@ -1127,6 +1186,32 @@ function reconstructRotatedCodes(quantized: TurboQuantizeResult): {
  * the recorded scalar, so it costs O(1) and needs no scan of the result. Only the decode is
  * affected: cosine similarity is scale-free, so such a record stays fully comparable through
  * {@link turboQuantizedCosineSimilarity}.
+ *
+ * ## THE OUTPUT IS NOT SHRINKAGE-CORRECTED AT 1-4 BITS
+ *
+ * These are decoded coordinates, and comparing two of them with a plain `cosineSimilarity`
+ * gives the RAW estimator — the one the correction exists to undo. At 1 bit that reads a
+ * true 0.80 as 0.59; at 2-4 bits it is low by less, but low in the same direction and for
+ * the same reason. The corrected number comes from {@link turboQuantizedCosineSimilarity},
+ * or from {@link turboPrepareQuery} + {@link turboPreparedCosineSimilarity} in a search
+ * loop. At 5-8 bits the shrinkage is left uncorrected by design, so there the two routes
+ * ARE interchangeable; that boundary is {@link TURBO_MAX_CORRECTED_BITS}. Pinned by the
+ * test "turboDequantize + plain cosineSimilarity is NOT shrinkage-corrected at 1-4 bits".
+ *
+ * The warning lives here, and not only on {@link turboPrepareQuery}, because this is the
+ * function on the natural integration path: a `Float32Array` is the only output shape an
+ * `IVectorStorage` backend accepts, so a caller wiring turbo into storage reaches this
+ * one — and reaches the prepared-query docs only if they already understood the problem.
+ *
+ * THERE IS DELIBERATELY NO "corrected-compare" HELPER, because it would be a rename. The
+ * correction inverts a map defined on the CODE-DOMAIN ratio `dot / (codeNormA *
+ * codeNormB)`, and this function has already renormalized its output to the recorded
+ * `norm`, destroying that ratio. So any helper taking two {@link TurboQuantizeResult}s and
+ * returning a corrected number IS {@link turboQuantizedCosineSimilarity}. The case that
+ * genuinely needs one — an `IVectorStorage` backend scoring decoded vectors server-side,
+ * with no hook to substitute a scorer — is not fixable in this module at all, and is
+ * tracked in https://github.com/workglow-dev/libs/issues/798 (see the module doc). No
+ * workaround exists for it today.
  *
  * @param quantized - The TurboQuant quantization result
  * @returns Reconstructed vector as Float32Array
@@ -1264,7 +1349,7 @@ function assertComparablePair(a: TurboQuantizeResult, b: TurboQuantizeResult): v
  * "these are unrelated" either way, and both remove a bias that moved every absolute
  * threshold in one direction.
  *
- * 5-8 bits are left alone; see {@link MAX_CORRECTED_BITS}.
+ * 5-8 bits are left alone; see {@link TURBO_MAX_CORRECTED_BITS}.
  *
  * The correction itself lives in {@link finishCosine}, shared with the prepared-query
  * path — the two entry points must return the same number for the same pair, and the only
