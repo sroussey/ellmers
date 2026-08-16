@@ -1,5 +1,137 @@
 # @workglow/task-graph
 
+## 0.3.45
+
+### Breaking Changes
+
+- **bug fixes(task-graph)**: stop clearRun dangling blob refs; restore the publish test gate (#793)
+- **refactors(task-graph)**: always return a Promise from getOutputStreamByRef
+
+### Features
+
+#### task-graph
+
+- publish the run's resolved cache on IExecuteContext
+- recognize stream-consuming sink tasks
+- stream N binary output ports to cache on the unflagged path
+
+### Bug Fixes
+
+#### task-graph
+
+- cover the co-located tests the Promise collapse missed
+- re-resolve credential inputs on a re-run instead of blanking them (#799)
+- stop clearRun dangling blob refs; restore the publish test gate (#793)
+- run a pure stream consumer through the stream pump
+- restore force-accumulate protection for leaf tasks
+- gate force-accumulate on materializing consumers, not streaming ones
+- a non-cacheable task ignores the cache when deciding accumulation
+- add missing override modifier in multi-binary port test
+
+### Refactors
+
+#### task-graph
+
+- always return a Promise from getOutputStreamByRef
+
+#### tasks
+
+- pin response_type at every call site
+
+### Performance
+
+#### task-graph
+
+- delete a run's private cache rows by name, not by scanning
+
+### Tests
+
+#### task-graph
+
+- pin the undeclared-executeStream warning as reachable
+- pin the streaming memory bound
+- resolve accumulation test through the package entry
+- pin the no-sink-and-no-accumulator hole for multi-binary tasks
+- pin the all-or-nothing multi-port cache-ref invariant
+
+### Documentation
+
+#### task-graph
+
+- document cache write ordering, correct the blob-name claim
+- state the ICacheRef.port writer guarantee, and test it
+
+## Unreleased
+
+### Breaking Changes
+
+- **refactor(task-graph)**: `TaskOutputRepository.getOutputStreamByRef` (and
+  `getOutputStreamByRefForRun`) always return a Promise
+
+  Both were declared as a tri-state union —
+  `AsyncIterable<Uint8Array> | undefined | Promise<AsyncIterable<Uint8Array> | undefined>` —
+  which does not compose with `StreamPortCodec.materialize`, whose parameter is the
+  iterable alone. Every consumer had to decide for itself whether a given backing needed
+  awaiting, and the tree had grown two narrowings of the one interface in opposite
+  directions: the concrete repositories overrode it with the synchronous half, while the
+  streaming contract helper declared its own Promise-only version.
+
+  The union also made the await in `streamRefViaBacking` load-bearing by convention
+  rather than by type. That await is what turns an asynchronous backing's dangling ref
+  into `undefined` — a cache miss — instead of a truthy Promise a caller reads as a live
+  stream, and nothing in the signature required it.
+
+  Migration for an implementor: mark the method `async`. A backing that can answer
+  synchronously still does; the cost is one microtask per ref, not per chunk. Callers
+  that were relying on the synchronous return must `await` it — including in assertions,
+  where `expect(repo.getOutputStreamByRef(ref)).toBeDefined()` previously passed for a
+  dangling ref, because a Promise is always defined.
+
+## 0.3.44
+
+### Bug Fixes
+
+#### task-graph
+
+- stop caching ConditionalTask and cover unfed branch ports
+- derive branch ports for conditionConfig-driven ConditionalTask
+
+## 0.3.43
+
+### Breaking Changes
+
+- **refactors(task-graph)**: collapse the dual streaming writer surfaces
+
+### Refactors
+
+#### task-graph
+
+- collapse the dual streaming writer surfaces
+
+## 0.3.42
+
+## 0.3.41
+
+### Bug Fixes
+
+#### task-graph
+
+- drop the owned-sink stamp on disown
+
+## 0.3.40
+
+### Features
+
+#### cli
+
+- add tests for live iteration graphs in WorkflowRunApp
+
+### Bug Fixes
+
+#### task-graph
+
+- reject own() config for an already-constructed task
+
 ## 0.3.39
 
 ### Features

@@ -62,9 +62,7 @@ export function visibleIterationSlots(
       : Math.min(Math.max(running.length, 1), MAX_RUNNING_ROWS);
   if (running.length >= cap) return running.slice(0, cap);
 
-  const completed = slots
-    .filter((s) => s.status === "completed")
-    .sort((a, b) => b.index - a.index);
+  const completed = slots.filter((s) => s.status === "completed").sort((a, b) => b.index - a.index);
   const out = [...running];
   for (const slot of completed) {
     if (out.length >= cap) break;
@@ -131,9 +129,7 @@ export const FULL_SLOT_TRACKING_MAX = 200;
 /** Hard cap on running rows rendered/retained, independent of concurrency. */
 export const MAX_RUNNING_ROWS = 64;
 
-function visibleIterationGraphsOf(
-  task: ITask
-): Array<{ index: number; graph: TaskGraph }> {
+function visibleIterationGraphsOf(task: ITask): Array<{ index: number; graph: TaskGraph }> {
   const getter = (
     task as { getVisibleIterationGraphs?: () => Array<{ index: number; graph: TaskGraph }> }
   ).getVisibleIterationGraphs;
@@ -289,7 +285,8 @@ export function registerIterationListeners(
   ): void => {
     if (iterationCount <= FULL_SLOT_TRACKING_MAX)
       onProgressFull(index, iterationCount, prog, message, subgraph);
-    else upsertRunning(index, { progress: prog, message, ...(subgraph ? { graph: subgraph } : {}) });
+    else
+      upsertRunning(index, { progress: prog, message, ...(subgraph ? { graph: subgraph } : {}) });
   };
 
   task.events.on("iteration_start", onStart);

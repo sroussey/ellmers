@@ -124,9 +124,7 @@ export function createLlamaCppServerTextGenerationStream(
   };
 }
 
-function promptTextFromMessages(
-  messages: ReadonlyArray<{ readonly content: unknown }>
-): string {
+function promptTextFromMessages(messages: ReadonlyArray<{ readonly content: unknown }>): string {
   const parts: string[] = [];
   for (const message of messages) {
     const content = message.content;

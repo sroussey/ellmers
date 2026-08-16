@@ -46,15 +46,19 @@ async function collect(stream: AsyncIterable<Uint8Array>): Promise<number[]> {
  */
 class RefProducingJob extends Job<SInput, SOutput> {
   public override async execute(input: SInput, _context: IJobExecuteContext): Promise<SOutput> {
-    const file: CacheRef = await repo.saveOutputStream(
+    const file: CacheRef = await repo.saveOutputStreamPort(
       "RefJob",
       { id: input.id },
+      "file",
+      "binary",
       gen(new Uint8Array([10, 20]), new Uint8Array([30])),
       {}
     );
-    const transcript: CacheRef = await repo.saveOutputStream(
+    const transcript: CacheRef = await repo.saveOutputStreamPort(
       "RefJobTranscript",
       { id: input.id },
+      "transcript",
+      "binary",
       gen(new Uint8Array([7])),
       {}
     );

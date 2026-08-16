@@ -77,7 +77,14 @@ beforeEach(() => {
 
 describe("TaskRunner input-side CacheRef hydration", () => {
   it("hydrates a branded ref to a Blob for a format:'blob' input port", async () => {
-    const ref = await repo.saveOutputStream("Up", { n: 1 }, gen(new Uint8Array([1, 2, 3])), {});
+    const ref = await repo.saveOutputStreamPort(
+      "Up",
+      { n: 1 },
+      "file",
+      "binary",
+      gen(new Uint8Array([1, 2, 3])),
+      {}
+    );
     const task = new BlobInputTask();
     await task.run({ bytes: ref }, { registry: services });
 
@@ -87,7 +94,14 @@ describe("TaskRunner input-side CacheRef hydration", () => {
   });
 
   it("hydrates a branded ref to an ArrayBuffer for a format:'binary' input port", async () => {
-    const ref = await repo.saveOutputStream("Up", { n: 2 }, gen(new Uint8Array([4, 5])), {});
+    const ref = await repo.saveOutputStreamPort(
+      "Up",
+      { n: 2 },
+      "file",
+      "binary",
+      gen(new Uint8Array([4, 5])),
+      {}
+    );
     const task = new BinaryInputTask();
     await task.run({ bytes: ref }, { registry: services });
 

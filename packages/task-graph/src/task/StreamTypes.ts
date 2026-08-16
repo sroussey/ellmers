@@ -427,6 +427,24 @@ export function isTaskStreamable(task: {
 }
 
 /**
+ * Determines whether a task CONSUMES a stream: it implements `executeStream()`
+ * and declares a delta-mode (`append` / `object` / `binary`) port on its INPUT
+ * schema.
+ *
+ * Distinct from {@link isTaskStreamable}, which asks whether a task PRODUCES
+ * one. A pure sink — reads a stream, returns a small summary — produces no
+ * stream and would otherwise be handed a fully drained input, which is the
+ * whole cost the stream was avoiding.
+ */
+export function isStreamConsumer(task: {
+  inputSchema(): DataPortSchema;
+  executeStream?: (...args: any[]) => any;
+}): boolean {
+  if (typeof task.executeStream !== "function") return false;
+  return getStreamingPorts(task.inputSchema()).some((p) => isDeltaStreamMode(p.mode));
+}
+
+/**
  * Returns the port ID (property name) of the first output port that declares
  * `x-stream: "append"`, or `undefined` if no such port exists.
  *

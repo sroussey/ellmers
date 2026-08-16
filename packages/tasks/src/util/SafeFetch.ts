@@ -49,6 +49,89 @@ export interface SafeFetchOptions extends RequestInit {
    * port the task was never authorized to reach.
    */
   readonly privateResourceScopes?: readonly string[];
+  /**
+   * Extra request-header names that carry a secret and must be dropped when a
+   * redirect crosses to a different origin. {@link CROSS_ORIGIN_STRIPPED_HEADERS}
+   * is always dropped regardless of this field; this list exists for schemes
+   * that place a credential on a caller-named header (e.g. `X-Api-Key`), which
+   * safeFetch cannot recognize on its own. Matched case-insensitively.
+   */
+  readonly sensitiveHeaders?: readonly string[];
+}
+
+/**
+ * Request headers always dropped on a cross-origin redirect hop. Following a
+ * redirect must not replay ambient authority to a host the caller never chose:
+ * the redirect target is named by the previous server, which may itself be
+ * compromised or attacker-influenced.
+ */
+export const CROSS_ORIGIN_STRIPPED_HEADERS: readonly string[] = [
+  "authorization",
+  "proxy-authorization",
+  "cookie",
+];
+
+/** Origin comparison, so a differing scheme or port also counts as cross-origin. */
+function isCrossOrigin(fromUrl: string, toUrl: string): boolean {
+  try {
+    return new URL(fromUrl).origin !== new URL(toUrl).origin;
+  } catch {
+    // Unparseable on either side: fail closed and strip.
+    return true;
+  }
+}
+
+/**
+ * Returns a copy of `headers` with the credential-bearing entries removed,
+ * preserving the caller's `HeadersInit` shape (`Headers`, entry pairs, or a
+ * plain record). Never mutates its argument.
+ */
+export function stripSensitiveHeaders(
+  headers: HeadersInit | undefined,
+  sensitiveHeaders: readonly string[] | undefined
+): HeadersInit | undefined {
+  if (headers === undefined) return undefined;
+  const extra = new Set((sensitiveHeaders ?? []).map((name) => name.toLowerCase()));
+  const drop = (name: string): boolean => {
+    const lower = name.toLowerCase();
+    return CROSS_ORIGIN_STRIPPED_HEADERS.includes(lower) || extra.has(lower);
+  };
+
+  if (typeof Headers !== "undefined" && headers instanceof Headers) {
+    const next = new Headers();
+    headers.forEach((value, key) => {
+      if (!drop(key)) next.append(key, value);
+    });
+    return next;
+  }
+  if (Array.isArray(headers)) {
+    return headers.filter((entry) => !drop(entry[0] ?? ""));
+  }
+  const next: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers as Record<string, string>)) {
+    if (!drop(key)) next[key] = value;
+  }
+  return next;
+}
+
+/**
+ * Applies {@link stripSensitiveHeaders} to a request init when the next hop is
+ * cross-origin; returns `init` unchanged otherwise.
+ *
+ * Callers thread the result forward as the init for every remaining hop, so a
+ * header stripped once stays stripped for the rest of the chain even if a later
+ * Location returns to the original origin. That is deliberate: restoring it
+ * would let a `vendor -> attacker -> vendor` chain launder the credential back
+ * into a request whose path the attacker chose.
+ */
+export function applyCrossOriginHeaderStrip<T extends { headers?: HeadersInit | undefined }>(
+  init: T,
+  fromUrl: string,
+  toUrl: string,
+  sensitiveHeaders: readonly string[] | undefined
+): T {
+  if (!isCrossOrigin(fromUrl, toUrl)) return init;
+  return { ...init, headers: stripSensitiveHeaders(init.headers, sensitiveHeaders) };
 }
 
 export type SafeFetchFn = (url: string, options: SafeFetchOptions) => Promise<Response>;
@@ -139,9 +222,19 @@ export function isSafeFetchRedirectError(error: unknown): error is FetchUrlJobEr
  */
 async function defaultSafeFetch(url: string, options: SafeFetchOptions): Promise<Response> {
   const requestedRedirectMode = options.redirect ?? "follow";
-  const { allowPrivate, privateResourceScopes, redirect: _redirect, ...fetchOptions } = options;
+  const {
+    allowPrivate,
+    privateResourceScopes,
+    sensitiveHeaders,
+    redirect: _redirect,
+    ...initialFetchOptions
+  } = options;
 
   let currentUrl = url;
+  let fetchOptions: Omit<
+    SafeFetchOptions,
+    "allowPrivate" | "privateResourceScopes" | "sensitiveHeaders" | "redirect"
+  > = initialFetchOptions;
   for (let hops = 0; hops <= MAX_REDIRECT_HOPS; hops += 1) {
     assertAllowedUrl(currentUrl, allowPrivate, privateResourceScopes);
 
@@ -171,7 +264,11 @@ async function defaultSafeFetch(url: string, options: SafeFetchOptions): Promise
       );
     }
 
-    currentUrl = new URL(location, currentUrl).toString();
+    const nextUrl = new URL(location, currentUrl).toString();
+    // Credential-bearing headers never survive an origin change; the strip is
+    // carried forward, so it is never undone by a later same-origin hop.
+    fetchOptions = applyCrossOriginHeaderStrip(fetchOptions, currentUrl, nextUrl, sensitiveHeaders);
+    currentUrl = nextUrl;
   }
 
   throw createFetchUrlJobError(

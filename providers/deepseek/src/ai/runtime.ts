@@ -14,5 +14,6 @@
 // organize-imports-ignore
 
 export * from "./common/DeepSeek_Client";
+export * from "./common/DeepSeek_EffortPolicy";
 export * from "./registerDeepSeekInline";
 export * from "./registerDeepSeekWorker";

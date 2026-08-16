@@ -22,7 +22,7 @@ import { TASK_OUTPUT_REPOSITORY } from "../storage/TaskOutputRepository";
 import { ENTITLEMENT_ENFORCER, formatEntitlementDenial } from "../task/EntitlementEnforcer";
 import type { ITask } from "../task/ITask";
 import type { Usage } from "../task/StreamTypes";
-import { isTaskStreamable } from "../task/StreamTypes";
+import { isStreamConsumer, isTaskStreamable } from "../task/StreamTypes";
 import { Task } from "../task/Task";
 import type { TaskError } from "../task/TaskError";
 import { TaskAbortedError, TaskConfigurationError, TaskEntitlementError } from "../task/TaskError";
@@ -521,12 +521,14 @@ export class TaskGraphRunner {
 
   protected async runTask<T>(task: ITask, input: TaskInput): Promise<GraphSingleTaskResult<T>> {
     const isStreamable = isTaskStreamable(task);
+    const isConsumer = isStreamConsumer(task);
 
     // For pass-through streaming tasks: if the task is streamable and has
     // streaming input edges, tee each stream so one copy is forwarded to
     // the task's executeStream() (via inputStreams) while the other stays
-    // on the edge for materialization by awaitStreamInputs.
-    if (isStreamable) {
+    // on the edge for materialization by awaitStreamInputs. A pure sink
+    // (streams in, summary out) needs the same forwarding.
+    if (isStreamable || isConsumer) {
       this.streamPump.prepareStreamingInputs(task, this.noAccumulation);
     }
 
@@ -554,7 +556,18 @@ export class TaskGraphRunner {
       }
     }
 
-    if (isStreamable) {
+    // Anything that runs `executeStream()` goes through the pump — the same
+    // pair that decided the input preparation above. A pure sink (delta-mode
+    // input port, `executeStream`, no streaming output port) still streams: it
+    // just streams inward. Dispatching it to `runner.run` instead left it
+    // running its stream with none of the graph-level wiring the pump owns —
+    // no `task_stream_start` / `_chunk` / `_end` on the graph, no STREAMING
+    // status pushed to its edges, and no `taskNeedsAccumulation` decision
+    // (`accumulateLeafOutputs` was never consulted for it). Its output ports
+    // are non-streaming, so the pump's own output-side work — the passthrough
+    // edge gates, the per-port stream fan-out — finds nothing to do and costs
+    // nothing.
+    if (isStreamable || isConsumer) {
       return this.streamPump.runStreamingTask<T>(task, input, this.currentCtx!, {
         registry: this.registry,
         outputCache: this.outputCache,

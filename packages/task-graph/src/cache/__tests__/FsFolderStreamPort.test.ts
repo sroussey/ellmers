@@ -54,7 +54,7 @@ describe("FsFolderTaskOutputRepository.saveOutputStreamPort", () => {
     expect(ref.mode).toBe("append");
     expect(ref.size).toBeGreaterThan(0);
 
-    const back = repo.getOutputStreamByRef(ref);
+    const back = await repo.getOutputStreamByRef(ref);
     expect(back).toBeDefined();
     expect(await codec.materialize(back!, "text")).toBe("Bonjour monde");
   });
@@ -75,7 +75,7 @@ describe("FsFolderTaskOutputRepository.saveOutputStreamPort", () => {
       {}
     );
     expect(ref.mode).toBe("object");
-    const back = repo.getOutputStreamByRef(ref);
+    const back = await repo.getOutputStreamByRef(ref);
     expect(await codec.materialize(back!, "items")).toEqual([
       { id: 1, v: "b" },
       { id: 2, v: "c" },
@@ -124,7 +124,7 @@ describe("FsFolderTaskOutputRepository.saveOutputStreamPort", () => {
       {}
     );
     expect(a.$ref).not.toBe(b.$ref);
-    expect(await text.materialize(repo.getOutputStreamByRef(a)!, "text")).toBe("x");
+    expect(await text.materialize((await repo.getOutputStreamByRef(a))!, "text")).toBe("x");
     const blob = await repo.getOutputByRef(b);
     expect(Array.from(new Uint8Array(await blob!.arrayBuffer()))).toEqual([1]);
   });

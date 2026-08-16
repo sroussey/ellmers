@@ -14,6 +14,7 @@
 
 // organize-imports-ignore
 
+export * from "./common/HFT_BackgroundRemoval";
 export * from "./common/HFT_Constants";
 export * from "./common/HFT_Device";
 export * from "./common/HFT_ModelSchema";

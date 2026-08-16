@@ -57,7 +57,9 @@ class RiggedReplayRepo extends TaskOutputRepository {
   corruptRows(row: TaskOutput): void {
     for (const key of this.rows.keys()) this.rows.set(key, row);
   }
-  override getOutputStreamByRef(ref: CacheRef): AsyncIterable<Uint8Array> | undefined {
+  override async getOutputStreamByRef(
+    ref: CacheRef
+  ): Promise<AsyncIterable<Uint8Array> | undefined> {
     const factory = this.refStreams.get(ref.$ref);
     if (!factory) return undefined;
     return factory();

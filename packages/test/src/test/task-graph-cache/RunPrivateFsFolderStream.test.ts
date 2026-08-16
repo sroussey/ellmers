@@ -56,7 +56,6 @@ describe("run-private streaming over an FsFolder backing", () => {
   it("reports streaming capability only for a sidecar-capable backing", () => {
     const streamable = new RunPrivateCacheRepo({ backing, runId: "run-A" });
     expect(streamable.supportsStreaming()).toBe(true);
-    expect(streamable.supportsStreamingPorts()).toBe(true);
     expect(typeof streamable.getOutputStreamByRef).toBe("function");
 
     const tabular = new RunPrivateCacheRepo({
@@ -64,7 +63,6 @@ describe("run-private streaming over an FsFolder backing", () => {
       runId: "run-A",
     });
     expect(tabular.supportsStreaming()).toBe(false);
-    expect(tabular.supportsStreamingPorts()).toBe(false);
     expect(typeof tabular.getOutputStreamByRef).toBe("undefined");
   });
 
@@ -132,7 +130,7 @@ describe("run-private streaming over an FsFolder backing", () => {
     // Run A's row and blob are gone; the ref no longer resolves.
     expect(await repoA.getOutput("T", { p: 1 })).toBeUndefined();
     expect(await repoA.size()).toBe(0);
-    expect(repoA.getOutputStreamByRef!(refA)).toBeUndefined();
+    expect(await repoA.getOutputStreamByRef!(refA)).toBeUndefined();
 
     // Run B is untouched: its row still reads and its blob survives.
     expect(await repoB.getOutput("T", { p: 1 })).toEqual({ ok: "B" });
@@ -142,6 +140,46 @@ describe("run-private streaming over an FsFolder backing", () => {
     // came from run-A must never resolve against run-B, even after the blob
     // (and its run-A rows) are gone.
     expect(await repoB.getOutputStreamByRef!(refA)).toBeUndefined();
+  });
+
+  it("leaves a blob it did not write in place, for the age sweep to reclaim", async () => {
+    const codec = getStreamPortCodec("append");
+    const mk = (t: string): AsyncIterable<Uint8Array> =>
+      codec.encode(fromArray([{ type: "text-delta", port: "text", textDelta: t }]), "text");
+
+    // A blob under run-A's namespace that run-A's wrapper never minted: what a
+    // PREVIOUS process's write looks like to a crash-resumed wrapper. Its row
+    // survives `clearRun()` (the write-set is per-process), so its blob has to
+    // survive too — otherwise the surviving row carries a dangling CacheRef.
+    const foreignRef = await backing.saveOutputStreamPortForRun!(
+      "run-A",
+      "T",
+      { p: "pre-crash" },
+      "text",
+      "append",
+      mk("pre-crash"),
+      {}
+    );
+
+    const repoA = new RunPrivateCacheRepo({ backing, runId: "run-A" });
+    await repoA.saveOutput("T", { p: 1 }, { ok: "A" });
+    const ownRef = await repoA.saveOutputStreamPort!("T", { p: 1 }, "text", "append", mk("A"), {});
+    expect(blobNames(folder)).toHaveLength(2);
+
+    await repoA.clearRun();
+
+    // Only the blob this wrapper minted is gone.
+    expect(await repoA.getOutputStreamByRef!(ownRef)).toBeUndefined();
+    const survived = await repoA.getOutputStreamByRef!(foreignRef);
+    expect(survived).toBeDefined();
+    expect(await codec.materialize(survived!, "text")).toBe("pre-crash");
+    expect(blobNames(folder)).toHaveLength(1);
+
+    // The age sweep is what reclaims it — same story as the surviving rows.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await backing.deleteRunOlderThan("run-A", 0);
+    expect(await repoA.getOutputStreamByRef!(foreignRef)).toBeUndefined();
+    expect(blobNames(folder)).toHaveLength(0);
   });
 
   describe("run-scope enforcement", () => {

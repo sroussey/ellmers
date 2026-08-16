@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Capability, ModelRecord } from "@workglow/ai";
+import type { Capability, ModelEffortPolicy, ModelRecord } from "@workglow/ai";
 import { AiProvider } from "@workglow/ai";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
 import {
@@ -12,6 +12,7 @@ import {
   inferAnthropicCapabilities,
 } from "./common/Anthropic_Capabilities";
 import { ANTHROPIC } from "./common/Anthropic_Constants";
+import { anthropicEffortPolicy } from "./common/Anthropic_EffortPolicy";
 import type { AnthropicModelConfig } from "./common/Anthropic_ModelSchema";
 
 /**
@@ -32,6 +33,10 @@ export class AnthropicQueuedProvider extends createCloudProviderClass<AnthropicM
 ) {
   override inferCapabilities(model: ModelRecord): readonly Capability[] {
     return inferAnthropicCapabilities(model);
+  }
+
+  override effortPolicy(model: AnthropicModelConfig): ModelEffortPolicy | undefined {
+    return anthropicEffortPolicy(model);
   }
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {

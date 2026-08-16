@@ -98,7 +98,9 @@ class StreamPortMemoryRepo extends TaskOutputRepository {
     const bytes = this.blobs.get(ref.$ref);
     return bytes === undefined ? undefined : new Blob([bytes as Uint8Array<ArrayBuffer>]);
   }
-  override getOutputStreamByRef(ref: CacheRef): AsyncIterable<Uint8Array> | undefined {
+  override async getOutputStreamByRef(
+    ref: CacheRef
+  ): Promise<AsyncIterable<Uint8Array> | undefined> {
     const bytes = this.blobs.get(ref.$ref);
     if (bytes === undefined) return undefined;
     return (async function* () {

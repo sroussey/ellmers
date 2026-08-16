@@ -121,12 +121,7 @@ function SubtaskRow({
     );
   }
   return (
-    <SubtaskStatusWithUsage
-      task={task}
-      line={line}
-      iterationSlots={iterationSlots}
-      depth={depth}
-    />
+    <SubtaskStatusWithUsage task={task} line={line} iterationSlots={iterationSlots} depth={depth} />
   );
 }
 
@@ -154,11 +149,7 @@ function SubtaskStatusWithUsage({
         barProgress={line.progress ?? 0}
       />
       {usageLine ? <Text dimColor> {usageLine}</Text> : null}
-      <IterationTaskRows
-        task={task}
-        slots={slots}
-        concurrencyLimit={concurrencyLimitOf(task)}
-      />
+      <IterationTaskRows task={task} slots={slots} concurrencyLimit={concurrencyLimitOf(task)} />
       {depth < MAX_SUBTASK_DEPTH && !iterator && (
         <NestedSubtaskRows task={task} parentType={line.type} depth={depth} />
       )}

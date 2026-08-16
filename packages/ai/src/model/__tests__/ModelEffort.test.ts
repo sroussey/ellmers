@@ -5,7 +5,15 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { MODEL_EFFORTS, isModelEffort } from "../ModelEffort";
+import {
+  MODEL_EFFORTS,
+  effortPlaceholder,
+  enabledEffortsForModel,
+  isModelEffort,
+  readEffortOptions,
+  sanitizeEffortOptions,
+  stampEffortOptions,
+} from "../ModelEffort";
 
 describe("ModelEffort", () => {
   it("lists none through ultra", () => {
@@ -17,5 +25,68 @@ describe("ModelEffort", () => {
     expect(isModelEffort("off")).toBe(false);
     expect(isModelEffort("xhigh")).toBe(false);
     expect(isModelEffort(undefined)).toBe(false);
+  });
+});
+
+describe("sanitizeEffortOptions", () => {
+  it("drops unknown entries and keeps order of valid ones", () => {
+    expect(sanitizeEffortOptions(["high", "nope", "low"])).toEqual(["high", "low"]);
+  });
+
+  it("returns [] for an empty array and undefined for a non-array", () => {
+    expect(sanitizeEffortOptions([])).toEqual([]);
+    expect(sanitizeEffortOptions("high")).toBeUndefined();
+  });
+});
+
+describe("readEffortOptions", () => {
+  it("returns undefined when the key is omitted so callers ask the provider", () => {
+    expect(readEffortOptions({})).toBeUndefined();
+  });
+
+  it("treats a present key as authoritative, including [] after filtering junk", () => {
+    expect(readEffortOptions({ effort_options: [] })).toEqual([]);
+    expect(readEffortOptions({ effort_options: ["bogus"] })).toEqual([]);
+    expect(readEffortOptions({ effort_options: ["medium"] })).toEqual(["medium"]);
+  });
+});
+
+describe("stampEffortOptions", () => {
+  it("leaves the record unchanged when the provider has no policy", () => {
+    const record = { title: "x" };
+    expect(stampEffortOptions(record, undefined)).toEqual(record);
+    expect("effort_options" in stampEffortOptions(record, undefined)).toBe(false);
+  });
+
+  it("copies supported, including []", () => {
+    expect(
+      stampEffortOptions({ title: "x" }, { supported: ["low", "high"], default: "low" })
+        .effort_options
+    ).toEqual(["low", "high"]);
+    expect(stampEffortOptions({}, { supported: [], default: undefined }).effort_options).toEqual(
+      []
+    );
+  });
+});
+
+describe("enabledEffortsForModel", () => {
+  const policy = { supported: [...MODEL_EFFORTS], default: "medium" as const };
+
+  it("prefers a present effort_options key over policy", () => {
+    expect(enabledEffortsForModel({ effort_options: ["high"] }, policy)).toEqual(["high"]);
+    expect(enabledEffortsForModel({ effort_options: [] }, policy)).toEqual([]);
+  });
+
+  it("falls back to policy.supported, or undefined when neither exists", () => {
+    expect(enabledEffortsForModel({}, policy)).toEqual([...MODEL_EFFORTS]);
+    expect(enabledEffortsForModel({}, undefined)).toBeUndefined();
+  });
+});
+
+describe("effortPlaceholder", () => {
+  it("names the class default when known", () => {
+    expect(effortPlaceholder({ supported: MODEL_EFFORTS, default: "none" })).toBe("Default: none");
+    expect(effortPlaceholder({ supported: MODEL_EFFORTS, default: undefined })).toBe("Default");
+    expect(effortPlaceholder(undefined)).toBe("Default");
   });
 });

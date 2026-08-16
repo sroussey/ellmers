@@ -53,7 +53,7 @@ export class RunPrivateTaskOutputRepository extends TaskOutputRepository {
     await this.storage.setupDatabase?.();
   }
 
-  public async keyFromInputs(inputs: TaskInput): Promise<string> {
+  public override async keyFromInputs(inputs: TaskInput): Promise<string> {
     return await makeFingerprint(inputs);
   }
 

@@ -11,8 +11,10 @@ import type {
   ModelSearchTaskOutput,
 } from "@workglow/ai";
 import { filterLabeledModelsByQuery } from "@workglow/ai/provider-utils";
+import { stampEffortOptions } from "@workglow/ai/worker";
 import { getClient } from "./DeepSeek_Client";
 import { DEEPSEEK } from "./DeepSeek_Constants";
+import { deepseekEffortPolicy } from "./DeepSeek_EffortPolicy";
 
 interface DeepSeekModelListItem {
   readonly label: string;
@@ -44,15 +46,21 @@ function mapModelList(models: DeepSeekModelListItem[]): ModelSearchResultItem[] 
     id: m.value,
     label: m.label,
     description: m.description ?? "",
-    record: {
-      model_id: m.value,
-      provider: DEEPSEEK,
-      title: m.value,
-      description: "",
-      capabilities: [],
-      provider_config: { model_name: m.value },
-      metadata: {},
-    },
+    record: stampEffortOptions(
+      {
+        model_id: m.value,
+        provider: DEEPSEEK,
+        title: m.value,
+        description: "",
+        capabilities: [],
+        provider_config: { model_name: m.value },
+        metadata: {},
+      },
+      deepseekEffortPolicy({
+        provider: DEEPSEEK,
+        provider_config: { model_name: m.value },
+      })
+    ),
     raw: m,
   }));
 }
