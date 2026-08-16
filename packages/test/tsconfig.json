@@ -14,6 +14,7 @@
     { "path": "../storage" },
     { "path": "../job-queue" },
     { "path": "../task-graph" },
+    { "path": "../triggers" },
     { "path": "../knowledge-base" },
     { "path": "../tasks" },
     { "path": "../ai" },

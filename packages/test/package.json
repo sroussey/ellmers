@@ -68,6 +68,7 @@
     "@workglow/storage": "workspace:*",
     "@workglow/supabase": "workspace:*",
     "@workglow/task-graph": "workspace:*",
+    "@workglow/triggers": "workspace:*",
     "@workglow/tasks": "workspace:*",
     "@workglow/tf-mediapipe": "workspace:*",
     "@workglow/util": "workspace:*",
