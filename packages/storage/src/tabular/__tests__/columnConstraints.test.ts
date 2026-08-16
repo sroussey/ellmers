@@ -55,6 +55,65 @@ describe("getNonNullSchema", () => {
     const resolved = { type: "string" } as JsonSchema;
     expect(getNonNullSchema(getNonNullSchema(resolved))).toEqual(resolved);
   });
+
+  it("collapses the `type: [T, null]` array spelling to T", () => {
+    // RunUsageSchema and friends use this form. Leaving the array intact made
+    // every caller switching on `type` fall through to its unknown-type branch.
+    expect(getNonNullSchema({ type: ["integer", "null"] } as JsonSchema)).toMatchObject({
+      type: "integer",
+    });
+  });
+
+  it("keeps sibling keywords when collapsing the array spelling", () => {
+    expect(
+      getNonNullSchema({ type: ["string", "null"], maxLength: 10 } as JsonSchema)
+    ).toMatchObject({ type: "string", maxLength: 10 });
+  });
+
+  it("leaves a genuine multi-type union as an array", () => {
+    // No single SQL type describes it, so the honest answer is to keep falling
+    // through to the callers' unknown-type handling.
+    const union = { type: ["string", "integer", "null"] } as JsonSchema;
+    expect((getNonNullSchema(union) as { type: unknown }).type).toEqual([
+      "string",
+      "integer",
+      "null",
+    ]);
+  });
+});
+
+describe("the `type: [T, null]` spelling derives the same constraints as anyOf", () => {
+  // Regression guard: these two spellings of "nullable T" must not produce
+  // different columns. They did — the array form silently became
+  // `TEXT /* unknown type */` with no width or range derived at all.
+  const pairs: ReadonlyArray<readonly [string, JsonSchema, JsonSchema]> = [
+    [
+      "integer",
+      { type: ["integer", "null"] } as JsonSchema,
+      nullable({ type: "integer" } as JsonSchema),
+    ],
+    [
+      "string with maxLength",
+      { type: ["string", "null"], maxLength: 10 } as JsonSchema,
+      nullable({ type: "string", maxLength: 10 } as JsonSchema),
+    ],
+    [
+      "bounded integer",
+      { type: ["integer", "null"], minimum: 0, maximum: 100 } as JsonSchema,
+      nullable({ type: "integer", minimum: 0, maximum: 100 } as JsonSchema),
+    ],
+  ];
+
+  it.each(pairs)("%s", (_label, arrayForm, anyOfForm) => {
+    const ddl = (schema: JsonSchema) =>
+      mapPostgresType(schema, { getNonNullType: getNonNullSchema });
+
+    expect(ddl(arrayForm)).toBe(ddl(anyOfForm));
+    expect(varcharWidth(arrayForm)).toBe(varcharWidth(anyOfForm));
+    expect(sqlIntegerTypeFor(arrayForm)).toBe(sqlIntegerTypeFor(anyOfForm));
+    expect(numericBounds(arrayForm)).toEqual(numericBounds(anyOfForm));
+    expect(isNullableSchema(arrayForm)).toBe(true);
+  });
 });
 
 describe("varcharWidth", () => {
@@ -363,5 +422,74 @@ describe("assertColumnConstraints", () => {
     expect(() =>
       assertColumnConstraints({ id: "a", name: "ab", note: null, extra: null }, constraints)
     ).not.toThrow();
+  });
+});
+
+describe("integer column range boundaries", () => {
+  const constraintsFor = (typeDef: JsonSchema) =>
+    buildColumnConstraints(
+      {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+        additionalProperties: false,
+      } as unknown as DataPortSchemaObject,
+      {
+        type: "object",
+        properties: { n: typeDef },
+        required: [],
+        additionalProperties: false,
+      } as unknown as DataPortSchemaObject
+    );
+
+  const check = (typeDef: JsonSchema, n: number) => () =>
+    assertColumnConstraints({ id: "a", n }, constraintsFor(typeDef));
+
+  it("has SMALLINT's range fully covered by the bounds that select it", () => {
+    // SMALLINT is only chosen when `minimum >= 0` and `maximum <= 32767`, so
+    // the declared bounds are necessarily at least as tight as the column's
+    // range and always report first. The range check is unreachable here by
+    // construction — assert the bound message rather than contriving a schema
+    // that cannot exist.
+    const smallint = { type: "integer", minimum: 0, maximum: 32767 } as JsonSchema;
+    expect(sqlIntegerTypeFor(smallint)).toBe("SMALLINT");
+    expect(check(smallint, 32767)).not.toThrow();
+    expect(check(smallint, 32768)).toThrow("is above the schema maximum 32767");
+    expect(check(smallint, -1)).toThrow("is below the schema minimum 0");
+  });
+
+  it("accepts and rejects at INTEGER's edges", () => {
+    const int = { type: "integer" } as JsonSchema;
+    expect(check(int, 2147483647)).not.toThrow();
+    expect(check(int, -2147483648)).not.toThrow();
+    expect(check(int, 2147483648)).toThrow("out of range for type integer");
+    expect(check(int, -2147483649)).toThrow("out of range for type integer");
+  });
+
+  it("rejects exactly 2^63 in a BIGINT column", () => {
+    // int8's maximum is 2^63 - 1, which no JS number can hold: the literal
+    // rounds up to 2^63. An inclusive `value > max` test would therefore admit
+    // 2^63 itself, which Postgres rejects. The bound is stored exclusive to
+    // close that gap.
+    const bigint = { type: "integer", minimum: 0 } as JsonSchema;
+    expect(sqlIntegerTypeFor(bigint)).toBe("BIGINT");
+    expect(check(bigint, 2 ** 63)).toThrow("out of range for type bigint");
+  });
+
+  it("accepts the largest and smallest values a BIGINT column can really hold", () => {
+    // Selected as BIGINT by the maximum alone, so no declared minimum masks
+    // the column's lower bound. The declared maximum of 2^63 also lets the
+    // range check — not the bound — be what rejects 2^63.
+    const bigint = { type: "integer", maximum: 2 ** 63 } as JsonSchema;
+    expect(sqlIntegerTypeFor(bigint)).toBe("BIGINT");
+
+    // Doubles near 2^63 are 2048 apart; this is the largest one below it, and
+    // it sits comfortably inside int8.
+    expect(check(bigint, 2 ** 63 - 2048)).not.toThrow();
+    expect(check(bigint, 2 ** 63)).toThrow("out of range for type bigint");
+
+    // -2^63 is int8's exact minimum and is exactly representable.
+    expect(check(bigint, -(2 ** 63))).not.toThrow();
+    expect(check(bigint, -(2 ** 63) - 4096)).toThrow("out of range for type bigint");
   });
 });

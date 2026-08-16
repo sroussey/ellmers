@@ -36,21 +36,24 @@ export function varcharWidthForFormat(format: unknown): number | undefined {
 export type SqlIntegerType = "SMALLINT" | "INTEGER" | "BIGINT";
 
 /**
- * Inclusive value range of each integer column type. A value outside it is a
- * hard error on the DB ("smallint out of range"), independent of whatever the
- * schema's own `minimum`/`maximum` say.
+ * Value range of each integer column type: `min` inclusive, `maxExclusive`
+ * exclusive. A value outside it is a hard error on the DB ("smallint out of
+ * range"), independent of whatever the schema's own `minimum`/`maximum` say.
  *
- * `BIGINT`'s bounds lie beyond `Number.MAX_SAFE_INTEGER`, so they are the
- * nearest doubles to int8's true limits. That is as precise as a JS number can
- * be in the first place: any number that survives this check is one the
- * language could represent, so the approximation never rejects a value a
- * caller could actually have supplied intact.
+ * The upper bound is stored *exclusive* so every bound here is a power of two
+ * and therefore exactly representable as a double. Spelling int8's inclusive
+ * maximum instead would be a lie: `9223372036854775807` rounds up to 2^63 as a
+ * JS number, so a `value > max` test would admit exactly 2^63 — a value
+ * Postgres rejects. Comparing `value >= 2^63` has no such gap, and the same
+ * form works unchanged for the two narrower types.
  */
-const SQL_INTEGER_RANGES: Readonly<Record<SqlIntegerType, { min: number; max: number }>> = {
-  SMALLINT: { min: -32768, max: 32767 },
-  INTEGER: { min: -2147483648, max: 2147483647 },
-  BIGINT: { min: -9223372036854775808, max: 9223372036854775807 },
-};
+const SQL_INTEGER_RANGES: Readonly<Record<SqlIntegerType, { min: number; maxExclusive: number }>> =
+  {
+    SMALLINT: { min: -32768, maxExclusive: 32768 },
+    INTEGER: { min: -2147483648, maxExclusive: 2147483648 },
+    // -2^63 is exactly representable, so the lower bound stays inclusive.
+    BIGINT: { min: -9223372036854775808, maxExclusive: 9223372036854775808 },
+  };
 
 /**
  * The integer column type a schema maps to, or `undefined` when the column is
@@ -139,9 +142,31 @@ export function isNullableSchema(typeDef: JsonSchema): boolean {
   return false;
 }
 
-/** Extracts the non-null branch from a `T | null` union schema. */
+/**
+ * Extracts the non-null branch from a `T | null` union schema, in either
+ * spelling: `anyOf`/`oneOf`, or the `type: ["string", "null"]` array form.
+ *
+ * The array form matters as much as the others — `RunUsageSchema` and friends
+ * use it — and it was previously left intact, so every caller switching on
+ * `type` saw an array rather than `"string"`/`"integer"` and fell through to
+ * its unknown-type branch. That made `mapPostgresType` emit
+ * `TEXT /* unknown type *\/` for what should be an INTEGER column, and left
+ * such columns with no derived width or range at all.
+ */
 export function getNonNullSchema(typeDef: JsonSchema): JsonSchema {
   if (typeof typeDef === "boolean") return typeDef;
+
+  if (Array.isArray(typeDef.type)) {
+    const nonNullTypes = typeDef.type.filter((entry) => entry !== "null");
+    // Collapse to the concrete type only when exactly one remains. A genuine
+    // multi-type union stays an array and keeps falling through to the
+    // callers' unknown-type handling, which is the honest answer for a column
+    // that has no single SQL type.
+    if (nonNullTypes.length === 1) {
+      return { ...typeDef, type: nonNullTypes[0] } as JsonSchema;
+    }
+    return typeDef;
+  }
 
   if (typeDef.anyOf && Array.isArray(typeDef.anyOf)) {
     const nonNullType = typeDef.anyOf.find((t: any) => t.type !== "null");
@@ -329,7 +354,7 @@ function assertNumericConstraints(value: number, constraint: TabularColumnConstr
       );
     }
     const range = SQL_INTEGER_RANGES[integerType];
-    if (value < range.min || value > range.max) {
+    if (value < range.min || value >= range.maxExclusive) {
       throw new StorageValidationError(
         `value ${value} is out of range for type ${integerType.toLowerCase()}: ` +
           `column "${constraint.column}"`
