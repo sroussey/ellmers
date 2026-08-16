@@ -15,6 +15,7 @@ import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import {
   MAX_REQUEST_TIMEOUT_MS,
   postWebhookJson,
+  resolveWebhookCredential,
   resolveWebhookUrl,
   webhookBaseEntitlements,
   webhookPrivateEntitlements,
@@ -191,11 +192,24 @@ export class WebhookNotifyTask<
     // forwards `...rest` into a job input, so a resolved secret left on a port
     // would be persisted. This post is assembled field by field below and the
     // credential ports are simply never read again.
+    //
+    // Checked BEFORE the credential is applied: `applyCredentialToHeaders`
+    // fails OPEN on a missing value — it returns the caller's headers
+    // unchanged — so without this guard a locked store or a mistyped key posts
+    // the notification unauthenticated and reports success. `Object.hasOwn` is
+    // the discriminator because the input resolver writes `undefined` over a
+    // missed key, leaving the port present.
+    const credential = resolveWebhookCredential(
+      input.credential_key,
+      Object.hasOwn(input, "credential_key"),
+      "credential_key",
+      "WebhookNotifyTask"
+    );
     let headers: Record<string, string> | undefined;
     try {
       headers = applyCredentialToHeaders({
         headers: input.headers,
-        credential: input.credential_key,
+        credential,
         scheme: input.credential_scheme,
         headerName: input.credential_header,
       });
@@ -216,6 +230,12 @@ export class WebhookNotifyTask<
       url,
       payload: input.payload,
       headers,
+      // The port holds the RESOLVED secret by execute time, so this is the
+      // value an echoing endpoint would hand back into `response`. Redacted
+      // unconditionally, including under `credential_scheme: "none"`: a value
+      // that is never sent cannot be echoed, so redacting it costs nothing and
+      // keeps a scheme-dependent branch out of a security path.
+      secrets: input.credential_key === undefined ? [] : [input.credential_key],
       timeout: input.timeout,
       signal: context.signal,
       registry: context.registry,

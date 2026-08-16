@@ -18,6 +18,14 @@
  * the most useful diagnostic there is). This module is the one layer that
  * knows the URL IS the credential, so redaction belongs here rather than in
  * the shared transport.
+ *
+ * The URL is not the only secret a post can carry: {@link WebhookNotifyTask}
+ * places a resolved credential on a request header, and an endpoint that
+ * echoes the request returns it verbatim into the `response` output port. So
+ * the invariant is stated over VALUES rather than over the URL — no value this
+ * module was handed as a secret reaches a message, an output port or a stack —
+ * and {@link createWebhookRedactor} builds the single function every echoed
+ * string goes through, from the URL plus {@link WebhookPostRequest.secrets}.
  */
 
 import { AbortSignalJobError } from "@workglow/job-queue";
@@ -185,6 +193,55 @@ export function redactWebhookUrlIn(text: string, url: string): string {
   return redacted;
 }
 
+/** Strips every secret a post was handed out of a caller-visible string. */
+export type WebhookRedactor = (text: string) => string;
+
+/**
+ * Builds the one redaction function a post runs every echoed string through.
+ *
+ * {@link redactWebhookUrlIn} knows the URL and nothing else, which was the
+ * whole coverage of this module until a header credential existed. A secret
+ * placed on `Authorization` (or a signing header) is never a redaction
+ * candidate for it, so an echoing endpoint — webhook.site, RequestBin, a
+ * chatty 200 — returned it verbatim into a task output port that is pipeable
+ * and persisted with the run.
+ *
+ * ORDER IS LOAD-BEARING: the exact secrets go first, longest-first, and the
+ * URL pass runs last. Reversed, the URL pass can chop a substring out of a
+ * secret and leave the remainder no longer matching anything.
+ *
+ * Each secret is admitted raw and `encodeURIComponent`-encoded, mirroring the
+ * URL pass's own variant handling, because an endpoint quoting a value back
+ * inside a URL or a form field echoes the encoded bytes.
+ *
+ * Deliberately NO length floor, unlike the URL pass's path segments. Those are
+ * guesses about which part of a URL is a token; a header secret is a known
+ * exact value handed in by the caller. Residual, accepted: a short secret
+ * (`"ok"`, `"1"`) redacts substrings all over a diagnostic and can mangle it —
+ * a mangled diagnostic beats a leaked short API key.
+ */
+export function createWebhookRedactor(
+  url: string,
+  secrets: readonly string[] | undefined
+): WebhookRedactor {
+  const candidates = new Set<string>();
+  for (const secret of secrets ?? []) {
+    if (secret.length === 0) {
+      continue;
+    }
+    candidates.add(secret);
+    candidates.add(encodeURIComponent(secret));
+  }
+  const ordered = [...candidates].sort((a, b) => b.length - a.length);
+  return (text: string): string => {
+    let redacted = text;
+    for (const candidate of ordered) {
+      redacted = redacted.split(candidate).join(REDACTED_SEGMENT);
+    }
+    return redactWebhookUrlIn(redacted, url);
+  };
+}
+
 /**
  * Builds a redacted `.stack` for a rewritten error.
  *
@@ -205,16 +262,20 @@ export function redactWebhookUrlIn(text: string, url: string): string {
  * (JavaScriptCore's `fn@file:line:col` form): only the redacted header is
  * kept, losing frames rather than risking the secret.
  */
-export function redactedStackFrom(original: unknown, rebuilt: Error, url: string): string {
+export function redactedStackFrom(
+  original: unknown,
+  rebuilt: Error,
+  redact: WebhookRedactor
+): string {
   const header = `${rebuilt.name}: ${rebuilt.message}`;
   const originalStack =
     original instanceof Error && typeof original.stack === "string" ? original.stack : "";
   const lines = originalStack.split("\n");
   const firstFrame = lines.findIndex((line) => /^\s+at /.test(line));
   if (firstFrame < 0) {
-    return redactWebhookUrlIn(header, url);
+    return redact(header);
   }
-  return redactWebhookUrlIn([header, ...lines.slice(firstFrame)].join("\n"), url);
+  return redact([header, ...lines.slice(firstFrame)].join("\n"));
 }
 
 /**
@@ -270,6 +331,45 @@ export function resolveWebhookUrl(
   return resolved;
 }
 
+/**
+ * Fails a post whose configured credential the store could not answer, the
+ * header-credential mirror of {@link resolveWebhookUrl}'s identical URL guard.
+ *
+ * `applyCredentialToHeaders` is pure, has no `configured` signal, and is shared
+ * with {@link FetchUrlTask}, so it returns the caller's headers unchanged when
+ * the resolved credential is `undefined` — which means a locked store or a
+ * mistyped key silently sent the notification UNAUTHENTICATED (or unsigned) and
+ * reported success. The `configured` bit lives here instead, at the task
+ * boundary that knows an operator asked for a credential at all.
+ *
+ * `credentialConfigured` is what separates "no credential wanted" from
+ * "credential wanted but the store could not answer": the input resolver
+ * overwrites the port in place, so a store miss leaves the port PRESENT with
+ * value `undefined`, whereas an unconfigured port is absent entirely.
+ *
+ * The scheme is deliberately not a parameter. Under `credential_scheme: "none"`
+ * the value is resolved and not sent — a debug affordance, not a reason to
+ * swallow a locked store, since the operator configured a key either way.
+ *
+ * Never echoes the value: it is a secret whatever it turns out to be.
+ */
+export function resolveWebhookCredential(
+  credential: string | undefined,
+  credentialConfigured: boolean,
+  portName: string,
+  label: string
+): string | undefined {
+  if (credentialConfigured && (credential === undefined || credential.length === 0)) {
+    throw createFetchUrlJobError(
+      FetchUrlErrorCode.CONFIGURATION,
+      `${label}: '${portName}' is set but the credential store returned no value for it. ` +
+        `Unlock the store or correct the key; the request is never sent without the ` +
+        `credential that was configured for it.`
+    );
+  }
+  return credential;
+}
+
 export interface WebhookPostRequest {
   /** Full webhook URL. Treated as a secret throughout. */
   readonly url: string;
@@ -277,6 +377,19 @@ export interface WebhookPostRequest {
   readonly payload: unknown;
   /** Extra request headers merged over the JSON content type. */
   readonly headers: Readonly<Record<string, string>> | undefined;
+  /**
+   * Values this post was handed as secrets, stripped from every echoed string
+   * before it reaches a message, an output port or a stack.
+   *
+   * The URL is redacted unconditionally and is not listed here; this is for
+   * the SECOND secret shape — a credential placed on a request header, which
+   * {@link redactWebhookUrlIn} has no way to recognize. An endpoint that
+   * quotes the request back returns it verbatim otherwise.
+   *
+   * Declared rather than optional, so every call site answers the question.
+   * `undefined` means "this post carries no secret beyond the URL".
+   */
+  readonly secrets: readonly string[] | undefined;
   /**
    * Request timeout in milliseconds: a whole number from 1 to
    * {@link MAX_REQUEST_TIMEOUT_MS}. Anything else is a permanent configuration
@@ -425,7 +538,8 @@ function toRedactedWebhookError(
   error: unknown,
   url: string,
   label: string,
-  callerSignal: AbortSignal
+  callerSignal: AbortSignal,
+  redact: WebhookRedactor
 ): unknown {
   if (error instanceof AbortSignalJobError) {
     return error;
@@ -467,7 +581,7 @@ function toRedactedWebhookError(
     if (!leaksUrl(error, url)) {
       return error;
     }
-    const rebuilt = createFetchUrlJobError(error.code, redactWebhookUrlIn(error.message, url), {
+    const rebuilt = createFetchUrlJobError(error.code, redact(error.message), {
       url: redactWebhookUrl(url),
       httpStatus: error.httpStatus,
       httpStatusText: error.httpStatusText,
@@ -482,13 +596,13 @@ function toRedactedWebhookError(
     // The same reasoning is why the generic branch below lifts only the cause's
     // MESSAGE — already redacted — into its own message, and never attaches the
     // cause object itself.
-    rebuilt.stack = redactedStackFrom(error, rebuilt, url);
+    rebuilt.stack = redactedStackFrom(error, rebuilt, redact);
     return rebuilt;
   }
   // Redacted BEFORE truncating: cutting first can slice a token in half so it
   // no longer matches the candidates, leaving a usable prefix behind — the same
   // ordering the response-body path uses.
-  const detail = truncate(redactWebhookUrlIn(detailWithCause(error), url), MAX_ERROR_BODY_CHARS);
+  const detail = truncate(redact(detailWithCause(error)), MAX_ERROR_BODY_CHARS);
   return createFetchUrlJobError(
     FetchUrlErrorCode.NETWORK_ERROR,
     `Network error posting ${label} to ${redactWebhookUrl(url)}: ${detail}`,
@@ -732,6 +846,10 @@ export function withJsonContentType(
  */
 export async function postWebhookJson(request: WebhookPostRequest): Promise<WebhookPostResult> {
   const { url, label } = request;
+  // Built ONCE and used for every echoed string below — body, failure body,
+  // reason phrase, stringify detail and every rewritten error — so a new echo
+  // surface cannot be added with only half the secrets stripped from it.
+  const redact = createWebhookRedactor(url, request.secrets);
   const classification = classifyUrl(url);
   if (classification.kind === "invalid") {
     throw createFetchUrlJobError(
@@ -797,8 +915,7 @@ export async function postWebhookJson(request: WebhookPostRequest): Promise<Webh
     const detail = err instanceof Error ? err.message : String(err);
     throw createFetchUrlJobError(
       FetchUrlErrorCode.CONFIGURATION,
-      `Cannot build the ${label} request for ${redactWebhookUrl(url)}: ` +
-        `${redactWebhookUrlIn(detail, url)}`,
+      `Cannot build the ${label} request for ${redactWebhookUrl(url)}: ` + `${redact(detail)}`,
       { url: redactWebhookUrl(url) }
     );
   }
@@ -824,7 +941,7 @@ export async function postWebhookJson(request: WebhookPostRequest): Promise<Webh
       privateResourceScopes: allowPrivate ? [privateScope] : undefined,
     });
   } catch (err) {
-    throw toRedactedWebhookError(err, url, label, request.signal);
+    throw toRedactedWebhookError(err, url, label, request.signal, redact);
   }
 
   if (response.ok) {
@@ -844,7 +961,7 @@ export async function postWebhookJson(request: WebhookPostRequest): Promise<Webh
     // stops at `SECURITY_LIMITS.webhookMaxResponseBodyBytes`, so a token
     // straddling that boundary can still leave a partial behind.
     const { text, complete } = await readBodyText(response);
-    const surfaced = truncate(redactWebhookUrlIn(text, url), MAX_RESPONSE_BODY_CHARS);
+    const surfaced = truncate(redact(text), MAX_RESPONSE_BODY_CHARS);
     return {
       status: response.status,
       // An incomplete read carries the same marker `truncate` uses, so a body
@@ -874,13 +991,13 @@ export async function postWebhookJson(request: WebhookPostRequest): Promise<Webh
   // what would turn a POST at an internal service into a read of it.
   const bodySuffix =
     request.includeBodyInError && !allowPrivate && failureBody.length > 0
-      ? `: ${truncate(redactWebhookUrlIn(failureBody, url), MAX_ERROR_BODY_CHARS)}`
+      ? `: ${truncate(redact(failureBody), MAX_ERROR_BODY_CHARS)}`
       : "";
   // The reason phrase is caller-controlled text like the body, so it gets the
   // same two treatments: withheld entirely for a private destination, and
   // redacted otherwise. A server is free to put anything in it, and the well
   // known phrases ("Not Found", "Bad Request") survive redaction unchanged.
-  const statusText = allowPrivate ? "" : redactWebhookUrlIn(response.statusText, url);
+  const statusText = allowPrivate ? "" : redact(response.statusText);
 
   throw createFetchUrlJobError(
     httpStatusToFetchUrlErrorCode(response.status),
