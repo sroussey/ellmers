@@ -103,9 +103,33 @@ scope exit.
   `stopTimeoutMs` on the trigger, `timeoutMs` on the `stop()` call, or
   `stopTimeoutMs` on `listen()` (which forwards to each trigger AND bounds the
   set, so a third-party `ITrigger` that ignores the option cannot wedge its
-  siblings). Past the deadline the still-pending handlers are **abandoned — they
-  keep running** — a `TriggerStopTimeoutError` carrying the count is emitted on
-  `error`, and the trigger is released so it can be started again.
+  siblings). Every deadline is a positive integer, and each is validated where
+  it is supplied — `listen({ stopTimeoutMs })` at listen time, the `timeoutMs`
+  on a `stop()` call as its first act — so a malformed one is never discovered
+  during the shutdown it was meant to bound. A `stop()` rejected for a malformed
+  deadline has attempted nothing: the session is untouched, and a corrected call
+  still stops it. Past the
+  deadline the still-pending handlers are **abandoned — they keep running** — a
+  `TriggerStopTimeoutError` carrying the count is emitted on `error`, and the
+  trigger is released so it can be started again. Under the workflow bindings
+  the abandoned run is released along with the rest of the session's state, so
+  the next `listen()` starts clean rather than queueing its first fire behind a
+  promise nothing can settle; if that run is still going, the collision surfaces
+  as a per-fire "already running" error on the trigger's `error` event.
+- **A stop that resolves means everything stopped** — `handle.stop()` and
+  `workflow.stopListening()` ask every trigger, report each failure through the
+  logger, release the handle, and then **reject** with a `WorkflowTriggerError`
+  naming the triggers whose own `stop()` rejected (`cause` carries the first
+  reason). The handle is released either way: a rejected `stop()` is not
+  evidence that a trigger is still scheduling, and holding the handle would lock
+  `workflow.trigger(...)` out and keep handing back dead triggers. An expired
+  deadline is the exception and still resolves — it is opt-in, and its
+  documented outcome is a warning plus handlers that keep running.
+- **A listening session is configured once** — `listen()` called again while
+  already listening returns the same handle, but only when it carries no
+  options. A repeat call passing `signal` or `stopTimeoutMs` throws: the handle
+  is shared, so the second caller's abort would tear down the first caller's
+  schedule. To change the configuration, `stopListening()` and listen again.
 - **Overlap** — `overlap: "skip" | "queue" | "concurrent"`, default `"skip"`. A
   tick arriving while the previous handler runs is dropped (and emits `skip`); a
   trigger is a clock, not a work queue, so a slow handler cannot grow a backlog.

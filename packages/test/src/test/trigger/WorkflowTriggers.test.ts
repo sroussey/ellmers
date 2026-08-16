@@ -12,6 +12,7 @@ import type {
   TriggerEventListener,
   TriggerEventListeners,
   TriggerEvents,
+  TriggerHandler,
 } from "@workglow/triggers";
 import {
   CronTrigger,
@@ -135,14 +136,46 @@ class WedgedTrigger implements ITrigger {
   public readonly kind = "wedged";
   public readonly events = new EventEmitter<TriggerEventListeners>();
   public running = false;
+  /**
+   * Handed to every fire and NEVER aborted: a wedged stop abandons its
+   * handlers, it does not cancel them. That is what makes a run started by this
+   * trigger outlive the session that scheduled it.
+   */
+  private readonly controller = new AbortController();
+  private handler: TriggerHandler | undefined;
 
   constructor(public readonly id: string) {}
 
-  public start(): void {
+  public start(handler: TriggerHandler): void {
+    this.handler = handler;
     this.running = true;
   }
 
+  /**
+   * Delivers one fire on demand, so a test can wedge a workflow RUN rather than
+   * only a `stop()`. Rejections are reported on `error` exactly as a real
+   * trigger's loop reports them.
+   */
+  public fire(scheduledAt: number): void {
+    const handler = this.handler;
+    if (!handler) return;
+    void Promise.resolve(
+      handler({
+        triggerId: this.id,
+        scheduledAt,
+        signal: this.controller.signal,
+        payload: undefined,
+      })
+    ).catch((error: unknown) => {
+      this.events.emit("error", error instanceof Error ? error : new Error(String(error)));
+    });
+  }
+
   public stop(): Promise<void> {
+    // The schedule really is cancelled — it is the DRAIN that never completes.
+    // Reporting `running` forever instead would make every later listen() fail
+    // the already-running check and hide what these tests are about.
+    this.running = false;
     return new Promise<void>(() => {});
   }
 
@@ -199,12 +232,13 @@ interface WarnRecord {
 }
 
 /**
- * Installs a logger that records `warn` calls; returns the sink and a restore fn.
- * Built from scratch rather than spread from the installed logger, whose methods
- * live on a class prototype and would be lost.
+ * Installs a logger that records `warn` and `error` calls; returns both sinks
+ * and a restore fn. Built from scratch rather than spread from the installed
+ * logger, whose methods live on a class prototype and would be lost.
  */
-function captureWarnings(): { warnings: WarnRecord[]; restore: () => void } {
+function captureLogs(): { warnings: WarnRecord[]; errors: WarnRecord[]; restore: () => void } {
   const warnings: WarnRecord[] = [];
+  const errors: WarnRecord[] = [];
   const previous = getLogger();
   const noop = (): void => {};
   const logger: ILogger = {
@@ -213,7 +247,9 @@ function captureWarnings(): { warnings: WarnRecord[]; restore: () => void } {
     warn: (message: string, meta?: Record<string, unknown>) => {
       warnings.push({ message, meta });
     },
-    error: noop,
+    error: (message: string, meta?: Record<string, unknown>) => {
+      errors.push({ message, meta });
+    },
     fatal: noop,
     child: () => logger,
     time: noop,
@@ -222,7 +258,7 @@ function captureWarnings(): { warnings: WarnRecord[]; restore: () => void } {
     groupEnd: noop,
   };
   setLogger(logger);
-  return { warnings, restore: () => setLogger(previous) };
+  return { warnings, errors, restore: () => setLogger(previous) };
 }
 
 /**
@@ -730,10 +766,49 @@ describe("Workflow trigger bindings", () => {
     const second: ITriggerListenerHandle = await workflow.listen();
     expect(second).toBe(first);
 
+    // But a repeat call CARRYING CONFIGURATION throws: the handle is shared, so
+    // there is nowhere for a second configuration to go. Merging would let this
+    // caller's signal tear down the first caller's schedule, leak an abort
+    // listener per call, and leave no answer to whose stopTimeoutMs wins.
+    await expect(workflow.listen({ stopTimeoutMs: PERIOD })).rejects.toBeInstanceOf(
+      WorkflowTriggerError
+    );
+    await expect(workflow.listen({ stopTimeoutMs: PERIOD })).rejects.toThrow(/configured once/);
+    await expect(workflow.listen({ signal: new AbortController().signal })).rejects.toBeInstanceOf(
+      WorkflowTriggerError
+    );
+
+    // The rejected calls changed nothing: the original session is still the one
+    // running, and still the one the handle stops.
     await advanceFakeTimers(PERIOD * 2);
     expect(executions).toHaveLength(2);
 
     await first.stop();
+  });
+
+  test("a second listen()'s signal is rejected rather than silently ignored", async () => {
+    const workflow = createWorkflow();
+    const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+    workflow.trigger(trigger, { input: () => ({ label: "tick" }) });
+
+    const handle = await workflow.listen();
+    const controller = new AbortController();
+
+    await expect(workflow.listen({ signal: controller.signal })).rejects.toBeInstanceOf(
+      WorkflowTriggerError
+    );
+
+    // Aborting does nothing BECAUSE THE CALL THREW — the caller was told its
+    // cancellation was never wired, rather than handed a handle that quietly
+    // ignores it.
+    controller.abort();
+    await flushAsyncWork();
+
+    expect(trigger.running).toBe(true);
+    await advanceFakeTimers(PERIOD * 2);
+    expect(executions).toHaveLength(2);
+
+    await handle.stop();
   });
 
   test("listen() with no bound trigger throws a typed error", async () => {
@@ -987,7 +1062,7 @@ describe("Workflow trigger bindings", () => {
 
   describe("stop deadline", () => {
     test("listen({ stopTimeoutMs }) bounds stop() even when a trigger ignores the option", async () => {
-      const { warnings, restore } = captureWarnings();
+      const { warnings, restore } = captureLogs();
       try {
         const workflow = createWorkflow();
         const wedged = new WedgedTrigger("wedged-1");
@@ -1020,7 +1095,7 @@ describe("Workflow trigger bindings", () => {
     });
 
     test("stop({ timeoutMs }) overrides the listen() default", async () => {
-      const { warnings, restore } = captureWarnings();
+      const { warnings, restore } = captureLogs();
       try {
         const workflow = createWorkflow();
         workflow.trigger(new WedgedTrigger("wedged-2"));
@@ -1039,7 +1114,7 @@ describe("Workflow trigger bindings", () => {
     });
 
     test("a set of triggers that all stop cleanly reports nothing", async () => {
-      const { warnings, restore } = captureWarnings();
+      const { warnings, restore } = captureLogs();
       try {
         const workflow = createWorkflow();
         workflow.trigger(new IntervalTrigger({ intervalMs: PERIOD, id: "a" }), {
@@ -1059,6 +1134,270 @@ describe("Workflow trigger bindings", () => {
         // The deadline timer is cleared once the drain wins the race.
         expect(vi.getTimerCount()).toBe(0);
       } finally {
+        restore();
+      }
+    });
+  });
+
+  describe("one listening session's state", () => {
+    // The handle, the run chain and the pending counters belong to ONE session:
+    // created by exactly one listen(), destroyed by exactly one release. These
+    // tests pin the two ends of that — a stop() that cannot complete leaves the
+    // session either fully intact or fully released, never half.
+
+    test("listen({ stopTimeoutMs }) rejects a malformed deadline and starts nothing", async () => {
+      // Validated at listen() rather than at stop(): unvalidated, the ONLY
+      // symptom is a shutdown that cannot complete — the one moment the
+      // schedule most needs to be stoppable.
+      for (const value of [0, -1, 1.5, Number.NaN]) {
+        const workflow = createWorkflow();
+        const trigger = new IntervalTrigger({ intervalMs: PERIOD, id: `bad-${String(value)}` });
+        workflow.trigger(trigger, { input: () => ({ label: "listened" }) });
+
+        await expect(workflow.listen({ stopTimeoutMs: value })).rejects.toBeInstanceOf(
+          TriggerConfigurationError
+        );
+        await expect(workflow.listen({ stopTimeoutMs: value })).rejects.toThrow(/stopTimeoutMs/);
+
+        // Checked before any state is touched, so nothing was scheduled.
+        expect(trigger.running).toBe(false);
+        await advanceFakeTimers(PERIOD * 3);
+        expect(executions).toEqual([]);
+
+        // ... and the workflow is still free to listen properly.
+        const handle = await workflow.listen({ stopTimeoutMs: PERIOD });
+        await advanceFakeTimers(PERIOD);
+        expect(executions).toEqual(["listened"]);
+        await handle.stop();
+        executions.length = 0;
+      }
+    });
+
+    test("a malformed listen() deadline is rejected before an already-aborted signal", async () => {
+      // Both arguments are wrong. The configuration error is the one to report:
+      // a malformed number is wrong whatever the signal is doing, and whether
+      // or not the workflow is already listening.
+      const workflow = createWorkflow();
+      workflow.trigger(new IntervalTrigger({ intervalMs: PERIOD }));
+
+      await expect(
+        workflow.listen({ signal: AbortSignal.abort(), stopTimeoutMs: 0 })
+      ).rejects.toBeInstanceOf(TriggerConfigurationError);
+    });
+
+    test("stop({ timeoutMs }) rejects a malformed deadline and leaves the handle usable", async () => {
+      const workflow = createWorkflow();
+      const trigger = new IntervalTrigger({ intervalMs: PERIOD, id: "still-listening" });
+      workflow.trigger(trigger, { input: () => ({ label: "tick" }) });
+
+      const handle = await workflow.listen();
+      await advanceFakeTimers(PERIOD);
+      expect(executions).toHaveLength(1);
+
+      // Nothing was attempted, so nothing was released.
+      await expect(handle.stop({ timeoutMs: 0 })).rejects.toBeInstanceOf(TriggerConfigurationError);
+
+      // The session is fully intact: still running, still firing, still owned by
+      // this handle — so a corrected call actually stops it.
+      expect(trigger.running).toBe(true);
+      await advanceFakeTimers(PERIOD * 2);
+      expect(executions).toHaveLength(3);
+
+      await handle.stop();
+      expect(trigger.running).toBe(false);
+      await advanceFakeTimers(PERIOD * 3);
+      expect(executions).toHaveLength(3);
+      // And THAT release really happened, rather than the schedule merely
+      // going quiet with the binding lock still held.
+      expect(() =>
+        workflow.trigger(new IntervalTrigger({ intervalMs: PERIOD, id: "after" }))
+      ).not.toThrow();
+    });
+
+    test("a trigger whose stop() rejects is reported and leaves the workflow re-listenable", async () => {
+      const { errors, restore } = captureLogs();
+      try {
+        const workflow = createWorkflow();
+        const rejecting = new RejectingStopTrigger("rejects-on-stop");
+        const healthy = new IntervalTrigger({ intervalMs: PERIOD, id: "healthy" });
+        workflow.trigger(rejecting);
+        workflow.trigger(healthy, { input: () => ({ label: "healthy" }) });
+
+        const handle = await workflow.listen();
+        await advanceFakeTimers(PERIOD);
+        expect(executions).toEqual(["healthy"]);
+
+        // Every trigger was asked to stop and the failure is then propagated:
+        // `stop()` resolving has to mean everything stopped.
+        const failure = await handle.stop().then(
+          () => undefined,
+          (error: unknown) => error
+        );
+        expect(failure).toBeInstanceOf(WorkflowTriggerError);
+        expect(String(failure)).toContain("rejects-on-stop");
+        expect((failure as Error).cause).toBeInstanceOf(Error);
+        expect(errors.some((entry) => entry.message === "Trigger failed to stop")).toBe(true);
+
+        // The sibling was not held hostage by the failure.
+        expect(healthy.running).toBe(false);
+
+        // The handle was released anyway: a rejected stop() is not evidence the
+        // trigger is still scheduling, and holding the handle would lock
+        // trigger() out forever and keep handing back dead triggers.
+        expect(() =>
+          workflow.trigger(new IntervalTrigger({ intervalMs: PERIOD, id: "after" }), {
+            input: () => ({ label: "after" }),
+          })
+        ).not.toThrow();
+
+        const next = await workflow.listen();
+        await advanceFakeTimers(PERIOD);
+        expect(executions).toContain("after");
+        await next.stop().catch(() => {});
+      } finally {
+        restore();
+      }
+    });
+
+    test("a run abandoned by a timed-out stop does not poison the next session", async () => {
+      const { restore } = captureLogs();
+      const gate = createGate();
+      try {
+        const workflow = createWorkflow();
+        const wedged = new WedgedTrigger("wedged-run");
+        workflow.trigger(wedged, {
+          input: (context) => ({ label: `fire@${context.scheduledAt - START}` }),
+        });
+
+        const errors: Error[] = [];
+        wedged.on("error", (error) => errors.push(error));
+
+        const handle = await workflow.listen();
+        holdGate = gate;
+        wedged.fire(START + PERIOD);
+        await drainUntil(() => executions.length === 1);
+        expect(executions).toEqual(["fire@100"]);
+
+        // The deadline expires with that run still parked. Its signal is never
+        // aborted, so the run is ABANDONED rather than cancelled — it is still
+        // the recorded tail of the workflow's run chain.
+        const stopping = handle.stop({ timeoutMs: PERIOD });
+        await advanceFakeTimers(PERIOD);
+        await stopping;
+
+        // From here on nothing parks; only the abandoned run is still held.
+        holdGate = undefined;
+
+        const next = await workflow.listen();
+        wedged.fire(START + PERIOD * 2);
+        await flushAsyncWork();
+
+        // The new session's fire reaches the workflow and COLLIDES with the
+        // abandoned run — the documented trade. Today it instead waits on a
+        // promise nothing can settle: no error, no execution, a schedule that
+        // is running and permanently silent.
+        expect(completed).toEqual([]);
+        expect(errors).toHaveLength(1);
+        expect(String(errors[0])).toMatch(/already running/i);
+
+        // And the collision really is per-fire and self-clearing: once the
+        // abandoned run finishes, the session is healthy with no residue.
+        gate.open();
+        await drainUntil(() => completed.length >= 1);
+        wedged.fire(START + PERIOD * 3);
+        await drainUntil(() => completed.length >= 2);
+        expect(completed).toEqual(["fire@100", "fire@300"]);
+        expect(errors).toHaveLength(1);
+
+        const stoppingNext = next.stop({ timeoutMs: PERIOD });
+        await advanceFakeTimers(PERIOD);
+        await stoppingNext;
+      } finally {
+        // Let the abandoned run finish rather than outlive the test.
+        holdGate = undefined;
+        gate.open();
+        await flushAsyncWork();
+        restore();
+      }
+    });
+
+    test("a run abandoned by a timed-out stop does not exhaust the next session's backlog", async () => {
+      const { restore } = captureLogs();
+      const gate = createGate();
+      const laterGate = createGate();
+      try {
+        const workflow = createWorkflow();
+        const wedged = new WedgedTrigger("wedged-backlog");
+        const errors: Error[] = [];
+        wedged.on("error", (error) => errors.push(error));
+        workflow.trigger(wedged, {
+          input: (context) => ({ label: `fire@${context.scheduledAt - START}` }),
+          maxPendingFires: 1,
+        });
+
+        const handle = await workflow.listen();
+        holdGate = gate;
+        wedged.fire(START + PERIOD);
+        await drainUntil(() => executions.length === 1);
+        // Queues behind the parked run: this binding's pending count is now 1.
+        wedged.fire(START + PERIOD * 2);
+        await flushAsyncWork();
+        expect(errors).toEqual([]);
+
+        const stopping = handle.stop({ timeoutMs: PERIOD });
+        await advanceFakeTimers(PERIOD);
+        await stopping;
+
+        // The abandoned pair is still parked, so the count they were charged
+        // against is exactly the residue the next session must not inherit.
+        holdGate = undefined;
+        const next = await workflow.listen();
+        wedged.fire(START + PERIOD * 3);
+        await flushAsyncWork();
+
+        // This fire reaches the workflow — where it collides with the abandoned
+        // run, which is the documented trade. What it must NOT be is dropped
+        // against a backlog the previous session abandoned, which is what
+        // happens today: the count is still 1, so the fire never gets that far.
+        expect(errors).toHaveLength(1);
+        expect(errors[0]?.message).not.toContain("maxPendingFires");
+        expect(String(errors[0])).toMatch(/already running/i);
+
+        // Now let the abandoned pair settle. The queued one decrements a
+        // counter the release already reset, which is what the clamp is for:
+        // unclamped it goes NEGATIVE, and a negative count makes the
+        // `waiting >= limit` drop test unreachable — the unbounded backlog
+        // `maxPendingFires` exists to prevent.
+        gate.open();
+        await drainUntil(() => completed.length >= 2);
+        expect(completed).toEqual(["fire@100", "fire@200"]);
+
+        // So the fresh session's backlog must still bound at 1: one fire runs,
+        // one queues under the limit, and the third is dropped. That third drop
+        // is reachable only if the counter really is 0 rather than negative.
+        holdGate = laterGate;
+        wedged.fire(START + PERIOD * 4);
+        await drainUntil(() => executions.length === 3);
+        wedged.fire(START + PERIOD * 5);
+        await flushAsyncWork();
+        expect(errors).toHaveLength(1);
+        wedged.fire(START + PERIOD * 6);
+        await flushAsyncWork();
+        expect(errors).toHaveLength(2);
+        expect(errors[1]?.message).toContain("maxPendingFires: 1");
+
+        holdGate = undefined;
+        laterGate.open();
+        await drainUntil(() => completed.length >= 4);
+
+        const stoppingNext = next.stop({ timeoutMs: PERIOD });
+        await advanceFakeTimers(PERIOD);
+        await stoppingNext;
+      } finally {
+        holdGate = undefined;
+        gate.open();
+        laterGate.open();
+        await flushAsyncWork();
         restore();
       }
     });

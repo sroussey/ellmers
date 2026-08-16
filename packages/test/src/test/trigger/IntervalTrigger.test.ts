@@ -1108,13 +1108,20 @@ describe("IntervalTrigger", () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
-    test("rejects a non-positive stop deadline", () => {
+    test("rejects a non-positive stop deadline", async () => {
+      // The constructor throws synchronously — there is no promise to carry the
+      // failure. `stop()` REJECTS instead, so a caller stopping a set of
+      // triggers is not taken down before its siblings are even asked.
       expect(() => new IntervalTrigger({ intervalMs: PERIOD, stopTimeoutMs: 0 })).toThrow(
         TriggerConfigurationError
       );
       const trigger = new IntervalTrigger({ intervalMs: PERIOD });
-      expect(() => trigger.stop({ timeoutMs: -1 })).toThrow(TriggerConfigurationError);
-      expect(() => trigger.stop({ timeoutMs: 1.5 })).toThrow(TriggerConfigurationError);
+      await expect(trigger.stop({ timeoutMs: -1 })).rejects.toBeInstanceOf(
+        TriggerConfigurationError
+      );
+      await expect(trigger.stop({ timeoutMs: 1.5 })).rejects.toBeInstanceOf(
+        TriggerConfigurationError
+      );
     });
   });
 });

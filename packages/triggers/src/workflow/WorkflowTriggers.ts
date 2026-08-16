@@ -71,7 +71,10 @@ export interface WorkflowListenOptions {
   readonly signal?: AbortSignal | undefined;
   /**
    * Default deadline for {@link ITriggerListenerHandle.stop}, in milliseconds.
-   * Unbounded by default; see {@link TriggerStopOptions.timeoutMs}.
+   * A positive integer, VALIDATED BY `listen()` — a malformed one would
+   * otherwise surface only at `stop()`, where the thing that fails is the
+   * shutdown itself. Unbounded by default; see
+   * {@link TriggerStopOptions.timeoutMs}.
    *
    * Forwarded to each trigger's own `stop()` AND applied again around the whole
    * set, because a trigger is an interface: a third-party `ITrigger` that
@@ -97,6 +100,20 @@ export interface ITriggerListenerHandle extends AsyncDisposable {
    * Pass {@link TriggerStopOptions.timeoutMs} (or `stopTimeoutMs` on
    * {@link Workflow.listen}) to bound that wait; unbounded by default, so a
    * handler that never settles never lets this resolve.
+   *
+   * Resolving means EVERY trigger stopped. Two ways it rejects instead, and the
+   * two leave the session in deliberately opposite states:
+   *
+   * - a malformed `timeoutMs` rejects before anything is attempted, leaving the
+   *   session fully intact and this handle still usable; while
+   * - a trigger whose own `stop()` rejected is reported and then re-thrown as a
+   *   {@link WorkflowTriggerError} naming it, with `cause` set to the first
+   *   reason — after every trigger was asked to stop and the handle released,
+   *   so the workflow can listen again.
+   *
+   * An expired `timeoutMs` is NOT a rejection: the deadline is opt-in and its
+   * documented outcome is that the abandoned handlers keep running, reported by
+   * a warning.
    */
   stop(options?: TriggerStopOptions): Promise<void>;
 }
@@ -189,11 +206,23 @@ declare module "@workglow/task-graph" {
      * runner); this method only owns the schedule.
      *
      * Calling it again while already listening returns the same handle rather
-     * than starting a second set of timers.
+     * than starting a second set of timers — but only for a call carrying NO
+     * configuration. A listening session is configured once: to change its
+     * configuration, `stopListening()` and listen again.
      *
+     * @throws {@link TriggerConfigurationError} when `options.stopTimeoutMs` is
+     *   not a positive integer — checked first, because a malformed number is
+     *   wrong whatever the signal's state and whether or not this workflow is
+     *   already listening.
      * @throws the signal's abort reason when `options.signal` is already
      *   aborted — checked before any state is touched, so the workflow is left
      *   exactly as it was and stays free to bind and listen later.
+     * @throws {@link WorkflowTriggerError} when this workflow is already
+     *   listening AND the call carries a `signal` or a `stopTimeoutMs`. The
+     *   handle is shared, so there is nowhere for a second configuration to go:
+     *   merging would let this caller's abort tear down the first caller's
+     *   schedule, leak an abort listener per call, and leave no answer to whose
+     *   `stopTimeoutMs` wins.
      * @throws {@link WorkflowTriggerError} when a bound trigger is already
      *   running (it is driving another workflow, and a trigger holds one
      *   handler). Checked before any state is touched too, so a rejected
@@ -204,6 +233,11 @@ declare module "@workglow/task-graph" {
     /**
      * Stops every trigger started by {@link Workflow.listen}. A no-op when not
      * listening. Bounded only if `listen()` was given a `stopTimeoutMs`.
+     *
+     * REJECTS when a trigger's own `stop()` rejected — see
+     * {@link ITriggerListenerHandle.stop}, whose contract this shares: the
+     * triggers were all asked and the handle released, but resolving has to
+     * mean everything stopped. An expired deadline still resolves.
      */
     stopListening(): Promise<void>;
   }
@@ -273,7 +307,16 @@ export async function listenWorkflow(
   workflow: Workflow,
   options: WorkflowListenOptions = {}
 ): Promise<ITriggerListenerHandle> {
-  // FIRST, before the handle lookup and before any state is touched. An
+  // Validated FIRST — ahead of the signal and ahead of the handle lookup —
+  // because a malformed deadline is wrong regardless of what the signal is
+  // doing and regardless of whether this workflow is already listening. Left
+  // unvalidated, its only symptom was a `stop()` that could not complete: the
+  // one moment the schedule most needs to be stoppable.
+  if (options.stopTimeoutMs !== undefined) {
+    assertPositiveInteger(options.stopTimeoutMs, "stopTimeoutMs");
+  }
+
+  // Before the handle lookup and before any state is touched. An
   // already-aborted signal starts nothing (`BaseTrigger.start` bails on one),
   // so the old path returned a handle that had already been removed from
   // `workflowHandles` and whose triggers were never scheduled: a listen() that
@@ -281,7 +324,21 @@ export async function listenWorkflow(
   options.signal?.throwIfAborted();
 
   const existing = workflowHandles.get(workflow);
-  if (existing) return existing;
+  if (existing) {
+    // A bare repeat call is a documented no-op: it hands back the running
+    // session. A repeat call carrying CONFIGURATION is not, because there is
+    // nowhere for that configuration to go — the handle is shared. Wiring the
+    // second caller's `signal` would let consumer B's abort tear down consumer
+    // A's schedule and leak an abort listener per call, and there is no
+    // defensible answer to whose `stopTimeoutMs` wins.
+    if (options.signal !== undefined || options.stopTimeoutMs !== undefined) {
+      throw new WorkflowTriggerError(
+        "This workflow is already listening and a listening session is configured once: to " +
+          "change its configuration, call stopListening() and listen again."
+      );
+    }
+    return existing;
+  }
 
   const bindings = workflowBindings.get(workflow) ?? [];
   if (bindings.length === 0) {
@@ -314,13 +371,42 @@ export async function listenWorkflow(
   const triggers = bindings.map((binding) => binding.trigger);
   let detachAbort: (() => void) | undefined;
 
+  /**
+   * Destroys this listening session. The handle, the run chain and the pending
+   * counters are ONE session's state — created by exactly one `listen()` and
+   * destroyed by exactly one call to this — so all three go together, behind
+   * the SAME identity check: a stale release (a timed-out `stop()` finishing
+   * after a fresh `listen()`) must not wipe a newer session's state.
+   *
+   * Clearing the chain is what stops a run abandoned by a timed-out `stop()`
+   * from being awaited by the next session's first fire, which would otherwise
+   * queue behind a promise nothing can settle — a schedule that is running and
+   * permanently silent. The residual trade is a possible collision: if the
+   * abandoned run is still going, that first fire can hit `Workflow`'s
+   * "already running" error on the trigger's `error` event. That is the
+   * intended exchange — a loud, per-fire, self-clearing error instead of silent
+   * permanent death. The abandoned chain cannot take the new tail down with it:
+   * its own `finally` deletes the entry only while it is still the recorded
+   * tail (see {@link runWorkflowForFire}).
+   */
   const releaseHandle = (): void => {
     detachAbort?.();
     detachAbort = undefined;
-    if (workflowHandles.get(workflow) === handle) workflowHandles.delete(workflow);
+    if (workflowHandles.get(workflow) !== handle) return;
+    workflowHandles.delete(workflow);
+    workflowRunChains.delete(workflow);
+    for (const binding of bindings) binding.pending = 0;
   };
 
   const stop = async (stopOptions: TriggerStopOptions = {}): Promise<void> => {
+    // The FIRST statement, so a malformed deadline rejects before any trigger
+    // is asked to stop and before the handle is released: nothing was
+    // attempted, so the session is left fully intact — still installed, still
+    // stoppable through a corrected `handle.stop()`. `options.stopTimeoutMs`
+    // needs no re-check; `listen()` validated it.
+    if (stopOptions.timeoutMs !== undefined) {
+      assertPositiveInteger(stopOptions.timeoutMs, "timeoutMs");
+    }
     const timeoutMs = stopOptions.timeoutMs ?? options.stopTimeoutMs;
     const triggerStopOptions: TriggerStopOptions = timeoutMs === undefined ? {} : { timeoutMs };
 
@@ -343,22 +429,44 @@ export async function listenWorkflow(
     const results =
       timeoutMs === undefined ? await settling : await settleWithin(settling, timeoutMs);
 
-    // Released either way: leaving the handle installed after a timed-out stop
-    // locks `workflow.trigger(...)` forever and makes `listen()` keep handing
-    // back triggers that are on their way out.
+    // Released whatever happened — a timed-out drain and a rejected
+    // `trigger.stop()` alike. Neither is evidence that a trigger is still
+    // scheduling, and leaving the handle installed locks
+    // `workflow.trigger(...)` forever while making `listen()` keep handing back
+    // triggers that are on their way out. The failure is propagated below
+    // instead, which reports it without holding the workflow hostage.
     releaseHandle();
 
     if (results === undefined) {
+      // The deadline is opt-in and its documented outcome is that the abandoned
+      // handlers keep running, so it warns rather than rejecting: the caller
+      // asked to get on with shutting down.
       getLogger().warn("Timed out stopping workflow triggers", {
         timeoutMs,
         triggerIds: [...outstanding].map((trigger) => trigger.id),
       });
       return;
     }
-    for (const result of results) {
-      if (result.status === "rejected") {
-        getLogger().error("Trigger failed to stop", { error: String(result.reason) });
-      }
+
+    // `allSettled` preserves order, so a result's index names its trigger.
+    const failures: { readonly id: string; readonly reason: unknown }[] = [];
+    results.forEach((result, index) => {
+      if (result.status !== "rejected") return;
+      const id = triggers[index]?.id ?? "unknown";
+      failures.push({ id, reason: result.reason });
+      getLogger().error("Trigger failed to stop", { triggerId: id, error: String(result.reason) });
+    });
+    if (failures.length > 0) {
+      // Reported AND propagated: every trigger was asked and the handle is
+      // already released, but a `stop()` that resolves has to mean everything
+      // stopped — reporting through the logger alone left a caller told its
+      // shutdown succeeded while a trigger it named was never stopped.
+      throw new WorkflowTriggerError(
+        `Trigger(s) ${failures.map((failure) => `"${failure.id}"`).join(", ")} failed to stop. ` +
+          `Every trigger was asked and the handle was released, so this workflow can listen ` +
+          `again — but stop() resolving means every trigger stopped.`,
+        { cause: failures[0]!.reason }
+      );
     }
   };
   const handle: ITriggerListenerHandle = {
@@ -414,6 +522,9 @@ export async function listenWorkflow(
  * Stops every trigger {@link listenWorkflow} started for `workflow`. The
  * free-function form of {@link Workflow.stopListening}; a no-op when the
  * workflow is not listening.
+ *
+ * Rejects when a trigger's own `stop()` rejected — see
+ * {@link ITriggerListenerHandle.stop} for the full contract.
  */
 export async function stopWorkflowListening(workflow: Workflow): Promise<void> {
   await workflowHandles.get(workflow)?.stop();
@@ -511,7 +622,14 @@ async function runWorkflowForFire(
       // `catch`, not a bare await: a fire whose run rejected must not take the
       // fires queued behind it down with it.
       await predecessor.catch(() => {});
-      binding.pending -= 1;
+      // Clamped, because this decrement can outlive the session that counted
+      // it: a chain abandoned by a timed-out `stop()` still decrements when its
+      // predecessor eventually settles, and by then `releaseHandle` has reset
+      // the counter to 0. Unclamped that drives it NEGATIVE, which makes the
+      // `waiting >= limit` drop test unreachable — reintroducing, in the
+      // backlog counter itself, the unbounded growth `maxPendingFires` exists
+      // to prevent.
+      binding.pending = Math.max(0, binding.pending - 1);
       // The wait can outlast the trigger. A fire that queued behind a slow run
       // must not start a new one after `stop()`.
       if (context.signal.aborted) return;
@@ -534,7 +652,10 @@ async function runWorkflowForFire(
     if (context.signal.aborted) return;
     throw error;
   } finally {
-    // Identity check: a later fire may already have claimed the tail.
+    // Identity check: a later fire may already have claimed the tail — and so
+    // may a later listening SESSION, since `releaseHandle` clears the tail with
+    // the rest of the session's state. A chain abandoned by a timed-out
+    // `stop()` therefore settles without deleting the new session's tail.
     if (workflowRunChains.get(workflow) === chain) workflowRunChains.delete(workflow);
   }
 }
