@@ -13,5 +13,6 @@
 // organize-imports-ignore
 
 export * from "./common/Xai_Client";
+export * from "./common/Xai_EffortPolicy";
 export * from "./registerXaiInline.browser";
 export * from "./registerXaiWorker.browser";

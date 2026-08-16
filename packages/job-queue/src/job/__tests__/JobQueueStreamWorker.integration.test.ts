@@ -13,13 +13,14 @@ import { afterEach, describe, expect, it } from "vitest";
  * queue host — NOT a test of current `@workglow/job-queue` behavior.
  *
  * SCOPE — read before changing this test: today, `@workglow/job-queue`'s own
- * stream channel (`IJobExecuteContext.emitStreamEvent` → worker `job_stream`
- * event → `JobQueueServer.forwardToClients("handleJobStream", …)` →
- * `JobQueueClient` → `JobHandle.onStream`) is entirely SAME-PROCESS: the
- * `JobQueueWorker` runs in-process inside `JobQueueServer`, and
- * `forwardToClients` invokes attached-client methods directly (no postMessage,
- * no worker thread, no transferables). Cross-PROCESS coordination is handled
- * by the message-queue storage layer via `IMessageQueue.subscribeToChanges`
+ * stream channel (`IJobExecuteContext.emitStreamEvent` → worker
+ * `onStreamEvent` → `JobQueueServer.dispatchStreamToClients` →
+ * `JobQueueClient.handleJobStream` → `JobHandle.onStream`) is entirely
+ * SAME-PROCESS: the `JobQueueWorker` runs in-process inside
+ * `JobQueueServer`, and `dispatchStreamToClients` invokes attached-client
+ * methods directly (no postMessage, no worker thread, no transferables).
+ * Cross-PROCESS coordination is handled by the message-queue storage layer
+ * via `IMessageQueue.subscribeToChanges`
  * with serialized rows — also not a transferables path. There is no
  * `WorkerManager`-hosted queue transport anywhere in the package. The actual
  * same-process delivery path is proven by JobQueueStream.test.ts.

@@ -11,7 +11,9 @@ import type {
   ModelSearchTaskOutput,
 } from "@workglow/ai";
 import { normalizedModelSearchQuery } from "@workglow/ai/provider-utils";
+import { stampEffortOptions } from "@workglow/ai/worker";
 import { GOOGLE_GEMINI } from "./Gemini_Constants";
+import { geminiEffortPolicy } from "./Gemini_EffortPolicy";
 
 interface GeminiModelEntry {
   readonly label: string;
@@ -72,15 +74,21 @@ function mapGeminiModel(model: GeminiApiModel): ModelSearchResultItem {
     id,
     label: title,
     description: model.displayName ? id : (model.description ?? ""),
-    record: {
-      model_id: id,
-      provider: GOOGLE_GEMINI,
-      title,
-      description: model.description ?? "",
-      capabilities: capabilitiesForGeminiApiModel(model, id),
-      provider_config: { model_name: id },
-      metadata: {},
-    },
+    record: stampEffortOptions(
+      {
+        model_id: id,
+        provider: GOOGLE_GEMINI,
+        title,
+        description: model.description ?? "",
+        capabilities: capabilitiesForGeminiApiModel(model, id),
+        provider_config: { model_name: id },
+        metadata: {},
+      },
+      geminiEffortPolicy({
+        provider: GOOGLE_GEMINI,
+        provider_config: { model_name: id },
+      })
+    ),
     raw: model,
   };
 }
@@ -124,15 +132,21 @@ export const Gemini_ModelSearch_Stream: AiProviderRunFn<
     id: m.value,
     label: m.label,
     description: "",
-    record: {
-      model_id: m.value,
-      provider: GOOGLE_GEMINI,
-      title: m.value,
-      description: "",
-      capabilities: m.capabilities ? [...m.capabilities] : [],
-      provider_config: { model_name: m.value },
-      metadata: {},
-    },
+    record: stampEffortOptions(
+      {
+        model_id: m.value,
+        provider: GOOGLE_GEMINI,
+        title: m.value,
+        description: "",
+        capabilities: m.capabilities ? [...m.capabilities] : [],
+        provider_config: { model_name: m.value },
+        metadata: {},
+      },
+      geminiEffortPolicy({
+        provider: GOOGLE_GEMINI,
+        provider_config: { model_name: m.value },
+      })
+    ),
     raw: m,
   }));
   emit({ type: "finish", data: { results } });

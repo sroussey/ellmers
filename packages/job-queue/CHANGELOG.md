@@ -1,5 +1,48 @@
 # @workglow/job-queue
 
+## 0.3.45
+
+### Breaking Changes
+
+- **features(job-queue)**: pace a producing job by its stream consumers
+- **features(job-queue)**: emitStreamEvent returns a delivery promise
+
+### Features
+
+#### job-queue
+
+- pace a producing job by its stream consumers
+- emitStreamEvent returns a delivery promise
+
+### Bug Fixes
+
+#### job-queue
+
+- hold a job's claim while a stream event is parked
+- advertise onStream only where an event can be delivered
+
+### Refactors
+
+#### tasks
+
+- pin response_type at every call site
+
+### Tests
+
+#### job-queue
+
+- fix pacing test setup and cover the half-channel gate
+
+## 0.3.44
+
+## 0.3.43
+
+## 0.3.42
+
+## 0.3.41
+
+## 0.3.40
+
 ## 0.3.39
 
 ### Bug Fixes

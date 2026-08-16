@@ -42,6 +42,12 @@ export const XaiModelSchema = {
           default: false,
           "x-ui-hidden": true,
         },
+        reasoning_effort: {
+          type: "string",
+          description:
+            "Native xAI reasoning effort. When set, wins over the coarse model.effort dial.",
+          "x-ui-hidden": true,
+        },
       },
       required: ["model_name"],
       additionalProperties: false,

@@ -90,7 +90,7 @@ describe("job-queue stream delivery (same-process)", () => {
     expect(typeof handle.onStream).toBe("function");
 
     const received: StreamEventLike[] = [];
-    const cleanup = handle.onStream!((event) => {
+    const cleanup = handle.onStream!(async (event) => {
       received.push(event);
     });
 

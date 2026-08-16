@@ -7,8 +7,16 @@
 import type { DataPortSchemaObject } from "@workglow/util/worker";
 import type { ModelEffort } from "./ModelEffort";
 
-export { isModelEffort, MODEL_EFFORTS } from "./ModelEffort";
-export type { ModelEffort } from "./ModelEffort";
+export {
+  effortPlaceholder,
+  enabledEffortsForModel,
+  isModelEffort,
+  MODEL_EFFORTS,
+  readEffortOptions,
+  sanitizeEffortOptions,
+  stampEffortOptions,
+} from "./ModelEffort";
+export type { ModelEffort, ModelEffortPolicy } from "./ModelEffort";
 
 /**
  * A model configuration suitable for task/job inputs.
@@ -30,6 +38,12 @@ export const ModelConfigSchema = {
       enum: ["none", "low", "medium", "high", "extra", "ultra"],
       description:
         "Coarse thinking/reasoning dial. Native provider_config thinking knobs always win when set.",
+    },
+    effort_options: {
+      type: "array",
+      items: { type: "string", enum: ["none", "low", "medium", "high", "extra", "ultra"] },
+      description:
+        "Enabled coarse effort levels for this model. When present (including empty), overrides provider.effortPolicy for UI.",
     },
     provider_config: {
       type: "object",
@@ -137,6 +151,7 @@ export type ModelConfig = {
   metadata?: { [x: string]: unknown } | undefined;
   pricing?: ModelPricing | undefined;
   effort?: ModelEffort | undefined;
+  effort_options?: ModelEffort[] | undefined;
   provider: string;
   provider_config: {
     [x: string]: unknown;
@@ -152,6 +167,7 @@ export type ModelRecord = {
   capabilities: string[];
   pricing?: ModelPricing | undefined;
   effort?: ModelEffort | undefined;
+  effort_options?: ModelEffort[] | undefined;
   provider: string;
   provider_config: {
     [x: string]: unknown;

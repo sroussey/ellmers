@@ -34,11 +34,7 @@ async function assertAnthropicModelExists(
   const modelName = modelNameOf(model);
   const client = await getClient(model);
   try {
-    await client.beta.models.retrieve(
-      modelName,
-      null,
-      signal ? { signal } : undefined
-    );
+    await client.beta.models.retrieve(modelName, null, signal ? { signal } : undefined);
   } catch (err) {
     if (isNotFoundError(err)) {
       throw new Error(

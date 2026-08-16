@@ -131,6 +131,16 @@ export interface JobQueueWorkerOptions<Input, Output> {
    * by the limiter.
    */
   readonly prefetch?: number;
+  /**
+   * Direct, awaitable call path from {@link JobQueueWorker.emitStreamEvent} to
+   * the owning `JobQueueServer`'s attached clients. `events.emit` cannot
+   * carry a return value back to its caller, so a server injects this hook
+   * (see `JobQueueServer.createWorker`) rather than the worker maintaining a
+   * second client registry — it reuses the server's existing `clients` set.
+   * Never rejects; a forwarding failure is the injected hook's own concern to
+   * log.
+   */
+  readonly onStreamEvent?: (jobId: unknown, event: StreamEventLike) => Promise<void>;
 }
 
 /**
@@ -157,6 +167,8 @@ export class JobQueueWorker<
   protected readonly events = new EventEmitter<JobQueueWorkerEventListeners<Input, Output>>();
   protected readonly deadLetter: IMessageQueue<DeadLetter<Input>> | "discard";
   protected readonly prefetch: number;
+  protected readonly onStreamEvent:
+    ((jobId: unknown, event: StreamEventLike) => Promise<void>) | undefined;
 
   protected running = false;
 
@@ -222,6 +234,13 @@ export class JobQueueWorker<
   private readonly streamPublishChains: Map<unknown, Promise<void>> = new Map();
 
   /**
+   * Per-job lease-renewal timers armed by {@link armStreamClaimHeartbeat}.
+   * Cleared when the job's `executeJob` returns and again in
+   * {@link cleanupJob}, so a late fire-and-forget emit cannot leave one behind.
+   */
+  private readonly streamClaimHeartbeats: Map<unknown, ReturnType<typeof setInterval>> = new Map();
+
+  /**
    * Recent per-job processing durations (ms) used for
    * {@link getAverageProcessingTime}. Bounded to the most recent
    * {@link JobQueueWorker.maxProcessingTimeSamples} entries so a long-lived worker doesn't
@@ -253,6 +272,7 @@ export class JobQueueWorker<
       options.maxProcessingTimeSamples ?? DEFAULT_LIMITS.jobQueueMaxProcessingTimeSamples;
     this.deadLetter = options.deadLetter ?? "discard";
     this.prefetch = Math.max(1, options.prefetch ?? 1);
+    this.onStreamEvent = options.onStreamEvent;
   }
 
   /**
@@ -821,6 +841,7 @@ export class JobQueueWorker<
         if (leaseInterval !== undefined) {
           clearInterval(leaseInterval);
         }
+        this.clearStreamClaimHeartbeat(job.id);
       }
       await this.completeJob(job, output);
 
@@ -932,15 +953,51 @@ export class JobQueueWorker<
   }
 
   /**
-   * Emit a cross-process stream event for a job.
+   * Emit a stream event for a job, both in-memory to the owning server's
+   * attached clients and best-effort across processes via the message
+   * queue's publish chain.
    *
-   * Mirrors {@link updateProgress}: stream events are delivered in-memory via
-   * the `job_stream` event and forwarded by an attached `JobQueueServer` to
-   * subscribed clients. Storage is not touched.
+   * The returned promise settles once BOTH halves have delivered:
+   *
+   * - the direct, awaitable dispatch to attached clients via
+   *   {@link JobQueueWorkerOptions.onStreamEvent} — injected by the server
+   *   because `this.events.emit` below cannot carry a return value back to
+   *   this caller; and
+   * - the cross-process publish chain (unchanged from before).
+   *
+   * Neither half can reject the returned promise — a forwarding failure or a
+   * publish failure is logged and swallowed — so a slow or misbehaving
+   * consumer paces the producing job without ever failing it.
+   *
+   * Emitting is also what makes this job's remaining runtime consumer-paced,
+   * so it is where the claim starts being renewed — see
+   * {@link armStreamClaimHeartbeat}.
    */
-  protected emitStreamEvent(jobId: unknown, event: StreamEventLike): void {
-    // In-memory fast path (same-process attached clients) — unchanged.
+  protected emitStreamEvent(jobId: unknown, event: StreamEventLike): Promise<void> {
+    this.armStreamClaimHeartbeat(jobId);
+
+    // In-memory fan-out for worker-level observers (mirrored again at the
+    // server level) — fire-and-forget, unrelated to the awaitable dispatch
+    // below.
     this.events.emit("job_stream", jobId, event);
+
+    const dispatches: Promise<void>[] = [];
+
+    // Direct call path to the owning server's attached clients. This is the
+    // in-process half of the returned promise: without it, a job on a
+    // backend with no `publishStreamChunk` (SQLite, Postgres, Supabase,
+    // IndexedDB) would await nothing and could outrun its consumer without
+    // bound.
+    if (this.onStreamEvent) {
+      dispatches.push(
+        this.onStreamEvent(jobId, event).catch((err) => {
+          getLogger().error("stream event dispatch to attached clients failed", {
+            jobId,
+            error: err,
+          });
+        })
+      );
+    }
 
     // Cross-process side-channel (best-effort). The CARRIER assigns the per-job
     // `seq` from a counter it owns, so the sequence is continuous across
@@ -962,7 +1019,64 @@ export class JobQueueWorker<
           getLogger().error("publishStreamChunk failed", { jobId, error: err });
         });
       this.streamPublishChains.set(jobId, chain);
+      dispatches.push(chain);
     }
+
+    if (dispatches.length === 0) return Promise.resolve();
+    return Promise.all(dispatches).then(() => undefined);
+  }
+
+  /**
+   * Start renewing this job's claim, once, on its first stream event.
+   *
+   * {@link emitStreamEvent} resolves only after every `onStream` listener has
+   * taken the event, and a graph consumer's listener resolves only when the
+   * consumer pulls — so a slow sink parks the job mid-body for as long as it
+   * likes. Nothing else renews the claim while it is parked: `updateProgress`
+   * deliberately never touches storage, and the only remaining writes are the
+   * terminal ones. A storage that reclaims PROCESSING rows with an expired
+   * lease (`InMemoryQueueStorage.next` and every durable backend that follows
+   * the same `IQueueStorage.next` contract) then hands the job to the
+   * next `next()` caller — this worker's own poll loop included — and the
+   * re-execution replays the whole body onto the subscription still parked on
+   * the first one, concatenating two copies of the payload. That is the
+   * corruption the stream retry ban exists to prevent, arriving by a path the
+   * ban does not cover; the reclaim also burns an attempt each time, so a
+   * parked job can exhaust `maxAttempts` while its first execution is still
+   * running.
+   *
+   * Renewal starts at the first event rather than for every job because that
+   * emit is the moment the job's remaining runtime stops being bounded by its
+   * own work. `extendLeaseWhileRunning` already renews for the whole
+   * execution, so it is left to do the job when enabled.
+   */
+  private armStreamClaimHeartbeat(jobId: unknown): void {
+    if (this.extendLeaseWhileRunning) return;
+    if (this.streamClaimHeartbeats.has(jobId)) return;
+    // No claim means no lease to hold: the emit is arriving outside the
+    // claimed window (a fire-and-forget event landing after the terminal
+    // write) and a timer here would have nothing to clear it.
+    if (!this.activeClaims.has(jobId)) return;
+    const period = Math.max(1, Math.floor(this.leaseMs * 0.5));
+    const timer = setInterval(() => {
+      const claim = this.activeClaims.get(jobId);
+      if (!claim) return;
+      claim.extendLease(this.leaseMs).catch((err) => {
+        getLogger().error("extendLease failed while a stream event was in flight:", {
+          error: err,
+          jobId,
+        });
+      });
+    }, period);
+    this.streamClaimHeartbeats.set(jobId, timer);
+  }
+
+  /** Stop renewing a job's claim. Idempotent. */
+  private clearStreamClaimHeartbeat(jobId: unknown): void {
+    const timer = this.streamClaimHeartbeats.get(jobId);
+    if (timer === undefined) return;
+    clearInterval(timer);
+    this.streamClaimHeartbeats.delete(jobId);
   }
 
   /** Internal — resolve the active claim for a job id, throw if missing. */
@@ -1249,6 +1363,7 @@ export class JobQueueWorker<
     this.activeJobAbortControllers.delete(jobId);
     this.activeClaims.delete(jobId);
     this.streamPublishChains.delete(jobId);
+    this.clearStreamClaimHeartbeat(jobId);
   }
 
   /**

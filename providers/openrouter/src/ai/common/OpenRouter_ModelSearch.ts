@@ -11,8 +11,10 @@ import type {
   ModelSearchTaskOutput,
 } from "@workglow/ai";
 import { filterLabeledModelsByQuery } from "@workglow/ai/provider-utils";
+import { stampEffortOptions } from "@workglow/ai/worker";
 import { deriveCapabilitiesFromMeta } from "./OpenRouter_Capabilities";
 import { OPENROUTER } from "./OpenRouter_Constants";
+import { openrouterEffortPolicy } from "./OpenRouter_EffortPolicy";
 
 export interface OpenRouterRawModel {
   readonly id: string;
@@ -79,20 +81,26 @@ export function mapOpenRouterModels(raw: readonly OpenRouterRawModel[]): ModelSe
       id: m.id,
       label: m.name ?? m.id,
       description: m.description ?? "",
-      record: {
-        model_id: m.id,
-        provider: OPENROUTER,
-        title: m.name ?? m.id,
-        description: m.description ?? "",
-        capabilities: [...capabilities],
-        provider_config: { model_name: m.id },
-        metadata: {
-          context_length: m.context_length,
-          pricing: m.pricing,
-          architecture: m.architecture,
-          supported_parameters: m.supported_parameters,
+      record: stampEffortOptions(
+        {
+          model_id: m.id,
+          provider: OPENROUTER,
+          title: m.name ?? m.id,
+          description: m.description ?? "",
+          capabilities: [...capabilities],
+          provider_config: { model_name: m.id },
+          metadata: {
+            context_length: m.context_length,
+            pricing: m.pricing,
+            architecture: m.architecture,
+            supported_parameters: m.supported_parameters,
+          },
         },
-      },
+        openrouterEffortPolicy({
+          provider: OPENROUTER,
+          provider_config: { model_name: m.id },
+        })
+      ),
       raw: m,
     };
   });

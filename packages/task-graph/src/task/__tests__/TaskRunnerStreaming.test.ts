@@ -349,6 +349,36 @@ class TestStreamingStructuredTask extends Task<StructuredInput, StructuredOutput
   }
 }
 
+/**
+ * Declares an `append` output port but implements only `execute()` — the
+ * configuration mistake TaskRunner's streaming diagnostic exists to name.
+ */
+class DeclaresStreamWithoutExecuteStreamTask extends Task<StreamTestInput, StreamTestOutput> {
+  public static override type = "DeclaresStreamWithoutExecuteStreamTask";
+  public static override cacheable = false;
+
+  public static override inputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { prompt: { type: "string" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+
+  public static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { text: { type: "string", "x-stream": "append" } },
+      required: ["text"],
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+
+  override async execute(): Promise<StreamTestOutput> {
+    return { text: "plain" };
+  }
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -668,6 +698,37 @@ describe("TaskRunner Streaming", () => {
       const result = await task.run({ prompt: "config-test" });
 
       expect(result.text).toBe("Hello world");
+    });
+
+    it("warns when a task declares an x-stream output but implements no executeStream", async () => {
+      // The one diagnostic for the "declared a stream, forgot to implement it"
+      // mistake, which otherwise degrades silently to accumulate-everything.
+      // It has been read as unreachable — `isStreamable` being false looks like
+      // it should force the mode to "none" — but `isTaskStreamable` returns
+      // false for the MISSING executeStream here, which is the guard's other
+      // conjunct, leaving the declared mode free to be non-"none".
+      const warnings: string[] = [];
+      const capturing = Object.create(getTestingLogger()) as { warn: (...a: unknown[]) => void };
+      capturing.warn = (...args: unknown[]) => {
+        warnings.push(String(args[0]));
+      };
+      setLogger(capturing as any);
+      try {
+        const task = new DeclaresStreamWithoutExecuteStreamTask();
+        const result = await task.run();
+        expect(result.text).toBe("plain");
+      } finally {
+        setLogger(logger);
+      }
+
+      expect(
+        warnings.some(
+          (w) =>
+            w.includes("DeclaresStreamWithoutExecuteStreamTask") &&
+            w.includes('declares streaming output (x-stream: "append")') &&
+            w.includes("does not implement executeStream()")
+        )
+      ).toBe(true);
     });
   });
 

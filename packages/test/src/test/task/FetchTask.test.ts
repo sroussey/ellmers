@@ -18,11 +18,15 @@ import {
   wrapQueueStorage,
 } from "@workglow/job-queue";
 import {
+  CACHE_REGISTRY,
+  DefaultCacheRegistry,
   getTaskQueueRegistry,
   JobTaskFailedError,
   setTaskQueueRegistry,
   TaskConfigurationError,
+  TaskInvalidInputError,
 } from "@workglow/task-graph";
+import { InMemoryTaskOutputRepository } from "@workglow/task-graph/test";
 import type { FetchUrlTaskInput, FetchUrlTaskOutput } from "@workglow/tasks";
 import {
   applyCredentialToHeaders,
@@ -32,6 +36,8 @@ import {
   FetchUrlJob,
   FetchUrlTask,
   isFetchUrlJobError,
+  isFetchUrlNetworkCause,
+  isFetchUrlRetryableErrorCode,
   registerSafeFetch,
   type SafeFetchFn,
 } from "@workglow/tasks";
@@ -58,6 +64,31 @@ const createMockResponse = (jsonData: any = {}): Response => {
     },
   });
 };
+
+function concatChunks(chunks: readonly Uint8Array[]): Uint8Array {
+  const merged = new Uint8Array(chunks.reduce((n, c) => n + c.byteLength, 0));
+  let offset = 0;
+  for (const c of chunks) {
+    merged.set(c, offset);
+    offset += c.byteLength;
+  }
+  return merged;
+}
+
+/** 200 whose body stream errors — the shape of a peer closing mid-read. */
+function erroredBodyResponse(error: Error): Response {
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.error(error);
+      },
+    }),
+    {
+      status: 200,
+      headers: { "Content-Type": "text/plain" },
+    }
+  );
+}
 
 // Mock fetch for testing — stubbed into SafeFetch so we bypass the real
 // server impl (DNS + undici) during unit tests. These tests cover retry,
@@ -106,7 +137,7 @@ describe("FetchUrlTask", () => {
       "https://api.example.com/3",
     ];
 
-    const results = await Promise.all(urls.map((url) => fetchUrl({ url })));
+    const results = await Promise.all(urls.map((url) => fetchUrl({ url, response_type: "json" })));
     expect(mockFetch.mock.calls.length).toBe(3);
     expect(results).toHaveLength(3);
     const sorted = results
@@ -154,9 +185,9 @@ describe("FetchUrlTask", () => {
     mockFetch.mockImplementation(() => Promise.resolve(createMockResponse(mockResponse)));
 
     // Add jobs to queue via client
-    await client.send({ url: "https://api.example.com/1" });
-    await client.send({ url: "https://api.example.com/2" });
-    await client.send({ url: "https://api.example.com/3" });
+    await client.send({ url: "https://api.example.com/1", response_type: "stream" });
+    await client.send({ url: "https://api.example.com/2", response_type: "stream" });
+    await client.send({ url: "https://api.example.com/3", response_type: "stream" });
 
     // Start the server and wait for processing
     await server.start();
@@ -182,6 +213,7 @@ describe("FetchUrlTask", () => {
 
     const fetchPromise = fetchUrl({
       url: "https://api.example.com/notfound",
+      response_type: "stream",
     });
 
     const error = await fetchPromise.catch((e: unknown) => e);
@@ -204,6 +236,7 @@ describe("FetchUrlTask", () => {
 
     const fetchPromise = fetchUrl({
       url: "https://api.example.com/network-error",
+      response_type: "stream",
     });
 
     const error = await fetchPromise.catch((e: unknown) => e);
@@ -231,6 +264,7 @@ describe("FetchUrlTask", () => {
 
     const fetchPromise = fetchUrl({
       url: "https://api.example.com/invalid-json",
+      response_type: "json",
     });
 
     const error = await fetchPromise.catch((e: unknown) => e);
@@ -240,6 +274,53 @@ describe("FetchUrlTask", () => {
     expect(jobFailed.code).toBe(FetchUrlErrorCode.RESPONSE_PARSE_ERROR);
 
     expect(mockFetch.mock.calls.length).toBe(1);
+  });
+
+  test("treats a socket close while reading the body as a retryable network error", async () => {
+    const socketError = new Error("The socket connection was closed unexpectedly");
+    mockFetch.mockImplementation(() => Promise.resolve(erroredBodyResponse(socketError)));
+
+    const error = await fetchUrl({
+      url: "https://www.sec.gov/Archives/edgar/data/1/a.txt",
+      response_type: "text",
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(JobTaskFailedError);
+    const jobFailed = error as JobTaskFailedError;
+    expect(jobFailed.code).toBe(FetchUrlErrorCode.NETWORK_ERROR);
+    expect(jobFailed.jobError).toBeInstanceOf(RetryableJobError);
+    expect(jobFailed.message).toContain("socket");
+    expect(mockFetch.mock.calls.length).toBe(1);
+  });
+
+  test("treats an ECONNRESET while reading the body as a retryable network error", async () => {
+    const reset = new Error("read failed") as NodeJS.ErrnoException;
+    reset.code = "ECONNRESET";
+    mockFetch.mockImplementation(() => Promise.resolve(erroredBodyResponse(reset)));
+
+    const error = await fetchUrl({
+      url: "https://www.sec.gov/Archives/edgar/data/1/a.txt",
+      response_type: "text",
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(JobTaskFailedError);
+    expect((error as JobTaskFailedError).code).toBe(FetchUrlErrorCode.NETWORK_ERROR);
+    expect((error as JobTaskFailedError).jobError).toBeInstanceOf(RetryableJobError);
+  });
+
+  test("treats a nested socket cause while reading the body as a retryable network error", async () => {
+    const wrapped = new Error("Unable to decode");
+    wrapped.cause = new Error("other side closed");
+    mockFetch.mockImplementation(() => Promise.resolve(erroredBodyResponse(wrapped)));
+
+    const error = await fetchUrl({
+      url: "https://www.sec.gov/Archives/edgar/data/1/a.txt",
+      response_type: "text",
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(JobTaskFailedError);
+    expect((error as JobTaskFailedError).code).toBe(FetchUrlErrorCode.NETWORK_ERROR);
+    expect((error as JobTaskFailedError).jobError).toBeInstanceOf(RetryableJobError);
   });
 
   test("handles mixed success and failure responses", async () => {
@@ -265,7 +346,9 @@ describe("FetchUrlTask", () => {
       "https://api.example.com/not-found",
     ];
 
-    const results = await Promise.allSettled(urls.map((url) => fetchUrl({ url })));
+    const results = await Promise.allSettled(
+      urls.map((url) => fetchUrl({ url, response_type: "json" }))
+    );
 
     expect(mockFetch.mock.calls.length).toBe(3);
     expect(results[0].status).toBe("fulfilled");
@@ -295,6 +378,7 @@ describe("FetchUrlTask", () => {
 
     const error = await fetchUrl({
       url: "https://api.example.com/rate-limited",
+      response_type: "stream",
     }).catch((e) => e);
 
     expect(error).toBeInstanceOf(JobTaskFailedError);
@@ -324,6 +408,7 @@ describe("FetchUrlTask", () => {
 
     const error = await fetchUrl({
       url: "https://api.example.com/service-unavailable",
+      response_type: "stream",
     }).catch((e) => e);
 
     expect(error).toBeInstanceOf(JobTaskFailedError);
@@ -358,7 +443,10 @@ describe("FetchUrlTask", () => {
       Promise.resolve(new Response("Not Found", { status: 404, statusText: "Not Found" }))
     );
 
-    const handle = await client.send({ url: "https://api.example.com/missing" });
+    const handle = await client.send({
+      url: "https://api.example.com/missing",
+      response_type: "stream",
+    });
     await server.start();
     const queueError = await handle.waitFor().catch((e: unknown) => e);
     expect(queueError).toBeInstanceOf(PermanentJobError);
@@ -388,6 +476,7 @@ describe("FetchUrlTask", () => {
 
     const error = await fetchUrl({
       url: "https://api.example.com/rate-limited-date",
+      response_type: "stream",
     }).catch((e) => e);
 
     expect(error).toBeInstanceOf(JobTaskFailedError);
@@ -417,6 +506,7 @@ describe("FetchUrlTask", () => {
 
     const error = await fetchUrl({
       url: "https://api.example.com/rate-limited-invalid",
+      response_type: "stream",
     }).catch((e) => e);
 
     expect(error).toBeInstanceOf(JobTaskFailedError);
@@ -442,6 +532,7 @@ describe("FetchUrlTask", () => {
 
     const error = await fetchUrl({
       url: "https://api.example.com/rate-limited-past",
+      response_type: "stream",
     }).catch((e) => e);
 
     expect(error).toBeInstanceOf(JobTaskFailedError);
@@ -468,6 +559,7 @@ describe("FetchUrlTask", () => {
 
     const error = await fetchUrl({
       url: "https://api.example.com/rate-limited-rfc1123",
+      response_type: "stream",
     }).catch((e) => e);
 
     expect(error).toBeInstanceOf(JobTaskFailedError);
@@ -500,6 +592,7 @@ describe("FetchUrlTask", () => {
 
     const error = await fetchUrl({
       url: "https://api.example.com/rate-limited-iso8601",
+      response_type: "stream",
     }).catch((e) => e);
 
     expect(error).toBeInstanceOf(JobTaskFailedError);
@@ -515,230 +608,550 @@ describe("FetchUrlTask", () => {
     expect(mockFetch.mock.calls.length).toBe(1);
   });
 
-  describe("dynamic outputSchema", () => {
-    test("outputSchema returns all output types when response_type is null", () => {
-      const task = new FetchUrlTask({
-        defaults: { url: "https://api.example.com/test", response_type: null },
-      });
+  describe("dynamic output schema", () => {
+    const props = (task: FetchUrlTask) => {
       const schema = task.outputSchema();
+      if (typeof schema === "boolean" || !schema.properties) throw new Error("no properties");
+      return schema.properties as Record<string, any>;
+    };
 
-      expect(typeof schema).toBe("object");
-      expect(schema).not.toBe(false);
-      if (typeof schema === "object" && schema !== null && "properties" in schema) {
-        expect(schema.properties).toHaveProperty("json");
-        expect(schema.properties).toHaveProperty("text");
-        expect(schema.properties).toHaveProperty("blob");
-        expect(schema.properties).toHaveProperty("arraybuffer");
-      }
-    });
-
-    test("outputSchema returns all output types when response_type is undefined", () => {
-      const task = new FetchUrlTask({ defaults: { url: "https://api.example.com/test" } });
-      const schema = task.outputSchema();
-
-      expect(typeof schema).toBe("object");
-      expect(schema).not.toBe(false);
-      if (typeof schema === "object" && schema !== null && "properties" in schema) {
-        expect(schema.properties).toHaveProperty("json");
-        expect(schema.properties).toHaveProperty("text");
-        expect(schema.properties).toHaveProperty("blob");
-        expect(schema.properties).toHaveProperty("arraybuffer");
-      }
-    });
-
-    test("outputSchema returns only json when response_type is json", () => {
+    test("stream yields body + metadata only", () => {
       const task = new FetchUrlTask({
-        defaults: { url: "https://api.example.com/test", response_type: "json" },
+        defaults: { url: "https://api.example.com/t", response_type: "stream" },
       });
-      const schema = task.outputSchema();
+      expect(Object.keys(props(task)).sort()).toEqual(["body", "metadata"]);
+    });
 
-      expect(typeof schema).toBe("object");
-      expect(schema).not.toBe(false);
-      if (typeof schema === "object" && schema !== null && "properties" in schema) {
-        expect(schema.properties).toHaveProperty("json");
-        expect(schema.properties).not.toHaveProperty("text");
-        expect(schema.properties).not.toHaveProperty("blob");
-        expect(schema.properties).not.toHaveProperty("arraybuffer");
+    test("body is always present and declares binary streaming", () => {
+      for (const rt of ["stream", "text", "json", "blob", "arraybuffer"] as const) {
+        const task = new FetchUrlTask({
+          defaults: { url: "https://api.example.com/t", response_type: rt },
+        });
+        expect(props(task).body["x-stream"]).toBe("binary");
+        expect(props(task).body.format).toBe("binary");
       }
     });
 
-    test("outputSchema returns only text when response_type is text", () => {
+    test("body is the only streaming port for every response type", () => {
+      for (const rt of ["stream", "text", "json", "blob", "arraybuffer"] as const) {
+        const task = new FetchUrlTask({
+          defaults: { url: "https://api.example.com/t", response_type: rt },
+        });
+        const streaming = Object.entries(props(task)).filter(([, p]) => p["x-stream"]);
+        expect(streaming.map(([name]) => name)).toEqual(["body"]);
+      }
+    });
+
+    test("json narrows to body + json + metadata", () => {
       const task = new FetchUrlTask({
-        defaults: { url: "https://api.example.com/test", response_type: "text" },
+        defaults: { url: "https://api.example.com/t", response_type: "json" },
       });
-      const schema = task.outputSchema();
-
-      expect(typeof schema).toBe("object");
-      expect(schema).not.toBe(false);
-      if (typeof schema === "object" && schema !== null && "properties" in schema) {
-        expect(schema.properties).not.toHaveProperty("json");
-        expect(schema.properties).toHaveProperty("text");
-        expect(schema.properties).not.toHaveProperty("blob");
-        expect(schema.properties).not.toHaveProperty("arraybuffer");
-      }
+      expect(Object.keys(props(task)).sort()).toEqual(["body", "json", "metadata"]);
     });
 
-    test("outputSchema returns only blob when response_type is blob", () => {
+    test("emits schemaChange when response_type changes", () => {
       const task = new FetchUrlTask({
-        defaults: { url: "https://api.example.com/test", response_type: "blob" },
+        defaults: { url: "https://api.example.com/t", response_type: "stream" },
       });
-      const schema = task.outputSchema();
-
-      expect(typeof schema).toBe("object");
-      expect(schema).not.toBe(false);
-      if (typeof schema === "object" && schema !== null && "properties" in schema) {
-        expect(schema.properties).not.toHaveProperty("json");
-        expect(schema.properties).not.toHaveProperty("text");
-        expect(schema.properties).toHaveProperty("blob");
-        expect(schema.properties).not.toHaveProperty("arraybuffer");
-      }
-    });
-
-    test("outputSchema returns only arraybuffer when response_type is arraybuffer", () => {
-      const task = new FetchUrlTask({
-        defaults: { url: "https://api.example.com/test", response_type: "arraybuffer" },
-      });
-      const schema = task.outputSchema();
-
-      expect(typeof schema).toBe("object");
-      expect(schema).not.toBe(false);
-      if (typeof schema === "object" && schema !== null && "properties" in schema) {
-        expect(schema.properties).not.toHaveProperty("json");
-        expect(schema.properties).not.toHaveProperty("text");
-        expect(schema.properties).not.toHaveProperty("blob");
-        expect(schema.properties).toHaveProperty("arraybuffer");
-      }
-    });
-
-    test("outputSchema updates when response_type changes", () => {
-      const task = new FetchUrlTask<FetchUrlTaskInput>({
-        defaults: { url: "https://api.example.com/test", response_type: null },
-      });
-      let schema = task.outputSchema();
-
-      // Initially should have all types (4 response types + metadata)
-      expect(typeof schema).toBe("object");
-      expect(schema).not.toBe(false);
-      if (typeof schema === "object" && schema !== null && "properties" in schema) {
-        expect(Object.keys(schema.properties || {})).toHaveLength(5);
-        expect(schema.properties).toHaveProperty("metadata");
-      }
-
-      // Change response_type to json
-      task.setInput({ response_type: "json" });
-      schema = task.outputSchema();
-
-      expect(typeof schema).toBe("object");
-      expect(schema).not.toBe(false);
-      if (typeof schema === "object" && schema !== null && "properties" in schema) {
-        expect(Object.keys(schema.properties || {})).toHaveLength(2); // json + metadata
-        expect(schema.properties).toHaveProperty("json");
-        expect(schema.properties).toHaveProperty("metadata");
-      }
-    });
-
-    test("execution with null response_type defaults to json", async () => {
-      const mockResponse = { data: { success: true } };
-      mockFetch.mockImplementation(() => Promise.resolve(createMockResponse(mockResponse)));
-
-      const result = await fetchUrl({
-        url: "https://api.example.com/test",
-        response_type: null,
-      });
-
-      expect(result).toHaveProperty("json");
-      expect(result.json).toEqual(mockResponse);
-      expect(mockFetch.mock.calls.length).toBe(1);
-    });
-
-    test("emits schemaChange event when response_type changes", () => {
-      const task = new FetchUrlTask<FetchUrlTaskInput>({
-        defaults: { url: "https://api.example.com/test", response_type: null },
-      });
-
-      let schemaChangeEmitted = false;
-      let receivedInputSchema: any;
-      let receivedOutputSchema: any;
-
-      task.on("schemaChange", (inputSchema?: any, outputSchema?: any) => {
-        schemaChangeEmitted = true;
-        receivedInputSchema = inputSchema;
-        receivedOutputSchema = outputSchema;
-      });
-
-      // Change response_type from null to "json"
-      task.setInput({ response_type: "json" });
-
-      expect(schemaChangeEmitted).toBe(true);
-      expect(receivedInputSchema).toBeDefined();
-      expect(receivedOutputSchema).toBeDefined();
-
-      // Verify the output schema only has json property
-      if (
-        typeof receivedOutputSchema === "object" &&
-        receivedOutputSchema !== null &&
-        "properties" in receivedOutputSchema
-      ) {
-        expect(receivedOutputSchema.properties).toHaveProperty("json");
-        expect(receivedOutputSchema.properties).not.toHaveProperty("text");
-        expect(receivedOutputSchema.properties).not.toHaveProperty("blob");
-        expect(receivedOutputSchema.properties).not.toHaveProperty("arraybuffer");
-      }
-    });
-
-    test("emits schemaChange event when response_type changes from json to text", () => {
-      const task = new FetchUrlTask<FetchUrlTaskInput>({
-        defaults: { url: "https://api.example.com/test", response_type: "json" },
-      });
-
-      let schemaChangeEmitted = false;
-      let receivedOutputSchema: any;
-
-      task.on("schemaChange", (_inputSchema?: any, outputSchema?: any) => {
-        schemaChangeEmitted = true;
-        receivedOutputSchema = outputSchema;
-      });
-
-      // Change response_type from "json" to "text"
-      task.setInput({ response_type: "text" });
-
-      expect(schemaChangeEmitted).toBe(true);
-      expect(receivedOutputSchema).toBeDefined();
-
-      // Verify the output schema only has text property
-      if (
-        typeof receivedOutputSchema === "object" &&
-        receivedOutputSchema !== null &&
-        "properties" in receivedOutputSchema
-      ) {
-        expect(receivedOutputSchema.properties).not.toHaveProperty("json");
-        expect(receivedOutputSchema.properties).toHaveProperty("text");
-        expect(receivedOutputSchema.properties).not.toHaveProperty("blob");
-        expect(receivedOutputSchema.properties).not.toHaveProperty("arraybuffer");
-      }
-    });
-
-    test("does not emit schemaChange event when response_type does not change", () => {
-      const task = new FetchUrlTask({
-        defaults: { url: "https://api.example.com/test", response_type: "json" },
-      });
-
-      let schemaChangeEmitted = false;
-
+      let fired = false;
       task.on("schemaChange", () => {
-        schemaChangeEmitted = true;
+        fired = true;
+      });
+      task.setInput({ response_type: "json" });
+      expect(fired).toBe(true);
+      expect(Object.keys(props(task)).sort()).toEqual(["body", "json", "metadata"]);
+    });
+  });
+
+  describe("streaming body", () => {
+    test("stream response type yields body bytes and no derived port", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(new Blob([new Uint8Array([1, 2, 3, 4])]), {
+            status: 200,
+            headers: { "content-type": "application/octet-stream", "content-length": "4" },
+          })
+        )
+      );
+      const result = await fetchUrl({ url: "https://example.com/f.bin", response_type: "stream" });
+      expect(result.text).toBeUndefined();
+      expect(result.json).toBeUndefined();
+      expect(result.metadata?.status).toBe(200);
+    });
+
+    test("text is byte-identical to a UTF-8 decode of the body", async () => {
+      const body = "héllo wörld";
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(body, {
+            status: 200,
+            headers: { "content-type": "text/plain; charset=utf-8" },
+          })
+        )
+      );
+      const result = await fetchUrl({ url: "https://example.com/t.txt", response_type: "text" });
+      expect(result.text).toBe(body);
+    });
+
+    test("a Content-Length mismatch throws", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(new Blob([new Uint8Array([1, 2])]), {
+            status: 200,
+            headers: { "content-length": "9" },
+          })
+        )
+      );
+      const error = await fetchUrl({
+        url: "https://example.com/short.bin",
+        response_type: "stream",
+      }).catch((e) => e);
+      expect(String(error)).toMatch(/content-length/i);
+    });
+
+    test("a combined Content-Length with equal duplicates is accepted", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(new Blob([new Uint8Array([1, 2])]), {
+            status: 200,
+            headers: { "content-length": "2, 2" },
+          })
+        )
+      );
+      const result = await fetchUrl({ url: "https://example.com/d.bin", response_type: "stream" });
+      expect(result.metadata?.status).toBe(200);
+    });
+
+    test("a combined Content-Length with unequal values throws", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(new Blob([new Uint8Array([1, 2])]), {
+            status: 200,
+            headers: { "content-length": "2, 3" },
+          })
+        )
+      );
+      const error = await fetchUrl({
+        url: "https://example.com/c.bin",
+        response_type: "stream",
+      }).catch((e) => e);
+      expect(String(error)).toMatch(/content-length/i);
+    });
+
+    // A `Content-Length` under a content coding measures the encoded octets,
+    // which is not what the loop counts — see the real-transport suite for the
+    // round trip. What is pinned here is that the exemption is keyed on the
+    // coding and nothing else: `identity` names no coding, so the length still
+    // has to be asserted.
+    test("a content coding exempts the body from its stated length", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(new Blob([new Uint8Array([1, 2])]), {
+            status: 200,
+            headers: { "content-length": "9", "content-encoding": "gzip" },
+          })
+        )
+      );
+      const result = await fetchUrl({
+        url: "https://example.com/e.bin",
+        response_type: "stream",
+      });
+      expect(result.metadata?.status).toBe(200);
+    });
+
+    test("Content-Encoding: identity keeps the length assertion", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(new Blob([new Uint8Array([1, 2])]), {
+            status: 200,
+            headers: { "content-length": "9", "content-encoding": "identity" },
+          })
+        )
+      );
+      const error = await fetchUrl({
+        url: "https://example.com/i.bin",
+        response_type: "stream",
+      }).catch((e) => e);
+      expect(String(error)).toMatch(/content-length/i);
+    });
+
+    // `Headers.get` answers `""`, not `null`, for a header present with no
+    // value — so a proxy emitting a bare `Content-Length:` states no size
+    // rather than a malformed one, and refusing it would fail the fetch
+    // permanently (FETCH_CONTENT_LENGTH_MISMATCH is not retryable).
+    test("an empty Content-Length states no size rather than a bad one", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(new Blob([new Uint8Array([1, 2])]), {
+            status: 200,
+            headers: { "content-length": "" },
+          })
+        )
+      );
+      const result = await fetchUrl({ url: "https://example.com/p.bin", response_type: "stream" });
+      expect(result.metadata?.status).toBe(200);
+    });
+
+    // The server transport hands back a passthrough whose source pipe holds the
+    // connection's undici Agent open until that pipe settles — and an unread
+    // TransformStream readable never lets it, because its readable HWM is 0.
+    // Cancelling is what settles it. Abandoning a non-2xx body without
+    // cancelling therefore leaked an Agent and a socket per attempt, ten per
+    // job on the queued path's maxAttempts.
+    //
+    // The socket-level proof is in SafeFetchServerTransport.test.ts; this one
+    // is carrier-independent and pins the INTENT (the body gets cancelled)
+    // rather than the symptom, so it keeps holding if the transport changes.
+    test("an HTTP error cancels the response body instead of abandoning it", async () => {
+      let cancelled = false;
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(new Uint8Array([1, 2, 3]));
+              },
+              cancel() {
+                cancelled = true;
+              },
+            }),
+            { status: 500, statusText: "Internal Server Error" }
+          )
+        )
+      );
+
+      await expect(
+        fetchUrl({ url: "https://example.com/boom", response_type: "stream" })
+      ).rejects.toThrow();
+      expect(cancelled).toBe(true);
+    });
+
+    // What "required" actually buys at the TASK layer, pinned in both
+    // directions because the two halves disagree and the disagreement is easy
+    // to mis-remember.
+    //
+    // The schema does list `response_type` in `required`, and `validateInput`
+    // rejects a payload without it. But `run()` never presents such a payload:
+    // `Task`'s constructor seeds `defaults` from the input schema via
+    // `getData(..., { addOptionalProps: true })`, and json-schema-library
+    // synthesizes an `enum` property as its FIRST member — which here is
+    // "stream". So `new FetchUrlTask().run({ url })` does not throw; it fetches
+    // with response_type "stream".
+    //
+    // That is a gap in the breaking change, not a property to rely on: the
+    // stated rationale ("a default would silently pick one for a caller who
+    // never considered the question") is met for a persisted job payload — see
+    // the FetchUrlJob test below, which is the case that used to complete
+    // successfully with no value — and not met for a directly constructed
+    // task. Closing it means suppressing the base class's synthesized default,
+    // which is a further behaviour change and belongs to its own review. Both
+    // assertions are here so that change cannot land unnoticed in either
+    // direction.
+    test("validateInput rejects a payload with no response_type", async () => {
+      const task = new FetchUrlTask();
+      await expect(
+        task.validateInput({ url: "https://example.com/no-type" } as FetchUrlTaskInput)
+      ).rejects.toThrow(TaskInvalidInputError);
+    });
+
+    test("run() with no response_type still fetches, defaulted to 'stream' by the base class", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(new Response("defaulted", { status: 200 }))
+      );
+      const task = new FetchUrlTask();
+      const result = (await task.run({
+        url: "https://example.com/no-type",
+      } as FetchUrlTaskInput)) as FetchUrlTaskOutput;
+
+      expect(task.runInputData.response_type).toBe("stream");
+      // "stream" materializes nothing, so no derived port is populated.
+      expect(result.text).toBeUndefined();
+      expect(result.json).toBeUndefined();
+      expect(result.metadata?.status).toBe(200);
+    });
+
+    // The task layer validates its input, but JobQueueWorker calls
+    // job.execute() on a PERSISTED payload with no validation at all. A job
+    // enqueued before response_type became required, drained after the deploy
+    // that requires it, therefore reaches the job carrying `undefined` — and
+    // grouping that with "stream" let it stream, complete, and return
+    // `{ metadata }` with no text and no json: a caller that asked for a value
+    // got a silent success with no value. This has to go through FetchUrlJob
+    // directly; the task layer would reject it first, so only the job
+    // reproduces the queued-payload case.
+    test("a persisted job payload with no response_type fails before fetching", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(new Response("never reached", { status: 200 }))
+      );
+      const input = { url: "https://example.com/legacy-payload" } as FetchUrlTaskInput;
+      const job = new FetchUrlJob<FetchUrlTaskInput, FetchUrlTaskOutput>({ input });
+
+      const error = await job
+        .execute(input, { signal: new AbortController().signal, updateProgress: async () => {} })
+        .catch((e: unknown) => e);
+
+      expect(isFetchUrlJobError(error)).toBe(true);
+      expect((error as { code?: string }).code).toBe(FetchUrlErrorCode.INVALID_RESPONSE_TYPE);
+      // Before the request, not after: a payload that cannot produce a result
+      // should not spend a network call, and failing ahead of the first delta
+      // keeps classifyBodyFailure's retry rule out of it entirely.
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    // `Job.ts` forbids retaining a chunk buffer across `emitStreamEvent` —
+    // a carrier may transfer it, which detaches the buffer in this realm. The
+    // accumulation feeding `text`/`json`/`blob` runs on the same chunk, so a
+    // retained reference reads back zero-length and an empty body would be
+    // reported as a successful fetch.
+    test("a carrier that transfers the emitted chunk cannot empty the derived port", async () => {
+      const parts = ["first-", "second-", "third"];
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                // Separately allocated chunks: detaching one buffer must not
+                // reach into the next.
+                for (const part of parts) controller.enqueue(new TextEncoder().encode(part));
+                controller.close();
+              },
+            }),
+            { status: 200, headers: { "content-type": "text/plain" } }
+          )
+        )
+      );
+
+      const input = {
+        url: "https://example.com/transfer.txt",
+        response_type: "text",
+      } as FetchUrlTaskInput;
+      const job = new FetchUrlJob<FetchUrlTaskInput, FetchUrlTaskOutput>({ input });
+      const lengthsAfterEmit: number[] = [];
+      const yielded: Uint8Array[] = [];
+      let finish: FetchUrlTaskOutput | undefined;
+      // Drained rather than run through `execute()`: the yielded delta is the
+      // half that fails SILENTLY. A detached one carries no bytes, so `body`
+      // ends up empty with nothing raised, while the accumulated copy at least
+      // throws on the decode.
+      for await (const event of job.executeStream(input, {
+        signal: new AbortController().signal,
+        updateProgress: async () => {},
+        emitStreamEvent: async (event) => {
+          const delta = (event as { binaryDelta?: Uint8Array }).binaryDelta;
+          if (!delta) return;
+          // What a transferring carrier does to the buffer it was handed.
+          structuredClone(delta.buffer, { transfer: [delta.buffer] });
+          lengthsAfterEmit.push(delta.byteLength);
+        },
+      })) {
+        if (event.type === "binary-delta") yielded.push(event.binaryDelta as Uint8Array);
+        if (event.type === "finish") finish = event.data as FetchUrlTaskOutput;
+      }
+
+      // Without this the test proves nothing: a `structuredClone` that failed
+      // to transfer would leave the buffers intact and every build would pass.
+      expect(lengthsAfterEmit).toEqual(parts.map(() => 0));
+      expect(finish?.text).toBe(parts.join(""));
+      expect(new TextDecoder().decode(concatChunks(yielded))).toBe(parts.join(""));
+    });
+
+    // -----------------------------------------------------------------------
+    // Regression: executeStream() is what TaskRunner actually calls for a
+    // FetchUrlTask run (isTaskStreamable is permanently true once
+    // executeStream exists), so the queued branch of execute() — queue
+    // resolution, rate limiting, retries — is only reachable if executeStream
+    // delegates to it. An output-only assertion can't catch a dead delegation:
+    // the inline path produces the identical output. The `sendSpy` assertion
+    // below is the one that actually distinguishes "ran through the queue"
+    // from "ran inline and nobody noticed."
+    // -----------------------------------------------------------------------
+    test("a successful fetch with config.queue set actually travels through the queue", async () => {
+      const queueName = "streaming-success-queue";
+      const storage = new InMemoryQueueStorage<FetchUrlTaskInput, FetchUrlTaskOutput>(queueName);
+      await storage.migrate();
+      const { messageQueue, jobStore } = wrapQueueStorage(storage);
+      const server = new JobQueueServer<FetchUrlTaskInput, FetchUrlTaskOutput>(FetchUrlJob, {
+        messageQueue,
+        jobStore,
+        queueName,
+        pollIntervalMs: 1,
+      });
+      const client = new JobQueueClient<FetchUrlTaskInput, FetchUrlTaskOutput>({
+        messageQueue,
+        jobStore,
+        queueName,
+      });
+      client.attach(server);
+      // Registering under `queueName` is what makes FetchUrlTask's own
+      // resolveOrCreateQueue() find and reuse THIS client/server pair instead
+      // of minting its own — see resolveOrCreateQueue's registry.getQueue lookup.
+      getTaskQueueRegistry().registerQueue({ server, client, storage });
+      const sendSpy = vi.spyOn(client, "send");
+
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response("hello queued world", {
+            status: 200,
+            headers: { "Content-Type": "text/plain" },
+          })
+        )
+      );
+
+      try {
+        await server.start();
+
+        // No credential_key: this must reach the queue, not the
+        // credential+queue refusal.
+        const task = new FetchUrlTask({ queue: queueName });
+        const result = await task.run({
+          url: "https://api.example.com/queued-success",
+          response_type: "text",
+        });
+
+        expect(result.text).toBe("hello queued world");
+
+        // The fetch succeeding proves nothing about *how* it ran — the inline
+        // path would produce the identical result. This is the assertion that
+        // proves the job travelled through the queue: `executeStream`'s
+        // `queuePref !== false` branch is the only code path that calls the
+        // registered client's send().
+        expect(sendSpy).toHaveBeenCalledTimes(1);
+        expect(sendSpy.mock.calls[0]?.[0]).toMatchObject({
+          url: "https://api.example.com/queued-success",
+        });
+        expect(await storage.size(JobStatus.COMPLETED)).toBe(1);
+        expect(await storage.size(JobStatus.PENDING)).toBe(0);
+        expect(mockFetch.mock.calls.length).toBe(1);
+      } finally {
+        await server.stop();
+        await storage.deleteAll();
+      }
+    });
+  });
+
+  describe("conditional requests", () => {
+    test("a 304 answering a conditional request finishes notModified with no body", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(new Response(null, { status: 304, headers: { etag: '"v1"' } }))
+      );
+      const result = await fetchUrl({
+        url: "https://example.com/big.zip",
+        response_type: "stream",
+        headers: { "If-None-Match": '"v1"' },
+      });
+      expect(result.metadata?.notModified).toBe(true);
+      expect(result.metadata?.status).toBe(304);
+      expect(result.blob).toBeUndefined();
+    });
+
+    test("an unsolicited 304 throws", async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(new Response(null, { status: 304 })));
+      const error = await fetchUrl({
+        url: "https://example.com/big.zip",
+        response_type: "stream",
+      }).catch((e) => e);
+      expect(error).toBeInstanceOf(Error);
+    });
+
+    test("If-Modified-Since also counts as conditional", async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(new Response(null, { status: 304 })));
+      const result = await fetchUrl({
+        url: "https://example.com/big.zip",
+        response_type: "stream",
+        headers: { "if-modified-since": "Wed, 01 Jan 2025 00:00:00 GMT" },
+      });
+      expect(result.metadata?.notModified).toBe(true);
+    });
+
+    // `TaskRunner` resolves a run's cache three ways — the run config, the
+    // task's own runConfig, and a CACHE_REGISTRY binding — and each one caches
+    // the bodiless 304 outcome and then serves it back to every later run while
+    // the origin moves on to a 200 with different bytes. A guard reading only
+    // one of the three leaves the hazard live on the other two, so all three
+    // are pinned here.
+    describe("a conditional request plus an output cache is refused", () => {
+      const conditionalInput = {
+        url: "https://example.com/big.zip",
+        response_type: "stream",
+        headers: { "If-None-Match": '"v1"' },
+      } as const;
+
+      beforeEach(() => {
+        mockFetch.mockImplementation(() =>
+          Promise.resolve(new Response(null, { status: 304, headers: { etag: '"v1"' } }))
+        );
       });
 
-      // Set response_type to the same value
-      task.setInput({ response_type: "json" });
+      test("via the task's own runConfig", async () => {
+        const task = new FetchUrlTask({ queue: false });
+        task.runConfig.outputCache = new InMemoryTaskOutputRepository();
+        const error = await task.run({ ...conditionalInput }).catch((e) => e);
+        expect(String(error)).toMatch(/conditional request/i);
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
 
-      expect(schemaChangeEmitted).toBe(false);
+      test("via the run config passed to run()", async () => {
+        const task = new FetchUrlTask({ queue: false });
+        const error = await task
+          .run({ ...conditionalInput }, { outputCache: new InMemoryTaskOutputRepository() })
+          .catch((e) => e);
+        expect(String(error)).toMatch(/conditional request/i);
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      test("via a CACHE_REGISTRY binding on the run's ServiceRegistry", async () => {
+        const services = new ServiceRegistry(new Container());
+        services.registerInstance(
+          CACHE_REGISTRY,
+          new DefaultCacheRegistry({ deterministic: new InMemoryTaskOutputRepository() })
+        );
+        const task = new FetchUrlTask({ queue: false });
+        const error = await task
+          .run({ ...conditionalInput }, { registry: services })
+          .catch((e) => e);
+        expect(String(error)).toMatch(/conditional request/i);
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      // The refusal is about a cache being in play, not about the header: a run
+      // with no cache anywhere still answers a conditional request normally.
+      test("but not when the run resolved no cache at all", async () => {
+        const services = new ServiceRegistry(new Container());
+        const task = new FetchUrlTask({ queue: false });
+        const result = await task.run({ ...conditionalInput }, { registry: services });
+        expect(result.metadata?.notModified).toBe(true);
+      });
+
+      // The three refusals above each pin a way a cache IS present. The run's
+      // resolution also answers the other direction: `outputCache: false` on
+      // the run overrides the instance field, `TaskRunner` resolves no cache
+      // from it, and a guard consulting the overridden field first would refuse
+      // a run that can write nowhere.
+      test("but not when the run config disables the cache the instance carries", async () => {
+        const task = new FetchUrlTask({ queue: false });
+        task.runConfig.outputCache = new InMemoryTaskOutputRepository();
+        const result = await task.run({ ...conditionalInput }, { outputCache: false });
+        expect(result.metadata?.notModified).toBe(true);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+      });
+
+      // A cache being in play is necessary but not sufficient: every write path
+      // in CacheCoordinator (the row save, and the stream sink that mints the
+      // `body` ref) returns early on `task.cacheable`, so a non-cacheable task
+      // cannot overwrite the copy its 304 validated.
+      test("but not when the task itself is not cacheable", async () => {
+        const task = new FetchUrlTask({ queue: false }, { cacheable: false });
+        task.runConfig.outputCache = new InMemoryTaskOutputRepository();
+        const result = await task.run({ ...conditionalInput });
+        expect(result.metadata?.notModified).toBe(true);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+      });
     });
   });
 
   // -------------------------------------------------------------------------
   // C1 regression: SafeFetch throws permanent FETCH_* errors (SSRF deny, DNS
-  // failure, invalid URL, etc). The outer catches in fetchWithProgress /
+  // failure, invalid URL, etc). The outer catches in the old fetch helper /
   // FetchUrlJob.execute previously rewrote *every* non-Abort throw into a
   // NETWORK_ERROR (retryable) — burning the full retry budget on a permanent
   // SSRF deny. Each case below asserts the original code/class is preserved.
@@ -771,6 +1184,7 @@ describe("FetchUrlTask", () => {
 
         const fetchPromise = fetchUrl({
           url: "https://api.example.com/will-deny",
+          response_type: "stream",
         });
         const error = await fetchPromise.catch((e: unknown) => e);
         // JobTaskFailedError wraps at the task layer; assert on `.jobError`.
@@ -787,14 +1201,91 @@ describe("FetchUrlTask", () => {
       mockFetch.mockImplementation(() =>
         Promise.reject(new TypeError("connect ECONNREFUSED 127.0.0.1:443"))
       );
-      const error = await fetchUrl({ url: "https://api.example.com/down" }).catch(
-        (e: unknown) => e
-      );
+      const error = await fetchUrl({
+        url: "https://api.example.com/down",
+        response_type: "stream",
+      }).catch((e: unknown) => e);
       const jobErr = (error as { jobError?: unknown }).jobError ?? error;
       expect(isFetchUrlJobError(jobErr)).toBe(true);
       expect((jobErr as { code?: string }).code).toBe(FetchUrlErrorCode.NETWORK_ERROR);
       expect(jobErr).toBeInstanceOf(RetryableJobError);
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // A decode failure's message embeds SERVER-CONTROLLED BYTES — V8 quotes a
+  // snippet of the body into the SyntaxError. Matching the network-message
+  // heuristic against it lets the response decide whether the job is retryable.
+  // -------------------------------------------------------------------------
+  describe("isFetchUrlNetworkCause", () => {
+    test("returns false for a SyntaxError quoting a network-looking response body", () => {
+      const decodeFailure = new SyntaxError(
+        `Unexpected token 'G', "Gateway timeout at: https://registry.example/pkg" is not valid JSON`
+      );
+
+      expect(isFetchUrlNetworkCause(decodeFailure)).toBe(false);
+    });
+
+    test("still returns true for a SyntaxError carrying a network errno code", () => {
+      const withCode = new SyntaxError("network timeout") as NodeJS.ErrnoException;
+      withCode.code = "ECONNRESET";
+
+      expect(isFetchUrlNetworkCause(withCode)).toBe(true);
+    });
+
+    test("still returns true for a SyntaxError whose cause is a socket error", () => {
+      const withCause = new SyntaxError("not valid JSON");
+      withCause.cause = Object.assign(new Error("terminated"), { code: "UND_ERR_SOCKET" });
+
+      expect(isFetchUrlNetworkCause(withCause)).toBe(true);
+    });
+
+    test("keeps message matching for non-SyntaxError decode failures", () => {
+      // The Bun body-abort shape: a bare Error with no code and no cause.
+      expect(
+        isFetchUrlNetworkCause(new Error("The socket connection was closed unexpectedly"))
+      ).toBe(true);
+    });
+
+    test("returns true for the undici terminated/UND_ERR_SOCKET shape", () => {
+      const terminated = new TypeError("terminated");
+      terminated.cause = Object.assign(new Error("other side closed"), {
+        code: "UND_ERR_SOCKET",
+      });
+
+      expect(isFetchUrlNetworkCause(terminated)).toBe(true);
+    });
+  });
+
+  describe("decode failures whose body reads like a network error", () => {
+    const decodeBodies: ReadonlyArray<string> = [
+      "network timeout at: https://registry.example/pkg",
+      "Gateway timeout",
+      "ECONNRESET while proxying",
+    ];
+
+    for (const body of decodeBodies) {
+      test(`"${body}" served as 200 JSON is a permanent parse error`, async () => {
+        mockFetch.mockImplementation(() =>
+          Promise.resolve(
+            new Response(body, {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            })
+          )
+        );
+
+        const error = await fetchUrl({
+          url: "https://api.example.com/decode-fail",
+          response_type: "json",
+        }).catch((e: unknown) => e);
+        const jobErr = (error as { jobError?: unknown }).jobError ?? error;
+
+        expect((jobErr as { code?: string }).code).toBe(FetchUrlErrorCode.RESPONSE_PARSE_ERROR);
+        expect(jobErr).toBeInstanceOf(PermanentJobError);
+        expect(isFetchUrlRetryableErrorCode((jobErr as { code?: string }).code)).toBe(false);
+      });
+    }
   });
 
   describe("credentials", () => {
@@ -839,14 +1330,17 @@ describe("FetchUrlTask", () => {
 
     test("keeps the secret out of the request body and off the job input", async () => {
       let seenInput: FetchUrlTaskInput | undefined;
-      const originalExecute = FetchUrlJob.prototype.execute;
-      const spy = vi.spyOn(FetchUrlJob.prototype, "execute").mockImplementation(async function (
+      // executeStream is the sole body producer for the inline path (execute()
+      // just drains it), so the spy has to sit on executeStream to observe what
+      // the job actually receives.
+      const originalExecuteStream = FetchUrlJob.prototype.executeStream;
+      const spy = vi.spyOn(FetchUrlJob.prototype, "executeStream").mockImplementation(function (
         this: FetchUrlJob,
         input: any,
         context: any
       ) {
         seenInput = input;
-        return originalExecute.call(this, input, context) as any;
+        return originalExecuteStream.call(this, input, context);
       });
 
       try {
@@ -1046,6 +1540,40 @@ describe("FetchUrlTask", () => {
       const headers = lastRequestHeaders();
       expect(headers.Authorization).toBe(`Bearer ${SECRET}`);
       expect(headers["X-Trace"]).toBe("keep-me");
+    });
+
+    /**
+     * The silent half of the re-run credential bug, and the reason it is fixed
+     * in `TaskRunner` rather than in any one task.
+     *
+     * Input resolution writes the resolved secret back onto `credential_key`
+     * itself, and `run()` merges overrides into `runInputData` rather than
+     * resetting it — so a second standalone run of the same instance used to
+     * look the SECRET up as if it were a key, miss, and leave the port
+     * `undefined`. `applyCredentialToHeaders` returns the headers unchanged for
+     * a falsy credential, so run 2 went out over the wire with NO
+     * `Authorization` header and no error anywhere: an authenticated request
+     * silently downgraded to an anonymous one.
+     *
+     * The key lives in `defaults` here, which is the broken shape. Supplying it
+     * as a `run()` override was always safe (`setInput` rewrites that port every
+     * run), as was any graph run (`resetGraph` restores the raw id first).
+     */
+    test("a defaults-configured credential key still authenticates on a re-run", async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(createMockResponse({ ok: true })));
+
+      const registry = await createCredentialRegistry();
+      const task = new FetchUrlTask({
+        defaults: { url: "https://api.example.com/data", credential_key: CREDENTIAL_KEY },
+      });
+
+      await task.run({}, { registry });
+      expect(lastRequestHeaders().Authorization).toBe(`Bearer ${SECRET}`);
+
+      await task.run({}, { registry });
+      expect(lastRequestHeaders().Authorization).toBe(`Bearer ${SECRET}`);
+
+      expect(mockFetch.mock.calls.length).toBe(2);
     });
   });
 

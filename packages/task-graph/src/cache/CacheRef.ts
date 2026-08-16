@@ -17,9 +17,9 @@ export const CACHE_REF_KIND = "task-graph/CacheRef" as const;
 
 /**
  * A reference to bytes that live in the configured cache backing rather than
- * inline in a task `Output`. Emitted by `TaskRunner` for binary output ports
+ * inline in a task `Output`. Emitted by `TaskRunner` for streaming output ports
  * whose committed size meets the `IRunConfig.referenceThresholdBytes` and
- * whose cache backing implements `saveOutputStream`.
+ * whose cache backing implements `saveOutputStreamPort`.
  *
  * `$ref` is opaque to consumers: only the cache backing knows how to translate
  * it back into bytes. `size` and `mime` are best-effort hints populated when
@@ -38,17 +38,27 @@ export interface ICacheRef {
   readonly kind: typeof CACHE_REF_KIND;
   readonly $ref: string;
   /**
-   * Which output port produced these bytes. Optional for backward
-   * compatibility: refs written before per-port sinks (single binary port) have
-   * no `port`, and resolve exactly as before. When present, it lets a row carry
-   * more than one ref unambiguously and the resolver pick the right one without
-   * a schema lookup.
+   * Which output port produced these bytes, letting a row carry more than one
+   * ref unambiguously and the resolver pick the right one without a schema
+   * lookup.
+   *
+   * Every ref minted today carries it: the sole streaming writer
+   * (`saveOutputStreamPort`, and its run-scoped counterpart) takes `port` as a
+   * required argument, so a backing has nothing to leave off.
+   *
+   * It stays OPTIONAL for readers, not writers. This type describes persisted
+   * data of unknown vintage: `@workglow/task-graph` 0.3.39 through 0.3.42 also
+   * shipped a portless writer (`saveOutputStream`, removed in 0.3.43) whose
+   * refs carry no port, so a cache folder written by any of those releases
+   * still holds them. Reading must keep working against those rows — a `$ref`
+   * alone resolves — so do not make this required on the strength of what the
+   * current writer guarantees.
    */
   readonly port?: string;
   /**
    * Stream mode of the persisted bytes, so a reader knows the codec to replay
-   * (`binary` raw bytes, `append` text, `object` NDJSON deltas). Absent on
-   * legacy binary refs, which default to binary handling.
+   * (`binary` raw bytes, `append` text, `object` NDJSON deltas). A ref with no
+   * `mode` defaults to binary handling.
    */
   readonly mode?: StreamMode;
   readonly size?: number;
@@ -71,9 +81,8 @@ export function isCacheRef(value: unknown): value is CacheRef {
 /**
  * Construct a branded {@link CacheRef}. Cache backings MUST use this helper (or
  * spread `{kind: CACHE_REF_KIND, ...}` themselves) so the resulting ref carries
- * the brand. Helpers in {@link CacheCoordinator} / {@link RunPrivateCacheRepo}
- * defensively re-wrap legacy backings whose `saveOutputStream` predates the
- * brand and returns an unbranded `{$ref}` shape.
+ * the brand. Helpers in {@link CacheCoordinator} defensively re-wrap a backing
+ * whose writer returns an unbranded `{$ref}` shape.
  */
 export function makeCacheRef(raw: {
   readonly $ref: string;

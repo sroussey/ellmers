@@ -35,7 +35,14 @@ const handleFor = <T>(output: T) => ({ waitFor: () => Promise.resolve(output) })
 describe("resolveJobOutputStream", () => {
   it("streams the ref at an explicit port", async () => {
     const repo = new StreamingMemoryRepo({});
-    const ref = await repo.saveOutputStream("T", { a: 1 }, gen(new Uint8Array([1, 2, 3])), {});
+    const ref = await repo.saveOutputStreamPort(
+      "T",
+      { a: 1 },
+      "audio",
+      "binary",
+      gen(new Uint8Array([1, 2, 3])),
+      {}
+    );
     const handle = handleFor({ transcript: "hi", audio: ref });
     const stream = await resolveJobOutputStream(handle, repo, "audio");
     expect(stream).toBeDefined();
@@ -44,7 +51,14 @@ describe("resolveJobOutputStream", () => {
 
   it("auto-discovers a ref at a declared streamable port when the schema is supplied", async () => {
     const repo = new StreamingMemoryRepo({});
-    const ref = await repo.saveOutputStream("T", { a: 2 }, gen(new Uint8Array([9, 8])), {});
+    const ref = await repo.saveOutputStreamPort(
+      "T",
+      { a: 2 },
+      "audio",
+      "binary",
+      gen(new Uint8Array([9, 8])),
+      {}
+    );
     const handle = handleFor({ audio: ref });
     const stream = await resolveJobOutputStream(
       handle,
@@ -69,8 +83,22 @@ describe("resolveJobOutputStream", () => {
 
   it("throws for two refs across declared streamable ports without an explicit port", async () => {
     const repo = new StreamingMemoryRepo({});
-    const r1 = await repo.saveOutputStream("T", { a: 3 }, gen(new Uint8Array([1])), {});
-    const r2 = await repo.saveOutputStream("T", { a: 4 }, gen(new Uint8Array([2])), {});
+    const r1 = await repo.saveOutputStreamPort(
+      "T",
+      { a: 3 },
+      "audio",
+      "binary",
+      gen(new Uint8Array([1])),
+      {}
+    );
+    const r2 = await repo.saveOutputStreamPort(
+      "T",
+      { a: 4 },
+      "audio",
+      "binary",
+      gen(new Uint8Array([2])),
+      {}
+    );
     const twoPortSchema = {
       type: "object",
       properties: {
@@ -85,7 +113,14 @@ describe("resolveJobOutputStream", () => {
 
   it("throws when portless discovery is requested without a schema", async () => {
     const repo = new StreamingMemoryRepo({});
-    const ref = await repo.saveOutputStream("T", { a: 6 }, gen(new Uint8Array([1])), {});
+    const ref = await repo.saveOutputStreamPort(
+      "T",
+      { a: 6 },
+      "audio",
+      "binary",
+      gen(new Uint8Array([1])),
+      {}
+    );
     await expect(resolveJobOutputStream(handleFor({ audio: ref }), repo)).rejects.toThrow(
       TypeError
     );
@@ -93,7 +128,14 @@ describe("resolveJobOutputStream", () => {
 
   it("ignores a crafted ref shape embedded at a non-streamable port", async () => {
     const repo = new StreamingMemoryRepo({});
-    const ref = await repo.saveOutputStream("T", { a: 7 }, gen(new Uint8Array([1, 2, 3])), {});
+    const ref = await repo.saveOutputStreamPort(
+      "T",
+      { a: 7 },
+      "audio",
+      "binary",
+      gen(new Uint8Array([1, 2, 3])),
+      {}
+    );
     const schema = {
       type: "object",
       properties: {
@@ -143,7 +185,14 @@ describe("resolveJobOutputStream", () => {
 
   it("makeJobOutputStreamResolver closes over the backing", async () => {
     const repo = new StreamingMemoryRepo({});
-    const ref = await repo.saveOutputStream("T", { a: 5 }, gen(new Uint8Array([7, 7])), {});
+    const ref = await repo.saveOutputStreamPort(
+      "T",
+      { a: 5 },
+      "audio",
+      "binary",
+      gen(new Uint8Array([7, 7])),
+      {}
+    );
     const resolver = makeJobOutputStreamResolver(repo);
     const stream = await resolver({ file: ref }, "file");
     expect(await collect(stream!)).toEqual([7, 7]);

@@ -8,6 +8,7 @@ import type {
   CacheRef,
   IExecuteContext,
   StreamEvent,
+  StreamMode,
   TaskInput,
   TaskOutput,
 } from "@workglow/task-graph";
@@ -50,9 +51,11 @@ class StreamingMemoryRepo extends TaskOutputRepository {
   override isDurable(): boolean {
     return false;
   }
-  override async saveOutputStream(
+  override async saveOutputStreamPort(
     taskType: string,
     inputs: TaskInput,
+    port: string,
+    mode: StreamMode,
     chunks: AsyncIterable<Uint8Array>,
     _metadata: Record<string, unknown>
   ): Promise<CacheRef> {
@@ -69,9 +72,9 @@ class StreamingMemoryRepo extends TaskOutputRepository {
       merged.set(p, off);
       off += p.byteLength;
     }
-    const key = `inmem://${taskType}::${JSON.stringify(inputs)}`;
+    const key = `inmem://${taskType}::${JSON.stringify(inputs)}::${port}`;
     this.streamed.set(key, merged);
-    return makeCacheRef({ $ref: key, size, mime: "application/octet-stream" });
+    return makeCacheRef({ $ref: key, port, mode, size, mime: "application/octet-stream" });
   }
   override async getOutputByRef(ref: CacheRef): Promise<Blob | undefined> {
     const bytes = this.streamed.get(ref.$ref);
