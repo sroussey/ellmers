@@ -6,6 +6,7 @@ import { configDefaults, coverageConfigDefaults, defineConfig } from "vitest/con
 import { discoverTestFiles, listTestProjects } from "./scripts/lib/testDiscovery.ts";
 import { coverageIncludeGlobs, workspaceGroups } from "./scripts/lib/workspaceGroups.ts";
 import {
+  assertNoSourceStubs,
   listWorkspacePackages,
   resolveTestTarget,
   workspaceSourcePlugin,
@@ -36,27 +37,6 @@ const tierExclude =
       : ["**/*.integration.test.ts", "**/*.e2e.test.ts"];
 
 /**
- * Options every project needs. Project roots differ, so anything path-shaped
- * here must be ABSOLUTE — a relative `setupFiles` or `typecheck.tsconfig` would
- * resolve against each project's own root and silently fail to load.
- */
-const shared = {
-  setupFiles: [abs("vitest.setup.ts")],
-  // The nightly type-drift guard runs `.test-d.ts` files through vitest's
-  // `--typecheck` engine. Scope the tsc program to the package under test so
-  // unrelated source (example UIs needing `jsx`, providers relying on their
-  // own ambient `types`/`lib`) is not swept in and reported as drift.
-  typecheck: {
-    tsconfig: abs("tsconfig.typecheck.json"),
-  },
-  testTimeout: 15000, // 15 second global timeout (WASM Postgres / PGlite init can be slow)
-  // Vitest uses hookTimeout for beforeEach/afterAll separately from testTimeout; keep both aligned
-  hookTimeout: 15000,
-  retry: 1,
-  exclude: [...configDefaults.exclude, ...tierExclude],
-};
-
-/**
  * Which build of the workspace packages a vitest run exercises.
  *
  * `source` (the default) resolves every `@workglow/*` specifier to the
@@ -72,9 +52,42 @@ const shared = {
  * unconditionally, so under the default NO vitest run resolves a `@workglow/*`
  * specifier through `exports`. The nightly Bun parity workflow does, but it is
  * informational and never blocks a merge, so the blocking guard is the
- * `test-vitest-dist` CI job, which sets this variable.
+ * `test-vitest-dist` CI job, which runs `bun run test:vitest:dist`.
  */
-const testsRunAgainstSource = resolveTestTarget(process.env.WORKGLOW_TEST_TARGET) !== "dist";
+const target = resolveTestTarget(process.env.WORKGLOW_TEST_TARGET);
+const testsRunAgainstSource = target !== "dist";
+
+/**
+ * Options every project needs. Project roots differ, so anything path-shaped
+ * here must be ABSOLUTE — a relative `setupFiles` or `typecheck.tsconfig` would
+ * resolve against each project's own root and silently fail to load.
+ */
+const shared = {
+  /**
+   * The VALIDATED target, handed to the workers.
+   *
+   * A test that needs to know which build it is exercising cannot re-derive
+   * this: `packages/test` is a composite program rooted at `./src` and cannot
+   * import `scripts/lib/*`, so re-implementing the `=== "dist"` comparison
+   * there would reintroduce exactly the silent-typo bug `resolveTestTarget`
+   * exists to remove. Passing the resolved value down means there is one
+   * definition of the target for the config and every suite alike.
+   */
+  env: { WORKGLOW_TEST_TARGET: target },
+  setupFiles: [abs("vitest.setup.ts")],
+  // The nightly type-drift guard runs `.test-d.ts` files through vitest's
+  // `--typecheck` engine. Scope the tsc program to the package under test so
+  // unrelated source (example UIs needing `jsx`, providers relying on their
+  // own ambient `types`/`lib`) is not swept in and reported as drift.
+  typecheck: {
+    tsconfig: abs("tsconfig.typecheck.json"),
+  },
+  testTimeout: 15000, // 15 second global timeout (WASM Postgres / PGlite init can be slow)
+  // Vitest uses hookTimeout for beforeEach/afterAll separately from testTimeout; keep both aligned
+  hookTimeout: 15000,
+  retry: 1,
+  exclude: [...configDefaults.exclude, ...tierExclude],
+};
 
 const discovered = discoverTestFiles();
 
@@ -93,6 +106,17 @@ const discovered = discoverTestFiles();
  */
 const workspacePackages = listWorkspacePackages(__dirname);
 const sourcePlugin = workspaceSourcePlugin(__dirname, workspacePackages);
+
+/**
+ * Under the `dist` target, refuse to run at all against a stubbed `dist`.
+ *
+ * At CONFIG LOAD deliberately, not in a test: this kills the whole run before
+ * any suite can pass vacuously, and it covers the export-name parity sweep the
+ * same way it covers the identity ones. A test-shaped guard would have to be
+ * imported by every file it protects, and the one that forgot would be the one
+ * reporting a false pass.
+ */
+if (!testsRunAgainstSource) assertNoSourceStubs(workspacePackages);
 
 /**
  * One project per workspace that actually holds tests, derived from the same
@@ -128,15 +152,12 @@ export default defineConfig({
     coverage: {
       provider: "v8", // or 'istanbul'
       reporter: ["text", "json", "json-summary", "html"],
-      /**
-       * Base directory the globs below resolve against. Pinned rather than
-       * inherited: `include`/`exclude` are documented as relative to
-       * `coverage.root`, which otherwise follows the run's root — and this
-       * config is invoked from package directories too
-       * (`vitest run --config ../../vitest.config.ts`), where a repo-relative
-       * glob would match nothing.
-       */
-      root: __dirname,
+      // There is deliberately no `root` here. Vitest 4 has no such coverage
+      // option — its own types reject it, and its provider derives the roots it
+      // globs from the resolved PROJECT configs, never from the coverage block
+      // — so the key was inert. The `include` globs below are matched against
+      // absolute filenames with `contains: true`, which is what actually makes
+      // them work from a package directory.
       /**
        * The denominator is every package's own `src`, stated explicitly. Left
        * to vitest's default (files loaded during the run), a package's score
