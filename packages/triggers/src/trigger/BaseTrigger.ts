@@ -291,10 +291,22 @@ export abstract class BaseTrigger implements ITrigger {
    * abandoned — they keep running — and the expiry is reported on `error`.
    */
   public stop(options: TriggerStopOptions = {}): Promise<void> {
-    const timeoutMs =
-      options.timeoutMs === undefined
-        ? this.stopTimeoutMs
-        : assertPositiveInteger(options.timeoutMs, "timeoutMs");
+    let timeoutMs: number | undefined;
+    try {
+      timeoutMs =
+        options.timeoutMs === undefined
+          ? this.stopTimeoutMs
+          : assertPositiveInteger(options.timeoutMs, "timeoutMs");
+    } catch (error) {
+      // Returned as a REJECTION rather than thrown synchronously: a caller
+      // stopping a set of triggers must not be taken down before its siblings
+      // are even asked. Only the computation is wrapped — the method stays
+      // non-`async` deliberately, because the body publishes `run.stopping` and
+      // returns that exact promise, which is what makes concurrent `stop()`
+      // calls join one drain. An `async` wrapper would hand each caller a fresh
+      // promise and break that identity.
+      return Promise.reject(error);
+    }
     const run = this._run;
     if (!run) return Promise.resolve();
     if (run.stopping) return run.stopping;
