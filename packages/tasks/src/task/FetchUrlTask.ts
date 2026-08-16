@@ -1174,7 +1174,7 @@ export class FetchUrlTask<
         return;
       }
 
-      yield* this.consumeJobStream(handle);
+      yield* this.consumeJobStream(handle, input.response_type === "stream");
     } catch (err: any) {
       throw new JobTaskFailedError(err);
     } finally {
@@ -1230,8 +1230,26 @@ export class FetchUrlTask<
    * An `error` event is not decoration on any of this: it is the only in-band
    * report of a failure the completion signal may not carry, so it is queued
    * in order and raised as a throw when the consumer reaches it.
+   *
+   * **`requireStreamDelivery` closes the gap a handle's own capability cannot.**
+   * `onStream` is advertised whenever the client has an attached server, which
+   * on a durable queue is the *possibility* of delivery rather than a
+   * guarantee: the job may be claimed by a worker in another process, whose
+   * events never reach here. Which process claims a job is not knowable at
+   * `send` time, so the only honest advertise-time answer would be to withhold
+   * `onStream` from every durable queue — refusing streaming for the ordinary
+   * single-process deployment that works today. The discriminator is available
+   * here instead, and it is the terminal marker rather than a delta count: a
+   * locally-claimed job always emits it (`FetchUrlJob.executeStream` calls
+   * `emitStreamEnd` whenever the context carries `emitStreamEvent`, which
+   * `JobQueueWorker.executeJob` supplies unconditionally), even for a 304 or a
+   * zero-length body, while a remotely-claimed one produces nothing and this
+   * loop exits through its settlement fallback with `streamEnded` false.
    */
-  private async *consumeJobStream(handle: JobHandle<Output>): AsyncIterable<StreamEvent<Output>> {
+  private async *consumeJobStream(
+    handle: JobHandle<Output>,
+    requireStreamDelivery: boolean
+  ): AsyncIterable<StreamEvent<Output>> {
     const pending: Array<{ readonly event: StreamEventLike; readonly release: () => void }> = [];
     let wake: (() => void) | undefined;
     let closed = false;
@@ -1316,6 +1334,18 @@ export class FetchUrlTask<
       }
       await settlement;
       if (failed) throw toJobFailure(failure);
+      // Ordered after the failure check on purpose: a job that genuinely failed
+      // should report its own cause, which is the better diagnosis. This
+      // complaint is only for a job that SUCCEEDED while delivering nothing.
+      if (requireStreamDelivery && !streamEnded) {
+        throw new TaskFailedError(
+          `FetchUrlTask: the queue's stream events never reached this process — the job was ` +
+            `likely claimed by a worker in another process — so response_type "stream" would ` +
+            `report a successful fetch with an empty body. Use a materializing response_type ` +
+            `(text/json/blob/arraybuffer), which travels in the job's settled output, a carrier ` +
+            `implementing the stream channel, or run the worker in-process.`
+        );
+      }
       yield { type: "finish", data: output } as StreamEvent<Output>;
     } finally {
       closed = true;
