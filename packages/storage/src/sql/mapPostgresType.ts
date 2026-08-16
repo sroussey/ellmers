@@ -5,6 +5,7 @@
  */
 
 import type { JsonSchema } from "@workglow/util/schema";
+import { varcharWidthForFormat } from "../tabular/columnConstraints";
 
 /** Options for {@link mapPostgresType}. */
 export interface PostgresTypeMapOptions {
@@ -41,12 +42,17 @@ export function mapPostgresType(typeDef: JsonSchema, options: PostgresTypeMapOpt
 
   switch (actualType.type) {
     case "string": {
-      // Handle special string formats
+      // Handle special string formats that map to a dedicated column type
       if (actualType.format === "date-time") return "TIMESTAMP";
       if (actualType.format === "date") return "DATE";
-      if (actualType.format === "email") return "VARCHAR(255)";
-      if (actualType.format === "uri") return "VARCHAR(2048)";
       if (actualType.format === "uuid") return "UUID";
+
+      // Formats carrying an implied width (`email`, `uri`) resolve before the
+      // pgvector hook. Read from the shared table so the width this DDL
+      // declares is the width `varcharWidth` reports to the schemaless
+      // backends — the two cannot drift apart.
+      const formatWidth = varcharWidthForFormat(actualType.format);
+      if (formatWidth !== undefined) return `VARCHAR(${formatWidth})`;
 
       // Backend-specific vector column (pgvector), when supported.
       const vectorType = options.vectorTypeFor?.(actualType);

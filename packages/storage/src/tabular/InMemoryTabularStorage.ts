@@ -14,6 +14,8 @@ import { safeEmit } from "../events/safeEmit";
 import { type ITabularMigration, type ITabularMigrationApplier } from "../migrations";
 import type { ClientProvidedKeysOption, KeyGenerationStrategy } from "./BaseTabularStorage";
 import { BaseTabularStorage } from "./BaseTabularStorage";
+import type { TabularColumnConstraint } from "./columnConstraints";
+import { assertColumnConstraints, buildColumnConstraints } from "./columnConstraints";
 import { pickCoveringIndex } from "./coveringIndexPicker";
 import { InMemoryTabularMigrationApplier } from "./InMemoryTabularMigrationApplier";
 import type {
@@ -109,6 +111,13 @@ export class InMemoryTabularStorage<
   private autoIncrementCounter = 0;
   /** Tracks whether the last put was an insert vs update — read by subscribeToChanges. */
   private _lastPutWasInsert = false;
+  /**
+   * Per-column NOT NULL / VARCHAR-width constraints derived from the schema.
+   * Derived once here rather than per write: the schema is fixed for the life
+   * of the instance (the in-memory migration applier treats DDL ops as no-ops
+   * because rows are plain objects), so there is nothing to invalidate.
+   */
+  private readonly columnConstraints: ReadonlyArray<TabularColumnConstraint>;
 
   constructor(
     schema: Schema,
@@ -128,6 +137,19 @@ export class InMemoryTabularStorage<
       migrationName,
       uniqueIndexes
     );
+    this.columnConstraints = buildColumnConstraints(this.primaryKeySchema, this.valueSchema);
+  }
+
+  /**
+   * Enforce the DB-equivalent column constraints — `NOT NULL` (including the
+   * presence of every `required` column) and `VARCHAR(n)` width — at the
+   * in-memory tier, for the same reason {@link assertUniqueIndexes} exists:
+   * a store used as a test double or a dev-mode backend should reject the rows
+   * Postgres/SQLite would reject, rather than accepting them and deferring the
+   * failure to the first real deployment.
+   */
+  private assertColumnConstraints(entityToStore: Entity): void {
+    assertColumnConstraints(entityToStore as Record<string, unknown>, this.columnConstraints);
   }
 
   override async setupDatabase(): Promise<void> {
@@ -188,6 +210,11 @@ export class InMemoryTabularStorage<
         entityToStore = { ...value, [keyName]: generatedValue } as Entity;
       }
     }
+
+    // Runs after auto-key generation (a generated key satisfies its column's
+    // NOT NULL) and before anything mutates the Map, so a rejected row leaves
+    // no trace — matching a failed INSERT.
+    this.assertColumnConstraints(entityToStore);
 
     const { key } = this.separateKeyValueFromCombined(entityToStore);
     const id = await makeFingerprint(key);
@@ -436,9 +463,12 @@ export class InMemoryTabularStorage<
 
       const updated = { ...entity, ...patch } as Entity;
       // The guard above forbids primary-key changes, so the row keeps its id.
-      // Enforce the same invariants as put(): reject a patch that would collide
-      // with another row's UNIQUE tuple, and mark this write as an UPDATE (not
-      // an INSERT) so change subscribers classify the emitted "put" correctly.
+      // Enforce the same invariants as put(): reject a patch that nulls out a
+      // NOT NULL column or overflows a VARCHAR width, reject one that would
+      // collide with another row's UNIQUE tuple, and mark this write as an
+      // UPDATE (not an INSERT) so change subscribers classify the emitted
+      // "put" correctly.
+      this.assertColumnConstraints(updated);
       this.assertUniqueIndexes(updated, id);
       this.values.set(id, updated);
       this._lastPutWasInsert = false;
