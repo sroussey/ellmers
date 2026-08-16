@@ -358,7 +358,7 @@ class TestTask extends Task<TestInput, TestOutput> {
 
 ```sh
 bun scripts/test.ts [--all] [kinds...] [sections...] [runners...] [options]
-bun scripts/test.ts --changed [base]   # only packages affected since base (default origin/main)
+  bun scripts/test.ts --changed [base]   # packages affected since base (default origin/main); with a kind, CI slices still apply
 ```
 
 When making code changes, run the tests on that section only, and pass vitest only. Otherwise tests are very slow. For example, if you are making changes to the McpServer, run `bun scripts/test.ts mcp vitest`.
@@ -368,10 +368,11 @@ section, and `--check-sections` fails if any test file is unreachable by section
 selection. Note that `packages/test/src/test/task-graph*/` belongs to section `graph`,
 not `task-graph`; `task-graph` selects the package's own co-located `__tests__`.
 
-`--changed` delegates package selection to Turbo (`turbo run test --filter=...[base]`),
-so a change also runs the tests of everything that depends on it. Only workspaces with a
-`test` script participate; tooling tests outside any workspace (`scripts/`) are not
-covered by that mode — run them with `bun scripts/test.ts scripts`.
+`--changed` delegates package selection to Turbo (`turbo run test --filter=...[base]`
+when used alone; with a kind/section, the same filter names packages and the file-list
+runner keeps the slice). A change also runs the tests of everything that depends on it.
+Only workspaces with a `test` script participate; tooling tests under `scripts/` join
+the file-list path when the git diff touches that directory.
 
 ### Vitest projects
 

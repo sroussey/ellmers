@@ -17,6 +17,8 @@ env:
   CI: "true"
   DO_NOT_TRACK: "1"
   TURBO_TELEMETRY_DISABLED: "1"
+  # PRs: only packages the change can reach. Push/dispatch: full suite.
+  TEST_CHANGED: ${{ github.event_name == 'pull_request' && format('--changed {0}', github.event.pull_request.base.sha) || '' }}
 
 jobs:
   typecheck-budget:
@@ -84,6 +86,8 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -97,9 +101,14 @@ jobs:
           name: build-output
           path: .
       - name: Run unit tests via vitest
-        run: bun run test:vitest:unit
+        run: bun run test:vitest:unit -- ${{ env.TEST_CHANGED }}
       - name: Copy Vitest coverage fragment
-        run: cp coverage/coverage-final.json vitest-unit-coverage.json
+        run: |
+          if [ -f coverage/coverage-final.json ]; then
+            cp coverage/coverage-final.json vitest-unit-coverage.json
+          else
+            echo '{}' > vitest-unit-coverage.json
+          fi
       - name: Upload Vitest coverage fragment
         uses: actions/upload-artifact@v7
         with:
@@ -112,6 +121,8 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -127,9 +138,14 @@ jobs:
       - name: Run integration tests via vitest
         env:
           WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
-        run: bun run test:vitest:integration
+        run: bun run test:vitest:integration -- ${{ env.TEST_CHANGED }}
       - name: Copy Vitest coverage fragment
-        run: cp coverage/coverage-final.json vitest-integration-coverage.json
+        run: |
+          if [ -f coverage/coverage-final.json ]; then
+            cp coverage/coverage-final.json vitest-integration-coverage.json
+          else
+            echo '{}' > vitest-integration-coverage.json
+          fi
       - name: Upload Vitest coverage fragment
         uses: actions/upload-artifact@v7
         with:
@@ -143,6 +159,8 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -165,9 +183,14 @@ jobs:
       - name: Run rag tests via vitest
         env:
           WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
-        run: bun run test:vitest:rag
+        run: bun run test:vitest:rag -- ${{ env.TEST_CHANGED }}
       - name: Copy Vitest coverage fragment
-        run: cp coverage/coverage-final.json vitest-rag-coverage.json
+        run: |
+          if [ -f coverage/coverage-final.json ]; then
+            cp coverage/coverage-final.json vitest-rag-coverage.json
+          else
+            echo '{}' > vitest-rag-coverage.json
+          fi
       - name: Upload Vitest coverage fragment
         uses: actions/upload-artifact@v7
         with:
@@ -180,6 +203,8 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -202,9 +227,14 @@ jobs:
       - name: Run HuggingFace Transformers provider tests via vitest
         env:
           WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
-        run: bun run test:vitest:ai-provider-hft
+        run: bun run test:vitest:ai-provider-hft -- ${{ env.TEST_CHANGED }}
       - name: Copy Vitest coverage fragment
-        run: cp coverage/coverage-final.json vitest-ai-provider-hft-coverage.json
+        run: |
+          if [ -f coverage/coverage-final.json ]; then
+            cp coverage/coverage-final.json vitest-ai-provider-hft-coverage.json
+          else
+            echo '{}' > vitest-ai-provider-hft-coverage.json
+          fi
       - name: Upload Vitest coverage fragment
         uses: actions/upload-artifact@v7
         with:
@@ -217,6 +247,8 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -239,9 +271,14 @@ jobs:
       - name: Run LlamaCpp provider tests via vitest
         env:
           WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
-        run: bun run test:vitest:ai-provider-nodellama
+        run: bun run test:vitest:ai-provider-nodellama -- ${{ env.TEST_CHANGED }}
       - name: Copy Vitest coverage fragment
-        run: cp coverage/coverage-final.json vitest-ai-provider-nodellama-coverage.json
+        run: |
+          if [ -f coverage/coverage-final.json ]; then
+            cp coverage/coverage-final.json vitest-ai-provider-nodellama-coverage.json
+          else
+            echo '{}' > vitest-ai-provider-nodellama-coverage.json
+          fi
       - name: Upload Vitest coverage fragment
         uses: actions/upload-artifact@v7
         with:
@@ -254,6 +291,8 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -269,9 +308,14 @@ jobs:
       - name: Run API provider tests via vitest
         env:
           WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
-        run: bun run test:vitest:ai-provider-api
+        run: bun run test:vitest:ai-provider-api -- ${{ env.TEST_CHANGED }}
       - name: Copy Vitest coverage fragment
-        run: cp coverage/coverage-final.json vitest-ai-provider-api-coverage.json
+        run: |
+          if [ -f coverage/coverage-final.json ]; then
+            cp coverage/coverage-final.json vitest-ai-provider-api-coverage.json
+          else
+            echo '{}' > vitest-ai-provider-api-coverage.json
+          fi
       - name: Upload Vitest coverage fragment
         uses: actions/upload-artifact@v7
         with:
@@ -325,6 +369,13 @@ jobs:
           path: coverage-parts
       - name: Merge coverage (nyc) and emit HTML/LCOV
         run: |
+          shopt -s nullglob
+          parts=(coverage-parts/*.json)
+          if [ ${#parts[@]} -eq 0 ]; then
+            echo "No coverage fragments (no tests ran for this change)"
+            mkdir -p coverage
+            exit 0
+          fi
           bunx nyc merge coverage-parts merged.json
           mkdir -p .nyc_output
           cp merged.json .nyc_output/out.json
@@ -336,7 +387,7 @@ jobs:
           path: coverage
           retention-days: 1
       - name: Report Coverage
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && hashFiles('coverage/coverage-summary.json') != ''
         uses: davelosert/vitest-coverage-report-action@v2
 
   cleanup:
