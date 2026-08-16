@@ -16,6 +16,10 @@ export * from "@workglow/postgres/job-queue";
 export * from "@workglow/duckdb/storage";
 export * from "@workglow/storage";
 export * from "@workglow/task-graph";
+// A pure re-export: the triggers package installs nothing on import. It exports
+// `installWorkflowTriggers()`, which `workglow/auto-bootstrap` calls; a consumer
+// bootstrapping manually calls it too, or uses the free functions.
+export * from "@workglow/triggers";
 export * from "@workglow/browser-control/task";
 export * from "@workglow/javascript/task";
 export * from "@workglow/mcp/tasks";
