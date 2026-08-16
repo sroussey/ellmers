@@ -50,6 +50,38 @@ const AutoKeySchema = {
 
 const AutoKeyPK = ["id"] as const;
 
+/**
+ * `score` maps to SMALLINT (unsigned, maximum fits), so it carries both a
+ * schema bound and a narrower-than-INTEGER column range. `offset` is signed and
+ * `ratio` is a float, so neither picks up an integer range.
+ */
+const NumericSchema = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    score: { type: "integer", minimum: 0, maximum: 100 },
+    offset: { type: "integer" },
+    big: { type: "integer", minimum: 0 },
+    ratio: { type: "number", minimum: 0, maximum: 1 },
+    bounded: { type: "number", exclusiveMinimum: 0, exclusiveMaximum: 10 },
+    unbounded: { type: "number" },
+  },
+  required: ["id", "score", "offset", "big", "ratio", "bounded", "unbounded"],
+  additionalProperties: false,
+} as const satisfies DataPortSchemaObject;
+
+const NumericPK = ["id"] as const;
+
+const validNumericRow = {
+  id: "n-1",
+  score: 50,
+  offset: -5,
+  big: 1,
+  ratio: 0.5,
+  bounded: 5,
+  unbounded: 1.25,
+};
+
 describe("InMemoryTabularStorage column constraints", () => {
   let storage: InMemoryTabularStorage<typeof ConstraintSchema, typeof ConstraintPK>;
 
@@ -168,6 +200,101 @@ describe("InMemoryTabularStorage column constraints", () => {
     it("leaves an unbounded string column alone", async () => {
       await storage.put({ ...validRow, note: "n".repeat(10_000) });
       expect((await storage.get({ id: "row-1" }))?.note?.length).toBe(10_000);
+    });
+  });
+
+  describe("numeric bounds", () => {
+    let numeric: InMemoryTabularStorage<typeof NumericSchema, typeof NumericPK>;
+
+    beforeEach(async () => {
+      numeric = new InMemoryTabularStorage(NumericSchema, NumericPK);
+      await numeric.setupDatabase();
+    });
+
+    it("accepts a row inside every bound", async () => {
+      await numeric.put(validNumericRow);
+      expect(await numeric.size()).toBe(1);
+    });
+
+    it("rejects a value below the schema minimum", async () => {
+      await expect(numeric.put({ ...validNumericRow, score: -1 } as never)).rejects.toThrow(
+        'value -1 for column "score" is below the schema minimum 0'
+      );
+    });
+
+    it("rejects a value above the schema maximum", async () => {
+      await expect(numeric.put({ ...validNumericRow, score: 101 } as never)).rejects.toThrow(
+        'value 101 for column "score" is above the schema maximum 100'
+      );
+    });
+
+    it("accepts values exactly on an inclusive bound", async () => {
+      await numeric.put({ ...validNumericRow, score: 0, ratio: 0 });
+      await numeric.put({ ...validNumericRow, id: "n-2", score: 100, ratio: 1 });
+      expect(await numeric.size()).toBe(2);
+    });
+
+    it("rejects values sitting on an exclusive bound", async () => {
+      await expect(numeric.put({ ...validNumericRow, bounded: 0 } as never)).rejects.toThrow(
+        'value 0 for column "bounded" is not above the schema exclusiveMinimum 0'
+      );
+      await expect(numeric.put({ ...validNumericRow, bounded: 10 } as never)).rejects.toThrow(
+        'value 10 for column "bounded" is not below the schema exclusiveMaximum 10'
+      );
+    });
+
+    it("accepts values just inside an exclusive bound", async () => {
+      await numeric.put({ ...validNumericRow, bounded: 0.001 });
+      expect((await numeric.get({ id: "n-1" }))?.bounded).toBe(0.001);
+    });
+
+    it("rejects a non-integer in an integer column", async () => {
+      await expect(numeric.put({ ...validNumericRow, offset: 1.5 } as never)).rejects.toThrow(
+        'column "offset" is INTEGER but got a non-integer value: 1.5'
+      );
+    });
+
+    it("allows a fractional value in a float column", async () => {
+      await numeric.put({ ...validNumericRow, ratio: 0.125 });
+      expect((await numeric.get({ id: "n-1" }))?.ratio).toBe(0.125);
+    });
+
+    it("rejects an integer overflowing its column range", async () => {
+      // `offset` has no declared bounds at all, so only the INTEGER column
+      // range stands between the caller and a silent overflow.
+      await expect(
+        numeric.put({ ...validNumericRow, offset: 2147483648 } as never)
+      ).rejects.toThrow('value 2147483648 is out of range for type integer: column "offset"');
+    });
+
+    it("applies the wider BIGINT range to an unbounded-above unsigned column", async () => {
+      // `big` is unsigned with no maximum, so the DDL widens it to BIGINT — a
+      // value INTEGER could not hold must still be accepted here.
+      await numeric.put({ ...validNumericRow, big: 4294967296 });
+      expect((await numeric.get({ id: "n-1" }))?.big).toBe(4294967296);
+
+      await expect(numeric.put({ ...validNumericRow, big: 1e19 } as never)).rejects.toThrow(
+        "out of range for type bigint"
+      );
+    });
+
+    it("leaves a column with neither bounds nor an integer range alone", async () => {
+      await numeric.put({ ...validNumericRow, unbounded: -1e12 });
+      expect((await numeric.get({ id: "n-1" }))?.unbounded).toBe(-1e12);
+    });
+
+    it("rejects an out-of-range patch in updateWhere and keeps the row intact", async () => {
+      await numeric.put(validNumericRow);
+      await expect(numeric.updateWhere({ id: "n-1" }, { score: 500 } as never)).rejects.toThrow(
+        'value 500 for column "score" is above the schema maximum 100'
+      );
+      expect((await numeric.get({ id: "n-1" }))?.score).toBe(50);
+    });
+
+    it("throws StorageValidationError", async () => {
+      await expect(numeric.put({ ...validNumericRow, score: 999 } as never)).rejects.toBeInstanceOf(
+        StorageValidationError
+      );
     });
   });
 

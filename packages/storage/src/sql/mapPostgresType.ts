@@ -5,7 +5,7 @@
  */
 
 import type { JsonSchema } from "@workglow/util/schema";
-import { varcharWidthForFormat } from "../tabular/columnConstraints";
+import { sqlIntegerTypeFor, varcharWidthForFormat } from "../tabular/columnConstraints";
 
 /** Options for {@link mapPostgresType}. */
 export interface PostgresTypeMapOptions {
@@ -68,34 +68,14 @@ export function mapPostgresType(typeDef: JsonSchema, options: PostgresTypeMapOpt
     }
 
     case "number":
-    case "integer":
-      // Handle integer vs floating point
-      if (actualType.multipleOf === 1 || actualType.type === "integer") {
-        // Use PostgreSQL's numeric range types based on min/max values.
-        if (typeof actualType.minimum === "number" && actualType.minimum >= 0) {
-          // For unsigned integers.
-          if (typeof actualType.maximum === "number") {
-            if (actualType.maximum <= 32767) return "SMALLINT";
-            if (actualType.maximum <= 2147483647) return "INTEGER";
-          }
-          return "BIGINT";
-        }
-
-        // Signed (or unbounded-below) integers: a large positive maximum still
-        // needs a wide enough column. Without this, a schema like
-        // `{ type: "integer", minimum: -1, maximum: 9999999999 }` would map to
-        // INTEGER (max 2147483647) and reject schema-valid writes at runtime.
-        // A minimum below INTEGER's lower bound also forces BIGINT.
-        if (typeof actualType.maximum === "number" && actualType.maximum > 2147483647) {
-          return "BIGINT";
-        }
-        if (typeof actualType.minimum === "number" && actualType.minimum < -2147483648) {
-          return "BIGINT";
-        }
-
-        // Default integer type.
-        return "INTEGER";
-      }
+    case "integer": {
+      // Integer columns pick a PostgreSQL range type from the schema's min/max.
+      // Read from the shared selector so the type this DDL declares is the one
+      // whose range the schemaless backends enforce — the two cannot drift
+      // apart. Returns undefined for non-integral schemas, which fall through
+      // to the floating-point handling below.
+      const integerType = sqlIntegerTypeFor(actualType);
+      if (integerType) return integerType;
 
       // For floating point numbers with precision requirements
       if (actualType.format === "float") return "REAL";
@@ -110,6 +90,7 @@ export function mapPostgresType(typeDef: JsonSchema, options: PostgresTypeMapOpt
       }
 
       return "NUMERIC";
+    }
 
     case "boolean":
       return "BOOLEAN";

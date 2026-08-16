@@ -12,6 +12,8 @@ import {
   buildColumnConstraints,
   getNonNullSchema,
   isNullableSchema,
+  numericBounds,
+  sqlIntegerTypeFor,
   varcharWidth,
   varcharWidthForFormat,
 } from "../columnConstraints";
@@ -140,6 +142,77 @@ describe("varcharWidth agrees with the VARCHAR width mapPostgresType emits", () 
     expect(varcharWidthForFormat("uri")).toBe(2048);
     expect(varcharWidthForFormat("uuid")).toBeUndefined();
     expect(varcharWidthForFormat(undefined)).toBeUndefined();
+  });
+});
+
+describe("sqlIntegerTypeFor agrees with the integer type mapPostgresType emits", () => {
+  // Same contract as the VARCHAR matrix: the range enforced on write must be
+  // the range of the column the DDL actually declares.
+  const cases: JsonSchema[] = [
+    { type: "integer" },
+    { type: "integer", minimum: 0 },
+    { type: "integer", minimum: 0, maximum: 100 },
+    { type: "integer", minimum: 0, maximum: 32767 },
+    { type: "integer", minimum: 0, maximum: 32768 },
+    { type: "integer", minimum: 0, maximum: 2147483647 },
+    { type: "integer", minimum: 0, maximum: 2147483648 },
+    { type: "integer", minimum: -1, maximum: 9999999999 },
+    { type: "integer", minimum: -2147483649 },
+    { type: "integer", maximum: 10 },
+    { type: "number" },
+    { type: "number", multipleOf: 1 },
+    { type: "number", multipleOf: 1, minimum: 0, maximum: 5 },
+    { type: "number", multipleOf: 0.01 },
+    { type: "number", format: "float" },
+    { type: "number", format: "double" },
+    nullable({ type: "integer", minimum: 0, maximum: 100 }),
+    { type: "string" },
+  ] as JsonSchema[];
+
+  it.each(cases.map((schema) => [JSON.stringify(schema), schema] as const))(
+    "%s",
+    (_label, schema) => {
+      const sqlType = mapPostgresType(schema, { getNonNullType: getNonNullSchema });
+      const selected = sqlIntegerTypeFor(schema);
+      const emitted = ["SMALLINT", "INTEGER", "BIGINT"].includes(sqlType) ? sqlType : undefined;
+
+      expect(emitted).toBe(selected);
+    }
+  );
+});
+
+describe("numericBounds", () => {
+  it("returns undefined when a column declares no bounds", () => {
+    expect(numericBounds({ type: "integer" } as JsonSchema)).toBeUndefined();
+  });
+
+  it("returns undefined for non-numeric types", () => {
+    expect(numericBounds({ type: "string", maxLength: 5 } as JsonSchema)).toBeUndefined();
+  });
+
+  it("reads every bound keyword", () => {
+    expect(
+      numericBounds({
+        type: "number",
+        minimum: 1,
+        maximum: 10,
+        exclusiveMinimum: 0,
+        exclusiveMaximum: 11,
+      } as JsonSchema)
+    ).toEqual({ minimum: 1, maximum: 10, exclusiveMinimum: 0, exclusiveMaximum: 11 });
+  });
+
+  it("unwraps a nullable union", () => {
+    expect(numericBounds(nullable({ type: "integer", minimum: 3 } as JsonSchema))).toMatchObject({
+      minimum: 3,
+    });
+  });
+
+  it("ignores the draft-04 boolean spelling of exclusiveMinimum", () => {
+    // Reading `true` as a bound of 1 would reject every value <= 1.
+    expect(
+      numericBounds({ type: "integer", exclusiveMinimum: true } as unknown as JsonSchema)
+    ).toBeUndefined();
   });
 });
 

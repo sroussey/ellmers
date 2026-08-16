@@ -32,6 +32,90 @@ export function varcharWidthForFormat(format: unknown): number | undefined {
   return typeof format === "string" ? FORMAT_VARCHAR_WIDTHS[format] : undefined;
 }
 
+/** The integer column types the SQL backends select between. */
+export type SqlIntegerType = "SMALLINT" | "INTEGER" | "BIGINT";
+
+/**
+ * Inclusive value range of each integer column type. A value outside it is a
+ * hard error on the DB ("smallint out of range"), independent of whatever the
+ * schema's own `minimum`/`maximum` say.
+ *
+ * `BIGINT`'s bounds lie beyond `Number.MAX_SAFE_INTEGER`, so they are the
+ * nearest doubles to int8's true limits. That is as precise as a JS number can
+ * be in the first place: any number that survives this check is one the
+ * language could represent, so the approximation never rejects a value a
+ * caller could actually have supplied intact.
+ */
+const SQL_INTEGER_RANGES: Readonly<Record<SqlIntegerType, { min: number; max: number }>> = {
+  SMALLINT: { min: -32768, max: 32767 },
+  INTEGER: { min: -2147483648, max: 2147483647 },
+  BIGINT: { min: -9223372036854775808, max: 9223372036854775807 },
+};
+
+/**
+ * The integer column type a schema maps to, or `undefined` when the column is
+ * not integral (a float/NUMERIC column, or not a number at all).
+ *
+ * This is the single source of truth for the selection: `mapPostgresType` reads
+ * it when emitting DDL, and {@link buildColumnConstraints} reads it so the
+ * schemaless backends reject exactly the overflows Postgres would.
+ */
+export function sqlIntegerTypeFor(typeDef: JsonSchema): SqlIntegerType | undefined {
+  const actualType = getNonNullSchema(typeDef);
+  if (typeof actualType === "boolean") return undefined;
+  if (actualType.type !== "number" && actualType.type !== "integer") return undefined;
+  // `multipleOf: 1` marks a `number` schema as integral, same as `type: integer`.
+  if (actualType.multipleOf !== 1 && actualType.type !== "integer") return undefined;
+
+  if (typeof actualType.minimum === "number" && actualType.minimum >= 0) {
+    // Unsigned: pick the narrowest type that holds the declared maximum.
+    if (typeof actualType.maximum === "number") {
+      if (actualType.maximum <= 32767) return "SMALLINT";
+      if (actualType.maximum <= 2147483647) return "INTEGER";
+    }
+    return "BIGINT";
+  }
+
+  // Signed (or unbounded-below): widen to BIGINT when either bound escapes
+  // INTEGER's range.
+  if (typeof actualType.maximum === "number" && actualType.maximum > 2147483647) return "BIGINT";
+  if (typeof actualType.minimum === "number" && actualType.minimum < -2147483648) return "BIGINT";
+  return "INTEGER";
+}
+
+/** Numeric bounds a schema declares on a `number`/`integer` column. */
+export interface NumericBounds {
+  readonly minimum: number | undefined;
+  readonly maximum: number | undefined;
+  readonly exclusiveMinimum: number | undefined;
+  readonly exclusiveMaximum: number | undefined;
+}
+
+/**
+ * The numeric bounds declared on a column, or `undefined` when it declares
+ * none. Only the numeric (draft-06+) spelling of `exclusiveMinimum` /
+ * `exclusiveMaximum` is read; the legacy draft-04 boolean form is ignored
+ * rather than misread as a bound of `0`/`1`.
+ */
+export function numericBounds(typeDef: JsonSchema): NumericBounds | undefined {
+  const actualType = getNonNullSchema(typeDef);
+  if (typeof actualType === "boolean") return undefined;
+  if (actualType.type !== "number" && actualType.type !== "integer") return undefined;
+
+  const asNumber = (value: unknown): number | undefined =>
+    typeof value === "number" ? value : undefined;
+
+  const bounds: NumericBounds = {
+    minimum: asNumber(actualType.minimum),
+    maximum: asNumber(actualType.maximum),
+    exclusiveMinimum: asNumber(actualType.exclusiveMinimum),
+    exclusiveMaximum: asNumber(actualType.exclusiveMaximum),
+  };
+
+  const declaresSomething = Object.values(bounds).some((bound) => bound !== undefined);
+  return declaresSomething ? bounds : undefined;
+}
+
 /** Whether a JSON Schema property admits `null`. */
 export function isNullableSchema(typeDef: JsonSchema): boolean {
   if (typeof typeDef === "boolean") return typeDef;
@@ -110,6 +194,10 @@ export interface TabularColumnConstraint {
   readonly notNull: boolean;
   /** Declared VARCHAR width, when the column maps to a width-bounded column. */
   readonly maxLength: number | undefined;
+  /** Declared numeric bounds, when the column is a number and declares any. */
+  readonly bounds: NumericBounds | undefined;
+  /** Integer column type the DDL selects, when the column is integral. */
+  readonly integerType: SqlIntegerType | undefined;
 }
 
 /**
@@ -123,6 +211,14 @@ export interface TabularColumnConstraint {
  *   enforce client-side in `getValueAsOrderedArray` /
  *   `getPrimaryKeyAsOrderedArray` before a statement is ever built.
  * - A string column carrying a width maps to `VARCHAR(n)`.
+ * - An integral column maps to `SMALLINT`/`INTEGER`/`BIGINT`, whose range the
+ *   database enforces.
+ *
+ * It also carries the schema's declared numeric bounds. Those are the one
+ * constraint here the SQL backends do *not* fully emit — they add
+ * `CHECK (col >= 0)` for an unsigned column but nothing for the bounds
+ * themselves — so enforcing them is deliberately stricter than the database.
+ * See {@link assertNumericConstraints}.
  *
  * Computed once per storage instance; the result is a plain array so the
  * per-write check is a straight loop with no schema walking.
@@ -140,6 +236,8 @@ export function buildColumnConstraints(
       required: true,
       notNull: true,
       maxLength: varcharWidth(typeDef),
+      bounds: numericBounds(typeDef),
+      integerType: sqlIntegerTypeFor(typeDef),
     });
   }
 
@@ -152,6 +250,8 @@ export function buildColumnConstraints(
       required,
       notNull: required && !isNullableSchema(typeDef),
       maxLength: varcharWidth(typeDef),
+      bounds: numericBounds(typeDef),
+      integerType: sqlIntegerTypeFor(typeDef),
     });
   }
 
@@ -178,6 +278,64 @@ function characterLength(value: string): number {
 function exceedsWidth(value: string, width: number): boolean {
   if (value.length <= width) return false;
   return characterLength(value) > width;
+}
+
+/**
+ * Throws when `value` violates the numeric constraints on `constraint`.
+ *
+ * Two distinct sources are checked, and the messages say which is which:
+ *
+ * - **Schema bounds** (`minimum`/`maximum`/`exclusive*`). The SQL backends emit
+ *   a `CHECK (col >= 0)` for an unsigned column but no CHECK for the bounds
+ *   themselves, so enforcing these makes the schemaless backends *stricter*
+ *   than the database. That is deliberate: the schema is the declared contract
+ *   for every backend, and a value outside it is a bug wherever it is stored.
+ * - **Integer column range**, which the database really does reject.
+ */
+function assertNumericConstraints(value: number, constraint: TabularColumnConstraint): void {
+  const bounds = constraint.bounds;
+  if (bounds) {
+    // NaN fails no comparison below; the integer check catches it for integral
+    // columns, and Postgres accepts NaN in float/NUMERIC columns anyway.
+    if (bounds.minimum !== undefined && value < bounds.minimum) {
+      throw new StorageValidationError(
+        `value ${value} for column "${constraint.column}" is below the schema minimum ${bounds.minimum}`
+      );
+    }
+    if (bounds.maximum !== undefined && value > bounds.maximum) {
+      throw new StorageValidationError(
+        `value ${value} for column "${constraint.column}" is above the schema maximum ${bounds.maximum}`
+      );
+    }
+    if (bounds.exclusiveMinimum !== undefined && value <= bounds.exclusiveMinimum) {
+      throw new StorageValidationError(
+        `value ${value} for column "${constraint.column}" is not above the schema ` +
+          `exclusiveMinimum ${bounds.exclusiveMinimum}`
+      );
+    }
+    if (bounds.exclusiveMaximum !== undefined && value >= bounds.exclusiveMaximum) {
+      throw new StorageValidationError(
+        `value ${value} for column "${constraint.column}" is not below the schema ` +
+          `exclusiveMaximum ${bounds.exclusiveMaximum}`
+      );
+    }
+  }
+
+  const integerType = constraint.integerType;
+  if (integerType) {
+    if (!Number.isInteger(value)) {
+      throw new StorageValidationError(
+        `column "${constraint.column}" is ${integerType} but got a non-integer value: ${value}`
+      );
+    }
+    const range = SQL_INTEGER_RANGES[integerType];
+    if (value < range.min || value > range.max) {
+      throw new StorageValidationError(
+        `value ${value} is out of range for type ${integerType.toLowerCase()}: ` +
+          `column "${constraint.column}"`
+      );
+    }
+  }
 }
 
 /**
@@ -230,6 +388,10 @@ export function assertColumnConstraints(
         `value too long for type character varying(${constraint.maxLength}): ` +
           `column "${constraint.column}" is ${characterLength(value)} characters`
       );
+    }
+
+    if (typeof value === "number") {
+      assertNumericConstraints(value, constraint);
     }
   }
 }
