@@ -24,16 +24,9 @@ import { describe, expect, it } from "vitest";
  */
 export interface StreamingRepositoryUnderTest {
   supportsStreaming(): boolean;
-  supportsStreamingPorts(): boolean;
   isDurable(): boolean;
   getOutputByRef(ref: CacheRef): Promise<Blob | undefined>;
   getOutputStreamByRef(ref: CacheRef): Promise<AsyncIterable<Uint8Array> | undefined>;
-  saveOutputStream(
-    taskType: string,
-    inputs: object,
-    stream: AsyncIterable<Uint8Array>,
-    meta: object
-  ): Promise<CacheRef>;
   saveOutputStreamPort(
     taskType: string,
     inputs: object,
@@ -94,11 +87,10 @@ export function runStreamingTaskOutputRepositoryContract(
   const { name, makeRepo, makeSibling, refScheme, foreignRefScheme } = opts;
 
   describe(name, () => {
-    it("advertises the full streaming surface and is durable", async () => {
+    it("advertises the streaming surface and is durable", async () => {
       const { repo } = await makeRepo();
       expect(repo.supportsStreaming()).toBe(true);
       expect(typeof repo.getOutputStreamByRef).toBe("function");
-      expect(repo.supportsStreamingPorts()).toBe(true);
       expect(repo.isDurable()).toBe(true);
     });
 
@@ -142,6 +134,7 @@ export function runStreamingTaskOutputRepositoryContract(
         codec.encode(fromArray(events), "items"),
         {}
       );
+      expect(ref.port).toBe("items");
       expect(ref.mode).toBe("object");
       expect(await codec.materialize((await repo.getOutputStreamByRef(ref))!, "items")).toEqual([
         { id: 1, v: "b" },
@@ -164,16 +157,20 @@ export function runStreamingTaskOutputRepositoryContract(
         codec.encode(fromArray(events), "file"),
         {}
       );
+      expect(ref.port).toBe("file");
+      expect(ref.mode).toBe("binary");
       const blob = await repo.getOutputByRef(ref);
       expect(Array.from(new Uint8Array(await blob!.arrayBuffer()))).toEqual([10, 20, 30]);
       expect(await collect((await repo.getOutputStreamByRef(ref))!)).toEqual([10, 20, 30]);
     });
 
-    it("round-trips a multi-chunk saveOutputStream and reports size", async () => {
+    it("round-trips a multi-chunk write and reports size", async () => {
       const { repo } = await makeRepo();
-      const ref = await repo.saveOutputStream(
+      const ref = await repo.saveOutputStreamPort(
         "T",
         { k: 1 },
+        "file",
+        "binary",
         gen(new Uint8Array([1, 2]), new Uint8Array([3]), new Uint8Array([4, 5, 6])),
         { mime: "application/octet-stream" }
       );
@@ -206,6 +203,10 @@ export function runStreamingTaskOutputRepositoryContract(
         {}
       );
       expect(a.$ref).not.toBe(b.$ref);
+      // The writer takes the port, so a multi-port row's refs are each
+      // self-describing — the resolver picks one without a schema lookup.
+      expect(a.port).toBe("text");
+      expect(b.port).toBe("file");
       expect(await text.materialize((await repo.getOutputStreamByRef(a))!, "text")).toBe("x");
       const blob = await repo.getOutputByRef(b);
       expect(Array.from(new Uint8Array(await blob!.arrayBuffer()))).toEqual([1]);
@@ -223,7 +224,14 @@ export function runStreamingTaskOutputRepositoryContract(
 
     it("clear() makes previously written refs dangle (a miss, not empty)", async () => {
       const { repo } = await makeRepo();
-      const ref = await repo.saveOutputStream("T", { k: 4 }, gen(new Uint8Array([1])), {});
+      const ref = await repo.saveOutputStreamPort(
+        "T",
+        { k: 4 },
+        "file",
+        "binary",
+        gen(new Uint8Array([1])),
+        {}
+      );
       await repo.clear();
       expect(await repo.getOutputByRef(ref)).toBeUndefined();
       expect(await repo.getOutputStreamByRef(ref)).toBeUndefined();
@@ -232,7 +240,14 @@ export function runStreamingTaskOutputRepositoryContract(
 
     it("clearOlderThan prunes blob payloads alongside rows", async () => {
       const { repo } = await makeRepo();
-      const ref = await repo.saveOutputStream("T", { k: 5 }, gen(new Uint8Array([1])), {});
+      const ref = await repo.saveOutputStreamPort(
+        "T",
+        { k: 5 },
+        "file",
+        "binary",
+        gen(new Uint8Array([1])),
+        {}
+      );
       // Negative cutoff => a future instant, so everything counts as older.
       await repo.clearOlderThan(-60_000);
       expect(await repo.getOutputStreamByRef(ref)).toBeUndefined();
@@ -240,7 +255,14 @@ export function runStreamingTaskOutputRepositoryContract(
 
     it("a sibling instance over the same backing store resolves the ref", async () => {
       const { repo, table } = await makeRepo();
-      const ref = await repo.saveOutputStream("T", { k: 6 }, gen(new Uint8Array([4, 2])), {});
+      const ref = await repo.saveOutputStreamPort(
+        "T",
+        { k: 6 },
+        "file",
+        "binary",
+        gen(new Uint8Array([4, 2])),
+        {}
+      );
       const sibling = await makeSibling(table);
       expect(await collect((await sibling.getOutputStreamByRef(ref))!)).toEqual([4, 2]);
       const blob = await sibling.getOutputByRef(ref);

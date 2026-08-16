@@ -4,11 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Capability, ModelRecord } from "@workglow/ai";
+import type { Capability, ModelEffortPolicy, ModelRecord } from "@workglow/ai";
 import { AiProvider } from "@workglow/ai";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
 import { inferXaiCapabilities, xaiWorkerRunFnSpecs } from "./common/Xai_Capabilities";
 import { XAI } from "./common/Xai_Constants";
+import { xaiEffortPolicy } from "./common/Xai_EffortPolicy";
 import type { XaiModelConfig } from "./common/Xai_ModelSchema";
 
 /**
@@ -23,6 +24,10 @@ export class XaiQueuedProvider extends createCloudProviderClass<XaiModelConfig>(
 }) {
   override inferCapabilities(model: ModelRecord): readonly Capability[] {
     return inferXaiCapabilities(model);
+  }
+
+  override effortPolicy(model: XaiModelConfig): ModelEffortPolicy | undefined {
+    return xaiEffortPolicy(model);
   }
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {

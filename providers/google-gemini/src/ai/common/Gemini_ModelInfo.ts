@@ -33,7 +33,10 @@ async function assertGeminiModelExists(
   const modelName = getModelName(model);
   const client = await createGeminiClient(model);
   try {
-    await client.models.get({ model: modelName, config: signal ? { abortSignal: signal } : undefined });
+    await client.models.get({
+      model: modelName,
+      config: signal ? { abortSignal: signal } : undefined,
+    });
   } catch (err) {
     if (isNotFoundError(err)) {
       throw new Error(

@@ -422,6 +422,7 @@ export class JobQueueServer<
       stopTimeoutMs: this.stopTimeoutMs,
       deadLetter: this.deadLetter,
       prefetch: this.prefetch,
+      onStreamEvent: (jobId, event) => this.dispatchStreamToClients(jobId, event),
     });
 
     // Forward worker events to server and clients
@@ -506,11 +507,37 @@ export class JobQueueServer<
     });
 
     worker.on("job_stream", (jobId, event) => {
+      // Observer fan-out only. Forwarding to attached CLIENTS is handled
+      // awaitably via `onStreamEvent` below (`events.emit` cannot carry a
+      // promise back to the worker that's pacing itself on it).
       this.events.emit("job_stream", this.queueName, jobId, event);
-      this.forwardToClients("handleJobStream", jobId, event);
     });
 
     return worker;
+  }
+
+  /**
+   * Direct, awaitable call path from a worker's `emitStreamEvent` to this
+   * server's attached clients — injected into the worker as
+   * {@link JobQueueWorkerOptions.onStreamEvent} so the worker can await
+   * delivery without going through `events.emit` (which returns no promise).
+   * Reuses the existing {@link clients} registry populated by
+   * `JobQueueClient.attach`; never rejects.
+   * @internal
+   */
+  private async dispatchStreamToClients(jobId: unknown, event: StreamEventLike): Promise<void> {
+    if (this.clients.size === 0) return;
+    await Promise.all(
+      [...this.clients].map((client) =>
+        client.handleJobStream(jobId, event).catch((err) => {
+          getLogger().error("forwarding stream event to attached client failed", {
+            jobId,
+            queueName: this.queueName,
+            error: err,
+          });
+        })
+      )
+    );
   }
 
   /**
@@ -532,11 +559,6 @@ export class JobQueueServer<
     progress: number,
     message: string,
     details: Record<string, unknown> | null
-  ): void;
-  protected forwardToClients(
-    method: "handleJobStream",
-    jobId: unknown,
-    event: StreamEventLike
   ): void;
   protected forwardToClients(method: string, ...args: unknown[]): void {
     for (const client of this.clients) {

@@ -196,8 +196,19 @@ describe("StreamPump", () => {
     const sp = new StreamPump(graph, (runner as any).processScheduler, em);
 
     // Bracket access bypasses TS visibility — taskNeedsAccumulation is `private`.
-    // Two-arg branch: when outputCache is truthy, accumulation is required regardless of edges.
     const fakeOutputCache = {} as any;
+
+    // `a`'s class declares cachePolicy "none", so a cache in play is
+    // irrelevant to it — no row will ever be written, and the edge analysis
+    // (not the cache) owns the decision. Its one edge to `b` carries a plain,
+    // non-streaming port, so no accumulation is needed either.
+    expect((sp as any).taskNeedsAccumulation(a, fakeOutputCache, false)).toBe(false);
+
+    // Forcing the SAME task cacheable flips the two-arg branch back on:
+    // accumulation is required whenever outputCache is truthy, regardless of
+    // edges (neither cache relaxation applies to a plain, non-streaming
+    // schema, so control reaches the trailing `return true`).
+    a.runConfig = { ...a.runConfig, cacheable: true };
     expect((sp as any).taskNeedsAccumulation(a, fakeOutputCache, false)).toBe(true);
 
     // Inverse smoke: with a non-streaming chain and no outputCache, no accumulation is needed.

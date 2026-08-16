@@ -104,7 +104,9 @@ describe("job-queue cross-process stream channel (storage-only client)", () => {
     const handle = await producer.send({ taskType: "stream" });
 
     const received: StreamEventLike[] = [];
-    observer.onJobStream(handle.id, (event) => received.push(event));
+    observer.onJobStream(handle.id, async (event) => {
+      received.push(event);
+    });
 
     await handle.waitFor();
     // Let any queued channel callbacks flush.
@@ -126,13 +128,17 @@ describe("job-queue cross-process stream channel (storage-only client)", () => {
     await storage.publishStreamChunk!(jobId, { type: "text-delta", port: "p", textDelta: "b" }); // seq 2
 
     const first: string[] = [];
-    const unsubA = observer.onJobStream(jobId, (e) => first.push(e.textDelta as string));
+    const unsubA = observer.onJobStream(jobId, async (e) => {
+      first.push(e.textDelta as string);
+    });
     expect(first).toEqual(["a", "b"]); // late subscriber replays 1..2
 
     unsubA(); // last listener removed → subscription torn down, cursor persists
 
     const second: string[] = [];
-    observer.onJobStream(jobId, (e) => second.push(e.textDelta as string));
+    observer.onJobStream(jobId, async (e) => {
+      second.push(e.textDelta as string);
+    });
     expect(second).toEqual([]); // re-subscribe must NOT replay 1..2 again
 
     await storage.publishStreamChunk!(jobId, { type: "text-delta", port: "p", textDelta: "c" }); // seq 3
@@ -142,7 +148,9 @@ describe("job-queue cross-process stream channel (storage-only client)", () => {
   it("tears down the channel subscription once the terminal finish event is delivered", async () => {
     const jobId = "manual-finish-job";
     const received: string[] = [];
-    observer.onJobStream(jobId, (e) => received.push(e.type));
+    observer.onJobStream(jobId, async (e) => {
+      received.push(e.type);
+    });
 
     await storage.publishStreamChunk!(jobId, { type: "text-delta", port: "p", textDelta: "x" });
     await storage.publishStreamChunk!(jobId, { type: "finish", data: {} }); // terminal
@@ -164,7 +172,9 @@ describe("job-queue cross-process stream channel (storage-only client)", () => {
     // SYNCHRONOUSLY inside subscribeToStream, so teardown fires before the
     // unsubscriber can be registered.
     const first: string[] = [];
-    observer.onJobStream(jobId, (e) => first.push(e.type));
+    observer.onJobStream(jobId, async (e) => {
+      first.push(e.type);
+    });
     expect(first).toEqual(["text-delta", "finish"]);
 
     // The mid-subscribe teardown must not leave a zombie unsubscriber behind:
@@ -172,14 +182,18 @@ describe("job-queue cross-process stream channel (storage-only client)", () => {
     // from seq 0 — the cursor was cleared by the teardown), not early-return
     // dead against a stale registration.
     const second: string[] = [];
-    observer.onJobStream(jobId, (e) => second.push(e.type));
+    observer.onJobStream(jobId, async (e) => {
+      second.push(e.type);
+    });
     expect(second).toEqual(["text-delta", "finish"]);
   });
 
   it("disconnect tears down channel stream subscriptions and stream state", async () => {
     const jobId = "disconnect-job";
     const received: string[] = [];
-    observer.onJobStream(jobId, (e) => received.push(e.type));
+    observer.onJobStream(jobId, async (e) => {
+      received.push(e.type);
+    });
 
     await storage.publishStreamChunk!(jobId, { type: "text-delta", port: "p", textDelta: "a" });
     expect(received).toEqual(["text-delta"]);
@@ -199,7 +213,9 @@ describe("job-queue cross-process stream channel (storage-only client)", () => {
     // by publishing straight to the shared carrier.
     const jobId = "remote-worker-job";
     const seen: string[] = [];
-    producer.onJobStream(jobId, (e) => seen.push(e.type)); // producer IS attached
+    producer.onJobStream(jobId, async (e) => {
+      seen.push(e.type);
+    }); // producer IS attached
 
     await storage.publishStreamChunk!(jobId, { type: "text-delta", port: "p", textDelta: "r" });
     await storage.publishStreamChunk!(jobId, { type: "finish", data: {} });
@@ -248,7 +264,9 @@ describe("job-queue stream channel with a server-attached subscriber", () => {
     // the already-delivered event is not replayed; from here the channel is
     // authoritative and the fast path is suppressed (no double delivery).
     const received: string[] = [];
-    handle.onStream!((e) => received.push((e.textDelta as string) ?? e.type));
+    handle.onStream!(async (e) => {
+      received.push((e.textDelta as string) ?? e.type);
+    });
 
     gates.get(gateId)!.release();
     await handle.waitFor();
@@ -297,7 +315,7 @@ describe("job-queue stream channel on an async-seq carrier", () => {
       const handle = await producer.send({ taskType: "stream" });
       const received: StreamEventLike[] = [];
       const done = Promise.withResolvers<void>();
-      observer.onJobStream(handle.id, (event) => {
+      observer.onJobStream(handle.id, async (event) => {
         received.push(event);
         if (event.type === "finish") done.resolve();
       });
@@ -335,7 +353,9 @@ describe("createInMemoryQueue facades carry the stream channel", () => {
       expect(typeof handle.onStream).toBe("function");
 
       const received: StreamEventLike[] = [];
-      handle.onStream!((event) => received.push(event));
+      handle.onStream!(async (event) => {
+        received.push(event);
+      });
 
       await handle.waitFor();
       await new Promise((r) => setTimeout(r, 5));
@@ -343,6 +363,98 @@ describe("createInMemoryQueue facades carry the stream channel", () => {
       expect(received.map((e) => e.type)).toEqual(["binary-delta", "binary-delta", "finish"]);
       expect(Array.from(received[0].binaryDelta as Uint8Array)).toEqual([1, 2]);
       expect(Array.from(received[1].binaryDelta as Uint8Array)).toEqual([3]);
+    } finally {
+      await server.stop();
+      client.disconnect();
+    }
+  });
+});
+
+describe("a half-configured channel (subscribeToStream without publishStreamChunk) behaves as channel-less", () => {
+  it("the same-process fast path still delivers to a server-attached onStream listener", async () => {
+    // `subscribeToStream` present, `publishStreamChunk` absent: no real
+    // backend is shaped this way (channel-capable backends implement both;
+    // SQLite/Postgres/AWS/Cloudflare implement neither), but a carrier that
+    // advertises replay with nothing to ever publish to it must not be
+    // treated as channel-capable — `ensureStreamSubscription` would
+    // otherwise open a subscription that permanently suppresses
+    // `handleJobStream`'s fast path for every job, with nothing to replace
+    // it (see `JobQueueClient.ts`). This is the direct regression test for
+    // that gate: reverting it to check `subscribeToStream` alone reproduces
+    // a silent zero-event delivery here.
+    const queueName = `stream-half-channel-${uuid4()}`;
+    const storage = new InMemoryQueueStorage<SInput, SOutput>(queueName);
+    await storage.migrate();
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
+    (messageQueue as { publishStreamChunk?: unknown }).publishStreamChunk = undefined;
+
+    const server = new JobQueueServer<SInput, SOutput, StreamEmittingJob>(StreamEmittingJob, {
+      messageQueue,
+      jobStore,
+      queueName,
+      pollIntervalMs: 1,
+      stopTimeoutMs: 0,
+    });
+    const client = new JobQueueClient<SInput, SOutput>({ messageQueue, jobStore, queueName });
+    client.attach(server);
+    await server.start();
+
+    try {
+      const handle = await client.send({ taskType: "stream" });
+      const received: StreamEventLike[] = [];
+      handle.onStream?.(async (event) => {
+        received.push(event);
+      });
+
+      const output = await handle.waitFor();
+
+      expect(output).toEqual({ ok: true });
+      // The fast path must have delivered every event — a reverted gate
+      // opens a dead channel subscription instead and this stays empty.
+      expect(received.map((e) => e.type)).toEqual(["binary-delta", "binary-delta", "finish"]);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("an unattached client over the same carrier does not advertise onStream at all", async () => {
+    // No server attached, so the fast path is gone and the half-channel is the
+    // only candidate transport — and it delivers nothing. `createJobHandle`
+    // must therefore withhold `onStream` rather than hand out a listener that
+    // can never fire: callers probe `typeof handle.onStream === "function"` as
+    // THE signal for whether the queue can stream (FetchUrlTask refuses
+    // `response_type: "stream"` on its absence), and an inert-but-present
+    // `onStream` turns that refusal into an empty body reported as a
+    // successful fetch.
+    const queueName = `stream-half-channel-unattached-${uuid4()}`;
+    const storage = new InMemoryQueueStorage<SInput, SOutput>(queueName);
+    await storage.migrate();
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
+    (messageQueue as { publishStreamChunk?: unknown }).publishStreamChunk = undefined;
+
+    const server = new JobQueueServer<SInput, SOutput, StreamEmittingJob>(StreamEmittingJob, {
+      messageQueue,
+      jobStore,
+      queueName,
+      pollIntervalMs: 1,
+      stopTimeoutMs: 0,
+    });
+    const client = new JobQueueClient<SInput, SOutput>({ messageQueue, jobStore, queueName });
+    client.connect(); // storage-only — deliberately NOT attached to the server
+    await server.start();
+
+    try {
+      const handle = await client.send({ taskType: "stream" });
+      expect(handle.onStream).toBeUndefined();
+
+      // And the reason it must be withheld: subscribing would deliver nothing.
+      const received: StreamEventLike[] = [];
+      client.onJobStream(handle.id, async (event) => {
+        received.push(event);
+      });
+      await handle.waitFor();
+      await new Promise((r) => setTimeout(r, 20));
+      expect(received).toEqual([]);
     } finally {
       await server.stop();
       client.disconnect();

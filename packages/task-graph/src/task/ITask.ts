@@ -12,6 +12,7 @@ import type {
 } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import type { CachePolicy } from "../cache/CachePolicy";
+import type { CacheRegistry } from "../cache/CacheRegistry";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ITaskGraph } from "../task-graph/ITaskGraph";
 import type { IWorkflow } from "../task-graph/IWorkflow";
@@ -29,6 +30,18 @@ import type {
 import type { JsonTaskItem, TaskGraphItemJson, TaskGraphJsonOptions } from "./TaskJSON";
 import type { TaskRunner } from "./TaskRunner";
 import type { TaskConfig, TaskInput, TaskOutput, TaskStatus } from "./TaskTypes";
+
+declare const ownConfigNotApplicable: unique symbol;
+
+/**
+ * The type {@link IExecuteContext.own} gives its `config` parameter when the
+ * argument is already an `ITask`. Uninhabited (the brand key cannot be
+ * produced), so passing anything there is a compile error — one that names the
+ * reason, where a bare `never` would only report "type 'undefined'".
+ */
+export interface ConfigNotApplicableToAnExistingTask {
+  readonly [ownConfigNotApplicable]: never;
+}
 
 export interface IExecuteContext {
   signal: AbortSignal;
@@ -52,10 +65,18 @@ export interface IExecuteContext {
    *
    * A graph or workflow is adapted into a wrapper task the caller never sees,
    * so `config` is the only way to name one — without it every owned workflow
-   * renders as the same anonymous `Own[Workflow]` row. An argument that is
-   * already an `ITask` keeps its own config; name those at construction.
+   * renders as the same anonymous `Own[Workflow]` row.
+   *
+   * An argument that is already an `ITask` was constructed and validated with
+   * its own config, so there is nothing left for a second one to configure and
+   * the parameter is typed away for that case (passing one anyway — through a
+   * cast — throws rather than being dropped). Name those at construction, or
+   * call {@link ITask.setTitle} to relabel a reused instance.
    */
-  own: <T extends ITask | ITaskGraph | IWorkflow>(i: T, config?: TaskConfig) => T;
+  own: <T extends ITask | ITaskGraph | IWorkflow>(
+    i: T,
+    config?: T extends ITask ? ConfigNotApplicableToAnExistingTask : TaskConfig
+  ) => T;
   /**
    * Release a task previously registered with {@link IExecuteContext.own}, so
    * the running task stops holding it once its work is done.
@@ -76,6 +97,29 @@ export interface IExecuteContext {
    */
   disown: <T extends ITask | ITaskGraph | IWorkflow>(i: T) => void;
   registry: ServiceRegistry;
+  /**
+   * The cache this run resolved, or `undefined` when it resolved none.
+   *
+   * `TaskRunner` reaches its answer three ways — `IRunConfig.outputCache` on
+   * the run, `task.runConfig.outputCache` on the instance, and a
+   * `CACHE_REGISTRY` binding on the run's {@link registry} — and only the
+   * runner sees the precedence between them. A task that re-derives the answer
+   * from any single source is right for that shape and blind to the other two,
+   * which for a task whose correctness depends on whether its output will be
+   * stored (a conditional HTTP request whose bodiless `304` must not overwrite
+   * the copy it just validated) is a silent data-integrity hole rather than a
+   * missing feature.
+   *
+   * This grants no reach a task lacked: `registry.get(CACHE_REGISTRY)` on the
+   * already-exposed {@link registry} returns the same repositories. What it
+   * publishes is the *resolution* — one value, read from the runner's own
+   * field, so a second derivation cannot drift from it.
+   *
+   * Both slots are individually optional, so a registry-supplied instance may
+   * carry neither; "a cache is in play" means a slot is actually populated.
+   * Absent on a hand-built context that never went through a runner.
+   */
+  readonly cacheRegistry?: CacheRegistry;
   /**
    * Input streams for pass-through streaming tasks. Keyed by input port name.
    * Provided when the graph runner detects that a task has streaming input edges
@@ -179,7 +223,7 @@ export interface IRunConfig {
    * values and `undefined` fall back to
    * {@link REFERENCE_THRESHOLD_BYTES_DEFAULT} (64 KB).
    *
-   * Only applied when the cache backing implements `saveOutputStream` and the
+   * Only applied when the cache backing implements `saveOutputStreamPort` and the
    * port carries binary stream events; otherwise the value is always inlined
    * regardless of this setting.
    */

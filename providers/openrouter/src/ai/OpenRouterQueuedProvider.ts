@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Capability, ModelRecord } from "@workglow/ai";
+import type { Capability, ModelEffortPolicy, ModelRecord } from "@workglow/ai";
 import { AiProvider } from "@workglow/ai";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
 import {
@@ -12,6 +12,7 @@ import {
   openRouterWorkerRunFnSpecs,
 } from "./common/OpenRouter_Capabilities";
 import { OPENROUTER } from "./common/OpenRouter_Constants";
+import { openrouterEffortPolicy } from "./common/OpenRouter_EffortPolicy";
 import type { OpenRouterModelConfig } from "./common/OpenRouter_ModelSchema";
 
 /** Main-thread registration shell for OpenRouter (inline + worker-proxy). */
@@ -21,6 +22,10 @@ export class OpenRouterQueuedProvider extends createCloudProviderClass<OpenRoute
 ) {
   override inferCapabilities(model: ModelRecord): readonly Capability[] {
     return inferOpenRouterCapabilities(model);
+  }
+
+  override effortPolicy(model: OpenRouterModelConfig): ModelEffortPolicy | undefined {
+    return openrouterEffortPolicy(model);
   }
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
