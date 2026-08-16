@@ -22,7 +22,7 @@
  * `node_modules` → stub → source.
  */
 
-import { existsSync } from "node:fs";
+import { closeSync, existsSync, openSync, readSync } from "node:fs";
 import { chmod, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 
@@ -155,13 +155,34 @@ export async function writeSourceStubs(
   return written;
 }
 
-export async function isSourceStub(file: string): Promise<boolean> {
+/** How far into an entry file the sentinel can sit — it is written on line 1. */
+const SENTINEL_PROBE_BYTES = 512;
+
+/**
+ * Whether a file is a `use-source` stub, using `node:fs` only.
+ *
+ * Node-portable on purpose: `vitest.config.ts` needs this answer, and Vite
+ * loads that config under NODE, where `Bun.file` does not exist. The async
+ * {@link isSourceStub} delegates here so the two can never disagree about what
+ * a stub is.
+ */
+export function containsSourceStubSentinel(file: string): boolean {
   if (!TEXT_ENTRY_EXTENSIONS.some((ext) => file.endsWith(ext))) return false;
+  let fd: number | undefined;
   try {
-    return (await Bun.file(file).slice(0, 512).text()).includes(SOURCE_STUB_SENTINEL);
+    fd = openSync(file, "r");
+    const buffer = Buffer.alloc(SENTINEL_PROBE_BYTES);
+    const read = readSync(fd, buffer, 0, SENTINEL_PROBE_BYTES, 0);
+    return buffer.subarray(0, read).toString("utf8").includes(SOURCE_STUB_SENTINEL);
   } catch {
     return false;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
+}
+
+export async function isSourceStub(file: string): Promise<boolean> {
+  return containsSourceStubSentinel(file);
 }
 
 /**

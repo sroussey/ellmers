@@ -32,8 +32,9 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Plugin } from "vite";
-// Extension required: this module is in `vitest.config.ts`'s graph, which Vite's
-// native config loader resolves without extension inference.
+// Extensions required on both: this module is in `vitest.config.ts`'s graph,
+// which Vite's native config loader resolves without extension inference.
+import { collectDistTargets, containsSourceStubSentinel } from "./sourceStubs.ts";
 import { workspaceGroups } from "./workspaceGroups.ts";
 
 /** Source extensions a dist entry can have come from, in resolution order. */
@@ -169,6 +170,37 @@ export function listWorkspacePackages(root: string): WorkspacePackage[] {
     }
   }
   return found.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Fail when any package's published dist entry is a `use-source` stub.
+ *
+ * The `dist` target exists to exercise the BUILT BUNDLES. A stubbed dist
+ * re-exports `src`, so every bundle-shaped assertion passes for the wrong
+ * reason: `@workglow/ai` and `@workglow/ai/worker` collapse onto one source
+ * module, so every cross-entry `instanceof` succeeds trivially and an
+ * export-name parity check compares a file with itself. The run stays green and
+ * covers nothing.
+ *
+ * One aggregated error, because a developer who ran `use-source` has stubbed
+ * every package: failing on the first would take 41 fix-and-rerun cycles to
+ * learn the one fact the message already knows.
+ */
+export function assertNoSourceStubs(packages: readonly WorkspacePackage[]): void {
+  const stubs: string[] = [];
+  for (const pkg of packages) {
+    for (const target of collectDistTargets(pkg.exports)) {
+      const file = join(pkg.dir, target);
+      if (existsSync(file) && containsSourceStubSentinel(file)) stubs.push(file);
+    }
+  }
+  if (stubs.length === 0) return;
+  throw new Error(
+    `WORKGLOW_TEST_TARGET="dist" exercises the built bundles, but ${stubs.length} published ` +
+      `entr${stubs.length === 1 ? "y is" : "ies are"} a \`use-source\` stub re-exporting src. ` +
+      `Every bundle-identity assertion would pass vacuously. Run \`bun run use-dist\` to ` +
+      `restore the real build.\n${stubs.join("\n")}`
+  );
 }
 
 /**

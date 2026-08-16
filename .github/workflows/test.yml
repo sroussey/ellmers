@@ -43,6 +43,12 @@ jobs:
       # programs resolve their own package against.
       - name: Typecheck co-located tests
         run: bun run typecheck:tests
+      # `scripts/` is in no other program: the budget guard globs
+      # packages|providers and `typecheck:tests` globs packages/*/tsconfig.test.json.
+      # It is now home to vitest.config.ts's resolution logic, so a type error
+      # there would otherwise only surface when a test run failed to load.
+      - name: Typecheck scripts and vitest config
+        run: bun run typecheck:scripts
 
   test-discovery:
     runs-on: ubuntu-latest
@@ -131,10 +137,11 @@ jobs:
         with:
           name: build-output
           path: .
+      # The script sets WORKGLOW_TEST_TARGET itself, so `publish-all` and this
+      # job run the same thing and neither can lose the variable to a workflow
+      # edit: dropping it here now means deleting the script call.
       - name: Run unit tests against the built bundles
-        env:
-          WORKGLOW_TEST_TARGET: dist
-        run: bun run test:vitest:unit
+        run: bun run test:vitest:dist
 
   test-vitest-integration:
     runs-on: ubuntu-latest
