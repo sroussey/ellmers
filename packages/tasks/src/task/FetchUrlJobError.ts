@@ -41,6 +41,15 @@ export const FetchUrlErrorCode = {
    * before the first byte reached anyone and stays retryable.
    */
   BODY_TRUNCATED: "FETCH_BODY_TRUNCATED",
+  /**
+   * A 307/308 redirect crossed to a different origin while the request carried
+   * a body. 307/308 preserve method and body by definition, so there is no
+   * downgrade that both withholds the body and still performs the write the
+   * caller asked for. Deliberately absent from
+   * {@link FETCH_URL_RETRYABLE_ERROR_CODES}: a retry re-issues the same hop and
+   * meets the same refusal.
+   */
+  REDIRECT_BODY_NOT_REPLAYED: "FETCH_REDIRECT_BODY_NOT_REPLAYED",
 } as const;
 
 export type FetchUrlErrorCodeValue = (typeof FetchUrlErrorCode)[keyof typeof FetchUrlErrorCode];

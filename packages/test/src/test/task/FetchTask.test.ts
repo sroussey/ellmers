@@ -1172,6 +1172,10 @@ describe("FetchUrlTask", () => {
       { label: "DNS_FAILED", code: FetchUrlErrorCode.DNS_FAILED },
       { label: "REDIRECT_MISSING_LOCATION", code: FetchUrlErrorCode.REDIRECT_MISSING_LOCATION },
       { label: "TOO_MANY_REDIRECTS", code: FetchUrlErrorCode.TOO_MANY_REDIRECTS },
+      {
+        label: "REDIRECT_BODY_NOT_REPLAYED",
+        code: FetchUrlErrorCode.REDIRECT_BODY_NOT_REPLAYED,
+      },
       { label: "NO_RESPONSE_BODY", code: FetchUrlErrorCode.NO_RESPONSE_BODY },
       { label: "CONFIGURATION", code: FetchUrlErrorCode.CONFIGURATION },
     ];
