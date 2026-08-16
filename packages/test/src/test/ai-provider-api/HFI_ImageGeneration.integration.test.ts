@@ -6,7 +6,9 @@
 
 import { ImageEditTask, ImageGenerateTask } from "@workglow/ai";
 import { registerHfInferenceInline } from "@workglow/huggingface-inference/ai-runtime";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect } from "vitest";
+
+import { it } from "../../contract/creditExhaustedSkip";
 
 const RUN = !!process.env.HF_TOKEN;
 

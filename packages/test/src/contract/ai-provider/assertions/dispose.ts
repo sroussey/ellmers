@@ -5,7 +5,9 @@
  */
 
 import { getLogger } from "@workglow/util";
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
+
+import { it } from "../../creditExhaustedSkip";
 
 import type { AiProviderConformanceOpts, ConformanceHandle } from "../types";
 

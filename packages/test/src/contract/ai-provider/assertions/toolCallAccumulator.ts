@@ -7,7 +7,9 @@
 import type { ToolCalls, ToolDefinition } from "@workglow/ai";
 import { toolCalling } from "@workglow/ai";
 import { parsePartialJson } from "@workglow/util/schema";
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
+
+import { it } from "../../creditExhaustedSkip";
 
 import type { AiProviderConformanceOpts, ConformanceFixture } from "../types";
 

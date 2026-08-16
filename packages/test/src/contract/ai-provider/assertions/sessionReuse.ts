@@ -8,8 +8,9 @@ import type { Capability } from "@workglow/ai";
 import { accumulatingEmit, getAiProviderRegistry, getGlobalModelRepository } from "@workglow/ai";
 import type { TaskOutput } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect } from "vitest";
 
+import { it } from "../../creditExhaustedSkip";
 import { itExpectFail } from "../../itExpectFail";
 import type { AiProviderConformanceOpts, ConformanceFixture, ConformanceHandle } from "../types";
 

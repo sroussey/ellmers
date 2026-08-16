@@ -5,7 +5,9 @@
  */
 
 import type { Usage } from "@workglow/ai";
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
+
+import { it } from "../../creditExhaustedSkip";
 
 /**
  * Shared contract for every provider's usage normalization.
