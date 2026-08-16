@@ -614,4 +614,82 @@ describe("PostgresTabularStorage regressions", () => {
     expect(again).toEqual([{ a: "x", b: "y" }]);
     expect(await storage.size()).toBe(1);
   });
+
+  // A compound key's `IN` list is a nested expression tree, so its length is
+  // bounded by the server's `max_stack_depth`, not by the 65535 bind-parameter
+  // cap the chunk size was originally derived from. Sizing only against that
+  // cap emitted 15000-tuple lists for a 2-column key and a stock server threw
+  // `stack depth limit exceeded` past 6534 of them.
+  //
+  // Asserted as a statement-shape contract rather than as "does not throw":
+  // these tests run on PGlite, whose stack ceiling is its own, so a throw-based
+  // test would pass against the unfixed code and guard nothing.
+  /**
+   * A pool that answers every statement with no rows and keeps the SQL. The
+   * assertion here is about the shape of what `getBulk` emits, so no real
+   * engine is involved: driving PGlite through a recording wrapper instead
+   * desynchronizes its extended-protocol state ("unnamed prepared statement
+   * does not exist") and tests the wrapper more than the code.
+   */
+  function makeRecordingPool(): { pool: Pool; selects: string[] } {
+    const selects: string[] = [];
+    const pool = {
+      query: async (sql: string) => {
+        if (typeof sql === "string" && sql.startsWith("SELECT")) selects.push(sql);
+        return { rows: [] };
+      },
+    };
+    return { pool: pool as unknown as Pool, selects };
+  }
+
+  /** Row-value tuples in one compound-key `IN` list, e.g. `($1, $2)`. */
+  function countTuples(sql: string): number {
+    return (sql.match(/\(\$\d+(?:, \$\d+)+\)/g) ?? []).length;
+  }
+
+  it("chunks a compound-key getBulk by tuple count, not by bind-parameter count", async () => {
+    const { pool, selects } = makeRecordingPool();
+    const storage = new PostgresTabularStorage<typeof JunctionSchema, readonly ["a", "b"]>(
+      pool,
+      "junction_chunk",
+      JunctionSchema,
+      ["a", "b"] as const
+    );
+
+    const keys = Array.from({ length: 5000 }, (_, i) => ({ a: `a${i}`, b: `b${i}` }));
+    await storage.getBulk(keys);
+
+    // Under the old parameter-derived size (30000/2 = 15000) this was a single
+    // 5000-tuple statement; it must now be split.
+    expect(selects.length).toBeGreaterThan(1);
+    for (const sql of selects) expect(countTuples(sql)).toBeLessThanOrEqual(2000);
+    // Chunking must not drop the tail — every key is still asked for.
+    expect(selects.reduce((sum, sql) => sum + countTuples(sql), 0)).toBe(5000);
+  });
+
+  it("leaves a single-column getBulk on the flat placeholder list", async () => {
+    const SingleSchema = {
+      type: "object",
+      properties: { a: { type: "string" }, v: { type: "string" } },
+      required: ["a"],
+      additionalProperties: false,
+    } as const satisfies DataPortSchemaObject;
+
+    const { pool, selects } = makeRecordingPool();
+    const storage = new PostgresTabularStorage<typeof SingleSchema, readonly ["a"]>(
+      pool,
+      "single_chunk",
+      SingleSchema,
+      ["a"] as const
+    );
+
+    // A flat `IN ($1, $2, ...)` list does not nest, so it keeps the larger
+    // parameter-derived chunk and stays one statement at this size.
+    await storage.getBulk(Array.from({ length: 5000 }, (_, i) => ({ a: `a${i}` })));
+
+    expect(selects).toHaveLength(1);
+    // Flat (`IN ($1, $2, ...)`), not the nested row-value form (`IN (($1, $2), ...)`)
+    // that the tuple limit exists to bound.
+    expect(selects[0]).not.toMatch(/IN \(\(/);
+  });
 });
