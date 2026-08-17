@@ -114,6 +114,24 @@ describe("the `type: [T, null]` spelling derives the same constraints as anyOf",
     expect(numericBounds(arrayForm)).toEqual(numericBounds(anyOfForm));
     expect(isNullableSchema(arrayForm)).toBe(true);
   });
+
+  it("a genuine multi-type union stays in the unknown-type branch", () => {
+    // Collapsing applies only when ONE non-null type remains. Two real types
+    // have no single SQL type, so the honest answer is still the unknown-type
+    // branch — not a guess at whichever came first.
+    const union = { type: ["string", "integer", "null"] } as JsonSchema;
+    expect(mapPostgresType(union, { getNonNullType: getNonNullSchema })).toBe(
+      "TEXT /* unknown type */"
+    );
+    expect(varcharWidth(union)).toBeUndefined();
+    expect(sqlIntegerTypeFor(union)).toBeUndefined();
+
+    expect(
+      mapPostgresType({ type: ["string", "integer"] } as JsonSchema, {
+        getNonNullType: getNonNullSchema,
+      })
+    ).toBe("TEXT /* unknown type */");
+  });
 });
 
 describe("varcharWidth", () => {
@@ -332,6 +350,69 @@ describe("buildColumnConstraints", () => {
       notNull: false,
       maxLength: undefined,
     });
+  });
+
+  it("drops width, range and bounds in sqlite mode but keeps required and notNull", () => {
+    // SQLite emits `TEXT /* VARCHAR(n) */` and a single `INTEGER` type, so it
+    // enforces neither width nor column range; schema bounds are emitted as a
+    // CHECK by no backend at all. Presence and NOT NULL survive.
+    const numericValueSchema = {
+      type: "object",
+      properties: {
+        name: { type: "string", maxLength: 10 },
+        score: { type: "integer", minimum: 0, maximum: 100 },
+      },
+      required: ["name", "score"],
+      additionalProperties: false,
+    } as unknown as DataPortSchemaObject;
+
+    const postgres = Object.fromEntries(
+      buildColumnConstraints(primaryKeySchema, numericValueSchema, "postgres").map((c) => [
+        c.column,
+        c,
+      ])
+    );
+    expect(postgres.name.maxLength).toBe(10);
+    expect(postgres.score.integerType).toBe("SMALLINT");
+    expect(postgres.score.bounds).toEqual({
+      minimum: 0,
+      maximum: 100,
+      exclusiveMinimum: undefined,
+      exclusiveMaximum: undefined,
+    });
+
+    const sqlite = Object.fromEntries(
+      buildColumnConstraints(primaryKeySchema, numericValueSchema, "sqlite").map((c) => [
+        c.column,
+        c,
+      ])
+    );
+    expect(sqlite.id).toMatchObject({
+      isPrimaryKey: true,
+      required: true,
+      notNull: true,
+      maxLength: undefined,
+      bounds: undefined,
+      integerType: undefined,
+    });
+    expect(sqlite.name).toMatchObject({
+      required: true,
+      notNull: true,
+      maxLength: undefined,
+      bounds: undefined,
+      integerType: undefined,
+    });
+    expect(sqlite.score).toMatchObject({
+      required: true,
+      notNull: true,
+      maxLength: undefined,
+      bounds: undefined,
+      integerType: undefined,
+    });
+  });
+
+  it("returns no constraints in off mode", () => {
+    expect(buildColumnConstraints(primaryKeySchema, valueSchema, "off")).toEqual([]);
   });
 });
 

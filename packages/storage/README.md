@@ -261,6 +261,49 @@ const userRepo = new InMemoryTabularStorage<typeof UserSchema, ["id"]>(
 );
 ```
 
+#### Nullable columns and generated DDL
+
+A nullable column can be written two ways, and both are recognized:
+
+```typescript
+{
+  input: {
+    anyOf: [{ type: "integer" }, { type: "null" }];
+  }
+} // anyOf form
+{
+  input: {
+    type: ["integer", "null"];
+  }
+} // type-array form
+```
+
+As of this release the **type-array form maps to the underlying type's column
+type** (`INTEGER`, `VARCHAR(n)`, …) instead of falling through to
+`TEXT /* unknown type */`. Only the DDL generated for _new_ tables changes —
+`CREATE TABLE IF NOT EXISTS` never alters an existing one, so a Postgres
+database created before this keeps its `TEXT` columns and reads those values
+back as `string` where a freshly created database returns `number`.
+
+No migration ships for this: the declarative migration op set has no
+column-type-change op, migrations are supplied per storage instance by whoever
+constructs it, and no table in this repository is built from an affected schema.
+Bringing an existing deployment in line is an operator action:
+
+```sql
+ALTER TABLE run_usage
+  ALTER COLUMN input  TYPE INTEGER USING input::integer,
+  ALTER COLUMN output TYPE INTEGER USING output::integer;
+-- string columns additionally take a width; truncation policy is the operator's call
+ALTER TABLE run_usage
+  ALTER COLUMN "modelId" TYPE VARCHAR(255) USING left("modelId", 255);
+```
+
+The `USING left(...)` clause **truncates** any value already wider than the new
+width. That is a choice about your data, not a recommendation — inspect the
+column first and decide whether to widen the schema, clean the rows, or accept
+the truncation.
+
 #### Auto-Generated Primary Keys
 
 TabularStorage supports automatic ID generation by marking schema properties with `x-auto-generated: true`:

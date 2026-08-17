@@ -14,7 +14,7 @@ import { safeEmit } from "../events/safeEmit";
 import { type ITabularMigration, type ITabularMigrationApplier } from "../migrations";
 import type { ClientProvidedKeysOption, KeyGenerationStrategy } from "./BaseTabularStorage";
 import { BaseTabularStorage } from "./BaseTabularStorage";
-import type { TabularColumnConstraint } from "./columnConstraints";
+import type { TabularColumnConstraint, TabularConstraintMode } from "./columnConstraints";
 import { assertColumnConstraints, buildColumnConstraints } from "./columnConstraints";
 import { pickCoveringIndex } from "./coveringIndexPicker";
 import { InMemoryTabularMigrationApplier } from "./InMemoryTabularMigrationApplier";
@@ -126,7 +126,8 @@ export class InMemoryTabularStorage<
     clientProvidedKeys: ClientProvidedKeysOption = "if-missing",
     tabularMigrations?: ReadonlyArray<ITabularMigration>,
     migrationName: string = "inmemory",
-    uniqueIndexes: readonly (readonly (keyof NoInfer<Entity>)[])[] = []
+    uniqueIndexes: readonly (readonly (keyof NoInfer<Entity>)[])[] = [],
+    constraintMode: TabularConstraintMode = "postgres"
   ) {
     super(
       schema,
@@ -137,16 +138,26 @@ export class InMemoryTabularStorage<
       migrationName,
       uniqueIndexes
     );
-    this.columnConstraints = buildColumnConstraints(this.primaryKeySchema, this.valueSchema);
+    this.columnConstraints = buildColumnConstraints(
+      this.primaryKeySchema,
+      this.valueSchema,
+      constraintMode
+    );
   }
 
   /**
-   * Enforce the DB-equivalent column constraints — `NOT NULL` (including the
-   * presence of every `required` column) and `VARCHAR(n)` width — at the
-   * in-memory tier, for the same reason {@link assertUniqueIndexes} exists:
-   * a store used as a test double or a dev-mode backend should reject the rows
-   * Postgres/SQLite would reject, rather than accepting them and deferring the
-   * failure to the first real deployment.
+   * Enforce the backend-equivalent column constraints at the in-memory tier,
+   * for the same reason {@link assertUniqueIndexes} exists: a store used as a
+   * test double or a dev-mode backend should reject the rows the real backend
+   * would reject, rather than accepting them and deferring the failure to the
+   * first real deployment.
+   *
+   * Presence of every `required` column and `NOT NULL` are what every backend
+   * enforces. `VARCHAR(n)` width, integer column range and the schema's own
+   * numeric bounds are Postgres-shaped — SQLite enforces none of them, and the
+   * bounds are stricter than any database. A consumer targeting SQLite passes
+   * `"sqlite"` as the constructor's `constraintMode` so its double matches its
+   * real backend.
    */
   private assertColumnConstraints(entityToStore: Entity): void {
     assertColumnConstraints(entityToStore as Record<string, unknown>, this.columnConstraints);
