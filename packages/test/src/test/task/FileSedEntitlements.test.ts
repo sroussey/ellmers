@@ -12,6 +12,7 @@ import {
   TaskEntitlementError,
   TaskGraph,
   TaskGraphRunner,
+  TaskInvalidInputError,
   TaskRegistry,
   type IEntitlementEnforcer,
 } from "@workglow/task-graph";
@@ -183,5 +184,29 @@ describe("FileSedTask entitlement enforcement", () => {
     }).entitlements().entitlements;
 
     expect(declared[0].resources).toEqual([target]);
+  });
+
+  /**
+   * A misconfigured root (or one cleaned up mid-run) must not escape as a raw
+   * `ENOENT ... lstat` from deep inside the resolver. It names the root, and
+   * the read is refused either way — the declaration degrades to an UNSCOPED
+   * `filesystem:read`, which `execute()` never reaches because resolution
+   * throws there too.
+   */
+  test("names a configured root that does not exist, and still fails closed", async () => {
+    const missingRoot = join(testDir, "nope");
+    const filePath = join(testDir, "notes.txt");
+    writeFileSync(filePath, "bravo foo\n", "utf-8");
+
+    const task = new FileSedTask({
+      roots: [missingRoot],
+      defaults: { url: filePath, pattern: "foo", replacement: "bar" },
+    });
+
+    const declared = task.entitlements().entitlements;
+    expect(declared.find((e) => e.id === Entitlements.FILESYSTEM_READ)?.resources).toBeUndefined();
+
+    await expect(task.run()).rejects.toThrow(TaskInvalidInputError);
+    await expect(task.run()).rejects.toThrow(missingRoot);
   });
 });
