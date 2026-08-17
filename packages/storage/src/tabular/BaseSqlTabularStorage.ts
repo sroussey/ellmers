@@ -119,6 +119,16 @@ export abstract class BaseSqlTabularStorage<
     return null;
   }
 
+  /**
+   * Public view of {@link connectionHandle} used by
+   * {@link withConnectionTransaction} to group participants. Postgres overrides
+   * this so a real `pg.Pool` still groups by pool identity even though
+   * {@link connectionHandle} stays `null` (pool writes must not serialize).
+   */
+  public sharedConnectionHandle(): object | null {
+    return this.connectionHandle();
+  }
+
   protected constructPrimaryKeyColumns($delimiter: string = ""): string {
     let cached = this._pkColsCache.get($delimiter);
     if (cached === undefined) {

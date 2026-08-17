@@ -11,9 +11,21 @@ export * from "./common";
 export {
   __resetAlsForTesting,
   ConnectionReentryError,
+  getAlsStore,
   runInTransactionOnConnection,
   runOnConnection,
 } from "./tabular/ConnectionMutex.server";
+
+export {
+  assertSharedConnectionHandle,
+  connectionTxQuery,
+  discardDeferredPuts,
+  enqueueDeferredPut,
+  isEnlistedInConnectionTx,
+  runNativeConnectionTransaction,
+  setConnectionTxQuery,
+  takeDeferredPuts,
+} from "./tabular/runNativeConnectionTransaction";
 
 export * from "./tabular/FsFolderTabularStorage";
 

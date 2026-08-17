@@ -26,15 +26,20 @@ import type {
   ValueOptionType,
 } from "@workglow/storage";
 import {
+  assertSharedConnectionHandle,
   BaseSqlTabularStorage,
   buildSearchWhere,
+  discardDeferredPuts,
+  enqueueDeferredPut,
   MIGRATIONS_TABLE,
   pickCoveringIndex,
   runInTransactionOnConnection,
+  runNativeConnectionTransaction,
   runOnConnection,
   safeEmit,
   SqliteDialect,
   SqlTabularMigrationApplier,
+  takeDeferredPuts,
   TYPED_ARRAY_CTORS,
 } from "@workglow/storage";
 import { createServiceToken, uuid4 } from "@workglow/util";
@@ -82,6 +87,61 @@ export class SqliteTabularStorage<
    */
   protected override connectionHandle(): object | null {
     return this.db as unknown as object;
+  }
+
+  /**
+   * Runs a write through the cross-instance connection chain (when the
+   * handle is shared) and then this instance's own mutex. Calls arriving
+   * through the `tx` proxy go straight to the `_*Internal` methods and never
+   * re-enter here. The chain is consulted even while `inTransaction` is set:
+   * `runOnConnection` inlines a genuine descendant of the open transaction
+   * body and queues an unrelated concurrent call.
+   */
+  protected guardedWrite<T>(fn: () => Promise<T>): Promise<T> {
+    const handle = this.connectionHandle();
+    if (handle !== null) {
+      return runOnConnection(handle, this, () => this.mutex(fn));
+    }
+    return this.mutex(fn);
+  }
+
+  async runConnectionTransaction<T>(
+    participants: readonly AnyTabularStorage[],
+    fn: () => Promise<T>
+  ): Promise<T> {
+    const handle = assertSharedConnectionHandle(this, participants);
+    const siblings = participants as unknown as Array<
+      SqliteTabularStorage<Schema, PrimaryKeyNames, Entity, PrimaryKey, Value, InsertType>
+    >;
+    return runNativeConnectionTransaction({
+      handle,
+      participants,
+      begin: () => {
+        for (const sibling of siblings) sibling.inTransaction = true;
+        this.db.exec("BEGIN");
+      },
+      commit: () => {
+        this.db.exec("COMMIT");
+      },
+      rollback: () => {
+        this.db.exec("ROLLBACK");
+      },
+      afterCommit: () => {
+        for (const sibling of siblings) sibling.flushAlsDeferredPuts();
+      },
+      afterRollback: () => {
+        for (const sibling of siblings) discardDeferredPuts(sibling);
+      },
+      fn,
+    }).finally(() => {
+      for (const sibling of siblings) sibling.inTransaction = false;
+    });
+  }
+
+  private flushAlsDeferredPuts(): void {
+    for (const entity of takeDeferredPuts(this) as Entity[]) {
+      safeEmit(this.events, "put", entity);
+    }
   }
 
   /**
@@ -725,6 +785,7 @@ export class SqliteTabularStorage<
    * that are about to roll back.
    */
   protected emitPut(entity: Entity): void {
+    if (enqueueDeferredPut(this, entity)) return;
     safeEmit(this.events, "put", entity);
   }
 
@@ -735,14 +796,10 @@ export class SqliteTabularStorage<
    * @emits 'put' event when successful (deferred until commit if inside withTransaction)
    */
   async put(entity: InsertType): Promise<Entity> {
-    return this.mutex(() => this._putInternal(entity));
+    return this.guardedWrite(() => this._putInternal(entity));
   }
 
   protected async _putInternal(entity: InsertType): Promise<Entity> {
-    const handle = this.connectionHandle();
-    if (handle !== null && !this.inTransaction) {
-      return runOnConnection(handle, this, async () => this.executePutSync(entity));
-    }
     return this.executePutSync(entity);
   }
 
@@ -759,16 +816,11 @@ export class SqliteTabularStorage<
    * inside a {@link withTransaction}, deferral extends to that outer commit.
    */
   async putBulk(entities: InsertType[]): Promise<Entity[]> {
-    return this.mutex(() => this._putBulkInternal(entities));
+    return this.guardedWrite(() => this._putBulkInternal(entities));
   }
 
   protected async _putBulkInternal(entities: InsertType[]): Promise<Entity[]> {
     if (entities.length === 0) return [];
-
-    const handle = this.connectionHandle();
-    if (handle !== null && !this.inTransaction) {
-      return runOnConnection(handle, this, () => this.runPutBulkOnHandle(entities));
-    }
     return this.runPutBulkOnHandle(entities);
   }
 
@@ -928,43 +980,42 @@ export class SqliteTabularStorage<
           "Run nested rollback boundaries with SAVEPOINT directly, or refactor to a single transaction."
       );
     }
-    // Instance-first / connection-second: the per-instance mutex still bounds
-    // work reaching THIS storage while the transaction body runs, then the
-    // shared ConnectionMutex chain bounds work reaching the same underlying
-    // handle from any OTHER storage instance.
-    return this.mutex(async () => {
-      const handle = this.connectionHandle();
-      const body = async (): Promise<T> => this.runWithTransactionBody(fn);
-      if (handle !== null) {
-        return runInTransactionOnConnection(handle, this, body);
-      }
-      return body();
-    });
+    // Connection-first / instance-second: the shared chain bounds work on the
+    // handle, then the per-instance mutex bounds work reaching THIS storage.
+    // Writes use the same order (`guardedWrite`), so an external put cannot
+    // hold the instance mutex while waiting for a chain slot this transaction
+    // already owns.
+    const handle = this.connectionHandle();
+    if (handle !== null) {
+      return runInTransactionOnConnection(handle, this, () => this.runWithTransactionBody(fn));
+    }
+    return this.runWithTransactionBody(fn);
   }
 
   private async runWithTransactionBody<T>(fn: (tx: this) => Promise<T>): Promise<T> {
-    const deferredPutEvents: Entity[] = [];
-    this.inTransaction = true;
-    try {
-      this.db.exec("BEGIN");
+    return this.mutex(async () => {
+      const deferredPutEvents: Entity[] = [];
+      this.inTransaction = true;
       let result: T;
       try {
-        result = await fn(this.createTxView(deferredPutEvents));
-        this.db.exec("COMMIT");
-      } catch (err) {
+        this.db.exec("BEGIN");
         try {
-          this.db.exec("ROLLBACK");
-        } catch {
-          // prefer the original error if rollback fails
+          result = await fn(this.createTxView(deferredPutEvents));
+          this.db.exec("COMMIT");
+        } catch (err) {
+          try {
+            this.db.exec("ROLLBACK");
+          } catch {
+            // prefer the original error if rollback fails
+          }
+          throw err;
         }
-        throw err;
+      } finally {
+        this.inTransaction = false;
       }
-      // Flush deferred events only on commit success.
       for (const entity of deferredPutEvents) safeEmit(this.events, "put", entity);
       return result;
-    } finally {
-      this.inTransaction = false;
-    }
+    });
   }
 
   /**
@@ -1071,14 +1122,10 @@ export class SqliteTabularStorage<
    * @emits 'delete' event when successful
    */
   async delete(key: PrimaryKey): Promise<void> {
-    return this.mutex(() => this._deleteInternal(key));
+    return this.guardedWrite(() => this._deleteInternal(key));
   }
 
   private async _deleteInternal(key: PrimaryKey): Promise<void> {
-    const handle = this.connectionHandle();
-    if (handle !== null && !this.inTransaction) {
-      return runOnConnection(handle, this, async () => this.runDeleteOnHandle(key));
-    }
     this.runDeleteOnHandle(key);
   }
 
@@ -1144,14 +1191,10 @@ export class SqliteTabularStorage<
    * @emits 'clearall' event when successful
    */
   async deleteAll(): Promise<void> {
-    return this.mutex(() => this._deleteAllInternal());
+    return this.guardedWrite(() => this._deleteAllInternal());
   }
 
   private async _deleteAllInternal(): Promise<void> {
-    const handle = this.connectionHandle();
-    if (handle !== null && !this.inTransaction) {
-      return runOnConnection(handle, this, async () => this.runDeleteAllOnHandle());
-    }
     this.runDeleteAllOnHandle();
   }
 
@@ -1351,18 +1394,13 @@ export class SqliteTabularStorage<
    * @param criteria - Object with column names as keys and values or SearchConditions
    */
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
-    return this.mutex(() => this._deleteSearchInternal(criteria));
+    return this.guardedWrite(() => this._deleteSearchInternal(criteria));
   }
 
   private async _deleteSearchInternal(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
     const criteriaKeys = Object.keys(criteria) as Array<keyof Entity>;
     if (criteriaKeys.length === 0) {
       return;
-    }
-
-    const handle = this.connectionHandle();
-    if (handle !== null && !this.inTransaction) {
-      return runOnConnection(handle, this, async () => this.runDeleteSearchOnHandle(criteria));
     }
     this.runDeleteSearchOnHandle(criteria);
   }
@@ -1387,7 +1425,7 @@ export class SqliteTabularStorage<
     patch: Partial<Entity>
   ): Promise<Entity | undefined> {
     this.assertPatchKeepsPrimaryKey(patch);
-    return this.mutex(() => this._updateWhereInternal(match, patch));
+    return this.guardedWrite(() => this._updateWhereInternal(match, patch));
   }
 
   private async _updateWhereInternal(
@@ -1396,13 +1434,6 @@ export class SqliteTabularStorage<
   ): Promise<Entity | undefined> {
     const patchKeys = Object.keys(patch) as Array<keyof Entity>;
     if (patchKeys.length === 0) return undefined;
-
-    const handle = this.connectionHandle();
-    if (handle !== null && !this.inTransaction) {
-      return runOnConnection(handle, this, async () =>
-        this.runUpdateWhereOnHandle(match, patch, patchKeys)
-      );
-    }
     return this.runUpdateWhereOnHandle(match, patch, patchKeys);
   }
 

@@ -27,15 +27,21 @@ import type {
   ValueOptionType,
 } from "@workglow/storage";
 import {
+  assertSharedConnectionHandle,
   BaseSqlTabularStorage,
   buildSearchWhere,
+  discardDeferredPuts,
   DuckDbDialect,
+  enqueueDeferredPut,
+  isEnlistedInConnectionTx,
   MIGRATIONS_TABLE,
   pickCoveringIndex,
   runInTransactionOnConnection,
+  runNativeConnectionTransaction,
   runOnConnection,
   safeEmit,
   SqlTabularMigrationApplier,
+  takeDeferredPuts,
   TYPED_ARRAY_CTORS,
 } from "@workglow/storage";
 import { createServiceToken, uuid4 } from "@workglow/util";
@@ -142,6 +148,48 @@ export class DuckDbTabularStorage<
     return typeof this.dbOrPath === "object" && this.dbOrPath !== null
       ? (this.dbOrPath as object)
       : null;
+  }
+
+  async runConnectionTransaction<T>(
+    participants: readonly AnyTabularStorage[],
+    fn: () => Promise<T>
+  ): Promise<T> {
+    const handle = assertSharedConnectionHandle(this, participants);
+    const siblings = participants as unknown as Array<
+      DuckDbTabularStorage<Schema, PrimaryKeyNames, Entity, PrimaryKey, Value, InsertType>
+    >;
+    const db = await this.getDb();
+    return runNativeConnectionTransaction({
+      handle,
+      participants,
+      begin: async () => {
+        for (const sibling of siblings) sibling.inTransaction = true;
+        await db.exec("BEGIN");
+      },
+      commit: async () => {
+        await db.exec("COMMIT");
+        for (const sibling of siblings) sibling.inTransaction = false;
+      },
+      rollback: async () => {
+        await db.exec("ROLLBACK");
+        for (const sibling of siblings) sibling.inTransaction = false;
+      },
+      afterCommit: () => {
+        for (const sibling of siblings) sibling.flushAlsDeferredPuts();
+      },
+      afterRollback: () => {
+        for (const sibling of siblings) discardDeferredPuts(sibling);
+      },
+      fn,
+    }).finally(() => {
+      for (const sibling of siblings) sibling.inTransaction = false;
+    });
+  }
+
+  private flushAlsDeferredPuts(): void {
+    for (const entity of takeDeferredPuts(this) as Entity[]) {
+      safeEmit(this.events, "put", entity);
+    }
   }
 
   /**
@@ -701,6 +749,7 @@ export class DuckDbTabularStorage<
    * rows that are about to roll back.
    */
   protected emitPut(entity: Entity): void {
+    if (enqueueDeferredPut(this, entity)) return;
     safeEmit(this.events, "put", entity);
   }
 
@@ -748,8 +797,9 @@ export class DuckDbTabularStorage<
       return result.rows.map((row) => this.hydrateRow(row));
     };
 
-    // Already inside an outer transaction (via the `tx` view): no own BEGIN.
-    if (this.inTransaction) {
+    // Already inside an outer transaction (via the `tx` view or a connection-
+    // scoped transaction): no own BEGIN.
+    if (this.inTransaction || isEnlistedInConnectionTx(this)) {
       const { aligned, distinct } = await this.runBulkPut(entities, dialect, 30000, exec);
       for (const entity of distinct) this.emitPut(entity);
       return aligned;

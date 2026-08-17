@@ -5,7 +5,11 @@
  */
 
 import { Sqlite, SqliteTabularStorage } from "@workglow/sqlite/storage";
-import { ConnectionReentryError, StorageValidationError } from "@workglow/storage";
+import {
+  ConnectionReentryError,
+  StorageValidationError,
+  withConnectionTransaction,
+} from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { getTestingLogger } from "@workglow/util/test";
@@ -136,6 +140,25 @@ describe("SqliteTabularStorage", async () => {
       >(
         ":memory:",
         `contract_test_${uuid4().replace(/-/g, "_")}`,
+        CompoundSchema,
+        CompoundPrimaryKeyNames
+      );
+      await storage.setupDatabase();
+      return storage;
+    },
+    createSiblingStorage: async (primary) => {
+      const handle = (
+        primary as unknown as { sharedConnectionHandle: () => object | null }
+      ).sharedConnectionHandle();
+      if (handle == null) {
+        throw new Error("SqliteTabularStorage contract storage has no shared handle");
+      }
+      const storage = new SqliteTabularStorage<
+        typeof CompoundSchema,
+        typeof CompoundPrimaryKeyNames
+      >(
+        handle as Sqlite.Database,
+        `contract_sib_${uuid4().replace(/-/g, "_")}`,
         CompoundSchema,
         CompoundPrimaryKeyNames
       );
@@ -552,5 +575,66 @@ describe("SqliteTabularStorage shared-connection safety", () => {
     expect(await a.get({ name: "n1", type: "x" })).toBeDefined();
     expect(await a.get({ name: "n2", type: "x" })).toBeDefined();
     expect(await a.get({ name: "n3", type: "x" })).toBeDefined();
+  });
+
+  it("withConnectionTransaction commits writes across two tables", async () => {
+    const [a, b] = await makeSharedPair();
+    await withConnectionTransaction([a, b], async () => {
+      await a.put({ name: "from-a", type: "x", option: "va", success: true });
+      await b.put({ name: "from-b", type: "x", option: "vb", success: true });
+    });
+    expect(await a.get({ name: "from-a", type: "x" })).toMatchObject({ option: "va" });
+    expect(await b.get({ name: "from-b", type: "x" })).toMatchObject({ option: "vb" });
+  });
+
+  it("withConnectionTransaction rolls back both tables when the callback throws", async () => {
+    const [a, b] = await makeSharedPair();
+    await a.put({ name: "kept", type: "x", option: "base", success: true });
+
+    await expect(
+      withConnectionTransaction([a, b], async () => {
+        await a.put({ name: "from-a", type: "x", option: "va", success: true });
+        await b.put({ name: "from-b", type: "x", option: "vb", success: true });
+        throw new Error("forced rollback");
+      })
+    ).rejects.toThrow("forced rollback");
+
+    expect(await a.get({ name: "kept", type: "x" })).toBeDefined();
+    expect(await a.get({ name: "from-a", type: "x" })).toBeUndefined();
+    expect(await b.get({ name: "from-b", type: "x" })).toBeUndefined();
+  });
+
+  it("withConnectionTransaction still throws sibling-op for a non-enlisted storage", async () => {
+    const [a, b, db] = await makeSharedPair();
+    const c = new SqliteTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      db,
+      `shared_c_${uuid4().replace(/-/g, "_")}`,
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+    await c.setupDatabase();
+
+    let error: unknown;
+    await withConnectionTransaction([a, b], async () => {
+      await a.put({ name: "enlisted", type: "x", option: "ok", success: true });
+      try {
+        await c.put({ name: "outsider", type: "x", option: "no", success: true });
+      } catch (err) {
+        error = err;
+      }
+    });
+
+    expect(error).toBeInstanceOf(ConnectionReentryError);
+    expect((error as ConnectionReentryError).mode).toBe("sibling-op");
+    expect(await c.get({ name: "outsider", type: "x" })).toBeUndefined();
+    expect(await a.get({ name: "enlisted", type: "x" })).toBeDefined();
+  });
+
+  it("withConnectionTransaction rejects participants on different connections", async () => {
+    const [a] = await makeSharedPair();
+    const [other] = await makeSharedPair();
+    await expect(withConnectionTransaction([a, other], async () => undefined)).rejects.toThrow(
+      /do not share a connection handle/
+    );
   });
 });

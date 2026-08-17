@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Als } from "./connectionAls.shared";
+import type { Als, AlsContext } from "./connectionAls.shared";
 
 /**
  * Cross-instance connection safety for storage backends that share a single
@@ -22,7 +22,7 @@ import type { Als } from "./connectionAls.shared";
  * This module keeps a module-level {@link WeakMap} keyed on the connection
  * handle so every instance that binds the same handle chains through the same
  * promise. Cross-instance re-entry detection lives on the handle state
- * itself (`txOwner`), so it is **ALS-independent**: the module works
+ * itself (`txOwners`), so it is **ALS-independent**: the module works
  * identically on Node (real `AsyncLocalStorage`) and in the browser (the
  * synchronous shim), even when the caller `await`s between the outer
  * transaction opening and the sibling call.
@@ -34,7 +34,7 @@ import type { Als } from "./connectionAls.shared";
  *
  * The browser shim has no async context — its store is gone at the first
  * `await` inside the transaction body — so on that runtime only, a descendant
- * is recognized from handle state (`state.txOwner === owner`). Chain-waiting
+ * is recognized from handle state (`state.txOwners.has(owner)`). Chain-waiting
  * there would deadlock: the chain slot is released by the outer transaction's
  * `finally`, which is itself awaiting the inner call. That fallback cannot
  * tell a descendant from an unrelated concurrent call, which is why it is
@@ -64,8 +64,24 @@ export interface ConnectionAlsApi {
 
 interface HandleState {
   chain: Promise<void>;
-  txOwner: object | null;
+  txOwners: Set<object> | null;
   txId: symbol | null;
+}
+
+export type TransactionOwners = object | readonly object[];
+
+function ownerSet(owner: TransactionOwners): Set<object> {
+  if (Array.isArray(owner)) {
+    if (owner.length === 0) {
+      throw new Error("runInTransactionOnConnection requires at least one owner");
+    }
+    return new Set(owner);
+  }
+  return new Set([owner as object]);
+}
+
+function leadOwner(owners: Set<object>): object {
+  return owners.values().next().value as object;
 }
 
 type ReentryDecision = "throw" | "inline" | "chain";
@@ -120,9 +136,10 @@ export interface ConnectionMutexApi {
   readonly runOnConnection: <T>(handle: object, owner: object, fn: () => Promise<T>) => Promise<T>;
   readonly runInTransactionOnConnection: <T>(
     handle: object,
-    owner: object,
+    owner: TransactionOwners,
     fn: () => Promise<T>
   ) => Promise<T>;
+  readonly getAlsStore: () => AlsContext | undefined;
   readonly __resetAlsForTesting: (useShim?: boolean) => void;
 }
 
@@ -132,7 +149,7 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
   function getState(handle: object): HandleState {
     let state = handleStates.get(handle);
     if (state === undefined) {
-      state = { chain: Promise.resolve(), txOwner: null, txId: null };
+      state = { chain: Promise.resolve(), txOwners: null, txId: null };
       handleStates.set(handle, state);
     }
     return state;
@@ -144,17 +161,22 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
    * a {@link ConnectionReentryError} message so operators can see both
    * offending callers without leaking arbitrary object state.
    */
-  function ownerTable(owner: object): string | undefined {
+  function ownerTable(owner: object | undefined): string | undefined {
+    if (owner === undefined) return undefined;
     const value = (owner as { readonly table?: unknown }).table;
     return typeof value === "string" ? value : undefined;
   }
 
+  function activeLead(state: HandleState): object | undefined {
+    return state.txOwners !== null ? leadOwner(state.txOwners) : undefined;
+  }
+
   /**
    * Classify the current call against the state of the shared handle. Order
-   * matters: an active `txOwner` that is **not** our owner is always a
-   * cross-instance re-entry — regardless of whether the ALS store is present.
-   * Only if the caller is provably the same owner (matching ALS store) do we
-   * inline; anything else queues through the chain.
+   * matters: an active owner set that does **not** contain our owner is always
+   * a cross-instance re-entry — regardless of whether the ALS store is present.
+   * Only if the caller is enlisted (matching ALS store) do we inline; anything
+   * else queues through the chain.
    */
   function classifyReentry(
     state: HandleState,
@@ -162,11 +184,11 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     handle: object,
     store: Als
   ): ReentryDecision {
-    if (state.txOwner !== null && state.txOwner !== owner) {
+    if (state.txOwners !== null && !state.txOwners.has(owner)) {
       return "throw";
     }
     const alsStore = store.getStore();
-    if (alsStore !== undefined && alsStore.handle === handle && alsStore.owner === owner) {
+    if (alsStore !== undefined && alsStore.handle === handle && alsStore.owners.has(owner)) {
       return "inline";
     }
     // Synchronous shim only: a descendant of our own transaction body loses the
@@ -175,9 +197,9 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     // `finally`, which is awaiting this call — so fall back to handle state.
     // This cannot distinguish a descendant from an unrelated concurrent call on
     // the same instance, so it stays off wherever a real ALS store exists.
-    // (`txOwner === owner` here implies an open transaction: `txOwner` and
+    // (`txOwners.has(owner)` here implies an open transaction: `txOwners` and
     // `txId` are always written and cleared together.)
-    if (store.synchronousOnly === true && state.txOwner === owner) {
+    if (store.synchronousOnly === true && state.txOwners !== null && state.txOwners.has(owner)) {
       return "inline";
     }
     return "chain";
@@ -186,16 +208,16 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
   /**
    * Runs `fn` in a chain shared across every caller bound to `handle`.
    *
-   * The handle state (`txOwner`) is checked first: if another instance holds
-   * the transaction, this throws {@link ConnectionReentryError} synchronously
-   * — no `await ensureAls()` needed on the throw path, so browser shim and
-   * Node behave identically.
+   * The handle state (`txOwners`) is checked first: if another instance holds
+   * the transaction and this owner is not enlisted, this throws
+   * {@link ConnectionReentryError} synchronously — no `await ensureAls()`
+   * needed on the throw path, so browser shim and Node behave identically.
    *
-   * A same-instance descendant of an open transaction body runs `fn` inline —
+   * An enlisted descendant of an open transaction body runs `fn` inline —
    * re-taking the chain would deadlock. It is recognized from the
    * `AsyncLocalStorage` store on Node and from handle state on the browser
-   * shim (which has no async context). An unrelated concurrent call on the
-   * same instance still queues on the chain under a real ALS.
+   * shim (which has no async context). An unrelated concurrent call on an
+   * enlisted instance still queues on the chain under a real ALS.
    */
   async function runOnConnection<T>(
     handle: object,
@@ -205,14 +227,18 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     const state = getState(handle);
     // Fast, synchronous throw on cross-instance sibling ops — do NOT await
     // ensureAls first, so the shim path (browser) still fails fast.
-    if (state.txOwner !== null && state.txOwner !== owner) {
-      throw new ConnectionReentryError(ownerTable(state.txOwner), ownerTable(owner), "sibling-op");
+    if (state.txOwners !== null && !state.txOwners.has(owner)) {
+      throw new ConnectionReentryError(
+        ownerTable(activeLead(state)),
+        ownerTable(owner),
+        "sibling-op"
+      );
     }
     const store = als.ensureAls();
     const decision = classifyReentry(state, owner, handle, store);
     if (decision === "throw") {
       throw new ConnectionReentryError(
-        ownerTable(state.txOwner ?? owner),
+        ownerTable(activeLead(state) ?? owner),
         ownerTable(owner),
         "sibling-op"
       );
@@ -236,10 +262,12 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
   /**
    * Runs `fn` as a transaction body on the shared connection. Acquires the
    * chain lock, then establishes an {@link AsyncLocalStorage} store so nested
-   * `runOnConnection` calls from `fn`'s async descendants can detect the
-   * enclosing owner and re-enter inline.
+   * `runOnConnection` calls from `fn`'s async descendants can detect enlisted
+   * owners and re-enter inline.
    *
-   * Cross-instance re-entry from `fn`'s descendants throws
+   * `owner` is either a single storage instance (the one-participant
+   * `withTransaction` case) or every participant of a connection-scoped
+   * transaction. Cross-instance re-entry from a non-enlisted descendant throws
    * {@link ConnectionReentryError} the same way {@link runOnConnection} does,
    * with `mode === "nested-transaction"` at the transaction-opening call
    * site. The synchronous throw path here is symmetric with `runOnConnection`
@@ -247,31 +275,33 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
    */
   async function runInTransactionOnConnection<T>(
     handle: object,
-    owner: object,
+    owner: TransactionOwners,
     fn: () => Promise<T>
   ): Promise<T> {
+    const owners = ownerSet(owner);
+    const lead = leadOwner(owners);
     const state = getState(handle);
-    if (state.txOwner !== null && state.txOwner !== owner) {
+    if (state.txOwners !== null && !state.txOwners.has(lead)) {
       throw new ConnectionReentryError(
-        ownerTable(state.txOwner),
-        ownerTable(owner),
+        ownerTable(activeLead(state)),
+        ownerTable(lead),
         "nested-transaction"
       );
     }
     const store = als.ensureAls();
-    const decision = classifyReentry(state, owner, handle, store);
+    const decision = classifyReentry(state, lead, handle, store);
     if (decision === "throw") {
       throw new ConnectionReentryError(
-        ownerTable(state.txOwner ?? owner),
-        ownerTable(owner),
+        ownerTable(activeLead(state) ?? lead),
+        ownerTable(lead),
         "nested-transaction"
       );
     }
     if (decision === "inline") {
-      // Nested-tx from the same owner: the caller is expected to have already
-      // guarded against this at its own call site (SQLite / PGlite have no
-      // autonomous BEGIN). Run inline so we surface a clearer downstream error
-      // instead of deadlocking here.
+      // Nested-tx from an enlisted owner: the caller is expected to have
+      // already guarded against this at its own call site (SQLite / PGlite
+      // have no autonomous BEGIN). Run inline so we surface a clearer
+      // downstream error instead of deadlocking here.
       return fn();
     }
     const prev = state.chain;
@@ -282,13 +312,16 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     await prev;
     const txId = Symbol("connection-tx");
     state.txId = txId;
-    state.txOwner = owner;
+    state.txOwners = owners;
     try {
-      return await store.run({ txId, owner, handle }, () => fn());
+      return await store.run(
+        { txId, owner: lead, owners, handle, deferredPuts: new WeakMap(), txQuery: undefined },
+        () => fn()
+      );
     } finally {
       if (state.txId === txId) {
         state.txId = null;
-        state.txOwner = null;
+        state.txOwners = null;
       }
       release();
     }
@@ -297,6 +330,7 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
   return {
     runOnConnection,
     runInTransactionOnConnection,
+    getAlsStore: () => als.ensureAls().getStore(),
     __resetAlsForTesting: als.__resetAlsForTesting,
   };
 }

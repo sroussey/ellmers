@@ -11,6 +11,7 @@ export * from "./common";
 export {
   __resetAlsForTesting,
   ConnectionReentryError,
+  getAlsStore,
   runInTransactionOnConnection,
   runOnConnection,
 } from "./tabular/ConnectionMutex.browser";

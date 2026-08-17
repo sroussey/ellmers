@@ -9,6 +9,7 @@ import { countMatchesQueryBlock } from "./assertions/countMatchesQuery";
 import { inListCriterionBlock } from "./assertions/inListCriterion";
 import { subscribeToChangesBlock } from "./assertions/subscribeToChanges";
 import { vectorColumnFormatBlock } from "./assertions/vectorColumnFormat";
+import { withConnectionTransactionBlock } from "./assertions/withConnectionTransaction";
 import { withTransactionRollbackBlock } from "./assertions/withTransactionRollback";
 import type { TabularStorageContractOpts } from "./types";
 
@@ -17,6 +18,7 @@ export function runTabularStorageContract(opts: TabularStorageContractOpts): voi
     subscribeToChangesBlock(opts);
     vectorColumnFormatBlock(opts);
     withTransactionRollbackBlock(opts);
+    withConnectionTransactionBlock(opts);
     countMatchesQueryBlock(opts);
     inListCriterionBlock(opts);
   });

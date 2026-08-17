@@ -16,8 +16,25 @@ import type { ConnectionAlsApi } from "./defineConnectionMutex";
 
 export interface AlsContext {
   readonly txId: symbol;
+  /** Lead owner (first enlisted participant); used in re-entry error labels. */
   readonly owner: object;
+  /** Every storage instance enlisted in this connection-scoped transaction. */
+  readonly owners: ReadonlySet<object>;
   readonly handle: object;
+  /**
+   * `put` events deferred until COMMIT of a connection-scoped transaction.
+   * Callers flush this after COMMIT (while the store is still active, via
+   * {@link safeEmit} — not {@link BaseSqlTabularStorage.emitPut}, which would
+   * re-queue).
+   */
+  readonly deferredPuts: WeakMap<object, unknown[]>;
+  /**
+   * Dedicated query handle for a real `pg.Pool` transaction. Enlisted
+   * Postgres storages route writes through this so every participant shares
+   * one client. Written after the store is created, once the client is
+   * checked out.
+   */
+  txQuery: { query: (...args: never[]) => Promise<unknown> } | undefined;
 }
 
 export interface Als {

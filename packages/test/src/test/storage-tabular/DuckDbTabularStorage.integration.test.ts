@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { DuckDbTabularStorage } from "@workglow/duckdb/storage";
+import { DuckDb, DuckDbTabularStorage } from "@workglow/duckdb/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { getTestingLogger } from "@workglow/util/test";
@@ -103,12 +103,27 @@ describe("DuckDbTabularStorage", () => {
   runTabularStorageContract({
     name: "DuckDbTabularStorage",
     createStorage: async () => {
+      const db = await DuckDb.open(":memory:");
+      const storage = new DuckDbTabularStorage<
+        typeof CompoundSchema,
+        typeof CompoundPrimaryKeyNames
+      >(db, `contract_test_${uuid4().replace(/-/g, "_")}`, CompoundSchema, CompoundPrimaryKeyNames);
+      await storage.setupDatabase();
+      return storage;
+    },
+    createSiblingStorage: async (primary) => {
+      const handle = (
+        primary as unknown as { sharedConnectionHandle: () => object | null }
+      ).sharedConnectionHandle();
+      if (handle == null) {
+        throw new Error("DuckDbTabularStorage contract storage has no shared handle");
+      }
       const storage = new DuckDbTabularStorage<
         typeof CompoundSchema,
         typeof CompoundPrimaryKeyNames
       >(
-        ":memory:",
-        `contract_test_${uuid4().replace(/-/g, "_")}`,
+        handle as Awaited<ReturnType<typeof DuckDb.open>>,
+        `contract_sib_${uuid4().replace(/-/g, "_")}`,
         CompoundSchema,
         CompoundPrimaryKeyNames
       );

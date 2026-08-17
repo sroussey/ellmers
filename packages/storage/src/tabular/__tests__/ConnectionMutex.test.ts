@@ -225,6 +225,39 @@ describe("ConnectionMutex F1: cross-instance re-entry is ALS-independent", () =>
         expect(order).toEqual(["BEGIN", "COMMIT", "SIBLING-OP"]);
       }
     );
+
+    it("inlines an enlisted sibling owner instead of throwing sibling-op", async () => {
+      const handle = {};
+      const ownerA = { table: "table_a" };
+      const ownerB = { table: "table_b" };
+      let enlistedResult: string | undefined;
+
+      await runInTransactionOnConnection(handle, [ownerA, ownerB], async () => {
+        enlistedResult = await runOnConnection(handle, ownerB, async () => "joined");
+      });
+
+      expect(enlistedResult).toBe("joined");
+    });
+
+    it("still throws sibling-op for an owner that was not enlisted", async () => {
+      const handle = {};
+      const ownerA = { table: "table_a" };
+      const ownerB = { table: "table_b" };
+      const ownerC = { table: "table_c" };
+
+      let error: unknown;
+      await runInTransactionOnConnection(handle, [ownerA, ownerB], async () => {
+        try {
+          await runOnConnection(handle, ownerC, async () => "unreachable");
+        } catch (err) {
+          error = err;
+        }
+      });
+
+      expect(error).toBeInstanceOf(ConnectionReentryError);
+      expect((error as ConnectionReentryError).mode).toBe("sibling-op");
+      expect((error as ConnectionReentryError).blockedTable).toBe("table_c");
+    });
   });
 });
 

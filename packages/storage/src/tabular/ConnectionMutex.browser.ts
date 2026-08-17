@@ -9,7 +9,7 @@ import { defineConnectionMutex } from "./defineConnectionMutex";
 
 export { ConnectionReentryError } from "./defineConnectionMutex";
 
-export const { runOnConnection, runInTransactionOnConnection, __resetAlsForTesting } =
+export const { runOnConnection, runInTransactionOnConnection, getAlsStore, __resetAlsForTesting } =
   defineConnectionMutex({
     ensureAls,
     __resetAlsForTesting: resetAlsForTesting,

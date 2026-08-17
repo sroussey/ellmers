@@ -550,6 +550,14 @@ describe("PostgresTabularStorage", () => {
       await storage.setupDatabase();
       return storage;
     },
+    createSiblingStorage: async () => {
+      const storage = new PostgresTabularStorage<
+        typeof CompoundSchema,
+        typeof CompoundPrimaryKeyNames
+      >(db, `contract_sib_${uuid4().replace(/-/g, "_")}`, CompoundSchema, CompoundPrimaryKeyNames);
+      await storage.setupDatabase();
+      return storage;
+    },
     capabilities: {
       supportsSubscriptions: false,
       supportsVectorColumns: true,

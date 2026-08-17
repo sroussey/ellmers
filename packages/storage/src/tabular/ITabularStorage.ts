@@ -622,6 +622,11 @@ export interface ITabularStorage<
    *
    * Use SAVEPOINT directly if you need nested rollback boundaries within a
    * single logical transaction.
+   *
+   * To commit writes across several storages that share one connection, use
+   * the free function `withConnectionTransaction(participants, fn)` instead
+   * of nesting `withTransaction` calls. Inside that callback, call ordinary
+   * methods on the original instances (there is no `tx` proxy).
    */
   withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T>;
 

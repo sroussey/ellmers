@@ -424,7 +424,7 @@ export class SqliteAiVectorStorage<
    * base put() if the extension is not available.
    */
   public override async put(entity: any): Promise<Entity> {
-    return this.mutex(() => this._putInternal(entity));
+    return this.guardedWrite(() => this._putInternal(entity));
   }
 
   /**
@@ -439,7 +439,7 @@ export class SqliteAiVectorStorage<
    * commits so listeners never observe rows that are about to roll back.
    */
   public override async putBulk(entities: any[]): Promise<Entity[]> {
-    return this.mutex(() => this._putBulkInternal(entities));
+    return this.guardedWrite(() => this._putBulkInternal(entities));
   }
 
   /**

@@ -31,6 +31,7 @@ export type TabularStorageContractAssertion =
   | "subscribeToChanges"
   | "vectorColumnFormat"
   | "withTransactionRollback"
+  | "withConnectionTransaction"
   | "countMatchesQuery"
   | "inListCriterion";
 
@@ -48,6 +49,15 @@ interface TabularStorageContractBaseOpts {
   readonly createVectorStorage?: () => Promise<
     ITabularStorage<typeof VectorItemSchema, typeof VectorItemPrimaryKeyNames>
   >;
+  /**
+   * Creates a second table on the same connection handle as `primary`.
+   * Required for the `withConnectionTransaction` assertion; backends that
+   * cannot share a handle (InMemory, FsFolder, IndexedDB, Supabase) omit it
+   * and that block is skipped.
+   */
+  readonly createSiblingStorage?: (
+    primary: ITabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>
+  ) => Promise<ITabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>>;
   /**
    * Names of contract assertions currently broken in this adapter; each
    * named test wraps with `itExpectFail`. The string-literal union catches
