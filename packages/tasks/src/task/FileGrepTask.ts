@@ -91,13 +91,15 @@ const inputSchema = {
     maxOutputLines: {
       type: "integer",
       title: "Max Output Lines",
-      description: "Maximum number of output lines, including context",
+      description:
+        "Maximum number of output lines, including context. Defaults to 10000; set this to override.",
       minimum: 0,
     },
     maxOutputChars: {
       type: "integer",
       title: "Max Output Characters",
-      description: "Maximum number of output characters, including newlines",
+      description:
+        "Maximum number of output characters, including newlines. Defaults to 1000000; set this to override.",
       minimum: 0,
     },
   },
@@ -144,7 +146,8 @@ const outputSchema = {
     matchCount: {
       type: "integer",
       title: "Match Count",
-      description: "Number of matching lines",
+      description:
+        "Number of matching lines. With `existsOnly` the scan stops at the first match, so this is 1 rather than a full count.",
     },
     exists: {
       type: "boolean",
@@ -303,7 +306,6 @@ export async function grepLines(
   let lineNumber = 0;
   let matchCount = 0;
   let exists = false;
-  let truncated = false;
 
   let afterRemaining = 0;
   let maxMatchesReached = false;
@@ -311,14 +313,17 @@ export async function grepLines(
   let outputLines = 0;
   let outputChars = 0;
 
+  // Caps apply whether or not the caller stated them: an unbounded default sent
+  // the whole document back to whoever asked for one line.
+  const maxOutputLines = options.maxOutputLines ?? DEFAULT_LIMITS.grepMaxOutputLines;
+  const maxOutputChars = options.maxOutputChars ?? DEFAULT_LIMITS.grepMaxOutputChars;
+
   function canEmit(text: string): boolean {
-    if (options.maxOutputLines !== undefined && outputLines >= options.maxOutputLines) {
+    if (outputLines >= maxOutputLines) {
       return false;
     }
 
-    const chars = text.length + 1;
-
-    if (options.maxOutputChars !== undefined && outputChars + chars > options.maxOutputChars) {
+    if (outputChars + text.length + 1 > maxOutputChars) {
       return false;
     }
 
@@ -327,7 +332,6 @@ export async function grepLines(
 
   function emitLine(entry: GrepLine): boolean {
     if (!canEmit(entry.text)) {
-      truncated = true;
       return false;
     }
 
@@ -375,6 +379,14 @@ export async function grepLines(
   const batch: string[] = [];
   let exhausted = false;
 
+  // `stopped` says the scan ended early; whether that MEANS truncation depends
+  // on whether anything was left, which is settled once, below.
+  let stopped = false;
+  let stopIndex = -1;
+  let existsOnlyHit = false;
+  let lineCapped = false;
+  let sawMoreInput = false;
+
   try {
     outer: while (!exhausted) {
       batch.length = 0;
@@ -388,7 +400,7 @@ export async function grepLines(
         // server's line splitter signal truncation without a side channel.
         const text = next.value;
         if (text.length >= maxLineChars) {
-          truncated = true;
+          lineCapped = true;
           batch.push(text.slice(0, maxLineChars));
         } else {
           batch.push(text);
@@ -401,7 +413,7 @@ export async function grepLines(
         throw new TaskAbortedError("Task aborted");
       }
       if (Date.now() > deadline) {
-        truncated = true;
+        stopped = true;
         break;
       }
 
@@ -423,12 +435,10 @@ export async function grepLines(
           exists = true;
 
           if (options.existsOnly) {
-            return {
-              groups: [],
-              matchCount: 1,
-              exists: true,
-              truncated: false,
-            };
+            existsOnlyHit = true;
+            stopped = true;
+            stopIndex = i;
+            break outer;
           }
 
           if (extract) {
@@ -454,12 +464,9 @@ export async function grepLines(
                   match: false,
                 })
               ) {
-                return {
-                  groups,
-                  matchCount,
-                  exists,
-                  truncated: true,
-                };
+                stopped = true;
+                stopIndex = i - 1;
+                break outer;
               }
             }
 
@@ -470,12 +477,9 @@ export async function grepLines(
                 match: true,
               })
             ) {
-              return {
-                groups,
-                matchCount,
-                exists,
-                truncated: true,
-              };
+              stopped = true;
+              stopIndex = i - 1;
+              break outer;
             }
           }
 
@@ -485,7 +489,8 @@ export async function grepLines(
             maxMatchesReached = true;
 
             if (afterContext === 0) {
-              truncated = true;
+              stopped = true;
+              stopIndex = i;
               break outer;
             }
           }
@@ -494,15 +499,14 @@ export async function grepLines(
             !emitLine({
               line: lineNumber,
               text,
-              match: false,
+              // `maxMatchesReached` governs whether a match COUNTS toward the
+              // budget, not whether the line IS a match.
+              match: matched,
             })
           ) {
-            return {
-              groups,
-              matchCount,
-              exists,
-              truncated: true,
-            };
+            stopped = true;
+            stopIndex = i - 1;
+            break outer;
           }
 
           afterRemaining--;
@@ -519,7 +523,8 @@ export async function grepLines(
 
         if (maxMatchesReached) {
           if (afterRemaining === 0) {
-            truncated = true;
+            stopped = true;
+            stopIndex = i;
             break outer;
           }
 
@@ -535,8 +540,29 @@ export async function grepLines(
         }
       }
     }
+
+    /*
+     * Truncation is exact because the loop drives the iterator itself: it is
+     * only truncation if something was actually left, either in the current
+     * batch or in the source. That costs one extra element from the source on
+     * an early stop.
+     *
+     * `stopIndex` is the last line fully accounted for. An output cap rejects
+     * the line it stopped on, so those sites record `i - 1` and that line
+     * counts as remaining; a match budget consumed its line, so those record
+     * `i`.
+     */
+    if (stopped) {
+      sawMoreInput = stopIndex + 1 < batch.length ? true : (await iterator.next()).done !== true;
+    }
   } finally {
     await iterator.return?.();
+  }
+
+  const truncated = lineCapped || (stopped && sawMoreInput);
+
+  if (existsOnlyHit) {
+    return { groups: [], matchCount: 1, exists: true, truncated };
   }
 
   return {

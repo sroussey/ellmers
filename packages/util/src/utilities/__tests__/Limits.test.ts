@@ -25,6 +25,8 @@ describe("DEFAULT_LIMITS", () => {
     expect(DEFAULT_LIMITS.otpCacheHardTtlMs).toBe(6 * 60 * 60 * 1000);
     expect(DEFAULT_LIMITS.grepMaxSearchMs).toBe(30_000);
     expect(DEFAULT_LIMITS.grepMaxLineChars).toBe(64_000);
+    expect(DEFAULT_LIMITS.grepMaxOutputLines).toBe(10_000);
+    expect(DEFAULT_LIMITS.grepMaxOutputChars).toBe(1_000_000);
   });
 
   it("is a frozen object shape (const assertion) with only number values", () => {

@@ -6,7 +6,7 @@
 
 import { TaskAbortedError } from "@workglow/task-graph";
 import { FileGrepTask, grepLines, registerSafeFetch, type SafeFetchFn } from "@workglow/tasks";
-import { setLogger } from "@workglow/util";
+import { DEFAULT_LIMITS, setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -272,6 +272,12 @@ describe("FileGrepTask", () => {
     ]);
   });
 
+  /**
+   * `truncated` is now computed rather than hard-coded: the match is on line 2
+   * of 6, so four lines were never scanned and the scan really did stop early.
+   * `matchCount` stays 1 — `existsOnly` stops at the first match, and 0 would
+   * contradict `exists: true`.
+   */
   test("existsOnly returns whether a match exists without groups", async () => {
     const result = await new FileGrepTask({
       defaults: {
@@ -285,8 +291,66 @@ describe("FileGrepTask", () => {
       groups: [],
       matchCount: 1,
       exists: true,
-      truncated: false,
+      truncated: true,
     });
+  });
+
+  test("existsOnly reports no truncation when the match is the last line", async () => {
+    mockText("alpha\nbravo\ncharlie foo\n");
+
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "foo",
+        existsOnly: true,
+      },
+    }).run();
+
+    expect(result.truncated).toBe(false);
+  });
+
+  test("truncated is false when the last line is the final match", async () => {
+    mockText("alpha\nfoo one\nbravo\nfoo two\n");
+
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "foo",
+        maxMatches: 2,
+      },
+    }).run();
+
+    expect(result.matchCount).toBe(2);
+    expect(result.truncated).toBe(false);
+  });
+
+  test("maxMatches with afterContext still labels later matching lines as matches", async () => {
+    mockText("foo a\nfoo b\nfoo c\ntail\n");
+
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "foo",
+        maxMatches: 1,
+        afterContext: 2,
+      },
+    }).run();
+
+    expect(result.matchCount).toBe(1);
+    const byLine = new Map(result.groups.flatMap((g) => g.lines).map((l) => [l.line, l.match]));
+    expect(byLine.get(2)).toBe(true);
+    expect(byLine.get(3)).toBe(true);
+  });
+
+  test("applies default output caps when the caller states none", async () => {
+    mockText("foo\n".repeat(DEFAULT_LIMITS.grepMaxOutputLines + 500));
+
+    const result = await new FileGrepTask({
+      defaults: { url: "https://example.com/log.txt", pattern: "foo" },
+    }).run();
+
+    expect(result.truncated).toBe(true);
+    expect(result.groups.flatMap((g) => g.lines)).toHaveLength(DEFAULT_LIMITS.grepMaxOutputLines);
   });
 
   test("countOnly returns the match count without groups", async () => {
