@@ -182,7 +182,7 @@ export default defineConfig({
        * every exception carries its own reason instead of being hidden in a
        * shortened glob.
        */
-      include: coverageIncludeGlobs(workspaceGroups(__dirname)),
+      include: coverageIncludeGlobs(__dirname, workspaceGroups(__dirname)),
       exclude: [
         // `coverageConfigDefaults`, not `configDefaults`: the latter is
         // vitest's TEST-FILE exclude list, spliced in here for a question it
@@ -221,9 +221,7 @@ export default defineConfig({
          * globs above, so the group list stays derived and this exception
          * carries its own reason.
          */
-        ...workspacePackages
-          .filter((pkg) => !pkg.publishes)
-          .map((pkg) => `${path.relative(__dirname, pkg.dir)}/src/**`),
+        ...workspacePackages.filter((pkg) => !pkg.publishes).map((pkg) => `${pkg.dir}/src/**`),
         // Tests, fixtures and typing-only files: counting them inflates every
         // package by the coverage of code that exists to be run.
         //

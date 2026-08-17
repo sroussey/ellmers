@@ -34,7 +34,7 @@ import { join } from "node:path";
 import type { Plugin } from "vite";
 // Extensions required on both: this module is in `vitest.config.ts`'s graph,
 // which Vite's native config loader resolves without extension inference.
-import { collectDistTargets, containsSourceStubSentinel } from "./sourceStubs.ts";
+import { collectBinTargets, collectDistTargets, probeSourceStub } from "./sourceStubs.ts";
 import { workspaceGroups } from "./workspaceGroups.ts";
 
 /** Source extensions a dist entry can have come from, in resolution order. */
@@ -87,6 +87,15 @@ export interface WorkspacePackage {
    * has to re-read it would be one more thing to keep in step.
    */
   readonly exports: unknown;
+  /**
+   * The manifest's `bin` field, verbatim, or `undefined` when it declares none.
+   *
+   * `use-source` stubs `bin` targets too, and two of them are named by no
+   * `exports` entry at all (`examples/eval` declares no `exports`; `examples/cli`'s
+   * bin is not among its export targets), so a guard reading only `exports`
+   * looked straight past them.
+   */
+  readonly bin: unknown;
   /** Every name this package lists in any dependency block. */
   readonly dependencies: ReadonlySet<string>;
   /**
@@ -139,7 +148,7 @@ export function listWorkspacePackages(root: string): WorkspacePackage[] {
     for (const entry of entries) {
       const dir = join(root, group, entry);
       const manifestPath = join(dir, "package.json");
-      let manifest: { name?: unknown; exports?: unknown; publishConfig?: unknown };
+      let manifest: { name?: unknown; exports?: unknown; bin?: unknown; publishConfig?: unknown };
       try {
         manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as typeof manifest;
       } catch (error) {
@@ -164,6 +173,7 @@ export function listWorkspacePackages(root: string): WorkspacePackage[] {
         name: manifest.name,
         dir,
         exports: manifest.exports,
+        bin: manifest.bin,
         dependencies: declaredDependencies(manifest as Record<string, unknown>),
         publishes: access !== "none",
       });
@@ -188,19 +198,57 @@ export function listWorkspacePackages(root: string): WorkspacePackage[] {
  */
 export function assertNoSourceStubs(packages: readonly WorkspacePackage[]): void {
   const stubs: string[] = [];
+  const unreadable: string[] = [];
   for (const pkg of packages) {
-    for (const target of collectDistTargets(pkg.exports)) {
+    for (const target of guardedDistTargets(pkg)) {
       const file = join(pkg.dir, target);
-      if (existsSync(file) && containsSourceStubSentinel(file)) stubs.push(file);
+      if (!existsSync(file)) continue;
+      const probe = probeSourceStub(file);
+      if (probe === "stub") stubs.push(file);
+      else if (probe === "unreadable") unreadable.push(file);
     }
   }
-  if (stubs.length === 0) return;
+  if (stubs.length === 0 && unreadable.length === 0) return;
+
+  const sections: string[] = [];
+  if (stubs.length > 0) {
+    sections.push(
+      `${stubs.length} published entr${stubs.length === 1 ? "y is" : "ies are"} a ` +
+        `\`use-source\` stub re-exporting src. Every bundle-identity assertion would pass ` +
+        `vacuously.\n${stubs.join("\n")}`
+    );
+  }
+  if (unreadable.length > 0) {
+    sections.push(
+      `${unreadable.length} published entr${unreadable.length === 1 ? "y" : "ies"} could not ` +
+        `be read, so ${unreadable.length === 1 ? "it" : "they"} cannot be proved to be a real ` +
+        `bundle — and an entry that cannot be proved to be one is not one. Treating it as ` +
+        `built is exactly how the vacuous pass this guard exists to prevent gets ` +
+        `through.\n${unreadable.join("\n")}`
+    );
+  }
   throw new Error(
-    `WORKGLOW_TEST_TARGET="dist" exercises the built bundles, but ${stubs.length} published ` +
-      `entr${stubs.length === 1 ? "y is" : "ies are"} a \`use-source\` stub re-exporting src. ` +
-      `Every bundle-identity assertion would pass vacuously. Run \`bun run use-dist\` to ` +
-      `restore the real build.\n${stubs.join("\n")}`
+    `WORKGLOW_TEST_TARGET="dist" exercises the built bundles. Run \`bun run use-dist\` to ` +
+      `restore the real build.\n\n${sections.join("\n\n")}`
   );
+}
+
+/**
+ * Every dist entry `use-source` writes a stub into, for guard purposes: the
+ * `exports` targets plus any `bin` target they do not already name.
+ *
+ * Deliberately NOT `stubSpecsFor`, which additionally maps each target to a
+ * source counterpart and THROWS for one that is neither `.js` nor `.d.ts`. All
+ * 338 dist targets across the 41 manifests are one of those today, but the
+ * guard has no use for the mapping and should not acquire a new way to fail
+ * during config resolution.
+ */
+export function guardedDistTargets(pkg: WorkspacePackage): string[] {
+  const targets = collectDistTargets(pkg.exports);
+  for (const binTarget of collectBinTargets(pkg.bin)) {
+    if (!targets.includes(binTarget)) targets.push(binTarget);
+  }
+  return targets;
 }
 
 /** The guard plugin's name, so a test can assert attachment without a literal. */
@@ -219,8 +267,11 @@ export const DIST_STUB_GUARD_PLUGIN_NAME = "workglow:dist-stub-guard";
  * assertion in `configResolved` still kills the run before any suite can report
  * a pass over stubs.
  *
- * The verdict is computed once and re-thrown: one scan serves all twelve
- * projects, and a 41-entry message printed twelve times is unreadable.
+ * The verdict is computed once and re-thrown, so one scan of the tree serves
+ * every project rather than one per project. Every project still throws, so
+ * none can be initialized past a stubbed tree; vitest's own startup
+ * `AggregateError` then lists that single Error object once per project it
+ * failed to set up, which is its reporting rather than a repeated scan.
  */
 export function sourceStubGuardPlugin(packages: readonly WorkspacePackage[]): Plugin {
   let verdict: { error: Error | undefined } | undefined;
