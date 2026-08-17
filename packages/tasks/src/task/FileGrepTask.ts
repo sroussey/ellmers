@@ -13,7 +13,7 @@ import {
   Workflow,
 } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import { assertSafeRegexPattern, escapeRegExp } from "../util/regexSafety";
+import { compileSafeRegex, escapeRegExp } from "../util/regexSafety";
 import { linesFromText } from "../util/textLines";
 import { FetchUrlTask } from "./FetchUrlTask";
 
@@ -212,14 +212,8 @@ function createMatcher(pattern: string, options: GrepOptions): (text: string) =>
     return (text) => text.includes(pattern);
   }
 
-  assertSafeRegexPattern(pattern);
-
-  try {
-    const regex = new RegExp(pattern, options.ignoreCase ? "i" : "");
-    return (text) => regex.test(text);
-  } catch {
-    throw new TaskInvalidInputError(`Invalid regular expression: ${pattern}`);
-  }
+  const regex = compileSafeRegex(pattern, options.ignoreCase ? "i" : "");
+  return (text) => regex.test(text);
 }
 
 /**
