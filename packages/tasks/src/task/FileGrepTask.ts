@@ -26,7 +26,8 @@ const inputSchema = {
     url: {
       type: "string",
       title: "URL",
-      description: "URL to search (http://, https://)",
+      description:
+        "URL to search (http://, https://). The Node/Electron build additionally accepts a `file://` URL or an absolute filesystem path, subject to the `filesystem:read` entitlement and any configured `roots`.",
       format: "uri",
     },
     pattern: {
@@ -574,9 +575,13 @@ export async function grepLines(
 }
 
 /**
- * Task for grepping documents from URLs (including file:// URLs).
- * Works in all environments (browser, Node.js, Bun) by using fetch API.
- * For server-only filesystem path access, see FileGrepTask.server.
+ * Task for grepping documents fetched over http(s).
+ *
+ * This build handles http and https only: the fetch routes through
+ * `FetchUrlTask` -> `safeFetch` -> `classifyUrl`, which rejects every other
+ * scheme. `file://` URLs and bare filesystem paths are handled only by the
+ * server build (`FileGrepTask.server`), which requires the `filesystem:read`
+ * entitlement.
  */
 export class FileGrepTask<Config extends TaskConfig = TaskConfig> extends Task<
   FileGrepTaskInput,

@@ -56,11 +56,20 @@ const fileGrepTaskConfigSchema = {
 } as const satisfies DataPortSchema;
 
 /**
- * Server-only task for grepping documents from the filesystem.
- * Streams the file line-by-line rather than loading it into memory.
- * Only available in Node.js and Bun environments.
+ * Server-only task for grepping documents from the filesystem, on top of the
+ * base task's http(s) handling.
  *
- * For cross-platform grep (including browser), use FileGrepTask with URLs.
+ * The file is read as a stream rather than loaded into memory, and split into
+ * lines with a hard per-line cap ({@link DEFAULT_LIMITS.grepMaxLineChars}) — a
+ * longer physical line is truncated to that length and the remainder discarded,
+ * so a file with no line terminator cannot exhaust memory.
+ *
+ * A local path is resolved and realpath'd before it is opened, and constrained
+ * to `config.roots` when the embedder sets them. Reading requires the
+ * `filesystem:read` entitlement, declared scoped to the resolved path.
+ *
+ * Only available in Node.js and Bun environments. For cross-platform grep
+ * (including browser), use FileGrepTask with an http(s) URL.
  */
 export class FileGrepTask extends BaseFileGrepTask<FileGrepTaskConfig> {
   public static override configSchema(): DataPortSchema {
