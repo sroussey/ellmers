@@ -14,7 +14,7 @@ import {
 } from "@workglow/task-graph";
 import { DEFAULT_LIMITS, SECURITY_LIMITS } from "@workglow/util";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import { compileSafeRegex, escapeRegExp } from "../util/regexSafety";
+import { assertSafeRegexPattern, compileSafeRegex, escapeRegExp } from "../util/regexSafety";
 import { linesFromText } from "../util/textLines";
 import { fetchUrlEntitlementsFor, FetchUrlTask } from "./FetchUrlTask";
 

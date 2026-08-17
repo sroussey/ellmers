@@ -652,23 +652,26 @@ describe("FileGrepTask", () => {
   });
 
   /**
-   * `((a)*)*$` walks straight past the shape screen — the screen only looks for
-   * a quantifier before the group's first `)`, and here the inner one sits
-   * behind a nested group — and it is exponential all the same: against
-   * `"a".repeat(n) + "!"` V8 takes 8_234 ms at n=26, doubling per added
-   * character. At n=40 that is roughly 2^40 backtracking steps, on the order of
-   * days. Unbounded, this run never returns and no abort can interrupt the one
-   * synchronous `test()` it is stuck inside; the match budget is what turns it
-   * into a rejection. This is exactly why the screen is documented as a
+   * `(\w|\d)*$` walks straight past the shape screen and is exponential all the
+   * same: against `"1".repeat(n) + "!"` V8 takes 1 ms at n=16, 14 ms at n=20,
+   * 218 ms at n=24 and 657 ms at n=26 — doubling per added character. At n=40
+   * that is roughly 2^40 backtracking steps, on the order of days. Unbounded,
+   * this run never returns and no abort can interrupt the one synchronous
+   * `test()` it is stuck inside; the match budget is what turns it into a
+   * rejection.
+   *
+   * The bypass is structural rather than an oversight: the two branches overlap
+   * on the digits they both accept, and the screen compares branch TEXT, which
+   * cannot see that. This is exactly why the screen is documented as a
    * heuristic and the budget as the enforced bound.
    */
   test("a guard-bypassing pattern fails on the match budget instead of hanging", async () => {
-    mockText("a".repeat(40) + "!");
+    mockText("1".repeat(40) + "!");
 
     const started = Date.now();
     await expect(
       new FileGrepTask({
-        defaults: { url: "https://example.com/log.txt", pattern: "((a)*)*$" },
+        defaults: { url: "https://example.com/log.txt", pattern: "(\\w|\\d)*$" },
       }).run()
     ).rejects.toThrow(/budget/);
     expect(Date.now() - started).toBeLessThan(5_000);
