@@ -87,6 +87,7 @@ export * from "./task/vector/VectorNormalizeTask";
 export * from "./task/vector/VectorScaleTask";
 export * from "./task/vector/VectorSubtractTask";
 export * from "./task/vector/VectorSumTask";
+export * from "./util/regexSafety";
 export * from "./util/SafeFetch";
 export * from "./util/UrlClassifier";
 export { applyFilter, hasFilterOp, registerFilterOp } from "@workglow/util/media";
