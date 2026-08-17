@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IExecuteContext, TaskConfig } from "@workglow/task-graph";
+import type { IExecuteContext, TaskConfig, TaskEntitlements } from "@workglow/task-graph";
 import {
   CreateWorkflow,
   Task,
@@ -16,7 +16,7 @@ import { SECURITY_LIMITS } from "@workglow/util";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { compileSafeRegex, escapeRegExp } from "../util/regexSafety";
 import { linesFromText } from "../util/textLines";
-import { FetchUrlTask } from "./FetchUrlTask";
+import { fetchUrlEntitlementsFor, FetchUrlTask } from "./FetchUrlTask";
 
 const inputSchema = {
   type: "object",
@@ -428,6 +428,21 @@ export class FileSedTask<Config extends TaskConfig = TaskConfig> extends Task<
   public static override title = "File Sed";
   public static override description = "Substitute matching text in a file (sed)";
   public static override cacheable = true;
+  public static override hasDynamicEntitlements: boolean = true;
+
+  /**
+   * The owned `FetchUrlTask` does the network access, but an owned child is
+   * created inside `execute()` and so is absent from the graph-start snapshot
+   * `computeGraphEntitlements` takes over `graph.getTasks()`. Declaring the
+   * fetch's entitlements here is what puts them in front of the enforcer.
+   */
+  public static override entitlements(): TaskEntitlements {
+    return FetchUrlTask.entitlements();
+  }
+
+  public override entitlements(): TaskEntitlements {
+    return fetchUrlEntitlementsFor(this.runInputData?.url);
+  }
 
   public static override inputSchema(): DataPortSchema {
     return inputSchema as DataPortSchema;
