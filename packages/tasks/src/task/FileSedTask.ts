@@ -12,7 +12,7 @@ import {
   TaskInvalidInputError,
   Workflow,
 } from "@workglow/task-graph";
-import { SECURITY_LIMITS } from "@workglow/util";
+import { DEFAULT_LIMITS, SECURITY_LIMITS } from "@workglow/util";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { compileSafeRegex, escapeRegExp } from "../util/regexSafety";
 import { linesFromText } from "../util/textLines";
@@ -341,8 +341,10 @@ export async function sedLines(
   let outputChars = 0;
 
   const iterator = lines[Symbol.asyncIterator]();
+  const maxLineChars = DEFAULT_LIMITS.grepMaxLineChars;
   const batch: string[] = [];
   let exhausted = false;
+  let lineCapped = false;
 
   try {
     outer: while (!exhausted) {
@@ -353,7 +355,15 @@ export async function sedLines(
           exhausted = true;
           break;
         }
-        batch.push(next.value);
+        // `>=` rather than `>`: conservative by one character, and it lets the
+        // server's line splitter signal truncation without a side channel.
+        const text = next.value;
+        if (text.length >= maxLineChars) {
+          lineCapped = true;
+          batch.push(text.slice(0, maxLineChars));
+        } else {
+          batch.push(text);
+        }
       }
 
       if (batch.length === 0) break;
@@ -407,7 +417,10 @@ export async function sedLines(
     text: out.length === 0 ? "" : `${out.join("\n")}\n`,
     replacementCount,
     linesChanged,
-    truncated,
+    // A capped line means the emitted document is missing part of the source,
+    // which is what `truncated` is for — an output cap is not the only way to
+    // stop short of the whole document.
+    truncated: truncated || lineCapped,
   };
 }
 

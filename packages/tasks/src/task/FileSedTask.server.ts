@@ -15,12 +15,12 @@ import {
   Workflow,
 } from "@workglow/task-graph";
 import { createReadStream } from "node:fs";
-import { createInterface } from "node:readline";
 
-import { SECURITY_LIMITS } from "@workglow/util";
+import { DEFAULT_LIMITS, SECURITY_LIMITS } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { createBoundedRegexReplacer } from "../util/BoundedRegex.server";
 import { isHttpUrl, resolveLocalFilePath } from "../util/LocalFilePath.server";
+import { linesFromStream } from "../util/StreamLines.server";
 import type {
   FileSedTaskConfig,
   FileSedTaskInput,
@@ -56,8 +56,11 @@ const fileSedTaskConfigSchema = {
  * Server-only task for substituting text in files on the filesystem, on top of
  * the base task's http(s) handling.
  *
- * The file is streamed line-by-line rather than loaded into memory, and the
- * file on disk is never modified — there is no in-place (`sed -i`) mode.
+ * The file is streamed line-by-line rather than loaded into memory, and split
+ * into lines with a hard per-line cap ({@link DEFAULT_LIMITS.grepMaxLineChars})
+ * — a longer physical line is truncated to that length and the remainder
+ * discarded, so a file with no line terminator cannot exhaust memory. The file
+ * on disk is never modified — there is no in-place (`sed -i`) mode.
  *
  * A local path is resolved and realpath'd before it is opened, and constrained
  * to `config.roots` when the embedder sets them. Reading requires the
@@ -219,20 +222,22 @@ async function sedFile(
   substituter: SedLineSubstituter
 ): Promise<FileSedTaskOutput> {
   const input = createReadStream(file, { signal });
-  const rl = createInterface({
-    input,
-    crlfDelay: Infinity,
-  });
 
   try {
-    return await sedLines(rl, pattern, replacement, options, signal, substituter);
+    return await sedLines(
+      linesFromStream(input, DEFAULT_LIMITS.grepMaxLineChars),
+      pattern,
+      replacement,
+      options,
+      signal,
+      substituter
+    );
   } catch (err) {
     if (signal.aborted) {
       throw new TaskAbortedError("Task aborted");
     }
     throw err;
   } finally {
-    rl.close();
     input.destroy();
   }
 }
