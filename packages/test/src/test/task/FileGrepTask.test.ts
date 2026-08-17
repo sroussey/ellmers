@@ -367,6 +367,199 @@ describe("FileGrepTask", () => {
     ).rejects.toThrow(/afterContext/);
   });
 
+  test("onlyMatching emits the matched substring instead of the line", async () => {
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "foo",
+        onlyMatching: true,
+      },
+    }).run();
+
+    expect(result.matchCount).toBe(2);
+    expect(result.groups).toEqual([
+      {
+        startLine: 2,
+        endLine: 2,
+        lines: [{ line: 2, text: "foo", match: true }],
+      },
+      {
+        startLine: 5,
+        endLine: 5,
+        lines: [{ line: 5, text: "foo", match: true }],
+      },
+    ]);
+  });
+
+  test("onlyMatching emits one entry per match on a line", async () => {
+    mockText("foo bar foo\n");
+
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "foo",
+        onlyMatching: true,
+      },
+    }).run();
+
+    // matchCount counts matching LINES, as `grep -c` does even with -o.
+    expect(result.matchCount).toBe(1);
+    expect(result.groups).toEqual([
+      {
+        startLine: 1,
+        endLine: 1,
+        lines: [
+          { line: 1, text: "foo", match: true },
+          { line: 1, text: "foo", match: true },
+        ],
+      },
+    ]);
+  });
+
+  test("onlyMatching emits the matched text, not the pattern", async () => {
+    mockText("id=alpha\nid=bravo\n");
+
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "id=\\w+",
+        onlyMatching: true,
+      },
+    }).run();
+
+    expect(result.groups[0].lines.map((l) => l.text)).toEqual(["id=alpha", "id=bravo"]);
+  });
+
+  test("onlyMatching with ignoreCase keeps the original casing", async () => {
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "foo",
+        ignoreCase: true,
+        onlyMatching: true,
+      },
+    }).run();
+
+    expect(result.groups.flatMap((g) => g.lines.map((l) => l.text))).toEqual(["foo", "FOO", "foo"]);
+  });
+
+  test("onlyMatching with fixedString emits the literal occurrences", async () => {
+    mockText("cost is $5.00 and $5X00\n");
+
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "$5.00",
+        fixedString: true,
+        onlyMatching: true,
+      },
+    }).run();
+
+    expect(result.groups[0].lines.map((l) => l.text)).toEqual(["$5.00"]);
+  });
+
+  test("onlyMatching suppresses context lines", async () => {
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "charlie",
+        context: 1,
+        onlyMatching: true,
+      },
+    }).run();
+
+    expect(result.groups).toEqual([
+      {
+        startLine: 3,
+        endLine: 3,
+        lines: [{ line: 3, text: "charlie", match: true }],
+      },
+    ]);
+  });
+
+  test("onlyMatching with invertMatch emits nothing", async () => {
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "foo",
+        invertMatch: true,
+        onlyMatching: true,
+      },
+    }).run();
+
+    expect(result.exists).toBe(true);
+    expect(result.matchCount).toBe(4);
+    expect(result.groups).toEqual([]);
+  });
+
+  test("onlyMatching skips zero-length matches", async () => {
+    mockText("abc\n");
+
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "x*",
+        onlyMatching: true,
+      },
+    }).run();
+
+    expect(result.exists).toBe(true);
+    expect(result.groups).toEqual([]);
+  });
+
+  test("onlyMatching still counts lines under countOnly", async () => {
+    mockText("foo bar foo\nfoo again\n");
+
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "foo",
+        onlyMatching: true,
+        countOnly: true,
+      },
+    }).run();
+
+    expect(result).toEqual({
+      groups: [],
+      matchCount: 2,
+      exists: true,
+      truncated: false,
+    });
+  });
+
+  test("onlyMatching keeps every match of the line maxMatches stops on", async () => {
+    mockText("foo bar foo\nfoo again\n");
+
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "foo",
+        onlyMatching: true,
+        maxMatches: 1,
+      },
+    }).run();
+
+    expect(result.matchCount).toBe(1);
+    expect(result.truncated).toBe(true);
+    expect(result.groups[0].lines.map((l) => l.text)).toEqual(["foo", "foo"]);
+  });
+
+  test("onlyMatching truncates on maxOutputLines mid-line", async () => {
+    mockText("foo foo foo\n");
+
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "foo",
+        onlyMatching: true,
+        maxOutputLines: 2,
+      },
+    }).run();
+
+    expect(result.truncated).toBe(true);
+    expect(result.groups[0].lines).toHaveLength(2);
+  });
+
   test("splits CRLF the same as LF", async () => {
     mockText("one\r\ntwo foo\r\nthree\r\n");
 

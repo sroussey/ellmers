@@ -13,7 +13,7 @@ import {
   Workflow,
 } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import { assertSafeRegexPattern } from "../util/regexSafety";
+import { assertSafeRegexPattern, escapeRegExp } from "../util/regexSafety";
 import { linesFromText } from "../util/textLines";
 import { FetchUrlTask } from "./FetchUrlTask";
 
@@ -134,10 +134,6 @@ function validateOptions(options: SedOptions): void {
   if (options.maxReplacements === 0) {
     throw new TaskInvalidInputError("maxReplacements must be greater than zero when specified");
   }
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
