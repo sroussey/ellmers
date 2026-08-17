@@ -34,7 +34,6 @@ import { ENTITLEMENT_ENFORCER, Entitlements, mergeEntitlements } from "@workglow
 import type { ServiceRegistry } from "@workglow/util";
 import { SECURITY_LIMITS } from "@workglow/util";
 import { isBareHeaderName } from "../task/FetchUrlCredentials";
-import type { FetchUrlJobErrorInstance } from "../task/FetchUrlJobError";
 import {
   createFetchUrlAbortedError,
   createFetchUrlJobError,
@@ -489,22 +488,6 @@ function retryDateFromResponse(
 }
 
 /**
- * The `.stack` is checked alongside the message and the `url` field because
- * V8 bakes the message into the stack string, and a frame can embed the URL on
- * its own (a module specifier, a fetch wrapper argument). A typed error whose
- * message happens to be clean but whose stack carries the token would
- * otherwise be passed through untouched — and stacks are persisted by
- * `formatErrorChainForDiagnostics`, so "logs are trusted" is not a defence.
- */
-function leaksUrl(error: FetchUrlJobErrorInstance, url: string): boolean {
-  return (
-    error.message.includes(url) ||
-    error.url === url ||
-    (typeof error.stack === "string" && error.stack.includes(url))
-  );
-}
-
-/**
  * Builds the diagnostic detail for an untyped throw, lifting ONE level of
  * `.cause` message onto it.
  *
@@ -534,7 +517,9 @@ function detailWithCause(error: unknown): string {
  * Normalizes anything thrown while posting into a typed fetch error whose
  * message cannot contain the webhook secret. Already-typed errors keep their
  * code (and therefore their retryable/permanent classification) and are passed
- * through untouched unless they embed the URL.
+ * through untouched unless redacting them would change something — message,
+ * `stack` or `url`. A rewrite preserves the code, so the classification
+ * survives either way.
  *
  * `callerSignal` is the task's own abort signal, kept separate from the
  * composed timeout signal so a cancellation can be told apart from a timeout.
@@ -583,10 +568,29 @@ function toRedactedWebhookError(
     );
   }
   if (isFetchUrlJobError(error)) {
-    if (!leaksUrl(error, url)) {
+    // Asked over VALUES, matching this module's stated invariant, rather than
+    // over the URL as a whole string. The exact-URL test asked a narrower
+    // question twice over: it consulted no `request.secrets` at all, so a
+    // header credential quoted back by a transport was invisible to it; and
+    // endpoints echo FRAGMENTS, never the whole URL — `Cannot POST
+    // /services/T0…/SECRETTOKEN` names the path and no origin. `.url` is asked
+    // separately because a transport may pair a clean message with a `url`
+    // field that IS the credential.
+    //
+    // Cost: 5-8 short-string passes plus one per `secrets` entry, on a path
+    // that has already paid a network round-trip.
+    const redactedMessage = redact(error.message);
+    const redactedStack = typeof error.stack === "string" ? redact(error.stack) : undefined;
+    const urlLeaks =
+      typeof error.url === "string" && (error.url === url || redact(error.url) !== error.url);
+    if (
+      redactedMessage === error.message &&
+      (redactedStack === undefined || redactedStack === error.stack) &&
+      !urlLeaks
+    ) {
       return error;
     }
-    const rebuilt = createFetchUrlJobError(error.code, redact(error.message), {
+    const rebuilt = createFetchUrlJobError(error.code, redactedMessage, {
       url: redactWebhookUrl(url),
       httpStatus: error.httpStatus,
       httpStatusText: error.httpStatusText,
@@ -1139,14 +1143,22 @@ export function webhookPrivateEntitlements(
   if (allowPrivate === false) {
     return withCredential;
   }
-  const scoped = !urlFromCredential && typeof url === "string" && url.length > 0;
+  // `scoped` is one decision about the RESOURCE, but it is false in two
+  // unrelated situations — the URL is a credential, or the instance configures
+  // no URL at all — so the reason it reports is a separate, three-way
+  // question. Collapsing them made an unconfigured `url` blame the credential
+  // store, which is the wrong place to look and the wrong fix to attempt.
+  const urlKnown = typeof url === "string" && url.length > 0;
+  const scoped = !urlFromCredential && urlKnown;
   return mergeEntitlements(withCredential, {
     entitlements: [
       {
         id: Entitlements.NETWORK_PRIVATE,
         reason: scoped
           ? "'allow_private_destination' is set, permitting a private/internal destination on the configured `url`"
-          : "'allow_private_destination' is set and the webhook URL comes from the credential store, so the destination is not knowable during entitlement evaluation",
+          : urlFromCredential
+            ? "'allow_private_destination' is set and the webhook URL comes from the credential store, so the destination is not knowable during entitlement evaluation"
+            : "'allow_private_destination' is set and this instance configures no `url`, so the destination arrives as a dataflow or run-input value after entitlements are evaluated and is not knowable here",
         resources: scoped ? [urlResourcePattern(url as string)] : undefined,
       },
     ],

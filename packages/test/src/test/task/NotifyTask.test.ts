@@ -777,6 +777,69 @@ describe("Webhook notification tasks", () => {
       expect(String(error.httpStatusText)).not.toContain("SECRETTOKEN");
     });
 
+    // An endpoint echoes a FRAGMENT, not the whole URL: Express answers an
+    // unknown route with `Cannot POST /services/T0…/SECRETTOKEN`, naming the
+    // path and never the origin. A whole-string test on `url` sees nothing to
+    // rewrite here and passes the token straight through, stack included.
+    test("a typed transport error quoting only the webhook path is rewritten", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.reject(
+          createFetchUrlJobError(
+            FetchUrlErrorCode.SCOPE_DENIED,
+            "Cannot POST /services/T00000000/B00000000/SECRETTOKEN",
+            { url: "https://hooks.slack.com" }
+          )
+        )
+      );
+
+      const error = (await slackNotify({ url: SLACK_URL, text: "hi" }).catch(
+        (e: unknown) => e
+      )) as PermanentJobError;
+
+      expect(error.message).not.toContain("SECRETTOKEN");
+      expect(error.stack ?? "").not.toContain("SECRETTOKEN");
+      expect(formatErrorChainForDiagnostics(error)).not.toContain("SECRETTOKEN");
+      // A rewrite preserves the code, so the retryable/permanent verdict the
+      // transport reached is not traded away for the redaction.
+      expect(error.code).toBe(FetchUrlErrorCode.SCOPE_DENIED);
+    });
+
+    // A typed error whose only leak is the `url` field. The message is clean,
+    // so nothing else in the gate fires — but that field IS the credential.
+    test("a typed error whose url field is the webhook URL is rewritten even with a clean message", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.reject(
+          createFetchUrlJobError(FetchUrlErrorCode.SCOPE_DENIED, "outside granted scope", {
+            url: SLACK_URL,
+          })
+        )
+      );
+
+      const error = (await slackNotify({ url: SLACK_URL, text: "hi" }).catch(
+        (e: unknown) => e
+      )) as PermanentJobError & { url?: string };
+
+      expect(error.url).not.toContain("SECRETTOKEN");
+      expect(formatErrorChainForDiagnostics(error)).not.toContain("SECRETTOKEN");
+      expect(error.code).toBe(FetchUrlErrorCode.SCOPE_DENIED);
+    });
+
+    // Asking over values rather than over one exact string widens what gets
+    // rebuilt, so pin the other side too: an error touching none of the post's
+    // secrets still comes back by identity rather than as a copy.
+    test("a typed error carrying no secret keeps its identity", async () => {
+      const thrown = createFetchUrlJobError(
+        FetchUrlErrorCode.SCOPE_DENIED,
+        "outside granted network:private scope",
+        { url: "https://internal.example/" }
+      );
+      mockFetch.mockImplementation(() => Promise.reject(thrown));
+
+      const error = await slackNotify({ url: SLACK_URL, text: "hi" }).catch((e: unknown) => e);
+
+      expect(error).toBe(thrown);
+    });
+
     test("the webhook URL is absent from every output schema", () => {
       for (const taskClass of [WebhookNotifyTask, SlackNotifyTask, DiscordNotifyTask]) {
         const schema = taskClass.outputSchema();
@@ -789,6 +852,10 @@ describe("Webhook notification tasks", () => {
   });
 
   describe("permanent error pass-through", () => {
+    // The guarantee this pins is now "redaction is a no-op on this error", not
+    // "this error does not contain the URL as a whole string" — the gate asks
+    // over every value the post was handed, so an error touching none of them
+    // still passes through by identity.
     test("a permanent error that does not leak is rethrown unchanged", async () => {
       const thrown = createFetchUrlJobError(
         FetchUrlErrorCode.SCOPE_DENIED,
@@ -821,6 +888,11 @@ describe("Webhook notification tasks", () => {
         expect(validateSchema(taskClass.inputSchema()).valid).toBe(true);
         expect(validateSchema(taskClass.outputSchema()).valid).toBe(true);
       }
+      // The two credential ports on WebhookNotifyTask do different things — one
+      // IS the destination, the other only rides on a header — so a UI that
+      // renders them by title has to be able to tell them apart.
+      const props = WebhookNotifyTask.inputSchema().properties;
+      expect(props.url_credential_key.title).not.toBe(props.credential_key.title);
     });
 
     test("Workflow.slackNotify runs end to end", async () => {
@@ -939,6 +1011,22 @@ describe("Webhook notification tasks", () => {
       const granted = task.entitlements().entitlements.find((e) => e.id === "network:private");
       expect(granted).toBeDefined();
       expect(granted!.resources).toBeUndefined();
+      expect(granted!.reason).toContain("credential store");
+    });
+
+    // `scoped` is false in two unrelated situations, and only one of them is
+    // about the credential store. This is the other: the instance configures no
+    // `url` at all, so the destination arrives as run-input AFTER entitlements
+    // are graded — the exact shape the graph-root smuggling case constructs.
+    // Blaming the credential store here points at the wrong fix.
+    test("an unconfigured url reports the run-input shape, not a credential store", () => {
+      const task = new WebhookNotifyTask();
+      task.runInputData = { payload: {}, allow_private_destination: true } as any;
+      const granted = task.entitlements().entitlements.find((e) => e.id === "network:private");
+      expect(granted).toBeDefined();
+      expect(granted!.resources).toBeUndefined();
+      expect(granted!.reason).toContain("run-input");
+      expect(granted!.reason).not.toContain("credential store");
     });
 
     // The two credential ports have DIFFERENT consequences for scoping, which
@@ -1650,6 +1738,81 @@ describe("Webhook notification tasks", () => {
       expect(image.alt_text).toBe("Build chart");
     });
 
+    // A `video` block pairs `title_url` with a required `title`, which is the
+    // same phishing primitive the button case is: the reader sees "Deploy
+    // succeeded" and clicks through to the attacker's URL. The property name is
+    // `title_url`, not `url`, so a rule keyed on `url` alone never saw it.
+    //
+    // Caveat, recorded rather than treated as a reason to skip the shape:
+    // Slack's video block needs `links.embed:write` and a registered unfurl
+    // domain, and the docs do not say whether an incoming webhook can satisfy
+    // that — so exploitability is bounded but unresolved.
+    test("a video block's title cannot mask its title_url", async () => {
+      await slackNotify({
+        url: SLACK_URL,
+        text: "ok",
+        blocks: [
+          {
+            type: "video",
+            title: { type: "plain_text", text: "Deploy succeeded" },
+            title_url: "https://evil.example/phish",
+            video_url: "https://ci.example/embed/build.mp4",
+            thumbnail_url: "https://ci.example/thumb.png",
+            alt_text: "Build recording",
+          },
+        ],
+      });
+
+      const video = JSON.parse(lastCall().options.body as string).blocks[0];
+      expect(video.title.text).toBe("https://evil.example/phish");
+      expect(video.title_url).toBe("https://evil.example/phish");
+      expect(lastCall().options.body as string).not.toContain("Deploy succeeded");
+    });
+
+    // The false positive the explicit pair table exists to avoid, and the twin
+    // of the `alt_text` guard above: an `image` block legitimately carries
+    // `image_url` AND a `title`, so "any `*_url` with a sibling label" would
+    // rewrite the caption to the CDN URL in the commonest block type there is.
+    test("an image block with a title is still not treated as a structural link", async () => {
+      await slackNotify({
+        url: SLACK_URL,
+        text: "ok",
+        blocks: [
+          {
+            type: "image",
+            image_url: "https://ci.example/chart.png?a=1&b=2",
+            title: { type: "plain_text", text: "Build chart" },
+            alt_text: "Build chart",
+          },
+        ],
+      });
+
+      const image = JSON.parse(lastCall().options.body as string).blocks[0];
+      expect(image.title.text).toBe("Build chart");
+      expect(image.image_url).toBe("https://ci.example/chart.png?a=1&b=2");
+    });
+
+    test("allow_markup keeps a video block's title intact", async () => {
+      await slackNotify({
+        url: SLACK_URL,
+        text: "ok",
+        blocks: [
+          {
+            type: "video",
+            title: { type: "plain_text", text: "Deploy succeeded" },
+            title_url: "https://evil.example/phish",
+            video_url: "https://ci.example/embed/build.mp4",
+            alt_text: "Build recording",
+          },
+        ],
+        allow_markup: true,
+      });
+
+      const video = JSON.parse(lastCall().options.body as string).blocks[0];
+      expect(video.title.text).toBe("Deploy succeeded");
+      expect(video.title_url).toBe("https://evil.example/phish");
+    });
+
     test("allow_markup keeps a structural link intact", async () => {
       await slackNotify({
         url: SLACK_URL,
@@ -2317,6 +2480,41 @@ describe("Webhook notification tasks", () => {
       expect(error.message).not.toContain(HEADER_SECRET);
       expect(error.stack ?? "").not.toContain(HEADER_SECRET);
       expect(formatErrorChainForDiagnostics(error)).not.toContain(HEADER_SECRET);
+    });
+
+    // The TYPED branch with a header secret, which the case above never
+    // reaches: its `TypeError` carries no code, so it takes the generic
+    // rebuild-everything path. A typed error is passed through by identity
+    // unless the gate says otherwise, and the gate consulted only the URL — so
+    // a transport quoting the header credential back walked out untouched.
+    //
+    // `url` is the ORIGIN, not the whole webhook URL, and that detail is what
+    // makes this case load-bearing: with the full URL there the old whole-string
+    // `error.url === url` test fires and the error is rewritten for a reason
+    // that has nothing to do with the header secret, so the case would pass
+    // against the unfixed code and pin nothing. A transport that reports only
+    // the origin is also the realistic shape.
+    test("a typed transport error quoting the header credential is rewritten", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.reject(
+          createFetchUrlJobError(
+            FetchUrlErrorCode.NETWORK_ERROR,
+            `upstream rejected Authorization: Bearer ${HEADER_SECRET}`,
+            { url: "https://example.com" }
+          )
+        )
+      );
+
+      const error = (await withStoredSecret(() =>
+        webhookNotify({ url: WEBHOOK_URL, payload: {}, credential_key: "echo-token" }).catch(
+          (e: unknown) => e
+        )
+      )) as Error & { code?: string };
+
+      expect(error.message).not.toContain(HEADER_SECRET);
+      expect(error.stack ?? "").not.toContain(HEADER_SECRET);
+      expect(formatErrorChainForDiagnostics(error)).not.toContain(HEADER_SECRET);
+      expect(error.code).toBe(FetchUrlErrorCode.NETWORK_ERROR);
     });
 
     // Regression guard against reordering: exact secrets are replaced FIRST,
