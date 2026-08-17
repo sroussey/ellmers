@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { FileSedTask } from "@workglow/tasks";
+import { TaskEntitlementError, TaskInvalidInputError } from "@workglow/task-graph";
+import { FileSedTask, registerSafeFetch, type SafeFetchFn } from "@workglow/tasks";
 import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -83,6 +84,140 @@ describe("FileSedTask (server - local files)", () => {
         defaults: { url: filePath, pattern: "foo", replacement: "bar" },
       }).run()
     ).rejects.toThrow();
+  });
+
+  test("refuses a path outside the configured roots", async () => {
+    const outside = join(tmpdir(), `filesed-outside-${Date.now()}.txt`);
+    writeFileSync(outside, "bravo foo\n", "utf-8");
+
+    try {
+      await expect(
+        new FileSedTask({
+          roots: [testDir],
+          defaults: { url: outside, pattern: "foo", replacement: "bar" },
+        }).run()
+      ).rejects.toThrow(TaskEntitlementError);
+    } finally {
+      rmSync(outside, { force: true });
+    }
+  });
+
+  /**
+   * The containment check runs AFTER `realpathSync`. A pre-realpath check
+   * passes here — the link itself sits inside the root — and then opens the
+   * target, which is the whole escape.
+   */
+  test("refuses a symlink that escapes the configured roots", async () => {
+    const link = join(testDir, "escape.txt");
+    symlinkSync("/etc/passwd", link);
+
+    await expect(
+      new FileSedTask({
+        roots: [testDir],
+        defaults: { url: link, pattern: "root", replacement: "x" },
+      }).run()
+    ).rejects.toThrow(TaskEntitlementError);
+  });
+
+  test("allows a symlink that stays inside the roots", async () => {
+    const target = join(testDir, "target.txt");
+    const link = join(testDir, "link.txt");
+    writeFileSync(target, "alpha\nbravo foo\n", "utf-8");
+    symlinkSync(target, link);
+
+    const result = await new FileSedTask({
+      roots: [testDir],
+      defaults: { url: link, pattern: "foo", replacement: "bar" },
+    }).run();
+
+    expect(result.text).toBe("alpha\nbravo bar\n");
+  });
+
+  /**
+   * `slice(7)` left the path percent-encoded, so a filer-authored name with a
+   * space or a `%` addressed a file that does not exist.
+   */
+  test("parses file:// URLs rather than slicing the scheme", async () => {
+    const filePath = join(testDir, "a b%c.txt");
+    writeFileSync(filePath, "alpha\nbravo foo\n", "utf-8");
+
+    const result = await new FileSedTask({
+      defaults: {
+        url: `file://${testDir}/a%20b%25c.txt`,
+        pattern: "foo",
+        replacement: "bar",
+      },
+    }).run();
+
+    expect(result.text).toBe("alpha\nbravo bar\n");
+  });
+
+  test("rejects a file:// URL carrying a remote host", async () => {
+    await expect(
+      new FileSedTask({
+        defaults: { url: "file://evil.example/etc/passwd", pattern: "root", replacement: "x" },
+      }).run()
+    ).rejects.toThrow(TaskInvalidInputError);
+  });
+
+  /**
+   * `url.slice(7)` on a relative path opened it against the process cwd, so a
+   * bare `package.json` was readable with no root, no containment and no
+   * declaration.
+   */
+  test("resolves a relative path rather than reading it from the process cwd", async () => {
+    await expect(
+      new FileSedTask({
+        roots: [testDir],
+        defaults: { url: "package.json", pattern: "name", replacement: "x" },
+      }).run()
+    ).rejects.toThrow(TaskEntitlementError);
+  });
+
+  /**
+   * The scheme test was case-sensitive, so `HTTP://x` fell through to the
+   * filesystem branch and was opened as a relative path against the process
+   * cwd. It must route to the fetch branch instead.
+   */
+  describe("uppercase schemes", () => {
+    let prevSafeFetch: SafeFetchFn;
+
+    beforeEach(() => {
+      prevSafeFetch = registerSafeFetch(() =>
+        Promise.resolve(
+          new Response("alpha\nbravo foo\n", {
+            status: 200,
+            headers: { "Content-Type": "text/plain" },
+          })
+        )
+      );
+    });
+
+    afterEach(() => {
+      registerSafeFetch(prevSafeFetch);
+    });
+
+    test("treats HTTP:// case-insensitively", async () => {
+      const result = await new FileSedTask({
+        defaults: {
+          url: "HTTP://example.com/log.txt",
+          pattern: "foo",
+          replacement: "bar",
+        },
+      }).run();
+
+      expect(result.text).toBe("alpha\nbravo bar\n");
+    });
+  });
+
+  describe.skipIf(!existsSync("/dev/zero"))("non-regular files", () => {
+    test("refuses a character device", async () => {
+      await expect(
+        new FileSedTask({
+          defaults: { url: "/dev/zero", pattern: "foo", replacement: "bar" },
+        }).run()
+      ).rejects.toThrow(TaskInvalidInputError);
+    });
   });
 
   /**

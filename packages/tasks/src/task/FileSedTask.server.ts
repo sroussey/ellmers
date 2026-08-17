@@ -4,14 +4,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IExecuteContext, TaskConfig } from "@workglow/task-graph";
-import { CreateWorkflow, TaskAbortedError, Workflow } from "@workglow/task-graph";
+import type { IExecuteContext, TaskEntitlements } from "@workglow/task-graph";
+import {
+  CreateWorkflow,
+  Entitlements,
+  mergeEntitlements,
+  TaskAbortedError,
+  TaskConfigSchema,
+  Workflow,
+} from "@workglow/task-graph";
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 
 import { SECURITY_LIMITS } from "@workglow/util";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { createBoundedRegexReplacer } from "../util/BoundedRegex.server";
+import { isHttpUrl, resolveLocalFilePath } from "../util/LocalFilePath.server";
 import type {
+  FileSedTaskConfig,
   FileSedTaskInput,
   FileSedTaskOutput,
   SedLineSubstituter,
@@ -24,18 +34,53 @@ import {
   sedLines,
 } from "./FileSedTask";
 
-export type { FileSedTaskInput, FileSedTaskOutput };
+export type { FileSedTaskConfig, FileSedTaskInput, FileSedTaskOutput };
+
+const fileSedTaskConfigSchema = {
+  type: "object",
+  properties: {
+    ...TaskConfigSchema["properties"],
+    roots: {
+      type: "array",
+      items: { type: "string" },
+      title: "Roots",
+      description: "Directories a local path must resolve inside (after symlink resolution)",
+      "x-ui-hidden": true,
+    },
+  },
+  additionalProperties: false,
+} as const satisfies DataPortSchema;
 
 /**
- * Server-only task for substituting text in files on the filesystem.
- * Streams the file line-by-line rather than loading it into memory.
- * Only available in Node.js and Bun environments.
+ * Server-only task for substituting text in files on the filesystem, on top of
+ * the base task's http(s) handling.
  *
- * The file on disk is never modified — there is no in-place (`sed -i`) mode.
+ * The file is streamed line-by-line rather than loaded into memory, and the
+ * file on disk is never modified — there is no in-place (`sed -i`) mode.
  *
- * For cross-platform substitution (including browser), use FileSedTask with URLs.
+ * A local path is resolved and realpath'd before it is opened, and constrained
+ * to `config.roots` when the embedder sets them. Reading requires the
+ * `filesystem:read` entitlement.
+ *
+ * Only available in Node.js and Bun environments. For cross-platform
+ * substitution (including browser), use FileSedTask with an http(s) URL.
  */
-export class FileSedTask extends BaseFileSedTask {
+export class FileSedTask extends BaseFileSedTask<FileSedTaskConfig> {
+  public static override configSchema(): DataPortSchema {
+    return fileSedTaskConfigSchema as DataPortSchema;
+  }
+
+  public static override entitlements(): TaskEntitlements {
+    return mergeEntitlements(super.entitlements(), {
+      entitlements: [
+        {
+          id: Entitlements.FILESYSTEM_READ,
+          reason: "Reads a local file or file:// URL from disk",
+        },
+      ],
+    });
+  }
+
   /**
    * Runs the substitution inside a `vm` context under a wall-clock budget, so
    * a catastrophically backtracking pattern fails instead of wedging the event
@@ -67,9 +112,9 @@ export class FileSedTask extends BaseFileSedTask {
     input: FileSedTaskInput,
     context: IExecuteContext
   ): Promise<FileSedTaskOutput> {
-    let { url, pattern, replacement, ...options } = input;
+    const { url, pattern, replacement, ...options } = input;
 
-    if (url.startsWith("http://") || url.startsWith("https://")) {
+    if (isHttpUrl(url)) {
       return super.execute(input, context);
     }
 
@@ -78,9 +123,7 @@ export class FileSedTask extends BaseFileSedTask {
     }
     await context.updateProgress(0, "Opening file");
 
-    if (url.startsWith("file://")) {
-      url = url.slice(7);
-    }
+    const file = resolveLocalFilePath(url, { roots: this.config.roots });
 
     if (context.signal.aborted) {
       throw new TaskAbortedError("Task aborted");
@@ -88,7 +131,7 @@ export class FileSedTask extends BaseFileSedTask {
     await context.updateProgress(10, "Substituting text");
 
     const result = await sedFile(
-      url,
+      file,
       pattern,
       replacement,
       options,
@@ -132,13 +175,13 @@ async function sedFile(
   }
 }
 
-export const fileSed = (input: FileSedTaskInput, config?: TaskConfig) => {
+export const fileSed = (input: FileSedTaskInput, config?: FileSedTaskConfig) => {
   return new FileSedTask(config).run(input);
 };
 
 declare module "@workglow/task-graph" {
   interface Workflow {
-    fileSed: CreateWorkflow<FileSedTaskInput, FileSedTaskOutput, TaskConfig>;
+    fileSed: CreateWorkflow<FileSedTaskInput, FileSedTaskOutput, FileSedTaskConfig>;
   }
 }
 

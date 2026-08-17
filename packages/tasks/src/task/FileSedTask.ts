@@ -24,7 +24,8 @@ const inputSchema = {
     url: {
       type: "string",
       title: "URL",
-      description: "URL to transform (http://, https://)",
+      description:
+        "URL to transform (http://, https://). The Node/Electron build additionally accepts a `file://` URL or an absolute filesystem path, subject to the `filesystem:read` entitlement and any configured `roots`.",
       format: "uri",
     },
     pattern: {
@@ -417,7 +418,11 @@ export async function sedLines(
  *
  * The source is never modified: the transformed document is returned as output.
  */
-export class FileSedTask extends Task<FileSedTaskInput, FileSedTaskOutput, TaskConfig> {
+export class FileSedTask<Config extends TaskConfig = TaskConfig> extends Task<
+  FileSedTaskInput,
+  FileSedTaskOutput,
+  Config
+> {
   public static override type = "FileSedTask";
   public static override category = "Document";
   public static override title = "File Sed";
@@ -490,13 +495,31 @@ export class FileSedTask extends Task<FileSedTaskInput, FileSedTaskOutput, TaskC
   }
 }
 
-export const fileSed = (input: FileSedTaskInput, config?: TaskConfig) => {
+/**
+ * Config for both builds. `roots` is declared here rather than beside the
+ * server subclass because a `declare module` augmentation must state one type
+ * across every file that contributes it, and both files augment `Workflow`
+ * with `fileSed`.
+ */
+export interface FileSedTaskConfig extends TaskConfig {
+  /**
+   * Directories a local path must resolve inside, checked after symlinks are
+   * resolved. Omitted means unrestricted: the enforced control is the
+   * `filesystem:read` entitlement, and this is the embedder's extra fence.
+   *
+   * Honored only by the server build — the cross-platform class reaches
+   * http(s) through `FetchUrlTask` and touches no filesystem.
+   */
+  readonly roots?: readonly string[] | undefined;
+}
+
+export const fileSed = (input: FileSedTaskInput, config?: FileSedTaskConfig) => {
   return new FileSedTask(config).run(input);
 };
 
 declare module "@workglow/task-graph" {
   interface Workflow {
-    fileSed: CreateWorkflow<FileSedTaskInput, FileSedTaskOutput, TaskConfig>;
+    fileSed: CreateWorkflow<FileSedTaskInput, FileSedTaskOutput, FileSedTaskConfig>;
   }
 }
 
