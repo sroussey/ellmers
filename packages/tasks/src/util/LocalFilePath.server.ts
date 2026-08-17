@@ -70,7 +70,20 @@ export function resolveLocalFilePath(url: string, options: LocalFilePathOptions 
   const { roots } = options;
   if (roots !== undefined) {
     const allowed = roots.some((root) => {
-      const realRoot = realpathSync(root);
+      // A root that cannot be resolved is a misconfiguration, and saying which
+      // one beats an `ENOENT ... lstat` raised from inside the containment
+      // check. It is deliberately NOT treated as "does not contain the path":
+      // that reads as a containment verdict on evidence nobody has.
+      let realRoot: string;
+      try {
+        realRoot = realpathSync(root);
+      } catch (err) {
+        throw new TaskInvalidInputError(
+          `Configured root ${root} could not be resolved: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        );
+      }
       return real === realRoot || real.startsWith(realRoot + sep);
     });
     if (!allowed) {
