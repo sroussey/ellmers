@@ -68,13 +68,14 @@ const inputSchema = {
     maxOutputLines: {
       type: "integer",
       title: "Max Output Lines",
-      description: "Maximum number of output lines",
+      description: "Maximum number of output lines. Defaults to 10000; set this to override.",
       minimum: 0,
     },
     maxOutputChars: {
       type: "integer",
       title: "Max Output Characters",
-      description: "Maximum number of output characters, including newlines",
+      description:
+        "Maximum number of output characters, including newlines. Defaults to 1000000; set this to override.",
       minimum: 0,
     },
   },
@@ -340,6 +341,11 @@ export async function sedLines(
   let outputLines = 0;
   let outputChars = 0;
 
+  // Caps apply whether or not the caller stated them: an unbounded default
+  // returned the whole document to whoever asked for one substitution.
+  const maxOutputLines = options.maxOutputLines ?? DEFAULT_LIMITS.grepMaxOutputLines;
+  const maxOutputChars = options.maxOutputChars ?? DEFAULT_LIMITS.grepMaxOutputChars;
+
   const iterator = lines[Symbol.asyncIterator]();
   const maxLineChars = DEFAULT_LIMITS.grepMaxLineChars;
   const batch: string[] = [];
@@ -392,14 +398,14 @@ export async function sedLines(
           continue;
         }
 
-        if (options.maxOutputLines !== undefined && outputLines >= options.maxOutputLines) {
+        if (outputLines >= maxOutputLines) {
           truncated = true;
           break outer;
         }
 
         const chars = replaced.length + 1;
 
-        if (options.maxOutputChars !== undefined && outputChars + chars > options.maxOutputChars) {
+        if (outputChars + chars > maxOutputChars) {
           truncated = true;
           break outer;
         }
