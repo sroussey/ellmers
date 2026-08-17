@@ -12,6 +12,22 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 await Sqlite.init();
 
+/**
+ * `@workglow/sqlite`'s `./storage` still carries a `"bun"` export condition, so
+ * Bun loads the `bun:sqlite` adapter here while Node loads the `node:sqlite`
+ * one. Both drivers owe callers the shared contract below — including the
+ * savepoint nesting `SqliteTabularStorage` relies on — and diverge only where
+ * the Node driver bridges something `bun:sqlite` provides natively or not at
+ * all: better-sqlite3 error-code spellings, option rejection, the async-body
+ * refusal, and the BigInt narrowing `node:sqlite` forces. Only those live in
+ * the node-scoped groups; every assertion there was checked to actually fail
+ * under `bun:sqlite`, so the guard is not skipping coverage it could keep.
+ *
+ * When a Bun release ships `node:sqlite` and the export condition goes away,
+ * delete `IS_NODE_DRIVER` and fold the groups back into one.
+ */
+const IS_NODE_DRIVER = typeof (globalThis as { Bun?: unknown }).Bun === "undefined";
+
 /** Fresh in-memory database with a single-column `t` table. */
 function makeDb(): Sqlite.Database {
   const db = new Sqlite.Database(":memory:");
@@ -24,43 +40,18 @@ function countRows(db: Sqlite.Database): number {
   return row?.n ?? 0;
 }
 
-describe("SQLite driver — transaction()", () => {
+describe("SQLite driver — shared contract", () => {
   let db: Sqlite.Database;
+  let dir: string;
 
   beforeEach(() => {
     db = makeDb();
+    dir = mkdtempSync(join(tmpdir(), "workglow-sqlite-shared-"));
   });
 
   afterEach(() => {
     db.close();
-  });
-
-  it("rejects an async body instead of committing it", async () => {
-    const unhandled: unknown[] = [];
-    const onUnhandled = (reason: unknown): void => {
-      unhandled.push(reason);
-    };
-    process.on("unhandledRejection", onUnhandled);
-    try {
-      const tx = db.transaction(((): unknown => {
-        db.prepare("INSERT INTO t (id) VALUES (1)").run();
-        return (async () => {
-          await new Promise((resolve) => setTimeout(resolve, 10));
-          throw new Error("late");
-        })();
-      }) as () => void);
-
-      expect(() => tx()).toThrow(/cannot return a promise/);
-      // The wrapper cannot commit work an async body has not finished, so the
-      // INSERT the body already issued must be rolled back.
-      expect(countRows(db)).toBe(0);
-
-      // Give the swallowed body time to reject and the process time to notice.
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      expect(unhandled).toEqual([]);
-    } finally {
-      process.off("unhandledRejection", onUnhandled);
-    }
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it("commits a synchronous body", () => {
@@ -79,6 +70,54 @@ describe("SQLite driver — transaction()", () => {
       })()
     ).toThrow(boom);
     expect(countRows(db)).toBe(0);
+  });
+
+  it("binds undefined as SQL NULL", () => {
+    db.exec("CREATE TABLE nullable (id INTEGER PRIMARY KEY, v TEXT)");
+    db.prepare("INSERT INTO nullable (id, v) VALUES (?, ?)").run(1, undefined);
+    const row = db.prepare<unknown[], { v: string | null }>("SELECT v FROM nullable").get();
+    expect(row?.v).toBeNull();
+  });
+
+  it("leaves foreign keys off by default", () => {
+    const row = db.prepare<unknown[], { foreign_keys: number }>("PRAGMA foreign_keys").get();
+    expect(row?.foreign_keys).toBe(0);
+    db.exec("CREATE TABLE parent (id INTEGER PRIMARY KEY)");
+    db.exec("CREATE TABLE child (id INTEGER PRIMARY KEY, p INTEGER REFERENCES parent(id))");
+    // A dangling reference is what an unenforced schema legitimately holds.
+    db.prepare("INSERT INTO child (id, p) VALUES (1, 99)").run();
+  });
+
+  it("opens in WAL mode with the shared busy timeout", () => {
+    const file = new Sqlite.Database(join(dir, "test.db"));
+    try {
+      const journal = file
+        .prepare<unknown[], { journal_mode: string }>("PRAGMA journal_mode")
+        .get();
+      expect(journal?.journal_mode).toBe("wal");
+      const busy = file.prepare<unknown[], { timeout: number }>("PRAGMA busy_timeout").get();
+      expect(busy?.timeout).toBe(5000);
+    } finally {
+      file.close();
+    }
+  });
+
+  it("returns rows with the ordinary object prototype", () => {
+    const row = db.prepare<unknown[], { x: number }>("SELECT 1 AS x").get();
+    expect(Object.getPrototypeOf(row)).toBe(Object.prototype);
+    expect(Object.prototype.hasOwnProperty.call(row, "x")).toBe(true);
+    // A null-prototype row makes this throw rather than return a boolean.
+    expect((row as unknown as { hasOwnProperty(k: string): boolean }).hasOwnProperty("x")).toBe(
+      true
+    );
+    expect(row).toStrictEqual({ x: 1 });
+  });
+
+  it("returns all() rows with the ordinary object prototype", () => {
+    db.exec("INSERT INTO t (id) VALUES (1), (2)");
+    const rows = db.prepare<unknown[], { id: number }>("SELECT id FROM t ORDER BY id").all();
+    expect(rows).toStrictEqual([{ id: 1 }, { id: 2 }]);
+    for (const row of rows) expect(Object.getPrototypeOf(row)).toBe(Object.prototype);
   });
 
   it("opens a SAVEPOINT inside a transaction started by exec with a trailing semicolon", () => {
@@ -133,7 +172,47 @@ describe("SQLite driver — transaction()", () => {
   });
 });
 
-describe("SQLite driver — constructor options", () => {
+describe.skipIf(!IS_NODE_DRIVER)("SQLite driver (node:sqlite) — transaction()", () => {
+  let db: Sqlite.Database;
+
+  beforeEach(() => {
+    db = makeDb();
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it("rejects an async body instead of committing it", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const tx = db.transaction(((): unknown => {
+        db.prepare("INSERT INTO t (id) VALUES (1)").run();
+        return (async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          throw new Error("late");
+        })();
+      }) as () => void);
+
+      expect(() => tx()).toThrow(/cannot return a promise/);
+      // The wrapper cannot commit work an async body has not finished, so the
+      // INSERT the body already issued must be rolled back.
+      expect(countRows(db)).toBe(0);
+
+      // Give the swallowed body time to reject and the process time to notice.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+});
+
+describe.skipIf(!IS_NODE_DRIVER)("SQLite driver (node:sqlite) — constructor options", () => {
   it.each([
     ["readonly", { readonly: true }],
     ["fileMustExist", { fileMustExist: true }],
@@ -150,7 +229,7 @@ describe("SQLite driver — constructor options", () => {
   });
 });
 
-describe("SQLite driver — result rows", () => {
+describe.skipIf(!IS_NODE_DRIVER)("SQLite driver (node:sqlite) — result rows", () => {
   let db: Sqlite.Database;
 
   beforeEach(() => {
@@ -159,24 +238,6 @@ describe("SQLite driver — result rows", () => {
 
   afterEach(() => {
     db.close();
-  });
-
-  it("returns rows with the ordinary object prototype", () => {
-    const row = db.prepare<unknown[], { x: number }>("SELECT 1 AS x").get();
-    expect(Object.getPrototypeOf(row)).toBe(Object.prototype);
-    expect(Object.prototype.hasOwnProperty.call(row, "x")).toBe(true);
-    // A null-prototype row makes this throw rather than return a boolean.
-    expect((row as unknown as { hasOwnProperty(k: string): boolean }).hasOwnProperty("x")).toBe(
-      true
-    );
-    expect(row).toStrictEqual({ x: 1 });
-  });
-
-  it("returns all() rows with the ordinary object prototype", () => {
-    db.exec("INSERT INTO t (id) VALUES (1), (2)");
-    const rows = db.prepare<unknown[], { id: number }>("SELECT id FROM t ORDER BY id").all();
-    expect(rows).toStrictEqual([{ id: 1 }, { id: 2 }]);
-    for (const row of rows) expect(Object.getPrototypeOf(row)).toBe(Object.prototype);
   });
 
   it("narrows BigInt integers back to numbers only when they round-trip", () => {
@@ -189,16 +250,9 @@ describe("SQLite driver — result rows", () => {
     expect(rows[0]!.n).toBe(Number.MAX_SAFE_INTEGER);
     expect(rows[1]!.n).toBe(BigInt(Number.MAX_SAFE_INTEGER) + 10n);
   });
-
-  it("binds undefined as SQL NULL", () => {
-    db.exec("CREATE TABLE nullable (id INTEGER PRIMARY KEY, v TEXT)");
-    db.prepare("INSERT INTO nullable (id, v) VALUES (?, ?)").run(1, undefined);
-    const row = db.prepare<unknown[], { v: string | null }>("SELECT v FROM nullable").get();
-    expect(row?.v).toBeNull();
-  });
 });
 
-describe("SQLite driver — error translation", () => {
+describe.skipIf(!IS_NODE_DRIVER)("SQLite driver (node:sqlite) — error translation", () => {
   it("reports a UNIQUE violation with the better-sqlite3 code spelling", () => {
     const db = new Sqlite.Database(":memory:");
     try {
@@ -219,21 +273,7 @@ describe("SQLite driver — error translation", () => {
   });
 });
 
-describe("SQLite driver — foreign keys", () => {
-  it("leaves foreign keys off by default", () => {
-    const db = new Sqlite.Database(":memory:");
-    try {
-      const row = db.prepare<unknown[], { foreign_keys: number }>("PRAGMA foreign_keys").get();
-      expect(row?.foreign_keys).toBe(0);
-      db.exec("CREATE TABLE parent (id INTEGER PRIMARY KEY)");
-      db.exec("CREATE TABLE child (id INTEGER PRIMARY KEY, p INTEGER REFERENCES parent(id))");
-      // A dangling reference is what an unenforced schema legitimately holds.
-      db.prepare("INSERT INTO child (id, p) VALUES (1, 99)").run();
-    } finally {
-      db.close();
-    }
-  });
-
+describe.skipIf(!IS_NODE_DRIVER)("SQLite driver (node:sqlite) — foreign keys", () => {
   it("enforces foreign keys when asked", () => {
     const db = new Sqlite.Database(":memory:", { enableForeignKeyConstraints: true });
     try {
@@ -254,7 +294,7 @@ describe("SQLite driver — foreign keys", () => {
   });
 });
 
-describe("SQLite driver — file-backed database", () => {
+describe.skipIf(!IS_NODE_DRIVER)("SQLite driver (node:sqlite) — file-backed database", () => {
   let dir: string;
 
   beforeEach(() => {
@@ -263,18 +303,6 @@ describe("SQLite driver — file-backed database", () => {
 
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
-  });
-
-  it("opens in WAL mode with the shared busy timeout", () => {
-    const db = new Sqlite.Database(join(dir, "test.db"));
-    try {
-      const journal = db.prepare<unknown[], { journal_mode: string }>("PRAGMA journal_mode").get();
-      expect(journal?.journal_mode).toBe("wal");
-      const busy = db.prepare<unknown[], { timeout: number }>("PRAGMA busy_timeout").get();
-      expect(busy?.timeout).toBe(5000);
-    } finally {
-      db.close();
-    }
   });
 
   it("waits for a lock held by another connection instead of failing immediately", () => {
