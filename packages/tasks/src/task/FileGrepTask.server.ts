@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IExecuteContext, TaskConfig, TaskEntitlements } from "@workglow/task-graph";
+import type { IExecuteContext, TaskEntitlements } from "@workglow/task-graph";
 import {
   CreateWorkflow,
   Entitlements,
@@ -22,6 +22,7 @@ import { createBoundedRegexMatcher } from "../util/BoundedRegex.server";
 import { isHttpUrl, resolveLocalFilePath } from "../util/LocalFilePath.server";
 import { compileSafeRegex } from "../util/RegexSafety";
 import type {
+  FileGrepTaskConfig,
   FileGrepTaskInput,
   FileGrepTaskOutput,
   GrepLineMatcher,
@@ -29,16 +30,7 @@ import type {
 } from "./FileGrepTask";
 import { FileGrepTask as BaseFileGrepTask, grepLines } from "./FileGrepTask";
 
-export type { FileGrepTaskInput, FileGrepTaskOutput };
-
-export interface FileGrepTaskConfig extends TaskConfig {
-  /**
-   * Directories a local path must resolve inside, checked after symlinks are
-   * resolved. Omitted means unrestricted: the enforced control is the
-   * `filesystem:read` entitlement, and this is the embedder's extra fence.
-   */
-  readonly roots?: readonly string[] | undefined;
-}
+export type { FileGrepTaskConfig, FileGrepTaskInput, FileGrepTaskOutput };
 
 const fileGrepTaskConfigSchema = {
   type: "object",

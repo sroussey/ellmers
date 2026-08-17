@@ -670,13 +670,33 @@ export class FileGrepTask<Config extends TaskConfig = TaskConfig> extends Task<
   }
 }
 
-export const fileGrep = (input: FileGrepTaskInput, config?: TaskConfig) => {
+/**
+ * Config for both builds. `roots` is declared here rather than beside the
+ * server subclass because a `declare module` augmentation must state one type
+ * across every file that contributes it, and both files augment `Workflow`
+ * with `fileGrep`. Declaring it only on the server made the two disagree
+ * (TS2717); declaring `TaskConfig` in both would keep them agreeing but drop
+ * `roots` from `workflow.fileGrep(...)`, which is the API most callers use.
+ */
+export interface FileGrepTaskConfig extends TaskConfig {
+  /**
+   * Directories a local path must resolve inside, checked after symlinks are
+   * resolved. Omitted means unrestricted: the enforced control is the
+   * `filesystem:read` entitlement, and this is the embedder's extra fence.
+   *
+   * Honored only by the server build — the cross-platform class reaches
+   * http(s) through `FetchUrlTask` and touches no filesystem.
+   */
+  readonly roots?: readonly string[] | undefined;
+}
+
+export const fileGrep = (input: FileGrepTaskInput, config?: FileGrepTaskConfig) => {
   return new FileGrepTask(config).run(input);
 };
 
 declare module "@workglow/task-graph" {
   interface Workflow {
-    fileGrep: CreateWorkflow<FileGrepTaskInput, FileGrepTaskOutput, TaskConfig>;
+    fileGrep: CreateWorkflow<FileGrepTaskInput, FileGrepTaskOutput, FileGrepTaskConfig>;
   }
 }
 
