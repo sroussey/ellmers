@@ -12,6 +12,7 @@ import type {
 } from "@workglow/ai";
 import {
   createEstimatedOutputUsageReporter,
+  jsonModeChatParts,
   OPENAI_STREAM_USAGE_OPTIONS,
 } from "@workglow/ai/provider-utils";
 import { createPartialJsonStream } from "@workglow/util/worker";
@@ -25,35 +26,15 @@ import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
 import { mapDeepSeekUsage } from "./DeepSeek_Usage";
 
 /**
- * Build the user message for DeepSeek's JSON mode.
- *
- * DeepSeek supports only `response_format: { type: "json_object" }` — passing
- * OpenAI's `json_schema` form returns `400 This response_format type is
- * unavailable now`. That type does no schema enforcement, and the vendor
- * additionally requires the word "json" to appear in the prompt (otherwise the
- * request can come back with empty content). So the schema has to travel in the
- * prompt instead of in `response_format`, and the wording below deliberately
- * contains a lowercase "json" to satisfy that requirement.
- *
- * `StructuredGenerationTask` re-validates the parsed object against the output
- * schema, so a model that ignores the shape still fails loudly downstream
- * rather than silently returning the wrong thing.
- */
-function buildJsonPrompt(prompt: string, schema: unknown): string {
-  if (schema === undefined || schema === null) {
-    return `${prompt}\n\nRespond with valid json only: a single JSON object, no prose and no code fences.`;
-  }
-  return (
-    `${prompt}\n\nRespond with valid json only: a single JSON object conforming to this ` +
-    `JSON Schema, with no prose and no code fences.\n\nJSON Schema:\n${JSON.stringify(schema)}`
-  );
-}
-
-/**
  * Streaming run-fn for `["text.generation", "json-mode"]`. Emits
  * `object-delta` events with progressively-completed partial JSON snapshots
  * on the `object` port, ending with a `finish` event carrying the parsed
  * final object.
+ *
+ * DeepSeek supports only `response_format: { type: "json_object" }` — passing
+ * OpenAI's `json_schema` form returns `400 This response_format type is
+ * unavailable now`. {@link jsonModeChatParts} puts the schema in the prompt
+ * (and includes a lowercase "json", which DeepSeek requires).
  */
 export const DeepSeek_StructuredGeneration_Stream: AiProviderRunFn<
   StructuredGenerationTaskInput,
@@ -64,7 +45,9 @@ export const DeepSeek_StructuredGeneration_Stream: AiProviderRunFn<
   const modelName = getModelName(model);
 
   const schema = input.outputSchema ?? outputSchema;
-  const userContent = buildJsonPrompt(input.prompt, schema);
+  const { prompt: userContent, responseFormat } = jsonModeChatParts(input.prompt, schema, {
+    jsonSchemaSupported: false,
+  });
 
   // DeepSeek only attaches billed usage to the final empty-choices chunk, so
   // without a provisional estimate the CLI row stays on a static "Preparing"
@@ -77,7 +60,7 @@ export const DeepSeek_StructuredGeneration_Stream: AiProviderRunFn<
     {
       model: modelName,
       messages: [{ role: "user", content: userContent }],
-      response_format: { type: "json_object" } as never,
+      response_format: responseFormat as never,
       max_tokens: resolveMaxTokens(model, input.maxTokens),
       temperature: input.temperature,
       stream: true,

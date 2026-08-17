@@ -9,7 +9,10 @@ import type {
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
-import { createUsageSnapshotEmitter } from "@workglow/ai/provider-utils";
+import {
+  createUsageSnapshotEmitter,
+  rewriteNullableUnionsForStrict,
+} from "@workglow/ai/provider-utils";
 import { createPartialJsonStream } from "@workglow/util/worker";
 import {
   createGeminiClient,
@@ -25,9 +28,13 @@ import { mapGeminiUsage } from "./Gemini_Usage";
 /**
  * Streaming run-fn for `["text.generation", "json-mode"]`. Gemini uses
  * `responseSchema` + `responseMimeType: "application/json"` to produce
- * structured output. Per the streaming convention exception for json-mode,
- * the `finish` event MUST include the parsed `object` — it is the definitive
- * result `StructuredGenerationTask` validates against the schema.
+ * structured output. TypeBox `Type.Union([T, Null])` is rewritten to
+ * `{type: [t, "null"]}` first so a nullable field is not an `anyOf`;
+ * `sanitizeSchemaForGemini` then strips `additionalProperties`. The prompt
+ * is left as the caller wrote it — Gemini enforces via `responseSchema`.
+ * Per the streaming convention exception for json-mode, the `finish` event
+ * MUST include the parsed `object` — it is the definitive result
+ * `StructuredGenerationTask` validates against the schema.
  *
  * Thinking headroom is opt-in via `provider_config.thinking_budget` or
  * `model.effort` (see {@link resolveThinkingConfig}). Do not invent a default
@@ -45,7 +52,8 @@ export const Gemini_StructuredGeneration_Stream: AiProviderRunFn<
   const ai = await createGeminiClient(model);
 
   const schema = input.outputSchema ?? outputSchema;
-  const sanitizedSchema = sanitizeSchemaForGemini(schema as Record<string, unknown>);
+  const rewritten = rewriteNullableUnionsForStrict(schema);
+  const sanitizedSchema = sanitizeSchemaForGemini(rewritten as Record<string, unknown>);
 
   // When a budget is set (native or via model.effort), resolveThinkingConfig pads
   // maxTokens so thinking + JSON both fit; otherwise the caller's maxTokens passes through.
