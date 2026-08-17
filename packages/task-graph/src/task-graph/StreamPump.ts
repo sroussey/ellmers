@@ -11,6 +11,7 @@ import { BackpressureGate } from "../task/BackpressureGate";
 import type { ITask } from "../task/ITask";
 import type { StreamEvent, StreamMode, Usage } from "../task/StreamTypes";
 import {
+  allStreamingPortsAreBinary,
   DEFAULT_BINARY_HIGH_WATER_BYTES,
   DEFAULT_STREAM_GATE_WATCHDOG_MS,
   edgeNeedsAccumulation,
@@ -485,18 +486,13 @@ export class StreamPump {
     // output would silently drop to the finish payload ({}).
     if (!task.cacheable) return false;
 
-    const outSchema = task.outputSchema();
-    const streamingPorts = getStreamingPorts(outSchema);
-    // At least one streaming port, and EVERY one of them binary. The count is
-    // free (each binary port gets its own sink and its own CacheRef), but the
-    // binary-only half is load-bearing: `getBinaryRefSinksByPolicy` builds
-    // sinks for binary ports only, so an `append`/`object` port alongside them
-    // would have neither a sink nor — with accumulation skipped — an
-    // accumulator, and its deltas would be silently dropped. Such mixed tasks
-    // take the accumulation path unless the caller opts into `noAccumulation`,
-    // where `canStreamAllPortsToCache` sinks every delta-mode port.
-    if (streamingPorts.length === 0) return false;
-    if (!streamingPorts.every((p) => p.mode === "binary")) return false;
+    // At least one streaming port, and EVERY one of them binary — see
+    // {@link allStreamingPortsAreBinary} for why the mixed case must keep
+    // accumulating. Such tasks take the accumulation path unless the caller
+    // opts into `noAccumulation`, where `canStreamAllPortsToCache` sinks every
+    // delta-mode port. Shared with TaskRunner's standalone relaxation so the
+    // two cannot drift on the port-shape question.
+    if (!allStreamingPortsAreBinary(task.outputSchema())) return false;
 
     return !StreamPump.anyConsumerNeedsMaterialized(graph, task);
   }

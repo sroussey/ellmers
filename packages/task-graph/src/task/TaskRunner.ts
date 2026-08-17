@@ -29,6 +29,7 @@ import type { BinaryRefSink, StreamSink } from "./StreamProcessor";
 import { StreamProcessor } from "./StreamProcessor";
 import type { StreamEvent, Usage } from "./StreamTypes";
 import {
+  allStreamingPortsAreBinary,
   getBinaryPortFormat,
   getOutputStreamMode,
   getPortStreamMode,
@@ -463,6 +464,45 @@ export class TaskRunner<
                   )
                 )
               : undefined);
+
+          // The standalone counterpart of the graph's
+          // `StreamPump.canStreamBinaryToCache` relaxation: bytes that are
+          // already going to a sink do not also need an in-memory copy.
+          //
+          // `shouldAccumulate` defaults to true for a run nobody configured,
+          // and for a binary-only task with a resolved sink that default buys
+          // nothing. `StreamProcessor` tees each delta into an accumulator AND
+          // materializes the whole artifact at finish, while the value the
+          // caller receives is the sink's CacheRef either way (refs take the
+          // port slot over the accumulated payload, and a ref under the
+          // threshold is rehydrated from the cache, not from the accumulator).
+          // So the copy costs the size of the artifact per in-flight run and
+          // changes only the payload on the emitted `finish` STREAM EVENT.
+          //
+          // Three gates, each load-bearing:
+          //
+          // - `config.shouldAccumulate === undefined` — nobody decided. Every
+          //   graph path states it explicitly (StreamPump computes it from the
+          //   consumer edges), so this is exactly the run with no consumer
+          //   analysis behind it, and a caller passing `true` still gets the
+          //   materialized finish event they asked for.
+          // - `refSinks` resolved AND covering every streaming port — the
+          //   sink is what makes the deltas survive; without one, skipping
+          //   accumulation drops them silently. (The force-accumulation guard
+          //   below is the same invariant read from the other side.)
+          // - binary-only ports — see {@link allStreamingPortsAreBinary}: a
+          //   mixed task's `append`/`object` ports get no sink on this path
+          //   and would lose their deltas.
+          if (
+            isStreamable &&
+            ctx.shouldAccumulate &&
+            config.shouldAccumulate === undefined &&
+            refSinks !== undefined &&
+            allStreamingPortsAreBinary(this.task.outputSchema()) &&
+            getStreamingPorts(this.task.outputSchema()).every((p) => refSinks.has(p.port))
+          ) {
+            ctx.shouldAccumulate = false;
+          }
 
           // A streamable task with delta-mode output ports, a cache in play,
           // and no sink resolved has nowhere to route those deltas. Force
