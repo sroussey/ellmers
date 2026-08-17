@@ -292,6 +292,31 @@ describe("TurboQuantize", () => {
       expect(first16).toEqual([
         16, -22, -15, -30, -17, -17, 35, 8, -34, -13, -31, -71, 8, 27, -10, -13,
       ]);
+
+      // INT16 over the same fixture. The int8 block above pins the 255-level loading
+      // factor; nothing pinned the 65535-level one at all until this.
+      //
+      // Both literals are what make these byte sequences ENGINE-INDEPENDENT rather than
+      // coincidentally equal. `optimalLoadingFactor` used to solve both by ternary search
+      // over `quantizerDistortion`, which calls `Math.exp` ~1200 times per evaluation —
+      // and ECMAScript leaves `Math.exp` implementation-approximated. Measured, the two
+      // engines this repo runs its tests under disagree at 255 levels:
+      // 3.9206374677710735810 under V8 (vitest on Node) against 3.9206374677728756950
+      // under JSC (`bun test`), a relative 4.6e-13. That is small enough to agree on
+      // today's bytes and not small enough to guarantee it, since a code is
+      // `Math.round((clamped / scale) * max)` and a value sitting near a half-integer can
+      // flip either way. `SOLVED_LOADING_FACTORS` tabulates both so the grid is fixed.
+      //
+      // THIS TEST MUST BE RUN UNDER BOTH RUNNERS before the pin is believed —
+      // `bun scripts/test.ts unit util vitest` AND `bun scripts/test.ts unit util bun`.
+      // Passing under one says nothing about the other, which is the entire property.
+      const first8Int16 = Array.from(
+        turboQuantizeToTypedArray(v64, TensorType.INT16, {
+          seed: 42,
+          padToPowerOf2: undefined,
+        }).slice(0, 8) as Int16Array
+      );
+      expect(first8Int16).toEqual([2700, -3745, -2606, -5122, -2817, -2863, 5901, 1356]);
     });
 
     test("should reject a decode whose codes are not a Uint8Array", () => {
@@ -674,6 +699,43 @@ describe("TurboQuantize", () => {
       const b = turboQuantize(new Float32Array([1, 2, 3, 4]), { bits: 4, seed: 42 });
 
       expect(turboQuantizedCosineSimilarity(a, b)).toBe(0);
+    });
+
+    /**
+     * WHERE THE CORRECTION MAP IS ALLOWED TO GO FLAT.
+     *
+     * `invertShrinkage` has no bracket to interpolate inside once the ratio reaches the
+     * last tabulated `g`, so it returns the endpoint. That is correct only if the last knot
+     * really is `g(1) = 1`. It was not: the quadrature cannot evaluate `rho = 1` at all —
+     * the `conditionalSd` floor turns the inner conditional expectation into a step
+     * function landing on a bin boundary, so Simpson loses ~1.7% of the cross term at 1 bit
+     * while the `square` term stays exact — and the tabulated last knot came out at
+     * 0.983377 / 0.989762 / 0.994138 / 0.996838 at 1/2/3/4 bits, against a docstring that
+     * claimed 1.
+     *
+     * The consequence was a silent flat region at the top of the scale: every ratio above
+     * that knot collapsed to exactly ±1, so at 2 bits every pair from |r| >= 0.9898 upward
+     * scored identically and could not be told apart. `shrinkageAt` now returns 1 at
+     * rho = 1 analytically (the pair is degenerate there — `y = x`, so `E[Q(x)Q(y)]` IS
+     * `E[Q(x)^2]`), which moves the flat region to the endpoint itself.
+     *
+     * `0.999` is the regression pin: pre-fix it exceeded the tabulated `g(1)` at every
+     * corrected width and saturated to exactly 1, so `Math.abs(...) < 1` fails on the old
+     * behaviour at all three widths. 1 bit is excluded because `finishCosine` never routes
+     * it through the table — it uses the Goemans-Williamson closed form — so no 1-bit score
+     * moves at all; that width's endpoint is covered by the closed-form agreement test.
+     */
+    test("the shrinkage map reaches exactly 1 at rho = 1, so only |ratio| = 1 saturates", () => {
+      for (const bits of [2, 3, 4] as const) {
+        expect(invertShrinkage(bits, 1), `bits=${bits} at ratio 1`).toBe(1);
+        expect(invertShrinkage(bits, -1), `bits=${bits} at ratio -1`).toBe(-1);
+
+        const justBelow = invertShrinkage(bits, 0.999);
+        expect(
+          Math.abs(justBelow),
+          `bits=${bits} ratio 0.999 gave ${justBelow}; pre-fix this saturated to exactly 1`
+        ).toBeLessThan(1);
+      }
     });
 
     test("should give high similarity for identical vectors", () => {
@@ -1107,7 +1169,7 @@ describe("TurboQuantize", () => {
           worstAt = ratio;
         }
         expect(error, `ratio=${ratio} table=${viaTable} closed=${viaClosedForm}`).toBeLessThan(
-          1e-3
+          1.5e-4
         );
       }
 
@@ -1116,7 +1178,25 @@ describe("TurboQuantize", () => {
       expect(
         worst,
         `worst disagreement ${worst.toExponential(2)} at ratio=${worstAt}`
-      ).toBeLessThan(1e-3);
+      ).toBeLessThan(1.5e-4);
+
+      // THE ENDPOINT, PINNED ON ITS OWN. `shrinkageAt` now returns an exact 1 at rho = 1,
+      // and this is the case that regression would silently undo. Before it, the last
+      // tabulated knot fell short of 1 (0.9834 at this width), so every ratio above it had
+      // no bracket to interpolate inside and `invertShrinkage` returned exactly 1.000000 —
+      // against an exact closed-form answer of 0.999877, an error of 1.234e-4.
+      //
+      // The bound is an absolute 1e-4 rather than `toBeCloseTo(..., 4)` because the two
+      // sides now agree to 5.027e-5, which is just OUTSIDE that matcher's 5e-5 window: the
+      // residual is the 65-knot linear interpolation, not the endpoint. 1e-4 keeps ~2x
+      // headroom over the real disagreement while still failing on the pre-fix 1.234e-4,
+      // which a looser `toBeCloseTo(..., 3)` (5e-4) would have waved through.
+      const nearOne = invertShrinkage(1, 0.99);
+      const nearOneClosed = Math.cos((Math.PI * 0.01) / 2);
+      expect(
+        Math.abs(nearOne - nearOneClosed),
+        `invertShrinkage(1, 0.99) = ${nearOne} vs closed form ${nearOneClosed}`
+      ).toBeLessThan(1e-4);
 
       // Oddness is a property of the map (negating one side of the pair negates every
       // Q(y)), and the table only stores the non-negative half — so it is an invariant of
@@ -1155,12 +1235,15 @@ describe("TurboQuantize", () => {
      * 1 bit is not swept here: its map is the closed form `cos(pi*(1 - r)/2)`, monotone by
      * inspection over [-1, 1], and it is covered end-to-end by the fidelity case below.
      *
-     * The map SATURATES at the ends — a ratio at or past the tabulated `g(1)` has no
-     * bracket to interpolate inside and returns exactly ±1 (2 bits from |r| >= 0.99,
-     * 3 bits from 0.995, 4 bits not within this grid). That is a documented clamp, and a
-     * flat region ties scores rather than inverting them, which is exactly the distinction
-     * the doc claim rests on. So: never decreasing anywhere, and strictly increasing
-     * wherever the value is not pinned to an endpoint.
+     * The map SATURATES ONLY AT |r| = 1 now. `shrinkageAt` returns an exact 1 at rho = 1,
+     * so the last knot IS 1 and the only ratios with no bracket to interpolate inside are
+     * the endpoints themselves. (Before that, the last knot fell short — 0.9898 at 2 bits,
+     * 0.9941 at 3, 0.9968 at 4 — so the map went flat from |r| >= 0.99 / 0.995 upwards and
+     * a whole band of near-identical pairs tied at exactly ±1.) A flat region ties scores
+     * rather than inverting them, which is the distinction the doc claim rests on, so the
+     * assertion is unchanged: never decreasing anywhere, and strictly increasing wherever
+     * the value is not pinned to an endpoint. What changed is how little of the range is
+     * pinned.
      */
     test("the shrinkage correction is strictly monotone at every corrected width", () => {
       const points = 401;
@@ -1465,6 +1548,64 @@ describe("TurboQuantize", () => {
       expect(() => turboPrepareQuery(viaJson as unknown as typeof good)).toThrow(
         "must be a Uint8Array"
       );
+    });
+
+    /**
+     * THE PRE-FIX BEHAVIOUR WAS NaN, WHICH IS WORSE THAN A THROW.
+     *
+     * The three compatibility scalars — `(bits, seed, dimensions)` — are re-checked per
+     * candidate, but they say nothing about the query's COORDINATES, and the dot product is
+     * bounded by the CANDIDATE's `paddedDimensions` rather than by `query.values.length`.
+     * So a prepared query whose `values` cannot span the candidate reads past its own end.
+     * Every one of those reads is `undefined`, `undefined * x` is NaN, NaN accumulates
+     * through the whole dot product, and `finishCosine` propagates it: `Math.max(-1,
+     * Math.min(1, NaN))` is NaN, and `invertShrinkage` compares NaN against every knot and
+     * returns from whichever branch it falls out of. The score is NaN.
+     *
+     * Nothing catches that downstream. A ranking `sort((a, b) => scores[b] - scores[a])`
+     * over NaN comparator results is implementation-defined — V8 and JSC need not even
+     * agree — so the caller gets an arbitrarily ordered shortlist with no error raised
+     * anywhere, at any layer. A throw naming the two counts is strictly better than a
+     * plausible-looking wrong answer.
+     *
+     * `dimensions: 768` pads to 1024, so a 512-long `values` is short by half. The
+     * `Array.from(...)` case is the shape a prepared query takes through JSON — a plain
+     * array, whose `length` would satisfy a length-only check while `values[i]` still works
+     * — which is why the type check comes first and separately.
+     */
+    test("rejects a prepared query whose values cannot span the candidate", () => {
+      const d = 768;
+      const rnd = makeRandom(31337);
+      const v = new Float32Array(d);
+      for (let i = 0; i < d; i++) v[i] = rnd() - 0.5;
+
+      const candidate = turboQuantize(v, { bits: 4, seed: 42 });
+      const prepared = turboPrepareQuery(candidate);
+      expect(candidate.paddedDimensions).toBe(1024);
+
+      // Hand-built, as a caller reconstructing one from persisted fields would produce.
+      const tooShort = {
+        bits: 4,
+        seed: 42,
+        dimensions: d,
+        values: new Float64Array(512),
+        codeNorm: 1,
+      };
+      expect(() => turboPreparedCosineSimilarity(tooShort, candidate)).toThrow(
+        /covers 512 padded coordinates/
+      );
+
+      const viaJson = { ...prepared, values: Array.from(prepared.values) };
+      expect(() =>
+        turboPreparedCosineSimilarity(viaJson as unknown as typeof prepared, candidate)
+      ).toThrow(/must be a Float64Array/);
+
+      const negativeNorm = { ...prepared, codeNorm: -1 };
+      expect(() => turboPreparedCosineSimilarity(negativeNorm, candidate)).toThrow(/non-negative/);
+
+      // The real prepared query still scores ~1 against its own candidate, so the three
+      // throws above are the guard firing and not the fixture being broken outright.
+      expect(turboPreparedCosineSimilarity(prepared, candidate)).toBeCloseTo(1, 10);
     });
   });
 
