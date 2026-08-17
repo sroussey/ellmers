@@ -12,8 +12,9 @@ import {
   TaskInvalidInputError,
   Workflow,
 } from "@workglow/task-graph";
+import { SECURITY_LIMITS } from "@workglow/util";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import { assertSafeRegexPattern, escapeRegExp } from "../util/regexSafety";
+import { compileSafeRegex, escapeRegExp } from "../util/regexSafety";
 import { linesFromText } from "../util/textLines";
 import { FetchUrlTask } from "./FetchUrlTask";
 
@@ -111,11 +112,24 @@ const outputSchema = {
 export type FileSedTaskInput = FromSchema<typeof inputSchema>;
 export type FileSedTaskOutput = FromSchema<typeof outputSchema>;
 
-type SedOptions = Omit<FileSedTaskInput, "url" | "pattern" | "replacement">;
+export type SedOptions = Omit<FileSedTaskInput, "url" | "pattern" | "replacement">;
 
-interface LineSubstitution {
-  readonly text: string;
-  readonly replacements: number;
+/** One batch of substituted lines, positionally aligned with the input. */
+export interface SedBatchResult {
+  readonly texts: readonly string[];
+  readonly counts: readonly number[];
+}
+
+/**
+ * Substitutes over a batch of lines at once. Batching is what makes an
+ * interruptible substituter affordable — see `createBoundedRegexReplacer` on
+ * the server build, whose per-call cost only amortizes over a batch.
+ *
+ * `budget` is how many replacements the whole run may still make, so a global
+ * substitution can be cut mid-line and the rest of the document copied verbatim.
+ */
+export interface SedLineSubstituter {
+  readonly substituteBatch: (texts: readonly string[], budget: number) => SedBatchResult;
 }
 
 function validateOptions(options: SedOptions): void {
@@ -136,40 +150,41 @@ function validateOptions(options: SedOptions): void {
   }
 }
 
-/**
- * Builds the per-line substitution. `budget` caps how many replacements the
- * whole run may still make, so a global substitution can be cut mid-line and
- * the rest of the document copied verbatim.
- */
-function createSubstituter(
-  pattern: string,
-  replacement: string,
-  options: SedOptions
-): (text: string, budget: number) => LineSubstitution {
+/** Compiles the substitution pattern, screening it for ReDoS shapes first. */
+export function createSedRegex(pattern: string, options: SedOptions): RegExp {
   const flags = `${options.global ? "g" : ""}${options.ignoreCase ? "i" : ""}`;
-
-  let regex: RegExp;
 
   if (options.fixedString) {
     if (pattern.length === 0) {
       throw new TaskInvalidInputError("pattern must not be empty when fixedString is set");
     }
-    regex = new RegExp(escapeRegExp(pattern), flags);
-  } else {
-    assertSafeRegexPattern(pattern);
-    try {
-      regex = new RegExp(pattern, flags);
-    } catch {
-      throw new TaskInvalidInputError(`Invalid regular expression: ${pattern}`);
-    }
+    return new RegExp(escapeRegExp(pattern), flags);
   }
 
-  // A literal replacement must not be re-read for `$1` / `$&` expansion.
-  const substitute: (args: unknown[]) => string = options.fixedString
-    ? () => replacement
-    : (args) => expandReplacement(replacement, args);
+  return compileSafeRegex(pattern, flags);
+}
 
-  return (text, budget) => {
+/**
+ * The expansion `String.replace` would do itself if it were handed a string.
+ * A literal replacement must not be re-read for `$1` / `$&` expansion.
+ */
+export function createSedExpander(
+  replacement: string,
+  options: SedOptions
+): (args: unknown[]) => string {
+  return options.fixedString ? () => replacement : (args) => expandReplacement(replacement, args);
+}
+
+/** Unbounded substituter; the server build overrides it with a bounded one. */
+export function createSubstituter(
+  pattern: string,
+  replacement: string,
+  options: SedOptions
+): SedLineSubstituter {
+  const regex = createSedRegex(pattern, options);
+  const substitute = createSedExpander(replacement, options);
+
+  const substituteLine = (text: string, budget: number): [string, number] => {
     let replacements = 0;
 
     const result = text.replace(regex, (...args: unknown[]): string => {
@@ -180,7 +195,30 @@ function createSubstituter(
       return substitute(args);
     });
 
-    return { text: result, replacements };
+    return [result, replacements];
+  };
+
+  return {
+    substituteBatch: (lines, budget) => {
+      const texts: string[] = [];
+      const counts: number[] = [];
+
+      let remaining = budget;
+
+      for (const line of lines) {
+        if (remaining <= 0) {
+          texts.push(line);
+          counts.push(0);
+          continue;
+        }
+        const [text, replacements] = substituteLine(line, remaining);
+        texts.push(text);
+        counts.push(replacements);
+        remaining -= replacements;
+      }
+
+      return { texts, counts };
+    },
   };
 }
 
@@ -188,7 +226,7 @@ function createSubstituter(
  * `String.replace` only expands `$n` when handed a string, and a callback is
  * what bounds the substitution count — so the expansion is done here instead.
  */
-function expandReplacement(replacement: string, args: unknown[]): string {
+export function expandReplacement(replacement: string, args: unknown[]): string {
   if (!replacement.includes("$")) {
     return replacement;
   }
@@ -272,16 +310,25 @@ function expandReplacement(replacement: string, args: unknown[]): string {
   return out;
 }
 
+/**
+ * Substitutes over `lines` in batches of {@link SECURITY_LIMITS.regexMatchBatchLines}.
+ *
+ * Abort is checked once per BATCH, not per line: a single `String.replace` is
+ * uninterruptible, so a per-line check bought nothing a hostile pattern could
+ * not ignore. The granularity that matters is therefore the batch, and the
+ * substituter itself bounds how long one batch may run.
+ */
 export async function sedLines(
   lines: AsyncIterable<string>,
   pattern: string,
   replacement: string,
   options: SedOptions = {},
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  substituter?: SedLineSubstituter | undefined
 ): Promise<FileSedTaskOutput> {
   validateOptions(options);
 
-  const substituter = createSubstituter(pattern, replacement, options);
+  const lineSubstituter = substituter ?? createSubstituter(pattern, replacement, options);
 
   const out: string[] = [];
 
@@ -292,43 +339,67 @@ export async function sedLines(
   let outputLines = 0;
   let outputChars = 0;
 
-  for await (const text of lines) {
-    if (signal?.aborted) {
-      throw new TaskAbortedError("Task aborted");
+  const iterator = lines[Symbol.asyncIterator]();
+  const batch: string[] = [];
+  let exhausted = false;
+
+  try {
+    outer: while (!exhausted) {
+      batch.length = 0;
+      while (batch.length < SECURITY_LIMITS.regexMatchBatchLines) {
+        const next = await iterator.next();
+        if (next.done === true) {
+          exhausted = true;
+          break;
+        }
+        batch.push(next.value);
+      }
+
+      if (batch.length === 0) break;
+
+      if (signal?.aborted) {
+        throw new TaskAbortedError("Task aborted");
+      }
+
+      const budget =
+        options.maxReplacements === undefined
+          ? Number.POSITIVE_INFINITY
+          : options.maxReplacements - replacementCount;
+
+      const { texts, counts } = lineSubstituter.substituteBatch(batch, budget);
+
+      for (let i = 0; i < batch.length; i++) {
+        const replaced = texts[i]!;
+        const replacements = counts[i]!;
+
+        replacementCount += replacements;
+        if (replacements > 0) {
+          linesChanged++;
+        }
+
+        if (options.onlyChangedLines && replacements === 0) {
+          continue;
+        }
+
+        if (options.maxOutputLines !== undefined && outputLines >= options.maxOutputLines) {
+          truncated = true;
+          break outer;
+        }
+
+        const chars = replaced.length + 1;
+
+        if (options.maxOutputChars !== undefined && outputChars + chars > options.maxOutputChars) {
+          truncated = true;
+          break outer;
+        }
+
+        out.push(replaced);
+        outputLines++;
+        outputChars += chars;
+      }
     }
-
-    const budget =
-      options.maxReplacements === undefined
-        ? Number.POSITIVE_INFINITY
-        : options.maxReplacements - replacementCount;
-
-    const { text: replaced, replacements } =
-      budget > 0 ? substituter(text, budget) : { text, replacements: 0 };
-
-    replacementCount += replacements;
-    if (replacements > 0) {
-      linesChanged++;
-    }
-
-    if (options.onlyChangedLines && replacements === 0) {
-      continue;
-    }
-
-    if (options.maxOutputLines !== undefined && outputLines >= options.maxOutputLines) {
-      truncated = true;
-      break;
-    }
-
-    const chars = replaced.length + 1;
-
-    if (options.maxOutputChars !== undefined && outputChars + chars > options.maxOutputChars) {
-      truncated = true;
-      break;
-    }
-
-    out.push(replaced);
-    outputLines++;
-    outputChars += chars;
+  } finally {
+    await iterator.return?.();
   }
 
   return {
@@ -361,6 +432,20 @@ export class FileSedTask extends Task<FileSedTaskInput, FileSedTaskOutput, TaskC
     return outputSchema as DataPortSchema;
   }
 
+  /**
+   * Seam for the substituter the scan runs. The server build overrides it to
+   * bound matching with an interruptible time budget; there is no `vm` in a
+   * browser, so a hostile pattern there still blocks that tab (a tab — not the
+   * process hosting a local API).
+   */
+  protected createSubstituter(
+    pattern: string,
+    replacement: string,
+    options: SedOptions
+  ): SedLineSubstituter {
+    return createSubstituter(pattern, replacement, options);
+  }
+
   override async execute(
     input: FileSedTaskInput,
     context: IExecuteContext
@@ -370,6 +455,10 @@ export class FileSedTask extends Task<FileSedTaskInput, FileSedTaskOutput, TaskC
     if (context.signal.aborted) {
       throw new TaskAbortedError("Task aborted");
     }
+
+    // Compiled before the fetch so a rejected pattern costs no network call.
+    const substituter = this.createSubstituter(pattern, replacement, options);
+
     await context.updateProgress(0, "Fetching file");
 
     const fetchTask = context.own(new FetchUrlTask({ queue: false }));
@@ -388,7 +477,8 @@ export class FileSedTask extends Task<FileSedTaskInput, FileSedTaskOutput, TaskC
       pattern,
       replacement,
       options,
-      context.signal
+      context.signal,
+      substituter
     );
 
     if (context.signal.aborted) {

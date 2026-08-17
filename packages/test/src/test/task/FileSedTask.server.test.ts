@@ -84,4 +84,46 @@ describe("FileSedTask (server - local files)", () => {
       }).run()
     ).rejects.toThrow();
   });
+
+  /**
+   * `String.replace` backtracks exactly like `test` does, and the shape screen
+   * is a heuristic rather than a decision procedure — so the enforced bound is
+   * the wall-clock budget the substitution runs under.
+   *
+   * `(\w|\d)*$` bypasses the screen: its branches overlap on the digits both
+   * accept, which comparing branch text cannot see. Measured here: 1 ms at
+   * n=16, 25 ms at n=20, 392 ms at n=24, 1538 ms at n=26 — doubling per added
+   * character, so the n=40 below is on the order of 2^40 steps. Unbounded it
+   * blocks the event loop with no abort able to reach it; the run must instead
+   * be REJECTED, and quickly.
+   */
+  test("a catastrophic pattern over a local file fails on the budget", async () => {
+    const filePath = join(testDir, "evil.txt");
+    writeFileSync(filePath, "1".repeat(40) + "!\n", "utf-8");
+
+    const started = Date.now();
+    await expect(
+      new FileSedTask({
+        defaults: { url: filePath, pattern: "(\\w|\\d)*$", replacement: "X" },
+      }).run()
+    ).rejects.toThrow(/budget/);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  test("the budget does not disturb an ordinary substitution", async () => {
+    const filePath = join(testDir, "groups.txt");
+    writeFileSync(filePath, "2026-08-17\nname: ada\n", "utf-8");
+
+    const result = await new FileSedTask({
+      defaults: {
+        url: filePath,
+        pattern: "(\\d{4})-(\\d{2})-(\\d{2})|name: (?<who>\\w+)",
+        replacement: "[$3/$2/$1 $<who> $&]",
+        global: true,
+      },
+    }).run();
+
+    expect(result.replacementCount).toBe(2);
+    expect(result.text).toBe("[17/08/2026  2026-08-17]\n[// ada name: ada]\n");
+  });
 });
