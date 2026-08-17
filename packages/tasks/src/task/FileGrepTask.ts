@@ -539,7 +539,11 @@ export async function grepLines(
  * Works in all environments (browser, Node.js, Bun) by using fetch API.
  * For server-only filesystem path access, see FileGrepTask.server.
  */
-export class FileGrepTask extends Task<FileGrepTaskInput, FileGrepTaskOutput, TaskConfig> {
+export class FileGrepTask<Config extends TaskConfig = TaskConfig> extends Task<
+  FileGrepTaskInput,
+  FileGrepTaskOutput,
+  Config
+> {
   public static override type = "FileGrepTask";
   public static override category = "Document";
   public static override title = "File Grep";
