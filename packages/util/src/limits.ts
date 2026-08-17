@@ -44,6 +44,8 @@ export const DEFAULT_LIMITS = {
   structuredGenMaxRetries: 2,
   /** Default absolute TTL (ms) for OtpPassphraseCache. */
   otpCacheHardTtlMs: 6 * 60 * 60 * 1000,
+  /** Default wall-clock budget (ms) for a whole FileGrepTask scan. */
+  grepMaxSearchMs: 30_000,
 } as const satisfies Record<string, number>;
 
 /**
@@ -66,4 +68,13 @@ export const SECURITY_LIMITS = {
   safeFetchMaxRedirectHops: 20,
   /** Max accepted length (characters) of an encoded tabular storage pagination cursor. */
   tabularMaxCursorLength: 8 * 1024,
+  /** Lines matched per interruptible regex batch (ReDoS defence, see below). */
+  regexMatchBatchLines: 512,
+  /**
+   * Wall-clock budget (ms) for one interruptible regex batch. A shape screen
+   * cannot decide backtracking, so this is the bound that is actually enforced:
+   * matching runs where it can be interrupted, and a batch that overruns fails
+   * the task instead of blocking forever.
+   */
+  regexMatchBatchTimeoutMs: 1_000,
 } as const satisfies Record<string, number>;

@@ -12,6 +12,7 @@ import "./util/SafeFetch.server";
 
 export * from "./common";
 export * from "./task/FileGrepTask.server";
+export { grepLines, linesFromText } from "./task/FileGrepTask";
 export * from "./task/FileLoaderTask.server";
 export * from "./task/FileSedTask.server";
 

@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { FileGrepTask, registerSafeFetch, type SafeFetchFn } from "@workglow/tasks";
+import { TaskAbortedError } from "@workglow/task-graph";
+import { FileGrepTask, grepLines, registerSafeFetch, type SafeFetchFn } from "@workglow/tasks";
 import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -574,6 +575,69 @@ describe("FileGrepTask", () => {
         lines: [{ line: 2, text: "two foo", match: true }],
       },
     ]);
+  });
+
+  test("rejects a catastrophic pattern before reading the document", async () => {
+    await expect(
+      new FileGrepTask({
+        defaults: { url: "https://example.com/log.txt", pattern: "(a+)+$" },
+      }).run()
+    ).rejects.toThrow(/nested quantifiers/);
+
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  /**
+   * `((a)*)*$` walks straight past the shape screen — the screen only looks for
+   * a quantifier before the group's first `)`, and here the inner one sits
+   * behind a nested group — and it is exponential all the same: against
+   * `"a".repeat(n) + "!"` V8 takes 8_234 ms at n=26, doubling per added
+   * character. At n=40 that is roughly 2^40 backtracking steps, on the order of
+   * days. Unbounded, this run never returns and no abort can interrupt the one
+   * synchronous `test()` it is stuck inside; the match budget is what turns it
+   * into a rejection. This is exactly why the screen is documented as a
+   * heuristic and the budget as the enforced bound.
+   */
+  test("a guard-bypassing pattern fails on the match budget instead of hanging", async () => {
+    mockText("a".repeat(40) + "!");
+
+    const started = Date.now();
+    await expect(
+      new FileGrepTask({
+        defaults: { url: "https://example.com/log.txt", pattern: "((a)*)*$" },
+      }).run()
+    ).rejects.toThrow(/budget/);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  /**
+   * Pre-fix the abort check ran between lines, which bought nothing: a single
+   * `regex.test()` is uninterruptible, so a hostile line blocked forever with
+   * the check sitting unreachable above it. It now runs between batches, and
+   * how long one batch may run is what the matcher's budget bounds.
+   *
+   * Driven through `grepLines` rather than the task because an async generator
+   * resolves on the MICROTASK queue: a purely in-memory source starves the
+   * timer phase entirely, so a `setTimeout` abort would not fire until the scan
+   * had already finished. The source below yields to the macrotask queue
+   * periodically, which is what a real file stream does on every read.
+   */
+  test("aborts between batches", async () => {
+    const controller = new AbortController();
+
+    async function* source(): AsyncGenerator<string> {
+      for (let i = 0; i < 200_000; i++) {
+        if (i % 1_000 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+        yield "foo";
+      }
+    }
+
+    const started = Date.now();
+    const running = grepLines(source(), "foo", { countOnly: true }, controller.signal);
+    setTimeout(() => controller.abort(), 5);
+
+    await expect(running).rejects.toThrow(TaskAbortedError);
+    expect(Date.now() - started).toBeLessThan(5_000);
   });
 
   test("empty file has no matches", async () => {
