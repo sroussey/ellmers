@@ -46,6 +46,8 @@ export const DEFAULT_LIMITS = {
   otpCacheHardTtlMs: 6 * 60 * 60 * 1000,
   /** Default wall-clock budget (ms) for a whole FileGrepTask scan. */
   grepMaxSearchMs: 30_000,
+  /** Max characters of one FileGrepTask line; the rest of that physical line is discarded. */
+  grepMaxLineChars: 64_000,
 } as const satisfies Record<string, number>;
 
 /**

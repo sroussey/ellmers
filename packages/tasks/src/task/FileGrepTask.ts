@@ -367,6 +367,7 @@ export async function grepLines(
 
   const iterator = lines[Symbol.asyncIterator]();
   const deadline = Date.now() + DEFAULT_LIMITS.grepMaxSearchMs;
+  const maxLineChars = DEFAULT_LIMITS.grepMaxLineChars;
   const batch: string[] = [];
   let exhausted = false;
 
@@ -379,7 +380,15 @@ export async function grepLines(
           exhausted = true;
           break;
         }
-        batch.push(next.value);
+        // `>=` rather than `>`: conservative by one character, and it lets the
+        // server's line splitter signal truncation without a side channel.
+        const text = next.value;
+        if (text.length >= maxLineChars) {
+          truncated = true;
+          batch.push(text.slice(0, maxLineChars));
+        } else {
+          batch.push(text);
+        }
       }
 
       if (batch.length === 0) break;

@@ -6,7 +6,7 @@
 
 import { TaskEntitlementError, TaskInvalidInputError } from "@workglow/task-graph";
 import { FileGrepTask, registerSafeFetch, type SafeFetchFn } from "@workglow/tasks";
-import { setLogger } from "@workglow/util";
+import { DEFAULT_LIMITS, setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
 import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
@@ -86,6 +86,51 @@ describe("FileGrepTask (server - local files)", () => {
         defaults: { url: filePath, pattern: "foo" },
       }).run()
     ).rejects.toThrow();
+  });
+
+  /**
+   * Reproduced pre-fix with a 640 MB newline-free stream: `createInterface`
+   * accumulated the whole thing and threw `RangeError: Invalid string length`
+   * from a stream `'data'` listener. That surfaces as an `uncaughtException`,
+   * not an iterator rejection, so `grepFile`'s try/catch never saw it and the
+   * process died. 1 MB here is enough to exercise the cap without the memory.
+   */
+  test("a file with no line terminator does not crash the process", async () => {
+    const filePath = join(testDir, "oneline.bin");
+    writeFileSync(filePath, "x".repeat(1_000_000), "utf-8");
+
+    const uncaught: unknown[] = [];
+    const spy = (err: unknown): void => {
+      uncaught.push(err);
+    };
+    process.on("uncaughtException", spy);
+
+    try {
+      const result = await new FileGrepTask({
+        defaults: { url: filePath, pattern: "x" },
+      }).run();
+
+      expect(uncaught).toEqual([]);
+      expect(result.matchCount).toBe(1);
+      expect(result.groups[0].lines[0].text).toHaveLength(DEFAULT_LIMITS.grepMaxLineChars);
+    } finally {
+      process.off("uncaughtException", spy);
+    }
+  });
+
+  test("caps an over-long line and reports truncation", async () => {
+    const filePath = join(testDir, "long.txt");
+    const long = "y".repeat(DEFAULT_LIMITS.grepMaxLineChars + 5_000);
+    writeFileSync(filePath, `short\n${long}\ntail foo\n`, "utf-8");
+
+    const result = await new FileGrepTask({
+      defaults: { url: filePath, pattern: "y" },
+    }).run();
+
+    expect(result.truncated).toBe(true);
+    const matched = result.groups.flatMap((g) => g.lines.filter((l) => l.match));
+    expect(matched).toHaveLength(1);
+    expect(matched[0].text).toHaveLength(DEFAULT_LIMITS.grepMaxLineChars);
   });
 
   test("refuses a path outside the configured roots", async () => {
