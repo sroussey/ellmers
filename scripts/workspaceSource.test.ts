@@ -8,7 +8,13 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SOURCE_STUB_SENTINEL, stubSpecsFor, type PackageManifest } from "./lib/sourceStubs";
+import {
+  containsSourceStubSentinel,
+  probeSourceStub,
+  SOURCE_STUB_SENTINEL,
+  stubSpecsFor,
+  type PackageManifest,
+} from "./lib/sourceStubs";
 import { ROOT } from "./lib/testDiscovery";
 import { coverageIncludeGlobs, workspaceGroups } from "./lib/workspaceGroups";
 import type {
@@ -20,11 +26,14 @@ import type {
 } from "./lib/workspaceSource";
 import {
   assertNoSourceStubs,
+  DIST_STUB_GUARD_PLUGIN_NAME,
   distToSource,
+  guardedDistTargets,
   listWorkspacePackages,
   ownerOf,
   resolveTestTarget,
   resolveWorkspaceSourceId,
+  sourceStubGuardPlugin,
   TEST_TARGETS,
   unresolvedWorkspaceMessage,
   WORKSPACE_SOURCE_PLUGIN_NAME,
@@ -135,8 +144,31 @@ describe("workspace source resolution", () => {
         default: { test?: { coverage?: { include?: string[] } } };
       };
       expect(mod.default.test?.coverage?.include).toEqual(
-        coverageIncludeGlobs(workspaceGroups(ROOT))
+        coverageIncludeGlobs(ROOT, workspaceGroups(ROOT))
       );
+    });
+
+    it("states the denominator in absolute globs", async () => {
+      // A `--project` run — every package's own `test` script, and
+      // `turbo run test -- --coverage` — starts in a package directory, so a
+      // relative pattern's meaning depends on which directory the coverage
+      // provider resolves it against. Measured on `@vitest/coverage-v8` 4.1.10
+      // the two forms agree, so anchoring is defensive rather than a fix for an
+      // observed miss; it is worth pinning anyway because a denominator that
+      // silently loses its untested half reads as a BETTER number rather than
+      // as an error. The two halves must agree: a relative `/src/**` exclusion
+      // subtracts from nothing once the include is absolute.
+      const mod = (await import("../vitest.config.ts")) as {
+        default: { test?: { coverage?: { include?: string[]; exclude?: string[] } } };
+      };
+      const include = mod.default.test?.coverage?.include ?? [];
+      expect(include.length).toBeGreaterThan(0);
+      expect(include.filter((glob) => !glob.startsWith("/"))).toEqual([]);
+      const packageExcludes = (mod.default.test?.coverage?.exclude ?? []).filter((glob) =>
+        glob.endsWith("/src/**")
+      );
+      expect(packageExcludes.length).toBeGreaterThan(0);
+      expect(packageExcludes.filter((glob) => !glob.startsWith("/"))).toEqual([]);
     });
 
     /**
@@ -210,7 +242,7 @@ describe("workspace source resolution", () => {
 
     it("keeps packages that publish nothing out of the denominator", async () => {
       const exclude = await coverageExclude();
-      expect(exclude).toContain("examples/web/src/**");
+      expect(exclude).toContain(join(ROOT, "examples/web/src/**"));
 
       // Pinned to the PROPERTY that justifies the exclusion, re-read from the
       // manifest, so the exception dies with its reason: publish `@workglow/web`
@@ -229,7 +261,7 @@ describe("workspace source resolution", () => {
       const exclude = await coverageExclude();
       const wronglyExcluded = packages
         .filter((pkg) => pkg.publishes)
-        .map((pkg) => `${pkg.dir.slice(ROOT.length + 1)}/src/**`)
+        .map((pkg) => `${pkg.dir}/src/**`)
         .filter((glob) => exclude.includes(glob));
       expect(wronglyExcluded).toEqual([]);
     });
@@ -399,6 +431,9 @@ describe("workspace source resolution", () => {
     const carriesPlugin = (project: ConfiguredProject): boolean =>
       (project.plugins ?? []).some((plugin) => plugin?.name === WORKSPACE_SOURCE_PLUGIN_NAME);
 
+    const carriesGuard = (project: ConfiguredProject): boolean =>
+      (project.plugins ?? []).some((plugin) => plugin?.name === DIST_STUB_GUARD_PLUGIN_NAME);
+
     it("attaches the source rewrite to every project under the default target", async () => {
       const projects = await projectsForTarget("source");
       expect(projects.filter((project) => !carriesPlugin(project))).toEqual([]);
@@ -407,6 +442,52 @@ describe("workspace source resolution", () => {
     it("attaches it to no project when the target is dist", async () => {
       const projects = await projectsForTarget("dist");
       expect(projects.filter(carriesPlugin)).toEqual([]);
+    });
+
+    it("loads under the dist target without probing the tree for stubs", async () => {
+      /**
+       * The stub check used to run as a MODULE-LEVEL side effect of loading the
+       * config, and this very describe imports the config with the target
+       * stubbed to `dist`. `scripts/*.test.ts` is unit-tier, so on a
+       * `use-source` tree an ordinary `bun run test:vitest:unit` died right
+       * here, advising the developer to run `use-dist` and undo the documented
+       * no-build dev mode the run had never left. CI never saw it because CI
+       * trees are really built.
+       *
+       * Mocked rather than driven off a genuinely stubbed tree: stubbing all 41
+       * workspaces from a test would write into every package's `dist`, and the
+       * assertion that matters is not "no stubs were found" but "the config
+       * never asked". A throwing spy makes any probe at import time fatal.
+       */
+      vi.resetModules();
+      const probe = vi.fn(() => {
+        throw new Error("assertNoSourceStubs must not run at config load");
+      });
+      vi.doMock("./lib/workspaceSource.ts", async () => {
+        const actual = await vi.importActual<typeof import("./lib/workspaceSource")>(
+          "./lib/workspaceSource.ts"
+        );
+        return { ...actual, assertNoSourceStubs: probe };
+      });
+      try {
+        const projects = await projectsForTarget("dist");
+        expect(projects.length).toBeGreaterThan(0);
+        expect(probe).not.toHaveBeenCalled();
+      } finally {
+        vi.doUnmock("./lib/workspaceSource.ts");
+        vi.resetModules();
+      }
+    });
+
+    it("attaches the stub guard under dist, and to no project under source", async () => {
+      // The guard replaces the import-time scan, so it has to reach every
+      // project: vitest resolves each project's config at startup, which is
+      // what makes a hook fire before any suite can report a pass over stubs.
+      const dist = await projectsForTarget("dist");
+      expect(dist.filter((project) => !carriesGuard(project))).toEqual([]);
+
+      const source = await projectsForTarget("source");
+      expect(source.filter(carriesGuard)).toEqual([]);
     });
 
     it("attaches one plugin instance to every project", async () => {
@@ -433,6 +514,7 @@ describe("workspace source resolution", () => {
             name: "@workglow/ai",
             dir: "/repo/packages/ai",
             exports: undefined,
+            bin: undefined,
             dependencies: new Set(),
             publishes: true,
           },
@@ -473,6 +555,7 @@ describe("workspace source resolution", () => {
       name: "@workglow/ai",
       dir: "/repo/packages/ai",
       exports: { ".": "./dist/node.js", "./worker": "./dist/worker.js" },
+      bin: undefined,
       dependencies: new Set<string>(),
       publishes: true,
     };
@@ -480,6 +563,7 @@ describe("workspace source resolution", () => {
       name: "@workglow/huggingface-transformers",
       dir: "/repo/providers/hft",
       exports: { "./ai": "./dist/ai.js" },
+      bin: undefined,
       dependencies: new Set(["@workglow/ai"]),
       publishes: true,
     };
@@ -646,6 +730,7 @@ describe("workspace source resolution", () => {
           name: "@workglow/fixture",
           dir,
           exports: Object.fromEntries(Object.keys(entries).map((t, i) => [i === 0 ? "." : t, t])),
+          bin: undefined,
           dependencies: new Set<string>(),
           publishes: true,
         },
@@ -703,6 +788,103 @@ describe("workspace source resolution", () => {
         }
         expect(message).toContain(a.files["./dist/node.js"]!);
         expect(message).toContain(b.files["./dist/browser.js"]!);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("guards every entry `use-source` writes a stub into", () => {
+      /**
+       * The guard read only `exports`, but `use-source` also stubs `bin`
+       * targets — and two of those are named by no export entry at all:
+       * `examples/eval` declares NO `exports`, only a `bin`, and
+       * `examples/cli`'s `bin` is not among its export targets. So `use-source`
+       * stubbed two published entries the dist guard never looked at, while
+       * `publish-workspaces.ts` (which walks the whole `dist` tree) did refuse
+       * them.
+       *
+       * Derived from `stubSpecsFor`, the same enumeration `use-source` stubs
+       * from, so the two cannot drift into disagreeing about what a package's
+       * entries are.
+       */
+      const unguarded: string[] = [];
+      for (const pkg of packages) {
+        const manifest = JSON.parse(
+          readFileSync(join(pkg.dir, "package.json"), "utf8")
+        ) as PackageManifest;
+        const guarded = new Set(guardedDistTargets(pkg));
+        for (const spec of stubSpecsFor(manifest)) {
+          if (!guarded.has(spec.target)) unguarded.push(`${pkg.name} ${spec.target}`);
+        }
+      }
+      expect(unguarded).toEqual([]);
+    });
+
+    it("treats an entry it cannot read as unproven, not as a real bundle", () => {
+      /**
+       * The two probe callers fail safe in OPPOSITE directions: stub removal
+       * must not delete what it could not read, while this guard must not
+       * accept it as a built bundle.
+       *
+       * A DIRECTORY named like a dist entry reproduces that without `chmod`,
+       * which proves nothing when the suite runs as root (as it does in a
+       * container): `open` succeeds and `read` fails EISDIR.
+       */
+      const root = mkdtempSync(join(tmpdir(), "workglow-stubs-"));
+      try {
+        mkdirSync(join(root, "dist", "node.js"), { recursive: true });
+        const pkg: WorkspacePackage = {
+          name: "@workglow/fixture",
+          dir: root,
+          exports: { ".": "./dist/node.js" },
+          bin: undefined,
+          dependencies: new Set<string>(),
+          publishes: true,
+        };
+        expect(() => assertNoSourceStubs([pkg])).toThrow("could not be read");
+        expect(() => assertNoSourceStubs([pkg])).toThrow(join(root, "dist", "node.js"));
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("still answers `false` for an unreadable entry on the removal path", () => {
+      // The opposite safe direction, pinned so a later "unreadable is
+      // suspicious" change cannot start DELETING artifacts it never read.
+      const root = mkdtempSync(join(tmpdir(), "workglow-stubs-"));
+      try {
+        mkdirSync(join(root, "node.js"), { recursive: true });
+        expect(containsSourceStubSentinel(join(root, "node.js"))).toBe(false);
+        expect(probeSourceStub(join(root, "node.js"))).toBe("unreadable");
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("still kills the run through the guard plugin, once per scan", () => {
+      /**
+       * The assertion moved out of `vitest.config.ts`'s module scope and into a
+       * hook, so the property that matters — a stubbed tree cannot run under
+       * the dist target — now depends on the plugin. `configResolved` fires
+       * once per project, so the verdict is computed once and re-thrown: one
+       * scan of the tree, and every project still fatal.
+       */
+      const root = mkdtempSync(join(tmpdir(), "workglow-stubs-"));
+      try {
+        const { pkg, files } = fixturePackage(root, {
+          "./dist/node.js": `// ${SOURCE_STUB_SENTINEL}\nexport * from "../src/node.ts";\n`,
+        });
+        const plugin = sourceStubGuardPlugin([pkg]);
+        // Vite's hook type also allows an object form (`{ handler }`); a
+        // refactor to it would silently stop the guard ever running.
+        expect(typeof plugin.configResolved).toBe("function");
+        const fire = (): void => {
+          (plugin.configResolved as () => void)();
+        };
+        expect(fire).toThrow(files["./dist/node.js"]!);
+        expect(fire).toThrow("use-dist");
+        // Cached verdict, still fatal for the second project that resolves.
+        expect(fire).toThrow("use-dist");
       } finally {
         rmSync(root, { recursive: true, force: true });
       }

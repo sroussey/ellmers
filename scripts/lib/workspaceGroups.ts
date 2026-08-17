@@ -75,14 +75,28 @@ export function workspaceGroups(root: string): readonly string[] {
 }
 
 /**
- * The coverage `include` globs for a set of groups.
+ * The coverage `include` globs for a set of groups, ABSOLUTE.
  *
  * The denominator is every workspace package's own `src`, so it has to be
  * derived from the same groups everything else walks: a group present in the
  * scan but absent here has its source rewritten to `src`, executed by its own
  * tests, and then left out of the report entirely — invisible, because a
  * coverage report shows a shorter file list rather than an error.
+ *
+ * Anchored at `root` for the same reason every path-shaped entry in the shared
+ * project options is: a `--project` run — the shape of every package's own
+ * `test` script, and of `turbo run test -- --coverage` — starts in a package
+ * directory, and a relative pattern's meaning there depends on which directory
+ * the provider happens to resolve it against. That is an implementation detail
+ * nothing pins: a relative pattern was measured to give the same denominator on
+ * `@vitest/coverage-v8` 4.1.10 from both the repo root and a package directory,
+ * so this is defensive rather than a fix for an observed miss — but a
+ * denominator that silently drops the untested half reads as a BETTER number,
+ * not as an error, so it is not worth resting on that detail.
+ *
+ * The coverage `exclude` entries that subtract individual packages must be
+ * anchored the same way, or they subtract from nothing.
  */
-export function coverageIncludeGlobs(groups: readonly string[]): string[] {
-  return groups.map((group) => `${group}/*/src/**/*.{ts,tsx}`);
+export function coverageIncludeGlobs(root: string, groups: readonly string[]): string[] {
+  return groups.map((group) => `${root}/${group}/*/src/**/*.{ts,tsx}`);
 }
