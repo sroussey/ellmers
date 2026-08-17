@@ -128,6 +128,15 @@ describe("hasUnsafeRegexShape", () => {
     expect(hasUnsafeRegexShape("([a-z]|[a-z])*")).toBe(true);
   });
 
+  /**
+   * The class-stripping regex this scanner replaced matched `\\[` as a class
+   * opener, so it stripped this whole pattern to `\\X` and called the nested
+   * quantifier inside it safe. Reading the escape is what fixes that.
+   */
+  it("does not let an escaped bracket hide a nested quantifier", () => {
+    expect(hasUnsafeRegexShape("\\[(a+)+]")).toBe(true);
+  });
+
   it("still catches a class branch that can match empty", () => {
     expect(hasUnsafeRegexShape("([a-z]*|[A-Z])+")).toBe(true);
   });
