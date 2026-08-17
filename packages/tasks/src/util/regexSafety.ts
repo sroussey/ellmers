@@ -7,6 +7,20 @@
 import { TaskInvalidInputError } from "@workglow/task-graph";
 import { SECURITY_LIMITS } from "@workglow/util";
 
+/**
+ * `{n,}` / `{n,m}` starting exactly at an index. Sticky rather than
+ * `test(pattern.slice(index))`, because slicing per character is the quadratic
+ * shape this module exists to avoid.
+ */
+const UNBOUNDED_REPETITION_RE = /\{\d+,\d*\}/y;
+
+/** True when a counted repetition starts at `index`. */
+function isUnboundedRepetitionAt(pattern: string, index: number): boolean {
+  if (pattern[index] !== "{") return false;
+  UNBOUNDED_REPETITION_RE.lastIndex = index;
+  return UNBOUNDED_REPETITION_RE.test(pattern);
+}
+
 interface PatternScan {
   /** Every `[` in the source, including literals inside a class. */
   readonly bracketCount: number;
@@ -81,7 +95,10 @@ function scanPattern(pattern: string): PatternScan {
       continue;
     }
 
-    if ((char === "*" || char === "+") && groupHasQuantifier.length > 0) {
+    if (
+      (char === "*" || char === "+" || isUnboundedRepetitionAt(pattern, index)) &&
+      groupHasQuantifier.length > 0
+    ) {
       groupHasQuantifier[groupHasQuantifier.length - 1] = true;
     }
   }
@@ -111,7 +128,7 @@ function endOfCharacterClass(pattern: string, index: number): number {
 function isRepetitionAt(pattern: string, index: number): boolean {
   const ch = pattern[index];
   if (ch === "*" || ch === "+") return true;
-  return /^\{\d+,\d*\}/.test(pattern.slice(index));
+  return isUnboundedRepetitionAt(pattern, index);
 }
 
 /** Bodies of every group immediately followed by a repetition quantifier. */

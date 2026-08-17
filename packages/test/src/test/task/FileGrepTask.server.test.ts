@@ -248,17 +248,18 @@ describe("FileGrepTask (server - local files)", () => {
 
   /**
    * The budget applies on the local path too, not only through the fetch
-   * branch. `((a)*)*$` bypasses the shape screen and takes 8_234 ms at n=26,
-   * doubling per character.
+   * branch. `(\w|\d)*$` bypasses the shape screen — its branches overlap on the
+   * digits both accept, which comparing branch text cannot see — and takes
+   * 657 ms at n=26, doubling per added character.
    */
   test("a catastrophic pattern over a local file fails on the budget", async () => {
     const filePath = join(testDir, "evil.txt");
-    writeFileSync(filePath, "a".repeat(40) + "!\n", "utf-8");
+    writeFileSync(filePath, "1".repeat(40) + "!\n", "utf-8");
 
     const started = Date.now();
     await expect(
       new FileGrepTask({
-        defaults: { url: filePath, pattern: "((a)*)*$" },
+        defaults: { url: filePath, pattern: "(\\w|\\d)*$" },
       }).run()
     ).rejects.toThrow(/budget/);
     expect(Date.now() - started).toBeLessThan(5_000);

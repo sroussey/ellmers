@@ -20,7 +20,7 @@ import { DEFAULT_LIMITS, SECURITY_LIMITS } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { createBoundedRegexMatcher } from "../util/BoundedRegex.server";
 import { isHttpUrl, resolveLocalFilePath } from "../util/LocalFilePath.server";
-import { compileSafeRegex } from "../util/RegexSafety";
+import { compileSafeRegex } from "../util/regexSafety";
 import type {
   FileGrepTaskConfig,
   FileGrepTaskInput,
