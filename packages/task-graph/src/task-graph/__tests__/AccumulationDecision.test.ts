@@ -248,3 +248,125 @@ describe("GraphAsTask leaf accumulation: non-cacheable streaming leaf, cache reg
     }
   });
 });
+
+/** Cacheable, binary-only, plus an `append` sibling to make the mixed case. */
+class MixedPortProducerTask extends Task<Record<string, never>, { bytes?: unknown; log?: string }> {
+  public static override type = "MixedPortProducerTask";
+  public static override category = "Test";
+  public static override title = "Mixed port producer";
+  public static override cacheable = true;
+  public static override inputSchema(): DataPortSchema {
+    return { type: "object", properties: {}, additionalProperties: false };
+  }
+  public static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: {
+        bytes: { title: "Bytes", "x-stream": "binary", format: "binary" },
+        log: { type: "string", "x-stream": "append" },
+      },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+  async *executeStream(): AsyncIterable<StreamEvent<{ bytes?: unknown; log?: string }>> {
+    yield { type: "binary-delta", port: "bytes", binaryDelta: new Uint8Array([1, 2]) };
+    yield { type: "text-delta", port: "log", textDelta: "hello " };
+    yield { type: "text-delta", port: "log", textDelta: "world" };
+    yield { type: "finish", data: {} };
+  }
+  override async execute(): Promise<{ bytes?: unknown; log?: string }> {
+    throw new Error("unreachable");
+  }
+}
+
+/**
+ * Captures the payload of the `finish` STREAM EVENT — the one thing skipping
+ * accumulation changes. The returned Output is not a discriminator: a binary
+ * port's slot carries the sink's CacheRef (or its below-threshold rehydration)
+ * either way, which is exactly why the in-memory copy is redundant.
+ */
+async function runCapturingFinish<T>(
+  task: Task<any, any>,
+  config: Record<string, unknown>
+): Promise<{ output: T; finish: Record<string, unknown> | undefined }> {
+  let finish: Record<string, unknown> | undefined;
+  task.on("stream_chunk", (event: StreamEvent) => {
+    if (event.type === "finish") finish = (event.data ?? {}) as Record<string, unknown>;
+  });
+  const output = (await task.runner.run({}, config as any)) as T;
+  return { output, finish };
+}
+
+describe("standalone run of a cacheable binary-only producer", () => {
+  it("skips accumulation once a sink covers every port, and still returns the bytes", async () => {
+    // No graph decided for this run, so `shouldAccumulate` would default to
+    // true and the finish event would carry a second copy of the artifact —
+    // per in-flight run, for a value nothing reads. `sec spac download` is the
+    // caller this was found on: ten filings at once, each held whole.
+    const producer = new CacheableProducerTask({ id: "solo" });
+    const { output, finish } = await runCapturingFinish<{ bytes?: unknown }>(producer, {
+      outputCache: new StreamingMemoryRepo({}),
+    });
+
+    expect(finish).toBeDefined();
+    expect(finish).not.toHaveProperty("bytes");
+    // Parity with the accumulating run: the value still arrives, rehydrated
+    // below the threshold from the CACHE rather than from the accumulator.
+    expect(new Uint8Array(output.bytes as ArrayBuffer)).toEqual(new Uint8Array([4, 5, 6, 7]));
+  });
+
+  it("returns the same Output as the accumulating run", async () => {
+    // The relaxation must be a memory change and nothing else. Same task, same
+    // cache backing, only the flag differs.
+    const cache = new StreamingMemoryRepo({});
+    const relaxed = await new CacheableProducerTask({ id: "relaxed" }).runner.run(
+      {},
+      { outputCache: cache }
+    );
+    const accumulated = await new CacheableProducerTask({ id: "accumulated" }).runner.run(
+      {},
+      { outputCache: new StreamingMemoryRepo({}), shouldAccumulate: true }
+    );
+
+    expect(new Uint8Array((relaxed as { bytes: ArrayBuffer }).bytes)).toEqual(
+      new Uint8Array((accumulated as { bytes: ArrayBuffer }).bytes)
+    );
+  });
+
+  it("honors an explicit shouldAccumulate: true — a stated preference is not overridden", async () => {
+    // The gate is "nobody decided", not "binary ports never accumulate": a
+    // caller (or the graph, which always states it) asking for the enriched
+    // finish event still gets one.
+    const producer = new CacheableProducerTask({ id: "explicit" });
+    const { finish } = await runCapturingFinish(producer, {
+      outputCache: new StreamingMemoryRepo({}),
+      shouldAccumulate: true,
+    });
+
+    expect(finish).toHaveProperty("bytes");
+  });
+
+  it("keeps accumulating when a non-binary port shares the schema", async () => {
+    // Only binary ports get sinks on this path, so the `append` port has
+    // neither a sink nor — with accumulation skipped — an accumulator, and its
+    // deltas would vanish. The mixed task stays on the accumulation path.
+    const producer = new MixedPortProducerTask({ id: "mixed" });
+    const { output, finish } = await runCapturingFinish<{ log?: string }>(producer, {
+      outputCache: new StreamingMemoryRepo({}),
+    });
+
+    expect(output.log).toBe("hello world");
+    expect(finish).toHaveProperty("log");
+  });
+
+  it("keeps accumulating when the cache cannot stream, so no sink exists", async () => {
+    // Nothing else would hold the bytes: with no sink the deltas have nowhere
+    // to go, and the task would return (and cache) an empty output.
+    const producer = new CacheableProducerTask({ id: "no-sink" });
+    const { output } = await runCapturingFinish<{ bytes?: unknown }>(producer, {
+      outputCache: new NonStreamingMemoryRepo({}),
+    });
+
+    expect(new Uint8Array(output.bytes as ArrayBuffer)).toEqual(new Uint8Array([4, 5, 6, 7]));
+  });
+});
