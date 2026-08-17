@@ -12,9 +12,12 @@ import {
   TaskInvalidInputError,
   Workflow,
 } from "@workglow/task-graph";
-import { SECURITY_LIMITS } from "@workglow/util";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { assertSafeRegexPattern } from "../util/regexSafety";
+import { linesFromText } from "../util/textLines";
 import { FetchUrlTask } from "./FetchUrlTask";
+
+export { linesFromText };
 
 const inputSchema = {
   type: "object",
@@ -174,15 +177,6 @@ interface BufferedLine {
   readonly text: string;
 }
 
-/**
- * Detects regex patterns prone to catastrophic backtracking (ReDoS).
- * Checks for nested quantifiers like (a+)+, (a*)+, (a+)*, etc.
- */
-function hasNestedQuantifiers(pattern: string): boolean {
-  const withoutClasses = pattern.replace(/\[(?:[^\]\\]|\\.)*\]/g, "X");
-  return /\([^)*+]*[*+][^)]*\)[+*?]|\([^)*+]*[*+][^)]*\)\{/.test(withoutClasses);
-}
-
 function validateOptions(options: GrepOptions): void {
   const integerOptions: Array<[keyof GrepOptions, number | undefined]> = [
     ["afterContext", options.afterContext],
@@ -213,39 +207,13 @@ function createMatcher(pattern: string, options: GrepOptions): (text: string) =>
     return (text) => text.includes(pattern);
   }
 
-  const bracketCount = (pattern.match(/\[/g) ?? []).length;
-  if (bracketCount > SECURITY_LIMITS.regexMaxBracketCount) {
-    throw new TaskInvalidInputError(
-      "Regex pattern rejected: too many '[' characters (potential ReDoS). " +
-        "Simplify the pattern to reduce complexity."
-    );
-  }
-
-  if (hasNestedQuantifiers(pattern)) {
-    throw new TaskInvalidInputError(
-      "Regex pattern rejected: nested quantifiers detected (potential ReDoS). " +
-        "Simplify the pattern to avoid catastrophic backtracking."
-    );
-  }
+  assertSafeRegexPattern(pattern);
 
   try {
     const regex = new RegExp(pattern, options.ignoreCase ? "i" : "");
     return (text) => regex.test(text);
   } catch {
     throw new TaskInvalidInputError(`Invalid regular expression: ${pattern}`);
-  }
-}
-
-export async function* linesFromText(text: string): AsyncGenerator<string> {
-  if (text.length === 0) {
-    return;
-  }
-  const lines = text.split(/\r?\n/);
-  if (text.endsWith("\n")) {
-    lines.pop();
-  }
-  for (const line of lines) {
-    yield line;
   }
 }
 
