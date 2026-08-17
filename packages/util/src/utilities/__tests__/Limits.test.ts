@@ -23,6 +23,7 @@ describe("DEFAULT_LIMITS", () => {
     expect(DEFAULT_LIMITS.aiChatMaxIterations).toBe(100);
     expect(DEFAULT_LIMITS.structuredGenMaxRetries).toBe(2);
     expect(DEFAULT_LIMITS.otpCacheHardTtlMs).toBe(6 * 60 * 60 * 1000);
+    expect(DEFAULT_LIMITS.grepMaxSearchMs).toBe(30_000);
   });
 
   it("is a frozen object shape (const assertion) with only number values", () => {
@@ -40,6 +41,8 @@ describe("SECURITY_LIMITS", () => {
     expect(SECURITY_LIMITS.imageMaxInputBytesBrowser).toBe(32 * 1024 * 1024);
     expect(SECURITY_LIMITS.safeFetchMaxRedirectHops).toBe(20);
     expect(SECURITY_LIMITS.tabularMaxCursorLength).toBe(8 * 1024);
+    expect(SECURITY_LIMITS.regexMatchBatchLines).toBe(512);
+    expect(SECURITY_LIMITS.regexMatchBatchTimeoutMs).toBe(1_000);
   });
 
   it("is a frozen object shape (const assertion) with only number values", () => {
