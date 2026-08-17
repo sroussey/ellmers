@@ -232,12 +232,12 @@ Bun is not a third target by default. A package's `exports` carries no `"bun"` c
 resolves the default `"import"` and loads `dist/node.js` — which is exactly what a `src/bun.ts`
 identical to `src/node.ts` would have produced. Add a `src/bun.ts`, a `--target=bun` build, and a
 `"bun"` export condition only when the Bun code genuinely differs; a duplicate is a third bundle
-and a third `.d.ts` to keep in sync for no behavior change. Two entries qualify today, both in
-`@workglow/util`: `"."` (`Worker.bun` vs `Worker.node`) and `"./worker"` (`dist/worker-bun.js`
-vs `dist/worker-node.js`). `@workglow/sqlite`'s `./storage` used to, but both runtimes now share
-the `node:sqlite` driver. That set is pinned by
+and a third `.d.ts` to keep in sync for no behavior change. Three entries qualify today:
+`@workglow/util`'s `"."` (`Worker.bun` vs `Worker.node`), `@workglow/util`'s `"./worker"`
+(`dist/worker-bun.js` vs `dist/worker-node.js`), and `@workglow/sqlite`'s `./storage`
+(`bun:sqlite` vs the `node:sqlite` driver). That set is pinned by
 `packages/test/src/test/util/BunExportConditions.test.ts`, which fails in both directions — on a
-redundant `"bun"` condition added back, and on one of the two being deleted.
+redundant `"bun"` condition added back, and on one of the three being deleted.
 
 Each build command follows the same template:
 
@@ -260,8 +260,9 @@ tree-shaking impossible for downstream consumers.
 
 ### Extended Pattern (util)
 
-`@workglow/util` has additional entry points beyond the standard two, and is the only package that
-still earns a `--target=bun` build — twice (`bun.ts` and `worker-bun.ts`). Each sub-path export
+`@workglow/util` has additional entry points beyond the standard two, and accounts for two of the
+three `--target=bun` builds that a surviving `"bun"` export condition still earns (`bun.ts` and
+`worker-bun.ts`; the third is `@workglow/sqlite`'s `storage/bun.ts`). Each sub-path export
 gets its own build:
 
 ```
@@ -322,14 +323,15 @@ Storage backend packages build one set of entry points per sub-path export:
 ```
 src/storage/browser.ts    →  dist/storage/browser.js    (--target=browser)
 src/storage/node.ts       →  dist/storage/node.js       (--target=node)
+src/storage/bun.ts        →  dist/storage/bun.js        (--target=bun)   # @workglow/sqlite only
 src/job-queue/browser.ts  →  dist/job-queue/browser.js  (--target=browser)
 src/job-queue/node.ts     →  dist/job-queue/node.js     (--target=node)
 ```
 
-No storage backend has a Bun build. Every server sub-path here — including `@workglow/sqlite`'s
-`./storage`, which now drives the built-in `node:sqlite` on both runtimes — is runtime-agnostic
-and serves Bun from the Node build, as do all sub-paths of `@workglow/postgres` /
-`@workglow/supabase` / `@workglow/aws` / `@workglow/duckdb`.
+`@workglow/sqlite`'s `./storage` is the one sub-path with a real Bun build: it selects `bun:sqlite`
+where the Node entry selects the built-in `node:sqlite`, which no released Bun carries. Its
+`./job-queue`, and every sub-path of `@workglow/postgres` / `@workglow/supabase` / `@workglow/aws`
+/ `@workglow/duckdb`, is runtime-agnostic on the server and serves Bun from the Node build.
 
 Note that the output directories for sub-paths (`dist/storage/`, `dist/job-queue/`) use
 `--outdir ./dist/storage` etc. to place them in nested directories matching the sub-path export
