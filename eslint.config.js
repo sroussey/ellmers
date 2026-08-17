@@ -8,6 +8,15 @@ import regexpPlugin from "eslint-plugin-regexp";
 import { defineConfig } from "eslint/config";
 import globals from "globals";
 
+const WORKER_STATE_MESSAGE =
+  "Main-thread-only state is unavailable in workers. Resolve it in the task class " +
+  "(e.g. AiTask.getJobInput()) and pass it through the serialized job input.";
+
+const BOOTSTRAP_MESSAGE =
+  "A run-fn executes in a worker with its own globalServiceRegistry, so bootstrapWorkglow " +
+  "mutates a registry the main thread never sees. Resolve the services in the task class " +
+  "(e.g. AiTask.getJobInput()) and pass them through the serialized job input.";
+
 export default defineConfig(
   {
     ignores: ["**/dist", "**/storybook-static", "**/node_modules"],
@@ -65,53 +74,6 @@ export default defineConfig(
     },
   },
   {
-    // `*_JobRunFns.ts` files execute inside workers, which have an isolated
-    // runtime with their own `globalServiceRegistry`. Importing main-thread-only
-    // state (the global service registry or credential stores) resolves against a
-    // different, empty registry at runtime. Resolve such state in the task class on
-    // the main thread and pass it through the serialized job input instead.
-    files: ["**/*_JobRunFns.ts"],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          paths: [
-            {
-              name: "@workglow/util",
-              importNames: [
-                "globalServiceRegistry",
-                "getGlobalCredentialStore",
-                "setGlobalCredentialStore",
-              ],
-              message:
-                "Main-thread-only state is unavailable in workers. Resolve it in the task class (e.g. AiTask.getJobInput()) and pass it through the serialized job input.",
-            },
-            {
-              name: "@workglow/util/worker",
-              importNames: ["globalServiceRegistry"],
-              message:
-                "Main-thread-only state is unavailable in workers. Resolve it in the task class (e.g. AiTask.getJobInput()) and pass it through the serialized job input.",
-            },
-            // Blocked WHOLESALE rather than by importNames: every export of
-            // this package registers services into the global registry, so a
-            // name list would be the whole surface and would drift the moment
-            // one was added.
-            {
-              name: "@workglow/bootstrap",
-              message:
-                "A run-fn executes in a worker with its own globalServiceRegistry, so bootstrapWorkglow mutates a registry the main thread never sees. Resolve the services in the task class (e.g. AiTask.getJobInput()) and pass them through the serialized job input.",
-            },
-            {
-              name: "workglow/bootstrap",
-              message:
-                "A run-fn executes in a worker with its own globalServiceRegistry, so bootstrapWorkglow mutates a registry the main thread never sees. Resolve the services in the task class (e.g. AiTask.getJobInput()) and pass them through the serialized job input.",
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
     // Provider `src/ai/common/**` files are re-exported from each provider's
     // `runtime.ts`, so they are evaluated inside worker bundles.
     // `@workglow/ai/worker` exists to keep the 50+ task classes out of those
@@ -146,6 +108,73 @@ export default defineConfig(
                 "Import effort helpers from @workglow/ai/worker. The root barrel " +
                 "pulls all task classes and a second copy of AiProviderRegistry / " +
                 "CheckpointRegistry into the worker bundle.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // `*_JobRunFns.ts` files execute inside workers, which have an isolated
+    // runtime with their own `globalServiceRegistry`. Importing main-thread-only
+    // state (the global service registry or credential stores) resolves against a
+    // different, empty registry at runtime. Resolve such state in the task class on
+    // the main thread and pass it through the serialized job input instead.
+    //
+    // This block MUST stay LAST. Every run-fn in the repo lives under
+    // `providers/*/src/ai/common/`, and that block sets `"no-restricted-imports":
+    // "off"` — correctly, because its typescript-eslint extension replaces the base
+    // rule and running both double-reports. In flat config a later object's entry
+    // for a rule replaces the earlier one wholesale, so with this block placed
+    // first the guard below matched zero real files. Re-enabling it here is safe:
+    // the two rules restrict disjoint specifiers, so nothing double-reports, and
+    // `scripts/eslintRestrictedImports.test.ts` pins both directions.
+    files: ["**/*_JobRunFns.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@workglow/util",
+              importNames: [
+                "globalServiceRegistry",
+                "getGlobalCredentialStore",
+                "setGlobalCredentialStore",
+              ],
+              message: WORKER_STATE_MESSAGE,
+            },
+            {
+              name: "@workglow/util/worker",
+              importNames: ["globalServiceRegistry"],
+              message: WORKER_STATE_MESSAGE,
+            },
+            // Only `bootstrapWorkglow` touches the global registry.
+            // `createOrchestrationContext` builds a fresh `Container`, and
+            // `registerAllDefaults(registry)` mutates only what it is handed —
+            // both legitimate against a registry the run-fn owns.
+            {
+              name: "@workglow/bootstrap",
+              importNames: ["bootstrapWorkglow"],
+              message: BOOTSTRAP_MESSAGE,
+            },
+            {
+              name: "workglow/bootstrap",
+              importNames: ["bootstrapWorkglow"],
+              message: BOOTSTRAP_MESSAGE,
+            },
+            // `packages/workglow/src/common.ts:30` does `export * from
+            // "./bootstrap"` and also re-exports `@workglow/util`, so every name
+            // restricted above is one specifier away through the root barrel.
+            {
+              name: "workglow",
+              importNames: [
+                "bootstrapWorkglow",
+                "globalServiceRegistry",
+                "getGlobalCredentialStore",
+                "setGlobalCredentialStore",
+              ],
+              message: `The workglow root barrel re-exports both @workglow/bootstrap and @workglow/util. ${WORKER_STATE_MESSAGE}`,
             },
           ],
         },
