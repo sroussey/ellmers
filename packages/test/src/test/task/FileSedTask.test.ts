@@ -5,7 +5,7 @@
  */
 
 import { FileSedTask, registerSafeFetch, type SafeFetchFn } from "@workglow/tasks";
-import { setLogger } from "@workglow/util";
+import { DEFAULT_LIMITS, setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -288,6 +288,41 @@ describe("FileSedTask", () => {
 
     expect(result.truncated).toBe(true);
     expect(result.text).toBe("ab\ncd\n");
+  });
+
+  /**
+   * The caps were enforced only when the caller STATED them, so omitting them
+   * meant no cap at all: a workflow substituting one word in a large document
+   * got the whole document back, and `truncated: false` said that was the
+   * complete answer.
+   */
+  test("caps output lines even when the caller states no limit", async () => {
+    const lines = DEFAULT_LIMITS.grepMaxOutputLines + 500;
+    mockText(`${Array.from({ length: lines }, (_, i) => `line ${i} foo`).join("\n")}\n`);
+
+    const result = await new FileSedTask({
+      defaults: { url: "https://example.com/log.txt", pattern: "foo", replacement: "bar" },
+    }).run();
+
+    expect(result.truncated).toBe(true);
+    expect(result.text.split("\n").filter((l) => l.length > 0)).toHaveLength(
+      DEFAULT_LIMITS.grepMaxOutputLines
+    );
+  });
+
+  test("caps output characters even when the caller states no limit", async () => {
+    // Few enough lines to stay under the line cap, wide enough to pass the
+    // character one — so this can only be the character cap firing.
+    const wide = "z".repeat(20_000);
+    mockText(`${Array.from({ length: 100 }, () => `${wide} foo`).join("\n")}\n`);
+
+    const result = await new FileSedTask({
+      defaults: { url: "https://example.com/log.txt", pattern: "foo", replacement: "bar" },
+    }).run();
+
+    expect(result.truncated).toBe(true);
+    expect(result.text.length).toBeLessThanOrEqual(DEFAULT_LIMITS.grepMaxOutputChars);
+    expect(result.text.split("\n").filter((l) => l.length > 0).length).toBeLessThan(100);
   });
 
   test("rejects maxReplacements of zero", async () => {
