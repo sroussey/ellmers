@@ -640,6 +640,30 @@ describe("FileGrepTask", () => {
     expect(Date.now() - started).toBeLessThan(5_000);
   });
 
+  /**
+   * The group de-duplication used to scan `currentGroup.lines` linearly on
+   * every emit, so a run of contiguous matches was quadratic. Measured on the
+   * pre-fix shape: 10 000 lines -> 126 ms, 20 000 -> 286 ms, 40 000 -> 1576 ms,
+   * 80 000 -> 6390 ms — a clean 4x per doubling, which puts 200 000 at roughly
+   * 40 s. The bound below is that curve's cost, not an arbitrary number.
+   */
+  test("greps 200k contiguous matching lines in bounded time", { timeout: 30_000 }, async () => {
+    mockText("foo\n".repeat(200_000));
+
+    const started = Date.now();
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "foo",
+        maxOutputLines: 200_000,
+        maxOutputChars: 10_000_000,
+      },
+    }).run();
+
+    expect(result.matchCount).toBe(200_000);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
   test("empty file has no matches", async () => {
     mockText("");
 

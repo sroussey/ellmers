@@ -332,16 +332,20 @@ export async function grepLines(
     }
 
     if (currentGroup && entry.line <= currentGroup.endLine + 1) {
-      // De-duplication exists to merge a before-context line already emitted as
-      // after-context. Under onlyMatching one line legitimately yields several
-      // entries, so merging them would collapse repeated matches into one.
-      const existing = options.onlyMatching
-        ? undefined
-        : currentGroup.lines.find((line) => line.line === entry.line);
-
-      if (existing) {
-        if (entry.match) {
-          existing.match = true;
+      /*
+       * Entries are appended in strictly increasing line order, so a line at or
+       * below endLine has already been emitted; only the last one can be it.
+       * The scan this replaces existed solely to skip replayed beforeBuffer
+       * entries, and those always carry match: false, so no flag is lost.
+       *
+       * Skipped entirely under onlyMatching, where one line legitimately yields
+       * several entries and merging them would collapse repeated matches
+       * into one.
+       */
+      if (!options.onlyMatching && entry.line <= currentGroup.endLine) {
+        const last = currentGroup.lines[currentGroup.lines.length - 1];
+        if (entry.match && last?.line === entry.line) {
+          last.match = true;
         }
 
         return true;
