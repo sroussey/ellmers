@@ -54,6 +54,21 @@ export function enabledEffortsForModel(
   return policy?.supported;
 }
 
+/**
+ * Whether `model.effort` should be mapped onto a provider request. Native
+ * `provider_config` knobs always win separately; this only gates the coarse dial.
+ */
+export function isModelEffortEnabled(
+  model: object | undefined,
+  policy: ModelEffortPolicy | undefined
+): boolean {
+  if (model === undefined) return false;
+  const effort = (model as { effort?: unknown }).effort;
+  if (!isModelEffort(effort)) return false;
+  const enabled = enabledEffortsForModel(model, policy);
+  return enabled === undefined || enabled.includes(effort);
+}
+
 export function effortPlaceholder(policy: ModelEffortPolicy | undefined): string {
   return policy?.default !== undefined ? `Default: ${policy.default}` : "Default";
 }

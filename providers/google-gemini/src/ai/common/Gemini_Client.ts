@@ -6,7 +6,8 @@
 
 import type { GoogleGenAI } from "@google/genai";
 import { resolveApiKey } from "@workglow/ai/provider-utils";
-import { isModelEffort, type ModelEffort } from "@workglow/ai/worker";
+import { isModelEffortEnabled, type ModelEffort } from "@workglow/ai/worker";
+import { geminiEffortPolicy } from "./Gemini_EffortPolicy";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 
 /** Maps coarse {@link ModelEffort} to Gemini thinkingBudget tokens. */
@@ -124,7 +125,9 @@ export function getModelName(model: GeminiModelConfig | undefined): string {
 export function getThinkingBudget(model: GeminiModelConfig | undefined): number | undefined {
   const configured = model?.provider_config?.thinking_budget;
   if (typeof configured === "number") return configured;
-  if (isModelEffort(model?.effort)) return EFFORT_TO_THINKING_BUDGET[model.effort];
+  if (model && isModelEffortEnabled(model, geminiEffortPolicy(model))) {
+    return EFFORT_TO_THINKING_BUDGET[model.effort as ModelEffort];
+  }
   return undefined;
 }
 

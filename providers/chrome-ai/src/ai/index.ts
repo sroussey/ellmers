@@ -11,7 +11,10 @@ export * from "./common/WebBrowser_Constants";
 export * from "./common/WebBrowser_ModelSchema";
 export * from "./registerWebBrowser";
 
-import { WEB_BROWSER_RUN_FN_SPECS } from "./common/WebBrowser_Capabilities";
+import {
+  inferWebBrowserCapabilities,
+  WEB_BROWSER_RUN_FN_SPECS,
+} from "./common/WebBrowser_Capabilities";
 import { _resetProbeCache, probeWebBrowserCapabilities } from "./common/WebBrowser_CapabilityProbe";
 import { WebBrowser_Chat } from "./common/WebBrowser_Chat";
 import {
@@ -49,6 +52,7 @@ export const _testOnly = {
   WebBrowserProvider,
   WEB_BROWSER_RUN_FN_SPECS,
   WEB_BROWSER_RUN_FNS,
+  inferWebBrowserCapabilities,
   WebBrowser_Chat,
   WebBrowser_TextGeneration_Unified,
   WebBrowser_StructuredGeneration,

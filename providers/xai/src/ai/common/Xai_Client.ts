@@ -5,7 +5,8 @@
  */
 
 import { isBrowserLike, resolveApiKey, validateProviderBaseUrl } from "@workglow/ai/provider-utils";
-import { isModelEffort, type ModelEffort } from "@workglow/ai/worker";
+import { isModelEffortEnabled, type ModelEffort } from "@workglow/ai/worker";
+import { xaiEffortPolicy } from "./Xai_EffortPolicy";
 import type { XaiModelConfig } from "./Xai_ModelSchema";
 
 /** Default base URL for the xAI (Grok) OpenAI-compatible API. */
@@ -128,6 +129,8 @@ export function getXaiReasoningEffort(model: XaiModelConfig | undefined): string
     const trimmed = native.trim();
     if (XAI_REASONING_EFFORTS.has(trimmed)) return trimmed;
   }
-  if (model && isModelEffort(model.effort)) return EFFORT_TO_XAI[model.effort];
+  if (model && isModelEffortEnabled(model, xaiEffortPolicy(model))) {
+    return EFFORT_TO_XAI[model.effort as ModelEffort];
+  }
   return undefined;
 }
