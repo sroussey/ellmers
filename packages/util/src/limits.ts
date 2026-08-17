@@ -48,6 +48,10 @@ export const DEFAULT_LIMITS = {
   grepMaxSearchMs: 30_000,
   /** Max characters of one FileGrepTask line; the rest of that physical line is discarded. */
   grepMaxLineChars: 64_000,
+  /** Default max FileGrepTask output lines (including context) when the caller states none. */
+  grepMaxOutputLines: 10_000,
+  /** Default max FileGrepTask output characters when the caller states none. */
+  grepMaxOutputChars: 1_000_000,
 } as const satisfies Record<string, number>;
 
 /**
