@@ -13,7 +13,7 @@ import {
   Workflow,
 } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import { assertSafeRegexPattern } from "../util/regexSafety";
+import { assertSafeRegexPattern, escapeRegExp } from "../util/regexSafety";
 import { linesFromText } from "../util/textLines";
 import { FetchUrlTask } from "./FetchUrlTask";
 
@@ -47,6 +47,11 @@ const inputSchema = {
       type: "boolean",
       title: "Invert Match",
       description: "Select lines that do not match (-v)",
+    },
+    onlyMatching: {
+      type: "boolean",
+      title: "Only Matching",
+      description: "Emit the matched substrings instead of whole lines, one per match (-o)",
     },
     afterContext: {
       type: "integer",
@@ -217,6 +222,46 @@ function createMatcher(pattern: string, options: GrepOptions): (text: string) =>
   }
 }
 
+/**
+ * Collects the matched substrings of a line for `onlyMatching`. A literal
+ * pattern is compiled rather than searched with `indexOf` so that an
+ * ignore-case match can be sliced out of the original text: `toLowerCase()`
+ * is not length-preserving for every character, so lowercasing the haystack
+ * to find an offset can misalign the slice back in the original.
+ */
+function createExtractor(pattern: string, options: GrepOptions): (text: string) => string[] {
+  const source = options.fixedString ? escapeRegExp(pattern) : pattern;
+
+  if (!options.fixedString) {
+    assertSafeRegexPattern(pattern);
+  }
+
+  let regex: RegExp;
+  try {
+    regex = new RegExp(source, options.ignoreCase ? "gi" : "g");
+  } catch {
+    throw new TaskInvalidInputError(`Invalid regular expression: ${pattern}`);
+  }
+
+  return (text) => {
+    const matches: string[] = [];
+
+    regex.lastIndex = 0;
+
+    let result: RegExpExecArray | null;
+    while ((result = regex.exec(text)) !== null) {
+      // grep skips a zero-length match; advancing is also what ends the loop.
+      if (result[0].length === 0) {
+        regex.lastIndex++;
+        continue;
+      }
+      matches.push(result[0]);
+    }
+
+    return matches;
+  };
+}
+
 export async function grepLines(
   lines: AsyncIterable<string>,
   pattern: string,
@@ -225,10 +270,17 @@ export async function grepLines(
 ): Promise<FileGrepTaskOutput> {
   validateOptions(options);
 
-  const beforeContext = options.context ?? options.beforeContext ?? 0;
-  const afterContext = options.context ?? options.afterContext ?? 0;
+  // Context is inert under onlyMatching: a context line holds no match, so
+  // grep prints nothing for it, and carrying a window would only let two
+  // matches separated by unprinted lines land in one group.
+  const beforeContext = options.onlyMatching ? 0 : (options.context ?? options.beforeContext ?? 0);
+  const afterContext = options.onlyMatching ? 0 : (options.context ?? options.afterContext ?? 0);
 
   const matcher = createMatcher(pattern, options);
+  const extract =
+    options.onlyMatching && !options.existsOnly && !options.countOnly
+      ? createExtractor(pattern, options)
+      : undefined;
 
   const groups: GrepGroup[] = [];
   const beforeBuffer: BufferedLine[] = [];
@@ -267,7 +319,12 @@ export async function grepLines(
     }
 
     if (currentGroup && entry.line <= currentGroup.endLine + 1) {
-      const existing = currentGroup.lines.find((line) => line.line === entry.line);
+      // De-duplication exists to merge a before-context line already emitted as
+      // after-context. Under onlyMatching one line legitimately yields several
+      // entries, so merging them would collapse repeated matches into one.
+      const existing = options.onlyMatching
+        ? undefined
+        : currentGroup.lines.find((line) => line.line === entry.line);
 
       if (existing) {
         if (entry.match) {
@@ -321,7 +378,21 @@ export async function grepLines(
         };
       }
 
-      if (!options.countOnly) {
+      if (extract) {
+        // An inverted selection reaches here on a line the pattern did NOT
+        // match, so the extractor finds nothing and emits nothing — which is
+        // exactly what `grep -v -o` prints.
+        for (const match of extract(text)) {
+          if (!emitLine({ line: lineNumber, text: match, match: true })) {
+            return {
+              groups,
+              matchCount,
+              exists,
+              truncated: true,
+            };
+          }
+        }
+      } else if (!options.countOnly) {
         for (const previous of beforeBuffer) {
           if (
             !emitLine({

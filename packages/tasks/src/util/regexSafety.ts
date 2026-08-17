@@ -90,6 +90,16 @@ function scanPattern(pattern: string): PatternScan {
 }
 
 /**
+ * Escapes every regex metacharacter, so caller text can be compiled into a
+ * pattern that matches it literally rather than being read as one. The other
+ * half of {@link assertSafeRegexPattern}: that guards text the caller *meant*
+ * as a pattern, this guards text they did not.
+ */
+export function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
  * Rejects regex sources prone to catastrophic backtracking (ReDoS) before they
  * ever reach `new RegExp`. Throws {@link TaskInvalidInputError} for a pattern
  * with too many `[` characters or with nested quantifiers like `(a+)+`.
