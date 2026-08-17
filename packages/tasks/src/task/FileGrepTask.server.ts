@@ -4,13 +4,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IExecuteContext, TaskConfig } from "@workglow/task-graph";
-import { CreateWorkflow, TaskAbortedError, Workflow } from "@workglow/task-graph";
+import type { IExecuteContext, TaskConfig, TaskEntitlements } from "@workglow/task-graph";
+import {
+  CreateWorkflow,
+  Entitlements,
+  mergeEntitlements,
+  TaskAbortedError,
+  TaskConfigSchema,
+  Workflow,
+} from "@workglow/task-graph";
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 
 import { SECURITY_LIMITS } from "@workglow/util";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { createBoundedRegexMatcher } from "../util/BoundedRegex.server";
+import { isHttpUrl, resolveLocalFilePath } from "../util/LocalFilePath.server";
 import { compileSafeRegex } from "../util/RegexSafety";
 import type {
   FileGrepTaskInput,
@@ -22,6 +31,30 @@ import { FileGrepTask as BaseFileGrepTask, grepLines } from "./FileGrepTask";
 
 export type { FileGrepTaskInput, FileGrepTaskOutput };
 
+export interface FileGrepTaskConfig extends TaskConfig {
+  /**
+   * Directories a local path must resolve inside, checked after symlinks are
+   * resolved. Omitted means unrestricted: the enforced control is the
+   * `filesystem:read` entitlement, and this is the embedder's extra fence.
+   */
+  readonly roots?: readonly string[] | undefined;
+}
+
+const fileGrepTaskConfigSchema = {
+  type: "object",
+  properties: {
+    ...TaskConfigSchema["properties"],
+    roots: {
+      type: "array",
+      items: { type: "string" },
+      title: "Roots",
+      description: "Directories a local path must resolve inside (after symlink resolution)",
+      "x-ui-hidden": true,
+    },
+  },
+  additionalProperties: false,
+} as const satisfies DataPortSchema;
+
 /**
  * Server-only task for grepping documents from the filesystem.
  * Streams the file line-by-line rather than loading it into memory.
@@ -29,7 +62,22 @@ export type { FileGrepTaskInput, FileGrepTaskOutput };
  *
  * For cross-platform grep (including browser), use FileGrepTask with URLs.
  */
-export class FileGrepTask extends BaseFileGrepTask {
+export class FileGrepTask extends BaseFileGrepTask<FileGrepTaskConfig> {
+  public static override configSchema(): DataPortSchema {
+    return fileGrepTaskConfigSchema as DataPortSchema;
+  }
+
+  public static override entitlements(): TaskEntitlements {
+    return mergeEntitlements(super.entitlements(), {
+      entitlements: [
+        {
+          id: Entitlements.FILESYSTEM_READ,
+          reason: "Reads a local file or file:// URL from disk",
+        },
+      ],
+    });
+  }
+
   /**
    * Runs regex matching inside a `vm` context under a wall-clock budget, so a
    * catastrophically backtracking pattern fails instead of wedging the event
@@ -53,9 +101,9 @@ export class FileGrepTask extends BaseFileGrepTask {
     input: FileGrepTaskInput,
     context: IExecuteContext
   ): Promise<FileGrepTaskOutput> {
-    let { url, pattern, ...options } = input;
+    const { url, pattern, ...options } = input;
 
-    if (url.startsWith("http://") || url.startsWith("https://")) {
+    if (isHttpUrl(url)) {
       return super.execute(input, context);
     }
 
@@ -64,9 +112,7 @@ export class FileGrepTask extends BaseFileGrepTask {
     }
     await context.updateProgress(0, "Opening file");
 
-    if (url.startsWith("file://")) {
-      url = url.slice(7);
-    }
+    const file = resolveLocalFilePath(url, { roots: this.config.roots });
 
     if (context.signal.aborted) {
       throw new TaskAbortedError("Task aborted");
@@ -74,7 +120,7 @@ export class FileGrepTask extends BaseFileGrepTask {
     await context.updateProgress(10, "Searching file");
 
     const result = await grepFile(
-      url,
+      file,
       pattern,
       options,
       context.signal,
@@ -116,13 +162,13 @@ async function grepFile(
   }
 }
 
-export const fileGrep = (input: FileGrepTaskInput, config?: TaskConfig) => {
+export const fileGrep = (input: FileGrepTaskInput, config?: FileGrepTaskConfig) => {
   return new FileGrepTask(config).run(input);
 };
 
 declare module "@workglow/task-graph" {
   interface Workflow {
-    fileGrep: CreateWorkflow<FileGrepTaskInput, FileGrepTaskOutput, TaskConfig>;
+    fileGrep: CreateWorkflow<FileGrepTaskInput, FileGrepTaskOutput, FileGrepTaskConfig>;
   }
 }
 
