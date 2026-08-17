@@ -6,9 +6,9 @@ import { configDefaults, coverageConfigDefaults, defineConfig } from "vitest/con
 import { discoverTestFiles, listTestProjects } from "./scripts/lib/testDiscovery.ts";
 import { coverageIncludeGlobs, workspaceGroups } from "./scripts/lib/workspaceGroups.ts";
 import {
-  assertNoSourceStubs,
   listWorkspacePackages,
   resolveTestTarget,
+  sourceStubGuardPlugin,
   workspaceSourcePlugin,
 } from "./scripts/lib/workspaceSource.ts";
 
@@ -108,15 +108,23 @@ const workspacePackages = listWorkspacePackages(__dirname);
 const sourcePlugin = workspaceSourcePlugin(__dirname, workspacePackages);
 
 /**
- * Under the `dist` target, refuse to run at all against a stubbed `dist`.
+ * What every project's `plugins` gets, decided once.
  *
- * At CONFIG LOAD deliberately, not in a test: this kills the whole run before
- * any suite can pass vacuously, and it covers the export-name parity sweep the
- * same way it covers the identity ones. A test-shaped guard would have to be
- * imported by every file it protects, and the one that forgot would be the one
- * reporting a false pass.
+ * Under the `dist` target the guard refuses to run at all against a stubbed
+ * `dist`: a stub re-exports `src`, so every bundle-shaped assertion passes for
+ * the wrong reason and the job reports a clean sweep over bundles it never
+ * loaded. That check is a plugin HOOK rather than a side effect of loading this
+ * module, because this module is ordinarily importable —
+ * `scripts/workspaceSource.test.ts` imports it with `WORKGLOW_TEST_TARGET`
+ * stubbed to `dist` to check attachment, and `scripts/*.test.ts` is unit-tier,
+ * so scanning at import time made an ordinary unit run on a `use-source` tree
+ * die with advice to run `use-dist` and undo the dev mode it never left. Vitest
+ * resolves every project's config at startup, so the hook still fires before
+ * any suite can report a false pass.
  */
-if (!testsRunAgainstSource) assertNoSourceStubs(workspacePackages);
+const projectPlugins = testsRunAgainstSource
+  ? [sourcePlugin]
+  : [sourceStubGuardPlugin(workspacePackages)];
 
 /**
  * One project per workspace that actually holds tests, derived from the same
@@ -140,7 +148,7 @@ const projects = listTestProjects(discovered).map((p) => {
   return {
     // Projects are standalone Vite configs, so a root-level `plugins` entry
     // would never reach them — the resolver has to be attached per project.
-    plugins: testsRunAgainstSource ? [sourcePlugin] : [],
+    plugins: [...projectPlugins],
     test: { ...shared, name: p.name, root, exclude: [...shared.exclude, ...bunOnly] },
   };
 });

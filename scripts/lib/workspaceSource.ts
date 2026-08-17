@@ -203,6 +203,44 @@ export function assertNoSourceStubs(packages: readonly WorkspacePackage[]): void
   );
 }
 
+/** The guard plugin's name, so a test can assert attachment without a literal. */
+export const DIST_STUB_GUARD_PLUGIN_NAME = "workglow:dist-stub-guard";
+
+/**
+ * {@link assertNoSourceStubs} as a plugin hook rather than a side effect of
+ * loading `vitest.config.ts`.
+ *
+ * That module is ordinarily importable — `scripts/workspaceSource.test.ts`
+ * imports it with `WORKGLOW_TEST_TARGET` stubbed to `dist` to check plugin
+ * attachment, and `scripts/*.test.ts` is unit-tier — so scanning at module
+ * scope made an ordinary `bun run test:vitest:unit` on a `use-source` tree die
+ * with advice to run `use-dist`, undoing the no-build dev mode the run never
+ * left. Vitest resolves EVERY project's config at startup, so running the
+ * assertion in `configResolved` still kills the run before any suite can report
+ * a pass over stubs.
+ *
+ * The verdict is computed once and re-thrown: one scan serves all twelve
+ * projects, and a 41-entry message printed twelve times is unreadable.
+ */
+export function sourceStubGuardPlugin(packages: readonly WorkspacePackage[]): Plugin {
+  let verdict: { error: Error | undefined } | undefined;
+  return {
+    name: DIST_STUB_GUARD_PLUGIN_NAME,
+    enforce: "pre",
+    configResolved() {
+      if (verdict === undefined) {
+        try {
+          assertNoSourceStubs(packages);
+          verdict = { error: undefined };
+        } catch (error) {
+          verdict = { error: error instanceof Error ? error : new Error(String(error)) };
+        }
+      }
+      if (verdict.error !== undefined) throw verdict.error;
+    },
+  };
+}
+
 /**
  * The source file a built entry came from, or `undefined` when there is none.
  *

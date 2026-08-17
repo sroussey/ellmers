@@ -20,11 +20,13 @@ import type {
 } from "./lib/workspaceSource";
 import {
   assertNoSourceStubs,
+  DIST_STUB_GUARD_PLUGIN_NAME,
   distToSource,
   listWorkspacePackages,
   ownerOf,
   resolveTestTarget,
   resolveWorkspaceSourceId,
+  sourceStubGuardPlugin,
   TEST_TARGETS,
   unresolvedWorkspaceMessage,
   WORKSPACE_SOURCE_PLUGIN_NAME,
@@ -399,6 +401,9 @@ describe("workspace source resolution", () => {
     const carriesPlugin = (project: ConfiguredProject): boolean =>
       (project.plugins ?? []).some((plugin) => plugin?.name === WORKSPACE_SOURCE_PLUGIN_NAME);
 
+    const carriesGuard = (project: ConfiguredProject): boolean =>
+      (project.plugins ?? []).some((plugin) => plugin?.name === DIST_STUB_GUARD_PLUGIN_NAME);
+
     it("attaches the source rewrite to every project under the default target", async () => {
       const projects = await projectsForTarget("source");
       expect(projects.filter((project) => !carriesPlugin(project))).toEqual([]);
@@ -407,6 +412,52 @@ describe("workspace source resolution", () => {
     it("attaches it to no project when the target is dist", async () => {
       const projects = await projectsForTarget("dist");
       expect(projects.filter(carriesPlugin)).toEqual([]);
+    });
+
+    it("loads under the dist target without probing the tree for stubs", async () => {
+      /**
+       * The stub check used to run as a MODULE-LEVEL side effect of loading the
+       * config, and this very describe imports the config with the target
+       * stubbed to `dist`. `scripts/*.test.ts` is unit-tier, so on a
+       * `use-source` tree an ordinary `bun run test:vitest:unit` died right
+       * here, advising the developer to run `use-dist` and undo the documented
+       * no-build dev mode the run had never left. CI never saw it because CI
+       * trees are really built.
+       *
+       * Mocked rather than driven off a genuinely stubbed tree: stubbing all 41
+       * workspaces from a test would write into every package's `dist`, and the
+       * assertion that matters is not "no stubs were found" but "the config
+       * never asked". A throwing spy makes any probe at import time fatal.
+       */
+      vi.resetModules();
+      const probe = vi.fn(() => {
+        throw new Error("assertNoSourceStubs must not run at config load");
+      });
+      vi.doMock("./lib/workspaceSource.ts", async () => {
+        const actual = await vi.importActual<typeof import("./lib/workspaceSource")>(
+          "./lib/workspaceSource.ts"
+        );
+        return { ...actual, assertNoSourceStubs: probe };
+      });
+      try {
+        const projects = await projectsForTarget("dist");
+        expect(projects.length).toBeGreaterThan(0);
+        expect(probe).not.toHaveBeenCalled();
+      } finally {
+        vi.doUnmock("./lib/workspaceSource.ts");
+        vi.resetModules();
+      }
+    });
+
+    it("attaches the stub guard under dist, and to no project under source", async () => {
+      // The guard replaces the import-time scan, so it has to reach every
+      // project: vitest resolves each project's config at startup, which is
+      // what makes a hook fire before any suite can report a pass over stubs.
+      const dist = await projectsForTarget("dist");
+      expect(dist.filter((project) => !carriesGuard(project))).toEqual([]);
+
+      const source = await projectsForTarget("source");
+      expect(source.filter(carriesGuard)).toEqual([]);
     });
 
     it("attaches one plugin instance to every project", async () => {
@@ -703,6 +754,35 @@ describe("workspace source resolution", () => {
         }
         expect(message).toContain(a.files["./dist/node.js"]!);
         expect(message).toContain(b.files["./dist/browser.js"]!);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("still kills the run through the guard plugin, once per scan", () => {
+      /**
+       * The assertion moved out of `vitest.config.ts`'s module scope and into a
+       * hook, so the property that matters — a stubbed tree cannot run under
+       * the dist target — now depends on the plugin. `configResolved` fires
+       * once per project, and a 41-entry message printed twelve times is
+       * unreadable, so the verdict is computed once and re-thrown.
+       */
+      const root = mkdtempSync(join(tmpdir(), "workglow-stubs-"));
+      try {
+        const { pkg, files } = fixturePackage(root, {
+          "./dist/node.js": `// ${SOURCE_STUB_SENTINEL}\nexport * from "../src/node.ts";\n`,
+        });
+        const plugin = sourceStubGuardPlugin([pkg]);
+        // Vite's hook type also allows an object form (`{ handler }`); a
+        // refactor to it would silently stop the guard ever running.
+        expect(typeof plugin.configResolved).toBe("function");
+        const fire = (): void => {
+          (plugin.configResolved as () => void)();
+        };
+        expect(fire).toThrow(files["./dist/node.js"]!);
+        expect(fire).toThrow("use-dist");
+        // Cached verdict, still fatal for the second project that resolves.
+        expect(fire).toThrow("use-dist");
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
