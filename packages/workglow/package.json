@@ -37,10 +37,6 @@
       "import": "./dist/node.js"
     },
     "./anthropic": {
-      "browser": {
-        "types": "./dist/anthropic.browser.d.ts",
-        "import": "./dist/anthropic.browser.js"
-      },
       "types": "./dist/anthropic.d.ts",
       "import": "./dist/anthropic.js"
     },
@@ -61,10 +57,6 @@
       "import": "./dist/deepseek-runtime.js"
     },
     "./gemini": {
-      "browser": {
-        "types": "./dist/google-gemini.browser.d.ts",
-        "import": "./dist/google-gemini.browser.js"
-      },
       "types": "./dist/google-gemini.d.ts",
       "import": "./dist/google-gemini.js"
     },
@@ -73,10 +65,6 @@
       "import": "./dist/google-gemini-runtime.js"
     },
     "./hf-inference": {
-      "browser": {
-        "types": "./dist/hf-inference.browser.d.ts",
-        "import": "./dist/hf-inference.browser.js"
-      },
       "types": "./dist/hf-inference.d.ts",
       "import": "./dist/hf-inference.js"
     },
@@ -85,10 +73,6 @@
       "import": "./dist/hf-inference-runtime.js"
     },
     "./hf-transformers": {
-      "browser": {
-        "types": "./dist/hf-transformers.browser.d.ts",
-        "import": "./dist/hf-transformers.browser.js"
-      },
       "types": "./dist/hf-transformers.d.ts",
       "import": "./dist/hf-transformers.js"
     },
