@@ -739,6 +739,44 @@ function toJobFailure(reason: unknown): unknown {
   return new Error(`Queued fetch job rejected without a reason (${String(reason)})`);
 }
 
+/**
+ * Entitlements a fetch of `url` requires. A task that OWNS a `FetchUrlTask`
+ * must declare these itself: the graph snapshot is taken over
+ * `graph.getTasks()` before any `execute()` runs, so an owned child created
+ * inside `execute()` is never in it.
+ *
+ * `url` may be unknown at evaluation time (root-task input is not applied
+ * yet), in which case this fails closed and requires an unscoped
+ * `network:private` rather than under-declaring it.
+ */
+export function fetchUrlEntitlementsFor(url: string | undefined): TaskEntitlements {
+  const base = FetchUrlTask.entitlements();
+  if (typeof url !== "string" || url.length === 0) {
+    return mergeEntitlements(base, {
+      entitlements: [
+        {
+          id: Entitlements.NETWORK_PRIVATE,
+          reason:
+            "Runtime URL is not yet available during entitlement evaluation; private/internal destinations must be explicitly allowed",
+        },
+      ],
+    });
+  }
+  const classification = classifyUrl(url);
+  if (classification.kind !== "private") {
+    return base;
+  }
+  return mergeEntitlements(base, {
+    entitlements: [
+      {
+        id: Entitlements.NETWORK_PRIVATE,
+        reason: `URL targets private/internal host: ${classification.reason ?? classification.host ?? "unknown"}`,
+        resources: [urlResourcePattern(url)],
+      },
+    ],
+  });
+}
+
 export class FetchUrlTask<
   Input extends FetchUrlTaskInput = FetchUrlTaskInput,
   Output extends FetchUrlTaskOutput = FetchUrlTaskOutput,
@@ -798,38 +836,9 @@ export class FetchUrlTask<
    * via the URL's origin so grants can be resource-limited (e.g. a dev-mode
    * grant for `http://localhost:*`). The graph runner evaluates this before
    * `execute()` runs, so a denied private URL never issues a network call.
-   *
-   * Root-task input may not yet be applied when entitlements are evaluated.
-   * If the URL is not available at this point, fail closed and require the
-   * private-network entitlement rather than under-declaring it.
    */
   public override entitlements(): TaskEntitlements {
-    const base = FetchUrlTask.entitlements();
-    const url = this.runInputData?.url;
-    if (typeof url !== "string" || url.length === 0) {
-      return mergeEntitlements(base, {
-        entitlements: [
-          {
-            id: Entitlements.NETWORK_PRIVATE,
-            reason:
-              "Runtime URL is not yet available during entitlement evaluation; private/internal destinations must be explicitly allowed",
-          },
-        ],
-      });
-    }
-    const classification = classifyUrl(url);
-    if (classification.kind !== "private") {
-      return base;
-    }
-    return mergeEntitlements(base, {
-      entitlements: [
-        {
-          id: Entitlements.NETWORK_PRIVATE,
-          reason: `URL targets private/internal host: ${classification.reason ?? classification.host ?? "unknown"}`,
-          resources: [urlResourcePattern(url)],
-        },
-      ],
-    });
+    return fetchUrlEntitlementsFor(this.runInputData?.url);
   }
 
   public static override configSchema(): DataPortSchema {
