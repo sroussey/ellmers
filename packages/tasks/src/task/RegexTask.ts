@@ -5,39 +5,15 @@
  */
 
 import type { IExecuteContext, IExecutePreviewContext, TaskConfig } from "@workglow/task-graph";
-import { CreateWorkflow, Task, TaskInvalidInputError, Workflow } from "@workglow/task-graph";
-import { SECURITY_LIMITS } from "@workglow/util";
+import { CreateWorkflow, Task, Workflow } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
-
-/**
- * Detects regex patterns prone to catastrophic backtracking (ReDoS).
- * Checks for nested quantifiers like (a+)+, (a*)+, (a+)*, etc.
- */
-function hasNestedQuantifiers(pattern: string): boolean {
-  // Strip character classes to avoid false positives on quantifiers inside [...]
-  const withoutClasses = pattern.replace(/\[(?:[^\]\\]|\\.)*\]/g, "X");
-  // Detect group with inner quantifier followed by outer quantifier
-  return /\([^)*+]*[*+][^)]*\)[+*?]|\([^)*+]*[*+][^)]*\)\{/.test(withoutClasses);
-}
+import { assertSafeRegexPattern } from "../util/regexSafety";
 
 function executeRegex(input: { value: string; pattern: string; flags?: string }): {
   match: boolean;
   matches: string[];
 } {
-  const bracketCount = (input.pattern.match(/\[/g) ?? []).length;
-  if (bracketCount > SECURITY_LIMITS.regexMaxBracketCount) {
-    throw new TaskInvalidInputError(
-      "Regex pattern rejected: too many '[' characters (potential ReDoS). " +
-        "Simplify the pattern to reduce complexity."
-    );
-  }
-
-  if (hasNestedQuantifiers(input.pattern)) {
-    throw new TaskInvalidInputError(
-      "Regex pattern rejected: nested quantifiers detected (potential ReDoS). " +
-        "Simplify the pattern to avoid catastrophic backtracking."
-    );
-  }
+  assertSafeRegexPattern(input.pattern);
 
   const flags = input.flags ?? "";
   const regex = new RegExp(input.pattern, flags);
