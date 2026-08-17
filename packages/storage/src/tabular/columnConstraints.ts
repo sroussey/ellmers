@@ -152,6 +152,12 @@ export function isNullableSchema(typeDef: JsonSchema): boolean {
  * its unknown-type branch. That made `mapPostgresType` emit
  * `TEXT /* unknown type *\/` for what should be an INTEGER column, and left
  * such columns with no derived width or range at all.
+ *
+ * Collapsing the array form therefore CHANGES the generated DDL for those
+ * columns. `CREATE TABLE IF NOT EXISTS` never alters an existing table, so a
+ * database created before this reads back `string` where a fresh one returns
+ * `number`. See "Nullable columns and generated DDL" in the package README for
+ * the operator-side `ALTER TABLE`.
  */
 export function getNonNullSchema(typeDef: JsonSchema): JsonSchema {
   if (typeof typeDef === "boolean") return typeDef;
@@ -208,6 +214,19 @@ export function varcharWidth(typeDef: JsonSchema): number | undefined {
   return typeof actualType.maxLength === "number" ? actualType.maxLength : undefined;
 }
 
+/**
+ * Which backend's write rules the schemaless stores enforce.
+ *
+ * - `"postgres"` (default): everything the Postgres DDL declares — NOT NULL,
+ *   `VARCHAR(n)` width, integer column range — plus the schema's own numeric
+ *   bounds, which no backend emits a CHECK for.
+ * - `"sqlite"`: only what SQLite enforces. It emits `TEXT` with the width in a
+ *   comment and a single `INTEGER` type, so neither width nor range is a
+ *   constraint there; presence and NOT NULL still are.
+ * - `"off"`: no write-time checking.
+ */
+export type TabularConstraintMode = "postgres" | "sqlite" | "off";
+
 /** The write-time constraints a single column imposes on every stored row. */
 export interface TabularColumnConstraint {
   readonly column: string;
@@ -227,7 +246,7 @@ export interface TabularColumnConstraint {
 
 /**
  * Derives the per-column write constraints implied by a storage's schema,
- * mirroring the DDL the SQL backends emit:
+ * mirroring the DDL the Postgres-shaped backends emit:
  *
  * - Primary-key columns are `NOT NULL` (see `constructPrimaryKeyColumns`).
  * - A value column is `NOT NULL` when it is listed in `required` *and* its
@@ -247,10 +266,14 @@ export interface TabularColumnConstraint {
  *
  * Computed once per storage instance; the result is a plain array so the
  * per-write check is a straight loop with no schema walking.
+ *
+ * `mode` narrows the set to what the target backend really enforces — see
+ * {@link TabularConstraintMode}.
  */
 export function buildColumnConstraints(
   primaryKeySchema: DataPortSchemaObject,
-  valueSchema: DataPortSchemaObject
+  valueSchema: DataPortSchemaObject,
+  mode: TabularConstraintMode = "postgres"
 ): ReadonlyArray<TabularColumnConstraint> {
   const constraints: TabularColumnConstraint[] = [];
 
@@ -278,6 +301,18 @@ export function buildColumnConstraints(
       bounds: numericBounds(typeDef),
       integerType: sqlIntegerTypeFor(typeDef),
     });
+  }
+
+  if (mode === "off") return [];
+  if (mode === "sqlite") {
+    // Width, range and schema bounds have no SQLite counterpart; presence and
+    // NOT NULL do. Stripped once here so the per-write loop stays a straight scan.
+    return constraints.map((c) => ({
+      ...c,
+      maxLength: undefined,
+      bounds: undefined,
+      integerType: undefined,
+    }));
   }
 
   return constraints;
@@ -365,9 +400,16 @@ function assertNumericConstraints(value: number, constraint: TabularColumnConstr
 
 /**
  * Throws when `row` violates any of `constraints`. Lets the schemaless
- * backends (InMemory and the storages layered on it) fail on a row that a
- * SQL backend would have rejected, instead of silently accepting a missing
- * `NOT NULL` column or an over-long `VARCHAR` and only failing in production.
+ * backends (InMemory and the storages layered on it) fail on a row that the
+ * real backend would have rejected, instead of silently accepting it and
+ * deferring the failure to the first real deployment.
+ *
+ * Only the presence / NOT NULL half of that claim holds on every backend. The
+ * width, integer-range and schema-bounds checks are Postgres-shaped: SQLite
+ * emits `TEXT` with the width in a comment and a single `INTEGER` type, so it
+ * enforces neither, and the schema's own numeric bounds are emitted as a CHECK
+ * by no backend at all — stricter than any database. Pick what to enforce with
+ * {@link TabularConstraintMode}.
  *
  * Error messages deliberately echo the SQL backends' wording so a test that
  * asserts on the message reads the same across backends.

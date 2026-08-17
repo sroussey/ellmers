@@ -298,6 +298,116 @@ describe("InMemoryTabularStorage column constraints", () => {
     });
   });
 
+  describe("constraint mode", () => {
+    /**
+     * The 8th constructor parameter is the constraint mode. Everything before
+     * it is spelled out so the mode lands in the right position.
+     */
+    function makeStorage<
+      S extends DataPortSchemaObject,
+      PK extends readonly (keyof S["properties"])[],
+    >(
+      schema: S,
+      primaryKeyNames: PK,
+      mode: "postgres" | "sqlite" | "off"
+    ): InMemoryTabularStorage<S, PK> {
+      return new InMemoryTabularStorage<S, PK>(
+        schema,
+        primaryKeyNames,
+        [],
+        "if-missing",
+        undefined,
+        "inmemory",
+        [],
+        mode
+      );
+    }
+
+    it("postgres is the default mode", async () => {
+      // Constructed with the pre-existing 7-argument call: the new parameter is
+      // additive, so an untouched caller keeps the Postgres-shaped rules.
+      const storage = new InMemoryTabularStorage(
+        ConstraintSchema,
+        ConstraintPK,
+        [],
+        "if-missing",
+        undefined,
+        "inmemory",
+        []
+      );
+      await storage.setupDatabase();
+      await expect(storage.put({ ...validRow, name: "Ada Lovelace!" } as never)).rejects.toThrow(
+        StorageValidationError
+      );
+    });
+
+    it("sqlite mode accepts a value wider than maxLength, as a SQLite TEXT column does", async () => {
+      // `SqliteTabularStorage.mapTypeToSQL` emits `TEXT /* VARCHAR(n) */` — the
+      // width is a COMMENT, and SQLite enforces no character width at all. A
+      // double that rejects the value is stricter than the backend it stands in
+      // for.
+      const storage = makeStorage(ConstraintSchema, ConstraintPK, "sqlite");
+      await storage.setupDatabase();
+      await storage.put({ ...validRow, name: "Ada Lovelace!" } as never);
+      expect((await storage.get({ id: "row-1" }))?.name).toBe("Ada Lovelace!");
+    });
+
+    it("sqlite mode accepts an integer outside the Postgres column range", async () => {
+      // `score` maps to SMALLINT on Postgres (max 32767). SQLite emits a bare
+      // `INTEGER` with no width selection, so 40000 stores fine there.
+      const storage = makeStorage(NumericSchema, NumericPK, "sqlite");
+      await storage.setupDatabase();
+      await storage.put({ ...validNumericRow, score: 40000 } as never);
+      expect((await storage.get({ id: "n-1" }))?.score).toBe(40000);
+    });
+
+    it("sqlite mode accepts a value outside the schema's declared bounds", async () => {
+      // Schema bounds are emitted as a CHECK by no backend at all, so they are
+      // the first thing a backend-scoped mode drops.
+      const storage = makeStorage(NumericSchema, NumericPK, "sqlite");
+      await storage.setupDatabase();
+      await storage.put({ ...validNumericRow, ratio: 42 } as never);
+      expect((await storage.get({ id: "n-1" }))?.ratio).toBe(42);
+    });
+
+    it("sqlite mode still rejects a missing required column", async () => {
+      const storage = makeStorage(ConstraintSchema, ConstraintPK, "sqlite");
+      await storage.setupDatabase();
+      const { name: _dropped, ...withoutName } = validRow;
+      await expect(storage.put(withoutName as never)).rejects.toThrow(
+        "Missing required value field: name"
+      );
+    });
+
+    it("sqlite mode still rejects an explicit null in a NOT NULL column", async () => {
+      const storage = makeStorage(ConstraintSchema, ConstraintPK, "sqlite");
+      await storage.setupDatabase();
+      await expect(storage.put({ ...validRow, name: null } as never)).rejects.toThrow(
+        "NOT NULL constraint failed: name"
+      );
+
+      // `note` is required but nullable, so an explicit null stays legal — the
+      // presence and NOT NULL halves are still two separate checks here.
+      await storage.put({ ...validRow, note: null } as never);
+      expect((await storage.get({ id: "row-1" }))?.note).toBeNull();
+    });
+
+    it("off mode accepts a row postgres mode rejects", async () => {
+      // One row failing width (name), integer range (count overflows INTEGER)
+      // and NOT NULL (email) simultaneously.
+      const offending = { ...validRow, name: "Ada Lovelace!", email: null, count: 3_000_000_000 };
+
+      const postgres = makeStorage(ConstraintSchema, ConstraintPK, "postgres");
+      await postgres.setupDatabase();
+      await expect(postgres.put(offending as never)).rejects.toThrow(StorageValidationError);
+
+      const off = makeStorage(ConstraintSchema, ConstraintPK, "off");
+      await off.setupDatabase();
+      await off.put(offending as never);
+      expect(await off.size()).toBe(1);
+    });
+  });
+
   describe("write atomicity", () => {
     it("stores nothing when a single put is rejected", async () => {
       await expect(storage.put({ ...validRow, name: null } as never)).rejects.toThrow();
