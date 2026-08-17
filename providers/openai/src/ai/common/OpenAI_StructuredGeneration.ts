@@ -57,7 +57,9 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
       format: {
         type: "json_schema",
         name: "structured_output",
-        schema: rewritten,
+        // The nullable-union rewrite is a strict-mode accommodation; a
+        // downshifted request sends the schema as the caller wrote it.
+        schema: strict ? rewritten : schema,
         strict,
       },
     },

@@ -28,10 +28,13 @@ import { mapGeminiUsage } from "./Gemini_Usage";
 /**
  * Streaming run-fn for `["text.generation", "json-mode"]`. Gemini uses
  * `responseSchema` + `responseMimeType: "application/json"` to produce
- * structured output. TypeBox `Type.Union([T, Null])` is rewritten to
- * `{type: [t, "null"]}` first so a nullable field is not an `anyOf`;
- * `sanitizeSchemaForGemini` then strips `additionalProperties`. The prompt
- * is left as the caller wrote it — Gemini enforces via `responseSchema`.
+ * structured output. The nullable-union rewrite is shape-neutral here:
+ * `@google/genai` normalizes both `anyOf: [T, {type:"null"}]` and
+ * `type: [T, "null"]` to `{nullable: true, type: T}` in its own request
+ * converter, so the two spellings serialize identically. It is applied only to
+ * keep one schema pipeline across providers. `sanitizeSchemaForGemini` then
+ * strips `additionalProperties`. The prompt is left as the caller wrote it —
+ * Gemini enforces via `responseSchema`.
  * Per the streaming convention exception for json-mode, the `finish` event
  * MUST include the parsed `object` — it is the definitive result
  * `StructuredGenerationTask` validates against the schema.

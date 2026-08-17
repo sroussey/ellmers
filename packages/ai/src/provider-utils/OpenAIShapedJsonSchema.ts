@@ -5,6 +5,18 @@
  */
 
 /**
+ * The single type a schema declares, reading both the `"object"` spelling and
+ * the `["object","null"]` array that {@link rewriteNullableUnionsForStrict}
+ * emits. `undefined` for a multi-type union, which has no strict spelling.
+ */
+function soleDeclaredType(type: unknown): string | undefined {
+  if (typeof type === "string") return type;
+  if (!Array.isArray(type)) return undefined;
+  const nonNull = type.filter((entry) => entry !== "null");
+  return nonNull.length === 1 && typeof nonNull[0] === "string" ? nonNull[0] : undefined;
+}
+
+/**
  * Whether a JSON schema satisfies the OpenAI-shape `strict` subset — every
  * object has `additionalProperties: false` and lists all of its properties in
  * `required`, recursively. Combinators (`anyOf`/`oneOf`/`allOf`) and `$ref`
@@ -28,7 +40,13 @@ export function isStrictCompatibleSchema(schema: unknown): boolean {
   if (s.$ref !== undefined) return false;
   if (Array.isArray(s.anyOf) || Array.isArray(s.oneOf) || Array.isArray(s.allOf)) return false;
 
-  const isObject = s.type === "object" || (s.type === undefined && s.properties !== undefined);
+  const declaredType = soleDeclaredType(s.type);
+  // A multi-type union (with or without "null") is a combinator by another
+  // name; only `[t, "null"]` has a strict spelling.
+  if (Array.isArray(s.type) && declaredType === undefined) return false;
+
+  const isObject =
+    declaredType === "object" || (s.type === undefined && s.properties !== undefined);
   if (isObject) {
     if (s.additionalProperties !== false) return false;
     const props = (s.properties as Record<string, unknown> | undefined) ?? {};
@@ -40,7 +58,7 @@ export function isStrictCompatibleSchema(schema: unknown): boolean {
     return true;
   }
 
-  const isArray = s.type === "array" || s.items !== undefined;
+  const isArray = declaredType === "array" || s.items !== undefined;
   if (isArray) {
     if (Array.isArray(s.items)) return s.items.every(isStrictCompatibleSchema);
     return isStrictCompatibleSchema(s.items);
@@ -64,7 +82,13 @@ export function firstNonStrictReason(schema: unknown): string | undefined {
   if (Array.isArray(s.oneOf)) return "oneOf";
   if (Array.isArray(s.allOf)) return "allOf";
 
-  const isObject = s.type === "object" || (s.type === undefined && s.properties !== undefined);
+  const declaredType = soleDeclaredType(s.type);
+  if (Array.isArray(s.type) && declaredType === undefined) {
+    return `multi-type union: ${(s.type as unknown[]).join("|")}`;
+  }
+
+  const isObject =
+    declaredType === "object" || (s.type === undefined && s.properties !== undefined);
   if (isObject) {
     if (s.additionalProperties !== false) return "missing additionalProperties:false";
     const props = (s.properties as Record<string, unknown> | undefined) ?? {};
@@ -77,7 +101,7 @@ export function firstNonStrictReason(schema: unknown): string | undefined {
     return undefined;
   }
 
-  const isArray = s.type === "array" || s.items !== undefined;
+  const isArray = declaredType === "array" || s.items !== undefined;
   if (isArray) {
     if (Array.isArray(s.items)) {
       for (let i = 0; i < s.items.length; i++) {
@@ -97,12 +121,16 @@ function isNullTypeSchema(schema: unknown): boolean {
   return (schema as Record<string, unknown>).type === "null";
 }
 
-function withNullType(schema: Record<string, unknown>): Record<string, unknown> {
+function withNullType(schema: Record<string, unknown>): Record<string, unknown> | undefined {
   const t = schema.type;
-  if (t === undefined) return { ...schema, type: ["object", "null"] };
-  if (Array.isArray(t)) {
-    return t.includes("null") ? schema : { ...schema, type: [...t, "null"] };
+  if (t === undefined) {
+    // Infer only from a keyword that already implies the kind; guessing
+    // "object" for a free-form variant sends a type the caller never wrote.
+    const implied =
+      schema.properties !== undefined ? "object" : schema.items !== undefined ? "array" : undefined;
+    return implied === undefined ? undefined : { ...schema, type: [implied, "null"] };
   }
+  if (Array.isArray(t)) return t.includes("null") ? schema : { ...schema, type: [...t, "null"] };
   return { ...schema, type: [t, "null"] };
 }
 
@@ -116,7 +144,11 @@ export function rewriteNullableUnionsForStrict(schema: unknown): unknown {
   if (Array.isArray(schema)) return schema.map(rewriteNullableUnionsForStrict);
 
   const s = schema as Record<string, unknown>;
-  const combinator = Array.isArray(s.anyOf) ? "anyOf" : Array.isArray(s.oneOf) ? "oneOf" : undefined;
+  const combinator = Array.isArray(s.anyOf)
+    ? "anyOf"
+    : Array.isArray(s.oneOf)
+      ? "oneOf"
+      : undefined;
   if (combinator !== undefined) {
     const variants = (s[combinator] as unknown[]).map(rewriteNullableUnionsForStrict);
     if (variants.length === 2) {
@@ -131,7 +163,8 @@ export function rewriteNullableUnionsForStrict(schema: unknown): unknown {
         const rest = { ...s };
         delete rest.anyOf;
         delete rest.oneOf;
-        return withNullType({ ...rest, ...(other as Record<string, unknown>) });
+        const collapsed = withNullType({ ...rest, ...(other as Record<string, unknown>) });
+        if (collapsed !== undefined) return collapsed;
       }
     }
     return { ...s, [combinator]: variants };
@@ -202,7 +235,10 @@ export function jsonModeChatParts(
   options?: { readonly jsonSchemaSupported?: boolean }
 ): JsonModeChatParts {
   if (options?.jsonSchemaSupported === false) {
-    return { prompt: promptWithJsonSchema(prompt, schema), responseFormat: { type: "json_object" } };
+    return {
+      prompt: promptWithJsonSchema(prompt, schema),
+      responseFormat: { type: "json_object" },
+    };
   }
   if (schema === undefined || schema === null) {
     return { prompt, responseFormat: { type: "json_object" } };

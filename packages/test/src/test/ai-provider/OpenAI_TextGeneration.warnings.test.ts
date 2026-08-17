@@ -4,7 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { firstNonStrictReason, isStrictCompatibleSchema } from "@workglow/ai/provider-utils";
+import {
+  firstNonStrictReason,
+  isStrictCompatibleSchema,
+  rewriteNullableUnionsForStrict,
+} from "@workglow/ai/provider-utils";
 import { _testOnly } from "@workglow/openai/ai";
 import type { ILogger } from "@workglow/util";
 import { setLogger } from "@workglow/util";
@@ -205,5 +209,42 @@ describe("warnStrictDowngradedOnce dedupe", () => {
     warnStrictDowngradedOnce("gpt-5.5", "anyOf");
     warnStrictDowngradedOnce("gpt-5.5-mini", "anyOf");
     expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  it("names the reason inside a nullable object", () => {
+    // The run-fn reports on the REWRITTEN schema, where the nullable field is a
+    // type array. While `firstNonStrictReason` read only the `"object"` string
+    // spelling it returned undefined here and the run-fn logged "unknown
+    // reason" — the downshift was observable but not diagnosable.
+    const rewritten = rewriteNullableUnionsForStrict({
+      type: "object",
+      additionalProperties: false,
+      required: ["addr"],
+      properties: {
+        addr: {
+          anyOf: [{ type: "object", properties: { city: { type: "string" } } }, { type: "null" }],
+        },
+      },
+    });
+    expect(isStrictCompatibleSchema(rewritten)).toBe(false);
+    const reason = firstNonStrictReason(rewritten);
+    expect(reason).toBe("addr.missing additionalProperties:false");
+
+    warnStrictDowngradedOnce("gpt-5.5", reason!);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain("addr.missing additionalProperties:false");
+  });
+
+  it("names a multi-type union", () => {
+    const rewritten = rewriteNullableUnionsForStrict({
+      anyOf: [{ type: ["string", "number"] }, { type: "null" }],
+    });
+    expect(isStrictCompatibleSchema(rewritten)).toBe(false);
+    const reason = firstNonStrictReason(rewritten);
+    expect(reason).toBe("multi-type union: string|number|null");
+
+    warnStrictDowngradedOnce("gpt-5.5", reason!);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain("multi-type union: string|number|null");
   });
 });

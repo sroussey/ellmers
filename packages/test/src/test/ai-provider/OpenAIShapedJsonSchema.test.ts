@@ -21,10 +21,7 @@ const STRICT_OBJECT = {
 
 /** TypeBox `Type.Union([T, Type.Null()])` — the shape that used to force `strict: false`. */
 const NULLABLE_STRING = {
-  anyOf: [
-    { type: "string", maxLength: 200, description: "Proposed target" },
-    { type: "null" },
-  ],
+  anyOf: [{ type: "string", maxLength: 200, description: "Proposed target" }, { type: "null" }],
 };
 
 const LOI_LIKE = {
@@ -86,6 +83,125 @@ describe("rewriteNullableUnionsForStrict", () => {
   });
 });
 
+describe("isStrictCompatibleSchema", () => {
+  it("rejects a nullable object whose inner object omits additionalProperties/required", () => {
+    // `rewriteNullableUnionsForStrict` collapses `anyOf: [T, null]` into a type
+    // ARRAY (`["object","null"]`). The strict check must keep recursing through
+    // that spelling: the inner object here carries neither
+    // `additionalProperties: false` nor `required`, so sending it with
+    // `strict: true` earns a 400 from OpenAI —
+    //   In context=('properties','addr'), 'additionalProperties' is required to
+    //   be supplied and to be false
+    // Reading only the `"object"` string spelling made this schema fall through
+    // to a bare `return true`, so the array-type branch is what stops the bad
+    // request. Do not simplify it away.
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      required: ["addr"],
+      properties: {
+        addr: {
+          anyOf: [{ type: "object", properties: { city: { type: "string" } } }, { type: "null" }],
+        },
+      },
+    };
+    const rewritten = rewriteNullableUnionsForStrict(schema);
+    expect(rewritten).toEqual({
+      type: "object",
+      additionalProperties: false,
+      required: ["addr"],
+      properties: { addr: { type: ["object", "null"], properties: { city: { type: "string" } } } },
+    });
+    expect(isStrictCompatibleSchema(rewritten)).toBe(false);
+  });
+
+  it("accepts a nullable object that is itself strict", () => {
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      required: ["addr"],
+      properties: {
+        addr: {
+          anyOf: [
+            {
+              type: "object",
+              additionalProperties: false,
+              required: ["city"],
+              properties: { city: { type: "string" } },
+            },
+            { type: "null" },
+          ],
+        },
+      },
+    };
+    const rewritten = rewriteNullableUnionsForStrict(schema) as Record<string, unknown>;
+    expect(isStrictCompatibleSchema(rewritten)).toBe(true);
+    expect((rewritten.properties as Record<string, unknown>).addr).toEqual({
+      type: ["object", "null"],
+      additionalProperties: false,
+      required: ["city"],
+      properties: { city: { type: "string" } },
+    });
+  });
+
+  it("rejects a genuine anyOf nested inside a nullable object", () => {
+    // The nullable wrapper is strict; the combinator two levels down is not,
+    // which is only reachable if the array-type branch recurses.
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      required: ["addr"],
+      properties: {
+        addr: {
+          anyOf: [
+            {
+              type: "object",
+              additionalProperties: false,
+              required: ["x"],
+              properties: { x: { anyOf: [{ type: "string" }, { type: "number" }] } },
+            },
+            { type: "null" },
+          ],
+        },
+      },
+    };
+    expect(isStrictCompatibleSchema(rewriteNullableUnionsForStrict(schema))).toBe(false);
+  });
+
+  it("rejects a multi-type union", () => {
+    // A type array naming two real types is a combinator by another name —
+    // `["string","number"]` has no strict spelling, with or without "null".
+    expect(isStrictCompatibleSchema({ type: ["string", "number"] })).toBe(false);
+
+    const rewritten = rewriteNullableUnionsForStrict({
+      anyOf: [{ type: ["string", "number"] }, { type: "null" }],
+    });
+    expect(rewritten).toEqual({ type: ["string", "number", "null"] });
+    expect(isStrictCompatibleSchema(rewritten)).toBe(false);
+  });
+
+  it("leaves an untyped nullable variant as anyOf rather than guessing object", () => {
+    // Nothing here implies a kind, so inventing `["object","null"]` would send
+    // a type the caller never wrote. The combinator survives untouched and the
+    // schema honestly reports non-strict.
+    const schema = { anyOf: [{ description: "free" }, { type: "null" }] };
+    expect(rewriteNullableUnionsForStrict(schema)).toEqual(schema);
+    expect(isStrictCompatibleSchema(rewriteNullableUnionsForStrict(schema))).toBe(false);
+  });
+
+  it("infers object from properties / array from items on an untyped variant", () => {
+    expect(
+      rewriteNullableUnionsForStrict({
+        anyOf: [{ properties: { a: { type: "string" } } }, { type: "null" }],
+      })
+    ).toEqual({ properties: { a: { type: "string" } }, type: ["object", "null"] });
+
+    expect(
+      rewriteNullableUnionsForStrict({ anyOf: [{ items: { type: "string" } }, { type: "null" }] })
+    ).toEqual({ items: { type: "string" }, type: ["array", "null"] });
+  });
+});
+
 describe("jsonModeChatParts", () => {
   it("uses json_schema + strict when the provider supports it and the schema is (or rewrites to) strict", () => {
     const parts = jsonModeChatParts("Extract the LOI.", LOI_LIKE);
@@ -106,6 +222,25 @@ describe("jsonModeChatParts", () => {
     });
     expect(parts.responseFormat).toEqual({ type: "json_object" });
     expect(parts.prompt).toBe(promptWithJsonSchema("Extract the LOI.", LOI_LIKE));
+  });
+
+  it("falls back to json_object when a nullable object is not strict-compatible", () => {
+    // The rewrite succeeds (the field collapses to a type array) but the inner
+    // object is not strict, so the request must downshift rather than ship
+    // `strict: true`. The prompt carries the ORIGINAL schema, not the rewrite.
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      required: ["addr"],
+      properties: {
+        addr: {
+          anyOf: [{ type: "object", properties: { city: { type: "string" } } }, { type: "null" }],
+        },
+      },
+    };
+    const parts = jsonModeChatParts("n", schema);
+    expect(parts.responseFormat).toEqual({ type: "json_object" });
+    expect(parts.prompt).toBe(promptWithJsonSchema("n", schema));
   });
 
   it("falls back to json_object + prompt schema when a combinator cannot be rewritten", () => {
