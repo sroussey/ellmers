@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { FileGrepTask, registerSafeFetch, type SafeFetchFn } from "@workglow/tasks";
-import { setLogger } from "@workglow/util";
+import { TaskAbortedError } from "@workglow/task-graph";
+import { FileGrepTask, grepLines, registerSafeFetch, type SafeFetchFn } from "@workglow/tasks";
+import { DEFAULT_LIMITS, setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -271,6 +272,12 @@ describe("FileGrepTask", () => {
     ]);
   });
 
+  /**
+   * `truncated` is now computed rather than hard-coded: the match is on line 2
+   * of 6, so four lines were never scanned and the scan really did stop early.
+   * `matchCount` stays 1 — `existsOnly` stops at the first match, and 0 would
+   * contradict `exists: true`.
+   */
   test("existsOnly returns whether a match exists without groups", async () => {
     const result = await new FileGrepTask({
       defaults: {
@@ -284,8 +291,66 @@ describe("FileGrepTask", () => {
       groups: [],
       matchCount: 1,
       exists: true,
-      truncated: false,
+      truncated: true,
     });
+  });
+
+  test("existsOnly reports no truncation when the match is the last line", async () => {
+    mockText("alpha\nbravo\ncharlie foo\n");
+
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "foo",
+        existsOnly: true,
+      },
+    }).run();
+
+    expect(result.truncated).toBe(false);
+  });
+
+  test("truncated is false when the last line is the final match", async () => {
+    mockText("alpha\nfoo one\nbravo\nfoo two\n");
+
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "foo",
+        maxMatches: 2,
+      },
+    }).run();
+
+    expect(result.matchCount).toBe(2);
+    expect(result.truncated).toBe(false);
+  });
+
+  test("maxMatches with afterContext still labels later matching lines as matches", async () => {
+    mockText("foo a\nfoo b\nfoo c\ntail\n");
+
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "foo",
+        maxMatches: 1,
+        afterContext: 2,
+      },
+    }).run();
+
+    expect(result.matchCount).toBe(1);
+    const byLine = new Map(result.groups.flatMap((g) => g.lines).map((l) => [l.line, l.match]));
+    expect(byLine.get(2)).toBe(true);
+    expect(byLine.get(3)).toBe(true);
+  });
+
+  test("applies default output caps when the caller states none", async () => {
+    mockText("foo\n".repeat(DEFAULT_LIMITS.grepMaxOutputLines + 500));
+
+    const result = await new FileGrepTask({
+      defaults: { url: "https://example.com/log.txt", pattern: "foo" },
+    }).run();
+
+    expect(result.truncated).toBe(true);
+    expect(result.groups.flatMap((g) => g.lines)).toHaveLength(DEFAULT_LIMITS.grepMaxOutputLines);
   });
 
   test("countOnly returns the match count without groups", async () => {
@@ -574,6 +639,96 @@ describe("FileGrepTask", () => {
         lines: [{ line: 2, text: "two foo", match: true }],
       },
     ]);
+  });
+
+  test("rejects a catastrophic pattern before reading the document", async () => {
+    await expect(
+      new FileGrepTask({
+        defaults: { url: "https://example.com/log.txt", pattern: "(a+)+$" },
+      }).run()
+    ).rejects.toThrow(/nested quantifiers/);
+
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  /**
+   * `(\w|\d)*$` walks straight past the shape screen and is exponential all the
+   * same: against `"1".repeat(n) + "!"` V8 takes 1 ms at n=16, 14 ms at n=20,
+   * 218 ms at n=24 and 657 ms at n=26 — doubling per added character. At n=40
+   * that is roughly 2^40 backtracking steps, on the order of days. Unbounded,
+   * this run never returns and no abort can interrupt the one synchronous
+   * `test()` it is stuck inside; the match budget is what turns it into a
+   * rejection.
+   *
+   * The bypass is structural rather than an oversight: the two branches overlap
+   * on the digits they both accept, and the screen compares branch TEXT, which
+   * cannot see that. This is exactly why the screen is documented as a
+   * heuristic and the budget as the enforced bound.
+   */
+  test("a guard-bypassing pattern fails on the match budget instead of hanging", async () => {
+    mockText("1".repeat(40) + "!");
+
+    const started = Date.now();
+    await expect(
+      new FileGrepTask({
+        defaults: { url: "https://example.com/log.txt", pattern: "(\\w|\\d)*$" },
+      }).run()
+    ).rejects.toThrow(/budget/);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  /**
+   * Pre-fix the abort check ran between lines, which bought nothing: a single
+   * `regex.test()` is uninterruptible, so a hostile line blocked forever with
+   * the check sitting unreachable above it. It now runs between batches, and
+   * how long one batch may run is what the matcher's budget bounds.
+   *
+   * Driven through `grepLines` rather than the task because an async generator
+   * resolves on the MICROTASK queue: a purely in-memory source starves the
+   * timer phase entirely, so a `setTimeout` abort would not fire until the scan
+   * had already finished. The source below yields to the macrotask queue
+   * periodically, which is what a real file stream does on every read.
+   */
+  test("aborts between batches", async () => {
+    const controller = new AbortController();
+
+    async function* source(): AsyncGenerator<string> {
+      for (let i = 0; i < 200_000; i++) {
+        if (i % 1_000 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+        yield "foo";
+      }
+    }
+
+    const started = Date.now();
+    const running = grepLines(source(), "foo", { countOnly: true }, controller.signal);
+    setTimeout(() => controller.abort(), 5);
+
+    await expect(running).rejects.toThrow(TaskAbortedError);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  /**
+   * The group de-duplication used to scan `currentGroup.lines` linearly on
+   * every emit, so a run of contiguous matches was quadratic. Measured on the
+   * pre-fix shape: 10 000 lines -> 126 ms, 20 000 -> 286 ms, 40 000 -> 1576 ms,
+   * 80 000 -> 6390 ms — a clean 4x per doubling, which puts 200 000 at roughly
+   * 40 s. The bound below is that curve's cost, not an arbitrary number.
+   */
+  test("greps 200k contiguous matching lines in bounded time", { timeout: 30_000 }, async () => {
+    mockText("foo\n".repeat(200_000));
+
+    const started = Date.now();
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "foo",
+        maxOutputLines: 200_000,
+        maxOutputChars: 10_000_000,
+      },
+    }).run();
+
+    expect(result.matchCount).toBe(200_000);
+    expect(Date.now() - started).toBeLessThan(5_000);
   });
 
   test("empty file has no matches", async () => {

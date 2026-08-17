@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { FileGrepTask } from "@workglow/tasks";
-import { setLogger } from "@workglow/util";
+import { TaskEntitlementError, TaskInvalidInputError } from "@workglow/task-graph";
+import { FileGrepTask, registerSafeFetch, type SafeFetchFn } from "@workglow/tasks";
+import { DEFAULT_LIMITS, setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -85,5 +86,182 @@ describe("FileGrepTask (server - local files)", () => {
         defaults: { url: filePath, pattern: "foo" },
       }).run()
     ).rejects.toThrow();
+  });
+
+  /**
+   * Reproduced pre-fix with a 640 MB newline-free stream: `createInterface`
+   * accumulated the whole thing and threw `RangeError: Invalid string length`
+   * from a stream `'data'` listener. That surfaces as an `uncaughtException`,
+   * not an iterator rejection, so `grepFile`'s try/catch never saw it and the
+   * process died. 1 MB here is enough to exercise the cap without the memory.
+   */
+  test("a file with no line terminator does not crash the process", async () => {
+    const filePath = join(testDir, "oneline.bin");
+    writeFileSync(filePath, "x".repeat(1_000_000), "utf-8");
+
+    const uncaught: unknown[] = [];
+    const spy = (err: unknown): void => {
+      uncaught.push(err);
+    };
+    process.on("uncaughtException", spy);
+
+    try {
+      const result = await new FileGrepTask({
+        defaults: { url: filePath, pattern: "x" },
+      }).run();
+
+      expect(uncaught).toEqual([]);
+      expect(result.matchCount).toBe(1);
+      expect(result.groups[0].lines[0].text).toHaveLength(DEFAULT_LIMITS.grepMaxLineChars);
+    } finally {
+      process.off("uncaughtException", spy);
+    }
+  });
+
+  test("caps an over-long line and reports truncation", async () => {
+    const filePath = join(testDir, "long.txt");
+    const long = "y".repeat(DEFAULT_LIMITS.grepMaxLineChars + 5_000);
+    writeFileSync(filePath, `short\n${long}\ntail foo\n`, "utf-8");
+
+    const result = await new FileGrepTask({
+      defaults: { url: filePath, pattern: "y" },
+    }).run();
+
+    expect(result.truncated).toBe(true);
+    const matched = result.groups.flatMap((g) => g.lines.filter((l) => l.match));
+    expect(matched).toHaveLength(1);
+    expect(matched[0].text).toHaveLength(DEFAULT_LIMITS.grepMaxLineChars);
+  });
+
+  test("refuses a path outside the configured roots", async () => {
+    const outside = join(tmpdir(), `filegrep-outside-${Date.now()}.txt`);
+    writeFileSync(outside, "bravo foo\n", "utf-8");
+
+    try {
+      await expect(
+        new FileGrepTask({
+          roots: [testDir],
+          defaults: { url: outside, pattern: "foo" },
+        }).run()
+      ).rejects.toThrow(TaskEntitlementError);
+    } finally {
+      rmSync(outside, { force: true });
+    }
+  });
+
+  /**
+   * The containment check runs AFTER `realpathSync`. A pre-realpath check
+   * passes here — the link itself sits inside the root — and then opens the
+   * target, which is the whole escape.
+   */
+  test("refuses a symlink that escapes the configured roots", async () => {
+    const link = join(testDir, "escape.txt");
+    symlinkSync("/etc/passwd", link);
+
+    await expect(
+      new FileGrepTask({
+        roots: [testDir],
+        defaults: { url: link, pattern: "root" },
+      }).run()
+    ).rejects.toThrow(TaskEntitlementError);
+  });
+
+  test("allows a symlink that stays inside the roots", async () => {
+    const target = join(testDir, "target.txt");
+    const link = join(testDir, "link.txt");
+    writeFileSync(target, "alpha\nbravo foo\n", "utf-8");
+    symlinkSync(target, link);
+
+    const result = await new FileGrepTask({
+      roots: [testDir],
+      defaults: { url: link, pattern: "foo" },
+    }).run();
+
+    expect(result.matchCount).toBe(1);
+  });
+
+  /**
+   * `slice(7)` left the path percent-encoded, so a filer-authored name with a
+   * space or a `%` addressed a file that does not exist.
+   */
+  test("parses file:// URLs rather than slicing the scheme", async () => {
+    const filePath = join(testDir, "a b%c.txt");
+    writeFileSync(filePath, "alpha\nbravo foo\n", "utf-8");
+
+    const result = await new FileGrepTask({
+      defaults: { url: `file://${testDir}/a%20b%25c.txt`, pattern: "foo" },
+    }).run();
+
+    expect(result.matchCount).toBe(1);
+  });
+
+  test("rejects a file:// URL carrying a remote host", async () => {
+    await expect(
+      new FileGrepTask({
+        defaults: { url: "file://evil.example/etc/passwd", pattern: "root" },
+      }).run()
+    ).rejects.toThrow(TaskInvalidInputError);
+  });
+
+  /**
+   * The scheme test was case-sensitive, so `HTTP://x` fell through to the
+   * filesystem branch and was opened as a relative path against the process
+   * cwd. It must route to the fetch branch instead.
+   */
+  describe("uppercase schemes", () => {
+    let prevSafeFetch: SafeFetchFn;
+
+    beforeEach(() => {
+      prevSafeFetch = registerSafeFetch(() =>
+        Promise.resolve(
+          new Response("alpha\nbravo foo\n", {
+            status: 200,
+            headers: { "Content-Type": "text/plain" },
+          })
+        )
+      );
+    });
+
+    afterEach(() => {
+      registerSafeFetch(prevSafeFetch);
+    });
+
+    test("treats HTTP:// case-insensitively", async () => {
+      const result = await new FileGrepTask({
+        defaults: { url: "HTTP://example.com/log.txt", pattern: "foo" },
+      }).run();
+
+      expect(result.matchCount).toBe(1);
+      expect(result.groups[0].lines[0].text).toBe("bravo foo");
+    });
+  });
+
+  describe.skipIf(!existsSync("/dev/zero"))("non-regular files", () => {
+    test("refuses a character device", async () => {
+      await expect(
+        new FileGrepTask({
+          defaults: { url: "/dev/zero", pattern: "foo" },
+        }).run()
+      ).rejects.toThrow(TaskInvalidInputError);
+    });
+  });
+
+  /**
+   * The budget applies on the local path too, not only through the fetch
+   * branch. `(\w|\d)*$` bypasses the shape screen — its branches overlap on the
+   * digits both accept, which comparing branch text cannot see — and takes
+   * 657 ms at n=26, doubling per added character.
+   */
+  test("a catastrophic pattern over a local file fails on the budget", async () => {
+    const filePath = join(testDir, "evil.txt");
+    writeFileSync(filePath, "1".repeat(40) + "!\n", "utf-8");
+
+    const started = Date.now();
+    await expect(
+      new FileGrepTask({
+        defaults: { url: filePath, pattern: "(\\w|\\d)*$" },
+      }).run()
+    ).rejects.toThrow(/budget/);
+    expect(Date.now() - started).toBeLessThan(5_000);
   });
 });

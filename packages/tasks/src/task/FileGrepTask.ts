@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IExecuteContext, TaskConfig } from "@workglow/task-graph";
+import type { IExecuteContext, TaskConfig, TaskEntitlements } from "@workglow/task-graph";
 import {
   CreateWorkflow,
   Task,
@@ -12,10 +12,11 @@ import {
   TaskInvalidInputError,
   Workflow,
 } from "@workglow/task-graph";
+import { DEFAULT_LIMITS, SECURITY_LIMITS } from "@workglow/util";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import { assertSafeRegexPattern, escapeRegExp } from "../util/regexSafety";
+import { assertSafeRegexPattern, compileSafeRegex, escapeRegExp } from "../util/regexSafety";
 import { linesFromText } from "../util/textLines";
-import { FetchUrlTask } from "./FetchUrlTask";
+import { fetchUrlEntitlementsFor, FetchUrlTask } from "./FetchUrlTask";
 
 export { linesFromText };
 
@@ -25,7 +26,8 @@ const inputSchema = {
     url: {
       type: "string",
       title: "URL",
-      description: "URL to search (http://, https://)",
+      description:
+        "URL to search (http://, https://). The Node/Electron build additionally accepts a `file://` URL or an absolute filesystem path, subject to the `filesystem:read` entitlement and any configured `roots`.",
       format: "uri",
     },
     pattern: {
@@ -90,13 +92,15 @@ const inputSchema = {
     maxOutputLines: {
       type: "integer",
       title: "Max Output Lines",
-      description: "Maximum number of output lines, including context",
+      description:
+        "Maximum number of output lines, including context. Defaults to 10000; set this to override.",
       minimum: 0,
     },
     maxOutputChars: {
       type: "integer",
       title: "Max Output Characters",
-      description: "Maximum number of output characters, including newlines",
+      description:
+        "Maximum number of output characters, including newlines. Defaults to 1000000; set this to override.",
       minimum: 0,
     },
   },
@@ -143,7 +147,8 @@ const outputSchema = {
     matchCount: {
       type: "integer",
       title: "Match Count",
-      description: "Number of matching lines",
+      description:
+        "Number of matching lines. With `existsOnly` the scan stops at the first match, so this is 1 rather than a full count.",
     },
     exists: {
       type: "boolean",
@@ -175,7 +180,16 @@ interface GrepGroup {
   lines: GrepLine[];
 }
 
-type GrepOptions = Omit<FileGrepTaskInput, "url" | "pattern">;
+export type GrepOptions = Omit<FileGrepTaskInput, "url" | "pattern">;
+
+/**
+ * Matches a batch of lines at once. Batching is what makes an interruptible
+ * matcher affordable — see `createBoundedRegexMatcher` on the server build,
+ * whose per-call cost only amortizes over a batch.
+ */
+export interface GrepLineMatcher {
+  readonly matchBatch: (texts: readonly string[]) => boolean[];
+}
 
 interface BufferedLine {
   readonly line: number;
@@ -203,23 +217,17 @@ function validateOptions(options: GrepOptions): void {
   }
 }
 
-function createMatcher(pattern: string, options: GrepOptions): (text: string) => boolean {
+export function createMatcher(pattern: string, options: GrepOptions): GrepLineMatcher {
   if (options.fixedString) {
     if (options.ignoreCase) {
       const needle = pattern.toLowerCase();
-      return (text) => text.toLowerCase().includes(needle);
+      return { matchBatch: (texts) => texts.map((t) => t.toLowerCase().includes(needle)) };
     }
-    return (text) => text.includes(pattern);
+    return { matchBatch: (texts) => texts.map((t) => t.includes(pattern)) };
   }
 
-  assertSafeRegexPattern(pattern);
-
-  try {
-    const regex = new RegExp(pattern, options.ignoreCase ? "i" : "");
-    return (text) => regex.test(text);
-  } catch {
-    throw new TaskInvalidInputError(`Invalid regular expression: ${pattern}`);
-  }
+  const regex = compileSafeRegex(pattern, options.ignoreCase ? "i" : "");
+  return { matchBatch: (texts) => texts.map((t) => regex.test(t)) };
 }
 
 /**
@@ -262,11 +270,20 @@ function createExtractor(pattern: string, options: GrepOptions): (text: string) 
   };
 }
 
+/**
+ * Scans `lines`, matching in batches of {@link SECURITY_LIMITS.regexMatchBatchLines}.
+ *
+ * Abort and the overall search deadline are checked once per BATCH, not per
+ * line: a single `regex.test` is uninterruptible, so per-line checks bought
+ * nothing a hostile pattern could not ignore. The granularity that matters is
+ * therefore the batch, and the matcher itself bounds how long one batch may run.
+ */
 export async function grepLines(
   lines: AsyncIterable<string>,
   pattern: string,
   options: GrepOptions = {},
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  matcher?: GrepLineMatcher | undefined
 ): Promise<FileGrepTaskOutput> {
   validateOptions(options);
 
@@ -276,7 +293,7 @@ export async function grepLines(
   const beforeContext = options.onlyMatching ? 0 : (options.context ?? options.beforeContext ?? 0);
   const afterContext = options.onlyMatching ? 0 : (options.context ?? options.afterContext ?? 0);
 
-  const matcher = createMatcher(pattern, options);
+  const lineMatcher = matcher ?? createMatcher(pattern, options);
   const extract =
     options.onlyMatching && !options.existsOnly && !options.countOnly
       ? createExtractor(pattern, options)
@@ -290,7 +307,6 @@ export async function grepLines(
   let lineNumber = 0;
   let matchCount = 0;
   let exists = false;
-  let truncated = false;
 
   let afterRemaining = 0;
   let maxMatchesReached = false;
@@ -298,14 +314,17 @@ export async function grepLines(
   let outputLines = 0;
   let outputChars = 0;
 
+  // Caps apply whether or not the caller stated them: an unbounded default sent
+  // the whole document back to whoever asked for one line.
+  const maxOutputLines = options.maxOutputLines ?? DEFAULT_LIMITS.grepMaxOutputLines;
+  const maxOutputChars = options.maxOutputChars ?? DEFAULT_LIMITS.grepMaxOutputChars;
+
   function canEmit(text: string): boolean {
-    if (options.maxOutputLines !== undefined && outputLines >= options.maxOutputLines) {
+    if (outputLines >= maxOutputLines) {
       return false;
     }
 
-    const chars = text.length + 1;
-
-    if (options.maxOutputChars !== undefined && outputChars + chars > options.maxOutputChars) {
+    if (outputChars + text.length + 1 > maxOutputChars) {
       return false;
     }
 
@@ -314,21 +333,24 @@ export async function grepLines(
 
   function emitLine(entry: GrepLine): boolean {
     if (!canEmit(entry.text)) {
-      truncated = true;
       return false;
     }
 
     if (currentGroup && entry.line <= currentGroup.endLine + 1) {
-      // De-duplication exists to merge a before-context line already emitted as
-      // after-context. Under onlyMatching one line legitimately yields several
-      // entries, so merging them would collapse repeated matches into one.
-      const existing = options.onlyMatching
-        ? undefined
-        : currentGroup.lines.find((line) => line.line === entry.line);
-
-      if (existing) {
-        if (entry.match) {
-          existing.match = true;
+      /*
+       * Entries are appended in strictly increasing line order, so a line at or
+       * below endLine has already been emitted; only the last one can be it.
+       * The scan this replaces existed solely to skip replayed beforeBuffer
+       * entries, and those always carry match: false, so no flag is lost.
+       *
+       * Skipped entirely under onlyMatching, where one line legitimately yields
+       * several entries and merging them would collapse repeated matches
+       * into one.
+       */
+      if (!options.onlyMatching && entry.line <= currentGroup.endLine) {
+        const last = currentGroup.lines[currentGroup.lines.length - 1];
+        if (entry.match && last?.line === entry.line) {
+          last.match = true;
         }
 
         return true;
@@ -352,134 +374,196 @@ export async function grepLines(
     return true;
   }
 
-  for await (const text of lines) {
-    if (signal?.aborted) {
-      throw new TaskAbortedError("Task aborted");
-    }
+  const iterator = lines[Symbol.asyncIterator]();
+  const deadline = Date.now() + DEFAULT_LIMITS.grepMaxSearchMs;
+  const maxLineChars = DEFAULT_LIMITS.grepMaxLineChars;
+  const batch: string[] = [];
+  let exhausted = false;
 
-    lineNumber++;
+  // `stopped` says the scan ended early; whether that MEANS truncation depends
+  // on whether anything was left, which is settled once, below.
+  let stopped = false;
+  let stopIndex = -1;
+  let existsOnlyHit = false;
+  let lineCapped = false;
+  let sawMoreInput = false;
 
-    let matched = matcher(text);
-
-    if (options.invertMatch) {
-      matched = !matched;
-    }
-
-    if (matched && !maxMatchesReached) {
-      matchCount++;
-      exists = true;
-
-      if (options.existsOnly) {
-        return {
-          groups: [],
-          matchCount: 1,
-          exists: true,
-          truncated: false,
-        };
-      }
-
-      if (extract) {
-        // An inverted selection reaches here on a line the pattern did NOT
-        // match, so the extractor finds nothing and emits nothing — which is
-        // exactly what `grep -v -o` prints.
-        for (const match of extract(text)) {
-          if (!emitLine({ line: lineNumber, text: match, match: true })) {
-            return {
-              groups,
-              matchCount,
-              exists,
-              truncated: true,
-            };
-          }
-        }
-      } else if (!options.countOnly) {
-        for (const previous of beforeBuffer) {
-          if (
-            !emitLine({
-              line: previous.line,
-              text: previous.text,
-              match: false,
-            })
-          ) {
-            return {
-              groups,
-              matchCount,
-              exists,
-              truncated: true,
-            };
-          }
-        }
-
-        if (
-          !emitLine({
-            line: lineNumber,
-            text,
-            match: true,
-          })
-        ) {
-          return {
-            groups,
-            matchCount,
-            exists,
-            truncated: true,
-          };
-        }
-      }
-
-      afterRemaining = afterContext;
-
-      if (options.maxMatches !== undefined && matchCount >= options.maxMatches) {
-        maxMatchesReached = true;
-
-        if (afterContext === 0) {
-          truncated = true;
+  try {
+    outer: while (!exhausted) {
+      batch.length = 0;
+      while (batch.length < SECURITY_LIMITS.regexMatchBatchLines) {
+        const next = await iterator.next();
+        if (next.done === true) {
+          exhausted = true;
           break;
         }
-      }
-    } else if (!options.countOnly && afterRemaining > 0) {
-      if (
-        !emitLine({
-          line: lineNumber,
-          text,
-          match: false,
-        })
-      ) {
-        return {
-          groups,
-          matchCount,
-          exists,
-          truncated: true,
-        };
+        // `>=` rather than `>`: conservative by one character, and it lets the
+        // server's line splitter signal truncation without a side channel.
+        const text = next.value;
+        if (text.length >= maxLineChars) {
+          lineCapped = true;
+          batch.push(text.slice(0, maxLineChars));
+        } else {
+          batch.push(text);
+        }
       }
 
-      afterRemaining--;
-    }
+      if (batch.length === 0) break;
 
-    beforeBuffer.push({
-      line: lineNumber,
-      text,
-    });
-
-    if (beforeBuffer.length > beforeContext) {
-      beforeBuffer.shift();
-    }
-
-    if (maxMatchesReached) {
-      if (afterRemaining === 0) {
-        truncated = true;
+      if (signal?.aborted) {
+        throw new TaskAbortedError("Task aborted");
+      }
+      if (Date.now() > deadline) {
+        stopped = true;
         break;
       }
 
-      continue;
+      const flags = lineMatcher.matchBatch(batch);
+
+      for (let i = 0; i < batch.length; i++) {
+        const text = batch[i]!;
+
+        lineNumber++;
+
+        let matched = flags[i]!;
+
+        if (options.invertMatch) {
+          matched = !matched;
+        }
+
+        if (matched && !maxMatchesReached) {
+          matchCount++;
+          exists = true;
+
+          if (options.existsOnly) {
+            existsOnlyHit = true;
+            stopped = true;
+            stopIndex = i;
+            break outer;
+          }
+
+          if (extract) {
+            // An inverted selection reaches here on a line the pattern did NOT
+            // match, so the extractor finds nothing and emits nothing — which is
+            // exactly what `grep -v -o` prints.
+            for (const match of extract(text)) {
+              if (!emitLine({ line: lineNumber, text: match, match: true })) {
+                return {
+                  groups,
+                  matchCount,
+                  exists,
+                  truncated: true,
+                };
+              }
+            }
+          } else if (!options.countOnly) {
+            for (const previous of beforeBuffer) {
+              if (
+                !emitLine({
+                  line: previous.line,
+                  text: previous.text,
+                  match: false,
+                })
+              ) {
+                stopped = true;
+                stopIndex = i - 1;
+                break outer;
+              }
+            }
+
+            if (
+              !emitLine({
+                line: lineNumber,
+                text,
+                match: true,
+              })
+            ) {
+              stopped = true;
+              stopIndex = i - 1;
+              break outer;
+            }
+          }
+
+          afterRemaining = afterContext;
+
+          if (options.maxMatches !== undefined && matchCount >= options.maxMatches) {
+            maxMatchesReached = true;
+
+            if (afterContext === 0) {
+              stopped = true;
+              stopIndex = i;
+              break outer;
+            }
+          }
+        } else if (!options.countOnly && afterRemaining > 0) {
+          if (
+            !emitLine({
+              line: lineNumber,
+              text,
+              // `maxMatchesReached` governs whether a match COUNTS toward the
+              // budget, not whether the line IS a match.
+              match: matched,
+            })
+          ) {
+            stopped = true;
+            stopIndex = i - 1;
+            break outer;
+          }
+
+          afterRemaining--;
+        }
+
+        beforeBuffer.push({
+          line: lineNumber,
+          text,
+        });
+
+        if (beforeBuffer.length > beforeContext) {
+          beforeBuffer.shift();
+        }
+
+        if (maxMatchesReached) {
+          if (afterRemaining === 0) {
+            stopped = true;
+            stopIndex = i;
+            break outer;
+          }
+
+          continue;
+        }
+
+        /*
+         * A non-matching line outside trailing context means any future
+         * match is separated from the current group.
+         */
+        if (!matched && afterRemaining === 0) {
+          currentGroup = undefined;
+        }
+      }
     }
 
     /*
-     * A non-matching line outside trailing context means any future
-     * match is separated from the current group.
+     * Truncation is exact because the loop drives the iterator itself: it is
+     * only truncation if something was actually left, either in the current
+     * batch or in the source. That costs one extra element from the source on
+     * an early stop.
+     *
+     * `stopIndex` is the last line fully accounted for. An output cap rejects
+     * the line it stopped on, so those sites record `i - 1` and that line
+     * counts as remaining; a match budget consumed its line, so those record
+     * `i`.
      */
-    if (!matched && afterRemaining === 0) {
-      currentGroup = undefined;
+    if (stopped) {
+      sawMoreInput = stopIndex + 1 < batch.length ? true : (await iterator.next()).done !== true;
     }
+  } finally {
+    await iterator.return?.();
+  }
+
+  const truncated = lineCapped || (stopped && sawMoreInput);
+
+  if (existsOnlyHit) {
+    return { groups: [], matchCount: 1, exists: true, truncated };
   }
 
   return {
@@ -491,16 +575,39 @@ export async function grepLines(
 }
 
 /**
- * Task for grepping documents from URLs (including file:// URLs).
- * Works in all environments (browser, Node.js, Bun) by using fetch API.
- * For server-only filesystem path access, see FileGrepTask.server.
+ * Task for grepping documents fetched over http(s).
+ *
+ * This build handles http and https only: the fetch routes through
+ * `FetchUrlTask` -> `safeFetch` -> `classifyUrl`, which rejects every other
+ * scheme. `file://` URLs and bare filesystem paths are handled only by the
+ * server build (`FileGrepTask.server`), which requires the `filesystem:read`
+ * entitlement.
  */
-export class FileGrepTask extends Task<FileGrepTaskInput, FileGrepTaskOutput, TaskConfig> {
+export class FileGrepTask<Config extends TaskConfig = TaskConfig> extends Task<
+  FileGrepTaskInput,
+  FileGrepTaskOutput,
+  Config
+> {
   public static override type = "FileGrepTask";
   public static override category = "Document";
   public static override title = "File Grep";
   public static override description = "Search a file for matching lines (grep)";
   public static override cacheable = true;
+  public static override hasDynamicEntitlements: boolean = true;
+
+  /**
+   * The owned `FetchUrlTask` does the network access, but an owned child is
+   * created inside `execute()` and so is absent from the graph-start snapshot
+   * `computeGraphEntitlements` takes over `graph.getTasks()`. Declaring the
+   * fetch's entitlements here is what puts them in front of the enforcer.
+   */
+  public static override entitlements(): TaskEntitlements {
+    return FetchUrlTask.entitlements();
+  }
+
+  public override entitlements(): TaskEntitlements {
+    return fetchUrlEntitlementsFor(this.runInputData?.url);
+  }
 
   public static override inputSchema(): DataPortSchema {
     return inputSchema as DataPortSchema;
@@ -508,6 +615,16 @@ export class FileGrepTask extends Task<FileGrepTaskInput, FileGrepTaskOutput, Ta
 
   public static override outputSchema(): DataPortSchema {
     return outputSchema as DataPortSchema;
+  }
+
+  /**
+   * Seam for the matcher the scan runs. The server build overrides it to bound
+   * regex matching with an interruptible time budget; there is no `vm` in a
+   * browser, so a hostile pattern there still blocks that tab (a tab — not the
+   * process hosting a local API).
+   */
+  protected createLineMatcher(pattern: string, options: GrepOptions): GrepLineMatcher {
+    return createMatcher(pattern, options);
   }
 
   override async execute(
@@ -519,6 +636,10 @@ export class FileGrepTask extends Task<FileGrepTaskInput, FileGrepTaskOutput, Ta
     if (context.signal.aborted) {
       throw new TaskAbortedError("Task aborted");
     }
+
+    // Compiled before the fetch so a rejected pattern costs no network call.
+    const matcher = this.createLineMatcher(pattern, options);
+
     await context.updateProgress(0, "Fetching file");
 
     const fetchTask = context.own(new FetchUrlTask({ queue: false }));
@@ -536,7 +657,8 @@ export class FileGrepTask extends Task<FileGrepTaskInput, FileGrepTaskOutput, Ta
       linesFromText(response.text ?? ""),
       pattern,
       options,
-      context.signal
+      context.signal,
+      matcher
     );
 
     if (context.signal.aborted) {
@@ -548,13 +670,33 @@ export class FileGrepTask extends Task<FileGrepTaskInput, FileGrepTaskOutput, Ta
   }
 }
 
-export const fileGrep = (input: FileGrepTaskInput, config?: TaskConfig) => {
+/**
+ * Config for both builds. `roots` is declared here rather than beside the
+ * server subclass because a `declare module` augmentation must state one type
+ * across every file that contributes it, and both files augment `Workflow`
+ * with `fileGrep`. Declaring it only on the server made the two disagree
+ * (TS2717); declaring `TaskConfig` in both would keep them agreeing but drop
+ * `roots` from `workflow.fileGrep(...)`, which is the API most callers use.
+ */
+export interface FileGrepTaskConfig extends TaskConfig {
+  /**
+   * Directories a local path must resolve inside, checked after symlinks are
+   * resolved. Omitted means unrestricted: the enforced control is the
+   * `filesystem:read` entitlement, and this is the embedder's extra fence.
+   *
+   * Honored only by the server build — the cross-platform class reaches
+   * http(s) through `FetchUrlTask` and touches no filesystem.
+   */
+  readonly roots?: readonly string[] | undefined;
+}
+
+export const fileGrep = (input: FileGrepTaskInput, config?: FileGrepTaskConfig) => {
   return new FileGrepTask(config).run(input);
 };
 
 declare module "@workglow/task-graph" {
   interface Workflow {
-    fileGrep: CreateWorkflow<FileGrepTaskInput, FileGrepTaskOutput, TaskConfig>;
+    fileGrep: CreateWorkflow<FileGrepTaskInput, FileGrepTaskOutput, FileGrepTaskConfig>;
   }
 }
 
