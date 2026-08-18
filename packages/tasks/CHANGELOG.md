@@ -1,5 +1,14 @@
 # @workglow/tasks
 
+## 0.3.46
+
+### Bug Fixes
+
+#### tasks
+
+- stop replaying method and body across SafeFetch redirects
+- fail a queued "stream" fetch whose deltas never arrived
+
 ## 0.3.45
 
 ### Breaking Changes

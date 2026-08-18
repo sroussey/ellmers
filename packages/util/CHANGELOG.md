@@ -1,5 +1,13 @@
 # @workglow/util
 
+## 0.3.46
+
+### Bug Fixes
+
+#### worker
+
+- resolve type mismatch in message event data handling
+
 ## 0.3.45
 
 ## 0.3.44

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.46
+
+### Features
+
+#### tests
+
+- add credit exhaustion handling and skip logic for provider tests
+
 ## 0.3.45
 
 ### Bug Fixes

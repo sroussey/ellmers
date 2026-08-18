@@ -1,5 +1,23 @@
 # @workglow/task-graph
 
+## 0.3.46
+
+### Features
+
+#### triggers
+
+- add the triggers package with cron, interval, and polling triggers
+
+### Bug Fixes
+
+#### storage
+
+- scope InMemory column constraints to a backend mode and document the nullable-column DDL change
+
+#### task-graph
+
+- let a standalone binary-only run skip the accumulator too (#822)
+
 ## 0.3.45
 
 ### Breaking Changes

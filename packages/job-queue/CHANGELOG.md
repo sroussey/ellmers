@@ -1,5 +1,13 @@
 # @workglow/job-queue
 
+## 0.3.46
+
+### Bug Fixes
+
+#### tasks
+
+- fail a queued "stream" fetch whose deltas never arrived
+
 ## 0.3.45
 
 ### Breaking Changes

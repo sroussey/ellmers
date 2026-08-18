@@ -1,5 +1,37 @@
 # @workglow/test
 
+## 0.3.46
+
+### Features
+
+#### schema
+
+- enhance JSON schema handling for strict compatibility
+
+#### tests
+
+- add tests for compound-key chunking behavior in PostgresTabularStorage
+- add credit exhaustion handling and skip logic for provider tests
+
+#### triggers
+
+- add the triggers package with cron, interval, and polling triggers
+
+#### storage
+
+- enforce varchar width and NOT NULL in InMemoryTabularStorage
+
+### Bug Fixes
+
+#### ai
+
+- stop reporting nullable-object schemas as OpenAI strict-compatible
+
+#### tasks
+
+- stop replaying method and body across SafeFetch redirects
+- fail a queued "stream" fetch whose deltas never arrived
+
 ## 0.3.45
 
 ### Breaking Changes

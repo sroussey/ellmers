@@ -1,7 +1,7 @@
 {
   "name": "@workglow/triggers",
   "type": "module",
-  "version": "0.3.45",
+  "version": "0.3.46",
   "license": "Apache-2.0",
   "sideEffects": false,
   "repository": {
@@ -12,7 +12,7 @@
   "bugs": {
     "url": "https://github.com/workglow-dev/libs/issues"
   },
-  "description": "Runtime-agnostic triggers for Workglow \u2014 interval, polling, and cron schedules that start workflows programmatically.",
+  "description": "Runtime-agnostic triggers for Workglow — interval, polling, and cron schedules that start workflows programmatically.",
   "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
