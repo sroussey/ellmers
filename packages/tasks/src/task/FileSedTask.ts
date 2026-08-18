@@ -104,7 +104,8 @@ const outputSchema = {
     truncated: {
       type: "boolean",
       title: "Truncated",
-      description: "Output stopped before EOF because of an output limit",
+      description:
+        "Output stopped before EOF because an output cap was reached or an input line was capped",
     },
   },
   required: ["text", "replacementCount", "linesChanged", "truncated"],
@@ -431,9 +432,10 @@ export async function sedLines(
 }
 
 /**
- * Task for substituting text in documents from URLs (including file:// URLs).
+ * Task for substituting text in documents fetched from URLs.
  * Works in all environments (browser, Node.js, Bun) by using fetch API.
- * For server-only filesystem path access, see FileSedTask.server.
+ * `file://` filesystem access is implemented in the server build only; see
+ * FileSedTask.server.
  *
  * The source is never modified: the transformed document is returned as output.
  */
