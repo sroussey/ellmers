@@ -22,9 +22,10 @@ export interface ConnectionTransactionHost {
 export function isConnectionTransactionHost(
   value: AnyTabularStorage
 ): value is AnyTabularStorage & ConnectionTransactionHost {
+  const host = value as unknown as ConnectionTransactionHost;
   return (
-    typeof (value as ConnectionTransactionHost).runConnectionTransaction === "function" &&
-    typeof (value as ConnectionTransactionHost).sharedConnectionHandle === "function"
+    typeof host.runConnectionTransaction === "function" &&
+    typeof host.sharedConnectionHandle === "function"
   );
 }
 

@@ -6,7 +6,10 @@
 
 import { getAlsStore, runInTransactionOnConnection } from "./ConnectionMutex.server";
 import type { AnyTabularStorage } from "./ITabularStorage";
-import type { ConnectionTransactionHost } from "./withConnectionTransaction";
+import {
+  isConnectionTransactionHost,
+  type ConnectionTransactionHost,
+} from "./withConnectionTransaction";
 
 export function assertSharedConnectionHandle(
   lead: ConnectionTransactionHost & { readonly table?: string },
@@ -19,10 +22,9 @@ export function assertSharedConnectionHandle(
     );
   }
   for (const participant of participants) {
-    const other =
-      typeof (participant as ConnectionTransactionHost).sharedConnectionHandle === "function"
-        ? (participant as ConnectionTransactionHost).sharedConnectionHandle()
-        : undefined;
+    const other = isConnectionTransactionHost(participant)
+      ? participant.sharedConnectionHandle()
+      : undefined;
     if (other !== handle) {
       const otherTable = (participant as { readonly table?: string }).table ?? "other";
       throw new Error(
