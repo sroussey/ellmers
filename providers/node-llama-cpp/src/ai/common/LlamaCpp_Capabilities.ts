@@ -41,10 +41,13 @@ export function inferLlamaCppCapabilities(model: CapabilityHints): readonly Capa
   if (/embed|minilm|bge-|gte-|e5-/i.test(baseName)) {
     return [
       "text.embedding",
+      "cache.checkpoint",
       "model.count-tokens",
+      "model.download",
       "model.download-remove",
       "model.info",
       "model.search",
+      "session.dispose",
     ];
   }
 
@@ -56,10 +59,13 @@ export function inferLlamaCppCapabilities(model: CapabilityHints): readonly Capa
       "text.summary",
       "tool-use",
       "json-mode",
+      "cache.checkpoint",
       "model.count-tokens",
+      "model.download",
       "model.download-remove",
       "model.info",
       "model.search",
+      "session.dispose",
     ];
   }
 

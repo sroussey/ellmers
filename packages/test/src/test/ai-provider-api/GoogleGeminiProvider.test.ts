@@ -129,6 +129,7 @@ describe("GoogleGeminiQueuedProvider.inferCapabilities", () => {
       "model.count-tokens",
       "model.info",
       "model.search",
+      "session.dispose",
       "text.generation",
       "text.rewriter",
       "text.summary",

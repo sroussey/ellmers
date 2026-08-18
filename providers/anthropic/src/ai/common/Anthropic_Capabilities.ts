@@ -52,6 +52,7 @@ export function inferAnthropicCapabilities(model: CapabilityHints): readonly Cap
       "tool-use",
       "json-mode",
       "vision-input",
+      "cache.checkpoint",
       "model.count-tokens",
       "model.info",
       "model.search",

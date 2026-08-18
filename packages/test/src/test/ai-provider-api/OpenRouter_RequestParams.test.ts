@@ -75,4 +75,12 @@ describe("buildOpenRouterExtras", () => {
       )
     ).toEqual({ reasoning: { effort: "low" } });
   });
+
+  it("does not map model.effort when effort_options is empty", () => {
+    expect(
+      buildOpenRouterExtras(
+        cfg({ model_name: "openai/gpt-5" }, { effort: "high", effort_options: [] })
+      )
+    ).toEqual({});
+  });
 });

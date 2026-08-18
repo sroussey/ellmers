@@ -159,6 +159,23 @@ describe("resolveMaxTokens", () => {
     );
   });
 
+  it("does not map model.effort on models the policy rejects", () => {
+    const nonThinking = {
+      ...thinkingModel,
+      effort: "ultra",
+      provider_config: { model_name: "deepseek-chat" },
+    };
+    expect(resolveMaxTokens(nonThinking as never, 4096)).toBe(
+      4096 + DEEPSEEK_DEFAULT_REASONING_ALLOWANCE
+    );
+  });
+
+  it("honours effort_options even when the class policy would allow the effort", () => {
+    expect(
+      resolveMaxTokens({ ...thinkingModel, effort: "ultra", effort_options: [] } as never, 4096)
+    ).toBe(4096 + DEEPSEEK_DEFAULT_REASONING_ALLOWANCE);
+  });
+
   it("lets reasoning_allowance win over model.effort", () => {
     const configured = {
       ...thinkingModel,

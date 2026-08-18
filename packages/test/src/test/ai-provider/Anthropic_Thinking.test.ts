@@ -17,12 +17,14 @@ const {
 function model(opts: {
   model_name: string;
   effort?: string;
+  effort_options?: readonly string[];
   thinking?: Record<string, unknown>;
   output_config?: Record<string, unknown>;
 }) {
   return {
     provider: "ANTHROPIC",
     effort: opts.effort,
+    effort_options: opts.effort_options,
     provider_config: {
       model_name: opts.model_name,
       ...(opts.thinking ? { thinking: opts.thinking } : {}),
@@ -54,6 +56,21 @@ describe("buildAnthropicThinkingParams", () => {
     });
     expect(
       buildAnthropicThinkingParams(model({ model_name: "claude-sonnet-5", effort: "none" }), 4096)
+    ).toEqual({ max_tokens: 4096 });
+  });
+
+  it("does not map model.effort on ids the policy rejects", () => {
+    expect(
+      buildAnthropicThinkingParams(model({ model_name: "not-a-claude", effort: "high" }), 4096)
+    ).toEqual({ max_tokens: 4096 });
+  });
+
+  it("honours effort_options even when the class policy would allow the effort", () => {
+    expect(
+      buildAnthropicThinkingParams(
+        model({ model_name: "claude-sonnet-5", effort: "high", effort_options: [] }),
+        4096
+      )
     ).toEqual({ max_tokens: 4096 });
   });
 
