@@ -1,5 +1,15 @@
 # @workglow/util
 
+## 0.3.47
+
+### Bug Fixes
+
+#### tasks
+
+- apply default output caps and report match/truncated honestly
+- cap FileGrepTask line length instead of accumulating unterminated lines
+- bound FileGrepTask regex matching with an interruptible time budget
+
 ## 0.3.46
 
 ### Bug Fixes

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.47
+
+### Features
+
+- thinking policy for models
+
 ## 0.3.46
 
 ### Features

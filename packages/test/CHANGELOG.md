@@ -1,5 +1,62 @@
 # @workglow/test
 
+## 0.3.47
+
+### Features
+
+- thinking policy for models
+
+#### tasks
+
+- enhance FileGrepTask with extractBatch functionality
+- add support for HEAD HTTP method in FetchUrlTask
+- add onlyMatching to FileGrepTask
+- add FileGrepTask for server-side file grepping
+
+### Bug Fixes
+
+#### tasks
+
+- apply default output caps to FileSedTask
+- cap FileSedTask line length instead of accumulating unterminated lines
+- name the configured root that cannot be resolved
+- declare the owned FetchUrlTask entitlements on FileSedTask
+- declare filesystem:read and resolve FileSedTask paths against roots
+- bound FileSedTask regex substitution with an interruptible budget
+- reconcile the ReDoS guard with the base branch's scanner
+- apply default output caps and report match/truncated honestly
+- cap FileGrepTask line length instead of accumulating unterminated lines
+- declare the owned FetchUrlTask entitlements on FileGrepTask
+- declare filesystem:read and resolve FileGrepTask paths against opt-in roots
+- bound FileGrepTask regex matching with an interruptible time budget
+- make the ReDoS guard linear, and add FileSedTask
+
+### Refactors
+
+#### tasks
+
+- share the regex ReDoS guard between RegexTask and FileGrepTask
+
+### Performance
+
+#### tasks
+
+- make FileGrepTask group de-duplication O(1) per line
+
+### Tests
+
+#### tasks
+
+- pin the escaped-bracket case the class-stripping regex missed
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `miniflare`: ^5.20260815.0-alpha
+
 ## 0.3.46
 
 ### Features

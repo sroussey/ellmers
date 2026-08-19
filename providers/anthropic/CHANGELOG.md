@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.47
+
+### Features
+
+- thinking policy for models
+
+### Bug Fixes
+
+#### ai
+
+- enhance model effort validation in Anthropic Thinking
+
 ## 0.3.46
 
 ## 0.3.45
