@@ -142,6 +142,7 @@ const outputSchema = {
         status: { type: "number" },
         notModified: { type: "boolean" },
       },
+      required: ["contentType", "headers", "status", "notModified"],
       additionalProperties: false,
       title: "Response Metadata",
       description: "HTTP response metadata: content type, headers, status, and 304 state",
