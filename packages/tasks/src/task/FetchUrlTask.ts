@@ -57,7 +57,7 @@ const inputSchema = {
       format: "uri",
     },
     method: {
-      enum: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+      enum: ["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH"],
       title: "Method",
       description: "The HTTP method to use",
       default: "GET",
@@ -594,6 +594,17 @@ export class FetchUrlJob<
     if (!response.ok) {
       await discardBody(response);
       throw buildHttpError(input.url!, response);
+    }
+
+    if ((input.method ?? "GET").toUpperCase() === "HEAD") {
+      // HEAD has no representation body. `response.body` is typically null, and
+      // Content-Length describes what a GET would return — not the (empty)
+      // bytes we receive. Streaming it would throw NO_RESPONSE_BODY or
+      // CONTENT_LENGTH_MISMATCH. Metadata is the whole answer.
+      await discardBody(response);
+      await this.emitStreamEnd(metadata, context);
+      yield { type: "finish", data: { metadata } } as StreamEvent<Output>;
+      return;
     }
 
     const chunks: Uint8Array[] = [];
