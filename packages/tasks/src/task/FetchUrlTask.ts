@@ -411,7 +411,7 @@ function assertResponseType(
   );
 }
 
-function buildHttpError(url: string, response: Response): Error {
+async function buildHttpError(url: string, response: Response): Promise<Error> {
   let retryDate: Date | undefined;
   if (response.status === 429 || response.status === 503 || response.headers.get("Retry-After")) {
     const retryAfterStr = response.headers.get("Retry-After");
@@ -425,7 +425,22 @@ function buildHttpError(url: string, response: Response): Error {
       }
     }
   }
-  return createFetchUrlHttpError(url, response.status, response.statusText, retryDate);
+  const body = await readHttpErrorBody(response);
+  return createFetchUrlHttpError(url, response.status, response.statusText, retryDate, body);
+}
+
+const HTTP_ERROR_BODY_MAX_BYTES = 4096;
+
+async function readHttpErrorBody(response: Response): Promise<string | undefined> {
+  try {
+    const text = await response.text();
+    if (text.length === 0) return undefined;
+    return text.length > HTTP_ERROR_BODY_MAX_BYTES
+      ? text.slice(0, HTTP_ERROR_BODY_MAX_BYTES)
+      : text;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -593,8 +608,9 @@ export class FetchUrlJob<
     }
 
     if (!response.ok) {
+      const error = await buildHttpError(input.url!, response);
       await discardBody(response);
-      throw buildHttpError(input.url!, response);
+      throw error;
     }
 
     if ((input.method ?? "GET").toUpperCase() === "HEAD") {

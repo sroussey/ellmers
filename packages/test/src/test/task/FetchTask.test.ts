@@ -231,6 +231,36 @@ describe("FetchUrlTask", () => {
     expect(mockFetch.mock.calls.length).toBe(1);
   });
 
+  test("surfaces JSON message from a non-2xx body", async () => {
+    mockFetch.mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            error: "Internal server error",
+            message: "upstream rejected the request",
+          }),
+          {
+            status: 500,
+            statusText: "Internal Server Error",
+            headers: { "Content-Type": "application/json" },
+          }
+        )
+      )
+    );
+
+    const error = await fetchUrl({
+      url: "https://api.example.com/items",
+      response_type: "json",
+    }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(JobTaskFailedError);
+    const jobFailed = error as JobTaskFailedError;
+    expect(jobFailed.jobError.message).toContain("upstream rejected the request");
+    expect(isFetchUrlJobError(jobFailed.jobError)).toBe(true);
+    if (isFetchUrlJobError(jobFailed.jobError)) {
+      expect(jobFailed.jobError.httpErrorMessage).toBe("upstream rejected the request");
+    }
+  });
+
   test("handles network errors", async () => {
     mockFetch.mockImplementation(() => Promise.reject(new Error("Network error")));
 
