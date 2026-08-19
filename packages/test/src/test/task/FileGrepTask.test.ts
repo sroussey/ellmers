@@ -678,6 +678,31 @@ describe("FileGrepTask", () => {
   });
 
   /**
+   * The server budget wraps `matchBatch` (`RegExp.test` in `vm`). `onlyMatching`
+   * then runs `createExtractor`, whose global `exec` loop is on the main thread
+   * and unbounded. `test` can return quickly via a left alternative while the
+   * later `/g` pass still walks into the catastrophic right one: `ok|(\w|\d)*$`
+   * against `"ok" + "1".repeat(n) + "!"` matches `ok` immediately, then `exec`
+   * continues into the digits and backtracks the same way `(\w|\d)*$` alone
+   * does. Pre-fix this never returned; the budget has to cover `exec` too.
+   */
+  test("onlyMatching still fails on the match budget when test() matched via a fast alternative", async () => {
+    mockText("ok" + "1".repeat(40) + "!");
+
+    const started = Date.now();
+    await expect(
+      new FileGrepTask({
+        defaults: {
+          url: "https://example.com/log.txt",
+          pattern: "ok|(\\w|\\d)*$",
+          onlyMatching: true,
+        },
+      }).run()
+    ).rejects.toThrow(/budget/);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  /**
    * Pre-fix the abort check ran between lines, which bought nothing: a single
    * `regex.test()` is uninterruptible, so a hostile line blocked forever with
    * the check sitting unreachable above it. It now runs between batches, and

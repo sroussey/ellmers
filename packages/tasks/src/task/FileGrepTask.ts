@@ -189,6 +189,13 @@ export type GrepOptions = Omit<FileGrepTaskInput, "url" | "pattern">;
  */
 export interface GrepLineMatcher {
   readonly matchBatch: (texts: readonly string[]) => boolean[];
+  /**
+   * Slices matched substrings out of each line, positionally aligned with
+   * `texts`. The server matcher bounds this under the same interruptible
+   * budget as {@link matchBatch}; without it, `onlyMatching` falls back to an
+   * unbounded `exec` on the calling thread.
+   */
+  readonly extractBatch?: (texts: readonly string[]) => string[][];
 }
 
 interface BufferedLine {
@@ -294,8 +301,9 @@ export async function grepLines(
   const afterContext = options.onlyMatching ? 0 : (options.context ?? options.afterContext ?? 0);
 
   const lineMatcher = matcher ?? createMatcher(pattern, options);
+  const wantExtract = Boolean(options.onlyMatching && !options.existsOnly && !options.countOnly);
   const extract =
-    options.onlyMatching && !options.existsOnly && !options.countOnly
+    wantExtract && lineMatcher.extractBatch === undefined
       ? createExtractor(pattern, options)
       : undefined;
 
@@ -419,6 +427,10 @@ export async function grepLines(
       }
 
       const flags = lineMatcher.matchBatch(batch);
+      const extracted =
+        wantExtract && lineMatcher.extractBatch !== undefined
+          ? lineMatcher.extractBatch(batch)
+          : undefined;
 
       for (let i = 0; i < batch.length; i++) {
         const text = batch[i]!;
@@ -442,11 +454,12 @@ export async function grepLines(
             break outer;
           }
 
-          if (extract) {
+          if (wantExtract) {
             // An inverted selection reaches here on a line the pattern did NOT
             // match, so the extractor finds nothing and emits nothing — which is
             // exactly what `grep -v -o` prints.
-            for (const match of extract(text)) {
+            const matches = extracted !== undefined ? (extracted[i] ?? []) : extract!(text);
+            for (const match of matches) {
               if (!emitLine({ line: lineNumber, text: match, match: true })) {
                 return {
                   groups,

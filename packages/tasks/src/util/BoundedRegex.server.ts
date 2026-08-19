@@ -60,6 +60,61 @@ export function createBoundedRegexMatcher(
   };
 }
 
+/**
+ * Collects global `exec` matches for each line under the same interruptible
+ * budget as {@link createBoundedRegexMatcher}.
+ *
+ * `test` is not a substitute for this: a pattern whose left alternative
+ * matches quickly (`ok|(\w|\d)*$` against a line that starts with `ok`)
+ * returns from `test` inside budget, then a later `/g` `exec` continues into
+ * the catastrophic right alternative and wedges the event loop. `onlyMatching`
+ * is that second pass. The regex must carry the `g` flag; `lastIndex` is reset
+ * per line.
+ */
+export function createBoundedRegexExtractor(
+  regex: RegExp,
+  timeoutMs: number
+): (texts: readonly string[]) => string[][] {
+  const context = createContext({
+    re: regex,
+    lines: [] as readonly string[],
+    out: [] as string[][],
+  });
+  // Wrapped so `matches` / `result` are not redeclared in the context's global
+  // scope on the second call — same reason as {@link createBoundedRegexReplacer}.
+  const script = new Script(`(function () {
+  out.length = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const matches = [];
+    re.lastIndex = 0;
+    const text = lines[i];
+    let result;
+    while ((result = re.exec(text)) !== null) {
+      if (result[0].length === 0) {
+        re.lastIndex++;
+        continue;
+      }
+      matches.push(result[0]);
+    }
+    out.push(matches);
+  }
+})();`);
+
+  return (texts) => {
+    const scope = context as { lines: readonly string[]; out: string[][] };
+    scope.lines = texts;
+    try {
+      script.runInContext(context, { timeout: timeoutMs });
+    } catch {
+      throw new TaskInvalidInputError(
+        `Regex matching exceeded its ${timeoutMs}ms budget for pattern /${regex.source}/ — ` +
+          `the pattern backtracks catastrophically on this input. Simplify the pattern.`
+      );
+    }
+    return scope.out.map((matches) => [...matches]);
+  };
+}
+
 /** One batch of substituted lines, positionally aligned with the input. */
 export interface BoundedReplaceResult {
   readonly texts: readonly string[];

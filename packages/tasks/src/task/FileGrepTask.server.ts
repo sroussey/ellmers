@@ -18,7 +18,10 @@ import { createReadStream } from "node:fs";
 
 import { DEFAULT_LIMITS, SECURITY_LIMITS } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
-import { createBoundedRegexMatcher } from "../util/BoundedRegex.server";
+import {
+  createBoundedRegexExtractor,
+  createBoundedRegexMatcher,
+} from "../util/BoundedRegex.server";
 import { isHttpUrl, resolveLocalFilePath } from "../util/LocalFilePath.server";
 import { compileSafeRegex } from "../util/regexSafety";
 import { linesFromStream } from "../util/StreamLines.server";
@@ -124,6 +127,11 @@ export class FileGrepTask extends BaseFileGrepTask<FileGrepTaskConfig> {
    * loop. Overriding here covers both branches: the http branch reaches
    * `super.execute`, which uses the matcher this returns.
    *
+   * `matchBatch` (`RegExp.test`) is not the whole cost: `onlyMatching` then
+   * `exec`s each hit to slice out the substring. A pattern whose left
+   * alternative matches quickly can still backtrack on that global pass, so
+   * `extractBatch` is bounded the same way.
+   *
    * `fixedString` never enters `vm` — `String.includes` cannot backtrack, and
    * the `vm` hop would cost ~20x for nothing.
    */
@@ -133,8 +141,15 @@ export class FileGrepTask extends BaseFileGrepTask<FileGrepTaskConfig> {
     }
 
     const regex = compileSafeRegex(pattern, options.ignoreCase ? "i" : "");
-    const matchBatch = createBoundedRegexMatcher(regex, SECURITY_LIMITS.regexMatchBatchTimeoutMs);
-    return { matchBatch };
+    const timeoutMs = SECURITY_LIMITS.regexMatchBatchTimeoutMs;
+    const matchBatch = createBoundedRegexMatcher(regex, timeoutMs);
+    const extractBatch = options.onlyMatching
+      ? createBoundedRegexExtractor(
+          new RegExp(regex.source, regex.ignoreCase ? "gi" : "g"),
+          timeoutMs
+        )
+      : undefined;
+    return { matchBatch, extractBatch };
   }
 
   /**
