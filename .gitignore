@@ -12,6 +12,9 @@ packages/cli-web/
 packages/cli-sec/
 .cache/
 .turbo
+# `vitest --coverage` writes here, and the CI merge step writes `.nyc_output`.
+coverage/
+.nyc_output/
 .env.*
 # Belt-and-suspenders: never commit a plaintext passphrase file even if a
 # developer drops one here. The .secrets/credentials/*.json ciphertext IS

@@ -22,7 +22,7 @@
  * `node_modules` → stub → source.
  */
 
-import { existsSync } from "node:fs";
+import { closeSync, existsSync, openSync, readSync } from "node:fs";
 import { chmod, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 
@@ -91,7 +91,8 @@ function specFor(distTarget: string, kind: StubKind): StubSpec {
   return { target: distTarget, source: sourceCounterpart(distTarget), kind };
 }
 
-function collectBinTargets(bin: unknown): string[] {
+/** Every `./dist/...` string a manifest's `bin` field names. */
+export function collectBinTargets(bin: unknown): string[] {
   if (typeof bin === "string") return bin.startsWith("./dist/") ? [bin] : [];
   if (bin !== null && typeof bin === "object") {
     return Object.values(bin as Record<string, unknown>).filter(
@@ -155,13 +156,59 @@ export async function writeSourceStubs(
   return written;
 }
 
-export async function isSourceStub(file: string): Promise<boolean> {
-  if (!TEXT_ENTRY_EXTENSIONS.some((ext) => file.endsWith(ext))) return false;
+/** How far into an entry file the sentinel can sit — it is written on line 1. */
+const SENTINEL_PROBE_BYTES = 512;
+
+/**
+ * What a probe of one dist entry found.
+ *
+ * Three states rather than a boolean, because the two callers fail safe in
+ * OPPOSITE directions: stub REMOVAL must not delete an artifact it could not
+ * read, while the `dist` target's guard must not accept one as a real bundle.
+ * A single "false" collapses those into one answer that is wrong for one of
+ * them.
+ */
+export type SourceStubProbe = "stub" | "not-stub" | "unreadable";
+
+/**
+ * Whether a file is a `use-source` stub, using `node:fs` only.
+ *
+ * Node-portable on purpose: `vitest.config.ts` needs this answer, and Vite
+ * loads that config under NODE, where `Bun.file` does not exist.
+ *
+ * A path that does not exist is `not-stub` — an absent entry is nobody's stub.
+ * Every other failure (EACCES, EISDIR, EIO) is `unreadable`: the file may be
+ * anything, and only the caller knows which way to resolve that.
+ */
+export function probeSourceStub(file: string): SourceStubProbe {
+  if (!TEXT_ENTRY_EXTENSIONS.some((ext) => file.endsWith(ext))) return "not-stub";
+  let fd: number | undefined;
   try {
-    return (await Bun.file(file).slice(0, 512).text()).includes(SOURCE_STUB_SENTINEL);
-  } catch {
-    return false;
+    fd = openSync(file, "r");
+    const buffer = Buffer.alloc(SENTINEL_PROBE_BYTES);
+    const read = readSync(fd, buffer, 0, SENTINEL_PROBE_BYTES, 0);
+    return buffer.subarray(0, read).toString("utf8").includes(SOURCE_STUB_SENTINEL)
+      ? "stub"
+      : "not-stub";
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | null)?.code === "ENOENT") return "not-stub";
+    return "unreadable";
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
+}
+
+/**
+ * Whether a file is definitely a stub. The async {@link isSourceStub} delegates
+ * here so the two can never disagree about what a stub is; an entry that could
+ * not be read is NOT one, which is the safe answer on the removal path.
+ */
+export function containsSourceStubSentinel(file: string): boolean {
+  return probeSourceStub(file) === "stub";
+}
+
+export async function isSourceStub(file: string): Promise<boolean> {
+  return containsSourceStubSentinel(file);
 }
 
 /**

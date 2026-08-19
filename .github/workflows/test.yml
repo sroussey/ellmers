@@ -45,6 +45,12 @@ jobs:
       # programs resolve their own package against.
       - name: Typecheck co-located tests
         run: bun run typecheck:tests
+      # `scripts/` is in no other program: the budget guard globs
+      # packages|providers and `typecheck:tests` globs packages/*/tsconfig.test.json.
+      # It is now home to vitest.config.ts's resolution logic, so a type error
+      # there would otherwise only surface when a test run failed to load.
+      - name: Typecheck scripts and vitest config
+        run: bun run typecheck:scripts
 
   test-discovery:
     runs-on: ubuntu-latest
@@ -115,6 +121,36 @@ jobs:
           name: coverage-vitest-unit
           path: vitest-unit-coverage.json
           retention-days: 1
+
+  # The one blocking job that resolves `@workglow/*` through `exports` rather
+  # than through the source-rewrite plugin. Every other vitest job here now
+  # runs against `src`, and there is no `bun test` job in this workflow at all,
+  # so without this a `bun build` entry that silently dropped a re-export would
+  # reach main and only surface in the nightly parity run, which never blocks.
+  # No coverage fragment is produced (scripts/test.ts skips `--coverage` when
+  # targeting dist), so merge-vitest-coverage needs no change.
+  test-vitest-dist:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun i
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: build-output
+          path: .
+      # The script sets WORKGLOW_TEST_TARGET itself, so `publish-all` and this
+      # job run the same thing and neither can lose the variable to a workflow
+      # edit: dropping it here now means deleting the script call.
+      - name: Run unit tests against the built bundles
+        run: bun run test:vitest:dist
 
   test-vitest-integration:
     runs-on: ubuntu-latest
@@ -395,6 +431,7 @@ jobs:
     needs:
       [
         test-vitest-unit,
+        test-vitest-dist,
         test-vitest-integration,
         test-vitest-rag,
         test-vitest-ai-provider-hft,
