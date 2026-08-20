@@ -1278,6 +1278,41 @@ describe("FetchUrlTask", () => {
       expect(result.blob).toBeUndefined();
     });
 
+    // A HEAD response carries no representation body, so the HEAD branch
+    // finishes with metadata alone regardless of response_type — which let
+    // {method: "HEAD", response_type: "json"} complete SUCCESSFULLY with
+    // json undefined. Same silent success with no value the required
+    // response_type change exists to prevent, reached from the other side.
+    // Through the job directly, because the task layer rejects it first.
+    test("a persisted HEAD payload with a derived response_type fails before fetching", async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(new Response(null, { status: 200 })));
+      const input = {
+        url: "https://example.com/big.zip",
+        method: "HEAD",
+        response_type: "json",
+      } as FetchUrlTaskInput;
+      const job = new FetchUrlJob<FetchUrlTaskInput, FetchUrlTaskOutput>({ input });
+
+      const error = await job
+        .execute(input, { signal: new AbortController().signal, updateProgress: async () => {} })
+        .catch((e: unknown) => e);
+
+      expect(isFetchUrlJobError(error)).toBe(true);
+      expect((error as { code?: string }).code).toBe(FetchUrlErrorCode.INVALID_RESPONSE_TYPE);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    test("validateInput rejects HEAD paired with a derived response_type", async () => {
+      const task = new FetchUrlTask();
+      await expect(
+        task.validateInput({
+          url: "https://example.com/big.zip",
+          method: "HEAD",
+          response_type: "text",
+        })
+      ).rejects.toThrow(TaskInvalidInputError);
+    });
+
     test("a HEAD error status still throws", async () => {
       mockFetch.mockImplementation(() =>
         Promise.resolve(new Response(null, { status: 404, statusText: "Not Found" }))

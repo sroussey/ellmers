@@ -26,6 +26,7 @@ import {
   TaskConfigurationError,
   TaskEntitlementError,
   TaskFailedError,
+  TaskInvalidInputError,
   Workflow,
 } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
@@ -411,6 +412,36 @@ function assertResponseType(
   );
 }
 
+/**
+ * Rejects a `response_type` the request METHOD cannot produce a value for.
+ *
+ * A HEAD response carries no representation body, so the fetch answers with
+ * metadata alone. Pairing it with a derived `response_type` therefore
+ * completes successfully with `text`/`json`/`blob` undefined — the same silent
+ * success with no value that {@link assertResponseType} exists to prevent,
+ * arrived at from the other direction. `"stream"` is the only type HEAD can
+ * honestly satisfy: it materializes nothing.
+ *
+ * `INVALID_RESPONSE_TYPE` is outside `FETCH_URL_RETRYABLE_ERROR_CODES`, so
+ * this is a permanent failure that burns no retry budget.
+ */
+function assertMethodAllowsResponseType(
+  method: string | undefined,
+  responseType: FetchUrlResponseType,
+  url: string
+): void {
+  if ((method ?? "GET").toUpperCase() !== "HEAD" || responseType === "stream") {
+    return;
+  }
+  throw createFetchUrlJobError(
+    FetchUrlErrorCode.INVALID_RESPONSE_TYPE,
+    `Fetch of ${url} pairs method HEAD with response_type '${responseType}'. A HEAD response ` +
+      `has no body, so no value can be derived from it — use response_type 'stream' and read ` +
+      `the metadata, or use GET.`,
+    { url }
+  );
+}
+
 async function buildHttpError(url: string, response: Response): Promise<Error> {
   let retryDate: Date | undefined;
   if (response.status === 429 || response.status === 503 || response.headers.get("Retry-After")) {
@@ -636,6 +667,7 @@ export class FetchUrlJob<
     // for should not spend a network call, and failing ahead of the first delta
     // keeps the retry rule in `classifyBodyFailure` out of it entirely.
     assertResponseType(input.response_type, input.url!);
+    assertMethodAllowsResponseType(input.method, input.response_type, input.url!);
 
     const response = await this.issueRequest(input, context);
     const metadata = buildMetadata(response);
@@ -888,6 +920,31 @@ export class FetchUrlTask<
           `executeStream() to change how the fetch itself runs.`
       );
     }
+  }
+
+  /**
+   * Belt and braces with {@link assertMethodAllowsResponseType}: the job layer
+   * fails closed on a persisted payload, and this fails the same combination at
+   * the task layer, before anything is enqueued.
+   */
+  public override async validateInput(
+    input: Input,
+    skipPorts?: ReadonlySet<string>
+  ): Promise<boolean> {
+    const valid = await super.validateInput(input, skipPorts);
+    const responseType = input.response_type;
+    if (
+      responseType !== undefined &&
+      responseType !== "stream" &&
+      (input.method ?? "GET").toUpperCase() === "HEAD"
+    ) {
+      throw new TaskInvalidInputError(
+        `${this.type}: method HEAD has no response body, so response_type ` +
+          `'${responseType}' can never be produced — use 'stream' and read the metadata, ` +
+          `or use GET.`
+      );
+    }
+    return valid;
   }
 
   public static override entitlements(): TaskEntitlements {
