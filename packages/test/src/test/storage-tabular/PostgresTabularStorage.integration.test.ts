@@ -6,7 +6,12 @@
 
 import { PGlite } from "@electric-sql/pglite";
 import { PostgresTabularStorage } from "@workglow/postgres/storage";
-import { ConnectionReentryError, StorageValidationError } from "@workglow/storage";
+import {
+  ConnectionReentryError,
+  NestedConnectionTransactionError,
+  StorageValidationError,
+  withConnectionTransaction,
+} from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { getTestingLogger } from "@workglow/util/test";
@@ -534,6 +539,32 @@ describe("PostgresTabularStorage", () => {
         expect(await a.get({ name: "n1", type: "x" })).toBeDefined();
         expect(await a.get({ name: "n2", type: "x" })).toBeDefined();
         expect(await a.get({ name: "n3", type: "x" })).toBeDefined();
+      } finally {
+        await pglite.close();
+      }
+    });
+
+    it("withConnectionTransaction refuses to nest on the same connection", async () => {
+      const [a, b, pglite] = await makeSharedPair();
+      try {
+        let nested: unknown;
+        await withConnectionTransaction([a, b], async () => {
+          await a.put({ name: "outer", type: "x", option: "outer", success: true });
+          try {
+            await withConnectionTransaction([a, b], async () => {
+              await b.put({ name: "inner", type: "x", option: "inner", success: true });
+            });
+          } catch (err) {
+            nested = err;
+          }
+        });
+
+        expect(nested).toBeInstanceOf(NestedConnectionTransactionError);
+        expect((nested as Error).message).toContain("SAVEPOINT");
+        // On PGlite the inner BEGIN would only warn, and the inner COMMIT
+        // would commit the outer's work — so the guard must fire before it.
+        expect(await a.get({ name: "outer", type: "x" })).toMatchObject({ option: "outer" });
+        expect(await b.get({ name: "inner", type: "x" })).toBeUndefined();
       } finally {
         await pglite.close();
       }

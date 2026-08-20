@@ -168,10 +168,14 @@ export class DuckDbTabularStorage<
       },
       commit: async () => {
         await db.exec("COMMIT");
-        for (const sibling of siblings) sibling.inTransaction = false;
       },
       rollback: async () => {
         await db.exec("ROLLBACK");
+      },
+      // Clearing `inTransaction` here rather than only in the trailing
+      // `.finally` is what lets a deferred `put` listener's own write take its
+      // own BEGIN: `afterCommit` runs before the promise settles.
+      onDeactivate: () => {
         for (const sibling of siblings) sibling.inTransaction = false;
       },
       afterCommit: () => {
@@ -182,6 +186,8 @@ export class DuckDbTabularStorage<
       },
       fn,
     }).finally(() => {
+      // Belt-and-braces: `onDeactivate` already ran on every path through
+      // runNativeConnectionTransaction, including a failed BEGIN.
       for (const sibling of siblings) sibling.inTransaction = false;
     });
   }

@@ -20,12 +20,32 @@ export interface AlsContext {
   readonly owner: object;
   /** Every storage instance enlisted in this connection-scoped transaction. */
   readonly owners: ReadonlySet<object>;
+  /**
+   * Key of the chain slot this transaction holds. Equal to
+   * {@link groupHandle} on every single-session backend; a real `pg.Pool`
+   * transaction may key its chain on the checked-out client instead, so the
+   * two are separate fields.
+   */
   readonly handle: object;
   /**
+   * The physical connection this transaction owns — the pool/database object
+   * every participant reported from `sharedConnectionHandle()`. Used to group
+   * participants and, with {@link active}, to detect a nested
+   * `withConnectionTransaction` on the same connection.
+   */
+  readonly groupHandle: object;
+  /**
+   * `false` once COMMIT/ROLLBACK has run. The store itself outlives the
+   * transaction — `afterCommit` listeners and any continuation of the body
+   * still see it — so accessors that answer "is a transaction open on this
+   * connection" must consult this flag rather than the store's presence.
+   */
+  active: boolean;
+  /**
    * `put` events deferred until COMMIT of a connection-scoped transaction.
-   * Callers flush this after COMMIT (while the store is still active, via
-   * {@link safeEmit} — not {@link BaseSqlTabularStorage.emitPut}, which would
-   * re-queue).
+   * Callers drain this after COMMIT, once the store has been deactivated, so a
+   * listener that writes in response emits (and commits) normally instead of
+   * queueing onto a fresh buffer nothing drains.
    */
   readonly deferredPuts: WeakMap<object, unknown[]>;
   /**
