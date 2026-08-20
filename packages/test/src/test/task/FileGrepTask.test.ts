@@ -165,6 +165,57 @@ describe("FileGrepTask", () => {
     ]);
   });
 
+  test("two matches inside beforeContext emit each line once", async () => {
+    mockText("match one\nfiller\nmatch two\n");
+
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "match",
+        beforeContext: 2,
+      },
+    }).run();
+
+    expect(result.groups).toEqual([
+      {
+        startLine: 1,
+        endLine: 3,
+        lines: [
+          { line: 1, text: "match one", match: true },
+          { line: 2, text: "filler", match: false },
+          { line: 3, text: "match two", match: true },
+        ],
+      },
+    ]);
+    expect(result.truncated).toBe(false);
+  });
+
+  test("a replayed context line is not charged against maxOutputLines", async () => {
+    mockText("match one\nfiller\nmatch two\n");
+
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "match",
+        beforeContext: 2,
+        maxOutputLines: 3,
+      },
+    }).run();
+
+    expect(result.truncated).toBe(false);
+    expect(result.groups).toEqual([
+      {
+        startLine: 1,
+        endLine: 3,
+        lines: [
+          { line: 1, text: "match one", match: true },
+          { line: 2, text: "filler", match: false },
+          { line: 3, text: "match two", match: true },
+        ],
+      },
+    ]);
+  });
+
   test("afterContext includes following lines", async () => {
     const result = await new FileGrepTask({
       defaults: {
