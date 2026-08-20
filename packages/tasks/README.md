@@ -15,6 +15,7 @@ A package of task types for common operations, workflow management, and data pro
   - [LambdaTask](#lambdatask)
   - [JsonTask](#jsontask)
   - [ArrayTask](#arraytask)
+- [Filesystem Tasks (server builds)](#filesystem-tasks-server-builds)
 - [Workflow Integration](#workflow-integration)
 - [Error Handling](#error-handling)
 - [Configuration](#configuration)
@@ -562,6 +563,58 @@ const result = await task.run();
 - Automatic task instance creation per array element
 - Combination generation for multiple array inputs
 - Seamless single-value and array handling
+
+## Filesystem Tasks (server builds)
+
+The Node and Electron builds ship three tasks that read the local filesystem —
+`FileGrepTask`, `FileLoaderTask` and `FileSedTask`.
+
+**They are not registered by default.** `registerCommonTasks()` deliberately
+leaves them out of `TaskRegistry`, because the registry is what a _deserialized_
+graph resolves a task type through, and a serialized node supplies its own
+`config` — so a graph naming `FileGrepTask` also names its own `roots`, and no
+default this package picks can constrain it. The only control that survives
+untrusted graph JSON is the task not being resolvable at all.
+
+A host that intends to expose them opts in:
+
+```typescript
+import { registerCommonTasks, registerFileSystemTasks } from "@workglow/tasks";
+
+registerCommonTasks();
+// Only where every graph reaching the registry is trusted:
+registerFileSystemTasks();
+```
+
+The classes are exported either way, so constructing one directly needs no
+registration:
+
+```typescript
+import { FileGrepTask } from "@workglow/tasks";
+
+const result = await new FileGrepTask({
+  roots: ["/srv/data"], // defaults to [process.cwd()]
+  defaults: { url: "/srv/data/app.log", pattern: "ERROR" },
+}).run();
+```
+
+### Root containment
+
+Each task resolves and `realpath`s a local path before opening it, then
+requires the result to sit inside one of `config.roots`. Omitting `roots` means
+`[process.cwd()]` — **not** "anywhere on the host". The `filesystem:read`
+entitlement is not a substitute: it is only consulted when the embedder both
+runs the graph with `enforceEntitlements` and registers an
+`ENTITLEMENT_ENFORCER`, and neither is the default.
+
+Set `allowAnyRoot: true` to read any path the process can open. It has to be
+said explicitly; leaving `roots` unset never implies it.
+
+```typescript
+new FileGrepTask({ allowAnyRoot: true, defaults: { url, pattern } });
+```
+
+An unresolvable entry in `roots` fails the call wherever it sits in the array.
 
 ## Workflow Integration
 

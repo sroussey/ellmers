@@ -36,6 +36,7 @@ describe("FileGrepTask (server - local files)", () => {
     writeFileSync(filePath, "alpha\nbravo foo\ncharlie\n", "utf-8");
 
     const result = await new FileGrepTask({
+      roots: [testDir],
       defaults: { url: filePath, pattern: "foo" },
     }).run();
 
@@ -54,6 +55,7 @@ describe("FileGrepTask (server - local files)", () => {
     writeFileSync(filePath, "keep\nskip foo\nkeep too\n", "utf-8");
 
     const result = await new FileGrepTask({
+      roots: [testDir],
       defaults: { url: `file://${filePath}`, pattern: "foo" },
     }).run();
 
@@ -66,6 +68,7 @@ describe("FileGrepTask (server - local files)", () => {
     writeFileSync(filePath, "one\r\ntwo foo\r\nthree\r\n", "utf-8");
 
     const result = await new FileGrepTask({
+      roots: [testDir],
       defaults: { url: filePath, pattern: "foo" },
     }).run();
 
@@ -83,6 +86,7 @@ describe("FileGrepTask (server - local files)", () => {
 
     await expect(
       new FileGrepTask({
+        roots: [testDir],
         defaults: { url: filePath, pattern: "foo" },
       }).run()
     ).rejects.toThrow();
@@ -107,6 +111,7 @@ describe("FileGrepTask (server - local files)", () => {
 
     try {
       const result = await new FileGrepTask({
+        roots: [testDir],
         defaults: { url: filePath, pattern: "x" },
       }).run();
 
@@ -124,6 +129,7 @@ describe("FileGrepTask (server - local files)", () => {
     writeFileSync(filePath, `short\n${long}\ntail foo\n`, "utf-8");
 
     const result = await new FileGrepTask({
+      roots: [testDir],
       defaults: { url: filePath, pattern: "y" },
     }).run();
 
@@ -131,6 +137,96 @@ describe("FileGrepTask (server - local files)", () => {
     const matched = result.groups.flatMap((g) => g.lines.filter((l) => l.match));
     expect(matched).toHaveLength(1);
     expect(matched[0].text).toHaveLength(DEFAULT_LIMITS.grepMaxLineChars);
+  });
+
+  /**
+   * With no `roots` the resolver used to skip containment entirely, and the
+   * `filesystem:read` entitlement is not a backstop for that: it is consulted
+   * only when the embedder runs with `enforceEntitlements` AND registers an
+   * enforcer, neither of which is the default. So an unconfigured host was
+   * readable end to end by anything that could name this task. The default is
+   * now the process working directory.
+   */
+  describe("root containment defaults to the process working directory", () => {
+    test("refuses a path outside the cwd when no roots are configured", async () => {
+      const outside = join(testDir, "notes.txt");
+      writeFileSync(outside, "bravo foo\n", "utf-8");
+
+      const run = new FileGrepTask({ defaults: { url: outside, pattern: "foo" } }).run();
+
+      await expect(run).rejects.toThrow(TaskEntitlementError);
+      // Naming the cwd is what tells an operator which root they actually got.
+      await expect(run).rejects.toThrow(process.cwd());
+    });
+
+    test("reads a path inside the cwd when no roots are configured", async () => {
+      const inside = join(process.cwd(), `filegrep-cwd-${Date.now()}`);
+      mkdirSync(inside, { recursive: true });
+      const filePath = join(inside, "notes.txt");
+      writeFileSync(filePath, "alpha\nbravo foo\n", "utf-8");
+
+      try {
+        const result = await new FileGrepTask({
+          defaults: { url: filePath, pattern: "foo" },
+        }).run();
+
+        expect(result.matchCount).toBe(1);
+      } finally {
+        rmSync(inside, { recursive: true, force: true });
+      }
+    });
+
+    /**
+     * The escape hatch is deliberately a separate, explicit statement rather
+     * than something an omitted `roots` implies — an embedder that means "any
+     * path this process can open" has to say so.
+     */
+    test("allowAnyRoot restores the unrestricted read", async () => {
+      const outside = join(testDir, "notes.txt");
+      writeFileSync(outside, "alpha\nbravo foo\n", "utf-8");
+
+      const result = await new FileGrepTask({
+        allowAnyRoot: true,
+        defaults: { url: outside, pattern: "foo" },
+      }).run();
+
+      expect(result.matchCount).toBe(1);
+    });
+
+    test("allowAnyRoot must be the literal true, not merely truthy config", async () => {
+      const outside = join(testDir, "notes.txt");
+      writeFileSync(outside, "bravo foo\n", "utf-8");
+
+      await expect(
+        new FileGrepTask({
+          allowAnyRoot: undefined,
+          defaults: { url: outside, pattern: "foo" },
+        }).run()
+      ).rejects.toThrow(TaskEntitlementError);
+    });
+  });
+
+  /**
+   * `realpathSync` on a root used to run inside the `some()` predicate, which
+   * short-circuits: `[good, missing]` never reached the broken root and
+   * succeeded, while `[missing, good]` threw. Same config, same input,
+   * opposite outcome by array order. Every root is resolved before any
+   * containment verdict now, so a broken one fails always rather than
+   * sometimes.
+   */
+  test("an unresolvable root is rejected regardless of its position", async () => {
+    const filePath = join(testDir, "notes.txt");
+    writeFileSync(filePath, "alpha\nbravo foo\n", "utf-8");
+    const missing = join(testDir, "does-not-exist");
+
+    for (const roots of [
+      [testDir, missing],
+      [missing, testDir],
+    ]) {
+      await expect(
+        new FileGrepTask({ roots, defaults: { url: filePath, pattern: "foo" } }).run()
+      ).rejects.toThrow(/Configured root .* could not be resolved/);
+    }
   });
 
   test("refuses a path outside the configured roots", async () => {
@@ -189,6 +285,7 @@ describe("FileGrepTask (server - local files)", () => {
     writeFileSync(filePath, "alpha\nbravo foo\n", "utf-8");
 
     const result = await new FileGrepTask({
+      roots: [testDir],
       defaults: { url: `file://${testDir}/a%20b%25c.txt`, pattern: "foo" },
     }).run();
 
@@ -240,6 +337,7 @@ describe("FileGrepTask (server - local files)", () => {
     test("refuses a character device", async () => {
       await expect(
         new FileGrepTask({
+          roots: ["/dev"],
           defaults: { url: "/dev/zero", pattern: "foo" },
         }).run()
       ).rejects.toThrow(TaskInvalidInputError);
@@ -259,6 +357,7 @@ describe("FileGrepTask (server - local files)", () => {
     const started = Date.now();
     await expect(
       new FileGrepTask({
+        roots: [testDir],
         defaults: { url: filePath, pattern: "(\\w|\\d)*$" },
       }).run()
     ).rejects.toThrow(/budget/);

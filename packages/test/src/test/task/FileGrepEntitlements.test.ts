@@ -110,7 +110,7 @@ describe("FileGrepTask entitlement enforcement", () => {
     const allowed = join(testDir, "notes.txt");
     writeFileSync(allowed, "alpha\nbravo foo\n", "utf-8");
 
-    const permitted = new TaskGraphRunner(makeGraph(allowed));
+    const permitted = new TaskGraphRunner(makeGraph(allowed, [testDir]));
     await expect(
       permitted.runGraph(
         {},
@@ -118,7 +118,9 @@ describe("FileGrepTask entitlement enforcement", () => {
       )
     ).resolves.toBeDefined();
 
-    const denied = new TaskGraphRunner(makeGraph("/etc/passwd"));
+    // Rooted at /etc so containment admits the path and the ENFORCER is what
+    // refuses it — the policy is what this test is about.
+    const denied = new TaskGraphRunner(makeGraph("/etc/passwd", ["/etc"]));
     await expect(
       denied.runGraph(
         {},
@@ -132,6 +134,7 @@ describe("FileGrepTask entitlement enforcement", () => {
     writeFileSync(filePath, "bravo foo\n", "utf-8");
 
     const declared = new FileGrepTask({
+      roots: [testDir],
       defaults: { url: filePath, pattern: "foo" },
     }).entitlements().entitlements;
 

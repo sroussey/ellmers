@@ -36,6 +36,7 @@ describe("FileSedTask (server - local files)", () => {
     writeFileSync(filePath, "alpha\nbravo foo\ncharlie\n", "utf-8");
 
     const result = await new FileSedTask({
+      roots: [testDir],
       defaults: { url: filePath, pattern: "foo", replacement: "bar" },
     }).run();
 
@@ -48,6 +49,7 @@ describe("FileSedTask (server - local files)", () => {
     writeFileSync(filePath, "alpha\nbravo foo\n", "utf-8");
 
     await new FileSedTask({
+      roots: [testDir],
       defaults: { url: filePath, pattern: "foo", replacement: "bar" },
     }).run();
 
@@ -59,6 +61,7 @@ describe("FileSedTask (server - local files)", () => {
     writeFileSync(filePath, "keep\nskip foo\nkeep too\n", "utf-8");
 
     const result = await new FileSedTask({
+      roots: [testDir],
       defaults: { url: `file://${filePath}`, pattern: "foo", replacement: "bar" },
     }).run();
 
@@ -70,6 +73,7 @@ describe("FileSedTask (server - local files)", () => {
     writeFileSync(filePath, "one\r\ntwo foo\r\nthree\r\n", "utf-8");
 
     const result = await new FileSedTask({
+      roots: [testDir],
       defaults: { url: filePath, pattern: "foo", replacement: "bar" },
     }).run();
 
@@ -81,6 +85,7 @@ describe("FileSedTask (server - local files)", () => {
 
     await expect(
       new FileSedTask({
+        roots: [testDir],
         defaults: { url: filePath, pattern: "foo", replacement: "bar" },
       }).run()
     ).rejects.toThrow();
@@ -105,6 +110,7 @@ describe("FileSedTask (server - local files)", () => {
 
     try {
       const result = await new FileSedTask({
+        roots: [testDir],
         defaults: { url: filePath, pattern: "x", replacement: "y", global: true },
       }).run();
 
@@ -122,6 +128,7 @@ describe("FileSedTask (server - local files)", () => {
     writeFileSync(filePath, `short\n${long}\ntail foo\n`, "utf-8");
 
     const result = await new FileSedTask({
+      roots: [testDir],
       defaults: { url: filePath, pattern: "foo", replacement: "bar" },
     }).run();
 
@@ -130,6 +137,43 @@ describe("FileSedTask (server - local files)", () => {
     expect(lines[1]).toHaveLength(DEFAULT_LIMITS.grepMaxLineChars);
     // The rest of the physical line is discarded, not folded into a new one.
     expect(lines[2]).toBe("tail bar");
+  });
+
+  /**
+   * With no `roots` the resolver used to skip containment entirely, and the
+   * `filesystem:read` entitlement is not a backstop for that: it is consulted
+   * only when the embedder runs with `enforceEntitlements` AND registers an
+   * enforcer, neither of which is the default. The default is now the process
+   * working directory.
+   */
+  describe("root containment defaults to the process working directory", () => {
+    test("refuses a path outside the cwd when no roots are configured", async () => {
+      const outside = join(testDir, "notes.txt");
+      writeFileSync(outside, "bravo foo\n", "utf-8");
+
+      const run = new FileSedTask({
+        defaults: { url: outside, pattern: "foo", replacement: "bar" },
+      }).run();
+
+      await expect(run).rejects.toThrow(TaskEntitlementError);
+      await expect(run).rejects.toThrow(process.cwd());
+    });
+
+    /**
+     * The escape hatch is deliberately a separate, explicit statement rather
+     * than something an omitted `roots` implies.
+     */
+    test("allowAnyRoot restores the unrestricted read", async () => {
+      const outside = join(testDir, "notes.txt");
+      writeFileSync(outside, "alpha\nbravo foo\n", "utf-8");
+
+      const result = await new FileSedTask({
+        allowAnyRoot: true,
+        defaults: { url: outside, pattern: "foo", replacement: "bar" },
+      }).run();
+
+      expect(result.text).toBe("alpha\nbravo bar\n");
+    });
   });
 
   test("refuses a path outside the configured roots", async () => {
@@ -188,6 +232,7 @@ describe("FileSedTask (server - local files)", () => {
     writeFileSync(filePath, "alpha\nbravo foo\n", "utf-8");
 
     const result = await new FileSedTask({
+      roots: [testDir],
       defaults: {
         url: `file://${testDir}/a%20b%25c.txt`,
         pattern: "foo",
@@ -260,6 +305,7 @@ describe("FileSedTask (server - local files)", () => {
     test("refuses a character device", async () => {
       await expect(
         new FileSedTask({
+          roots: ["/dev"],
           defaults: { url: "/dev/zero", pattern: "foo", replacement: "bar" },
         }).run()
       ).rejects.toThrow(TaskInvalidInputError);
@@ -285,6 +331,7 @@ describe("FileSedTask (server - local files)", () => {
     const started = Date.now();
     await expect(
       new FileSedTask({
+        roots: [testDir],
         defaults: { url: filePath, pattern: "(\\w|\\d)*$", replacement: "X" },
       }).run()
     ).rejects.toThrow(/budget/);
@@ -296,6 +343,7 @@ describe("FileSedTask (server - local files)", () => {
     writeFileSync(filePath, "2026-08-17\nname: ada\n", "utf-8");
 
     const result = await new FileSedTask({
+      roots: [testDir],
       defaults: {
         url: filePath,
         pattern: "(\\d{4})-(\\d{2})-(\\d{2})|name: (?<who>\\w+)",
