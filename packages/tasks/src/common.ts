@@ -87,6 +87,7 @@ export * from "./task/vector/VectorNormalizeTask";
 export * from "./task/vector/VectorScaleTask";
 export * from "./task/vector/VectorSubtractTask";
 export * from "./task/vector/VectorSumTask";
+export * from "./util/BoundedRegexRunner";
 export * from "./util/regexSafety";
 export * from "./util/SafeFetch";
 export * from "./util/UrlClassifier";

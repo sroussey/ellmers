@@ -20,7 +20,7 @@ describe("assertSafeRegexPattern", () => {
   });
 
   it("rejects nested quantifiers", () => {
-    for (const pattern of ["(a+)+", "(a*)+", "(a+)*", "(a+)?", "(a+){2}", "((b|c+))+"]) {
+    for (const pattern of ["(a+)+", "(a*)+", "(a+)*", "(a+){2}", "((b|c+))+"]) {
       expect(() => assertSafeRegexPattern(pattern)).toThrow(/nested quantifiers/);
     }
   });
@@ -139,5 +139,68 @@ describe("hasUnsafeRegexShape", () => {
 
   it("still catches a class branch that can match empty", () => {
     expect(hasUnsafeRegexShape("([a-z]*|[A-Z])+")).toBe(true);
+  });
+
+  /**
+   * A group made optional is bounded to at most ONE repetition, so its body's
+   * own `+` has nothing to backtrack against — `(X)?` is linear whatever `X`
+   * quantifies. Reading `?` as "the group is quantified" rejected the most
+   * ordinary shapes there are: an optional decimal part, an optional comment
+   * line, an optional trailing capture.
+   */
+  it.each([
+    "^-?\\d+(\\.\\d+)?$",
+    "^-?\\d+(?:\\.\\d+)?$",
+    "(\\w+)?",
+    "^(#.*)?$",
+    "(\\s+)?end",
+    "(https?://\\S+)?",
+    "(ERROR|WARN)\\s+(\\w+)?",
+    "(a+)?",
+    "(?<year>\\d+)?",
+    "(a+){1}",
+    "(a+){0,1}",
+    "(a+){foo}",
+    "(?:\\r?\\n)+",
+    "^(?:https?://)?(www\\.)?example\\.com",
+  ])("accepts the optional group %s", (pattern) => {
+    expect(hasUnsafeRegexShape(pattern)).toBe(false);
+  });
+
+  /**
+   * The rule is "does the quantifier permit two or more repetitions", NOT "is
+   * it a real `{n,}`/`{n,m}`". The cheaper-looking variant — reuse the existing
+   * comma-requiring `isUnboundedRepetitionAt` — would accept every one of
+   * these; `(a+){10}` measured 46 318 ms against a 41-character input.
+   */
+  it.each(["(a+){2}", "(a+){2,3}", "(a+){10}", "(a+){2,}"])(
+    "still rejects the counted repetition %s",
+    (pattern) => {
+      expect(hasUnsafeRegexShape(pattern)).toBe(true);
+    }
+  );
+
+  /**
+   * The inner `(a+)?` no longer trips the rule on its own, but a group whose
+   * body quantifies still counts as a quantifier for whatever encloses it — so
+   * the outer `+` over it is caught exactly as before.
+   */
+  it("still rejects an optional quantifying group under an outer quantifier", () => {
+    expect(hasUnsafeRegexShape("((a+)?)+")).toBe(true);
+  });
+
+  it("stays linear on a newly accepted optional group", () => {
+    // The screen is what changed, so compile exactly what it now accepts.
+    const pattern = "^-?\\d+(\\.\\d+)?$";
+    expect(hasUnsafeRegexShape(pattern)).toBe(false);
+    const regex = new RegExp(pattern);
+    expect(regex.exec("-12.5")?.[1]).toBe(".5");
+
+    // The optional group bounds itself to one repetition, so a long non-match
+    // is a single failed scan rather than an exponential search.
+    const value = "1".repeat(200_000) + "!";
+    const started = performance.now();
+    expect(regex.test(value)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(200);
   });
 });

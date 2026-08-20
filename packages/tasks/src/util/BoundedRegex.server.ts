@@ -5,7 +5,10 @@
  */
 
 import { TaskInvalidInputError } from "@workglow/task-graph";
+import { SECURITY_LIMITS } from "@workglow/util";
 import { createContext, Script } from "node:vm";
+import type { RegexRunnerFactory } from "./BoundedRegexRunner";
+import { registerRegexRunnerFactory } from "./BoundedRegexRunner";
 
 /**
  * Matches lines against a regex under an interruptible wall-clock budget.
@@ -221,3 +224,95 @@ export function createBoundedRegexReplacer(
     return { texts: [...scope.out], counts: [...scope.counts] };
   };
 }
+
+/**
+ * One value, one regex — the shape {@link RegexTask} needs, where the batching
+ * the other helpers do has nothing to amortize over.
+ *
+ * The context and script are module-level and shared across every runner: a
+ * fresh `createContext` per call site costs ~0.74 ms against ~0.16 ms for a
+ * reused one, and a task that evaluates a single value per run pays that on
+ * every run. `re` and `value` are assigned per call instead.
+ */
+const execContext = createContext({
+  re: undefined as RegExp | undefined,
+  value: "",
+  all: false,
+  matched: false,
+  out: [] as (string | undefined)[],
+});
+
+// Wrapped so `result` is not redeclared in the context's global scope on the
+// second call — same reason as {@link createBoundedRegexExtractor}.
+const execScript = new Script(`(function () {
+  out.length = 0;
+  matched = false;
+  re.lastIndex = 0;
+  if (all) {
+    let result;
+    while ((result = re.exec(value)) !== null) {
+      if (result[0].length === 0) {
+        re.lastIndex++;
+        continue;
+      }
+      out.push(result[0]);
+      if (!re.global) break;
+    }
+    matched = out.length > 0;
+  } else {
+    const result = re.exec(value);
+    if (result !== null) {
+      matched = true;
+      const parts = Array.prototype.slice.call(result);
+      for (let i = 0; i < parts.length; i++) out.push(parts[i]);
+    }
+  }
+})();`);
+
+interface ExecScope {
+  re: RegExp;
+  value: string;
+  all: boolean;
+  matched: boolean;
+  out: (string | undefined)[];
+}
+
+/**
+ * Builds a {@link RegexRunnerFactory} that runs each match under an
+ * interruptible wall-clock budget, for the same reason and with the same
+ * residual as {@link createBoundedRegexMatcher}.
+ */
+export function createBoundedRegexExecutor(timeoutMs: number): RegexRunnerFactory {
+  return (regex) => {
+    const scope = execContext as unknown as ExecScope;
+
+    const run = (value: string, all: boolean): void => {
+      scope.re = regex;
+      scope.value = value;
+      scope.all = all;
+      try {
+        execScript.runInContext(execContext, { timeout: timeoutMs });
+      } catch {
+        // Deliberately not a TaskTimeoutError: that extends TaskAbortedError and
+        // would report the run as aborted rather than failed by bad input.
+        throw new TaskInvalidInputError(
+          `Regex matching exceeded its ${timeoutMs}ms budget for pattern /${regex.source}/ — ` +
+            `the pattern backtracks catastrophically on this input. Simplify the pattern.`
+        );
+      }
+    };
+
+    return {
+      exec: (value) => {
+        run(value, false);
+        return scope.matched ? [...scope.out] : undefined;
+      },
+      execAll: (value) => {
+        run(value, true);
+        return [...scope.out] as string[];
+      },
+    };
+  };
+}
+
+registerRegexRunnerFactory(createBoundedRegexExecutor(SECURITY_LIMITS.regexMatchBatchTimeoutMs));

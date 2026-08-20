@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { TaskStatus } from "@workglow/task-graph";
+import { TaskInvalidInputError, TaskStatus } from "@workglow/task-graph";
 import { RegexTask } from "@workglow/tasks";
 import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
@@ -96,5 +96,27 @@ describe("RegexTask", () => {
   it("should complete with COMPLETED status", async () => {
     await task.run({ value: "abc", pattern: "abc" });
     expect(task.status).toBe(TaskStatus.COMPLETED);
+  });
+
+  /**
+   * The shape screen never sees this one: no group here quantifies, and no
+   * alternation overlaps, so it passes `assertSafeRegexPattern` both before and
+   * after the optional-group relaxation. What stops it is the match budget the
+   * runner applies — unbounded it measured 5 829 ms on this input, against a
+   * 1 000 ms budget. Bun honours a `vm` timeout coarsely, hence the headroom.
+   */
+  it("fails a catastrophically backtracking pattern instead of blocking", async () => {
+    const started = performance.now();
+    await expect(
+      task.run({ value: "ab".repeat(28) + "!", pattern: "^((a?)(b?))*$" })
+    ).rejects.toThrow(TaskInvalidInputError);
+    expect(performance.now() - started).toBeLessThan(5_000);
+  });
+
+  /** `(\.\d+)?` bounds the group to one repetition; the screen used to read the `?` as unsafe. */
+  it("accepts a decimal pattern the shape screen used to reject", async () => {
+    const result = await task.run({ value: "-12.5", pattern: "^-?\\d+(\\.\\d+)?$" });
+    expect(result.match).toBe(true);
+    expect(result.matches[0]).toBe("-12.5");
   });
 });
