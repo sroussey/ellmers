@@ -9,6 +9,24 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const abs = (p: string): string => path.join(__dirname, p);
 
 /**
+ * Vitest's workspace `cliOverrides` whitelist does not include `typecheck`,
+ * so `--typecheck` / `--typecheck.only` never reach `test.projects`. Read the
+ * flags from argv and enable typecheck on the `ai` project, or the nightly
+ * drift guard (`vitest run --typecheck --typecheck.only <file.test-d.ts>`)
+ * collects zero files.
+ */
+export function typecheckFromArgv(argv: readonly string[]): {
+  readonly enabled: boolean;
+  readonly only: boolean;
+} {
+  const only = argv.includes("--typecheck.only");
+  const enabled = only || argv.includes("--typecheck") || argv.includes("--typecheck.enabled");
+  return { enabled, only };
+}
+
+const typecheckCli = typecheckFromArgv(process.argv);
+
+/**
  * Tier gate for callers that do NOT pre-select files — `turbo run test` and a
  * bare `vitest run --project <name>`. Those would otherwise mean "every tier",
  * including the integration suites that want databases and live API keys, which
@@ -40,7 +58,13 @@ const shared = {
   // `--typecheck` engine. Scope the tsc program to the package under test so
   // unrelated source (example UIs needing `jsx`, providers relying on their
   // own ambient `types`/`lib`) is not swept in and reported as drift.
+  // `enabled`/`only` come from argv: see {@link typecheckFromArgv}. The
+  // tsconfig only includes `packages/ai/src`, so only the `ai` project turns
+  // typecheck on — other projects would glob their own `.test-d.ts` files
+  // into a program that does not contain them.
   typecheck: {
+    enabled: false,
+    only: typecheckCli.only,
     tsconfig: abs("tsconfig.typecheck.json"),
   },
   testTimeout: 15000, // 15 second global timeout (WASM Postgres / PGlite init can be slow)
@@ -72,7 +96,16 @@ const projects = listTestProjects(discovered).map((p) => {
     .filter((f) => f.runner === "bun" && f.path.startsWith(root + "/"))
     .map((f) => f.path.slice(root.length + 1));
   return {
-    test: { ...shared, name: p.name, root, exclude: [...shared.exclude, ...bunOnly] },
+    test: {
+      ...shared,
+      name: p.name,
+      root,
+      exclude: [...shared.exclude, ...bunOnly],
+      typecheck: {
+        ...shared.typecheck,
+        enabled: typecheckCli.enabled && p.name === "ai",
+      },
+    },
   };
 });
 

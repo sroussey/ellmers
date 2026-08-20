@@ -88,6 +88,31 @@ describe("test discovery", () => {
     expect(uncovered).toEqual([]);
   });
 
+  it("forwards CLI --typecheck onto the ai project", async () => {
+    // Vitest's project `cliOverrides` whitelist omits `typecheck`, so
+    // `vitest run --typecheck --typecheck.only <file.test-d.ts>` would collect
+    // zero files unless the ai project sets enabled/only from argv. Other
+    // projects stay off: tsconfig.typecheck.json only includes packages/ai.
+    const mod = await import("../vitest.config");
+    expect(mod.typecheckFromArgv(["vitest", "run"])).toEqual({ enabled: false, only: false });
+    expect(mod.typecheckFromArgv(["vitest", "run", "--typecheck", "--typecheck.only"])).toEqual({
+      enabled: true,
+      only: true,
+    });
+    const expected = mod.typecheckFromArgv(process.argv);
+    const projects = (mod.default.test?.projects ?? []) as Array<{
+      test: { name: string; typecheck: { enabled: boolean; only: boolean } };
+    }>;
+    const ai = projects.find((p) => p.test.name === "ai");
+    expect(ai).toBeDefined();
+    expect(ai!.test.typecheck.enabled).toBe(expected.enabled);
+    expect(ai!.test.typecheck.only).toBe(expected.only);
+    for (const p of projects) {
+      if (p.test.name === "ai") continue;
+      expect(p.test.typecheck.enabled).toBe(false);
+    }
+  });
+
   it("gives every workspace that holds tests a `test` script for Turbo to run", () => {
     // `turbo run test` invokes each workspace's own `test` script. A workspace
     // with tests but no script is not an error to Turbo — it reports the task
