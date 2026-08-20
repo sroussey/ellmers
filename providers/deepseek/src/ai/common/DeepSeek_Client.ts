@@ -5,7 +5,8 @@
  */
 
 import { isBrowserLike, resolveApiKey, validateProviderBaseUrl } from "@workglow/ai/provider-utils";
-import { isModelEffort, type ModelEffort } from "@workglow/ai/worker";
+import { isModelEffortEnabled, type ModelEffort } from "@workglow/ai/worker";
+import { deepseekEffortPolicy } from "./DeepSeek_EffortPolicy";
 import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
 
 /** Maps coarse {@link ModelEffort} to DeepSeek reasoning token allowance. */
@@ -143,8 +144,8 @@ export function resolveMaxTokens(
   let allowance: number;
   if (typeof configured === "number") {
     allowance = configured;
-  } else if (isModelEffort(model?.effort)) {
-    allowance = EFFORT_TO_REASONING_ALLOWANCE[model.effort];
+  } else if (model && isModelEffortEnabled(model, deepseekEffortPolicy(model))) {
+    allowance = EFFORT_TO_REASONING_ALLOWANCE[model.effort as ModelEffort];
   } else {
     allowance = DEEPSEEK_DEFAULT_REASONING_ALLOWANCE;
   }

@@ -11,6 +11,7 @@ export {
   effortPlaceholder,
   enabledEffortsForModel,
   isModelEffort,
+  isModelEffortEnabled,
   MODEL_EFFORTS,
   readEffortOptions,
   sanitizeEffortOptions,

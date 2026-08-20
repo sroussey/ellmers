@@ -15,6 +15,13 @@ export function tfmpWorkerRunFnSpecs(): readonly { readonly serves: readonly Cap
 
 type CapabilityHints = Pick<ModelRecord, "model_id" | "provider_config" | "capabilities">;
 
+const TFMP_META = [
+  "model.download",
+  "model.download-remove",
+  "model.info",
+  "model.search",
+] as const satisfies readonly Capability[];
+
 /**
  * Heuristic capability inference for TensorFlow MediaPipe {@link ModelRecord}.
  *
@@ -38,58 +45,45 @@ export function inferTfmpCapabilities(model: CapabilityHints): readonly Capabili
 
   // LLM bundles for the genai engine (e.g. Gemma/Qwen .task / .litertlm files).
   if (/gemma|qwen|\.litertlm$|(?:^|[-_])llm(?:[-_.]|$)/.test(baseName)) {
-    return [
-      "text.generation",
-      "json-mode",
-      "model.count-tokens",
-      "model.download-remove",
-      "model.info",
-      "model.search",
-    ];
+    return ["text.generation", "json-mode", "model.count-tokens", ...TFMP_META];
   }
 
   // Hand landmarker / gesture recognizer share `hand_*` filenames.
   if (/gesture_recognizer/.test(baseName)) {
-    return [
-      "vision.gesture",
-      "vision.hand-landmarks",
-      "model.download-remove",
-      "model.info",
-      "model.search",
-    ];
+    return ["vision.gesture", "vision.hand-landmarks", ...TFMP_META];
   }
   if (/hand_landmarker/.test(baseName)) {
-    return ["vision.hand-landmarks", "model.download-remove", "model.info", "model.search"];
+    return ["vision.hand-landmarks", ...TFMP_META];
   }
   if (/face_landmarker/.test(baseName)) {
-    return ["vision.face-landmarks", "model.download-remove", "model.info", "model.search"];
+    return ["vision.face-landmarks", ...TFMP_META];
   }
   if (/face_detector|blaze_face/.test(baseName)) {
-    return ["vision.face-detection", "model.download-remove", "model.info", "model.search"];
+    return ["vision.face-detection", ...TFMP_META];
   }
   if (/pose_landmarker/.test(baseName)) {
-    return ["vision.pose-landmarks", "model.download-remove", "model.info", "model.search"];
+    return ["vision.pose-landmarks", ...TFMP_META];
   }
   if (/object_detector|efficientdet|ssd_mobilenet|yolo/.test(baseName)) {
-    return ["image.object-detection", "model.download-remove", "model.info", "model.search"];
+    return ["image.object-detection", ...TFMP_META];
   }
   if (/segmenter|deeplab|selfie/.test(baseName)) {
-    return ["image.segmentation", "model.download-remove", "model.info", "model.search"];
+    return ["image.segmentation", ...TFMP_META];
   }
   if (/image_classifier|efficientnet|mobilenet/.test(baseName)) {
-    return ["image.classification", "model.download-remove", "model.info", "model.search"];
+    return ["image.classification", ...TFMP_META];
   }
   if (/image_embed/.test(baseName)) {
-    return ["image.embedding", "model.download-remove", "model.info", "model.search"];
+    return ["image.embedding", ...TFMP_META];
   }
   if (/text_embed|universal_sentence_encoder|use_/.test(baseName)) {
-    return ["text.embedding", "model.download-remove", "model.info", "model.search"];
+    return ["text.embedding", ...TFMP_META];
   }
   if (/text_classifier|bert_classifier/.test(baseName)) {
-    return ["text.classification", "model.download-remove", "model.info", "model.search"];
+    return ["text.classification", ...TFMP_META];
   }
   if (/language_detector/.test(baseName)) {
-    return ["text.language-detection", "model.download-remove", "model.info", "model.search"];
+    return ["text.language-detection", ...TFMP_META];
   }
 
   return ["model.search", "model.info"];

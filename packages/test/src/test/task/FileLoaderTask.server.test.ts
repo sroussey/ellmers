@@ -5,10 +5,11 @@
  */
 
 // Import directly from source to avoid ambiguous export issue
+import { Entitlements, TaskEntitlementError, TaskInvalidInputError } from "@workglow/task-graph";
 import { FileLoaderTask } from "@workglow/tasks";
 import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -38,7 +39,10 @@ describe("FileLoaderTask (server - local files)", () => {
     const filePath = join(testDir, "test.txt");
     writeFileSync(filePath, content, "utf-8");
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}`, format: "text" } });
+    const task = new FileLoaderTask({
+      roots: [testDir],
+      defaults: { url: `file://${filePath}`, format: "text" },
+    });
     const result = await task.run();
 
     expect(result.text).toBe(content);
@@ -55,7 +59,10 @@ describe("FileLoaderTask (server - local files)", () => {
     const filePath = join(testDir, "test.txt");
     writeFileSync(filePath, content, "utf-8");
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}`, format: "text" } });
+    const task = new FileLoaderTask({
+      roots: [testDir],
+      defaults: { url: `file://${filePath}`, format: "text" },
+    });
     const result = await task.run();
 
     expect(result.text).toBe(content);
@@ -67,7 +74,10 @@ describe("FileLoaderTask (server - local files)", () => {
     const filePath = join(testDir, "test.md");
     writeFileSync(filePath, content, "utf-8");
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}`, format: "auto" } });
+    const task = new FileLoaderTask({
+      roots: [testDir],
+      defaults: { url: `file://${filePath}`, format: "auto" },
+    });
     const result = await task.run();
 
     expect(result.text).toBe(content);
@@ -80,7 +90,10 @@ describe("FileLoaderTask (server - local files)", () => {
     const filePath = join(testDir, "test.json");
     writeFileSync(filePath, JSON.stringify(jsonData), "utf-8");
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}`, format: "auto" } });
+    const task = new FileLoaderTask({
+      roots: [testDir],
+      defaults: { url: `file://${filePath}`, format: "auto" },
+    });
     const result = await task.run();
 
     expect(result.json).toEqual(jsonData);
@@ -93,7 +106,10 @@ describe("FileLoaderTask (server - local files)", () => {
     const filePath = join(testDir, "invalid.json");
     writeFileSync(filePath, invalidJson, "utf-8");
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}`, format: "json" } });
+    const task = new FileLoaderTask({
+      roots: [testDir],
+      defaults: { url: `file://${filePath}`, format: "json" },
+    });
 
     await expect(task.run()).rejects.toThrow(
       /Failed to parse JSON|JSON Parse error|Expected property name or '\}' in JSON/
@@ -108,7 +124,10 @@ Bob,35,Paris`;
     const filePath = join(testDir, "test.csv");
     writeFileSync(filePath, csvContent, "utf-8");
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}`, format: "auto" } });
+    const task = new FileLoaderTask({
+      roots: [testDir],
+      defaults: { url: `file://${filePath}`, format: "auto" },
+    });
     const result = await task.run();
 
     expect(result.metadata.format).toBe("csv");
@@ -127,7 +146,7 @@ Bob,35,Paris`;
     const filePath = join(testDir, "products.csv");
     writeFileSync(filePath, csvContent, "utf-8");
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}` } });
+    const task = new FileLoaderTask({ roots: [testDir], defaults: { url: `file://${filePath}` } });
     const result = await task.run();
 
     expect(result.csv).toHaveLength(2);
@@ -148,7 +167,10 @@ Bob,35,Paris`;
     const filePath = join(testDir, "test.html");
     writeFileSync(filePath, htmlContent, "utf-8");
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}`, format: "auto" } });
+    const task = new FileLoaderTask({
+      roots: [testDir],
+      defaults: { url: `file://${filePath}`, format: "auto" },
+    });
     const result = await task.run();
 
     expect(result.text).toBe(htmlContent);
@@ -161,7 +183,10 @@ Bob,35,Paris`;
     const filePath = join(testDir, "test.htm");
     writeFileSync(filePath, htmlContent, "utf-8");
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}`, format: "auto" } });
+    const task = new FileLoaderTask({
+      roots: [testDir],
+      defaults: { url: `file://${filePath}`, format: "auto" },
+    });
     const result = await task.run();
 
     expect(result.metadata.format).toBe("html");
@@ -174,7 +199,10 @@ Bob,35,Paris`;
     const filePath = join(testDir, "test.png");
     writeFileSync(filePath, imageData);
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}`, format: "auto" } });
+    const task = new FileLoaderTask({
+      roots: [testDir],
+      defaults: { url: `file://${filePath}`, format: "auto" },
+    });
     const result = await task.run();
 
     expect(result.image).toContain("data:image/png;base64,");
@@ -200,7 +228,10 @@ Bob,35,Paris`;
       const filePath = join(testDir, `test.${ext}`);
       writeFileSync(filePath, imageData);
 
-      const task = new FileLoaderTask({ defaults: { url: `file://${filePath}`, format: "auto" } });
+      const task = new FileLoaderTask({
+        roots: [testDir],
+        defaults: { url: `file://${filePath}`, format: "auto" },
+      });
       const result = await task.run();
 
       expect(result.metadata.format).toBe("image");
@@ -216,7 +247,10 @@ Bob,35,Paris`;
     const filePath = join(testDir, "test.pdf");
     writeFileSync(filePath, pdfData);
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}`, format: "auto" } });
+    const task = new FileLoaderTask({
+      roots: [testDir],
+      defaults: { url: `file://${filePath}`, format: "auto" },
+    });
     const result = await task.run();
 
     expect(result.pdf).toContain("data:application/pdf;base64,");
@@ -231,7 +265,10 @@ Bob,35,Paris`;
     writeFileSync(filePath, textContent, "utf-8");
 
     // Even though file extension is .json, force it as text
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}`, format: "text" } });
+    const task = new FileLoaderTask({
+      roots: [testDir],
+      defaults: { url: `file://${filePath}`, format: "text" },
+    });
     const result = await task.run();
 
     expect(result.metadata.format).toBe("text");
@@ -243,7 +280,7 @@ Bob,35,Paris`;
     const filePath = join(testDir, "empty.csv");
     writeFileSync(filePath, csvContent, "utf-8");
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}` } });
+    const task = new FileLoaderTask({ roots: [testDir], defaults: { url: `file://${filePath}` } });
     const result = await task.run();
 
     expect(result.csv).toEqual([]);
@@ -254,7 +291,10 @@ Bob,35,Paris`;
     const filePath = join(testDir, "TEST.JSON");
     writeFileSync(filePath, JSON.stringify(jsonData), "utf-8");
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}`, format: "auto" } });
+    const task = new FileLoaderTask({
+      roots: [testDir],
+      defaults: { url: `file://${filePath}`, format: "auto" },
+    });
     const result = await task.run();
 
     expect(result.metadata.format).toBe("json");
@@ -266,7 +306,10 @@ Bob,35,Paris`;
     const filePath = join(testDir, "file.xyz");
     writeFileSync(filePath, content, "utf-8");
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}`, format: "auto" } });
+    const task = new FileLoaderTask({
+      roots: [testDir],
+      defaults: { url: `file://${filePath}`, format: "auto" },
+    });
     const result = await task.run();
 
     expect(result.metadata.format).toBe("text");
@@ -281,7 +324,7 @@ Bob,35,`;
     const filePath = join(testDir, "sparse.csv");
     writeFileSync(filePath, csvContent, "utf-8");
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}` } });
+    const task = new FileLoaderTask({ roots: [testDir], defaults: { url: `file://${filePath}` } });
     const result = await task.run();
 
     expect(result.csv).toHaveLength(3);
@@ -295,7 +338,10 @@ Bob,35,`;
     const filePath = join(testDir, "file.txt");
     writeFileSync(filePath, content, "utf-8");
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}`, format: "text" } });
+    const task = new FileLoaderTask({
+      roots: [testDir],
+      defaults: { url: `file://${filePath}`, format: "text" },
+    });
     const result = await task.run();
 
     expect(result.metadata).toHaveProperty("url", filePath);
@@ -319,7 +365,7 @@ Bob,35,`;
     const filePath = join(testDir, "complex.json");
     writeFileSync(filePath, JSON.stringify(jsonData), "utf-8");
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}` } });
+    const task = new FileLoaderTask({ roots: [testDir], defaults: { url: `file://${filePath}` } });
     const result = await task.run();
 
     expect(result.json).toEqual(jsonData);
@@ -337,7 +383,7 @@ Bob,35,`;
     const filePath = join(specialDir, "file-name.txt");
     writeFileSync(filePath, content, "utf-8");
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}` } });
+    const task = new FileLoaderTask({ roots: [testDir], defaults: { url: `file://${filePath}` } });
     const result = await task.run();
 
     expect(result.text).toBe(content);
@@ -353,7 +399,7 @@ Bob,35,`;
     const filePath = join(testDir, "large.csv");
     writeFileSync(filePath, csvContent, "utf-8");
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}` } });
+    const task = new FileLoaderTask({ roots: [testDir], defaults: { url: `file://${filePath}` } });
     const result = await task.run();
 
     expect(result.csv).toHaveLength(rows);
@@ -371,7 +417,7 @@ Bob,35,`;
     const filePath = join(testDir, "binary.png");
     writeFileSync(filePath, binaryData);
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}` } });
+    const task = new FileLoaderTask({ roots: [testDir], defaults: { url: `file://${filePath}` } });
     const result = await task.run();
 
     expect(result.image).toContain("data:image/png;base64,");
@@ -386,7 +432,7 @@ Bob,35,`;
     const filePath = join(testDir, "progress.txt");
     writeFileSync(filePath, content, "utf-8");
 
-    const task = new FileLoaderTask();
+    const task = new FileLoaderTask({ roots: [testDir] });
 
     // Mock the task runner's updateProgress by accessing the task's progress property
     // Note: Progress updates happen internally via context.updateProgress
@@ -402,7 +448,7 @@ Bob,35,`;
     const filePath = join(testDir, "windows.csv");
     writeFileSync(filePath, csvContent, "utf-8");
 
-    const task = new FileLoaderTask();
+    const task = new FileLoaderTask({ roots: [testDir] });
     const result = await task.run({ url: `file://${filePath}` });
 
     expect(result.csv).toHaveLength(2);
@@ -415,7 +461,7 @@ Bob,35,`;
     const filePath = join(testDir, "mixed.csv");
     writeFileSync(filePath, csvContent, "utf-8");
 
-    const task = new FileLoaderTask();
+    const task = new FileLoaderTask({ roots: [testDir] });
     const result = await task.run({ url: `file://${filePath}` });
 
     expect(result.csv).toHaveLength(2);
@@ -437,7 +483,7 @@ This is the body.`;
     const filePath = join(testDir, "frontmatter.md");
     writeFileSync(filePath, content, "utf-8");
 
-    const task = new FileLoaderTask();
+    const task = new FileLoaderTask({ roots: [testDir] });
     const result = await task.run({ url: `file://${filePath}`, format: "auto" });
 
     expect(result.metadata.format).toBe("markdown");
@@ -455,7 +501,10 @@ This is the body.`;
     const filePath = join(testDir, "no-frontmatter.md");
     writeFileSync(filePath, content, "utf-8");
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}`, format: "auto" } });
+    const task = new FileLoaderTask({
+      roots: [testDir],
+      defaults: { url: `file://${filePath}`, format: "auto" },
+    });
     const result = await task.run();
 
     expect(result.frontmatter).toBeUndefined();
@@ -476,7 +525,10 @@ import { getTestingLogger } from "@workglow/util/test";
     const filePath = join(testDir, "page.mdx");
     writeFileSync(filePath, content, "utf-8");
 
-    const task = new FileLoaderTask({ defaults: { url: `file://${filePath}`, format: "auto" } });
+    const task = new FileLoaderTask({
+      roots: [testDir],
+      defaults: { url: `file://${filePath}`, format: "auto" },
+    });
     const result = await task.run();
 
     expect(result.metadata.format).toBe("markdown");
@@ -503,7 +555,7 @@ Body content.`;
     const filePath = join(testDir, "types.md");
     writeFileSync(filePath, content, "utf-8");
 
-    const task = new FileLoaderTask();
+    const task = new FileLoaderTask({ roots: [testDir] });
     const result = await task.run({ url: `file://${filePath}` });
 
     expect(result.frontmatter).toEqual({
@@ -523,7 +575,7 @@ Body content.`;
     const filePath = join(testDir, "test.txt");
     writeFileSync(filePath, content, "utf-8");
 
-    const task = new FileLoaderTask();
+    const task = new FileLoaderTask({ roots: [testDir] });
     const result = await task.run({ url: `file://${filePath}`, format: "text" });
 
     expect(result.frontmatter).toBeUndefined();
@@ -542,7 +594,7 @@ Body.`;
     const filePath = join(testDir, "nested.md");
     writeFileSync(filePath, content, "utf-8");
 
-    const task = new FileLoaderTask();
+    const task = new FileLoaderTask({ roots: [testDir] });
     const result = await task.run({ url: `file://${filePath}` });
 
     expect(result.frontmatter).toEqual({
@@ -559,11 +611,121 @@ Body.`;
     const filePath = join(testDir, "test.markdown");
     writeFileSync(filePath, content, "utf-8");
 
-    const task = new FileLoaderTask();
+    const task = new FileLoaderTask({ roots: [testDir] });
     const result = await task.run({ url: `file://${filePath}`, format: "auto" });
 
     expect(result.metadata.format).toBe("markdown");
     expect(result.metadata.mimeType).toBe("text/markdown");
     expect(result.text).toBe(content);
+  });
+
+  /**
+   * This task was the worst of the three server file tasks: it declared no
+   * entitlement at all, honoured no roots, and reached the filesystem by
+   * `url.slice(7)` — which neither percent-decodes nor rejects a `file://`
+   * host. It now runs the same resolver the grep and sed tasks do.
+   */
+  describe("local path containment", () => {
+    test("refuses a path outside the cwd when no roots are configured", async () => {
+      const filePath = join(testDir, "secret.txt");
+      writeFileSync(filePath, "classified", "utf-8");
+
+      const run = new FileLoaderTask({ defaults: { url: filePath, format: "text" } }).run();
+
+      await expect(run).rejects.toThrow(TaskEntitlementError);
+      await expect(run).rejects.toThrow(process.cwd());
+    });
+
+    test("refuses a path outside the configured roots", async () => {
+      const outside = join(tmpdir(), `fileloader-outside-${Date.now()}.txt`);
+      writeFileSync(outside, "classified", "utf-8");
+
+      try {
+        await expect(
+          new FileLoaderTask({
+            roots: [testDir],
+            defaults: { url: outside, format: "text" },
+          }).run()
+        ).rejects.toThrow(TaskEntitlementError);
+      } finally {
+        rmSync(outside, { force: true });
+      }
+    });
+
+    /**
+     * Containment runs AFTER `realpathSync`, so a link sitting inside the root
+     * cannot be used to read its target outside one.
+     */
+    test("refuses a symlink that escapes the configured roots", async () => {
+      const link = join(testDir, "escape.txt");
+      symlinkSync("/etc/passwd", link);
+
+      await expect(
+        new FileLoaderTask({
+          roots: [testDir],
+          defaults: { url: link, format: "text" },
+        }).run()
+      ).rejects.toThrow(TaskEntitlementError);
+    });
+
+    test("allowAnyRoot restores the unrestricted read", async () => {
+      const filePath = join(testDir, "open.txt");
+      writeFileSync(filePath, "readable", "utf-8");
+
+      const result = await new FileLoaderTask({
+        allowAnyRoot: true,
+        defaults: { url: filePath, format: "text" },
+      }).run();
+
+      expect(result.text).toBe("readable");
+    });
+
+    /**
+     * `slice(7)` left the path percent-encoded, so a name with a space or a
+     * `%` addressed a file that does not exist.
+     */
+    test("parses file:// URLs rather than slicing the scheme", async () => {
+      const filePath = join(testDir, "a b%c.txt");
+      writeFileSync(filePath, "decoded", "utf-8");
+
+      const result = await new FileLoaderTask({
+        roots: [testDir],
+        defaults: { url: `file://${testDir}/a%20b%25c.txt`, format: "text" },
+      }).run();
+
+      expect(result.text).toBe("decoded");
+    });
+
+    test("rejects a file:// URL carrying a remote host", async () => {
+      await expect(
+        new FileLoaderTask({
+          allowAnyRoot: true,
+          defaults: { url: "file://evil.example/etc/passwd", format: "text" },
+        }).run()
+      ).rejects.toThrow(TaskInvalidInputError);
+    });
+
+    test("declares filesystem:read scoped to the resolved path", () => {
+      const filePath = join(testDir, "declared.txt");
+      writeFileSync(filePath, "content", "utf-8");
+
+      const declared = new FileLoaderTask({
+        roots: [testDir],
+        defaults: { url: `file://${filePath}`, format: "text" },
+      }).entitlements().entitlements;
+
+      expect(declared.map((entitlement) => entitlement.id)).toEqual([Entitlements.FILESYSTEM_READ]);
+      expect(declared[0].resources).toEqual([filePath]);
+    });
+
+    test("declares no filesystem:read for an http url", () => {
+      const declared = new FileLoaderTask({
+        defaults: { url: "https://example.com/data.json" },
+      }).entitlements().entitlements;
+
+      expect(declared.map((entitlement) => entitlement.id)).not.toContain(
+        Entitlements.FILESYSTEM_READ
+      );
+    });
   });
 });

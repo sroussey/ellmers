@@ -107,7 +107,11 @@ export type FileLoaderTaskOutput = FromSchema<typeof outputSchema>;
  * Works in all environments (browser, Node.js, Bun) by using fetch API.
  * For server-only filesystem path access, see FileLoaderServerTask.
  */
-export class FileLoaderTask extends Task<FileLoaderTaskInput, FileLoaderTaskOutput, TaskConfig> {
+export class FileLoaderTask<Config extends TaskConfig = TaskConfig> extends Task<
+  FileLoaderTaskInput,
+  FileLoaderTaskOutput,
+  Config
+> {
   public static override type = "FileLoaderTask";
   public static override category = "Document";
   public static override title = "File Loader";
@@ -544,13 +548,39 @@ export class FileLoaderTask extends Task<FileLoaderTaskInput, FileLoaderTaskOutp
   }
 }
 
-export const fileLoader = (input: FileLoaderTaskInput, config?: TaskConfig) => {
+/**
+ * Config for both builds. `roots` is declared here rather than beside the
+ * server subclass because a `declare module` augmentation must state one type
+ * across every file that contributes it, and both files augment `Workflow`
+ * with `fileLoader`.
+ */
+export interface FileLoaderTaskConfig extends TaskConfig {
+  /**
+   * Directories a local path must resolve inside, checked after symlinks are
+   * resolved. Omitted means `[process.cwd()]`, NOT unrestricted — the
+   * `filesystem:read` entitlement is only consulted when the embedder runs
+   * with `enforceEntitlements` and a registered enforcer, so it cannot stand
+   * in as the default fence. State {@link allowAnyRoot} to opt out.
+   *
+   * Honored only by the server build — the cross-platform class reaches
+   * http(s) through `FetchUrlTask` and touches no filesystem.
+   */
+  readonly roots?: readonly string[] | undefined;
+  /**
+   * Read any path the process can open, skipping containment entirely. Only
+   * the literal `true` does so, and it is never implied by leaving `roots`
+   * unset.
+   */
+  readonly allowAnyRoot?: boolean | undefined;
+}
+
+export const fileLoader = (input: FileLoaderTaskInput, config?: FileLoaderTaskConfig) => {
   return new FileLoaderTask(config).run(input);
 };
 
 declare module "@workglow/task-graph" {
   interface Workflow {
-    fileLoader: CreateWorkflow<FileLoaderTaskInput, FileLoaderTaskOutput, TaskConfig>;
+    fileLoader: CreateWorkflow<FileLoaderTaskInput, FileLoaderTaskOutput, FileLoaderTaskConfig>;
   }
 }
 

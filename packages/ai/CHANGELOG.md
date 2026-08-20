@@ -1,5 +1,25 @@
 # @workglow/ai
 
+## 0.3.47
+
+### Features
+
+- thinking policy for models
+
+## 0.3.46
+
+### Features
+
+#### schema
+
+- enhance JSON schema handling for strict compatibility
+
+### Bug Fixes
+
+#### ai
+
+- stop reporting nullable-object schemas as OpenAI strict-compatible
+
 ## 0.3.45
 
 ## 0.3.44

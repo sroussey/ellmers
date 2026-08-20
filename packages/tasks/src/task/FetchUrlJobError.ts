@@ -78,6 +78,7 @@ export interface FetchUrlJobErrorDetails {
   readonly url?: string;
   readonly httpStatus?: number;
   readonly httpStatusText?: string;
+  readonly httpErrorMessage?: string;
 }
 
 export type FetchUrlJobErrorInstance = JobError & {
@@ -85,6 +86,7 @@ export type FetchUrlJobErrorInstance = JobError & {
   url?: string;
   httpStatus?: number;
   httpStatusText?: string;
+  httpErrorMessage?: string;
   retryDate?: Date;
 };
 
@@ -103,6 +105,9 @@ function attachFetchUrlFields(
   }
   if (details?.httpStatusText !== undefined) {
     withCode.httpStatusText = details.httpStatusText;
+  }
+  if (details?.httpErrorMessage !== undefined) {
+    withCode.httpErrorMessage = details.httpErrorMessage;
   }
   return withCode;
 }
@@ -177,16 +182,38 @@ export function createFetchUrlHttpError(
   url: string,
   status: number,
   statusText: string,
-  retryDate?: Date
+  retryDate?: Date,
+  body?: string
 ): FetchUrlJobErrorInstance {
   const code = httpStatusToFetchUrlErrorCode(status);
-  const message = `Failed to fetch ${url}: ${status} ${statusText}`;
+  const httpErrorMessage = jsonMessageFromHttpBody(body);
+  const statusPart = `${status} ${statusText}`;
+  const message =
+    httpErrorMessage !== undefined
+      ? `Failed to fetch ${url}: ${statusPart}: ${httpErrorMessage}`
+      : `Failed to fetch ${url}: ${statusPart}`;
   return createFetchUrlJobError(code, message, {
     url,
     httpStatus: status,
     httpStatusText: statusText,
+    httpErrorMessage,
     retryDate,
   });
+}
+
+/** Reads `{message}` from a JSON error body, if that field is a non-empty string. */
+export function jsonMessageFromHttpBody(body: string | undefined): string | undefined {
+  if (body === undefined || body.trim() === "") return undefined;
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (parsed === null || typeof parsed !== "object") return undefined;
+    const message = (parsed as { message?: unknown }).message;
+    if (typeof message !== "string") return undefined;
+    const trimmed = message.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

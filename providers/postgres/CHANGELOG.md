@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.47
+
+## 0.3.46
+
+### Features
+
+#### tests
+
+- add tests for compound-key chunking behavior in PostgresTabularStorage
+
 ## 0.3.45
 
 ## 0.3.44

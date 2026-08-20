@@ -1,5 +1,67 @@
 # @workglow/tasks
 
+## 0.3.47
+
+### Features
+
+#### tasks
+
+- enhance FileGrepTask with extractBatch functionality
+- add support for HEAD HTTP method in FetchUrlTask
+- add onlyMatching to FileGrepTask
+- add FileGrepTask for server-side file grepping
+
+### Bug Fixes
+
+#### tasks
+
+- apply default output caps to FileSedTask
+- cap FileSedTask line length instead of accumulating unterminated lines
+- name the configured root that cannot be resolved
+- declare the owned FetchUrlTask entitlements on FileSedTask
+- declare filesystem:read and resolve FileSedTask paths against roots
+- bound FileSedTask regex substitution with an interruptible budget
+- reconcile the ReDoS guard with the base branch's scanner
+- declare the fileGrep Workflow augmentation with one config type
+- apply default output caps and report match/truncated honestly
+- cap FileGrepTask line length instead of accumulating unterminated lines
+- declare the owned FetchUrlTask entitlements on FileGrepTask
+- declare filesystem:read and resolve FileGrepTask paths against opt-in roots
+- bound FileGrepTask regex matching with an interruptible time budget
+- make the ReDoS guard linear, and add FileSedTask
+
+### Refactors
+
+#### tasks
+
+- share the streaming line splitter between file tasks
+- share the regex ReDoS guard between RegexTask and FileGrepTask
+
+### Performance
+
+#### tasks
+
+- make FileGrepTask group de-duplication O(1) per line
+
+### Documentation
+
+#### tasks
+
+- correct FileGrepTask url documentation for http(s) vs filesystem
+
+### Build
+
+- fix build
+
+## 0.3.46
+
+### Bug Fixes
+
+#### tasks
+
+- stop replaying method and body across SafeFetch redirects
+- fail a queued "stream" fetch whose deltas never arrived
+
 ## 0.3.45
 
 ### Breaking Changes

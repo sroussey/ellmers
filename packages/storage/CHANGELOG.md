@@ -1,5 +1,23 @@
 # @workglow/storage
 
+## 0.3.47
+
+## 0.3.46
+
+### Features
+
+#### storage
+
+- enforce numeric bounds and integer column range
+- enforce varchar width and NOT NULL in InMemoryTabularStorage
+
+### Bug Fixes
+
+#### storage
+
+- scope InMemory column constraints to a backend mode and document the nullable-column DDL change
+- close two gaps in column-constraint derivation
+
 ## 0.3.45
 
 ### Features

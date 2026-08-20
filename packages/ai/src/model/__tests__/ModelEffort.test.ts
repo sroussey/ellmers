@@ -10,6 +10,7 @@ import {
   effortPlaceholder,
   enabledEffortsForModel,
   isModelEffort,
+  isModelEffortEnabled,
   readEffortOptions,
   sanitizeEffortOptions,
   stampEffortOptions,
@@ -80,6 +81,24 @@ describe("enabledEffortsForModel", () => {
   it("falls back to policy.supported, or undefined when neither exists", () => {
     expect(enabledEffortsForModel({}, policy)).toEqual([...MODEL_EFFORTS]);
     expect(enabledEffortsForModel({}, undefined)).toBeUndefined();
+  });
+});
+
+describe("isModelEffortEnabled", () => {
+  const policy = { supported: ["low", "high"] as const, default: "low" as const };
+
+  it("is false when effort is unset or the enabled list excludes it", () => {
+    expect(isModelEffortEnabled({}, policy)).toBe(false);
+    expect(isModelEffortEnabled({ effort: "medium" }, policy)).toBe(false);
+    expect(isModelEffortEnabled({ effort: "high", effort_options: [] }, policy)).toBe(false);
+    expect(isModelEffortEnabled({ effort: "high" }, { supported: [], default: undefined })).toBe(
+      false
+    );
+  });
+
+  it("is true when effort is in the enabled list, or when nothing restricts it", () => {
+    expect(isModelEffortEnabled({ effort: "high" }, policy)).toBe(true);
+    expect(isModelEffortEnabled({ effort: "ultra" }, undefined)).toBe(true);
   });
 });
 

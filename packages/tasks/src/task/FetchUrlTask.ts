@@ -57,7 +57,7 @@ const inputSchema = {
       format: "uri",
     },
     method: {
-      enum: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+      enum: ["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH"],
       title: "Method",
       description: "The HTTP method to use",
       default: "GET",
@@ -142,6 +142,7 @@ const outputSchema = {
         status: { type: "number" },
         notModified: { type: "boolean" },
       },
+      required: ["contentType", "headers", "status", "notModified"],
       additionalProperties: false,
       title: "Response Metadata",
       description: "HTTP response metadata: content type, headers, status, and 304 state",
@@ -410,7 +411,7 @@ function assertResponseType(
   );
 }
 
-function buildHttpError(url: string, response: Response): Error {
+async function buildHttpError(url: string, response: Response): Promise<Error> {
   let retryDate: Date | undefined;
   if (response.status === 429 || response.status === 503 || response.headers.get("Retry-After")) {
     const retryAfterStr = response.headers.get("Retry-After");
@@ -424,7 +425,56 @@ function buildHttpError(url: string, response: Response): Error {
       }
     }
   }
-  return createFetchUrlHttpError(url, response.status, response.statusText, retryDate);
+  const body = await readHttpErrorBody(response);
+  return createFetchUrlHttpError(url, response.status, response.statusText, retryDate, body);
+}
+
+const HTTP_ERROR_BODY_MAX_BYTES = 4096;
+
+/**
+ * Budget for peeking at a non-2xx body. `response.text()` waits for the stream
+ * to close, which is how an abandoned error body used to leak a connection: a
+ * never-ending readable never settles, so the undici Agent stays checked out.
+ * Cancelling the reader when this budget expires (and after a successful peek)
+ * is what settles it. In-memory JSON error bodies complete well under this;
+ * a hung 5xx stream fails the fetch on status instead of waiting forever.
+ */
+const HTTP_ERROR_BODY_READ_MS = 100;
+
+async function readHttpErrorBody(response: Response): Promise<string | undefined> {
+  if (!response.body) return undefined;
+  const reader = response.body.getReader();
+  const timer = setTimeout(() => {
+    void reader.cancel().catch(() => {});
+  }, HTTP_ERROR_BODY_READ_MS);
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  try {
+    while (received < HTTP_ERROR_BODY_MAX_BYTES) {
+      const { done, value } = await reader.read();
+      if (done || value === undefined) break;
+      if (value.byteLength === 0) continue;
+      const take = Math.min(value.byteLength, HTTP_ERROR_BODY_MAX_BYTES - received);
+      chunks.push(take === value.byteLength ? value : value.subarray(0, take));
+      received += take;
+    }
+  } catch {
+    // Timeout cancel rejects an in-flight read. The HTTP status is still the error.
+  } finally {
+    clearTimeout(timer);
+    await reader.cancel().catch(() => {});
+  }
+  if (received === 0) return undefined;
+  let total = 0;
+  for (const c of chunks) total += c.byteLength;
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    merged.set(c, offset);
+    offset += c.byteLength;
+  }
+  const text = new TextDecoder().decode(merged);
+  return text.length === 0 ? undefined : text;
 }
 
 /**
@@ -592,8 +642,20 @@ export class FetchUrlJob<
     }
 
     if (!response.ok) {
+      const error = await buildHttpError(input.url!, response);
       await discardBody(response);
-      throw buildHttpError(input.url!, response);
+      throw error;
+    }
+
+    if ((input.method ?? "GET").toUpperCase() === "HEAD") {
+      // HEAD has no representation body. `response.body` is typically null, and
+      // Content-Length describes what a GET would return — not the (empty)
+      // bytes we receive. Streaming it would throw NO_RESPONSE_BODY or
+      // CONTENT_LENGTH_MISMATCH. Metadata is the whole answer.
+      await discardBody(response);
+      await this.emitStreamEnd(metadata, context);
+      yield { type: "finish", data: { metadata } } as StreamEvent<Output>;
+      return;
     }
 
     const chunks: Uint8Array[] = [];
@@ -739,6 +801,44 @@ function toJobFailure(reason: unknown): unknown {
   return new Error(`Queued fetch job rejected without a reason (${String(reason)})`);
 }
 
+/**
+ * Entitlements a fetch of `url` requires. A task that OWNS a `FetchUrlTask`
+ * must declare these itself: the graph snapshot is taken over
+ * `graph.getTasks()` before any `execute()` runs, so an owned child created
+ * inside `execute()` is never in it.
+ *
+ * `url` may be unknown at evaluation time (root-task input is not applied
+ * yet), in which case this fails closed and requires an unscoped
+ * `network:private` rather than under-declaring it.
+ */
+export function fetchUrlEntitlementsFor(url: string | undefined): TaskEntitlements {
+  const base = FetchUrlTask.entitlements();
+  if (typeof url !== "string" || url.length === 0) {
+    return mergeEntitlements(base, {
+      entitlements: [
+        {
+          id: Entitlements.NETWORK_PRIVATE,
+          reason:
+            "Runtime URL is not yet available during entitlement evaluation; private/internal destinations must be explicitly allowed",
+        },
+      ],
+    });
+  }
+  const classification = classifyUrl(url);
+  if (classification.kind !== "private") {
+    return base;
+  }
+  return mergeEntitlements(base, {
+    entitlements: [
+      {
+        id: Entitlements.NETWORK_PRIVATE,
+        reason: `URL targets private/internal host: ${classification.reason ?? classification.host ?? "unknown"}`,
+        resources: [urlResourcePattern(url)],
+      },
+    ],
+  });
+}
+
 export class FetchUrlTask<
   Input extends FetchUrlTaskInput = FetchUrlTaskInput,
   Output extends FetchUrlTaskOutput = FetchUrlTaskOutput,
@@ -798,38 +898,9 @@ export class FetchUrlTask<
    * via the URL's origin so grants can be resource-limited (e.g. a dev-mode
    * grant for `http://localhost:*`). The graph runner evaluates this before
    * `execute()` runs, so a denied private URL never issues a network call.
-   *
-   * Root-task input may not yet be applied when entitlements are evaluated.
-   * If the URL is not available at this point, fail closed and require the
-   * private-network entitlement rather than under-declaring it.
    */
   public override entitlements(): TaskEntitlements {
-    const base = FetchUrlTask.entitlements();
-    const url = this.runInputData?.url;
-    if (typeof url !== "string" || url.length === 0) {
-      return mergeEntitlements(base, {
-        entitlements: [
-          {
-            id: Entitlements.NETWORK_PRIVATE,
-            reason:
-              "Runtime URL is not yet available during entitlement evaluation; private/internal destinations must be explicitly allowed",
-          },
-        ],
-      });
-    }
-    const classification = classifyUrl(url);
-    if (classification.kind !== "private") {
-      return base;
-    }
-    return mergeEntitlements(base, {
-      entitlements: [
-        {
-          id: Entitlements.NETWORK_PRIVATE,
-          reason: `URL targets private/internal host: ${classification.reason ?? classification.host ?? "unknown"}`,
-          resources: [urlResourcePattern(url)],
-        },
-      ],
-    });
+    return fetchUrlEntitlementsFor(this.runInputData?.url);
   }
 
   public static override configSchema(): DataPortSchema {

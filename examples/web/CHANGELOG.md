@@ -1,5 +1,18 @@
 # @workglow/web
 
+## 0.3.47
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@codemirror/view`: 6.43.9
+- `react-resizable-panels`: ^4.12.3
+
+## 0.3.46
+
 ## 0.3.45
 
 ## 0.3.44

@@ -176,6 +176,28 @@ describe("getReasoningConfig", () => {
       })
     ).toEqual({ effort: "low" });
   });
+
+  it("does not map model.effort on models the policy rejects", () => {
+    expect(
+      getReasoningConfig({ ...modelWithConfig({ model_name: "gpt-4o" }), effort: "high" })
+    ).toBeUndefined();
+    expect(
+      getReasoningConfig({
+        ...modelWithConfig({ model_name: "text-embedding-3-small" }),
+        effort: "low",
+      })
+    ).toBeUndefined();
+  });
+
+  it("honours effort_options even when the class policy would allow the effort", () => {
+    expect(
+      getReasoningConfig({
+        ...modelWithConfig({ model_name: "gpt-5.6-luna" }),
+        effort: "high",
+        effort_options: [],
+      })
+    ).toBeUndefined();
+  });
 });
 
 describe("isStrictCompatibleSchema", () => {
