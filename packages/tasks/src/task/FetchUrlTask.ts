@@ -460,61 +460,52 @@ async function buildHttpError(url: string, response: Response): Promise<Error> {
   return createFetchUrlHttpError(url, response.status, response.statusText, retryDate, body);
 }
 
-/** How much of the decoded error body survives into the message. */
-const HTTP_ERROR_BODY_MAX_CHARS = 4096;
+const HTTP_ERROR_BODY_MAX_BYTES = 4096;
 
 /**
- * Hard ceiling on how many bytes are ever pulled off the wire for an error
- * body, well above {@link HTTP_ERROR_BODY_MAX_CHARS} so a multi-byte encoding
- * cannot starve the clip, and far below what a hostile or merely broken origin
- * can send. It exists because the status alone decided this response is an
- * error: nothing downstream reads the rest of it.
+ * Budget for peeking at a non-2xx body. `response.text()` waits for the stream
+ * to close, which is how an abandoned error body used to leak a connection: a
+ * never-ending readable never settles, so the undici Agent stays checked out.
+ * Cancelling the reader when this budget expires (and after a successful peek)
+ * is what settles it. In-memory JSON error bodies complete well under this;
+ * a hung 5xx stream fails the fetch on status instead of waiting forever.
  */
-const HTTP_ERROR_BODY_MAX_BYTES = 16 * 1024;
+const HTTP_ERROR_BODY_READ_MS = 100;
 
-/**
- * Reads at most a prefix of an error response body for the message.
- *
- * Buffering the whole body first is not an option: a 500 answered with a
- * multi-gigabyte body would be held in memory in full only to be sliced down
- * to a few kilobytes. So the read is bounded on BOTH sides of the decode — it
- * stops at whichever of the byte ceiling or the character cap comes first.
- *
- * Truncating mid-body is already the status quo for an over-cap body:
- * `jsonMessageFromHttpBody` parses the prefix and returns undefined when it is
- * not valid JSON, which is what a clipped body has always produced.
- */
 async function readHttpErrorBody(response: Response): Promise<string | undefined> {
-  const body = response.body;
-  if (body === null) return undefined;
-
-  const reader = body.getReader();
+  if (!response.body) return undefined;
+  const reader = response.body.getReader();
+  const timer = setTimeout(() => {
+    void reader.cancel().catch(() => {});
+  }, HTTP_ERROR_BODY_READ_MS);
+  const chunks: Uint8Array[] = [];
+  let received = 0;
   try {
-    const decoder = new TextDecoder();
-    let text = "";
-    let bytes = 0;
-
-    while (text.length < HTTP_ERROR_BODY_MAX_CHARS && bytes < HTTP_ERROR_BODY_MAX_BYTES) {
+    while (received < HTTP_ERROR_BODY_MAX_BYTES) {
       const { done, value } = await reader.read();
-      if (done) break;
-      if (value === undefined) continue;
-      bytes += value.byteLength;
-      text += decoder.decode(value, { stream: true });
+      if (done || value === undefined) break;
+      if (value.byteLength === 0) continue;
+      const take = Math.min(value.byteLength, HTTP_ERROR_BODY_MAX_BYTES - received);
+      chunks.push(take === value.byteLength ? value : value.subarray(0, take));
+      received += take;
     }
-
-    text += decoder.decode();
-
-    if (text.length === 0) return undefined;
-    return text.length > HTTP_ERROR_BODY_MAX_CHARS
-      ? text.slice(0, HTTP_ERROR_BODY_MAX_CHARS)
-      : text;
   } catch {
-    return undefined;
+    // Timeout cancel rejects an in-flight read. The HTTP status is still the error.
   } finally {
-    // Releases the socket back to the pool whether we stopped early or read to
-    // EOF — the same job `discardBody` does for a body nobody reads at all.
+    clearTimeout(timer);
     await reader.cancel().catch(() => {});
   }
+  if (received === 0) return undefined;
+  let total = 0;
+  for (const c of chunks) total += c.byteLength;
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    merged.set(c, offset);
+    offset += c.byteLength;
+  }
+  const text = new TextDecoder().decode(merged);
+  return text.length === 0 ? undefined : text;
 }
 
 /**
@@ -683,9 +674,12 @@ export class FetchUrlJob<
     }
 
     if (!response.ok) {
-      // No `discardBody` here: `readHttpErrorBody` reads a bounded prefix and
-      // cancels the reader in its own `finally`, which already releases the
-      // socket. Cancelling again would be a no-op at best.
+      // No `discardBody` here. `buildHttpError` always calls
+      // `readHttpErrorBody`, which cancels its reader in a `finally` — on the
+      // byte ceiling, on the read budget, or at EOF — so the socket is already
+      // released. With a body there is nothing left to cancel and the stream is
+      // still reader-locked, so a second `cancel()` only raises a TypeError for
+      // `discardBody` to swallow; with no body it was a no-op to begin with.
       const error = await buildHttpError(input.url!, response);
       throw error;
     }

@@ -877,10 +877,6 @@ describe("FetchUrlTask", () => {
     // The socket-level proof is in SafeFetchServerTransport.test.ts; this one
     // is carrier-independent and pins the INTENT (the body gets cancelled)
     // rather than the symptom, so it keeps holding if the transport changes.
-    //
-    // The chunk is deliberately larger than the error-body read ceiling: the
-    // message reader takes a bounded prefix and then cancels, so the body has
-    // to still be open at that point for the cancel to be observable at all.
     test("an HTTP error cancels the response body instead of abandoning it", async () => {
       let cancelled = false;
       mockFetch.mockImplementation(() =>
@@ -888,7 +884,7 @@ describe("FetchUrlTask", () => {
           new Response(
             new ReadableStream<Uint8Array>({
               start(controller) {
-                controller.enqueue(new Uint8Array(64 * 1024).fill(0x61));
+                controller.enqueue(new Uint8Array([1, 2, 3]));
               },
               cancel() {
                 cancelled = true;
