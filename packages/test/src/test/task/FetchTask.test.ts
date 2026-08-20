@@ -261,6 +261,51 @@ describe("FetchUrlTask", () => {
     }
   });
 
+  test("reads only a bounded prefix of a huge error body", async () => {
+    const CHUNK = new Uint8Array(1024 * 1024).fill(0x61);
+    const TOTAL_CHUNKS = 64;
+    let pulls = 0;
+
+    mockFetch.mockImplementation(() => {
+      let sent = 0;
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulls++;
+          if (sent >= TOTAL_CHUNKS) {
+            controller.close();
+            return;
+          }
+          sent++;
+          controller.enqueue(CHUNK);
+        },
+      });
+
+      return Promise.resolve(
+        new Response(body, {
+          status: 500,
+          statusText: "Internal Server Error",
+          headers: { "Content-Type": "text/plain" },
+        })
+      );
+    });
+
+    const error = await fetchUrl({
+      url: "https://api.example.com/huge-error",
+      response_type: "json",
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(JobTaskFailedError);
+    const jobFailed = error as JobTaskFailedError;
+    expect(isFetchUrlJobError(jobFailed.jobError)).toBe(true);
+    if (isFetchUrlJobError(jobFailed.jobError)) {
+      expect(jobFailed.jobError.httpStatus).toBe(500);
+    }
+
+    // The body is 64 MiB in 1 MiB chunks; the reader must stop at its ceiling
+    // rather than buffering the whole thing to slice a few kilobytes out.
+    expect(pulls).toBeLessThanOrEqual(32);
+  });
+
   test("handles network errors", async () => {
     mockFetch.mockImplementation(() => Promise.reject(new Error("Network error")));
 
@@ -1227,6 +1272,41 @@ describe("FetchUrlTask", () => {
       expect(result.text).toBeUndefined();
       expect(result.json).toBeUndefined();
       expect(result.blob).toBeUndefined();
+    });
+
+    // A HEAD response carries no representation body, so the HEAD branch
+    // finishes with metadata alone regardless of response_type — which let
+    // {method: "HEAD", response_type: "json"} complete SUCCESSFULLY with
+    // json undefined. Same silent success with no value the required
+    // response_type change exists to prevent, reached from the other side.
+    // Through the job directly, because the task layer rejects it first.
+    test("a persisted HEAD payload with a derived response_type fails before fetching", async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(new Response(null, { status: 200 })));
+      const input = {
+        url: "https://example.com/big.zip",
+        method: "HEAD",
+        response_type: "json",
+      } as FetchUrlTaskInput;
+      const job = new FetchUrlJob<FetchUrlTaskInput, FetchUrlTaskOutput>({ input });
+
+      const error = await job
+        .execute(input, { signal: new AbortController().signal, updateProgress: async () => {} })
+        .catch((e: unknown) => e);
+
+      expect(isFetchUrlJobError(error)).toBe(true);
+      expect((error as { code?: string }).code).toBe(FetchUrlErrorCode.INVALID_RESPONSE_TYPE);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    test("validateInput rejects HEAD paired with a derived response_type", async () => {
+      const task = new FetchUrlTask();
+      await expect(
+        task.validateInput({
+          url: "https://example.com/big.zip",
+          method: "HEAD",
+          response_type: "text",
+        })
+      ).rejects.toThrow(TaskInvalidInputError);
     });
 
     test("a HEAD error status still throws", async () => {
