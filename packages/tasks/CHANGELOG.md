@@ -1,5 +1,28 @@
 # @workglow/tasks
 
+## 0.3.48
+
+### Breaking Changes
+
+- **bug fixes(tasks)**: contain the server filesystem tasks by default
+
+### Features
+
+#### tasks
+
+- improve error body reading in FetchUrlTask
+- enhance FetchUrlJobError to include detailed HTTP error messages
+
+### Bug Fixes
+
+#### tasks
+
+- reject method HEAD paired with response_type text/json/blob/arraybuffer
+- bound the error body read instead of buffering all of it
+- contain the server filesystem tasks by default
+- keep $<name> literal when the pattern has no named groups
+- emit each grep context line once instead of replaying it
+
 ## 0.3.47
 
 ### Features

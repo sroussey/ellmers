@@ -1,5 +1,12 @@
 # @workglow/web
 
+## 0.3.48
+
+### Updated Dependencies
+
+- `@vitejs/plugin-react`: ^6.1.0
+- `vite`: ^8.2.2
+
 ## 0.3.47
 
 ### Chores

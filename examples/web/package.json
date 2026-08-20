@@ -1,6 +1,6 @@
 {
   "name": "@workglow/web",
-  "version": "0.3.47",
+  "version": "0.3.48",
   "bugs": {
     "url": "https://github.com/workglow-dev/libs/issues"
   },
@@ -55,12 +55,12 @@
   "devDependencies": {
     "@types/react": "catalog:",
     "@types/react-dom": "^19.2.4",
-    "@vitejs/plugin-react": "^6.0.5",
+    "@vitejs/plugin-react": "^6.1.0",
     "@tailwindcss/vite": "^4.3.3",
     "tailwindcss": "^4.3.3",
     "jsdom": "^30.0.1",
     "rollup-plugin-visualizer": "^7.1.1",
-    "vite": "^8.2.1",
+    "vite": "^8.2.2",
     "vite-plugin-wasm": "^3.6.0"
   },
   "publishConfig": {

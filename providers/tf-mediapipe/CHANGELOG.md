@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.3.48
+
 ## 0.3.47
 
 ### Features
