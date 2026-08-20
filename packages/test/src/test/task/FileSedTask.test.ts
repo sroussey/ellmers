@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { FileSedTask, registerSafeFetch, type SafeFetchFn } from "@workglow/tasks";
-import { DEFAULT_LIMITS, setLogger } from "@workglow/util";
+import { FileSedTask, registerSafeFetch, sedLines, type SafeFetchFn } from "@workglow/tasks";
+import { DEFAULT_LIMITS, SECURITY_LIMITS, setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -451,6 +451,64 @@ describe("FileSedTask", () => {
         replacement: "bar",
       },
     }).run();
+
+    expect(result).toEqual({
+      text: "",
+      replacementCount: 0,
+      linesChanged: 0,
+      truncated: false,
+    });
+  });
+
+  test("stops at the search deadline under onlyChangedLines", async () => {
+    // The fixture is finite so a regression fails on the assertions below
+    // rather than wedging the run: without the deadline the generator is
+    // simply drained and `truncated` comes back false.
+    const total = SECURITY_LIMITS.regexMatchBatchLines * 4;
+    let produced = 0;
+
+    vi.useFakeTimers();
+    try {
+      async function* source(): AsyncGenerator<string> {
+        for (let index = 0; index < total; index++) {
+          produced++;
+          // Time passes only once the first batch is under way, so the
+          // deadline trips at a batch boundary rather than before a single
+          // line has been read.
+          if (produced === 1) {
+            vi.advanceTimersByTime(DEFAULT_LIMITS.grepMaxSearchMs + 1);
+          }
+          yield `line ${index}`;
+        }
+      }
+
+      const result = await sedLines(source(), "NEVERMATCHES", "x", {
+        onlyChangedLines: true,
+      });
+
+      expect(result.truncated).toBe(true);
+      expect(result.text).toBe("");
+      expect(result.replacementCount).toBe(0);
+      // Abandoned at the first batch boundary, not drained.
+      expect(produced).toBe(SECURITY_LIMITS.regexMatchBatchLines);
+      expect(produced).toBeLessThan(total);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("does not report truncation for a short unchanged run", async () => {
+    // Guards the deadline check from reporting truncation where nothing was
+    // dropped: ten unchanged lines emit nothing and still reach EOF.
+    async function* source(): AsyncGenerator<string> {
+      for (let index = 0; index < 10; index++) {
+        yield `line ${index}`;
+      }
+    }
+
+    const result = await sedLines(source(), "NEVERMATCHES", "x", {
+      onlyChangedLines: true,
+    });
 
     expect(result).toEqual({
       text: "",
