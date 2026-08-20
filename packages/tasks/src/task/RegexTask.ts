@@ -7,35 +7,28 @@
 import type { IExecuteContext, IExecutePreviewContext, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Task, Workflow } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import { assertSafeRegexPattern } from "../util/regexSafety";
+import { getRegexRunnerFactory } from "../util/BoundedRegexRunner";
+import { compileSafeRegex } from "../util/regexSafety";
 
 function executeRegex(input: { value: string; pattern: string; flags?: string }): {
   match: boolean;
   matches: string[];
 } {
-  assertSafeRegexPattern(input.pattern);
-
   const flags = input.flags ?? "";
-  const regex = new RegExp(input.pattern, flags);
+  const runner = getRegexRunnerFactory()(compileSafeRegex(input.pattern, flags));
 
   if (flags.includes("g")) {
-    const allMatches = Array.from(input.value.matchAll(new RegExp(input.pattern, flags)));
-    return {
-      match: allMatches.length > 0,
-      matches: allMatches.map((m) => m[0]),
-    };
+    const matches = runner.execAll(input.value);
+    return { match: matches.length > 0, matches };
   }
 
-  const result = regex.exec(input.value);
-  if (!result) {
+  const result = runner.exec(input.value);
+  if (result === undefined) {
     return { match: false, matches: [] as string[] };
   }
 
   // Return full match + captured groups
-  return {
-    match: true,
-    matches: result.slice(0),
-  };
+  return { match: true, matches: result as string[] };
 }
 
 const inputSchema = {

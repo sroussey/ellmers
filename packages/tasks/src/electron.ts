@@ -9,6 +9,7 @@
 import "./codec.node";
 import "./task/image/registerImageTextRenderer.node";
 import "./util/SafeFetch.server";
+import "./util/BoundedRegex.server";
 
 export * from "./common";
 export * from "./task/FileGrepTask.server";
