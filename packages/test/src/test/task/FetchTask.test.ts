@@ -261,6 +261,51 @@ describe("FetchUrlTask", () => {
     }
   });
 
+  test("reads only a bounded prefix of a huge error body", async () => {
+    const CHUNK = new Uint8Array(1024 * 1024).fill(0x61);
+    const TOTAL_CHUNKS = 64;
+    let pulls = 0;
+
+    mockFetch.mockImplementation(() => {
+      let sent = 0;
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulls++;
+          if (sent >= TOTAL_CHUNKS) {
+            controller.close();
+            return;
+          }
+          sent++;
+          controller.enqueue(CHUNK);
+        },
+      });
+
+      return Promise.resolve(
+        new Response(body, {
+          status: 500,
+          statusText: "Internal Server Error",
+          headers: { "Content-Type": "text/plain" },
+        })
+      );
+    });
+
+    const error = await fetchUrl({
+      url: "https://api.example.com/huge-error",
+      response_type: "json",
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(JobTaskFailedError);
+    const jobFailed = error as JobTaskFailedError;
+    expect(isFetchUrlJobError(jobFailed.jobError)).toBe(true);
+    if (isFetchUrlJobError(jobFailed.jobError)) {
+      expect(jobFailed.jobError.httpStatus).toBe(500);
+    }
+
+    // The body is 64 MiB in 1 MiB chunks; the reader must stop at its ceiling
+    // rather than buffering the whole thing to slice a few kilobytes out.
+    expect(pulls).toBeLessThanOrEqual(32);
+  });
+
   test("handles network errors", async () => {
     mockFetch.mockImplementation(() => Promise.reject(new Error("Network error")));
 
@@ -832,6 +877,10 @@ describe("FetchUrlTask", () => {
     // The socket-level proof is in SafeFetchServerTransport.test.ts; this one
     // is carrier-independent and pins the INTENT (the body gets cancelled)
     // rather than the symptom, so it keeps holding if the transport changes.
+    //
+    // The chunk is deliberately larger than the error-body read ceiling: the
+    // message reader takes a bounded prefix and then cancels, so the body has
+    // to still be open at that point for the cancel to be observable at all.
     test("an HTTP error cancels the response body instead of abandoning it", async () => {
       let cancelled = false;
       mockFetch.mockImplementation(() =>
@@ -839,7 +888,7 @@ describe("FetchUrlTask", () => {
           new Response(
             new ReadableStream<Uint8Array>({
               start(controller) {
-                controller.enqueue(new Uint8Array([1, 2, 3]));
+                controller.enqueue(new Uint8Array(64 * 1024).fill(0x61));
               },
               cancel() {
                 cancelled = true;
