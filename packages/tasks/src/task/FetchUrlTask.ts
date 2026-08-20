@@ -431,16 +431,50 @@ async function buildHttpError(url: string, response: Response): Promise<Error> {
 
 const HTTP_ERROR_BODY_MAX_BYTES = 4096;
 
+/**
+ * Budget for peeking at a non-2xx body. `response.text()` waits for the stream
+ * to close, which is how an abandoned error body used to leak a connection: a
+ * never-ending readable never settles, so the undici Agent stays checked out.
+ * Cancelling the reader when this budget expires (and after a successful peek)
+ * is what settles it. In-memory JSON error bodies complete well under this;
+ * a hung 5xx stream fails the fetch on status instead of waiting forever.
+ */
+const HTTP_ERROR_BODY_READ_MS = 100;
+
 async function readHttpErrorBody(response: Response): Promise<string | undefined> {
+  if (!response.body) return undefined;
+  const reader = response.body.getReader();
+  const timer = setTimeout(() => {
+    void reader.cancel().catch(() => {});
+  }, HTTP_ERROR_BODY_READ_MS);
+  const chunks: Uint8Array[] = [];
+  let received = 0;
   try {
-    const text = await response.text();
-    if (text.length === 0) return undefined;
-    return text.length > HTTP_ERROR_BODY_MAX_BYTES
-      ? text.slice(0, HTTP_ERROR_BODY_MAX_BYTES)
-      : text;
+    while (received < HTTP_ERROR_BODY_MAX_BYTES) {
+      const { done, value } = await reader.read();
+      if (done || value === undefined) break;
+      if (value.byteLength === 0) continue;
+      const take = Math.min(value.byteLength, HTTP_ERROR_BODY_MAX_BYTES - received);
+      chunks.push(take === value.byteLength ? value : value.subarray(0, take));
+      received += take;
+    }
   } catch {
-    return undefined;
+    // Timeout cancel rejects an in-flight read. The HTTP status is still the error.
+  } finally {
+    clearTimeout(timer);
+    await reader.cancel().catch(() => {});
   }
+  if (received === 0) return undefined;
+  let total = 0;
+  for (const c of chunks) total += c.byteLength;
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    merged.set(c, offset);
+    offset += c.byteLength;
+  }
+  const text = new TextDecoder().decode(merged);
+  return text.length === 0 ? undefined : text;
 }
 
 /**
