@@ -15,9 +15,18 @@ import "./util/BoundedRegex.server";
 
 export * from "./common";
 export * from "./task/FileGrepTask.server";
-export { grepLines, linesFromText } from "./task/FileGrepTask";
+export { createMatcher, grepLines, linesFromText } from "./task/FileGrepTask";
+export type { GrepLineMatcher, GrepOptions } from "./task/FileGrepTask";
 export * from "./task/FileLoaderTask.server";
 export * from "./task/FileSedTask.server";
+export {
+  createSedExpander,
+  createSedRegex,
+  createSubstituter,
+  expandReplacement,
+  sedLines,
+} from "./task/FileSedTask";
+export type { SedBatchResult, SedLineSubstituter, SedOptions } from "./task/FileSedTask";
 
 import { TaskRegistry } from "@workglow/task-graph";
 import { registerCommonTasks as registerCommonTasksFn } from "./common";
