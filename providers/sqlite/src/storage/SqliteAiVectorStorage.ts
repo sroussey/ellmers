@@ -17,7 +17,6 @@ import {
   getMetadataProperty,
   getVectorProperty,
   matchesFilter,
-  runOnConnection,
   validateVectorEntities,
 } from "@workglow/storage";
 import type {
@@ -487,17 +486,10 @@ export class SqliteAiVectorStorage<
       return super._putBulkInternal(entities);
     }
 
-    // Route the vector-encoding write through the shared connection chain so
-    // two SqliteAiVectorStorage instances that wrap the same underlying handle
-    // (or one vector storage and one plain SqliteTabularStorage) queue on the
-    // same lock instead of racing on the shared connection. Skip when we are
-    // already inside an outer `withTransaction` — the chain lock is held there.
-    const dbWithFlag = this.database as unknown as { readonly inTransaction?: boolean };
-    const alreadyInTx = this.inTransaction || dbWithFlag.inTransaction === true;
-    const handle = this.connectionHandle();
-    if (handle !== null && !alreadyInTx) {
-      return runOnConnection(handle, this, () => this.runVectorPutBulkOnHandle(entities));
-    }
+    // The shared connection chain slot is already held by whoever reached
+    // here: the public `putBulk` takes it in `guardedWrite`, and a call
+    // arriving through the `tx` proxy runs inside the transaction that holds
+    // it. Re-taking it here would await a slot only this call can release.
     return this.runVectorPutBulkOnHandle(entities);
   }
 
