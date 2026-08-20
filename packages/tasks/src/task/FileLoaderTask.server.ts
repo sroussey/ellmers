@@ -22,7 +22,7 @@ import {
   localFilePathFromUrl,
   resolveLocalFilePath,
 } from "../util/LocalFilePath.server";
-import { fetchUrlEntitlementsFor, FetchUrlTask } from "./FetchUrlTask";
+import { fetchUrlEntitlementsFor } from "./FetchUrlTask";
 import type {
   FileLoaderTaskConfig,
   FileLoaderTaskInput,
@@ -82,7 +82,7 @@ export class FileLoaderTask extends BaseFileLoaderTask<FileLoaderTaskConfig> {
    * alongside the read this build adds.
    */
   public static override entitlements(): TaskEntitlements {
-    return mergeEntitlements(FetchUrlTask.entitlements(), {
+    return mergeEntitlements(super.entitlements(), {
       entitlements: [
         {
           id: Entitlements.FILESYSTEM_READ,
