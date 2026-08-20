@@ -279,7 +279,23 @@ export function expandReplacement(replacement: string, args: unknown[]): string 
         out += char;
         continue;
       }
-      out += named?.[replacement.slice(index + 2, close)] ?? "";
+      /*
+       * With no named groups in the pattern the engine leaves `$<name>`
+       * alone — `"abc".replace(/b/, "[$<x>]")` yields `"a[$<x>]c"` — so
+       * substituting "" here would silently DELETE the caller's text.
+       * Emitting only `$` without advancing past `close` is deliberate: the
+       * `<`, the name and the `>` are then copied one character at a time by
+       * the loop's literal path, reproducing the run exactly.
+       *
+       * An UNKNOWN name in a pattern that does have named groups still
+       * expands to "", which is what the engine does.
+       */
+      if (named === undefined) {
+        out += char;
+        continue;
+      }
+
+      out += named[replacement.slice(index + 2, close)] ?? "";
       index = close;
       continue;
     }

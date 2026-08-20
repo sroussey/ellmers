@@ -169,6 +169,45 @@ describe("FileSedTask", () => {
     expect(result.text).toBe("hello ada\n");
   });
 
+  test("leaves $<name> literal when the pattern has no named groups", async () => {
+    mockText("foo\n");
+
+    const result = await new FileSedTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "foo",
+        replacement: "bar $<id>",
+      },
+    }).run();
+
+    // Matches the engine: `"abc".replace(/b/, "[$<x>]")` === "a[$<x>]c".
+    expect(result.text).toBe("bar $<id>\n");
+  });
+
+  test("expands a known named group and empties an unknown one", async () => {
+    mockText("foo\nfoo\n");
+
+    const known = await new FileSedTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "(?<w>foo)",
+        replacement: "[$<w>]",
+      },
+    }).run();
+
+    expect(known.text).toBe("[foo]\n[foo]\n");
+
+    const unknown = await new FileSedTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "(?<w>foo)",
+        replacement: "[$<zz>]",
+      },
+    }).run();
+
+    expect(unknown.text).toBe("[]\n[]\n");
+  });
+
   test("leaves an unterminated $< and an out-of-range $n literal", async () => {
     mockText("x\n");
 
