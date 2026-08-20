@@ -540,13 +540,21 @@ export class FileSedTask<Config extends TaskConfig = TaskConfig> extends Task<
 export interface FileSedTaskConfig extends TaskConfig {
   /**
    * Directories a local path must resolve inside, checked after symlinks are
-   * resolved. Omitted means unrestricted: the enforced control is the
-   * `filesystem:read` entitlement, and this is the embedder's extra fence.
+   * resolved. Omitted means `[process.cwd()]`, NOT unrestricted — the
+   * `filesystem:read` entitlement is only consulted when the embedder runs
+   * with `enforceEntitlements` and a registered enforcer, so it cannot stand
+   * in as the default fence. State {@link allowAnyRoot} to opt out.
    *
    * Honored only by the server build — the cross-platform class reaches
    * http(s) through `FetchUrlTask` and touches no filesystem.
    */
   readonly roots?: readonly string[] | undefined;
+  /**
+   * Read any path the process can open, skipping containment entirely. Only
+   * the literal `true` does so, and it is never implied by leaving `roots`
+   * unset.
+   */
+  readonly allowAnyRoot?: boolean | undefined;
 }
 
 export const fileSed = (input: FileSedTaskInput, config?: FileSedTaskConfig) => {

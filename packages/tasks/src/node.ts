@@ -24,10 +24,37 @@ import { FileGrepTask } from "./task/FileGrepTask.server";
 import { FileLoaderTask } from "./task/FileLoaderTask.server";
 import { FileSedTask } from "./task/FileSedTask.server";
 
+/**
+ * Registers the tasks that are safe to have in the ambient registry on a
+ * server.
+ *
+ * The three filesystem tasks are NOT among them, and their absence is the
+ * point. `TaskRegistry` is what a deserialized graph resolves a task type
+ * through, and a serialized node carries its own `config` — so a graph that
+ * names `FileGrepTask` also states its own `roots`, and no default this
+ * package picks can constrain it. The only control that survives untrusted
+ * JSON is the task not being resolvable at all.
+ *
+ * A host that intends to expose them opts in with
+ * {@link registerFileSystemTasks}. The classes are exported either way, so
+ * constructing one directly is unchanged.
+ */
 export const registerCommonTasks = () => {
-  const tasks = registerCommonTasksFn();
+  return registerCommonTasksFn();
+};
+
+/**
+ * Adds the filesystem tasks to the ambient registry, making them resolvable by
+ * type name — including from graph JSON the host did not author.
+ *
+ * Call it only where every graph that can reach the registry is trusted. Each
+ * task still contains reads to its `config.roots`, which defaults to
+ * `process.cwd()`, but a serialized node supplies its own config: registration
+ * is the boundary, containment is the backstop behind it.
+ */
+export const registerFileSystemTasks = () => {
   TaskRegistry.registerTask(FileGrepTask);
   TaskRegistry.registerTask(FileLoaderTask);
   TaskRegistry.registerTask(FileSedTask);
-  return [...tasks, FileGrepTask, FileLoaderTask, FileSedTask];
+  return [FileGrepTask, FileLoaderTask, FileSedTask];
 };

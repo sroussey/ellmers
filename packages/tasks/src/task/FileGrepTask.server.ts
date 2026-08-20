@@ -44,7 +44,14 @@ const fileGrepTaskConfigSchema = {
       type: "array",
       items: { type: "string" },
       title: "Roots",
-      description: "Directories a local path must resolve inside (after symlink resolution)",
+      description:
+        "Directories a local path must resolve inside (after symlink resolution). Defaults to the process working directory",
+      "x-ui-hidden": true,
+    },
+    allowAnyRoot: {
+      type: "boolean",
+      title: "Allow Any Root",
+      description: "Skip root containment entirely and read any path the process can open",
       "x-ui-hidden": true,
     },
   },
@@ -61,8 +68,10 @@ const fileGrepTaskConfigSchema = {
  * so a file with no line terminator cannot exhaust memory.
  *
  * A local path is resolved and realpath'd before it is opened, and constrained
- * to `config.roots` when the embedder sets them. Reading requires the
- * `filesystem:read` entitlement, declared scoped to the resolved path.
+ * to `config.roots` — which defaults to the process working directory, so a
+ * task with no stated root reads from there and nowhere else. Set
+ * `config.allowAnyRoot` to opt out. Reading requires the `filesystem:read`
+ * entitlement, declared scoped to the resolved path.
  *
  * Only available in Node.js and Bun environments. For cross-platform grep
  * (including browser), use FileGrepTask with an http(s) URL.
@@ -112,7 +121,12 @@ export class FileGrepTask extends BaseFileGrepTask<FileGrepTaskConfig> {
           {
             id: Entitlements.FILESYSTEM_READ,
             reason: "Reads a local file from disk",
-            resources: [resolveLocalFilePath(url, { roots: this.config.roots })],
+            resources: [
+              resolveLocalFilePath(url, {
+                roots: this.config.roots,
+                allowAnyRoot: this.config.allowAnyRoot,
+              }),
+            ],
           },
         ],
       };
@@ -189,7 +203,10 @@ export class FileGrepTask extends BaseFileGrepTask<FileGrepTaskConfig> {
     }
     await context.updateProgress(0, "Opening file");
 
-    const file = resolveLocalFilePath(url, { roots: this.config.roots });
+    const file = resolveLocalFilePath(url, {
+      roots: this.config.roots,
+      allowAnyRoot: this.config.allowAnyRoot,
+    });
     this.assertResolvedPathDeclared(file);
 
     if (context.signal.aborted) {

@@ -117,7 +117,7 @@ describe("FileSedTask entitlement enforcement", () => {
     const allowed = join(testDir, "notes.txt");
     writeFileSync(allowed, "alpha\nbravo foo\n", "utf-8");
 
-    const permitted = new TaskGraphRunner(makeGraph(allowed));
+    const permitted = new TaskGraphRunner(makeGraph(allowed, [testDir]));
     await expect(
       permitted.runGraph(
         {},
@@ -125,7 +125,9 @@ describe("FileSedTask entitlement enforcement", () => {
       )
     ).resolves.toBeDefined();
 
-    const denied = new TaskGraphRunner(makeGraph("/etc/passwd"));
+    // Rooted at /etc so containment admits the path and the ENFORCER is what
+    // refuses it — the policy is what this test is about.
+    const denied = new TaskGraphRunner(makeGraph("/etc/passwd", ["/etc"]));
     await expect(
       denied.runGraph(
         {},
@@ -139,6 +141,7 @@ describe("FileSedTask entitlement enforcement", () => {
     writeFileSync(filePath, "bravo foo\n", "utf-8");
 
     const declared = new FileSedTask({
+      roots: [testDir],
       defaults: { url: filePath, pattern: "foo", replacement: "bar" },
     }).entitlements().entitlements;
 
@@ -180,6 +183,7 @@ describe("FileSedTask entitlement enforcement", () => {
     symlinkSync(target, link);
 
     const declared = new FileSedTask({
+      roots: [testDir],
       defaults: { url: `file://${link}`, pattern: "foo", replacement: "bar" },
     }).entitlements().entitlements;
 
