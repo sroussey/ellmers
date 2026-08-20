@@ -7,6 +7,7 @@
 import { Sqlite, SqliteTabularStorage } from "@workglow/sqlite/storage";
 import {
   ConnectionReentryError,
+  NestedConnectionTransactionError,
   StorageValidationError,
   withConnectionTransaction,
 } from "@workglow/storage";
@@ -636,5 +637,90 @@ describe("SqliteTabularStorage shared-connection safety", () => {
     await expect(withConnectionTransaction([a, other], async () => undefined)).rejects.toThrow(
       /do not share a connection handle/
     );
+  });
+
+  it("withConnectionTransaction refuses to nest on the same connection", async () => {
+    const [a, b] = await makeSharedPair();
+
+    let nested: unknown;
+    await withConnectionTransaction([a, b], async () => {
+      await a.put({ name: "outer", type: "x", option: "outer", success: true });
+      try {
+        await withConnectionTransaction([a, b], async () => {
+          await b.put({ name: "inner", type: "x", option: "inner", success: true });
+        });
+      } catch (err) {
+        nested = err;
+      }
+    });
+
+    expect(nested).toBeInstanceOf(NestedConnectionTransactionError);
+    expect((nested as Error).message).toContain("SAVEPOINT");
+    // The inner call must fail BEFORE issuing its own BEGIN, so the outer
+    // transaction is untouched and still commits its own work.
+    expect(await a.get({ name: "outer", type: "x" })).toMatchObject({ option: "outer" });
+    expect(await b.get({ name: "inner", type: "x" })).toBeUndefined();
+  });
+
+  it("a rejected nested transaction leaves the outer transaction able to write", async () => {
+    const [a, b] = await makeSharedPair();
+
+    await withConnectionTransaction([a, b], async () => {
+      await expect(withConnectionTransaction([a, b], async () => undefined)).rejects.toBeInstanceOf(
+        NestedConnectionTransactionError
+      );
+      // A write AFTER the rejected nesting attempt must still join the outer
+      // BEGIN — the failed inner call must not have cleared `inTransaction`.
+      await a.put({ name: "after-nested", type: "x", option: "va", success: true });
+      await b.put({ name: "after-nested", type: "x", option: "vb", success: true });
+      throw new Error("forced rollback");
+    }).catch((err: unknown) => {
+      expect((err as Error).message).toBe("forced rollback");
+    });
+
+    expect(await a.get({ name: "after-nested", type: "x" })).toBeUndefined();
+    expect(await b.get({ name: "after-nested", type: "x" })).toBeUndefined();
+  });
+
+  it("withConnectionTransaction on a DIFFERENT database may nest", async () => {
+    const [a, b] = await makeSharedPair();
+    const [c, d] = await makeSharedPair();
+
+    await withConnectionTransaction([a, b], async () => {
+      await a.put({ name: "outer", type: "x", option: "outer", success: true });
+      await withConnectionTransaction([c, d], async () => {
+        await c.put({ name: "inner", type: "x", option: "inner", success: true });
+      });
+    });
+
+    expect(await a.get({ name: "outer", type: "x" })).toMatchObject({ option: "outer" });
+    expect(await c.get({ name: "inner", type: "x" })).toMatchObject({ option: "inner" });
+  });
+
+  it("a deferred put listener that writes commits, and its own put event fires", async () => {
+    const [a, b] = await makeSharedPair();
+
+    const seen: string[] = [];
+    let writing = false;
+    b.on("put", (entity: { name: string }) => {
+      seen.push(entity.name);
+      if (writing) return;
+      writing = true;
+      // A listener reacting to the flushed commit event by writing back
+      // through the same storage: the write must take its own transaction and
+      // its own `put` event must reach this listener rather than being queued
+      // onto a buffer nothing drains.
+      void b.put({ name: "marker", type: "x", option: "from-listener", success: true });
+    });
+
+    await withConnectionTransaction([a, b], async () => {
+      await b.put({ name: "in-tx", type: "x", option: "vb", success: true });
+    });
+
+    await vi.waitFor(() => expect(seen).toContain("marker"));
+    expect(seen[0]).toBe("in-tx");
+    expect(await b.get({ name: "marker", type: "x" })).toMatchObject({
+      option: "from-listener",
+    });
   });
 });

@@ -950,7 +950,9 @@ export class PostgresTabularStorage<
           fn,
         });
       } finally {
-        setConnectionTxQuery(undefined);
+        // The ALS store's txQuery is cleared from inside the ALS scope by
+        // runNativeConnectionTransaction; clearing it here would run in the
+        // caller's context, where there is no store to reach.
         client.release();
       }
     }
@@ -964,10 +966,14 @@ export class PostgresTabularStorage<
       },
       commit: async () => {
         await this.pool.query("COMMIT");
-        for (const sibling of siblings) sibling.inTransaction = false;
       },
       rollback: async () => {
         await this.pool.query("ROLLBACK");
+      },
+      // Clearing `inTransaction` here rather than only in the trailing
+      // `.finally` is what lets a deferred `put` listener's own write take its
+      // own BEGIN: `afterCommit` runs before the promise settles.
+      onDeactivate: () => {
         for (const sibling of siblings) sibling.inTransaction = false;
       },
       afterCommit: () => {
@@ -978,6 +984,8 @@ export class PostgresTabularStorage<
       },
       fn,
     }).finally(() => {
+      // Belt-and-braces: `onDeactivate` already ran on every path through
+      // runNativeConnectionTransaction, including a failed BEGIN.
       for (const sibling of siblings) sibling.inTransaction = false;
     });
   }

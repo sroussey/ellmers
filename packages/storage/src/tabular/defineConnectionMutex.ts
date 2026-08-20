@@ -137,9 +137,15 @@ export interface ConnectionMutexApi {
   readonly runInTransactionOnConnection: <T>(
     handle: object,
     owner: TransactionOwners,
-    fn: () => Promise<T>
+    fn: () => Promise<T>,
+    groupHandle?: object
   ) => Promise<T>;
   readonly getAlsStore: () => AlsContext | undefined;
+  /**
+   * `true` when this runtime carries the store with the synchronous shim,
+   * whose store dies at the first `await` inside the transaction body.
+   */
+  readonly isSynchronousAls: () => boolean;
   readonly __resetAlsForTesting: (useShim?: boolean) => void;
 }
 
@@ -272,11 +278,19 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
    * with `mode === "nested-transaction"` at the transaction-opening call
    * site. The synchronous throw path here is symmetric with `runOnConnection`
    * — the handle state is checked before awaiting ALS.
+   *
+   * `handle` keys the chain slot; `groupHandle` names the physical connection
+   * the transaction owns and defaults to `handle`. They differ only where a
+   * backend wants finer-grained chaining than its connection identity (a real
+   * `pg.Pool` keyed on the checked-out client), and the store records both so
+   * nesting detection can key on the connection while chaining keys on the
+   * slot.
    */
   async function runInTransactionOnConnection<T>(
     handle: object,
     owner: TransactionOwners,
-    fn: () => Promise<T>
+    fn: () => Promise<T>,
+    groupHandle: object = handle
   ): Promise<T> {
     const owners = ownerSet(owner);
     const lead = leadOwner(owners);
@@ -313,15 +327,29 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     const txId = Symbol("connection-tx");
     state.txId = txId;
     state.txOwners = owners;
+    const ctx: AlsContext = {
+      txId,
+      owner: lead,
+      owners,
+      handle,
+      groupHandle,
+      active: true,
+      deferredPuts: new WeakMap(),
+      txQuery: undefined,
+    };
     try {
-      return await store.run(
-        { txId, owner: lead, owners, handle, deferredPuts: new WeakMap(), txQuery: undefined },
-        () => fn()
-      );
+      return await store.run(ctx, () => fn());
     } finally {
       if (state.txId === txId) {
         state.txId = null;
         state.txOwners = null;
+        // Belt-and-braces: the transaction body deactivates the store from
+        // INSIDE the ALS scope (so the mutation is visible to descendants).
+        // A body that threw before reaching that point still leaves a store
+        // reachable from any continuation that captured it, so mark it dead
+        // here too.
+        ctx.active = false;
+        ctx.txQuery = undefined;
       }
       release();
     }
@@ -331,6 +359,7 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     runOnConnection,
     runInTransactionOnConnection,
     getAlsStore: () => als.ensureAls().getStore(),
+    isSynchronousAls: () => als.ensureAls().synchronousOnly === true,
     __resetAlsForTesting: als.__resetAlsForTesting,
   };
 }
