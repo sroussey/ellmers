@@ -42,12 +42,15 @@ describe("resolveCommandFields", () => {
       resolve: async (args) =>
         args[0] === "TextGeneration"
           ? ({
-              type: "object",
-              properties: {
-                prompt: { type: "string", title: "Prompt" },
-                model: { type: "string", format: "model" },
+              input: {
+                type: "object",
+                properties: {
+                  prompt: { type: "string", title: "Prompt" },
+                  model: { type: "string", format: "model" },
+                },
+                required: ["prompt"],
               },
-              required: ["prompt"],
+              config: undefined,
             } as never)
           : undefined,
     });
@@ -77,13 +80,16 @@ describe("resolveCommandFields", () => {
       path: ["task", "run"],
       resolve: async () =>
         ({
-          type: "object",
-          properties: {
-            prompt: { type: "string" },
-            temperature: { type: "number", default: 0.7 },
-            secret: { type: "string", "x-ui-hidden": true },
+          input: {
+            type: "object",
+            properties: {
+              prompt: { type: "string" },
+              temperature: { type: "number", default: 0.7 },
+              secret: { type: "string", "x-ui-hidden": true },
+            },
+            required: ["prompt"],
           },
-          required: ["prompt"],
+          config: undefined,
         }) as never,
     });
     const fields = await resolveCommandFields(node, ["X"]);
@@ -93,6 +99,26 @@ describe("resolveCommandFields", () => {
       defaultValue: 0.7,
     });
     expect(fields.find((f) => f.key === "prompt")!.advanced).toBe(false);
+  });
+
+  it("offers task config as its own field source, minus anything the input shadows", async () => {
+    registerCommandSchemaProvider({
+      path: ["task", "run"],
+      resolve: async () =>
+        ({
+          input: { type: "object", properties: { title: { type: "string" } } },
+          config: {
+            type: "object",
+            properties: { delay: { type: "number" }, title: { type: "string" } },
+          },
+        }) as never,
+    });
+    const fields = await resolveCommandFields(node, ["Delay"]);
+    const config = fields.filter((f) => f.source === "config");
+    // `title` is in both, and a shorthand config flag for it would be read as
+    // the input one, so it is not offered.
+    expect(config.map((f) => f.key)).toEqual(["delay"]);
+    expect(config[0].advanced).toBe(true);
   });
 
   it("survives a provider that throws rather than losing the whole form", async () => {

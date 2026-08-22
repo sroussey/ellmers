@@ -15,6 +15,12 @@ export interface WebInvocation {
   readonly path: readonly string[];
   readonly args: readonly string[];
   readonly options: Readonly<Record<string, string | boolean>>;
+  /**
+   * Task config values, which the CLI reads from SINGLE-dash flags (`-delay 5`)
+   * so they cannot collide with the double-dash input flags. Kept apart here
+   * for the same reason, rather than hoping a name never appears in both.
+   */
+  readonly config?: Readonly<Record<string, string | boolean>>;
 }
 
 /** Characters that would change meaning if the line were pasted into a shell. */
@@ -25,6 +31,11 @@ export function composeArgv(invocation: WebInvocation): string[] {
   for (const [name, value] of Object.entries(invocation.options)) {
     if (value === false || value === undefined) continue;
     argv.push(`--${name}`);
+    if (value !== true) argv.push(String(value));
+  }
+  for (const [name, value] of Object.entries(invocation.config ?? {})) {
+    if (value === false || value === undefined) continue;
+    argv.push(`-${name}`);
     if (value !== true) argv.push(String(value));
   }
   return argv;
@@ -43,6 +54,11 @@ export function renderCliLine(binary: string, invocation: WebInvocation): string
     parts.push(`--${name}`);
     if (value !== true) parts.push(quote(String(value)));
   }
+  for (const [name, value] of Object.entries(invocation.config ?? {})) {
+    if (value === false || value === undefined) continue;
+    parts.push(`-${name}`);
+    if (value !== true) parts.push(quote(String(value)));
+  }
   return parts.join(" ");
 }
 
@@ -54,7 +70,12 @@ export function renderCliLine(binary: string, invocation: WebInvocation): string
  * argument, and commander would happily take an unknown flag on a command that
  * allows them.
  */
-export function validateInvocation(node: WebCommandNode, invocation: WebInvocation): string[] {
+export function validateInvocation(
+  node: WebCommandNode,
+  invocation: WebInvocation,
+  schemaKeys: ReadonlySet<string> = new Set(),
+  configKeys: ReadonlySet<string> = new Set()
+): string[] {
   const errors: string[] = [];
 
   node.args.forEach((argument, index) => {
@@ -75,7 +96,10 @@ export function validateInvocation(node: WebCommandNode, invocation: WebInvocati
   for (const [name, value] of Object.entries(invocation.options)) {
     const option = declared.get(name);
     if (!option) {
-      errors.push(`unknown option "${name}"`);
+      // A schema-derived flag is not declared on the command — `task run` and
+      // `workflow run` take theirs from the task's or graph's input schema —
+      // so the allow-list is "declared, or a field this invocation resolved".
+      if (!schemaKeys.has(name)) errors.push(`unknown option "${name}"`);
       continue;
     }
     if (option.kind === "boolean" && typeof value !== "boolean") {
@@ -89,6 +113,9 @@ export function validateInvocation(node: WebCommandNode, invocation: WebInvocati
     if (option.choices && typeof value === "string" && !option.choices.includes(value)) {
       errors.push(`${name} must be one of ${option.choices.join(", ")}`);
     }
+  }
+  for (const name of Object.keys(invocation.config ?? {})) {
+    if (!configKeys.has(name)) errors.push(`unknown config "${name}"`);
   }
   for (const option of node.options) {
     if (option.required && invocation.options[option.name] === undefined) {

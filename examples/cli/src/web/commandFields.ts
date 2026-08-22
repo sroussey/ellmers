@@ -21,7 +21,7 @@ export interface WebField {
   readonly advanced: boolean;
   readonly defaultValue: unknown;
   readonly choices: readonly string[] | undefined;
-  readonly source: "argument" | "schema" | "option";
+  readonly source: "argument" | "schema" | "config" | "option";
 }
 
 /**
@@ -31,9 +31,15 @@ export interface WebField {
  * cannot say until it knows the workflow — which is why the arguments are an
  * input here rather than the fields being static per command.
  */
+export interface CommandSchemas {
+  readonly input: DataPortSchemaObject | undefined;
+  /** Task config, which the CLI takes on single-dash flags. */
+  readonly config: DataPortSchemaObject | undefined;
+}
+
 export interface CommandSchemaProvider {
   readonly path: readonly string[];
-  resolve(args: readonly string[]): Promise<DataPortSchemaObject | undefined>;
+  resolve(args: readonly string[]): Promise<CommandSchemas | undefined>;
 }
 
 /** Flags the terminal keeps behind `--help`; the page keeps them behind a fold. */
@@ -142,14 +148,24 @@ export async function resolveCommandFields(
 
   const provider = providers.find((candidate) => samePath(candidate.path, node.path));
   if (provider) {
-    let schema: DataPortSchemaObject | undefined;
+    let schemas: CommandSchemas | undefined;
     try {
-      schema = await provider.resolve(args);
+      schemas = await provider.resolve(args);
     } catch {
-      schema = undefined;
+      schemas = undefined;
     }
-    if (schema) {
-      for (const field of schemaFields(schema)) fields.push({ ...field, source: "schema" });
+    if (schemas?.input) {
+      for (const field of schemaFields(schemas.input)) fields.push({ ...field, source: "schema" });
+    }
+    if (schemas?.config) {
+      const inputKeys = new Set(Object.keys(schemas.input?.properties ?? {}));
+      for (const field of schemaFields(schemas.config)) {
+        // A config key that also names an input port has no shorthand form in
+        // the CLI, so offering it here would compose a flag the CLI reads as
+        // the input one.
+        if (inputKeys.has(field.key)) continue;
+        fields.push({ ...field, source: "config", advanced: true });
+      }
     }
   }
 
@@ -170,6 +186,12 @@ export async function resolveCommandFields(
   return fields;
 }
 
+function asObjectSchema(schema: unknown): DataPortSchemaObject | undefined {
+  return typeof schema === "object" && schema !== null
+    ? (schema as DataPortSchemaObject)
+    : undefined;
+}
+
 export type WorkflowGraphLoader = (id: string) => Promise<TaskGraph | undefined>;
 
 /** The two commands whose real input lives in a schema rather than in flags. */
@@ -178,10 +200,11 @@ export function registerBuiltInSchemaProviders(loadWorkflowGraph: WorkflowGraphL
     path: ["task", "run"],
     resolve: async (args) => {
       const ctor = args[0] ? resolveTaskType(args[0]) : undefined;
-      const schema = ctor?.inputSchema();
-      return typeof schema === "object" && schema !== null
-        ? (schema as DataPortSchemaObject)
-        : undefined;
+      if (!ctor) return undefined;
+      return {
+        input: asObjectSchema(ctor.inputSchema()),
+        config: asObjectSchema(ctor.configSchema?.()),
+      };
     },
   });
   registerCommandSchemaProvider({
@@ -189,10 +212,7 @@ export function registerBuiltInSchemaProviders(loadWorkflowGraph: WorkflowGraphL
     resolve: async (args) => {
       const graph = args[0] ? await loadWorkflowGraph(args[0]) : undefined;
       if (!graph) return undefined;
-      const schema = computeGraphInputSchema(graph);
-      return typeof schema === "object" && schema !== null
-        ? (schema as DataPortSchemaObject)
-        : undefined;
+      return { input: asObjectSchema(computeGraphInputSchema(graph)), config: undefined };
     },
   });
 }

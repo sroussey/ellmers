@@ -76,6 +76,7 @@ function parseInvocation(body: string): WebInvocation | undefined {
       path: parsed.path.map(String),
       args: Array.isArray(parsed.args) ? parsed.args.map(String) : [],
       options: (parsed.options ?? {}) as Record<string, string | boolean>,
+      config: (parsed.config ?? {}) as Record<string, string | boolean>,
     };
   } catch {
     return undefined;
@@ -146,7 +147,17 @@ export async function handleWebRequest(request: WebRequest, ctx: WebContext): Pr
     if (!invocation) return json(400, { error: "malformed invocation" });
     const node = findCommandNode(buildCommandTree(ctx.program), invocation.path);
     if (!node) return json(404, { error: "unknown command" });
-    const errors = validateInvocation(node, invocation);
+    // The allow-list is the form the page was given: declared flags plus the
+    // schema fields this invocation resolves to, which is exactly what the CLI
+    // itself accepts for `task run` and `workflow run`.
+    const fields = await resolveCommandFields(node, invocation.args);
+    const schemaKeys = new Set(
+      fields.flatMap((field) => (field.source === "schema" ? [field.key] : []))
+    );
+    const configKeys = new Set(
+      fields.flatMap((field) => (field.source === "config" ? [field.key] : []))
+    );
+    const errors = validateInvocation(node, invocation, schemaKeys, configKeys);
     if (errors.length > 0) return json(400, { errors });
     const run = ctx.registry.start(invocation);
     return json(201, runSummary(run));

@@ -79,6 +79,19 @@ const node: WebCommandNode = {
   ],
 };
 
+describe("config flags", () => {
+  it("composes with one dash, which is how the CLI tells them from input", () => {
+    const withConfig = {
+      path: ["task", "run"],
+      args: ["Delay"],
+      options: {},
+      config: { delay: "400" },
+    };
+    expect(composeArgv(withConfig)).toEqual(["task", "run", "Delay", "-delay", "400"]);
+    expect(renderCliLine("workglow", withConfig)).toBe("workglow task run Delay -delay 400");
+  });
+});
+
 describe("validateInvocation", () => {
   it("reports a missing required argument", () => {
     expect(validateInvocation(node, { path: node.path, args: [], options: {} })).toEqual([
@@ -105,6 +118,31 @@ describe("validateInvocation", () => {
     expect(
       validateInvocation(node, { path: node.path, args: ["x"], options: { model: true } })
     ).toEqual(["model needs a value"]);
+  });
+
+  it("accepts a schema-derived flag the command never declared", () => {
+    const invocationWithSchemaFlag = {
+      path: node.path,
+      args: ["x"],
+      options: { prompt: "hello" },
+    };
+    expect(validateInvocation(node, invocationWithSchemaFlag)).toEqual(['unknown option "prompt"']);
+    expect(validateInvocation(node, invocationWithSchemaFlag, new Set(["prompt"]))).toEqual([]);
+  });
+
+  it("refuses a config key the resolved schema does not name", () => {
+    const withConfig = { path: node.path, args: ["x"], options: {}, config: { nope: "1" } };
+    expect(validateInvocation(node, withConfig, new Set(), new Set(["delay"]))).toEqual([
+      'unknown config "nope"',
+    ]);
+    expect(
+      validateInvocation(
+        node,
+        { ...withConfig, config: { delay: "5" } },
+        new Set(),
+        new Set(["delay"])
+      )
+    ).toEqual([]);
   });
 
   it("accepts a complete invocation", () => {
