@@ -12,6 +12,7 @@ import { ProgressBar } from "../components/ProgressBar";
 import { TaskDetailColumn } from "../components/TaskDetailColumn";
 import { TaskErrorDetail } from "../components/TaskErrorDetail";
 import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
+import { iterationSummaryLine } from "../model/runRowModel";
 import type { CliTaskLine, IterationSlotRow } from "../taskGraphCliSubscriptions";
 import { mergeLiveIterationGraphs, visibleIterationSlots } from "../taskGraphCliSubscriptions";
 import { settledTaskDurationMs } from "./taskDuration";
@@ -247,31 +248,4 @@ export function isRedundantSubgraph(rows: readonly CliTaskLine[], parentType: st
   return rows.length === 1 && rows[0]?.type === parentType;
 }
 
-/**
- * What the capped iteration rows are not showing. The visible rows are the work
- * in flight; without this the rest of a 240-iteration map is invisible, and the
- * parent's own bar is the only evidence it is a map at all.
- *
- * Reports only what the slots actually know: above {@link FULL_SLOT_TRACKING_MAX}
- * the CLI retains running iterations only, so there is no honest done or queued
- * count to print and the line reduces to the extra running ones.
- */
-export function iterationSummaryLine(
-  slots: readonly IterationSlotRow[] | undefined,
-  visibleCount: number
-): string {
-  if (!slots || slots.length <= visibleCount) return "";
-  let running = 0;
-  let done = 0;
-  let queued = 0;
-  for (const slot of slots) {
-    if (slot.status === "running") running++;
-    else if (slot.status === "completed") done++;
-    else queued++;
-  }
-  const parts: string[] = [];
-  if (running > visibleCount) parts.push(`${running - visibleCount} more running`);
-  if (done > 0) parts.push(`${done} done`);
-  if (queued > 0) parts.push(`${queued} queued`);
-  return parts.join(" · ");
-}
+export { iterationSummaryLine };
