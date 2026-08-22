@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createWriteStream, type WriteStream } from "node:fs";
+import { createReadStream, createWriteStream, type WriteStream } from "node:fs";
 import type { RunEvent } from "./RunEventTypes";
 
 export interface RunEventSink {
@@ -15,6 +15,15 @@ export interface RunEventSink {
 
 /** Env var a parent process sets to ask its child for a machine-readable run. */
 export const RUN_EVENTS_ENV = "WORKGLOW_RUN_EVENTS";
+
+/**
+ * Env var naming where answers to the run's human prompts arrive.
+ *
+ * Its own descriptor rather than stdin: stdin belongs to the command being run,
+ * and a run started with stdin closed (`< /dev/null`, a service manager, a CI
+ * job) must not die because the answers reader saw EOF.
+ */
+export const RUN_ANSWERS_ENV = "WORKGLOW_RUN_ANSWERS";
 
 let installed: RunEventSink | undefined;
 
@@ -66,6 +75,49 @@ export function installRunEventChannel(target: string): RunEventSink | undefined
   };
   installed = sink;
   return sink;
+}
+
+/**
+ * Reads NDJSON answer lines from the descriptor the parent named. Returns a
+ * stop function, or undefined when nothing is listening.
+ */
+export function readRunAnswerLines(
+  target: string,
+  onLine: (line: string) => void
+): (() => void) | undefined {
+  if (!target) return undefined;
+  let stream: ReturnType<typeof createReadStream> | undefined;
+  try {
+    if (target.startsWith("fd:")) {
+      const fd = Number.parseInt(target.slice(3), 10);
+      if (!Number.isInteger(fd) || fd < 0) return undefined;
+      stream = createReadStream("", { fd, encoding: "utf8" });
+    } else if (target.startsWith("file:")) {
+      stream = createReadStream(target.slice(5), { encoding: "utf8" });
+    }
+  } catch {
+    return undefined;
+  }
+  if (!stream) return undefined;
+  const source = stream;
+  source.on("error", () => {});
+  let buffer = "";
+  source.on("data", (chunk: string | Buffer) => {
+    buffer += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+    let index = buffer.indexOf("\n");
+    while (index >= 0) {
+      onLine(buffer.slice(0, index));
+      buffer = buffer.slice(index + 1);
+      index = buffer.indexOf("\n");
+    }
+  });
+  return () => {
+    try {
+      source.destroy();
+    } catch {
+      /* already gone */
+    }
+  };
 }
 
 export function getRunEventSink(): RunEventSink | undefined {

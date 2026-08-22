@@ -29,7 +29,12 @@ import { registerWorkflowCommand } from "./commands/workflow";
 import { loadConfig } from "./config";
 import { lazyStore } from "./keyring";
 import { RunEventHumanConnector } from "./run-events/RunEventHumanConnector";
-import { installRunEventChannel, RUN_EVENTS_ENV } from "./run-events/runEventChannel";
+import {
+  installRunEventChannel,
+  readRunAnswerLines,
+  RUN_ANSWERS_ENV,
+  RUN_EVENTS_ENV,
+} from "./run-events/runEventChannel";
 import { seedSamplesIfRepoEmpty } from "./samples/chatSample";
 import { createModelRepository, createWorkflowRepository } from "./storage";
 import { detectCliTheme, setCliTheme } from "./terminal/detectTerminalTheme";
@@ -55,17 +60,9 @@ const runEventSink = installRunEventChannel(process.env[RUN_EVENTS_ENV] ?? "");
 if (runEventSink) {
   const connector = new RunEventHumanConnector(runEventSink);
   globalServiceRegistry.registerInstance(HUMAN_CONNECTOR, connector);
-  let buffer = "";
-  process.stdin.setEncoding("utf8");
-  process.stdin.on("data", (chunk: string) => {
-    buffer += chunk;
-    let index = buffer.indexOf("\n");
-    while (index >= 0) {
-      connector.feedHumanResponseLine(buffer.slice(0, index));
-      buffer = buffer.slice(index + 1);
-      index = buffer.indexOf("\n");
-    }
-  });
+  readRunAnswerLines(process.env[RUN_ANSWERS_ENV] ?? "", (line) =>
+    connector.feedHumanResponseLine(line)
+  );
 } else {
   globalServiceRegistry.registerInstance(HUMAN_CONNECTOR, new InkHumanConnector());
 }

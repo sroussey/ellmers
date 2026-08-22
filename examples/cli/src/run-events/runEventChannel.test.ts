@@ -4,13 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   getRunEventSink,
   installRunEventChannel,
+  readRunAnswerLines,
   resetRunEventChannelForTesting,
 } from "./runEventChannel";
 
@@ -40,5 +41,23 @@ describe("run event channel", () => {
   it("never lets a broken channel take the run down with it", () => {
     const sink = installRunEventChannel("file:/nonexistent-dir/events.ndjson");
     expect(() => sink?.emit({ k: "status", id: "t1", status: "FAILED" })).not.toThrow();
+  });
+});
+
+describe("readRunAnswerLines", () => {
+  it("delivers whole lines and ignores a partial tail", async () => {
+    const file = join(mkdtempSync(join(tmpdir(), "wg-answers-")), "answers.ndjson");
+    writeFileSync(file, '{"requestId":"a"}\n{"requestId":"b"}\n{"partial"', "utf8");
+    const lines: string[] = [];
+    const stop = readRunAnswerLines(`file:${file}`, (line) => lines.push(line));
+    expect(stop).toBeDefined();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    stop!();
+    expect(lines).toEqual(['{"requestId":"a"}', '{"requestId":"b"}']);
+  });
+
+  it("is absent when nothing is answering", () => {
+    expect(readRunAnswerLines("", () => {})).toBeUndefined();
+    expect(readRunAnswerLines("nonsense", () => {})).toBeUndefined();
   });
 });
