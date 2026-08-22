@@ -387,6 +387,22 @@
         "sharp": "0.35.4",
       },
     },
+    "packages/web-search": {
+      "name": "@workglow/web-search",
+      "version": "0.3.48",
+      "devDependencies": {
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/tasks": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/tasks": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
     "packages/workglow": {
       "name": "workglow",
       "version": "0.4.6",
@@ -1730,6 +1746,8 @@
     "@workglow/util": ["@workglow/util@workspace:packages/util"],
 
     "@workglow/web": ["@workglow/web@workspace:examples/web"],
+
+    "@workglow/web-search": ["@workglow/web-search@workspace:packages/web-search"],
 
     "@workglow/xai": ["@workglow/xai@workspace:providers/xai"],
 
