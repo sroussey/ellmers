@@ -75,18 +75,6 @@ export function sortCliTaskLinesForDisplay(
   });
 }
 
-/**
- * The run's footer: what it spent, and how much of the graph has landed. The
- * task count carries a single-task graph no information the row above does not
- * already show, so it is omitted there rather than padding every `task run`.
- */
-export function graphFooterLine(usageLine: string, done: number, total: number): string {
-  const parts: string[] = [];
-  if (usageLine) parts.push(`Tokens ${usageLine}`);
-  if (total > 1) parts.push(`${done}/${total} tasks`);
-  return parts.join("  \u00B7  ");
-}
-
 /** When to draw a numeric progress bar (not just status text). */
 export function cliTaskShowsProgressBar(status: string): boolean {
   return status === "PROCESSING" || status === "STREAMING" || status === "ABORTING";

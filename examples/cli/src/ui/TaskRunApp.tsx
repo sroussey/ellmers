@@ -12,6 +12,7 @@ import { startTaskInstancePoll, type TaskFileProgressRow } from "./cliTaskUi";
 import { useCliTheme } from "./CliThemeContext";
 import { CLI_SPINNER_FRAMES } from "./components/CliSpinner";
 import { ProgressBar } from "./components/ProgressBar";
+import { deriveRunState, RunStatusBar } from "./components/RunStatusBar";
 import { StreamOutput } from "./components/StreamOutput";
 import { TaskErrorDetail } from "./components/TaskErrorDetail";
 import { TaskStatusProgressRow } from "./components/TaskStatusProgressRow";
@@ -222,7 +223,12 @@ export function TaskRunApp({
               variant="chrome"
             />
           )}
-          {runUsageLine ? <Text>{`Tokens ${runUsageLine}`}</Text> : null}
+          <RunStatusBar
+            usageLine={runUsageLine}
+            done={status === "COMPLETED" ? 1 : 0}
+            total={1}
+            state={deriveRunState([status])}
+          />
         </Box>
       </Box>
     </HumanInteractionHost>

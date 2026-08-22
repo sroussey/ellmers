@@ -7,9 +7,10 @@
 import type { TaskGraph } from "@workglow/task-graph";
 import { Box, Text } from "ink";
 import React, { useEffect, useState } from "react";
-import { graphFooterLine, sortCliTaskLinesForDisplay, startGraphTaskPoll } from "./cliTaskUi";
+import { sortCliTaskLinesForDisplay, startGraphTaskPoll } from "./cliTaskUi";
 import { useCliTheme } from "./CliThemeContext";
 import { ProgressBar } from "./components/ProgressBar";
+import { deriveRunState, RunStatusBar } from "./components/RunStatusBar";
 import { TaskDetailColumn } from "./components/TaskDetailColumn";
 import { HumanInteractionHost } from "./HumanInteractionHost";
 import { ChatTaskRow } from "./rows/ChatTaskRow";
@@ -70,7 +71,7 @@ export function WorkflowRunApp({
   const order = new Map(graph.getTasks().map((t, i) => [String(t.id), i]));
   const orderedTasks = sortCliTaskLinesForDisplay(Array.from(taskInfos.values()), order);
   const settledCount = orderedTasks.filter((t) => t.status === "COMPLETED").length;
-  const footerLine = graphFooterLine(runUsageLine, settledCount, orderedTasks.length);
+  const runState = deriveRunState(orderedTasks.map((t) => t.status));
 
   return (
     <HumanInteractionHost>
@@ -105,7 +106,12 @@ export function WorkflowRunApp({
               />
             );
           })}
-          {footerLine ? <Text color={bodyColor}>{footerLine}</Text> : null}
+          <RunStatusBar
+            usageLine={runUsageLine}
+            done={settledCount}
+            total={orderedTasks.length}
+            state={runState}
+          />
         </Box>
       </Box>
     </HumanInteractionHost>

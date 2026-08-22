@@ -10,7 +10,7 @@ import { render } from "ink";
 import { EventEmitter } from "node:events";
 import React from "react";
 import { describe, expect, it } from "vitest";
-import { graphFooterLine } from "../ui/cliTaskUi";
+import { deriveRunState, runStatusBarFields } from "../ui/components/RunStatusBar";
 import { taskDetailText } from "../ui/components/TaskDetailColumn";
 import { taskErrorText } from "../ui/components/TaskErrorDetail";
 import { iterationSummaryLine } from "../ui/rows/SubtaskRows";
@@ -115,15 +115,34 @@ describe("failed row detail", () => {
   });
 });
 
-describe("graph footer", () => {
-  it("carries spend and how much of the graph has landed", () => {
-    expect(graphFooterLine("↑ 1.2k ↓ 300 $0.01 2.4s", 3, 8)).toBe(
-      "Tokens ↑ 1.2k ↓ 300 $0.01 2.4s  ·  3/8 tasks"
-    );
-    expect(graphFooterLine("", 3, 8)).toBe("3/8 tasks");
+describe("run status bar", () => {
+  it("carries spend, how much of the graph landed, and the outcome", () => {
+    expect(runStatusBarFields("↑ 1.2k ↓ 300 $0.01 2.4s", 3, 8, "running")).toEqual([
+      "Tokens ↑ 1.2k ↓ 300 $0.01 2.4s",
+      "3 / 8 tasks",
+      "running",
+    ]);
+    expect(runStatusBarFields("", 6, 6, "completed")).toEqual(["6 / 6 tasks", "completed"]);
     // A single-task graph learns nothing from a count of one.
-    expect(graphFooterLine("", 1, 1)).toBe("");
-    expect(graphFooterLine("↑ 10 ↓ 2", 1, 1)).toBe("Tokens ↑ 10 ↓ 2");
+    expect(runStatusBarFields("↑ 10 ↓ 2", 1, 1, "completed")).toEqual([
+      "Tokens ↑ 10 ↓ 2",
+      "completed",
+    ]);
+  });
+
+  it("reports the run's outcome, not the last task's", () => {
+    expect(deriveRunState([])).toBe("");
+    expect(deriveRunState(["PENDING", "PENDING"])).toBe("");
+    expect(deriveRunState(["COMPLETED", "PROCESSING"])).toBe("running");
+    expect(deriveRunState(["COMPLETED", "COMPLETED"])).toBe("completed");
+    // One failure decides the run even when everything else landed.
+    expect(deriveRunState(["COMPLETED", "FAILED", "COMPLETED"])).toBe("failed");
+    expect(deriveRunState(["COMPLETED", "ABORTED"])).toBe("aborted");
+    // A failure outranks an abort: the abort is usually its consequence.
+    expect(deriveRunState(["FAILED", "ABORTED"])).toBe("failed");
+    // Settled tasks with others still queued is not a finished run.
+    expect(deriveRunState(["COMPLETED", "PENDING"])).toBe("running");
+    expect(deriveRunState(["COMPLETED", "DISABLED"])).toBe("completed");
   });
 });
 
@@ -195,6 +214,7 @@ describe("WorkflowRunApp columns", () => {
     expect(output).toMatch(/Reporting task\s+\d+(\.\d)?(ms|s)/);
     expect(output).toMatch(/Silent task\s+\d+(\.\d)?(ms|s)/);
     // Both tasks landed, and the footer says so.
-    expect(output).toContain("2/2 tasks");
+    expect(output).toContain("2 / 2 tasks");
+    expect(output).toContain("completed");
   });
 });
