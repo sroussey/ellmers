@@ -26,5 +26,6 @@
     {
       "path": "../../packages/web-search"
     }
-  ]
+  ],
+  "exclude": ["dist", "node_modules", "src/**/__tests__/**", "src/**/*.test.ts"]
 }

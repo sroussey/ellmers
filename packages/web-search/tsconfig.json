@@ -8,9 +8,18 @@
   },
   "include": ["src/**/*"],
   "references": [
-    { "path": "../util" },
-    { "path": "../task-graph" },
-    { "path": "../job-queue" },
-    { "path": "../tasks" }
-  ]
+    {
+      "path": "../util"
+    },
+    {
+      "path": "../task-graph"
+    },
+    {
+      "path": "../job-queue"
+    },
+    {
+      "path": "../tasks"
+    }
+  ],
+  "exclude": ["dist", "node_modules", "src/**/__tests__/**", "src/**/*.test.ts"]
 }
