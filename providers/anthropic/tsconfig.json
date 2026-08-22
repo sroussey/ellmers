@@ -24,6 +24,9 @@
     },
     {
       "path": "../../packages/ai"
+    },
+    {
+      "path": "../../packages/web-search"
     }
   ]
 }

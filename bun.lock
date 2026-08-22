@@ -455,6 +455,7 @@
         "@workglow/storage": "workspace:*",
         "@workglow/task-graph": "workspace:*",
         "@workglow/util": "workspace:*",
+        "@workglow/web-search": "workspace:*",
       },
       "peerDependencies": {
         "@workglow/ai": "workspace:*",
@@ -462,6 +463,7 @@
         "@workglow/storage": "workspace:*",
         "@workglow/task-graph": "workspace:*",
         "@workglow/util": "workspace:*",
+        "@workglow/web-search": "workspace:*",
       },
     },
     "providers/aws": {
