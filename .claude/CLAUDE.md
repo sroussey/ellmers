@@ -344,6 +344,21 @@ filtering is never emulated: post-filtering by `publishedDate` breaks `maxResult
 every result whose date the provider omitted, so `dateFilter: false` means such a request is
 refused rather than approximated.
 
+`excludeDomainFilter` is optional and defaults to `domainFilter`, because most providers treat
+the two directions the same. It exists because one real provider does not: OpenAI's
+`web_search` tool takes `filters.allowed_domains` and the installed SDK models no blocked
+equivalent. Folded into one field that provider must either under-declare (losing working
+include filtering) or over-declare — and over-declaring is the exact failure the record
+prevents, since `"auto"` would route an `excludeDomains` request to a provider that cannot
+honor it and the adapter would throw after selection rather than before.
+
+The grounded providers are not variations on one shape. Anthropic filters by domain and not by
+date; Gemini is the mirror image (`GoogleSearch.excludeDomains` is documented Vertex-only, and
+`timeRangeFilter` is documented "not supported in Vertex AI", so on the Gemini API path it is
+date-only); OpenAI is inclusion-only; OpenRouter does both. Read the installed SDK's own types
+before declaring a capability — the vendor docs and the shipped typings disagree, and the
+typings are what the code compiles against.
+
 `provider` is a required input with no default, mirroring `response_type` on `FetchUrlTask` —
 which provider serves a request decides its cost, rate limit and quality. `"auto"` opts into
 capability routing (the same idea as `AiProviderRegistry` picking the most-specific superset
@@ -351,14 +366,21 @@ of `requires`); the provider that ran is always reported on the `provider` outpu
 **pinned** provider that cannot honor an option throws rather than rerouting: naming one is a
 decision about cost and quota.
 
+Seven providers ship: `brave`, `tavily`, `searxng` inside this package; `anthropic`, `openai`,
+`openrouter`, `gemini` as a `./web-search` subpath on their vendor package. A vendor adapter is
+registered explicitly (`registerAnthropicWebSearchProvider()` and friends) — importing the
+subpath registers nothing, matching how `./ai` exports `registerAnthropic*` rather than
+self-registering. Only the three built-ins auto-register, and only because they live in this
+package's own `node.ts` runtime entry.
+
 HTTP adapters (Brave, Tavily, SearXNG) execute by **owning a `FetchUrlTask`**, inheriting
 credential resolution via `credential_key`, SafeFetch's redirect/SSRF checks, retry/backoff,
 per-attempt timeouts and the response cache. They do **not** inherit the queue's rate
 limiter: `FetchUrlTask` refuses `credential_key` on the queued path (a queued payload is
 persisted, secret included), so every keyed provider runs inline. Search APIs are metered
 against hard monthly quotas, so bounding a `MapTask` fan-out is the caller's job. The grounded Anthropic
-adapter lives in `@workglow/anthropic/web-search` and uses the vendor SDK instead, which is
-what keeps this package free of any dependency on `@workglow/ai`.
+adapters live in their vendor packages and use the vendor SDK instead, which is what keeps
+this package free of any dependency on `@workglow/ai`.
 
 Two Anthropic-specific traps the adapter handles: a `web_search_tool_result` block carries a
 **list** on success and an error **object** on failure — at HTTP 200, raising nothing — so
