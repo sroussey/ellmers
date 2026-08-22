@@ -8,7 +8,9 @@
     "url": "https://github.com/workglow-dev/libs.git",
     "directory": "packages/web-search"
   },
-  "bugs": { "url": "https://github.com/workglow-dev/libs/issues" },
+  "bugs": {
+    "url": "https://github.com/workglow-dev/libs/issues"
+  },
   "description": "Web-search task for Workglow with pluggable providers (Brave, Tavily, SearXNG; grounded providers ship in vendor packages).",
   "homepage": "https://workglow.dev",
   "scripts": {
@@ -28,7 +30,10 @@
   "exports": {
     ".": {
       "types": "./dist/node.d.ts",
-      "browser": { "types": "./dist/browser.d.ts", "import": "./dist/browser.js" },
+      "browser": {
+        "types": "./dist/browser.d.ts",
+        "import": "./dist/browser.js"
+      },
       "import": "./dist/node.js"
     }
   },
@@ -44,6 +49,11 @@
     "@workglow/tasks": "workspace:*",
     "@workglow/job-queue": "workspace:*"
   },
-  "files": ["dist", "src/**/*.md"],
-  "publishConfig": { "access": "public" }
+  "files": [
+    "dist",
+    "src/**/*.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

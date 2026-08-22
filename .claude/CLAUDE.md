@@ -67,6 +67,7 @@ util, sqlite            (foundation)
   → task-graph          (core DAG pipeline engine)
   → dataset, tasks      (KnowledgeBase, documents, chunks; utility tasks)
   → ai                  (AI task base classes, model registry, provider helpers)
+     web-search         (WebSearchTask + provider registry; depends on tasks, NOT on ai)
   → providers/*         (anthropic, openai, gemini, ollama, ...)
   → test                (integration tests), workglow (meta-package), debug (DevTools formatters)
 ```
@@ -97,9 +98,12 @@ moved onto the shared `node:sqlite` driver. The set is pinned by
 `packages/test/src/test/util/BunExportConditions.test.ts`, which fails until the fixture
 and this paragraph are updated together.
 
-Exceptions: `providers/*` ship `./ai` and `./ai-runtime` instead of browser/node.
-`@workglow/util` has extra named exports — `/schema`, `/graph`, `/worker`, `/media`,
-`/compress`.
+Exceptions: `providers/*` ship `./ai` and `./ai-runtime` instead of browser/node. A vendor
+may add further subpaths for surfaces outside the AI task framework: `@workglow/anthropic`,
+`@workglow/openai`, `@workglow/openrouter` and `@workglow/google-gemini` also ship
+`./web-search`, which implements `@workglow/web-search`'s provider interface and is loaded by
+neither AI entry. `@workglow/util` has extra named exports — `/schema`, `/graph`, `/worker`,
+`/media`, `/compress`.
 
 ## Code style
 
@@ -207,6 +211,60 @@ Run-fns receive an `AiSessionContext` (`sessionId`, `emitCheckpointId`, `prefix`
 `ownedSession`) rather than a scalar session id; inject a shared `resourceScope` in the run
 config to share checkpoints across separate runs. Details on the per-provider degradation
 paths (including OpenAI's derived `prompt_cache_key`) live with those types.
+
+### `@workglow/web-search`
+
+`WebSearchTask` plus a provider registry. One normalized shape serves both plain search APIs
+and model-grounded search: `results` is always present (for a grounded provider these are its
+citations), and `answer` only from providers that synthesize one.
+
+**Server-side only.** Every commercial search API authenticates with a request header, which
+forces a CORS preflight none of them answer, and a browser-executed search would expose the
+key to any visitor. The browser entry registers the **task** (so a builder UI can render and
+validate the node) and **no providers**; running it there throws from the registry.
+
+Providers declare a `WebSearchCapabilities` record and the task enforces it. `domainFilter` is
+three-valued — `"native"`, `"query-operator"` (the task rewrites the query with `site:`), or
+`false`. `excludeDomainFilter` defaults to `domainFilter` and exists because OpenAI's
+`web_search` takes `filters.allowed_domains` with no blocked equivalent; `exclusiveDomainDirections`
+exists because Anthropic's takes one list or the other, never both. Over-declaring is the
+failure the whole record prevents: `"auto"` would route an option to a provider that cannot
+honor it and the adapter would throw after selection rather than before.
+
+Date filtering is **never emulated** — post-filtering by `publishedDate` breaks `maxResults`
+and drops every result whose date the provider omitted, so `dateFilter: false` means such a
+request is refused rather than approximated.
+
+`provider` is a required input with no default, mirroring `response_type` on `FetchUrlTask` —
+which provider serves a request decides its cost, rate limit and quality. `"auto"` opts into
+capability routing; the provider that ran is always reported on the `provider` output port. A
+**pinned** provider that cannot honor an option throws rather than rerouting.
+
+Seven providers ship: `brave`, `tavily`, `searxng` here; `anthropic`, `openai`, `openrouter`,
+`gemini` as a `./web-search` subpath on their vendor package, registered explicitly
+(`registerAnthropicWebSearchProvider()` and friends) rather than on import. Only the three
+built-ins auto-register, from this package's own `node.ts`.
+
+HTTP adapters (Brave, Tavily, SearXNG) execute by **owning a `FetchUrlTask`**, inheriting
+credential resolution via `credential_key`, SafeFetch's redirect/SSRF checks, retry/backoff,
+per-attempt timeouts and the response cache. They do **not** inherit the queue's rate limiter:
+`FetchUrlTask` refuses `credential_key` on the queued path (a queued payload is persisted,
+secret included), so every keyed provider runs inline, and bounding a `MapTask` fan-out against
+a metered quota is the caller's job. The grounded adapters live in their vendor packages and
+use the vendor SDK, which is what keeps this package free of any dependency on `@workglow/ai`.
+
+Two Anthropic-specific traps the adapter handles: a `web_search_tool_result` block carries a
+**list** on success and an error **object** on failure — at HTTP 200, raising nothing — so
+reading it unbranched records a quota failure as a search that found nothing; and a
+server-tool turn can stop with `stop_reason: "pause_turn"`, which must be resumed by pushing
+the paused assistant content back or the answer is silently truncated.
+
+Port-crossing types (`SearchResult`, `WebSearchUsage`, `WebSearchTaskOutput`) are `type`
+aliases, not interfaces: TypeScript gives an alias an implicit index signature and an interface
+none, so the interface form is not assignable to the `DataPorts` constraint `Task` imposes.
+
+Only SearXNG needs no API key and has no quota, so it is the only one whose integration test
+runs unmocked (`.integration.test.ts`, skipped unless `WEB_SEARCH_SEARXNG_URL` is set).
 
 ### `providers/*`
 

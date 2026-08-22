@@ -13,12 +13,12 @@ and validate the node) but **no providers**. Execution happens on a server.
 
 ## Providers
 
-| provider | auth | answer | content | domain filter | date filter |
-| --- | --- | --- | --- | --- | --- |
-| `brave` | `X-Subscription-Token` | no | no | via `site:` | yes |
-| `tavily` | bearer token | yes | yes | native | yes |
-| `searxng` | none (self-hosted) | no | no | via `site:` | no |
-| `anthropic` | vendor SDK | yes | no | native | no |
+| provider    | auth                   | answer | content | domain filter | date filter |
+| ----------- | ---------------------- | ------ | ------- | ------------- | ----------- |
+| `brave`     | `X-Subscription-Token` | no     | no      | via `site:`   | yes         |
+| `tavily`    | bearer token           | yes    | yes     | native        | yes         |
+| `searxng`   | none (self-hosted)     | no     | no      | via `site:`   | no          |
+| `anthropic` | vendor SDK             | yes    | no      | native        | no          |
 
 `anthropic` ships in `@workglow/anthropic/web-search`; register it yourself.
 SearXNG needs `WEB_SEARCH_SEARXNG_URL` (or an explicit base URL) and an instance
