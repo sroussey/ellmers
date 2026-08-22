@@ -50,6 +50,7 @@ task-graph                            (core DAG pipeline engine)
 dataset, tasks                        (KnowledgeBase, documents, chunks; utility tasks)
     ↓
 ai                                    (AI task base classes, model registry, provider helpers)
+web-search                            (WebSearchTask + provider registry; depends on tasks, NOT on ai)
     ↓
 providers/*                           (concrete provider implementations: anthropic, openai, gemini, ollama, ...)
     ↓
@@ -70,7 +71,7 @@ Types built with `tsc` (composite + incremental). Conditional exports in `packag
 
 **No `bun` entry unless it differs.** Bun is not a build target by default: with no `"bun"` condition in `exports`, Bun resolves the default `"import"` and loads the node build. Add a `src/bun.ts`, a `--target=bun` build, and a `"bun"` export condition only when the Bun code genuinely differs — a duplicate of `node.ts` is a third bundle and a third `.d.ts` to keep in sync for no behavior change. Only three entries qualify today: `@workglow/util`'s `"."` (`Worker.bun` vs `Worker.node`), `@workglow/util`'s `"./worker"` (`dist/worker-bun.js` vs `dist/worker-node.js`), and `@workglow/sqlite`'s `./storage` (`bun:sqlite` vs the node driver). That set is pinned by `packages/test/src/test/util/BunExportConditions.test.ts` — adding or removing a `"bun"` condition fails it until the fixture and this paragraph are updated together.
 
-Exception: vendor packages under `providers/*` (e.g. `@workglow/anthropic`, `@workglow/openai`, `@workglow/google-gemini`) ship `./ai` and `./ai-runtime` sub-paths instead of browser/node.
+Exception: vendor packages under `providers/*` (e.g. `@workglow/anthropic`, `@workglow/openai`, `@workglow/google-gemini`) ship `./ai` and `./ai-runtime` sub-paths instead of browser/node. A vendor may add further sub-paths for surfaces outside the AI task framework: `@workglow/anthropic` also ships `./web-search`, which implements `@workglow/web-search`'s provider interface and is not loaded by either AI entry.
 
 Exception: `util` has multiple named exports beyond `"."`:
 
@@ -271,7 +272,7 @@ estimate; do not use the provisional figures for cost math.
 Do **not** put token counts in a `phase` message. A count in prose is invisible
 to cost math, cannot be aggregated, and renders twice once the row also shows
 the real usage. Reserve `phase` for the stage label (`Prefilling`), which says
-*where* the run is rather than *what it has spent*.
+_where_ the run is rather than _what it has spent_.
 
 **Streaming convention exception (one-shot run-fns):** Run-fns that do not stream incremental deltas — typically meta-ops (`provider.model-info`, `provider.model-search`, `model.count-tokens`, `model.unload`, `model.download`), embeddings (`text.embedding`, `image.embedding`), and one-shot vision/classification (`image.classification`, `image.segmentation`, etc.) — MUST emit a single `finish` event whose `data` is the full `Output`. The `collectStream(...)` consumer in `@workglow/ai/capability` returns `finish.data` directly in this mode, so the payload is the result. Do not also yield deltas in this pattern — `collectStream` rejects streams mixing deltas with a one-shot finish.
 
@@ -324,6 +325,55 @@ required field that one caller always provides and the other never does
 (e.g., `Array.isArray(input.messages) && input.messages.length > 0` for
 chat-vs-prompt). Schema invariants (e.g. `TextGenerationTask` requires
 `prompt`, `AiChatTask` requires `messages`) make this safe.
+
+### `@workglow/web-search` — web search
+
+`WebSearchTask` plus a provider registry. One normalized shape serves both plain search
+APIs and model-grounded search: `results` is always present (for a grounded provider these
+are its citations), and `answer` is populated only by providers that synthesize one.
+
+**Server-side only.** Every commercial search API authenticates with a request header, which
+forces a CORS preflight none of them answer, and a browser-executed search would expose the
+API key to any visitor. The browser entry registers the **task** (so a builder UI can render
+the node and validate a graph) and **no providers**; running it there throws from the registry.
+
+Providers declare a `WebSearchCapabilities` record and the task enforces it. `domainFilter`
+is three-valued — `"native"` (API takes a domain list), `"query-operator"` (the task rewrites
+the query with `site:`, a faithful translation on a Google-shaped engine), or `false`. Date
+filtering is never emulated: post-filtering by `publishedDate` breaks `maxResults` and drops
+every result whose date the provider omitted, so `dateFilter: false` means such a request is
+refused rather than approximated.
+
+`provider` is a required input with no default, mirroring `response_type` on `FetchUrlTask` —
+which provider serves a request decides its cost, rate limit and quality. `"auto"` opts into
+capability routing (the same idea as `AiProviderRegistry` picking the most-specific superset
+of `requires`); the provider that ran is always reported on the `provider` output port. A
+**pinned** provider that cannot honor an option throws rather than rerouting: naming one is a
+decision about cost and quota.
+
+HTTP adapters (Brave, Tavily, SearXNG) execute by **owning a `FetchUrlTask`**, inheriting
+credential resolution via `credential_key`, retry/backoff, per-attempt timeouts, the job
+queue's rate limiter and the response cache. Search APIs are metered against hard monthly
+quotas, so an unqueued fetch in a `MapTask` fan-out is a real hazard. The grounded Anthropic
+adapter lives in `@workglow/anthropic/web-search` and uses the vendor SDK instead, which is
+what keeps this package free of any dependency on `@workglow/ai`.
+
+Two Anthropic-specific traps the adapter handles: a `web_search_tool_result` block carries a
+**list** on success and an error **object** on failure — at HTTP 200, raising nothing — so
+reading it unbranched records a quota failure as a search that found nothing; and a
+server-tool turn can stop with `stop_reason: "pause_turn"`, which must be resumed by pushing
+the paused assistant content back or the answer is silently truncated.
+
+Port-crossing types (`SearchResult`, `WebSearchUsage`, `WebSearchTaskOutput`) are `type`
+aliases rather than interfaces: TypeScript gives an alias an implicit index signature and an
+interface none, so the interface form is not assignable to the `DataPorts` constraint `Task`
+imposes. `WebSearchTaskOutput` is hand-written rather than derived with `FromSchema` for the
+same reason `KbSearchTask` hand-writes its ports — the derived shape types `results` as bare
+objects, and a downstream task would read `unknown` instead of `results[0].url`.
+
+Only the SearXNG adapter needs no API key and has no quota, so it is the only one whose
+integration test can run in CI unmocked (`.integration.test.ts`, skipped unless
+`WEB_SEARCH_SEARXNG_URL` is set). The rest are fixture-driven.
 
 ### `@workglow/util` — shared utilities
 
