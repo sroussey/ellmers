@@ -1,0 +1,100 @@
+/**
+ * @license
+ * Copyright 2026 Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import type { Command } from "commander";
+import { join } from "node:path";
+import { loadConfig } from "../config";
+import { createWorkflowRepository } from "../storage";
+import { registerBuiltInSchemaProviders } from "../web/commandFields";
+import { startWebServer } from "../web/server";
+
+/** Nothing standard sits here, and it is easy to type. */
+export const DEFAULT_WEB_PORT = 8787;
+
+/**
+ * Loopback by default, and deliberately not a wildcard by accident.
+ *
+ * The console has no authentication beyond a per-process session token, and
+ * every page can start work that spends real money on model calls, so binding
+ * it to an interface the network can reach must be something an operator says
+ * out loud rather than the default they get by typing `workglow web`.
+ */
+export const DEFAULT_WEB_HOST = "127.0.0.1";
+
+export interface RegisterWebCommandOptions {
+  /** Name shown in the rendered command line, e.g. `sec`. */
+  readonly binaryName?: string;
+  /** How to start this CLI as a child, defaulting to how it was started. */
+  readonly binary?: readonly string[];
+  readonly logDir?: string;
+}
+
+function defaultBinary(): readonly string[] {
+  // argv[0] is the runtime and argv[1] is this program's entry, which is the
+  // pair that reproduces the process a run has to be.
+  return [process.argv[0], process.argv[1]];
+}
+
+/**
+ * Adds `web` to a commander program. A downstream CLI gets the console — its
+ * own commands included — by calling this once.
+ */
+export function registerWebCommand(
+  program: Command,
+  options: RegisterWebCommandOptions = {}
+): void {
+  program
+    .command("web")
+    .description("Serve a local web console for browsing, running and watching this CLI's commands")
+    .option(
+      "-p, --port <n>",
+      "Port to listen on",
+      (value) => Number.parseInt(value, 10),
+      DEFAULT_WEB_PORT
+    )
+    .option(
+      "--host <host>",
+      "Interface to bind. The default is loopback: this console can start runs that spend model quota, so exposing it is an explicit choice.",
+      DEFAULT_WEB_HOST
+    )
+    .action(async (opts: { port: number; host: string }) => {
+      const config = await loadConfig();
+      const workflowRepo = createWorkflowRepository(config);
+      await workflowRepo.setupDatabase();
+      registerBuiltInSchemaProviders((id) => workflowRepo.getTaskGraph(id));
+
+      const handle = await startWebServer({
+        port: opts.port,
+        host: opts.host,
+        program,
+        binaryName: options.binaryName ?? program.name() ?? "workglow",
+        binary: options.binary ?? defaultBinary(),
+        cwd: process.cwd(),
+        logDir: options.logDir ?? join(config.directories.cache, "web-runs"),
+      });
+
+      console.log(`web console listening on ${handle.url}/?t=${handle.token}`);
+      if (opts.host !== DEFAULT_WEB_HOST && opts.host !== "localhost") {
+        console.error(
+          `bound to ${opts.host} — this console has no authentication beyond its session token ` +
+            `and its buttons spend model quota. Do not expose it to an untrusted network.`
+        );
+      }
+      console.log("Press Ctrl-C to stop.");
+
+      // The action deliberately never resolves: the CLI's teardown runs when an
+      // action returns, and the server needs the database and job queue for as
+      // long as it is serving. Ctrl-C unblocks it, and teardown then runs once.
+      await new Promise<void>((resolve) => {
+        const shutdown = (): void => {
+          console.log("shutting down");
+          void handle.close().then(() => resolve());
+        };
+        process.once("SIGINT", shutdown);
+        process.once("SIGTERM", shutdown);
+      });
+    });
+}

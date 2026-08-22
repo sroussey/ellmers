@@ -25,6 +25,7 @@ import { registerInitCommand } from "./commands/init";
 import { registerMcpCommand } from "./commands/mcp";
 import { registerModelCommand } from "./commands/model";
 import { registerTaskCommand } from "./commands/task";
+import { registerWebCommand } from "./commands/web";
 import { registerWorkflowCommand } from "./commands/workflow";
 import { loadConfig } from "./config";
 import { lazyStore } from "./keyring";
@@ -98,6 +99,7 @@ registerWorkflowCommand(program);
 registerAgentCommand(program);
 registerCredentialCommand(program);
 registerTaskCommand(program);
+registerWebCommand(program);
 
 await program.parseAsync(process.argv);
 process.exit(0);
