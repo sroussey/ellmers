@@ -8,9 +8,29 @@ import { existsSync } from "node:fs";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** Built client assets live beside the built server code, in `dist/web`. */
+/**
+ * Where the built client lives, which differs by how the CLI was started:
+ * bundled (`dist/workglow.js`) it sits beside this module, and from source
+ * (`src/web/staticFiles.ts`) it is two levels up in `dist/web`. Resolved by
+ * probing rather than by a mode flag, so `bun src/workglow.ts web` and the
+ * published binary both serve the same files.
+ */
+const ASSET_ROOT_CANDIDATES = ["./web/", "../../dist/web/"] as const;
+
+let cachedRoot: string | undefined;
+
 export function webAssetRoot(): string {
-  return fileURLToPath(new URL("./web/", import.meta.url));
+  if (cachedRoot) return cachedRoot;
+  for (const candidate of ASSET_ROOT_CANDIDATES) {
+    const path = fileURLToPath(new URL(candidate, import.meta.url));
+    if (existsSync(path)) {
+      cachedRoot = path;
+      return path;
+    }
+  }
+  // Nothing built yet: return the bundled location so the handler's "not built"
+  // message is what a caller sees, rather than a path that happens to exist.
+  return fileURLToPath(new URL(ASSET_ROOT_CANDIDATES[0], import.meta.url));
 }
 
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
