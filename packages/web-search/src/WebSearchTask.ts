@@ -9,7 +9,12 @@ import { Task, TaskConfigurationError } from "@workglow/task-graph";
 import { FetchUrlTask, fetchUrlEntitlementsFor } from "@workglow/tasks";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { unhonorableOptions } from "./capabilityCheck";
-import type { IWebSearchProvider, WebSearchRequest } from "./IWebSearchProvider";
+import type {
+  IWebSearchProvider,
+  SearchResult,
+  WebSearchRequest,
+  WebSearchUsage,
+} from "./IWebSearchProvider";
 import { applyDomainOperators } from "./queryOperators";
 import { WebSearchProviderRegistry } from "./WebSearchProviderRegistry";
 
@@ -112,7 +117,21 @@ const outputSchema = {
 } as const satisfies DataPortSchema;
 
 export type WebSearchTaskInput = FromSchema<typeof inputSchema>;
-export type WebSearchTaskOutput = FromSchema<typeof outputSchema>;
+
+/**
+ * Written out rather than derived with `FromSchema`, because the schema types
+ * `results` and `usage` as bare objects and the derived shape loses every field
+ * a consumer wants. Stated here, a downstream task reads `results[0].url`
+ * instead of `unknown`.
+ */
+export type WebSearchTaskOutput = {
+  results: SearchResult[];
+  answer?: string | undefined;
+  query: string;
+  provider: string;
+  count: number;
+  usage?: WebSearchUsage | undefined;
+};
 
 export class WebSearchTask extends Task<WebSearchTaskInput, WebSearchTaskOutput> {
   static override readonly type = "WebSearchTask";

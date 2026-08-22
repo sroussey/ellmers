@@ -6,8 +6,14 @@
 
 import type { IExecuteContext } from "@workglow/task-graph";
 
-/** A single web result. Heterogeneous by provider — only title and url are guaranteed. */
-export interface SearchResult {
+/**
+ * A single web result. Heterogeneous by provider — only title and url are guaranteed.
+ *
+ * A type alias rather than an interface because this crosses a task port: TypeScript
+ * gives an alias an implicit index signature and an interface none, so the interface
+ * form is not assignable to the `DataPorts` constraint `Task` imposes on its output.
+ */
+export type SearchResult = {
   readonly title: string;
   readonly url: string;
   readonly snippet?: string | undefined;
@@ -17,7 +23,7 @@ export interface SearchResult {
   readonly publishedDate?: string | undefined;
   readonly score?: number | undefined;
   readonly favicon?: string | undefined;
-}
+};
 
 export interface WebSearchDateRange {
   readonly start?: string | undefined;
@@ -36,12 +42,13 @@ export interface WebSearchRequest {
   readonly credentialKey?: string | undefined;
 }
 
-export interface WebSearchUsage {
+/** Type alias for the same port-assignability reason as {@link SearchResult}. */
+export type WebSearchUsage = {
   readonly inputTokens?: number | undefined;
   readonly outputTokens?: number | undefined;
   /** Metered APIs bill per request, not per token. */
   readonly requests?: number | undefined;
-}
+};
 
 export interface WebSearchResponse {
   readonly results: readonly SearchResult[];
