@@ -4,11 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ModelRecord } from "@workglow/ai";
+import { getGlobalModelRepository } from "@workglow/ai";
 import type { Command } from "commander";
 import { join } from "node:path";
 import { loadConfig } from "../config";
 import { createWorkflowRepository } from "../storage";
 import { registerBuiltInSchemaProviders } from "../web/commandFields";
+import { registerWebFieldWidget } from "../web/extensions";
 import { startWebServer } from "../web/server";
 
 /** Nothing standard sits here, and it is easy to type. */
@@ -39,6 +42,30 @@ function defaultBinary(): readonly string[] {
 }
 
 /**
+ * The widget behind `format: "model"`, which is the schema annotation every AI
+ * task already carries — so a model field gets a picker with no per-command
+ * wiring, the same way a downstream package's own format would.
+ */
+function registerBuiltInFieldWidgets(): void {
+  registerWebFieldWidget({
+    format: "model",
+    source: "@workglow/cli",
+    search: async (query) => {
+      const models = (await getGlobalModelRepository().enumerateAllModels()) ?? [];
+      const needle = query.trim().toLowerCase();
+      return models
+        .filter((model: ModelRecord) => !needle || model.model_id.toLowerCase().includes(needle))
+        .slice(0, 50)
+        .map((model: ModelRecord) => ({
+          value: model.model_id,
+          label: model.model_id,
+          detail: model.provider,
+        }));
+    },
+  });
+}
+
+/**
  * Adds `web` to a commander program. A downstream CLI gets the console — its
  * own commands included — by calling this once.
  */
@@ -65,6 +92,7 @@ export function registerWebCommand(
       const workflowRepo = createWorkflowRepository(config);
       await workflowRepo.setupDatabase();
       registerBuiltInSchemaProviders((id) => workflowRepo.getTaskGraph(id));
+      registerBuiltInFieldWidgets();
 
       const handle = await startWebServer({
         port: opts.port,
