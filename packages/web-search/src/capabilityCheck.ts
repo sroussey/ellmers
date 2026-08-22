@@ -21,10 +21,11 @@ export function unhonorableOptions(
   const gaps: string[] = [];
   const wantsDomains = (request.includeDomains?.length ?? 0) > 0;
   const wantsExcludes = (request.excludeDomains?.length ?? 0) > 0;
-  if (capabilities.domainFilter === false) {
-    if (wantsDomains) gaps.push("includeDomains");
-    if (wantsExcludes) gaps.push("excludeDomains");
-  }
+  // Exclusion support defaults to inclusion support; a provider states it
+  // separately only when the two genuinely differ.
+  const excludeSupport = capabilities.excludeDomainFilter ?? capabilities.domainFilter;
+  if (wantsDomains && capabilities.domainFilter === false) gaps.push("includeDomains");
+  if (wantsExcludes && excludeSupport === false) gaps.push("excludeDomains");
   const range = request.dateRange;
   const wantsDates = range !== undefined && (range.start !== undefined || range.end !== undefined);
   if (wantsDates && !capabilities.dateFilter) gaps.push("dateRange");

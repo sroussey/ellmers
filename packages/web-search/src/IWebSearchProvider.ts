@@ -74,6 +74,19 @@ export interface WebSearchCapabilities {
   readonly content: boolean;
   readonly domainFilter: DomainFilterSupport;
   /**
+   * How the provider restricts results AWAY from a domain set, when that differs
+   * from {@link domainFilter}. Defaults to `domainFilter` — most providers treat
+   * the two symmetrically.
+   *
+   * It exists because one real provider does not: OpenAI's `web_search` tool
+   * takes `filters.allowed_domains` and has no blocked-domain equivalent. Folded
+   * into a single field, that provider would either have to under-declare (losing
+   * working include filtering) or over-declare — and over-declaring is the
+   * failure this whole record exists to prevent, because `"auto"` routing would
+   * hand it an `excludeDomains` request it silently cannot honor.
+   */
+  readonly excludeDomainFilter?: DomainFilterSupport | undefined;
+  /**
    * Date filtering is never emulated. Post-filtering by `publishedDate` breaks
    * `maxResults` and drops every result whose date the provider omitted, so a
    * provider that cannot do it server-side declares `false` and the request is

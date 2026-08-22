@@ -13,14 +13,29 @@ and validate the node) but **no providers**. Execution happens on a server.
 
 ## Providers
 
-| provider    | auth                   | answer | content | domain filter | date filter |
-| ----------- | ---------------------- | ------ | ------- | ------------- | ----------- |
-| `brave`     | `X-Subscription-Token` | no     | no      | via `site:`   | yes         |
-| `tavily`    | bearer token           | yes    | yes     | native        | yes         |
-| `searxng`   | none (self-hosted)     | no     | no      | via `site:`   | no          |
-| `anthropic` | vendor SDK             | yes    | no      | native        | no          |
+| provider     | auth                   | answer | content | domain filter            | date filter |
+| ------------ | ---------------------- | ------ | ------- | ------------------------ | ----------- |
+| `brave`      | `X-Subscription-Token` | no     | no      | via `site:`              | yes         |
+| `tavily`     | bearer token           | yes    | yes     | native                   | yes         |
+| `searxng`    | none (self-hosted)     | no     | no      | via `site:`              | no          |
+| `anthropic`  | vendor SDK             | yes    | no      | native                   | no          |
+| `openai`     | vendor SDK             | yes    | no      | native, **include only** | no          |
+| `openrouter` | vendor SDK             | yes    | yes     | native                   | no          |
+| `gemini`     | vendor SDK             | yes    | no      | **none**                 | **yes**     |
 
-`anthropic` ships in `@workglow/anthropic/web-search`; register it yourself.
+The four grounded providers ship in their vendor packages and must be registered
+explicitly — importing the subpath registers nothing:
+
+```ts
+import { registerAnthropicWebSearchProvider } from "@workglow/anthropic/web-search";
+import { registerOpenAiWebSearchProvider } from "@workglow/openai/web-search";
+import { registerOpenRouterWebSearchProvider } from "@workglow/openrouter/web-search";
+import { registerGeminiWebSearchProvider } from "@workglow/google-gemini/web-search";
+```
+
+Their capability profiles genuinely differ — OpenAI can restrict _to_ domains but not
+_away_ from them, and Gemini is the only one that filters by date while filtering by no
+domain at all. That is why `excludeDomainFilter` is separable from `domainFilter`.
 SearXNG needs `WEB_SEARCH_SEARXNG_URL` (or an explicit base URL) and an instance
 with `format=json` enabled.
 

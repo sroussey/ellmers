@@ -8,10 +8,24 @@
   },
   "include": ["src/**/*"],
   "references": [
-    { "path": "../../packages/util" },
-    { "path": "../../packages/task-graph" },
-    { "path": "../../packages/storage" },
-    { "path": "../../packages/job-queue" },
-    { "path": "../../packages/ai" }
-  ]
+    {
+      "path": "../../packages/util"
+    },
+    {
+      "path": "../../packages/task-graph"
+    },
+    {
+      "path": "../../packages/storage"
+    },
+    {
+      "path": "../../packages/job-queue"
+    },
+    {
+      "path": "../../packages/ai"
+    },
+    {
+      "path": "../../packages/web-search"
+    }
+  ],
+  "exclude": ["dist", "node_modules", "src/**/__tests__/**", "src/**/*.test.ts"]
 }

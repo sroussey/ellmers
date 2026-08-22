@@ -75,6 +75,21 @@ describe("unhonorableOptions", () => {
     expect(gaps).toEqual([]);
   });
 
+  it("defaults exclusion support to inclusion support", () => {
+    const caps = { ...NONE, domainFilter: "native" as const };
+    expect(unhonorableOptions(caps, { query: "c", excludeDomains: ["a.com"] })).toEqual([]);
+  });
+
+  it("lets a provider refuse exclusion while still serving inclusion", () => {
+    // OpenAI's web_search takes filters.allowed_domains and has no blocked
+    // equivalent, so the two halves must be declarable apart.
+    const caps = { ...NONE, domainFilter: "native" as const, excludeDomainFilter: false as const };
+    expect(unhonorableOptions(caps, { query: "c", includeDomains: ["a.com"] })).toEqual([]);
+    expect(unhonorableOptions(caps, { query: "c", excludeDomains: ["a.com"] })).toEqual([
+      "excludeDomains",
+    ]);
+  });
+
   it("does not report maxResults — it is clamped, not refused", () => {
     expect(
       unhonorableOptions({ ...NONE, maxResultsCap: 5 }, { query: "c", maxResults: 50 })
