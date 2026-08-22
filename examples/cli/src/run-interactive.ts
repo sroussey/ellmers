@@ -12,8 +12,44 @@ import type {
   WorkflowRunConfig,
 } from "@workglow/task-graph";
 import { TaskGraph } from "@workglow/task-graph";
+import { projectRunEvents, projectTaskRunEvents } from "./run-events/projectRunEvents";
+import type { RunEventSink } from "./run-events/runEventChannel";
+import { getRunEventSink } from "./run-events/runEventChannel";
 import { detectCliTheme, setCliTheme } from "./terminal/detectTerminalTheme";
 import { renderTaskInstanceRun, renderWorkflowRun } from "./ui/render";
+
+/**
+ * Runs while reporting to the event channel a parent process installed.
+ *
+ * This is the one place that decides, which is what makes every command in
+ * every CLI built on this package reportable without being rewritten: they all
+ * reach their graph through {@link withCli}.
+ */
+async function runReported<T>(
+  sink: RunEventSink,
+  attach: (sink: RunEventSink) => () => void,
+  execute: () => Promise<T>
+): Promise<T> {
+  const stop = attach(sink);
+  try {
+    const result = await execute();
+    sink.emit({ k: "run_end", state: "completed", error: undefined, output: result });
+    return result;
+  } catch (error) {
+    const aborted =
+      error instanceof Error && (/abort/i.test(error.name) || /abort/i.test(error.message));
+    sink.emit({
+      k: "run_end",
+      state: aborted ? "aborted" : "failed",
+      error: error instanceof Error ? error.message : String(error),
+      output: undefined,
+    });
+    throw error;
+  } finally {
+    stop();
+    await sink.close();
+  }
+}
 
 function taskStaticType(task: ITask): string {
   const ctor = task.constructor as { type?: string };
@@ -71,6 +107,14 @@ function withCliTask(task: ITask, options?: WithCliOptions): WithCliTaskHandle {
       overrides?: Record<string, unknown>,
       runConfig?: Partial<IRunConfig>
     ): Promise<unknown> => {
+      const sink = getRunEventSink();
+      if (sink) {
+        return runReported(
+          sink,
+          (s) => projectTaskRunEvents(task, s),
+          () => task.run(overrides, runConfig)
+        );
+      }
       if (!process.stdout.isTTY) {
         return task.run(overrides, runConfig);
       }
@@ -99,6 +143,14 @@ function withCliWorkflow(workflow: IWorkflow, options?: WithCliOptions): WithCli
       input: Record<string, unknown> = {},
       config?: WorkflowRunConfig
     ): Promise<unknown> => {
+      const sink = getRunEventSink();
+      if (sink) {
+        return runReported(
+          sink,
+          (s) => projectRunEvents(workflow.graph, s),
+          () => workflow.run(input, config)
+        );
+      }
       if (!process.stdout.isTTY) {
         return workflow.run(input, config);
       }
@@ -125,6 +177,14 @@ function withCliGraph(graph: TaskGraph, options?: WithCliOptions): WithCliGraphH
       input: Record<string, unknown> = {},
       config?: TaskGraphRunConfig
     ): Promise<unknown> => {
+      const sink = getRunEventSink();
+      if (sink) {
+        return runReported(
+          sink,
+          (s) => projectRunEvents(graph, s),
+          () => graph.run(input, config)
+        );
+      }
       if (!process.stdout.isTTY) {
         return graph.run(input, config);
       }

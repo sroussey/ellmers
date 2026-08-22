@@ -28,6 +28,8 @@ import { registerTaskCommand } from "./commands/task";
 import { registerWorkflowCommand } from "./commands/workflow";
 import { loadConfig } from "./config";
 import { lazyStore } from "./keyring";
+import { RunEventHumanConnector } from "./run-events/RunEventHumanConnector";
+import { installRunEventChannel, RUN_EVENTS_ENV } from "./run-events/runEventChannel";
 import { seedSamplesIfRepoEmpty } from "./samples/chatSample";
 import { createModelRepository, createWorkflowRepository } from "./storage";
 import { detectCliTheme, setCliTheme } from "./terminal/detectTerminalTheme";
@@ -44,7 +46,29 @@ registerBuiltInTransforms();
 // that need encrypted credentials (workflow run, credential add, etc.).
 setGlobalCredentialStore(new ChainedCredentialStore([lazyStore, new EnvCredentialStore()]));
 
-globalServiceRegistry.registerInstance(HUMAN_CONNECTOR, new InkHumanConnector());
+/**
+ * A parent process asking for a machine-readable run gets one: the channel is
+ * installed before anything can run, and the human connector answers over it
+ * rather than trying to render a prompt into a pipe.
+ */
+const runEventSink = installRunEventChannel(process.env[RUN_EVENTS_ENV] ?? "");
+if (runEventSink) {
+  const connector = new RunEventHumanConnector(runEventSink);
+  globalServiceRegistry.registerInstance(HUMAN_CONNECTOR, connector);
+  let buffer = "";
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk: string) => {
+    buffer += chunk;
+    let index = buffer.indexOf("\n");
+    while (index >= 0) {
+      connector.feedHumanResponseLine(buffer.slice(0, index));
+      buffer = buffer.slice(index + 1);
+      index = buffer.indexOf("\n");
+    }
+  });
+} else {
+  globalServiceRegistry.registerInstance(HUMAN_CONNECTOR, new InkHumanConnector());
+}
 
 // Set up global model repository backed by filesystem
 const config = await loadConfig();
