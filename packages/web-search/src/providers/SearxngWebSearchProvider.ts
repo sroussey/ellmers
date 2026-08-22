@@ -13,6 +13,7 @@ import type {
   WebSearchRequest,
   WebSearchResponse,
 } from "../IWebSearchProvider";
+import { trimTrailingSlashes } from "../urlText";
 import { fetchSearchJson } from "./httpSearch";
 
 /** Env var naming the self-hosted instance to search. */
@@ -41,7 +42,7 @@ export class SearxngWebSearchProvider implements IWebSearchProvider {
   };
 
   constructor(baseUrl: string) {
-    const trimmed = baseUrl.replace(/\/+$/, "");
+    const trimmed = trimTrailingSlashes(baseUrl);
     let parsed: URL;
     try {
       parsed = new URL(trimmed);
