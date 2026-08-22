@@ -4,4 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { registerBuiltInWebSearchProviders, registerWebSearchTasks } from "./common";
+
 export * from "./common";
+
+registerWebSearchTasks();
+registerBuiltInWebSearchProviders();
