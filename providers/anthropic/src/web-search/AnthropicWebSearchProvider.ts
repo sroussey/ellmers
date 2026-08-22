@@ -106,7 +106,14 @@ export class AnthropicWebSearchProvider implements IWebSearchProvider {
       if (message.stop_reason !== "pause_turn") {
         return {
           results,
-          answer: answerParts.length > 0 ? answerParts.join("") : undefined,
+          // Gated on the caller asking, even though the model always produces
+          // text: `answer` has to mean the same thing whichever provider routing
+          // picked, and Tavily populates it only when requested. Reporting a
+          // free byproduct here would make the port's meaning provider-dependent.
+          answer:
+            request.includeAnswer === true && answerParts.length > 0
+              ? answerParts.join("")
+              : undefined,
           query: request.query,
           usage: { inputTokens, outputTokens },
         };

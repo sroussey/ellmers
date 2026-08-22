@@ -25,10 +25,16 @@ export interface SearchFetchOptions {
 
 /**
  * Runs one search request through an owned {@link FetchUrlTask}, so a provider
- * adapter inherits credential resolution, retry and backoff, per-attempt
- * timeouts, the job queue's rate limiter, and the response cache instead of
- * reimplementing each. Search APIs are metered against hard monthly quotas, so
- * an unqueued fetch inside a fan-out is a real hazard rather than a style point.
+ * adapter inherits credential resolution, SafeFetch's redirect/SSRF checks,
+ * retry and backoff, per-attempt timeouts, and the response cache instead of
+ * reimplementing each.
+ *
+ * It does **not** inherit the job queue's rate limiter, and cannot: `FetchUrlTask`
+ * refuses `credential_key` on the queued path, because a queued job payload is
+ * persisted to durable storage and would write the resolved secret there. Every
+ * keyed provider therefore runs inline. Search APIs are metered against hard
+ * monthly quotas, so bounding concurrency across a fan-out is the caller's job —
+ * cap the `MapTask` rather than assuming a limiter here.
  */
 export async function fetchSearchJson(
   options: SearchFetchOptions,

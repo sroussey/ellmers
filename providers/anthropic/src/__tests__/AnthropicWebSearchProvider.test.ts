@@ -70,7 +70,7 @@ describe("AnthropicWebSearchProvider", () => {
       ])
     );
     const out = await new AnthropicWebSearchProvider({ client: client as never }).search(
-      { query: "cats" },
+      { query: "cats", includeAnswer: true },
       context
     );
     expect(out.results).toEqual([
@@ -86,6 +86,26 @@ describe("AnthropicWebSearchProvider", () => {
     ]);
     expect(out.answer).toBe("Cats are domestic animals.");
     expect(out.usage).toEqual({ inputTokens: 10, outputTokens: 20 });
+  });
+
+  it("omits the answer when the caller did not ask for one", async () => {
+    const { client } = clientReturning(
+      messageWith([
+        {
+          type: "web_search_tool_result",
+          content: [{ type: "web_search_result", title: "Cats", url: "https://e/cat" }],
+        },
+        { type: "text", text: "Cats are domestic animals." },
+      ])
+    );
+    const out = await new AnthropicWebSearchProvider({ client: client as never }).search(
+      { query: "cats" },
+      context
+    );
+    // The model always emits text; `answer` still has to mean the same thing
+    // here as it does for a provider that charges extra to synthesize one.
+    expect(out.answer).toBeUndefined();
+    expect(out.results).toHaveLength(1);
   });
 
   it("throws on an error result block rather than reading it as zero results", async () => {
@@ -108,7 +128,7 @@ describe("AnthropicWebSearchProvider", () => {
       messageWith([{ type: "text", text: "and the rest." }])
     );
     const out = await new AnthropicWebSearchProvider({ client: client as never }).search(
-      { query: "cats" },
+      { query: "cats", includeAnswer: true },
       context
     );
     expect(create).toHaveBeenCalledTimes(2);

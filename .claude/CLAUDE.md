@@ -352,9 +352,11 @@ of `requires`); the provider that ran is always reported on the `provider` outpu
 decision about cost and quota.
 
 HTTP adapters (Brave, Tavily, SearXNG) execute by **owning a `FetchUrlTask`**, inheriting
-credential resolution via `credential_key`, retry/backoff, per-attempt timeouts, the job
-queue's rate limiter and the response cache. Search APIs are metered against hard monthly
-quotas, so an unqueued fetch in a `MapTask` fan-out is a real hazard. The grounded Anthropic
+credential resolution via `credential_key`, SafeFetch's redirect/SSRF checks, retry/backoff,
+per-attempt timeouts and the response cache. They do **not** inherit the queue's rate
+limiter: `FetchUrlTask` refuses `credential_key` on the queued path (a queued payload is
+persisted, secret included), so every keyed provider runs inline. Search APIs are metered
+against hard monthly quotas, so bounding a `MapTask` fan-out is the caller's job. The grounded Anthropic
 adapter lives in `@workglow/anthropic/web-search` and uses the vendor SDK instead, which is
 what keeps this package free of any dependency on `@workglow/ai`.
 
