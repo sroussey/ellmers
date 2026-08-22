@@ -181,6 +181,9 @@ export function OptionsForm({
 }): JSX.Element {
   const { args, inputs, advanced } = splitFields(fields);
   const line = renderCliLine(binaryName, toInvocation(fields, values, path));
+  // Offering a flag the command does not declare produces a rejected run, so
+  // the button exists only where `--dry-run` is real.
+  const hasDryRun = fields.some((field) => field.key === "dry-run" && field.source === "option");
 
   return (
     <div className="wrap">
@@ -212,9 +215,11 @@ export function OptionsForm({
           <button className="ghost" onClick={() => void navigator.clipboard?.writeText(line)}>
             Copy
           </button>
-          <button className="ghost" onClick={() => onRun(true)}>
-            Dry run
-          </button>
+          {hasDryRun ? (
+            <button className="ghost" onClick={() => onRun(true)}>
+              Dry run
+            </button>
+          ) : null}
           <button className="btn primary" onClick={() => onRun(false)} disabled={errors.length > 0}>
             Run <span className="kbd">↵</span>
           </button>

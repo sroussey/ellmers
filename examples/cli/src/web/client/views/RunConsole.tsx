@@ -35,12 +35,14 @@ function TaskRow({
   tick,
   state,
   selected,
+  mapView,
   onSelect,
 }: {
   row: RunRow;
   tick: number;
   state: RunViewState;
   selected: boolean;
+  mapView: "rows" | "grid";
   onSelect: (id: string) => void;
 }): JSX.Element {
   const running = RUNNING.has(row.status);
@@ -79,7 +81,7 @@ function TaskRow({
           {row.usage.cached ? `  ${numberText(row.usage.cached)} cached` : ""}
         </div>
       ) : null}
-      {iteration ? <MapView taskId={row.id} map={iteration} tick={tick} /> : null}
+      {iteration ? <MapView taskId={row.id} map={iteration} tick={tick} view={mapView} /> : null}
       {row.streamText && running ? (
         <div className={`bubble d${Math.min(row.depth, 1)}`}>
           <div className="turn">
@@ -103,6 +105,8 @@ export function RunConsole({
   sortByStatus,
   selectedId,
   connected,
+  mapView,
+  onMapView,
   onSelect,
   onAbort,
 }: {
@@ -113,6 +117,8 @@ export function RunConsole({
   sortByStatus: boolean;
   selectedId: string | undefined;
   connected: boolean;
+  mapView: "rows" | "grid";
+  onMapView: (view: "rows" | "grid") => void;
   onSelect: (id: string) => void;
   onAbort: () => void;
 }): JSX.Element {
@@ -123,6 +129,10 @@ export function RunConsole({
   const usage = state.usage;
   const usageText = usage ? `↑ ${numberText(usage.input)} ↓ ${numberText(usage.output)}` : "";
   const fields = runStatusBarFields(usageText, done, rows.length, runState);
+  // The toggle only appears for a run that owns a map, and the grid only where
+  // per-index state is retained — offering it otherwise would promise a view
+  // the run cannot fill in.
+  const gridable = [...state.iterations.values()].some((map) => map.slots !== undefined);
 
   return (
     <div className="wrap">
@@ -135,6 +145,22 @@ export function RunConsole({
             $ <b>{cli}</b>
           </span>
           <span className="el">{(elapsedMs / 1000).toFixed(1)}s</span>
+          {gridable ? (
+            <>
+              <span className="el">Map</span>
+              <div className="seg">
+                {(["rows", "grid"] as const).map((candidate) => (
+                  <button
+                    key={candidate}
+                    aria-pressed={mapView === candidate}
+                    onClick={() => onMapView(candidate)}
+                  >
+                    {candidate === "rows" ? "Rows" : "Grid"}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
           {state.state === "running" ? (
             <button className="ghost" onClick={onAbort}>
               Abort
@@ -157,6 +183,7 @@ export function RunConsole({
               tick={tick}
               state={state}
               selected={selectedId === row.id}
+              mapView={mapView}
               onSelect={onSelect}
             />
           ))}

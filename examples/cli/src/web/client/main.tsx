@@ -67,6 +67,7 @@ function App(): JSX.Element {
   const [view, setView] = useState<RunViewState>(emptyRunView());
   const [connected, setConnected] = useState(true);
   const [sortByStatus, setSortByStatus] = useState(true);
+  const [mapView, setMapView] = useState<"rows" | "grid">("rows");
   const [selected, setSelected] = useState<string | undefined>(undefined);
   const [panels, setPanels] = useState<
     readonly { id: string; title: string; source: string; data: PanelData }[]
@@ -392,6 +393,8 @@ function App(): JSX.Element {
               sortByStatus={sortByStatus}
               selectedId={selected}
               connected={connected}
+              mapView={mapView}
+              onMapView={setMapView}
               onSelect={setSelected}
               onAbort={() => void abortRun(run.id)}
             />
