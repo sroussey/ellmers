@@ -153,17 +153,33 @@ export class WebSearchTask extends Task<WebSearchTaskInput, WebSearchTaskOutput>
   public static override hasDynamicEntitlements: boolean = true;
 
   /**
-   * Scoped to the resolved provider's origin when the provider is pinned and
-   * reaches one. `"auto"` cannot name an origin before the request is built, and
-   * an SDK-backed provider has none, so both fall back to the unscoped
-   * declaration.
+   * Narrowed to the pinned provider's own destination.
+   *
+   * {@link fetchUrlEntitlementsFor} does not scope `network:http` — it decides
+   * whether `network:private` is required: absent for a public origin, scoped to
+   * the host for a private one, and unscoped (fail-closed) when the destination
+   * is unknown. That distinction is load-bearing here because SearXNG is
+   * self-hosted and routinely sits on a private address.
+   *
+   * So a pinned provider declares exactly what its own endpoint needs, while
+   * `"auto"` fails closed: routing happens at run time and may land on a
+   * privately-hosted instance, which the unscoped base would not have required a
+   * grant for. An SDK-backed provider reaches a public vendor API through its own
+   * client and needs no private access.
+   *
+   * The configured default is read when no run input is set yet: an enforcer
+   * asks before the run, and `runInputData` is populated from `defaults` only
+   * once `resetInputData()` has run.
    */
   public override entitlements(): TaskEntitlements {
-    const name = this.runInputData?.provider;
-    if (typeof name !== "string" || name === "auto") return WebSearchTask.entitlements();
-    const endpoint = WebSearchProviderRegistry.get(name)?.endpoint;
-    if (endpoint === undefined) return WebSearchTask.entitlements();
-    return fetchUrlEntitlementsFor(endpoint);
+    const name = this.runInputData?.provider ?? this.defaults?.provider;
+    if (typeof name !== "string" || name === "auto") {
+      return fetchUrlEntitlementsFor(undefined);
+    }
+    const provider = WebSearchProviderRegistry.get(name);
+    if (provider === undefined) return fetchUrlEntitlementsFor(undefined);
+    if (provider.endpoint === undefined) return WebSearchTask.entitlements();
+    return fetchUrlEntitlementsFor(provider.endpoint);
   }
 
   public static override inputSchema(): DataPortSchema {

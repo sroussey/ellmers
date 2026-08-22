@@ -93,6 +93,28 @@ describe("BraveWebSearchProvider", () => {
     expect(out.results).toEqual([]);
   });
 
+  it("closes an open-ended date range at today", async () => {
+    const seen = vi.fn();
+    await new BraveWebSearchProvider().search(
+      { query: "cats", dateRange: { start: "2026-01-01" } },
+      contextWithResponse(BRAVE_PAYLOAD, seen)
+    );
+    const url = new URL((seen.mock.calls[0][0] as { url: string }).url);
+    const today = new Date().toISOString().slice(0, 10);
+    // Brave's freshness takes a closed range, so an open end becomes today.
+    expect(url.searchParams.get("freshness")).toBe(`2026-01-01to${today}`);
+  });
+
+  it("sends no freshness for an end-only range it cannot express", async () => {
+    const seen = vi.fn();
+    await new BraveWebSearchProvider().search(
+      { query: "cats", dateRange: { end: "2026-06-01" } },
+      contextWithResponse(BRAVE_PAYLOAD, seen)
+    );
+    const url = new URL((seen.mock.calls[0][0] as { url: string }).url);
+    expect(url.searchParams.get("freshness")).toBeNull();
+  });
+
   it("maps a date range onto Brave's freshness parameter", async () => {
     const seen = vi.fn();
     const p = new BraveWebSearchProvider();
