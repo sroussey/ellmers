@@ -6,8 +6,10 @@
 
 import { Box, Text } from "ink";
 import React from "react";
+import { TaskErrorDetail } from "../components/TaskErrorDetail";
 import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
 import type { TaskRowProps } from "./pickRenderer";
+import { settledTaskDurationMs } from "./taskDuration";
 import { useTaskStreamText } from "./useTaskStreamText";
 import { useTaskUsageLine } from "./useTaskUsageLine";
 
@@ -31,9 +33,11 @@ export function StreamingTextRow({ task, line }: TaskRowProps): React.ReactEleme
         label={line.label}
         status={line.status}
         message={line.message}
-        barProgress={line.progress ?? 0}
+        barProgress={line.progress}
+        durationMs={usageLine ? undefined : settledTaskDurationMs(task)}
       />
       {usageLine ? <Text dimColor> {usageLine}</Text> : null}
+      <TaskErrorDetail task={task} status={line.status} />
       {showPanel && (
         <Box
           flexDirection="column"

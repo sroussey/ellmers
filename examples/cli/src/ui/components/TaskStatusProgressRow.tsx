@@ -8,6 +8,7 @@ import { Box } from "ink";
 import React from "react";
 import { cliTaskShowsProgressBar } from "../cliTaskUi";
 import { ProgressBar } from "./ProgressBar";
+import { TaskDetailColumn } from "./TaskDetailColumn";
 import { TaskStatusLine } from "./TaskStatusLine";
 
 export interface TaskStatusProgressRowProps {
@@ -15,7 +16,15 @@ export interface TaskStatusProgressRowProps {
   readonly label: string;
   readonly status: string;
   readonly message?: string;
-  readonly barProgress: number;
+  /**
+   * Measured progress, or `undefined` when the task reports none. Undefined
+   * draws no bar and no percentage: an empty determinate bar reads as "0% and
+   * stuck", which is a different claim than "working, extent unknown" — the
+   * spinner in the status column already carries that one.
+   */
+  readonly barProgress: number | undefined;
+  /** Wall-clock for a settled row; shown in the trailing column instead of a percentage. */
+  readonly durationMs?: number;
   readonly marginLeft?: number;
   /** When true, never draw the bar (e.g. iteration row running but no numeric progress yet) */
   readonly suppressProgressBar?: boolean;
@@ -28,20 +37,24 @@ export interface TaskStatusProgressRowProps {
 }
 
 /**
- * Task status on the left, optional Unicode progress bar on the right (same row).
+ * Task status on the left, an optional Unicode progress bar on the right, and a
+ * fixed trailing column carrying the row's one number — percent while it runs,
+ * elapsed once it settles.
  */
 export function TaskStatusProgressRow({
   label,
   status,
   message,
   barProgress,
+  durationMs,
   marginLeft,
   suppressProgressBar = false,
   animateStatus = true,
   spinnerFrame,
   progressBarWidth,
 }: TaskStatusProgressRowProps): React.ReactElement {
-  const showBar = cliTaskShowsProgressBar(status) && !suppressProgressBar;
+  const running = cliTaskShowsProgressBar(status);
+  const showBar = running && !suppressProgressBar && barProgress !== undefined;
   return (
     <Box flexDirection="row" justifyContent="space-between" width="100%" marginLeft={marginLeft}>
       <Box flexGrow={1} minWidth={0} overflow="hidden">
@@ -58,6 +71,7 @@ export function TaskStatusProgressRow({
           <ProgressBar progress={barProgress} width={progressBarWidth} />
         </Box>
       )}
+      <TaskDetailColumn progress={barProgress} durationMs={durationMs} running={running} />
     </Box>
   );
 }

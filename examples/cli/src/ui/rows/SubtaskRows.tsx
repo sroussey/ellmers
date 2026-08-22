@@ -9,9 +9,12 @@ import { Box, Text } from "ink";
 import React from "react";
 import { useCliTheme } from "../CliThemeContext";
 import { ProgressBar } from "../components/ProgressBar";
+import { TaskDetailColumn } from "../components/TaskDetailColumn";
+import { TaskErrorDetail } from "../components/TaskErrorDetail";
 import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
 import type { CliTaskLine, IterationSlotRow } from "../taskGraphCliSubscriptions";
 import { mergeLiveIterationGraphs, visibleIterationSlots } from "../taskGraphCliSubscriptions";
+import { settledTaskDurationMs } from "./taskDuration";
 import {
   concurrencyLimitOf,
   isIteratorTask,
@@ -50,13 +53,16 @@ export function IterationTaskRows({
   readonly slots: readonly IterationSlotRow[] | undefined;
   readonly concurrencyLimit: number | undefined;
 }): React.ReactElement | null {
-  const visible = visibleIterationSlots(mergeLiveIterationGraphs(slots, task), concurrencyLimit);
+  const merged = mergeLiveIterationGraphs(slots, task);
+  const visible = visibleIterationSlots(merged, concurrencyLimit);
   if (visible.length === 0) return null;
+  const summary = iterationSummaryLine(merged, visible.length);
   return (
     <Box flexDirection="column">
       {visible.map((slot) =>
         slot.graph ? <IterationGraphRows key={slot.index} graph={slot.graph} /> : null
       )}
+      {summary ? <Text dimColor>{`  ${summary}`}</Text> : null}
     </Box>
   );
 }
@@ -115,7 +121,7 @@ function SubtaskRow({
           label={line.label}
           status={line.status}
           message={line.message}
-          barProgress={line.progress ?? 0}
+          barProgress={line.progress}
         />
       </Box>
     );
@@ -146,9 +152,11 @@ function SubtaskStatusWithUsage({
         label={line.label}
         status={line.status}
         message={line.message}
-        barProgress={line.progress ?? 0}
+        barProgress={line.progress}
+        durationMs={usageLine ? undefined : settledTaskDurationMs(task)}
       />
       {usageLine ? <Text dimColor> {usageLine}</Text> : null}
+      <TaskErrorDetail task={task} status={line.status} />
       <IterationTaskRows task={task} slots={slots} concurrencyLimit={concurrencyLimitOf(task)} />
       {depth < MAX_SUBTASK_DEPTH && !iterator && (
         <NestedSubtaskRows task={task} parentType={line.type} depth={depth} />
@@ -200,10 +208,11 @@ export function SubtaskRows({
     <Box paddingLeft={2} flexDirection="column">
       {showChrome && overallProgress !== undefined && (
         <Box flexDirection="row" justifyContent="space-between" width="100%">
-          <Text color={bodyColor}>Subgraph: </Text>
+          <Text color={bodyColor}>Subgraph</Text>
           <Box flexShrink={0} marginLeft={1}>
             <ProgressBar progress={overallProgress} />
           </Box>
+          <TaskDetailColumn progress={overallProgress} durationMs={undefined} running={true} />
         </Box>
       )}
       {hiddenCount > 0 && <Text dimColor>… {hiddenCount} completed</Text>}
@@ -236,4 +245,33 @@ export function SubtaskRows({
  */
 export function isRedundantSubgraph(rows: readonly CliTaskLine[], parentType: string): boolean {
   return rows.length === 1 && rows[0]?.type === parentType;
+}
+
+/**
+ * What the capped iteration rows are not showing. The visible rows are the work
+ * in flight; without this the rest of a 240-iteration map is invisible, and the
+ * parent's own bar is the only evidence it is a map at all.
+ *
+ * Reports only what the slots actually know: above {@link FULL_SLOT_TRACKING_MAX}
+ * the CLI retains running iterations only, so there is no honest done or queued
+ * count to print and the line reduces to the extra running ones.
+ */
+export function iterationSummaryLine(
+  slots: readonly IterationSlotRow[] | undefined,
+  visibleCount: number
+): string {
+  if (!slots || slots.length <= visibleCount) return "";
+  let running = 0;
+  let done = 0;
+  let queued = 0;
+  for (const slot of slots) {
+    if (slot.status === "running") running++;
+    else if (slot.status === "completed") done++;
+    else queued++;
+  }
+  const parts: string[] = [];
+  if (running > visibleCount) parts.push(`${running - visibleCount} more running`);
+  if (done > 0) parts.push(`${done} done`);
+  if (queued > 0) parts.push(`${queued} queued`);
+  return parts.join(" · ");
 }
