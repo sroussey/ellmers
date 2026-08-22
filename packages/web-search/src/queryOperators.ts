@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { trimTrailingSlashes } from "./urlText";
+
 /**
  * Reduces a caller-supplied domain to the bare host (plus any path prefix) that
  * a `site:` operator accepts. A scheme, a `www.` prefix, or a trailing slash
@@ -13,7 +15,7 @@ function normalizeDomain(domain: string): string {
   let value = domain.trim().toLowerCase();
   value = value.replace(/^[a-z][a-z0-9+.-]*:\/\//, "");
   value = value.replace(/^www\./, "");
-  value = value.replace(/\/+$/, "");
+  value = trimTrailingSlashes(value);
   return value;
 }
 
