@@ -123,7 +123,10 @@ export function projectRunEvents(graph: TaskGraph, sink: RunEventSink, depth = 0
 
 /** A single-task run: the task itself is row 0, its owned subgraph is depth 1. */
 export function projectTaskRunEvents(task: ITask, sink: RunEventSink): () => void {
-  const stopSubgraph = projectRunEvents(task.subGraph, sink, 1);
+  // Not every task-shaped value owns a subgraph; reporting must not be the
+  // thing that discovers it.
+  const subGraph = (task as { subGraph?: TaskGraph }).subGraph;
+  const stopSubgraph = subGraph ? projectRunEvents(subGraph, sink, 1) : () => {};
   const id = String(task.id);
   sink.emit({
     k: "task_added",

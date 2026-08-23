@@ -14,7 +14,7 @@ import type {
 import { TaskGraph } from "@workglow/task-graph";
 import { projectRunEvents, projectTaskRunEvents } from "./run-events/projectRunEvents";
 import type { RunEventSink } from "./run-events/runEventChannel";
-import { getRunEventSink } from "./run-events/runEventChannel";
+import { ensureRunReporting } from "./run-events/runReporting";
 import { detectCliTheme, setCliTheme } from "./terminal/detectTerminalTheme";
 import { renderTaskInstanceRun, renderWorkflowRun } from "./ui/render";
 
@@ -56,13 +56,29 @@ function taskStaticType(task: ITask): string {
   return typeof ctor.type === "string" ? ctor.type : "Task";
 }
 
-/** Detects workflow-shaped values (graph + run) without importing the Workflow class. */
+/**
+ * Detects workflow-shaped values (graph + run) without importing the Workflow
+ * class — and without `instanceof`, which asks whether the value came from THIS
+ * copy of the package rather than whether it is a workflow. A downstream CLI
+ * resolving its own `@workglow/task-graph` produces workflows this would
+ * otherwise disown: they fell through to the single-task path, which happened
+ * to work only because a workflow also has `run()`.
+ */
+function isGraphLike(value: unknown): value is TaskGraph {
+  return (
+    value != null &&
+    typeof value === "object" &&
+    typeof (value as { getTasks?: unknown }).getTasks === "function" &&
+    typeof (value as { run?: unknown }).run === "function"
+  );
+}
+
 function isWorkflowLike(arg: unknown): arg is IWorkflow {
   return (
     arg != null &&
     typeof arg === "object" &&
     "graph" in arg &&
-    (arg as { graph: unknown }).graph instanceof TaskGraph &&
+    isGraphLike((arg as { graph: unknown }).graph) &&
     "run" in arg &&
     typeof (arg as { run: unknown }).run === "function"
   );
@@ -74,6 +90,14 @@ export type Tasklike = ITask | IWorkflow | TaskGraph;
 export interface WithCliOptions {
   /** When true, do not print JSON to stdout on success (default for library-style callers). */
   readonly suppressResultOutput?: boolean;
+  /**
+   * Pass false when this run must not draw a terminal UI even on a TTY —
+   * a command emitting JSON on stdout, say, which Ink's rows would interleave
+   * with. Reporting to a watching parent is unaffected: that is a separate
+   * question from whether a human is looking at this terminal, and answering
+   * both with one flag is what made a piped run invisible to the console.
+   */
+  readonly interactive?: boolean;
 }
 
 export interface WithCliTaskHandle {
@@ -98,6 +122,7 @@ export type WithCliHandle = WithCliTaskHandle | WithCliWorkflowHandle | WithCliG
 
 function withCliTask(task: ITask, options?: WithCliOptions): WithCliTaskHandle {
   const suppressResultOutput = options?.suppressResultOutput ?? true;
+  const interactive = options?.interactive ?? true;
   return {
     kind: "task",
     abort: () => {
@@ -107,7 +132,7 @@ function withCliTask(task: ITask, options?: WithCliOptions): WithCliTaskHandle {
       overrides?: Record<string, unknown>,
       runConfig?: Partial<IRunConfig>
     ): Promise<unknown> => {
-      const sink = getRunEventSink();
+      const sink = ensureRunReporting();
       if (sink) {
         return runReported(
           sink,
@@ -115,7 +140,7 @@ function withCliTask(task: ITask, options?: WithCliOptions): WithCliTaskHandle {
           () => task.run(overrides, runConfig)
         );
       }
-      if (!process.stdout.isTTY) {
+      if (!interactive || !process.stdout.isTTY) {
         return task.run(overrides, runConfig);
       }
 
@@ -134,6 +159,7 @@ function withCliTask(task: ITask, options?: WithCliOptions): WithCliTaskHandle {
 
 function withCliWorkflow(workflow: IWorkflow, options?: WithCliOptions): WithCliWorkflowHandle {
   const suppressResultOutput = options?.suppressResultOutput ?? true;
+  const interactive = options?.interactive ?? true;
   return {
     kind: "workflow",
     abort: () => {
@@ -143,7 +169,7 @@ function withCliWorkflow(workflow: IWorkflow, options?: WithCliOptions): WithCli
       input: Record<string, unknown> = {},
       config?: WorkflowRunConfig
     ): Promise<unknown> => {
-      const sink = getRunEventSink();
+      const sink = ensureRunReporting();
       if (sink) {
         return runReported(
           sink,
@@ -151,7 +177,7 @@ function withCliWorkflow(workflow: IWorkflow, options?: WithCliOptions): WithCli
           () => workflow.run(input, config)
         );
       }
-      if (!process.stdout.isTTY) {
+      if (!interactive || !process.stdout.isTTY) {
         return workflow.run(input, config);
       }
 
@@ -168,6 +194,7 @@ function withCliWorkflow(workflow: IWorkflow, options?: WithCliOptions): WithCli
 
 function withCliGraph(graph: TaskGraph, options?: WithCliOptions): WithCliGraphHandle {
   const suppressResultOutput = options?.suppressResultOutput ?? true;
+  const interactive = options?.interactive ?? true;
   return {
     kind: "graph",
     abort: () => {
@@ -177,7 +204,7 @@ function withCliGraph(graph: TaskGraph, options?: WithCliOptions): WithCliGraphH
       input: Record<string, unknown> = {},
       config?: TaskGraphRunConfig
     ): Promise<unknown> => {
-      const sink = getRunEventSink();
+      const sink = ensureRunReporting();
       if (sink) {
         return runReported(
           sink,
@@ -185,7 +212,7 @@ function withCliGraph(graph: TaskGraph, options?: WithCliOptions): WithCliGraphH
           () => graph.run(input, config)
         );
       }
-      if (!process.stdout.isTTY) {
+      if (!interactive || !process.stdout.isTTY) {
         return graph.run(input, config);
       }
 
@@ -204,11 +231,11 @@ export function withCli(task: ITask, options?: WithCliOptions): WithCliTaskHandl
 export function withCli(workflow: IWorkflow, options?: WithCliOptions): WithCliWorkflowHandle;
 export function withCli(graph: TaskGraph, options?: WithCliOptions): WithCliGraphHandle;
 export function withCli(tasklike: Tasklike, options?: WithCliOptions): WithCliHandle {
-  if (tasklike instanceof TaskGraph) {
-    return withCliGraph(tasklike, options);
-  }
   if (isWorkflowLike(tasklike)) {
     return withCliWorkflow(tasklike, options);
+  }
+  if (tasklike instanceof TaskGraph || (isGraphLike(tasklike) && !("subGraph" in tasklike))) {
+    return withCliGraph(tasklike as TaskGraph, options);
   }
   return withCliTask(tasklike, options);
 }

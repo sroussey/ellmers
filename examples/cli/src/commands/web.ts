@@ -9,6 +9,7 @@ import { getGlobalModelRepository } from "@workglow/ai";
 import type { Command } from "commander";
 import { join } from "node:path";
 import { loadConfig } from "../config";
+import { ensureRunReporting } from "../run-events/runReporting";
 import { createWorkflowRepository } from "../storage";
 import { registerBuiltInSchemaProviders } from "../web/commandFields";
 import { registerWebFieldWidget } from "../web/extensions";
@@ -73,6 +74,11 @@ export function registerWebCommand(
   program: Command,
   options: RegisterWebCommandOptions = {}
 ): void {
+  // Registration happens during this CLI's boot, which is also the boot of every
+  // child the console spawns — so this is where a downstream binary picks up
+  // reporting without having to know the channel exists.
+  ensureRunReporting();
+
   program
     .command("web")
     .description("Serve a local web console for browsing, running and watching this CLI's commands")
