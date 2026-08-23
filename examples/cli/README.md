@@ -6,6 +6,18 @@ A command-line interface for running Workglow AI tasks and workflows.
 
 The Workglow CLI provides a terminal-based interface for creating, managing, and executing AI task pipelines. It features an interactive task runner with real-time progress visualization, making it easy to run AI workflows from the command line.
 
+A run renders as the graph it is: one row per task, with its status glyph, whatever
+detail the task is reporting, a progress bar and — once it settles — how long it took,
+over a bar for the run as a whole and a status line counting completed tasks.
+
+![A workflow running in the terminal](../../docs/developers/img/cli.png)
+
+The same commands are also available in a browser, served by this CLI itself with
+[`workglow web`](#web-console). It is the same graph, the same forms, and the same
+run — see below.
+
+![The web console running the same workflow](../../docs/developers/img/cli-web.png)
+
 ## Features
 
 - **Real-time Visualization**: Live updates of task execution progress
@@ -40,11 +52,15 @@ bun src/workglow.ts
 # Show help
 workglow --help
 
-# Run a simple text generation task
-workglow generate --model "onnx:Xenova/LaMini-Flan-T5-783M:q8" "Write a story about a robot"
+# Run one task by type, passing its config with a single dash
+workglow task run Delay -delay 2000
 
-# Create an embedding from text
-workglow embedding --model "onnx:Xenova/LaMini-Flan-T5-783M:q8" "Hello world"
+# Run a saved workflow, and list what is saved
+workglow workflow list
+workglow workflow run my-pipeline
+
+# Serve the same commands in a browser
+workglow web
 ```
 
 ### Example Workflows
@@ -101,19 +117,16 @@ cat workflow.json | workglow json
 
 ### Commands
 
-#### `generate`
+Run `workglow --help` for the current list; each group has its own `--help`.
 
-Generate text using AI models.
-
-```bash
-workglow generate [options] <text>
-```
-
-Options:
-
-- `--model, -m <model>`: AI model to use
-- `--max-length <length>`: Maximum output length
-- `--temperature <temp>`: Sampling temperature (0.0-1.0)
+- `init` — create the configuration and directories
+- `model` — list, search and manage models
+- `mcp` — manage MCP servers
+- `workflow` — list, add, edit and run saved workflows
+- `agent` — the same, for agents
+- `task` — list task types and run one by type
+- `credential` — manage encrypted credentials
+- `web` — serve the web console described below
 
 ## Web console
 
