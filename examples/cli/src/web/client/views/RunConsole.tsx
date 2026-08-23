@@ -13,7 +13,7 @@ import {
   runStatusBarFields,
   taskDetailText,
 } from "../../../ui/model/runRowModel";
-import { orderedRows, type RunRow, type RunViewState } from "../state";
+import { consoleContent, orderedRows, runLogText, type RunRow, type RunViewState } from "../state";
 import { MapView } from "./MapView";
 
 /** Braille frames, the same family the terminal spins. */
@@ -133,6 +133,7 @@ export function RunConsole({
   // per-index state is retained — offering it otherwise would promise a view
   // the run cannot fill in.
   const gridable = [...state.iterations.values()].some((map) => map.slots !== undefined);
+  const content = consoleContent(rows.length, state);
 
   return (
     <div className="wrap">
@@ -175,18 +176,25 @@ export function RunConsole({
               <span className="pct">{Math.round(state.graphProgress)}%</span>
             </div>
           ) : null}
-          {rows.length === 0 ? <div className="mapmore">waiting for the first task…</div> : null}
-          {rows.map((row) => (
-            <TaskRow
-              key={row.id}
-              row={row}
-              tick={tick}
-              state={state}
-              selected={selectedId === row.id}
-              mapView={mapView}
-              onSelect={onSelect}
-            />
-          ))}
+          {content === "waiting" ? (
+            <div className="mapmore">
+              {state.state === "running" ? "running…" : "this command printed nothing"}
+            </div>
+          ) : null}
+          {content === "output" ? <pre className="scr-out">{runLogText(state)}</pre> : null}
+          {content === "tasks"
+            ? rows.map((row) => (
+                <TaskRow
+                  key={row.id}
+                  row={row}
+                  tick={tick}
+                  state={state}
+                  selected={selectedId === row.id}
+                  mapView={mapView}
+                  onSelect={onSelect}
+                />
+              ))
+            : null}
         </div>
         <div className="scr-foot">
           {fields.map((field) => (
@@ -196,7 +204,7 @@ export function RunConsole({
         </div>
       </div>
 
-      {state.logs.length > 0 ? (
+      {content === "tasks" && state.logs.length > 0 ? (
         <div className="inspect">
           <div className="panel">
             <h5>

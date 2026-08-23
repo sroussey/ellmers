@@ -9,12 +9,14 @@ import type { RunEvent } from "../../run-events/RunEventTypes";
 import type { WebCommandNode } from "../commandTree";
 import {
   applyRecord,
+  consoleContent,
   emptyRunView,
   filterCommandTree,
   FULL_ITERATION_TRACKING_MAX,
   openPathsFor,
   orderedRows,
   reduceRunEvent,
+  runLogText,
   type RunViewState,
 } from "./state";
 
@@ -194,5 +196,23 @@ describe("openPathsFor", () => {
       "sec.spac.backfill",
     ]);
     expect(openPathsFor(["init"])).toEqual([]);
+  });
+});
+
+describe("consoleContent", () => {
+  it("shows the graph when the run has one", () => {
+    expect(consoleContent(1, apply([added("t1")]))).toBe("tasks");
+  });
+
+  it("shows the command's output when the run built no graph", () => {
+    // Most commands never build one: `list`, `detail`, `add`, `remove` print
+    // and exit, so their output is the whole run.
+    const state = apply([{ k: "log", level: "info", text: "model  description" }]);
+    expect(consoleContent(0, state)).toBe("output");
+    expect(runLogText(state)).toBe("model  description");
+  });
+
+  it("waits only while there is genuinely nothing yet", () => {
+    expect(consoleContent(0, emptyRunView())).toBe("waiting");
   });
 });

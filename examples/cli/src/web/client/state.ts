@@ -256,6 +256,28 @@ export function orderedRows(state: RunViewState, sortByStatus: boolean): readonl
     .flatMap((root) => [root, ...childrenOf(root)]);
 }
 
+/**
+ * What the run screen has to show.
+ *
+ * Most commands in a CLI never build a task graph — `list`, `detail`, `add`,
+ * `remove` all just print — so a screen that only knows how to draw rows spends
+ * those runs promising a task that never arrives, with the output the operator
+ * actually asked for exiled to a panel underneath. When there are no rows, the
+ * command's output IS the run.
+ */
+export type ConsoleContent = "tasks" | "output" | "waiting";
+
+export function consoleContent(rowCount: number, state: RunViewState): ConsoleContent {
+  if (rowCount > 0) return "tasks";
+  if (state.logs.length > 0) return "output";
+  return "waiting";
+}
+
+/** The command's own stdout/stderr, as printed. */
+export function runLogText(state: RunViewState): string {
+  return state.logs.map((log) => log.text).join("\n");
+}
+
 /** Filter state for the command rail. */
 export function filterCommandTree(
   nodes: readonly WebCommandNode[],
