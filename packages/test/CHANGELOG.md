@@ -1,5 +1,23 @@
 # @workglow/test
 
+## 0.3.49
+
+### Breaking Changes
+
+- **bug fixes(tasks)**: declare the owned FetchUrlTask entitlements on FileLoaderTask
+
+### Bug Fixes
+
+#### test
+
+- detect DeepSeek billing failures, and split credit skips CI vs local
+
+#### tasks
+
+- bound sedLines with a search deadline and restore the node export surface
+- accept optional groups in the regex screen and bound RegexTask matching
+- declare the owned FetchUrlTask entitlements on FileLoaderTask
+
 ## 0.3.48
 
 ### Breaking Changes

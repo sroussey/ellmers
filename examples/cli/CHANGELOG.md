@@ -1,5 +1,57 @@
 # @workglow/cli
 
+## 0.3.49
+
+### Features
+
+#### web
+
+- gate the console on a 1s heartbeat to the CLI
+
+#### cli
+
+- reach the grid rendering, and stop offering a flag that is not there
+- extension seams for the console, plus docs and a packaging guard
+- the web console's client
+- serve the console — run registry, routes, and the `web` command
+- read the command surface and its form off the live program
+- let a parent process ask a run for a machine-readable stream
+- make the run footer a status bar
+- give run rows the trailing column, elapsed, and failure reason
+
+### Bug Fixes
+
+#### web
+
+- survive an IPv6 host, a dead child, and an unreadable asset
+
+#### cli
+
+- stop the answers reader from pinning a finished child alive
+- a finished graph is not a finished run
+- report what a task owns, not just the top-level graph
+- install run reporting in the seam, not in one CLI's boot
+- show the output of a command that builds no task graph
+- scope a run to the command that started it, and show the theme choice
+- offer task config, and keep a run's shape in the buffer
+- read run answers from their own descriptor, not stdin
+
+### Refactors
+
+#### cli
+
+- extract the pure run-row model out of the Ink components
+
+### Documentation
+
+- reshoot the CLI screenshot and add the web console
+
+### Chores
+
+#### cli
+
+- add documentation images and update README references
+
 ## 0.3.48
 
 ## 0.3.47
