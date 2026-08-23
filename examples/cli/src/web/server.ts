@@ -116,7 +116,15 @@ async function serve(req: IncomingMessage, res: ServerResponse, ctx: WebContext)
     }
     if (result.kind === "file") {
       res.writeHead(200, { "content-type": result.contentType, "cache-control": "no-cache" });
-      createReadStream(result.path).pipe(res);
+      const file = createReadStream(result.path);
+      // `pipe` does not forward the source's errors, and an unhandled `error`
+      // on a stream is thrown — so a file that vanished or turned unreadable
+      // between the exists check and the read would take the whole console
+      // down rather than failing one request.
+      file.on("error", () => {
+        res.destroy();
+      });
+      file.pipe(res);
       return;
     }
     res.writeHead(result.status, { "content-type": "application/json; charset=utf-8" });

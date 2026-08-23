@@ -322,13 +322,14 @@ export function filterCommandTree(
 ): readonly WebCommandNode[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return nodes;
-  const matches = (node: WebCommandNode): boolean =>
-    `${node.name} ${node.description}`.toLowerCase().includes(needle) ||
-    node.children.some(matches);
-  const prune = (node: WebCommandNode): WebCommandNode => ({
-    ...node,
-    children: node.children.filter(matches).map(prune),
-  });
+  const self = (node: WebCommandNode): boolean =>
+    `${node.name} ${node.description}`.toLowerCase().includes(needle);
+  const matches = (node: WebCommandNode): boolean => self(node) || node.children.some(matches);
+  // A node that matches on its own name keeps ALL of its children: searching
+  // for `spacs` should show that group's steps, not an empty group you cannot
+  // run anything from. Only a node kept for a descendant's sake is pruned.
+  const prune = (node: WebCommandNode): WebCommandNode =>
+    self(node) ? node : { ...node, children: node.children.filter(matches).map(prune) };
   return nodes.filter(matches).map(prune);
 }
 

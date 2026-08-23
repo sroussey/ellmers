@@ -45,6 +45,17 @@ const DEFAULT_MAX_EVENTS = 5000;
 type Listener = (record: RunEventRecord) => void;
 
 /**
+ * Whether a child is still running.
+ *
+ * `exitCode` alone is not the test: a process killed by a signal — which is
+ * exactly what `abort` does — reports `exitCode === null` and `signalCode` set,
+ * forever, so an `exitCode`-only check calls a killed run alive.
+ */
+function isAlive(child: ChildProcess): boolean {
+  return child.exitCode === null && child.signalCode === null;
+}
+
+/**
  * Runs each invocation as a child of the same binary.
  *
  * A child rather than an in-process call, for three reasons that all showed up
@@ -94,6 +105,10 @@ export class RunRegistry {
     });
     this.children.set(id, child);
 
+    // Writing to a pipe whose reader has exited emits EPIPE, and an unhandled
+    // `error` event on a stream is thrown. Nothing else listens to this one.
+    (child.stdio[4] as Writable | undefined)?.on("error", () => {});
+
     this.record(run, { k: "run_start", cli: run.cli, at: run.startedAt });
     this.readEvents(run, child);
     this.readLogs(run, child.stdout, "info");
@@ -122,19 +137,28 @@ export class RunRegistry {
    */
   abort(id: string): boolean {
     const child = this.children.get(id);
-    if (!child || child.exitCode !== null) return false;
+    if (!child || !isAlive(child)) return false;
     child.kill("SIGINT");
     setTimeout(() => {
-      if (child.exitCode === null) child.kill("SIGKILL");
+      if (isAlive(child)) child.kill("SIGKILL");
     }, 5000).unref?.();
     return true;
   }
 
   answerHuman(id: string, response: unknown): boolean {
     const child = this.children.get(id);
-    const answers = child?.stdio[4] as Writable | undefined;
-    if (!answers) return false;
-    answers.write(`${JSON.stringify(response)}\n`);
+    if (!child || !isAlive(child)) return false;
+    const answers = child.stdio[4] as Writable | undefined;
+    if (!answers || answers.destroyed) return false;
+    // The child can still exit between the liveness check and the write, and
+    // an EPIPE arrives as an `error` event on a stream nobody listens to —
+    // which Node throws, taking the whole console down because someone
+    // answered a prompt a moment too late. (`start` installs the listener.)
+    try {
+      answers.write(`${JSON.stringify(response)}\n`);
+    } catch {
+      return false;
+    }
     return true;
   }
 
@@ -151,12 +175,17 @@ export class RunRegistry {
       this.listeners.set(id, set);
     }
     set.add(listener);
-    return () => set!.delete(listener);
+    return () => {
+      set!.delete(listener);
+      // A page that closed its stream leaves nothing behind: the map is keyed
+      // by run and a `web` server outlives thousands of them.
+      if (set!.size === 0) this.listeners.delete(id);
+    };
   }
 
   closeAll(): void {
     for (const child of this.children.values()) {
-      if (child.exitCode === null) child.kill("SIGKILL");
+      if (isAlive(child)) child.kill("SIGKILL");
     }
     for (const log of this.logs.values()) log.end();
   }

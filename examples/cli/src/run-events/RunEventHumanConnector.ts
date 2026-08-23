@@ -51,6 +51,17 @@ export class RunEventHumanConnector implements IHumanConnector {
   }
 
   send(request: IHumanRequest, signal: AbortSignal): Promise<IHumanResponse> {
+    // An `abort` listener added to an ALREADY-aborted signal never fires, so
+    // asking on one would emit the request and then wait forever for an answer
+    // nobody is reading — the exact hang the abort path exists to avoid.
+    if (signal.aborted) {
+      return Promise.resolve({
+        requestId: request.requestId,
+        action: "cancel",
+        content: undefined,
+        done: true,
+      });
+    }
     return new Promise<IHumanResponse>((resolve) => {
       const settle = (response: IHumanResponse): void => {
         this.pending.delete(request.requestId);

@@ -55,6 +55,24 @@ function constantTimeEquals(a: string, b: string): boolean {
 }
 
 /**
+ * The host a `Host:` header names, without its port.
+ *
+ * An IPv6 literal is bracketed and full of colons, so splitting on the first
+ * one yields `"["` — which matches nothing in the allow-list, and every API
+ * request from `http://[::1]:8787/` was refused with a message naming a host
+ * nobody typed.
+ */
+export function hostWithoutPort(header: string | undefined): string {
+  const value = (header ?? "").trim();
+  if (value.startsWith("[")) {
+    const close = value.indexOf("]");
+    return close === -1 ? value.toLowerCase() : value.slice(0, close + 1).toLowerCase();
+  }
+  const colon = value.indexOf(":");
+  return (colon === -1 ? value : value.slice(0, colon)).toLowerCase();
+}
+
+/**
  * The three defenses this server has, in the order they must run.
  *
  * The token stops another page on this machine driving the console (a run
@@ -63,7 +81,7 @@ function constantTimeEquals(a: string, b: string): boolean {
  * one. Neither is authentication: this server is for the person sitting at it.
  */
 function guard(request: WebRequest, ctx: WebContext): WebResult | undefined {
-  const host = (request.headers["host"] ?? "").split(":")[0].toLowerCase();
+  const host = hostWithoutPort(request.headers["host"]);
   if (host && !ctx.allowedHosts.has(host)) {
     return json(403, { error: `refusing requests for host "${host}"` });
   }
@@ -210,8 +228,17 @@ export async function handleWebRequest(request: WebRequest, ctx: WebContext): Pr
     }
     if (action === "/panels") {
       const panels = listWebPanels(run.invocation);
+      // A successful graph reports `result`, not `run_end` — one command may
+      // run several graphs, so the run ends with the process. The only
+      // `run_end` a healthy run carries is the one the registry synthesizes
+      // from the exit code, whose `output` is always undefined, so reading it
+      // alone handed every panel nothing at all.
       const output = run.events.flatMap((record) =>
-        record.event.k === "run_end" ? [record.event.output] : []
+        record.event.k === "result"
+          ? [record.event.output]
+          : record.event.k === "run_end" && record.event.output !== undefined
+            ? [record.event.output]
+            : []
       );
       const loaded = await Promise.all(
         panels.map(async (panel) => ({
