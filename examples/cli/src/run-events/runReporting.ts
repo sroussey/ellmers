@@ -39,12 +39,15 @@ export function ensureRunReporting(): RunEventSink | undefined {
   if (!sink) return undefined;
 
   // A run that reports over a pipe cannot prompt through a terminal UI, so the
-  // connector goes with the channel rather than being wired separately.
-  const connector = new RunEventHumanConnector(sink);
-  globalServiceRegistry.registerInstance(HUMAN_CONNECTOR, connector);
-  readRunAnswerLines(process.env[RUN_ANSWERS_ENV] ?? "", (line) =>
-    connector.feedHumanResponseLine(line)
+  // connector goes with the channel rather than being wired separately. It
+  // opens the answers reader itself, per outstanding question, because a reader
+  // held for the whole run keeps the child's event loop alive and the process
+  // never exits.
+  const answers = process.env[RUN_ANSWERS_ENV] ?? "";
+  const connector = new RunEventHumanConnector(sink, (onLine) =>
+    readRunAnswerLines(answers, onLine)
   );
+  globalServiceRegistry.registerInstance(HUMAN_CONNECTOR, connector);
 
   // The channel outlives any one graph — a command may run several — so it is
   // flushed when the process ends rather than when a run does. `beforeExit`

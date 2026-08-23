@@ -91,6 +91,13 @@ export function installRunEventChannel(target: string): RunEventSink | undefined
 /**
  * Reads NDJSON answer lines from the descriptor the parent named. Returns a
  * stop function, or undefined when nothing is listening.
+ *
+ * Open this only while an answer is actually expected — see
+ * {@link openAnswerReaderWhilePending}. The parent holds its end of the pipe
+ * for the whole run, so a reader left open counts toward the child's event
+ * loop and the process cannot exit: the command finishes in a second and the
+ * console waits forever on an exit that never comes. (`unref` is not the way
+ * out — a Socket built on the fd unrefs but delivers nothing under Bun.)
  */
 export function readRunAnswerLines(
   target: string,

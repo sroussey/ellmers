@@ -7,6 +7,9 @@
 import type { IHumanConnector, IHumanRequest, IHumanResponse } from "@workglow/util";
 import type { RunEventSink } from "./runEventChannel";
 
+/** Opens a reader for answers, returning how to stop it. */
+export type AnswerReaderFactory = (onLine: (line: string) => void) => (() => void) | undefined;
+
 /**
  * Asks the human by writing the request to the run's event stream and waiting
  * for a matching line on stdin. The parent bridges both ends to a browser.
@@ -17,16 +20,46 @@ import type { RunEventSink } from "./runEventChannel";
  */
 export class RunEventHumanConnector implements IHumanConnector {
   private readonly pending = new Map<string, (response: IHumanResponse) => void>();
+  /** Live answer reader, held only while at least one request is outstanding. */
+  private stopReader: (() => void) | undefined;
 
-  constructor(private readonly sink: RunEventSink) {}
+  constructor(
+    private readonly sink: RunEventSink,
+    private readonly openReader?: AnswerReaderFactory
+  ) {}
+
+  /**
+   * The reader is opened per outstanding request and closed with the last one.
+   *
+   * Kept open for the life of the process it does exactly one thing beyond
+   * reading: it holds the event loop, so a child that has finished its work
+   * never exits. Nothing observes that on a terminal — the command has already
+   * printed — but the web console ends a run on the child's exit, so every
+   * command that asked nothing hung there forever while having done its job in
+   * a second.
+   */
+  private acquireReader(): void {
+    if (this.stopReader || !this.openReader) return;
+    this.stopReader = this.openReader((line) => this.feedHumanResponseLine(line));
+  }
+
+  private releaseReader(): void {
+    if (this.pending.size > 0) return;
+    const stop = this.stopReader;
+    this.stopReader = undefined;
+    stop?.();
+  }
 
   send(request: IHumanRequest, signal: AbortSignal): Promise<IHumanResponse> {
     return new Promise<IHumanResponse>((resolve) => {
       const settle = (response: IHumanResponse): void => {
         this.pending.delete(request.requestId);
+        this.releaseReader();
         resolve(response);
       };
       this.pending.set(request.requestId, settle);
+      // Before the request is emitted, so an answer cannot arrive unread.
+      this.acquireReader();
       signal.addEventListener(
         "abort",
         () =>
