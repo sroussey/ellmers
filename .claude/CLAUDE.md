@@ -345,6 +345,18 @@ the same commands the terminal runs. Three things about it are load-bearing:
   `registerCommandSchemaProvider`. A superset registers what to show; there is no
   client bundle to ship and no plugin loader to keep stable.
 
+**A downstream CLI reuses the whole thing rather than copying it.**
+`runWorkglowCli()` (`src/bootstrap.ts`, exported from `lib.ts`) is the entire
+body of the `workglow` binary — task registrations, credential store, model
+repository, HFT worker, and every command including `web` — behind
+`registerTasks` / `registerCommands` hooks. `workglow.ts` is now just a call to
+it, and `@workglow/sec`'s `sec-base` binary is another. Keeping the body here
+rather than in a copied entry file is also what keeps the HuggingFace worker
+resolvable: its URL is relative to that module, so it resolves inside the
+installed `@workglow/cli` whoever called. `task list` / `task run` enumerate the
+global `TaskRegistry`, so a downstream contributes its tasks by registering
+them — the commands need no per-package knowledge.
+
 The client is bundled by `bun run build-web` into `dist/web` and is part of
 `build-example`. Its webfont link is deliberately non-render-blocking: a
 deferred module script waits on pending stylesheets, so a blocking font link

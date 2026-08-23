@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+export { runWorkglowCli, type WorkglowCliOptions } from "./bootstrap";
 export {
   DEFAULT_WEB_HOST,
   DEFAULT_WEB_PORT,
