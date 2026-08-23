@@ -12,10 +12,13 @@ import { startTaskInstancePoll, type TaskFileProgressRow } from "./cliTaskUi";
 import { useCliTheme } from "./CliThemeContext";
 import { CLI_SPINNER_FRAMES } from "./components/CliSpinner";
 import { ProgressBar } from "./components/ProgressBar";
+import { deriveRunState, RunStatusBar } from "./components/RunStatusBar";
 import { StreamOutput } from "./components/StreamOutput";
+import { TaskErrorDetail } from "./components/TaskErrorDetail";
 import { TaskStatusProgressRow } from "./components/TaskStatusProgressRow";
 import { HumanInteractionHost } from "./HumanInteractionHost";
 import { isRedundantSubgraph, SubtaskRows } from "./rows/SubtaskRows";
+import { settledTaskDurationMs } from "./rows/taskDuration";
 import { useSubtaskRows } from "./rows/useSubtaskRows";
 import { useTaskUsageLine } from "./rows/useTaskUsageLine";
 import { cliTaskLabel } from "./taskGraphCliSubscriptions";
@@ -38,7 +41,7 @@ interface LogLine {
 /** Batched progress UI when there is no per-file download list (keeps Ink calm). */
 interface TaskRunDisplayBatch {
   readonly spin: number;
-  readonly progress: number;
+  readonly progress: number | undefined;
   readonly message: string | undefined;
 }
 
@@ -74,10 +77,13 @@ export function TaskRunApp({
   const theme = useCliTheme();
   const bodyColor = theme.level === "advanced" ? theme.fg : undefined;
   const [status, setStatus] = useState("PENDING");
-  const progressRef = useRef({ prog: 0, msg: undefined as string | undefined });
+  const progressRef = useRef({
+    prog: undefined as number | undefined,
+    msg: undefined as string | undefined,
+  });
   const [batch, setBatch] = useState<TaskRunDisplayBatch>({
     spin: 0,
-    progress: 0,
+    progress: undefined,
     message: undefined,
   });
   const [downloadFiles, setDownloadFiles] = useState<TaskFileProgressRow[]>([]);
@@ -185,10 +191,12 @@ export function TaskRunApp({
             status={status}
             message={isModelDownloadTask ? undefined : batch.message}
             barProgress={batch.progress}
+            durationMs={usageLine ? undefined : settledTaskDurationMs(task)}
             spinnerFrame={batch.spin}
             progressBarWidth={isModelDownloadTask ? DOWNLOAD_PROGRESS_BAR_WIDTH : undefined}
           />
           {usageLine ? <Text dimColor> {usageLine}</Text> : null}
+          <TaskErrorDetail task={task} status={status} />
           {showFileDownloadList && (
             <Box paddingLeft={2} flexDirection="column">
               {downloadFiles.map((f) => (
@@ -215,7 +223,12 @@ export function TaskRunApp({
               variant="chrome"
             />
           )}
-          {runUsageLine ? <Text>{`Tokens ${runUsageLine}`}</Text> : null}
+          <RunStatusBar
+            usageLine={runUsageLine}
+            done={status === "COMPLETED" ? 1 : 0}
+            total={1}
+            state={deriveRunState([status])}
+          />
         </Box>
       </Box>
     </HumanInteractionHost>

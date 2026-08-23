@@ -20,27 +20,9 @@ import {
 import { promptMissingInput } from "../input/prompt";
 import { deepMerge } from "../input/resolve-input";
 import { withCli } from "../run-interactive";
+import { resolveTaskType } from "../taskTypes";
 import { renderSelectPrompt } from "../ui/render";
 import { formatError, formatTable, outputResult } from "../util";
-
-type AnyTaskConstructor = ITaskConstructor<any, any, any>;
-
-function resolveTaskType(name: string): AnyTaskConstructor | undefined {
-  // Exact match first
-  const exact = TaskRegistry.all.get(name) as AnyTaskConstructor | undefined;
-  if (exact) return exact;
-
-  // Case-insensitive match, with or without "Task" suffix
-  const lower = name.toLowerCase();
-  const candidates = [lower, lower.endsWith("task") ? lower.slice(0, -4) : lower + "task"];
-
-  for (const [key, ctor] of TaskRegistry.all) {
-    if (candidates.includes(key.toLowerCase())) {
-      return ctor as AnyTaskConstructor;
-    }
-  }
-  return undefined;
-}
 
 export function registerTaskCommand(program: Command): void {
   const task = program.command("task").description("List and run tasks");

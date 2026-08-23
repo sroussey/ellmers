@@ -8,6 +8,10 @@
   "compilerOptions": {
     "composite": true,
     "outDir": "dist",
-    "rootDir": "./src"
+    "rootDir": "./src",
+    // Nothing here is JSX. `@workglow/cli` is, and under `use-source` its
+    // stubbed `dist/*.d.ts` re-export `../src`, so typechecking this package
+    // reaches that package's `.tsx` and needs the same setting it uses.
+    "jsx": "react-jsx"
   }
 }

@@ -8,8 +8,10 @@ import type { ChatMessage, ContentBlock } from "@workglow/ai";
 import type { ITask, StreamEvent } from "@workglow/task-graph";
 import { Box, Text } from "ink";
 import React, { useEffect, useState, useSyncExternalStore } from "react";
+import { TaskErrorDetail } from "../components/TaskErrorDetail";
 import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
 import type { TaskRowProps } from "./pickRenderer";
+import { settledTaskDurationMs } from "./taskDuration";
 import { useTaskUsageLine } from "./useTaskUsageLine";
 
 const HISTORY_TAIL = 6;
@@ -106,7 +108,7 @@ export function ChatTaskRow({ task, line }: TaskRowProps): React.ReactElement {
           label={line.label}
           status={status}
           message={line.message}
-          barProgress={0}
+          barProgress={undefined}
         />
         {usageLine ? <Text dimColor> {usageLine}</Text> : null}
       </Box>
@@ -121,6 +123,7 @@ export function ChatTaskRow({ task, line }: TaskRowProps): React.ReactElement {
           status={status}
           message={`${messages.length} messages`}
           barProgress={100}
+          durationMs={usageLine ? undefined : settledTaskDurationMs(task)}
         />
         {usageLine ? <Text dimColor> {usageLine}</Text> : null}
       </Box>
@@ -134,9 +137,11 @@ export function ChatTaskRow({ task, line }: TaskRowProps): React.ReactElement {
           label={line.label}
           status={status}
           message={line.message ?? "failed"}
-          barProgress={line.progress ?? 0}
+          barProgress={line.progress}
+          durationMs={usageLine ? undefined : settledTaskDurationMs(task)}
         />
         {usageLine ? <Text dimColor> {usageLine}</Text> : null}
+        <TaskErrorDetail task={task} status={status} />
       </Box>
     );
   }
@@ -151,7 +156,7 @@ export function ChatTaskRow({ task, line }: TaskRowProps): React.ReactElement {
         label={line.label}
         status={status}
         message={line.message}
-        barProgress={line.progress ?? 0}
+        barProgress={line.progress}
       />
       {usageLine ? <Text dimColor> {usageLine}</Text> : null}
       <Box

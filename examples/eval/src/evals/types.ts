@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { StreamEvent, Usage } from "@workglow/task-graph";
+import type { IExecuteContext, StreamEvent, Usage } from "@workglow/task-graph";
 import type { DatasetRow, LabelNames } from "../hf/types";
 
 /** What one workflow execution produced for one dataset row. */
@@ -23,9 +23,25 @@ export interface RowPrediction {
  * the life of the call only — `--stream` is the only caller that passes it, so
  * an ordinary sweep never pays for the subscription.
  */
+/**
+ * How a row's work joins the run's single task graph.
+ *
+ * Each row builds its own small workflow. Run standalone those are invisible:
+ * the run is one graph, and anything executed outside it is work no progress
+ * surface can see. Handing the executor the sweep task's context lets it OWN
+ * that workflow for the row's duration, so the row appears as a live child and
+ * leaves when it finishes.
+ */
+export interface RowOwner {
+  readonly context: IExecuteContext;
+  /** Row label, e.g. `claude-haiku-4-5 · row 12`. */
+  readonly title: string;
+}
+
 export type RowExecutor = (
   row: DatasetRow,
-  onStreamChunk?: (event: StreamEvent) => void
+  onStreamChunk?: (event: StreamEvent) => void,
+  owner?: RowOwner
 ) => Promise<RowPrediction>;
 
 export interface ColumnOptions {

@@ -25,9 +25,11 @@ import { registerInitCommand } from "./commands/init";
 import { registerMcpCommand } from "./commands/mcp";
 import { registerModelCommand } from "./commands/model";
 import { registerTaskCommand } from "./commands/task";
+import { registerWebCommand } from "./commands/web";
 import { registerWorkflowCommand } from "./commands/workflow";
 import { loadConfig } from "./config";
 import { lazyStore } from "./keyring";
+import { ensureRunReporting } from "./run-events/runReporting";
 import { seedSamplesIfRepoEmpty } from "./samples/chatSample";
 import { createModelRepository, createWorkflowRepository } from "./storage";
 import { detectCliTheme, setCliTheme } from "./terminal/detectTerminalTheme";
@@ -44,7 +46,13 @@ registerBuiltInTransforms();
 // that need encrypted credentials (workflow run, credential add, etc.).
 setGlobalCredentialStore(new ChainedCredentialStore([lazyStore, new EnvCredentialStore()]));
 
-globalServiceRegistry.registerInstance(HUMAN_CONNECTOR, new InkHumanConnector());
+/**
+ * A parent process asking for a machine-readable run gets one, and the human
+ * connector goes with it: a run reporting over a pipe cannot prompt through Ink.
+ */
+if (!ensureRunReporting()) {
+  globalServiceRegistry.registerInstance(HUMAN_CONNECTOR, new InkHumanConnector());
+}
 
 // Set up global model repository backed by filesystem
 const config = await loadConfig();
@@ -77,6 +85,7 @@ registerWorkflowCommand(program);
 registerAgentCommand(program);
 registerCredentialCommand(program);
 registerTaskCommand(program);
+registerWebCommand(program);
 
 await program.parseAsync(process.argv);
 process.exit(0);

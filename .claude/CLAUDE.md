@@ -325,6 +325,31 @@ required field that one caller always provides and the other never does
 chat-vs-prompt). Schema invariants (e.g. `TextGenerationTask` requires
 `prompt`, `AiChatTask` requires `messages`) make this safe.
 
+### `examples/cli` — the CLI and its web console
+
+`workglow web` (`src/web/`, client in `src/web/client/`) serves a local page for
+the same commands the terminal runs. Three things about it are load-bearing:
+
+- **A run is a child process of the same binary**, spawned with the argv the
+  page shows and handed fd 3 for an NDJSON run-event stream and fd 4 for answers
+  to its prompts. The reporting branch lives in `withCli` — the one seam every
+  command in this package and in every CLI built on it already runs graphs
+  through — which is why the console works for commands nobody wrote it for, and
+  why a per-run env override belongs to that run rather than to the server.
+- **Pure presentation lives in `src/ui/model/`** and imports no renderer, so the
+  Ink rows and the browser rows cannot disagree about a glyph, a bar, a row's
+  trailing number, or a run's outcome. A test in that directory fails if
+  anything there imports ink or react.
+- **Extensions cross the seam as data, never code**: `registerWebPanel`,
+  `registerWebFieldWidget`, `registerWebStatusWidget`,
+  `registerCommandSchemaProvider`. A superset registers what to show; there is no
+  client bundle to ship and no plugin loader to keep stable.
+
+The client is bundled by `bun run build-web` into `dist/web` and is part of
+`build-example`. Its webfont link is deliberately non-render-blocking: a
+deferred module script waits on pending stylesheets, so a blocking font link
+means a blank console on any machine that cannot reach the CDN.
+
 ### `@workglow/util` — shared utilities
 
 `EventEmitter`, `ServiceRegistry` (DI), `DirectedAcyclicGraph`, `DataPortSchema`/`JsonSchema` types, `SchemaUtils`/`SchemaValidation`, `uuid4`, `sleep`, `WorkerManager`/`WorkerServer`, vector math, tensor types.

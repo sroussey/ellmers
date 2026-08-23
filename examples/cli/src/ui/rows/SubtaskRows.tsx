@@ -9,9 +9,13 @@ import { Box, Text } from "ink";
 import React from "react";
 import { useCliTheme } from "../CliThemeContext";
 import { ProgressBar } from "../components/ProgressBar";
+import { TaskDetailColumn } from "../components/TaskDetailColumn";
+import { TaskErrorDetail } from "../components/TaskErrorDetail";
 import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
+import { iterationSummaryLine } from "../model/runRowModel";
 import type { CliTaskLine, IterationSlotRow } from "../taskGraphCliSubscriptions";
 import { mergeLiveIterationGraphs, visibleIterationSlots } from "../taskGraphCliSubscriptions";
+import { settledTaskDurationMs } from "./taskDuration";
 import {
   concurrencyLimitOf,
   isIteratorTask,
@@ -50,13 +54,16 @@ export function IterationTaskRows({
   readonly slots: readonly IterationSlotRow[] | undefined;
   readonly concurrencyLimit: number | undefined;
 }): React.ReactElement | null {
-  const visible = visibleIterationSlots(mergeLiveIterationGraphs(slots, task), concurrencyLimit);
+  const merged = mergeLiveIterationGraphs(slots, task);
+  const visible = visibleIterationSlots(merged, concurrencyLimit);
   if (visible.length === 0) return null;
+  const summary = iterationSummaryLine(merged, visible.length);
   return (
     <Box flexDirection="column">
       {visible.map((slot) =>
         slot.graph ? <IterationGraphRows key={slot.index} graph={slot.graph} /> : null
       )}
+      {summary ? <Text dimColor>{`  ${summary}`}</Text> : null}
     </Box>
   );
 }
@@ -115,7 +122,7 @@ function SubtaskRow({
           label={line.label}
           status={line.status}
           message={line.message}
-          barProgress={line.progress ?? 0}
+          barProgress={line.progress}
         />
       </Box>
     );
@@ -146,9 +153,11 @@ function SubtaskStatusWithUsage({
         label={line.label}
         status={line.status}
         message={line.message}
-        barProgress={line.progress ?? 0}
+        barProgress={line.progress}
+        durationMs={usageLine ? undefined : settledTaskDurationMs(task)}
       />
       {usageLine ? <Text dimColor> {usageLine}</Text> : null}
+      <TaskErrorDetail task={task} status={line.status} />
       <IterationTaskRows task={task} slots={slots} concurrencyLimit={concurrencyLimitOf(task)} />
       {depth < MAX_SUBTASK_DEPTH && !iterator && (
         <NestedSubtaskRows task={task} parentType={line.type} depth={depth} />
@@ -200,10 +209,11 @@ export function SubtaskRows({
     <Box paddingLeft={2} flexDirection="column">
       {showChrome && overallProgress !== undefined && (
         <Box flexDirection="row" justifyContent="space-between" width="100%">
-          <Text color={bodyColor}>Subgraph: </Text>
+          <Text color={bodyColor}>Subgraph</Text>
           <Box flexShrink={0} marginLeft={1}>
             <ProgressBar progress={overallProgress} />
           </Box>
+          <TaskDetailColumn progress={overallProgress} durationMs={undefined} running={true} />
         </Box>
       )}
       {hiddenCount > 0 && <Text dimColor>… {hiddenCount} completed</Text>}
@@ -237,3 +247,5 @@ export function SubtaskRows({
 export function isRedundantSubgraph(rows: readonly CliTaskLine[], parentType: string): boolean {
   return rows.length === 1 && rows[0]?.type === parentType;
 }
+
+export { iterationSummaryLine };

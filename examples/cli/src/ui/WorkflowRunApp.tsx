@@ -10,6 +10,8 @@ import React, { useEffect, useState } from "react";
 import { sortCliTaskLinesForDisplay, startGraphTaskPoll } from "./cliTaskUi";
 import { useCliTheme } from "./CliThemeContext";
 import { ProgressBar } from "./components/ProgressBar";
+import { deriveRunState, RunStatusBar } from "./components/RunStatusBar";
+import { TaskDetailColumn } from "./components/TaskDetailColumn";
 import { HumanInteractionHost } from "./HumanInteractionHost";
 import { ChatTaskRow } from "./rows/ChatTaskRow";
 import { DefaultTaskRow } from "./rows/DefaultTaskRow";
@@ -68,6 +70,8 @@ export function WorkflowRunApp({
 
   const order = new Map(graph.getTasks().map((t, i) => [String(t.id), i]));
   const orderedTasks = sortCliTaskLinesForDisplay(Array.from(taskInfos.values()), order);
+  const settledCount = orderedTasks.filter((t) => t.status === "COMPLETED").length;
+  const runState = deriveRunState(orderedTasks.map((t) => t.status));
 
   return (
     <HumanInteractionHost>
@@ -75,10 +79,11 @@ export function WorkflowRunApp({
         <Box flexDirection="column">
           {overallProgress !== undefined && (
             <Box flexDirection="row" justifyContent="space-between" width="100%">
-              <Text color={bodyColor}>Workflow: </Text>
+              <Text color={bodyColor}>Workflow</Text>
               <Box flexShrink={0} marginLeft={1}>
                 <ProgressBar progress={overallProgress} />
               </Box>
+              <TaskDetailColumn progress={overallProgress} durationMs={undefined} running={true} />
             </Box>
           )}
           {orderedTasks.map((t) => {
@@ -101,7 +106,12 @@ export function WorkflowRunApp({
               />
             );
           })}
-          {runUsageLine ? <Text>{`Tokens ${runUsageLine}`}</Text> : null}
+          <RunStatusBar
+            usageLine={runUsageLine}
+            done={settledCount}
+            total={orderedTasks.length}
+            state={runState}
+          />
         </Box>
       </Box>
     </HumanInteractionHost>

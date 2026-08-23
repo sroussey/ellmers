@@ -6,10 +6,12 @@
 
 import { Box, Text } from "ink";
 import React from "react";
+import { TaskErrorDetail } from "../components/TaskErrorDetail";
 import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
 import type { CliTaskLine } from "../taskGraphCliSubscriptions";
 import type { TaskRowProps } from "./pickRenderer";
 import { isRedundantSubgraph, IterationTaskRows, SubtaskRows } from "./SubtaskRows";
+import { settledTaskDurationMs } from "./taskDuration";
 import { concurrencyLimitOf, isIteratorTask, useSubtaskRows } from "./useSubtaskRows";
 import { useTaskUsageLine } from "./useTaskUsageLine";
 
@@ -23,9 +25,11 @@ export function DefaultTaskRow({ task, line, iterationSlots }: TaskRowProps): Re
         label={line.label}
         status={line.status}
         message={line.message}
-        barProgress={line.progress ?? 0}
+        barProgress={line.progress}
+        durationMs={usageLine ? undefined : settledTaskDurationMs(task)}
       />
       {usageLine ? <Text dimColor> {usageLine}</Text> : null}
+      <TaskErrorDetail task={task} status={line.status} />
       <IterationTaskRows
         task={task}
         slots={iterationSlots}
