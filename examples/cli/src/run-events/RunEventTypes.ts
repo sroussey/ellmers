@@ -18,6 +18,13 @@ export type RunEvent =
       readonly type: string;
       readonly label: string;
       readonly depth: number;
+      /**
+       * Row that owns this one, when it is not a root. Depth alone cannot place
+       * a row: a subgraph's children arrive long after their parent's siblings,
+       * so arrival order attributes them to whichever root happens to precede
+       * them. The id says which parent, whenever the run has one.
+       */
+      readonly parent?: string;
     }
   | { readonly k: "task_removed"; readonly id: string }
   | { readonly k: "status"; readonly id: string; readonly status: string }

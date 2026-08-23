@@ -6,7 +6,21 @@
 
 import type { ITask, StreamEvent, TaskGraph, TaskIdType, Usage } from "@workglow/task-graph";
 import { cliTaskLabel } from "../ui/taskGraphCliSubscriptions";
+import { projectTaskSubtree } from "./projectSubtrees";
 import type { RunEventSink } from "./runEventChannel";
+
+export interface ProjectRunEventsOptions {
+  /** Nesting level reported on every row this projection adds. */
+  readonly depth?: number;
+  /** Row that owns this graph, when it is a subgraph rather than the run's own. */
+  readonly parent?: string;
+  /**
+   * Emit `task_removed` for every row added, when this projection stops. Right
+   * for a Map's iteration clone, which is real only while it runs; wrong for an
+   * owned subgraph, whose rows are most of what a finished run has to show.
+   */
+  readonly removeRowsOnStop?: boolean;
+}
 
 /**
  * Subscribes a running graph and reports it as {@link RunEvent}s.
@@ -19,8 +33,15 @@ import type { RunEventSink } from "./runEventChannel";
  * and stream chunks are already bridged up by the graph — including from
  * nested subgraphs — so those come from the graph rather than from each task.
  */
-export function projectRunEvents(graph: TaskGraph, sink: RunEventSink, depth = 0): () => void {
+export function projectRunEvents(
+  graph: TaskGraph,
+  sink: RunEventSink,
+  options: ProjectRunEventsOptions = {}
+): () => void {
+  const depth = options.depth ?? 0;
+  const parent = options.parent;
   const wired = new Map<string, () => void>();
+  const addedRows: string[] = [];
 
   const wire = (task: ITask): void => {
     const id = String(task.id);
@@ -31,7 +52,9 @@ export function projectRunEvents(graph: TaskGraph, sink: RunEventSink, depth = 0
       type: (task as { type?: string }).type ?? "Unknown",
       label: cliTaskLabel(task),
       depth,
+      ...(parent === undefined ? {} : { parent }),
     });
+    addedRows.push(id);
 
     const onStatus = (status: string): void => sink.emit({ k: "status", id, status });
     const onProgress = (progress: number | undefined, message?: string): void =>
@@ -54,12 +77,18 @@ export function projectRunEvents(graph: TaskGraph, sink: RunEventSink, depth = 0
     task.events.on("iteration_complete", onIterationComplete);
     task.events.on("iteration_progress", onIterationProgress);
 
+    // What this task owns — its own subgraph, or a Map's live iteration clones
+    // — is where the actual work of a sweep lives. Reporting only the top-level
+    // graph left `sec sync reg-a` showing a While Loop and nothing beneath it.
+    const stopSubtree = projectTaskSubtree(task, sink, depth, id, projectRunEvents);
+
     wired.set(id, () => {
       task.events.off("status", onStatus);
       task.events.off("progress", onProgress);
       task.events.off("iteration_start", onIterationStart);
       task.events.off("iteration_complete", onIterationComplete);
       task.events.off("iteration_progress", onIterationProgress);
+      stopSubtree();
     });
   };
 
@@ -112,6 +141,10 @@ export function projectRunEvents(graph: TaskGraph, sink: RunEventSink, depth = 0
   return () => {
     for (const unwire of wired.values()) unwire();
     wired.clear();
+    if (options.removeRowsOnStop) {
+      for (const id of addedRows) sink.emit({ k: "task_removed", id });
+    }
+    addedRows.length = 0;
     graph.off("task_added", onAdded);
     graph.off("task_removed", onRemoved);
     graph.off("graph_progress", onGraphProgress);
@@ -123,11 +156,9 @@ export function projectRunEvents(graph: TaskGraph, sink: RunEventSink, depth = 0
 
 /** A single-task run: the task itself is row 0, its owned subgraph is depth 1. */
 export function projectTaskRunEvents(task: ITask, sink: RunEventSink): () => void {
-  // Not every task-shaped value owns a subgraph; reporting must not be the
-  // thing that discovers it.
-  const subGraph = (task as { subGraph?: TaskGraph }).subGraph;
-  const stopSubgraph = subGraph ? projectRunEvents(subGraph, sink, 1) : () => {};
   const id = String(task.id);
+  // The parent row is announced first: a child naming a `parent` the console
+  // has not seen has nowhere to attach.
   sink.emit({
     k: "task_added",
     id,
@@ -135,6 +166,9 @@ export function projectTaskRunEvents(task: ITask, sink: RunEventSink): () => voi
     label: cliTaskLabel(task),
     depth: 0,
   });
+  // Lazily, because a task's subgraph is empty until `execute()` reaches the
+  // children — reading it once here saw nothing and reported nothing.
+  const stopSubgraph = projectTaskSubtree(task, sink, 0, id, projectRunEvents);
   const onStatus = (status: string): void => sink.emit({ k: "status", id, status });
   const onProgress = (progress: number | undefined, message?: string): void =>
     sink.emit({ k: "progress", id, progress, message });

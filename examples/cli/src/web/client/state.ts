@@ -20,6 +20,7 @@ export interface RunRow {
   readonly type: string;
   readonly label: string;
   readonly depth: number;
+  readonly parent: string | undefined;
   readonly order: number;
   readonly status: string;
   readonly progress: number | undefined;
@@ -101,6 +102,7 @@ export function reduceRunEvent(
         type: event.type,
         label: event.label,
         depth: event.depth,
+        parent: event.parent,
         order: state.nextOrder,
         status: "PENDING",
         progress: undefined,
@@ -231,29 +233,57 @@ export function applyRecord(
   return { ...reduceRunEvent(state, event, at), lastSeq: seq };
 }
 
-/** Rows in the order they should be drawn, parents keeping their children. */
+function statusBucket(row: RunRow): number {
+  if (row.status === "COMPLETED") return 0;
+  if (row.status === "PROCESSING" || row.status === "STREAMING") return 1;
+  if (row.status === "PENDING") return 2;
+  if (row.status === "FAILED" || row.status === "ABORTED") return 3;
+  return 4;
+}
+
+/**
+ * Rows in the order they should be drawn, every row directly beneath the one
+ * that owns it.
+ *
+ * Arrival order cannot do this on its own. A subgraph's children are reported
+ * long after their parent's siblings — the parent has to start running before
+ * it owns anything — so a walk that ends a parent's children at the next
+ * depth-0 row hands a While Loop's subtasks to whatever root was added last.
+ * The rows form a tree, so this walks one.
+ */
 export function orderedRows(state: RunViewState, sortByStatus: boolean): readonly RunRow[] {
-  const rows = [...state.rows.values()].sort((a, b) => a.order - b.order);
-  if (!sortByStatus) return rows;
-  const bucket = (row: RunRow): number => {
-    if (row.status === "COMPLETED") return 0;
-    if (row.status === "PROCESSING" || row.status === "STREAMING") return 1;
-    if (row.status === "PENDING") return 2;
-    if (row.status === "FAILED" || row.status === "ABORTED") return 3;
-    return 4;
+  const all = [...state.rows.values()].sort((a, b) => a.order - b.order);
+  const childrenOf = new Map<string, RunRow[]>();
+  const roots: RunRow[] = [];
+  for (const row of all) {
+    // A row whose parent is gone (an iteration clone released mid-flight) is
+    // still a row; dropping it would make it vanish rather than settle.
+    if (row.parent !== undefined && state.rows.has(row.parent)) {
+      const siblings = childrenOf.get(row.parent);
+      if (siblings) siblings.push(row);
+      else childrenOf.set(row.parent, [row]);
+    } else {
+      roots.push(row);
+    }
+  }
+
+  // Only roots re-sort by status. Sorting inside a subtree would reorder a
+  // pipeline's steps against the order they run in, which is the one thing the
+  // indentation is claiming.
+  const ordered = sortByStatus
+    ? [...roots].sort((a, b) => statusBucket(a) - statusBucket(b) || a.order - b.order)
+    : roots;
+
+  const out: RunRow[] = [];
+  const visit = (row: RunRow, seen: Set<string>): void => {
+    if (seen.has(row.id)) return;
+    seen.add(row.id);
+    out.push(row);
+    for (const child of childrenOf.get(row.id) ?? []) visit(child, seen);
   };
-  // Only roots sort; a child stays with its parent or the tree stops meaning
-  // anything.
-  const roots = rows.filter((row) => row.depth === 0);
-  const childrenOf = (root: RunRow): RunRow[] => {
-    const start = rows.indexOf(root) + 1;
-    const out: RunRow[] = [];
-    for (let i = start; i < rows.length && rows[i].depth > 0; i++) out.push(rows[i]);
-    return out;
-  };
-  return [...roots]
-    .sort((a, b) => bucket(a) - bucket(b) || a.order - b.order)
-    .flatMap((root) => [root, ...childrenOf(root)]);
+  const seen = new Set<string>();
+  for (const root of ordered) visit(root, seen);
+  return out;
 }
 
 /**
