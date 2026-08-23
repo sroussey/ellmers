@@ -30,6 +30,7 @@
   "bin": "./dist/workglow.js",
   "files": [
     "dist",
+    "docs",
     "src/**/*.md"
   ],
   "exports": {

@@ -10,13 +10,13 @@ A run renders as the graph it is: one row per task, with its status glyph, whate
 detail the task is reporting, a progress bar and — once it settles — how long it took,
 over a bar for the run as a whole and a status line counting completed tasks.
 
-![A workflow running in the terminal](../../docs/developers/img/cli.png)
+![A workflow running in the terminal](./docs/cli.png)
 
 The same commands are also available in a browser, served by this CLI itself with
 [`workglow web`](#web-console). It is the same graph, the same forms, and the same
 run — see below.
 
-![The web console running the same workflow](../../docs/developers/img/cli-web.png)
+![The web console running the same workflow](./docs/cli-web.png)
 
 ## Features
 
