@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createReadStream, createWriteStream, type WriteStream } from "node:fs";
+import { closeSync, createReadStream, openSync, writeSync } from "node:fs";
 import type { RunEvent } from "./RunEventTypes";
 
 export interface RunEventSink {
@@ -27,13 +27,14 @@ export const RUN_ANSWERS_ENV = "WORKGLOW_RUN_ANSWERS";
 
 let installed: RunEventSink | undefined;
 
-function openTarget(target: string): WriteStream | undefined {
+/** Resolves a target to a descriptor, and whether we opened it (so must close it). */
+function openTarget(target: string): { fd: number; owned: boolean } | undefined {
   if (target.startsWith("fd:")) {
     const fd = Number.parseInt(target.slice(3), 10);
     if (!Number.isInteger(fd) || fd < 0) return undefined;
-    return createWriteStream("", { fd });
+    return { fd, owned: false };
   }
-  if (target.startsWith("file:")) return createWriteStream(target.slice(5), { flags: "a" });
+  if (target.startsWith("file:")) return { fd: openSync(target.slice(5), "a"), owned: true };
   return undefined;
 }
 
@@ -46,31 +47,41 @@ function openTarget(target: string): WriteStream | undefined {
  */
 export function installRunEventChannel(target: string): RunEventSink | undefined {
   if (!target) return undefined;
-  let stream: WriteStream | undefined;
+  let stream: { fd: number; owned: boolean } | undefined;
   try {
     stream = openTarget(target);
   } catch {
     stream = undefined;
   }
   if (!stream) return undefined;
-  const out = stream;
-  out.on("error", () => {});
+  const { fd, owned } = stream;
+  let closed = false;
   const sink: RunEventSink = {
     emit(event) {
+      if (closed) return;
       try {
-        out.write(`${JSON.stringify(event)}\n`);
+        // Written synchronously, not queued on a stream. The channel now
+        // outlives every individual graph, so there is no per-run flush to hide
+        // behind — and a buffered line is a line a child that dies never
+        // delivers, which is exactly when a watcher most needs the record.
+        writeSync(fd, `${JSON.stringify(event)}\n`);
       } catch {
         /* the reader is gone; the run is not */
       }
     },
     close() {
-      return new Promise<void>((resolve) => {
-        try {
-          out.end(() => resolve());
-        } catch {
-          resolve();
+      if (!closed) {
+        closed = true;
+        // A descriptor the parent handed us belongs to the parent.
+        if (owned) {
+          try {
+            closeSync(fd);
+          } catch {
+            /* already gone */
+          }
         }
-      });
+      }
+      return Promise.resolve();
     },
   };
   installed = sink;

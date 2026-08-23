@@ -21,9 +21,9 @@ export const MAX_PROJECTED_DEPTH = 3;
  *
  * Owned subgraphs need no poll: `Task` emits `regenerate` on its own event bus
  * the moment its subgraph gains a task, so attaching is a subscription rather
- * than a guess. The terminal polls only because its hook cannot subscribe from
- * inside a render, and polling loses any subtask that starts and finishes
- * inside one interval — which is most of them on a fast pipeline.
+ * than a guess. The terminal attaches on the same event, for the same reason —
+ * a poll silently loses any subtask that starts and finishes inside one
+ * interval, which on a fast pipeline is most of them.
  */
 const ITERATION_SWEEP_MS = 150;
 

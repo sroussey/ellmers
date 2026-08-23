@@ -25,11 +25,6 @@ export interface SubtaskRowsState {
   readonly iterationSlots: ReadonlyMap<string, IterationSlotRow[]>;
 }
 
-/** A task in one of these states will never gain children, so stop waiting for them. */
-function isSettled(status: string): boolean {
-  return status === "COMPLETED" || status === "FAILED" || status === "ABORTED";
-}
-
 const EMPTY_SUBTASK_ROWS: SubtaskRowsState = {
   rows: [],
   tasks: new Map(),
@@ -110,11 +105,15 @@ export function useGraphTaskRows(graph: TaskGraph): SubtaskRowsState {
  * Tracks the tasks a running task owns via `context.own()`.
  *
  * A task's `subGraph` is usually empty when the row first mounts — children are
- * added as `execute()` reaches them — and `Task` only emits `regenerate` on its
- * own event bus when that happens, which no graph-level listener sees. So the
- * subgraph is attached lazily: poll `hasChildren()` until it flips, then
- * subscribe once with the same {@link subscribeTaskGraphForCli} the top-level
+ * added as `execute()` reaches them — so the subgraph is attached lazily, then
+ * subscribed once with the same {@link subscribeTaskGraphForCli} the top-level
  * graph uses.
+ *
+ * The signal to attach on is the task's OWN `regenerate` event, which `Task`
+ * emits the moment its subgraph gains a task. No graph-level listener sees it,
+ * which is why this used to poll `hasChildren()` instead — but this hook holds
+ * the task, and a poll silently loses any subtask that starts and finishes
+ * inside one interval, which on a fast pipeline is most of them.
  */
 export function useSubtaskRows(task: ITask): SubtaskRowsState {
   const skipTemplate = isIteratorTask(task);
@@ -126,16 +125,10 @@ export function useSubtaskRows(task: ITask): SubtaskRowsState {
     if (skipTemplate) return;
     let unsub: (() => void) | undefined;
     let stopPoll: (() => void) | undefined;
-    let attachInterval: ReturnType<typeof setInterval> | undefined;
 
     const tryAttach = (): void => {
       if (unsub) return;
-      if (!task.hasChildren() || !task.subGraph) {
-        // Recursion multiplies these pollers across the tree, and a leaf that
-        // finished childless would otherwise keep waking up for the whole run.
-        if (isSettled(task.status) && attachInterval !== undefined) clearInterval(attachInterval);
-        return;
-      }
+      if (!task.hasChildren() || !task.subGraph) return;
       unsub = subscribeTaskGraphForCli(
         task.subGraph,
         setTaskInfos,
@@ -144,17 +137,18 @@ export function useSubtaskRows(task: ITask): SubtaskRowsState {
         setIterationSlots
       );
       stopPoll = startGraphTaskPoll(task.subGraph, setTaskInfos);
-      // The subgraph is created once and kept, so nothing is left to wait for.
-      // Every row in a graph runs this hook — leaving the timer armed would cost
-      // one wake-up per childless task for the life of the run.
-      if (attachInterval !== undefined) clearInterval(attachInterval);
     };
 
+    // Fires when the subgraph gains a task, so a child is attached as it is
+    // owned rather than at the next tick of a timer. The subgraph is created
+    // once and kept, so `tryAttach` is a no-op after the first one lands.
+    task.events.on("regenerate", tryAttach);
+    // A row that mounts after its task already owns children gets no further
+    // `regenerate`, so the current state has to be read once up front.
     tryAttach();
-    if (!unsub) attachInterval = setInterval(tryAttach, 150);
 
     return () => {
-      if (attachInterval !== undefined) clearInterval(attachInterval);
+      task.events.off("regenerate", tryAttach);
       unsub?.();
       stopPoll?.();
     };

@@ -45,6 +45,27 @@ export function ensureRunReporting(): RunEventSink | undefined {
   readRunAnswerLines(process.env[RUN_ANSWERS_ENV] ?? "", (line) =>
     connector.feedHumanResponseLine(line)
   );
+
+  // The channel outlives any one graph — a command may run several — so it is
+  // flushed when the process ends rather than when a run does. `beforeExit`
+  // can still await; by `exit` nothing async can run, so the end() is
+  // best-effort there and only matters for a path that skipped beforeExit.
+  let closed = false;
+  const flush = async (): Promise<void> => {
+    if (closed) return;
+    closed = true;
+    await sink.close();
+  };
+  process.once("beforeExit", () => {
+    void flush();
+  });
+  process.once("exit", () => {
+    if (!closed) {
+      closed = true;
+      void sink.close();
+    }
+  });
+
   return sink;
 }
 

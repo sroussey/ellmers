@@ -24,6 +24,18 @@ import { renderTaskInstanceRun, renderWorkflowRun } from "./ui/render";
  * This is the one place that decides, which is what makes every command in
  * every CLI built on this package reportable without being rewritten: they all
  * reach their graph through {@link withCli}.
+ *
+ * A successful graph reports a `result`, NOT a `run_end`. One command commonly
+ * runs several graphs in sequence — `sync lists` rebuilds six tables, `sync
+ * all` walks every leaf — and each of those reaches here separately. Ending
+ * the run on the first one (and closing the channel behind it) is what made
+ * `embarc-data sync lists` report two tasks and one table's row count for a
+ * command that rebuilt six. The run ends when the PROCESS does, which the
+ * parent already observes.
+ *
+ * A failure is different, and does end the run: it propagates out of the
+ * command, so nothing further is coming, and the message is worth more than
+ * the exit code the parent would otherwise synthesize.
  */
 async function runReported<T>(
   sink: RunEventSink,
@@ -33,7 +45,7 @@ async function runReported<T>(
   const stop = attach(sink);
   try {
     const result = await execute();
-    sink.emit({ k: "run_end", state: "completed", error: undefined, output: result });
+    sink.emit({ k: "result", output: result });
     return result;
   } catch (error) {
     const aborted =
@@ -44,10 +56,10 @@ async function runReported<T>(
       error: error instanceof Error ? error.message : String(error),
       output: undefined,
     });
+    await sink.close();
     throw error;
   } finally {
     stop();
-    await sink.close();
   }
 }
 

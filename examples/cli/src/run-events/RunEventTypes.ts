@@ -69,6 +69,13 @@ export type RunEvent =
       readonly data: unknown;
     }
   | { readonly k: "log"; readonly level: "info" | "warn" | "error"; readonly text: string }
+  /**
+   * One graph finished and produced this. NOT the end of the run: a single
+   * command routinely runs several graphs in sequence (`sync lists` rebuilds
+   * six tables, `sync all` walks every leaf), and treating the first one's
+   * completion as the run's end stopped the console watching after it.
+   */
+  | { readonly k: "result"; readonly output: unknown }
   | {
       readonly k: "run_end";
       readonly state: RunState;

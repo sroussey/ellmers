@@ -81,8 +81,9 @@ describe("withCli with a run event channel", () => {
     const kinds = eventsFrom(file).map((e) => e.k);
     expect(kinds).toContain("task_added");
     expect(kinds).toContain("status");
-    expect(kinds).toContain("run_end");
-    expect(eventsFrom(file).at(-1)).toMatchObject({ k: "run_end", state: "completed" });
+    // A finished graph reports its `result`, not the end of the run — the
+    // process may still have more graphs to run. See the sequence test below.
+    expect(eventsFrom(file).at(-1)).toMatchObject({ k: "result" });
   });
 
   it("reports a failure as the run's end state and still rethrows", async () => {
@@ -106,7 +107,7 @@ describe("withCli with a run event channel", () => {
     await withCli(workflow.graph).run({});
     const kinds = eventsFrom(file).map((e) => e.k);
     expect(kinds).toContain("task_added");
-    expect(kinds).toContain("run_end");
+    expect(kinds).toContain("result");
   });
 
   it("reports even when the caller says not to draw a terminal UI", async () => {
@@ -121,12 +122,32 @@ describe("withCli with a run event channel", () => {
     expect(eventsFrom(file).map((e) => e.k)).toContain("task_added");
   });
 
+  it("keeps reporting across a command that runs several graphs", async () => {
+    // `sync lists` rebuilds six tables and `sync all` walks every leaf, each
+    // through its own `withCli`. Ending the run on the first graph — and
+    // closing the channel behind it — is what made the console show two tasks
+    // and one table's row count for a command that rebuilt six.
+    const file = tempFile();
+    installRunEventChannel(`file:${file}`);
+    for (const _ of [1, 2, 3]) {
+      const workflow = new Workflow();
+      workflow.pipe(new QuietTask() as never);
+      await withCli(workflow.graph).run({});
+    }
+    const events = eventsFrom(file);
+    expect(events.filter((e) => e.k === "result")).toHaveLength(3);
+    expect(events.filter((e) => e.k === "task_added").length).toBeGreaterThanOrEqual(3);
+    // Nothing claimed the run was over, so the parent's own view of the process
+    // exiting is what ends it.
+    expect(events.filter((e) => e.k === "run_end")).toHaveLength(0);
+  });
+
   it("reports a single-task run too", async () => {
     const file = tempFile();
     installRunEventChannel(`file:${file}`);
     await withCli(new QuietTask() as never).run({});
     const events = eventsFrom(file);
     expect(events.filter((e) => e.k === "task_added").length).toBeGreaterThan(0);
-    expect(events.at(-1)).toMatchObject({ k: "run_end", state: "completed" });
+    expect(events.at(-1)).toMatchObject({ k: "result" });
   });
 });

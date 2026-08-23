@@ -171,12 +171,19 @@ export function reduceRunEvent(
           schema: event.schema,
         },
       };
+    // One graph of possibly several finished. The last one wins: a command that
+    // runs a sequence ends on the one the operator was waiting for, and the
+    // earlier outputs are already in the log.
+    case "result":
+      return { ...state, output: event.output };
     case "run_end":
       return {
         ...state,
         state: event.state === "" ? "completed" : event.state,
         error: event.error,
-        output: event.output,
+        // A `run_end` synthesized from the exit code carries no output, and it
+        // must not erase what the graphs actually produced.
+        output: event.output ?? state.output,
         // A dead run cannot be answered, so an outstanding prompt goes with it.
         humanRequest: undefined,
       };
