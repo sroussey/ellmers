@@ -53,6 +53,7 @@ export async function startWebServer(args: StartWebServerArgs): Promise<WebServe
     token: args.token ?? randomUUID(),
     binaryName: args.binaryName,
     allowedHosts: new Set([args.host.toLowerCase(), "localhost", "127.0.0.1", "[::1]", "::1"]),
+    startedAt: Date.now(),
   };
 
   const server = createServer((req, res) => {

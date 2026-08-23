@@ -55,6 +55,36 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+/**
+ * One liveness probe.
+ *
+ * Deliberately not routed through {@link api}: a probe must never throw for
+ * the caller to interpret, and a bad token or a 500 answers the only question
+ * being asked — something is serving, or nothing is. It carries its own
+ * timeout because a half-open socket otherwise leaves the promise pending and
+ * the page believing the last good answer forever.
+ */
+export async function ping(
+  timeoutMs: number
+): Promise<{ readonly ok: boolean; readonly startedAt?: number }> {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), timeoutMs);
+  try {
+    const response = await fetch("/api/ping", {
+      headers: { "x-workglow-token": token },
+      signal: abort.signal,
+      cache: "no-store",
+    });
+    if (!response.ok) return { ok: false };
+    const body = (await response.json()) as { ok?: boolean; startedAt?: number };
+    return { ok: body.ok === true, startedAt: body.startedAt };
+  } catch {
+    return { ok: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function getCommands(): Promise<{
   readonly commands: readonly WebCommandNode[];
   readonly binaryName: string;

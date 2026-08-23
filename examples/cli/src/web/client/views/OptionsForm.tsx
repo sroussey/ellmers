@@ -170,6 +170,7 @@ export function OptionsForm({
   errors,
   onChange,
   onRun,
+  canRun = true,
 }: {
   binaryName: string;
   path: readonly string[];
@@ -178,6 +179,8 @@ export function OptionsForm({
   errors: readonly string[];
   onChange: (key: string, value: string | boolean) => void;
   onRun: (dryRun: boolean) => void;
+  /** False while the CLI is not answering its heartbeat; running would just fail. */
+  canRun?: boolean;
 }): JSX.Element {
   const { args, inputs, advanced } = splitFields(fields);
   const line = renderCliLine(binaryName, toInvocation(fields, values, path));
@@ -216,11 +219,16 @@ export function OptionsForm({
             Copy
           </button>
           {hasDryRun ? (
-            <button className="ghost" onClick={() => onRun(true)}>
+            <button className="ghost" onClick={() => onRun(true)} disabled={!canRun}>
               Dry run
             </button>
           ) : null}
-          <button className="btn primary" onClick={() => onRun(false)} disabled={errors.length > 0}>
+          <button
+            className="btn primary"
+            onClick={() => onRun(false)}
+            disabled={errors.length > 0 || !canRun}
+            title={canRun ? undefined : "the CLI is not responding"}
+          >
             Run <span className="kbd">↵</span>
           </button>
         </div>

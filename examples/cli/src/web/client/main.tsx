@@ -22,10 +22,18 @@ import {
   getStatusWidgets,
   listRuns,
   openRunStream,
+  ping,
   startRun,
   type RunSummary,
 } from "./api";
 import { formErrors, initialValues, toInvocation, type FormValues } from "./formModel";
+import {
+  HEARTBEAT_MS,
+  HEARTBEAT_TIMEOUT_MS,
+  INITIAL_LIVENESS,
+  reduceHeartbeat,
+  type CliLiveness,
+} from "./heartbeat";
 import {
   applyRecord,
   emptyRunView,
@@ -53,6 +61,46 @@ function useTick(active: boolean): number {
   return tick;
 }
 
+/**
+ * Polls the CLI once a second and reports whether it is answering.
+ *
+ * The page is served BY the CLI, and every button on it either starts work
+ * there or steers work already running there. When that process is gone —
+ * Ctrl-C in the terminal, a crash, a laptop that slept — nothing in the DOM
+ * says so: the buttons still look live and simply fail when pressed. This is
+ * what the rest of the page gates on so it can stop offering them.
+ */
+function useCliLiveness(): CliLiveness {
+  const [liveness, setLiveness] = useState<CliLiveness>(INITIAL_LIVENESS);
+
+  useEffect(() => {
+    let cancelled = false;
+    // One probe at a time. A CLI slower than the interval would otherwise
+    // accumulate a request per second against a process already struggling.
+    let inFlight = false;
+
+    const beat = async (): Promise<void> => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const probe = await ping(HEARTBEAT_TIMEOUT_MS);
+        if (!cancelled) setLiveness((previous) => reduceHeartbeat(previous, probe));
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    void beat();
+    const timer = setInterval(() => void beat(), HEARTBEAT_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
+  return liveness;
+}
+
 function App(): JSX.Element {
   const [commands, setCommands] = useState<readonly WebCommandNode[]>([]);
   const [binaryName, setBinaryName] = useState("workglow");
@@ -66,6 +114,7 @@ function App(): JSX.Element {
   const [run, setRun] = useState<RunSummary | undefined>(undefined);
   const [view, setView] = useState<RunViewState>(emptyRunView());
   const [connected, setConnected] = useState(true);
+  const cli = useCliLiveness();
   const [sortByStatus, setSortByStatus] = useState(true);
   const [mapView, setMapView] = useState<"rows" | "grid">("rows");
   const [selected, setSelected] = useState<string | undefined>(undefined);
@@ -207,6 +256,9 @@ function App(): JSX.Element {
   const onRun = useCallback(
     (dryRun: boolean) => {
       if (!node) return;
+      // Guarded here as well as on the button: Run also has a keyboard path,
+      // and a request to a dead CLI fails as an unexplained network error.
+      if (!cli.online) return;
       const invocation = toInvocation(fields, values, node.path);
       const withDry = dryRun
         ? { ...invocation, options: { ...invocation.options, "dry-run": true } }
@@ -218,7 +270,7 @@ function App(): JSX.Element {
         })
         .catch((cause: Error) => setError(cause.message));
     },
-    [attach, fields, node, values]
+    [attach, cli.online, fields, node, values]
   );
 
   // A finished run is where the Result tab and any contributed panels come from.
@@ -396,6 +448,18 @@ function App(): JSX.Element {
         </div>
 
         <div className="body">
+          {!cli.online ? (
+            <div className="wrap" style="color:var(--fail)">
+              {binaryName} is not responding. Anything that would talk to it is disabled until it
+              answers again.
+            </div>
+          ) : null}
+          {cli.online && cli.restarted ? (
+            <div className="wrap" style="color:var(--fail)">
+              {binaryName} restarted. It is reachable again, but it does not know about runs started
+              before the restart.
+            </div>
+          ) : null}
           {error ? (
             <div className="wrap" style="color:var(--fail)">
               {error}
@@ -404,7 +468,9 @@ function App(): JSX.Element {
           {view.humanRequest && run ? (
             <HumanPrompt
               request={view.humanRequest}
+              canAnswer={cli.online}
               onAnswer={(action, content) => {
+                if (!cli.online) return;
                 void answerHuman(run.id, {
                   requestId: view.humanRequest!.requestId,
                   action,
@@ -424,6 +490,7 @@ function App(): JSX.Element {
               errors={errors}
               onChange={onFieldChange}
               onRun={onRun}
+              canRun={cli.online}
             />
           ) : null}
           {tab === "options" && !node ? (
@@ -446,7 +513,10 @@ function App(): JSX.Element {
               mapView={mapView}
               onMapView={setMapView}
               onSelect={setSelected}
-              onAbort={() => void abortRun(run.id)}
+              canAbort={cli.online}
+              onAbort={() => {
+                if (cli.online) void abortRun(run.id);
+              }}
             />
           ) : null}
           {tab === "result" && run ? <ResultTab run={run} state={view} panels={panels} /> : null}
@@ -454,8 +524,17 @@ function App(): JSX.Element {
 
         <footer className="statusbar">
           <span className="live">
-            <span className={`dot ${connected ? "ok" : "fail"}`} />{" "}
-            {connected ? "connected" : "reconnecting"}
+            {/* Liveness of the CLI itself outranks the run stream: with the
+                process gone the stream is moot, and "reconnecting" would read
+                as a network hiccup rather than as a CLI that has stopped. */}
+            <span className={`dot ${cli.online ? (connected ? "ok" : "fail") : "fail"}`} />{" "}
+            {!cli.online
+              ? `${binaryName} not responding`
+              : cli.restarted
+                ? `${binaryName} restarted — earlier runs are gone`
+                : connected
+                  ? "connected"
+                  : "reconnecting"}
           </span>
           <span>{run ? `run ${run.id.slice(0, 8)}` : "no run"}</span>
           <span className="spacer" />

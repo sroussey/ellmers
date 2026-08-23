@@ -37,6 +37,12 @@ export interface WebContext {
   readonly binaryName: string;
   /** Host values the server will answer to, lower-cased, without the port. */
   readonly allowedHosts: ReadonlySet<string>;
+  /**
+   * When this server process started. Reported by `/api/ping` so a page can
+   * tell a restarted CLI from one that merely paused: the former answers again
+   * but remembers none of the runs the page is showing.
+   */
+  readonly startedAt: number;
 }
 
 const json = (status: number, body: unknown): WebResult => ({ kind: "json", status, body });
@@ -102,6 +108,17 @@ export async function handleWebRequest(request: WebRequest, ctx: WebContext): Pr
   // A page load carries the token in the query; assets it then requests carry
   // none, so only the API is gated. Nothing under the asset root is secret.
   if (denied && isApi) return denied;
+
+  if (request.path === "/api/ping") {
+    // Deliberately the cheapest thing here: polled once a second by every open
+    // page, it must not touch the registry, the database or the command tree.
+    //
+    // `startedAt` identifies THIS process, not just that something answered.
+    // A CLI restarted between polls is reachable again but remembers none of
+    // the runs the page is showing, and a page that treats that as "back to
+    // normal" leaves stale runs on screen with controls that address nothing.
+    return json(200, { ok: true, pid: process.pid, startedAt: ctx.startedAt });
+  }
 
   if (request.path === "/api/commands") {
     return json(200, { commands: buildCommandTree(ctx.program), binaryName: ctx.binaryName });

@@ -65,6 +65,31 @@ describe("web server", () => {
     expect(body.commands[0].name).toBe("demo");
   });
 
+  it("answers a heartbeat with the identity of the process serving it", async () => {
+    const h = await start();
+    const response = await fetch(`${h.url}/api/ping`, { headers: auth(h) });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { ok: boolean; pid: number; startedAt: number };
+    expect(body.ok).toBe(true);
+    // Identity, not just liveness: a restarted CLI answers again but remembers
+    // none of the runs the page is showing, and the page has to tell those
+    // apart to know whether what is on screen is still real.
+    expect(body.pid).toBe(process.pid);
+    expect(body.startedAt).toBeGreaterThan(0);
+
+    const again = (await (await fetch(`${h.url}/api/ping`, { headers: auth(h) })).json()) as {
+      startedAt: number;
+    };
+    expect(again.startedAt).toBe(body.startedAt);
+  });
+
+  it("gates the heartbeat behind the token like every other endpoint", async () => {
+    // A probe that answered unauthenticated would be a liveness oracle for
+    // anything that can reach the port.
+    const h = await start();
+    expect((await fetch(`${h.url}/api/ping`)).status).toBe(401);
+  });
+
   it("refuses the same request without the token", async () => {
     const h = await start();
     expect((await fetch(`${h.url}/api/commands`)).status).toBe(401);

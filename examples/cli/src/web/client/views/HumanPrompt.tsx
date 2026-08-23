@@ -21,9 +21,12 @@ interface SchemaLike {
 export function HumanPrompt({
   request,
   onAnswer,
+  canAnswer = true,
 }: {
   request: { requestId: string; message: string; schema: unknown };
   onAnswer: (action: "accept" | "cancel", content: Record<string, unknown> | undefined) => void;
+  /** False while the CLI is not answering; the run cannot receive a reply. */
+  canAnswer?: boolean;
 }): JSX.Element {
   const [values, setValues] = useState<Record<string, string>>({});
   const schema = (request.schema ?? {}) as SchemaLike;
@@ -51,10 +54,19 @@ export function HumanPrompt({
               </div>
             ))}
             <div style="display:flex;gap:8px;margin-top:8px">
-              <button className="btn primary" onClick={() => onAnswer("accept", values)}>
+              <button
+                className="btn primary"
+                onClick={() => onAnswer("accept", values)}
+                disabled={!canAnswer}
+                title={canAnswer ? undefined : "the CLI is not responding"}
+              >
                 Send
               </button>
-              <button className="btn" onClick={() => onAnswer("cancel", undefined)}>
+              <button
+                className="btn"
+                onClick={() => onAnswer("cancel", undefined)}
+                disabled={!canAnswer}
+              >
                 Cancel
               </button>
             </div>

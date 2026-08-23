@@ -109,6 +109,7 @@ export function RunConsole({
   onMapView,
   onSelect,
   onAbort,
+  canAbort = true,
 }: {
   cli: string;
   state: RunViewState;
@@ -121,6 +122,8 @@ export function RunConsole({
   onMapView: (view: "rows" | "grid") => void;
   onSelect: (id: string) => void;
   onAbort: () => void;
+  /** False while the CLI is not answering; the abort would reach nothing. */
+  canAbort?: boolean;
 }): JSX.Element {
   const rows = orderedRows(state, sortByStatus);
   const statuses = rows.map((row) => row.status);
@@ -163,7 +166,12 @@ export function RunConsole({
             </>
           ) : null}
           {state.state === "running" ? (
-            <button className="ghost" onClick={onAbort}>
+            <button
+              className="ghost"
+              onClick={onAbort}
+              disabled={!canAbort}
+              title={canAbort ? undefined : "the CLI is not responding"}
+            >
               Abort
             </button>
           ) : null}
