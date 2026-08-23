@@ -89,6 +89,10 @@ export class EvalSweepTask extends Task<Record<string, never>, Ports<EvalSweepTa
     );
     const run_id = await runSweep(stores, this.#rows, {
       ...options,
+      // Each row's workflow is owned by this task while it runs, so the sweep
+      // is ONE graph: the console shows the rows currently in flight beneath
+      // this row rather than nothing at all.
+      owner: context,
       onProgress: (done, total, model, ok, usage) => {
         // The caller's own reporter still runs — it owns the stderr tally —
         // and the percentage rides alongside it so a watching console shows

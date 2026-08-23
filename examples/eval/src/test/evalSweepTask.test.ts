@@ -12,9 +12,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { EvalSweepTask } from "../evals/EvalSweepTask";
+import { runWithStreamChunks } from "../evals/streamSubscribe";
 import type { RowExecutor } from "../evals/types";
 import type { DatasetRowRecord } from "../storage";
 import { createInMemoryStores } from "../storage";
+
+/**
+ * Set before any test runs: the CLI installs its run-event channel once per
+ * process, reading this variable on the first `withCli` call and memoizing the
+ * result. Setting it inside a test races whatever ran first.
+ */
+const EVENTS_FILE = join(mkdtempSync(join(tmpdir(), "eval-events-")), "events.ndjson");
+process.env.WORKGLOW_RUN_EVENTS = `file:${EVENTS_FILE}`;
 
 const fakeExecutor = vi.fn<RowExecutor>();
 vi.mock("../evals/classify", () => ({
@@ -93,31 +102,55 @@ describe("EvalSweepTask", () => {
     await expect(new EvalSweepTask().run()).rejects.toThrow(/withSweep/);
   });
 
-  it("reports the sweep to a watching parent when one asks", async () => {
-    // The whole reason the command goes through `withCli` rather than calling
-    // `workflow.run()`: a parent that set the channel — the web console runs
-    // commands as child processes — sees the sweep as a task graph. Nothing is
-    // drawn here; `interactive: false` leaves the terminal to the tally.
-    fakeExecutor.mockResolvedValue({ expected: "0", predicted: "0", usage: undefined });
-    const file = join(mkdtempSync(join(tmpdir(), "eval-events-")), "events.ndjson");
-    process.env.WORKGLOW_RUN_EVENTS = `file:${file}`;
+  it("reports the sweep as ONE graph, each row visible while it is in flight", async () => {
+    // Two properties in one test, because the run event channel installs once
+    // per process: the command goes through `withCli` so a watching parent (the
+    // web console runs commands as child processes) sees the sweep at all, and
+    // each row is OWNED by the sweep so the parent sees what it is doing rather
+    // than one opaque task for the whole thing.
+    const owners: string[] = [];
+    // Runs a row the way a real executor does — through `runWithStreamChunks`,
+    // which is the seam that owns the row's workflow. A fake that only returns
+    // a value would assert the owner was PASSED and nothing about it working.
+    fakeExecutor.mockImplementation(async (_row, chunk, owner) => {
+      if (owner) owners.push(owner.title);
+      await runWithStreamChunks(new Workflow(), chunk, owner);
+      return { expected: "0", predicted: "0", usage: undefined };
+    });
+    const file = EVENTS_FILE;
     try {
       const stores = await createInMemoryStores();
       const workflow = new Workflow();
-      workflow.pipe(new EvalSweepTask().withSweep(stores, rows(2), options()) as never);
+      workflow.pipe(new EvalSweepTask().withSweep(stores, rows(3), options()) as never);
       await withCli(workflow, { interactive: false }).run();
 
-      const kinds = readFileSync(file, "utf8")
+      const events = readFileSync(file, "utf8")
         .trim()
         .split("\n")
         .filter(Boolean)
-        .map((line) => (JSON.parse(line) as { k: string }).k);
+        .map((line) => JSON.parse(line) as { k: string; id?: string; label?: string });
+      const kinds = events.map((e) => e.k);
       expect(kinds).toContain("task_added");
       expect(kinds).toContain("status");
       // A finished graph reports `result`; the run ends with the process.
       expect(kinds).toContain("result");
+
+      // Every row was handed an owner, labelled by model and row rather than
+      // repeating one class name N times.
+      expect(owners).toEqual([
+        "claude-haiku-4-5 · row 0",
+        "claude-haiku-4-5 · row 1",
+        "claude-haiku-4-5 · row 2",
+      ]);
+
+      // The rows are children of the sweep, and they LEAVE when done — a
+      // thousand-row sweep must not accumulate a thousand rows.
+      const added = events.filter((e) => e.k === "task_added");
+      expect(added.find((e) => e.label === "Run eval sweep")).toBeDefined();
+      expect(added.length).toBeGreaterThan(1);
+      expect(events.filter((e) => e.k === "task_removed").length).toBeGreaterThan(0);
     } finally {
-      delete process.env.WORKGLOW_RUN_EVENTS;
+      fakeExecutor.mockReset();
     }
   });
 });

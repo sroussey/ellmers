@@ -32,7 +32,7 @@ export function makeSimilarityExecutor(
     }
   }
 
-  return async (row, onStreamChunk) => {
+  return async (row, onStreamChunk, owner) => {
     const a = String(row[options.textColumn] ?? "");
     const b = String(row[options.pairColumn] ?? "");
     const workflow = new Workflow();
@@ -40,7 +40,7 @@ export function makeSimilarityExecutor(
     const output = await runWithStreamChunks<{
       vector: TypedArray | TypedArray[];
       [USAGE_OUTPUT_KEY]?: Usage;
-    }>(workflow, onStreamChunk);
+    }>(workflow, onStreamChunk, owner);
     const vectors = Array.isArray(output.vector) ? output.vector : [output.vector];
     if (vectors.length < 2) {
       throw new Error(`expected 2 embeddings, got ${vectors.length}`);
