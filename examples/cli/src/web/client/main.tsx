@@ -7,10 +7,10 @@
 
 import type { JSX } from "preact";
 import { render } from "preact";
-import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { RunEvent } from "../../run-events/RunEventTypes";
 import type { WebField } from "../commandFields";
-import type { WebCommandNode } from "../commandTree";
+import { findCommandNode, type WebCommandNode } from "../commandTree";
 import type { PanelData } from "../extensions";
 import {
   abortRun,
@@ -81,6 +81,8 @@ function App(): JSX.Element {
     }[]
   >([]);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [theme, setTheme] = useState<"light" | "auto" | "dark">("auto");
+  const closeStreamRef = useRef<(() => void) | undefined>(undefined);
 
   const running = run !== undefined && view.state === "running";
   const tick = useTick(running);
@@ -109,17 +111,36 @@ function App(): JSX.Element {
       .catch(() => {});
   }, []);
 
-  const selectNode = useCallback((next: WebCommandNode) => {
-    setNode(next);
-    setTab("options");
-    setOpen((current) => new Set([...current, ...openPathsFor(next.path)]));
-    void getFields(next.path, [])
-      .then((result) => {
-        setFields(result.fields);
-        setValues(initialValues(result.fields));
-      })
-      .catch((cause: Error) => setError(cause.message));
+  /**
+   * Detaches the run being watched. Switching commands does this, because the
+   * tabs describe the command in front of you: leaving a finished run attached
+   * made `model detail` report itself completed, with `model list`'s results on
+   * its Result tab.
+   */
+  const detachRun = useCallback(() => {
+    closeStreamRef.current?.();
+    closeStreamRef.current = undefined;
+    setRun(undefined);
+    setView(emptyRunView());
+    setPanels([]);
+    setSelected(undefined);
   }, []);
+
+  const selectNode = useCallback(
+    (next: WebCommandNode) => {
+      if (next !== node) detachRun();
+      setNode(next);
+      setTab("options");
+      setOpen((current) => new Set([...current, ...openPathsFor(next.path)]));
+      void getFields(next.path, [])
+        .then((result) => {
+          setFields(result.fields);
+          setValues(initialValues(result.fields));
+        })
+        .catch((cause: Error) => setError(cause.message));
+    },
+    [detachRun, node]
+  );
 
   /** An argument decides which schema applies, so changing one re-asks. */
   const onFieldChange = useCallback(
@@ -142,24 +163,46 @@ function App(): JSX.Element {
     [fields, node]
   );
 
-  const attach = useCallback((summary: RunSummary) => {
-    setRun(summary);
-    setSelected(undefined);
-    setPanels([]);
-    setView(emptyRunView());
-    setTab("run");
-    void getRun(summary.id).then((detail) => {
-      let next = emptyRunView();
-      for (const record of detail.events) next = applyRecord(next, record.seq, record.event);
-      setView(next);
-      openRunStream(
-        summary.id,
-        next.lastSeq,
-        (seq, event: RunEvent) => setView((current) => applyRecord(current, seq, event)),
-        setConnected
-      );
-    });
-  }, []);
+  const attach = useCallback(
+    (summary: RunSummary, keepCommand = false) => {
+      // One stream at a time: without this, every run you opened kept its own
+      // EventSource for the life of the page.
+      closeStreamRef.current?.();
+      closeStreamRef.current = undefined;
+      setRun(summary);
+      setSelected(undefined);
+      setPanels([]);
+      setView(emptyRunView());
+      setTab("run");
+      // Show the command the run actually ran, so the crumb and the options
+      // under it describe what you are looking at.
+      if (!keepCommand) {
+        const owner = findCommandNode(commands, summary.invocation.path);
+        if (owner && owner !== node) {
+          setNode(owner);
+          setOpen((current) => new Set([...current, ...openPathsFor(owner.path)]));
+          void getFields(owner.path, summary.invocation.args)
+            .then((result) => {
+              setFields(result.fields);
+              setValues(initialValues(result.fields));
+            })
+            .catch(() => {});
+        }
+      }
+      void getRun(summary.id).then((detail) => {
+        let next = emptyRunView();
+        for (const record of detail.events) next = applyRecord(next, record.seq, record.event);
+        setView(next);
+        closeStreamRef.current = openRunStream(
+          summary.id,
+          next.lastSeq,
+          (seq, event: RunEvent) => setView((current) => applyRecord(current, seq, event)),
+          setConnected
+        );
+      });
+    },
+    [commands, node]
+  );
 
   const onRun = useCallback(
     (dryRun: boolean) => {
@@ -170,7 +213,7 @@ function App(): JSX.Element {
         : invocation;
       void startRun(withDry)
         .then((summary) => {
-          attach(summary);
+          attach(summary, true);
           void listRuns().then((result) => setRuns(result.runs));
         })
         .catch((cause: Error) => setError(cause.message));
@@ -188,6 +231,15 @@ function App(): JSX.Element {
       .then((result) => setRuns(result.runs))
       .catch(() => {});
   }, [run, view.state]);
+
+  // "auto" is the absence of a choice: the stylesheet reads the viewer's own
+  // setting when nothing is stamped, so clearing is what auto means.
+  useEffect(() => {
+    if (theme === "auto") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  useEffect(() => () => closeStreamRef.current?.(), []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -310,15 +362,13 @@ function App(): JSX.Element {
               </button>
             </div>
             <div className="tgl" role="group" aria-label="Theme">
-              {(["light", "auto", "dark"] as const).map((theme) => (
+              {(["light", "auto", "dark"] as const).map((candidate) => (
                 <button
-                  key={theme}
-                  onClick={() => {
-                    if (theme === "auto") delete document.documentElement.dataset.theme;
-                    else document.documentElement.dataset.theme = theme;
-                  }}
+                  key={candidate}
+                  aria-pressed={theme === candidate}
+                  onClick={() => setTheme(candidate)}
                 >
-                  {theme}
+                  {candidate}
                 </button>
               ))}
             </div>
