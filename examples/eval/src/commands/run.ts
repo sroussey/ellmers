@@ -4,9 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { withCli } from "@workglow/cli";
 import type { StreamEvent } from "@workglow/task-graph";
+import { Workflow } from "@workglow/task-graph";
 import type { Command } from "commander";
-import { runSweep } from "../evals/runner";
+import { EvalSweepTask, type EvalSweepTaskOutput } from "../evals/EvalSweepTask";
 import type { ColumnOptions, DatasetContext } from "../evals/types";
 import type { LabelNames } from "../hf/types";
 import type { EvalKind } from "../models";
@@ -167,19 +169,31 @@ async function runEval(kind: EvalKind, flags: RunFlags, stores: EvalStores): Pro
         if (event.type === "text-delta") process.stderr.write(event.textDelta);
       }
     : undefined;
-  const runId = await runSweep(stores, limited, {
-    kind,
-    dataset: flags.dataset,
-    split: flags.split,
-    models,
-    columns,
-    context,
-    onProgress: (done, total, model, ok, usage) => {
-      tally.record(model, ok, usage);
-      process.stderr.write(`${tally.render(done, total, Date.now())}\n`);
-    },
-    onStreamChunk,
-  });
+  // Through `withCli`, the seam that decides what a run does with itself. It
+  // draws nothing here — `interactive: false`, because the tally below owns
+  // the terminal — but it is what lets a watching parent (the web console runs
+  // commands as child processes) see the sweep at all.
+  const sweep = new EvalSweepTask({ title: `${kind} · ${flags.dataset}` }).withSweep(
+    stores,
+    limited,
+    {
+      kind,
+      dataset: flags.dataset,
+      split: flags.split,
+      models,
+      columns,
+      context,
+      onProgress: (done, total, model, ok, usage) => {
+        tally.record(model, ok, usage);
+        process.stderr.write(`${tally.render(done, total, Date.now())}\n`);
+      },
+      onStreamChunk,
+    }
+  );
+  const workflow = new Workflow();
+  workflow.pipe(sweep as never);
+  const output = (await withCli(workflow, { interactive: false }).run()) as EvalSweepTaskOutput;
+  const runId = output.run_id;
 
   console.error(`run ${runId} complete\n`);
   await printReport(stores, runId, flags.format);

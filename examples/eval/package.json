@@ -35,6 +35,7 @@
   "dependencies": {
     "@workglow/ai": "workspace:*",
     "@workglow/anthropic": "workspace:*",
+    "@workglow/cli": "workspace:*",
     "@workglow/deepseek": "workspace:*",
     "@workglow/google-gemini": "workspace:*",
     "@workglow/huggingface-transformers": "workspace:*",
