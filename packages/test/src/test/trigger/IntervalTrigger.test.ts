@@ -622,7 +622,9 @@ describe("IntervalTrigger", () => {
         expect(errors.map((error) => error.message)).toContain("stop listener boom");
         expect(rejections).toEqual([]);
       } finally {
-        process.off("unhandledRejection", onRejection);
+        // bun-types 1.4 shadows `Process.off` with a memoryPressure-only overload;
+        // the EventEmitter view still carries the generic one.
+        (process as NodeJS.EventEmitter).off("unhandledRejection", onRejection);
       }
     });
   });

@@ -118,7 +118,9 @@ describe("FileSedTask (server - local files)", () => {
       expect(result.replacementCount).toBe(DEFAULT_LIMITS.grepMaxLineChars);
       expect(result.text).toHaveLength(DEFAULT_LIMITS.grepMaxLineChars + 1);
     } finally {
-      process.off("uncaughtException", spy);
+      // bun-types 1.4 shadows `Process.off` with a memoryPressure-only overload;
+      // the EventEmitter view still carries the generic one.
+      (process as NodeJS.EventEmitter).off("uncaughtException", spy);
     }
   });
 

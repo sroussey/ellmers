@@ -161,7 +161,9 @@ describe("SafeFetch server transport (real node:http, no mocks)", () => {
   });
 
   afterEach(async () => {
-    process.off("unhandledRejection", onUnhandledRejection);
+    // bun-types 1.4 shadows `Process.off` with a memoryPressure-only overload;
+    // the EventEmitter view still carries the generic one.
+    (process as NodeJS.EventEmitter).off("unhandledRejection", onUnhandledRejection);
     for (const timer of timers.splice(0)) clearTimeout(timer);
     for (const server of servers.splice(0)) await closeServer(server);
   });
