@@ -337,3 +337,14 @@ export function filterCommandTree(
 export function openPathsFor(path: readonly string[]): string[] {
   return path.slice(0, -1).map((_, index) => path.slice(0, index + 1).join("."));
 }
+
+/**
+ * On a stacked (narrow) layout the rail and the main pane cannot share the
+ * viewport. Selecting a command — or attaching a run — must show the detail
+ * pane; going back restores the list.
+ */
+export type StackedPane = "list" | "detail";
+
+export function stackedPane(action: "select" | "back"): StackedPane {
+  return action === "back" ? "list" : "detail";
+}

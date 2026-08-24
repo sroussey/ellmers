@@ -39,7 +39,9 @@ import {
   emptyRunView,
   filterCommandTree,
   openPathsFor,
+  stackedPane,
   type RunViewState,
+  type StackedPane,
 } from "./state";
 import { CommandTree } from "./views/CommandTree";
 import { HumanPrompt } from "./views/HumanPrompt";
@@ -118,6 +120,7 @@ function App(): JSX.Element {
   const [sortByStatus, setSortByStatus] = useState(true);
   const [mapView, setMapView] = useState<"rows" | "grid">("rows");
   const [selected, setSelected] = useState<string | undefined>(undefined);
+  const [pane, setPane] = useState<StackedPane>("list");
   const [panels, setPanels] = useState<
     readonly { id: string; title: string; source: string; data: PanelData }[]
   >([]);
@@ -179,6 +182,7 @@ function App(): JSX.Element {
     (next: WebCommandNode) => {
       if (next !== node) detachRun();
       setNode(next);
+      setPane(stackedPane("select"));
       setTab("options");
       setOpen((current) => new Set([...current, ...openPathsFor(next.path)]));
       void getFields(next.path, [])
@@ -219,6 +223,7 @@ function App(): JSX.Element {
       closeStreamRef.current?.();
       closeStreamRef.current = undefined;
       setRun(summary);
+      setPane(stackedPane("select"));
       setSelected(undefined);
       setPanels([]);
       setView(emptyRunView());
@@ -320,7 +325,7 @@ function App(): JSX.Element {
   const crumbs = node ? [binaryName, ...node.path] : [binaryName];
 
   return (
-    <div className="app">
+    <div className="app" data-pane={pane}>
       <aside className="rail">
         <div className="brand">
           <div className="mark">w</div>
@@ -388,6 +393,14 @@ function App(): JSX.Element {
 
       <main className="main">
         <header className="topbar">
+          <button
+            type="button"
+            className="back"
+            aria-label="Back to commands"
+            onClick={() => setPane(stackedPane("back"))}
+          >
+            ←
+          </button>
           <div className="crumb">
             {crumbs.map((segment, index) => (
               <>

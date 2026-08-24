@@ -17,6 +17,7 @@ import {
   orderedRows,
   reduceRunEvent,
   runLogText,
+  stackedPane,
   type RunViewState,
 } from "./state";
 
@@ -214,5 +215,14 @@ describe("consoleContent", () => {
 
   it("waits only while there is genuinely nothing yet", () => {
     expect(consoleContent(0, emptyRunView())).toBe("waiting");
+  });
+});
+
+describe("stackedPane", () => {
+  it("shows the command after a select, and the rail after back", () => {
+    // On a stacked (narrow) layout the rail and the main pane cannot both
+    // fit, so picking a command has to switch the visible pane.
+    expect(stackedPane("select")).toBe("detail");
+    expect(stackedPane("back")).toBe("list");
   });
 });

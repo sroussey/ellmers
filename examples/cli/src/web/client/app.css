@@ -335,10 +335,17 @@ pre.json .k{color:var(--ink-3)} pre.json .s{color:var(--ink)} pre.json .n{color:
 .q{border-left:2px solid var(--accent);padding:2px 0 2px 12px;margin:0 0 14px;color:var(--ink-2)}
 .q b{color:var(--ink)}
 
+.back{display:none;flex:none;align-items:center;justify-content:center;width:28px;height:28px;
+  margin:0 6px 0 -4px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--panel);
+  color:var(--ink);cursor:pointer;font-size:16px;line-height:1}
+.back:hover{border-color:var(--ink-3)}
+
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media (max-width:820px){
-  .app{grid-template-columns:minmax(0,1fr);height:auto}
-  .rail{border-right:0;border-bottom:1px solid var(--line)}
-  .tree{max-height:240px}
+  .app{grid-template-columns:minmax(0,1fr)}
+  .app[data-pane="list"] .main{display:none}
+  .app[data-pane="detail"] .rail{display:none}
+  .back{display:inline-flex}
+  .rail{border-right:0}
   .field{grid-template-columns:minmax(0,1fr);gap:6px}
 }
