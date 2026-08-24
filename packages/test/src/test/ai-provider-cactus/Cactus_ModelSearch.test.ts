@@ -5,6 +5,7 @@
  */
 
 import type { ModelSearchTaskOutput } from "@workglow/ai";
+import { CACTUS_CATALOG } from "@workglow/cactus/ai";
 import { describe, expect, it } from "vitest";
 import { runFnFor } from "./test-utils";
 
@@ -22,8 +23,11 @@ describe("Cactus_ModelSearch", () => {
         if (ev.type === "finish") finishData = ev.data as ModelSearchTaskOutput;
       }
     );
-    expect(finishData?.results.length).toBe(1);
-    expect(finishData?.results[0].id).toBe("needle-26m");
+    const ids = finishData?.results.map((r) => r.id) ?? [];
+    expect(ids).toEqual(expect.arrayContaining(["needle-26m", "needle-v2"]));
+    // An empty query returns the whole catalog — assert against it rather than
+    // a literal count, so adding a model does not fail an unrelated test.
+    expect(ids).toEqual(CACTUS_CATALOG.map((entry) => entry.model_id));
     expect(finishData?.results[0].record.provider).toBe("LOCAL_CACTUS");
   });
 });

@@ -24,6 +24,19 @@ describe("CactusModelConfigSchema", () => {
     expect(result.valid).toBe(true);
   });
 
+  it("accepts the Needle v2 catalog id", () => {
+    const result = validator.validate({
+      model_id: "needle-v2-test",
+      title: "Needle 2",
+      description: "",
+      provider: "LOCAL_CACTUS",
+      provider_config: { model_id: "needle-v2" },
+      capabilities: ["tool-use"],
+      metadata: {},
+    });
+    expect(result.valid).toBe(true);
+  });
+
   it("rejects an unknown model_id", () => {
     const result = validator.validate({
       model_id: "x",

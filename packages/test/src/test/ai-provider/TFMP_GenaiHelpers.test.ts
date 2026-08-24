@@ -24,7 +24,12 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-const requireFromTfmp = createRequire(join(process.cwd(), "providers/tf-mediapipe/package.json"));
+// Anchored to this file, not `process.cwd()`: the package's own test script
+// runs vitest from `packages/test`, where a cwd-relative path resolves to a
+// directory that does not exist.
+const requireFromTfmp = createRequire(
+  new URL("../../../../../providers/tf-mediapipe/package.json", import.meta.url)
+);
 
 const {
   buildGenaiPrompt,

@@ -9,6 +9,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { CACTUS_CACHE_NAME, CACTUS_DEFAULT_MODELS_DIR } from "./Cactus_Constants";
 import { CactusIntegrityError, verifySha256 } from "./Cactus_Integrity";
+import { loadCactusModel, type NeedleEngine, type NeedleSdkModule } from "./Cactus_LoadEngine";
 import {
   assetSpecsOf,
   cactusAssetUrl,
@@ -17,11 +18,6 @@ import {
   type CactusCatalogEntry,
 } from "./Cactus_ModelCatalog";
 import type { CactusModelConfig } from "./Cactus_ModelSchema";
-
-type NeedleSdkModule = typeof import("needle-rs");
-// `NeedleWasm` has a private constructor so `InstanceType<...>` cannot be used.
-// Recover the instance type from the static `load` method's non-undefined return.
-type NeedleEngine = NonNullable<ReturnType<NeedleSdkModule["NeedleWasm"]["load"]>>;
 
 export interface CactusModelCacheInfo {
   readonly allCached: boolean;
@@ -498,25 +494,10 @@ export async function getOrLoadEngine(model: CactusModelConfig): Promise<NeedleE
     const entry = getCactusCatalogEntry(model_id);
     if (!entry) throw new Error(`Unknown Cactus model_id: ${model_id}`);
 
-    const [weightsBytes, vocabBytes, configBytes] = await Promise.all([
-      fetchAssetBytes(model, entry.assets.weights),
-      fetchAssetBytes(model, entry.assets.vocab),
-      fetchAssetBytes(model, entry.assets.config),
-    ]);
-
-    try {
-      const text = new TextDecoder().decode(configBytes);
-      cactusConfigJson.set(model_id, JSON.parse(text));
-    } catch {
-      cactusConfigJson.set(model_id, null);
-    }
-
-    // needle-rs `NeedleWasm.load(weights_bytes: Uint8Array, vocab_text: string)` — vocab is a string.
-    const vocabText = new TextDecoder().decode(vocabBytes);
-    const engine = sdk.NeedleWasm.load(weightsBytes, vocabText);
-    if (!engine) {
-      throw new Error(`needle-rs NeedleWasm.load returned undefined for model ${model_id}`);
-    }
+    const { engine, configJson } = await loadCactusModel(sdk, entry, (spec) =>
+      fetchAssetBytes(model, spec)
+    );
+    cactusConfigJson.set(model_id, configJson);
     cactusEngines.set(model_id, engine);
     return engine;
   })().finally(() => {
