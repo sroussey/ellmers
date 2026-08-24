@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import type { Usage } from "../../task/StreamTypes";
 import type { RetiredUsage } from "../GraphUsageAggregator";
-import { GraphUsageAggregator, UNNAMED_MODEL } from "../GraphUsageAggregator";
+import { EVICTED_TASKS, GraphUsageAggregator, UNNAMED_MODEL } from "../GraphUsageAggregator";
 
 const usage = (input: number, output: number): Usage => ({
   input,
@@ -138,6 +138,30 @@ describe("GraphUsageAggregator", () => {
 
       expect(agg.byModel().get(UNNAMED_MODEL)).toEqual(usage(10, 1));
       expect(agg.byModel().get("unnamed")).toEqual(usage(20, 2));
+    });
+
+    it("bounds the per-task rollup without losing the spend it accounted for", () => {
+      // A map over a corpus mints a fresh clone id per item, so the per-task
+      // rollup would otherwise grow one row per item for the life of the run.
+      const agg = new GraphUsageAggregator();
+      const items = 2_000;
+      for (let i = 0; i < items; i++) {
+        agg.observe(`clone-${i}`, usage(1, 1), "m");
+        agg.retire(`clone-${i}`);
+      }
+
+      const byTask = agg.byTask();
+      expect(byTask.size).toBeLessThanOrEqual(513);
+
+      const sum = (rows: Iterable<Usage>): Usage =>
+        [...rows].reduce((a, b) => usage(a.input! + b.input!, a.output! + b.output!), usage(0, 0));
+      // Evicted rows fold into one bucket rather than vanishing, so the rollup
+      // still sums to the run total.
+      expect(sum(byTask.values())).toEqual(usage(items, items));
+      expect(agg.total).toEqual(usage(items, items));
+      expect(byTask.get(EVICTED_TASKS)).toBeDefined();
+      // The most recent tasks stay individually addressable.
+      expect(byTask.get(`clone-${items - 1}`)).toEqual(usage(1, 1));
     });
 
     it("clears both rollups for a fresh run", () => {
