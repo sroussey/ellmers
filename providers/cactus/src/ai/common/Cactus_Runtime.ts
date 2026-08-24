@@ -498,7 +498,7 @@ export async function getOrLoadEngine(model: CactusModelConfig): Promise<NeedleE
     const blobs = await Promise.all(specs.map((spec) => fetchAssetBytes(model, spec)));
     const files = Object.fromEntries(specs.map((spec, i) => [spec.filename, blobs[i]!]));
 
-    if (entry.generation === 1) {
+    if ("config" in entry.assets) {
       try {
         const text = new TextDecoder().decode(files[entry.assets.config.filename]);
         cactusConfigJson.set(model_id, JSON.parse(text));
