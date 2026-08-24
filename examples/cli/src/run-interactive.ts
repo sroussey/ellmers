@@ -112,6 +112,30 @@ export interface WithCliOptions {
   readonly interactive?: boolean;
 }
 
+/**
+ * Operator opt-out from the terminal UI: `WORKGLOW_NO_TUI=1` runs plainly even
+ * on a TTY, exactly as a piped run does.
+ *
+ * It exists because the UI is not free to keep alive indefinitely. Ink renders
+ * through `yoga-layout` compiled to WASM, and WASM linear memory is neither the
+ * JS heap nor node's `external` — so what it retains is invisible to
+ * `heapUsed`, survives `Bun.gc(true)`, and is never returned to the OS.
+ * Measured on a bare 10-row Ink app that only re-renders: RSS grows with
+ * rendered elements x renders, ~25 KB per render at 10 rows, linear in both and
+ * with no plateau. A long-running sweep is the pathological case — an hours-long
+ * `sync` fan-out re-renders on every task and iteration event, which measured
+ * ~130 renders/second and took one process from 249 MB to 1.15 GB across 3,000
+ * items while its JS heap stayed flat at ~100 MB.
+ *
+ * So this is a mitigation, not a fix: it removes the UI, which removes the
+ * leak. The leak itself is upstream. Reach for it on any run whose length is
+ * governed by the size of the data rather than by a human watching it.
+ */
+export function tuiDisabledByEnv(): boolean {
+  const raw = process.env.WORKGLOW_NO_TUI?.trim().toLowerCase();
+  return raw !== undefined && raw !== "" && raw !== "0" && raw !== "false";
+}
+
 export interface WithCliTaskHandle {
   readonly kind: "task";
   run(overrides?: Record<string, unknown>): Promise<unknown>;
@@ -134,7 +158,7 @@ export type WithCliHandle = WithCliTaskHandle | WithCliWorkflowHandle | WithCliG
 
 function withCliTask(task: ITask, options?: WithCliOptions): WithCliTaskHandle {
   const suppressResultOutput = options?.suppressResultOutput ?? true;
-  const interactive = options?.interactive ?? true;
+  const interactive = (options?.interactive ?? true) && !tuiDisabledByEnv();
   return {
     kind: "task",
     abort: () => {
@@ -171,7 +195,7 @@ function withCliTask(task: ITask, options?: WithCliOptions): WithCliTaskHandle {
 
 function withCliWorkflow(workflow: IWorkflow, options?: WithCliOptions): WithCliWorkflowHandle {
   const suppressResultOutput = options?.suppressResultOutput ?? true;
-  const interactive = options?.interactive ?? true;
+  const interactive = (options?.interactive ?? true) && !tuiDisabledByEnv();
   return {
     kind: "workflow",
     abort: () => {
@@ -206,7 +230,7 @@ function withCliWorkflow(workflow: IWorkflow, options?: WithCliOptions): WithCli
 
 function withCliGraph(graph: TaskGraph, options?: WithCliOptions): WithCliGraphHandle {
   const suppressResultOutput = options?.suppressResultOutput ?? true;
-  const interactive = options?.interactive ?? true;
+  const interactive = (options?.interactive ?? true) && !tuiDisabledByEnv();
   return {
     kind: "graph",
     abort: () => {
