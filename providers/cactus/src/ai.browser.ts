@@ -7,6 +7,7 @@
 // organize-imports-ignore
 
 export * from "./ai/common/Cactus_Constants";
+export * from "./ai/common/Cactus_LoadEngine";
 export * from "./ai/common/Cactus_ModelCatalog";
 export * from "./ai/common/Cactus_ModelSchema";
 // Mutable runtime state (e.g. cactusEngines, cactusEngineLoadsInFlight,

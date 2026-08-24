@@ -36,8 +36,6 @@ export interface CactusAssetSpec {
   readonly size: number;
 }
 
-export type CactusNeedleGeneration = 1 | 2;
-
 interface CactusCatalogEntryBase {
   readonly model_id: string;
   readonly title: string;
@@ -142,7 +140,7 @@ export function getCactusCatalogEntry(model_id: string): CactusCatalogEntry | un
 
 /** Asset specs for download/cache: v1 is weights, vocab, config; v2 is the .cact image. */
 export function assetSpecsOf(entry: CactusCatalogEntry): readonly CactusAssetSpec[] {
-  if ("cact" in entry.assets) {
+  if (entry.generation === 2) {
     return [entry.assets.cact];
   }
   return [entry.assets.weights, entry.assets.vocab, entry.assets.config];

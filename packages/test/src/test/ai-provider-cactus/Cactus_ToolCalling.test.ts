@@ -21,6 +21,15 @@ const tools = [
       required: ["city"],
     },
   },
+  {
+    name: "book_flight",
+    description: "Book a flight out of an airport",
+    inputSchema: {
+      type: "object",
+      properties: { origin: { type: "string" } },
+      required: ["origin"],
+    },
+  },
 ];
 
 const model = {
@@ -94,7 +103,31 @@ describe("Cactus_ToolCalling output parsing", () => {
     expect(names).toEqual([]);
   });
 
-  it("uses run() fallback when only run_json is exposed", async () => {
+  it("collects calls from every tool_call block, not just the first", async () => {
+    const { names } = await runToolCalling({
+      run: () =>
+        `<tool_call>[{"name":"lookup_weather","arguments":{"city":"Paris"}}]</tool_call>` +
+        `<tool_call>[{"name":"book_flight","arguments":{"origin":"LHR"}}]</tool_call>`,
+    });
+    expect(names).toEqual(["lookup_weather", "book_flight"]);
+  });
+
+  it("recovers the payload when generation is cut off before the closing tag", async () => {
+    const { names } = await runToolCalling({
+      run: () => `<tool_call>[{"name":"lookup_weather","arguments":{"city":"Paris"}}]`,
+    });
+    expect(names).toEqual(["lookup_weather"]);
+  });
+
+  it("keeps the well-formed calls when a sibling entry is not an object", async () => {
+    const { names } = await runToolCalling({
+      run: () =>
+        `<tool_call>[null,{"name":"lookup_weather","arguments":{"city":"Paris"}}]</tool_call>`,
+    });
+    expect(names).toEqual(["lookup_weather"]);
+  });
+
+  it("ignores run_json and falls back to run() when run_stream is absent", async () => {
     const { names, finishText } = await runToolCalling({
       run: () => `<tool_call>[{"name":"lookup_weather","arguments":{"city":"Paris"}}]</tool_call>`,
       run_json: () => `<tool_call>[]</tool_call>`,
@@ -115,5 +148,17 @@ describe("Cactus_ToolCalling output parsing", () => {
     });
     expect(names).toEqual(["lookup_weather"]);
     expect(textDeltas.join("")).toContain("lookup_weather");
+  });
+
+  it("emits nothing for a token the callback reports without a text piece", async () => {
+    const { textDeltas } = await runToolCalling({
+      run: () => "unused",
+      run_stream: async (_q, _t, cb) => {
+        cb(42);
+        cb(43, "<tool_call>[]</tool_call>");
+        return `<tool_call>[]</tool_call>`;
+      },
+    });
+    expect(textDeltas.join("")).toBe("<tool_call>[]</tool_call>");
   });
 });

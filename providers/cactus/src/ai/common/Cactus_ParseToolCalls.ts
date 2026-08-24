@@ -4,50 +4,79 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ToolCalls } from "@workglow/ai";
+import type { ToolCall, ToolCalls } from "@workglow/ai";
 import { sanitizeToolArgs } from "@workglow/ai/worker";
 
-const TOOL_CALL_FENCE = /<tool_call>([\s\S]*?)<\/tool_call>/;
+const TOOL_CALL_OPEN = "<tool_call>";
+const TOOL_CALL_FENCE = /<tool_call>([\s\S]*?)<\/tool_call>/g;
 
 /**
- * Needle v2 wraps JSON in `<tool_call>…</tool_call>`; v1 emits the JSON
- * payload directly. Strip the fence when present so both generations share
- * one parser.
+ * Needle v2 wraps each JSON payload in `<tool_call>…</tool_call>` and can emit
+ * more than one block; v1 emits the JSON payload directly.
+ *
+ * Returns every fenced payload in order, or the whole string when no fence is
+ * present. A generation cut short at the token limit loses its closing tag —
+ * the text after the last opening tag is still the payload (its JSON may well
+ * be complete), so it is recovered rather than dropped on the floor.
  */
-export function unwrapNeedleToolOutput(raw: string): string {
+export function needleToolCallPayloads(raw: string): readonly string[] {
   const trimmed = raw.trim();
-  const match = TOOL_CALL_FENCE.exec(trimmed);
-  return match ? match[1].trim() : trimmed;
+  const payloads: string[] = [];
+  // `matchAll` iterates a clone of the regex, so the module-level `/g` object
+  // keeps `lastIndex === 0` and stays safe to share across calls.
+  for (const match of trimmed.matchAll(TOOL_CALL_FENCE)) {
+    const inner = match[1].trim();
+    if (inner) payloads.push(inner);
+  }
+  if (payloads.length > 0) return payloads;
+
+  const open = trimmed.lastIndexOf(TOOL_CALL_OPEN);
+  if (open !== -1) {
+    const tail = trimmed.slice(open + TOOL_CALL_OPEN.length).trim();
+    return tail ? [tail] : [];
+  }
+  return trimmed ? [trimmed] : [];
+}
+
+function toToolCall(candidate: unknown, index: number): ToolCall | undefined {
+  if (!candidate || typeof candidate !== "object") return undefined;
+  const record = candidate as { readonly name?: unknown; arguments?: unknown; params?: unknown };
+  if (typeof record.name !== "string" || record.name.length === 0) return undefined;
+  return {
+    id: `call_${index}`,
+    name: record.name,
+    input: sanitizeToolArgs(record.arguments ?? record.params ?? {}) as Record<string, unknown>,
+  };
 }
 
 export function parseNeedleToolCalls(raw: string): ToolCalls {
-  const payload = unwrapNeedleToolOutput(raw);
-  if (!payload) return [];
-  try {
-    const obj = JSON.parse(payload);
-    if (Array.isArray(obj)) {
-      return obj.map((o, i) => ({
-        id: `call_${i}`,
-        name: String(o.name ?? ""),
-        input: sanitizeToolArgs(o.arguments ?? o.params ?? {}) as Record<string, unknown>,
-      }));
+  const calls: ToolCalls = [];
+  for (const payload of needleToolCallPayloads(raw)) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(payload);
+    } catch {
+      // A payload the model mangled must not discard the ones it got right.
+      continue;
     }
-    if (obj && typeof obj === "object" && typeof obj.name === "string") {
-      return [
-        {
-          id: "call_0",
-          name: obj.name,
-          input: sanitizeToolArgs(obj.arguments ?? obj.params ?? {}) as Record<string, unknown>,
-        },
-      ];
+    for (const candidate of Array.isArray(parsed) ? parsed : [parsed]) {
+      const call = toToolCall(candidate, calls.length);
+      if (call) calls.push(call);
     }
-  } catch {
-    /* fall through */
   }
-  return [];
+  return calls;
 }
 
-/** needle-rs `run_stream` calls `on_token(tokenId, piece)`; tolerate a single-arg chunk too. */
-export function needleStreamPiece(tokenIdOrChunk: number | string, piece?: string): string {
-  return typeof piece === "string" ? piece : String(tokenIdOrChunk);
+/**
+ * needle-rs `run_stream` calls `on_token(tokenId, piece)` — the text is the
+ * second argument. A callback shape that passes only a string chunk is
+ * tolerated; a lone token id is not text and yields nothing, because emitting
+ * the number would inject digits into the generated text.
+ */
+export function needleStreamPiece(
+  tokenIdOrChunk: number | string,
+  piece: string | undefined
+): string {
+  if (typeof piece === "string") return piece;
+  return typeof tokenIdOrChunk === "string" ? tokenIdOrChunk : "";
 }

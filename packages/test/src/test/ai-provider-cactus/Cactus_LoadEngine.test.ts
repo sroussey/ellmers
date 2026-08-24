@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it, vi } from "vitest";
 import {
   loadCactusEngine,
+  type CactusCatalogEntry,
   type NeedleSdkModule,
-} from "../../../../../providers/cactus/src/ai/common/Cactus_LoadEngine";
-import type { CactusCatalogEntry } from "../../../../../providers/cactus/src/ai/common/Cactus_ModelCatalog";
+} from "@workglow/cactus/ai";
+import { describe, expect, it, vi } from "vitest";
 
 describe("loadCactusEngine", () => {
   it("loads v2 engines from the .cact bytes via NeedleV2Wasm.load", () => {
@@ -41,7 +41,7 @@ describe("loadCactusEngine", () => {
     expect(loadV1).not.toHaveBeenCalled();
   });
 
-  it("keeps compatibility with v1 entries that omit generation", () => {
+  it("loads v1 entries from weights plus decoded vocab text", () => {
     const weights = new Uint8Array([1, 2, 3]);
     const vocabBytes = new TextEncoder().encode("token");
     const expectedEngine = { run: vi.fn() };
@@ -57,6 +57,7 @@ describe("loadCactusEngine", () => {
       description: "",
       hf_repo: "repo",
       revision: "rev",
+      generation: 1,
       assets: {
         weights: { filename: "needle.safetensors", sha256: "x", size: weights.byteLength },
         vocab: { filename: "vocab.txt", sha256: "x", size: vocabBytes.byteLength },

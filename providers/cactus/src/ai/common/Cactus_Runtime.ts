@@ -9,7 +9,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { CACTUS_CACHE_NAME, CACTUS_DEFAULT_MODELS_DIR } from "./Cactus_Constants";
 import { CactusIntegrityError, verifySha256 } from "./Cactus_Integrity";
-import { loadCactusEngine, type NeedleEngine, type NeedleSdkModule } from "./Cactus_LoadEngine";
+import { loadCactusModel, type NeedleEngine, type NeedleSdkModule } from "./Cactus_LoadEngine";
 import {
   assetSpecsOf,
   cactusAssetUrl,
@@ -494,22 +494,10 @@ export async function getOrLoadEngine(model: CactusModelConfig): Promise<NeedleE
     const entry = getCactusCatalogEntry(model_id);
     if (!entry) throw new Error(`Unknown Cactus model_id: ${model_id}`);
 
-    const specs = assetSpecsOf(entry);
-    const blobs = await Promise.all(specs.map((spec) => fetchAssetBytes(model, spec)));
-    const files = Object.fromEntries(specs.map((spec, i) => [spec.filename, blobs[i]!]));
-
-    if ("config" in entry.assets) {
-      try {
-        const text = new TextDecoder().decode(files[entry.assets.config.filename]);
-        cactusConfigJson.set(model_id, JSON.parse(text));
-      } catch {
-        cactusConfigJson.set(model_id, null);
-      }
-    } else {
-      cactusConfigJson.set(model_id, null);
-    }
-
-    const engine = loadCactusEngine(sdk, entry, files);
+    const { engine, configJson } = await loadCactusModel(sdk, entry, (spec) =>
+      fetchAssetBytes(model, spec)
+    );
+    cactusConfigJson.set(model_id, configJson);
     cactusEngines.set(model_id, engine);
     return engine;
   })().finally(() => {

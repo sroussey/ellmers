@@ -11,7 +11,7 @@ Catalog:
 
 ## Capabilities
 
-- `tool-use` — function/tool calling via `engine.run` / `engine.run_json` / `engine.run_stream`
+- `tool-use` — function/tool calling via `engine.run_stream`, falling back to `engine.run`
 - `model.search`, `model.info` — catalog of Needle 2 and Needle 26M
 - `model.download`, `model.download-remove` — fetch + cache catalog assets (one `.cact` for v2; weights, vocab, and config for v1)
 
