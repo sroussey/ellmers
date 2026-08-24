@@ -1,5 +1,28 @@
 # @workglow/cli
 
+## 0.4.1
+
+### Features
+
+- implement stacked pane navigation in CLI web client
+
+#### cli
+
+- export the command-tree and field helpers a downstream verifies with
+- annotation seams and richer contributed UI for the web console
+
+### Bug Fixes
+
+#### cli
+
+- address review — scope churn, dialog name, and a mid-pattern `**`
+
+### Tests
+
+#### cli
+
+- pin that re-registering an annotation replaces rather than appends
+
 ## 0.4.0
 
 ## 0.3.49

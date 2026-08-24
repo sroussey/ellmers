@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.1
+
+### Bug Fixes
+
+- restore cactus build with legacy catalog typing
+- address PR review feedback for cactus v2 paths
+
+### Refactors
+
+- enhance Cactus model loading and tool calling functionality
+
+### Chores
+
+- fix tests
+
 ## 0.4.0
 
 ## 0.3.49

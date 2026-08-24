@@ -1,5 +1,24 @@
 # @workglow/test
 
+## 0.4.1
+
+### Bug Fixes
+
+- address PR review feedback for cactus v2 paths
+
+### Refactors
+
+- enhance Cactus model loading and tool calling functionality
+
+### Chores
+
+- fix tests
+- update deps
+
+### Updated Dependencies
+
+- `miniflare`: ^5.20260820.0-alpha
+
 ## 0.4.0
 
 ### Bug Fixes

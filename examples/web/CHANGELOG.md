@@ -1,5 +1,15 @@
 # @workglow/web
 
+## 0.4.1
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@types/react-dom`: ^19.2.5
+
 ## 0.4.0
 
 ## 0.3.49
