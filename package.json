@@ -145,6 +145,7 @@
     "better-sqlite3",
     "node-llama-cpp",
     "onnxruntime-node",
+    "protobufjs",
     "sharp"
   ],
   "lint-staged": {

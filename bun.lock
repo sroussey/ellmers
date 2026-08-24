@@ -905,6 +905,7 @@
     },
   },
   "trustedDependencies": [
+    "protobufjs",
     "better-sqlite3",
     "sharp",
     "onnxruntime-node",

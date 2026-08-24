@@ -4,9 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { loadCactusEngine, type NeedleSdkModule } from "../../../../../providers/cactus/src/ai/common/Cactus_LoadEngine";
-import type { CactusCatalogEntry } from "../../../../../providers/cactus/src/ai/common/Cactus_ModelCatalog";
 import { describe, expect, it, vi } from "vitest";
+import {
+  loadCactusEngine,
+  type NeedleSdkModule,
+} from "../../../../../providers/cactus/src/ai/common/Cactus_LoadEngine";
+import type { CactusCatalogEntry } from "../../../../../providers/cactus/src/ai/common/Cactus_ModelCatalog";
 
 describe("loadCactusEngine", () => {
   it("loads v2 engines from the .cact bytes via NeedleV2Wasm.load", () => {
