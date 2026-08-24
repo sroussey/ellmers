@@ -151,7 +151,12 @@ describe("GraphUsageAggregator", () => {
       }
 
       const byTask = agg.byTask();
-      expect(byTask.size).toBeLessThanOrEqual(513);
+      // 512 real tasks plus the overflow bucket. The bucket is exempt from the
+      // cap rather than counted against it: counted, the first overflow evicts
+      // twice (a row leaves, the bucket takes its place, the size is unchanged)
+      // and the steady state is one real task short of the constant.
+      expect(byTask.size).toBe(513);
+      expect([...byTask.keys()].filter((k) => k !== EVICTED_TASKS)).toHaveLength(512);
 
       const sum = (rows: Iterable<Usage>): Usage =>
         [...rows].reduce((a, b) => usage(a.input! + b.input!, a.output! + b.output!), usage(0, 0));
@@ -162,6 +167,37 @@ describe("GraphUsageAggregator", () => {
       expect(byTask.get(EVICTED_TASKS)).toBeDefined();
       // The most recent tasks stay individually addressable.
       expect(byTask.get(`clone-${items - 1}`)).toEqual(usage(1, 1));
+    });
+
+    it("keeps a task that is still reporting, and evicts one that went quiet", () => {
+      // `Map.set` on an existing key updates the value and leaves the insertion
+      // order alone, so recording spend has to delete-then-set for the eviction
+      // order to mean "least recently active" rather than "first ever seen".
+      const agg = new GraphUsageAggregator();
+      agg.observe("busy", usage(1, 1), "m");
+      agg.retire("busy");
+      agg.observe("quiet", usage(1, 1), "m");
+      agg.retire("quiet");
+
+      // Enough fresh tasks to overflow the cap, with `busy` reporting throughout.
+      for (let i = 0; i < 600; i++) {
+        agg.observe(`clone-${i}`, usage(1, 1), "m");
+        agg.retire(`clone-${i}`);
+        agg.observe("busy", usage(1, 1), "m");
+        agg.retire("busy");
+      }
+
+      const byTask = agg.byTask();
+      // Asserting the ACCUMULATED total, not mere presence: an evicted task is
+      // re-added by its next retire, so `toBeDefined()` passes either way and
+      // detects nothing. Only a row carrying all 601 executions proves `busy`
+      // was never folded into the bucket and restarted.
+      expect(byTask.get("busy")).toEqual(usage(601, 601));
+      expect(byTask.get("quiet")).toBeUndefined();
+      // Still nothing lost: the quiet task's spend lives in the overflow bucket.
+      const sum = (rows: Iterable<Usage>): Usage =>
+        [...rows].reduce((a, b) => usage(a.input! + b.input!, a.output! + b.output!), usage(0, 0));
+      expect(sum(byTask.values())).toEqual(agg.total);
     });
 
     it("clears both rollups for a fresh run", () => {
