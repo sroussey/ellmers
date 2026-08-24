@@ -97,10 +97,10 @@ export class GraphUsageAggregator {
    * itself — a task spanning an embedding and a generation model holds two
    * live buckets, and showing whichever reported last is not its spend.
    *
-   * Retains the most recent {@link MAX_RETIRED_TASK_ROWS} tasks; anything older
-   * is folded into the {@link EVICTED_TASKS} row, so the map still sums to
-   * {@link total} but a specific old id may no longer be present. Look up a
-   * task you are rendering, not one you no longer hold a node for.
+   * Retains the most recently active {@link MAX_RETIRED_TASK_ROWS} tasks;
+   * anything older is folded into the {@link EVICTED_TASKS} row, so the map
+   * still sums to {@link total} but a specific old id may no longer be present.
+   * Look up a task you are rendering, not one you no longer hold a node for.
    */
   byTask(): ReadonlyMap<string, Usage> {
     const out = new Map(this.retiredByTask);
@@ -189,7 +189,7 @@ export class GraphUsageAggregator {
   chargeLate(taskId: string, usage: Usage, modelId: string | undefined): void {
     const key = modelKey(modelId);
     this.retired = mergeUsage(this.retired, usage);
-    this.retiredByTask.set(taskId, mergeUsage(this.retiredByTask.get(taskId), usage) ?? usage);
+    this.bumpTaskRow(taskId, usage);
     this.retiredByModel.set(key, mergeUsage(this.retiredByModel.get(key), usage) ?? usage);
     this.notifyRetire({ taskId, modelId, usage });
   }
@@ -206,28 +206,44 @@ export class GraphUsageAggregator {
     // it still contributed to `total` for as long as it was live.
     if (row.usage.estimated) return;
     this.retired = mergeUsage(this.retired, row.usage);
-    this.retiredByTask.set(
-      taskId,
-      mergeUsage(this.retiredByTask.get(taskId), row.usage) ?? row.usage
-    );
+    this.bumpTaskRow(taskId, row.usage);
     this.evictOldestTaskRows();
     this.retiredByModel.set(key, mergeUsage(this.retiredByModel.get(key), row.usage) ?? row.usage);
     this.notifyRetire(row);
   }
 
   /**
-   * Folds the oldest per-task rows into {@link EVICTED_TASKS} once the map is
-   * over {@link MAX_RETIRED_TASK_ROWS}.
+   * Records a task's spend and marks it the most recently active.
+   *
+   * Deletes before setting, because `Map.set` on a key that already exists
+   * updates the value and leaves the insertion order alone. Without the delete
+   * a task keeps the position it first took, so {@link evictOldestTaskRows}
+   * would evict a task that is still reporting while holding one that went
+   * quiet after its first execution — the opposite of what the cap is for.
+   */
+  private bumpTaskRow(taskId: string, usage: Usage): void {
+    const merged = mergeUsage(this.retiredByTask.get(taskId), usage) ?? usage;
+    this.retiredByTask.delete(taskId);
+    this.retiredByTask.set(taskId, merged);
+  }
+
+  /**
+   * Folds the oldest per-task rows into {@link EVICTED_TASKS} once the map
+   * holds more than {@link MAX_RETIRED_TASK_ROWS} real tasks.
    *
    * Folded rather than dropped: `byTask()` summing to `total` is a stated
    * property of this class, and a plain eviction would break it silently — the
    * run total would keep counting spend that no per-task row accounted for.
-   * Map iteration is insertion-ordered, so the oldest row goes first; a task
-   * that reports again is re-set and therefore re-ordered to the end, which is
-   * what keeps the still-active tasks resident.
+   *
+   * The overflow bucket is exempt from the cap rather than counted against it.
+   * Counting it means the first overflow evicts twice: one real row leaves, the
+   * bucket arrives in its place, the size is unchanged and the loop goes round
+   * again — so the steady state would be `MAX_RETIRED_TASK_ROWS - 1` real
+   * tasks, one fewer than the constant says.
    */
   private evictOldestTaskRows(): void {
-    while (this.retiredByTask.size > MAX_RETIRED_TASK_ROWS) {
+    const cap = () => MAX_RETIRED_TASK_ROWS + (this.retiredByTask.has(EVICTED_TASKS) ? 1 : 0);
+    while (this.retiredByTask.size > cap()) {
       let oldest: string | undefined;
       for (const id of this.retiredByTask.keys()) {
         // Never the overflow bucket itself: folding it into itself would drop
