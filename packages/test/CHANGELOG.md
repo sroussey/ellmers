@@ -1,5 +1,13 @@
 # @workglow/test
 
+## 0.4.0
+
+### Bug Fixes
+
+#### tests
+
+- remove process listeners through the EventEmitter view
+
 ## 0.3.49
 
 ### Breaking Changes
