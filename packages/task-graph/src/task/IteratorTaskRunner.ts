@@ -89,9 +89,12 @@ export class IteratorTaskRunner<
     const requestedConcurrency = this.task.concurrencyLimit ?? iterationCount;
     const concurrency = Math.max(1, Math.min(requestedConcurrency, iterationCount));
 
-    const orderedResults: Array<TaskOutput | undefined> = preserveOrder
-      ? new Array(iterationCount)
-      : [];
+    // A `.forEach()` folds nothing, so nothing is kept: the arrays below would
+    // otherwise hold one merged output per item for the whole batch — and with
+    // no `batchSize` that is the entire iteration set.
+    const retainResults = this.task.retainsIterationResults();
+    const orderedResults: Array<TaskOutput | undefined> =
+      retainResults && preserveOrder ? new Array(iterationCount) : [];
     const completionOrderResults: TaskOutput[] = [];
 
     this.task.clearIterationGraphs();
@@ -118,7 +121,8 @@ export class IteratorTaskRunner<
           analysis,
           iterationCount,
           concurrency,
-          undefined
+          undefined,
+          retainResults
         );
 
         for (const { index, result } of batchResults) {
@@ -201,7 +205,9 @@ export class IteratorTaskRunner<
     analysis: IterationAnalysisResult,
     iterationCount: number,
     concurrency: number,
-    onItemComplete?: () => Promise<void>
+    onItemComplete?: () => Promise<void>,
+    /** When false, iteration outputs are dropped as they arrive (see {@link IteratorTask.retainsIterationResults}). */
+    retainResults: boolean = true
   ): Promise<Array<{ index: number; result: TaskOutput | undefined }>> {
     const results: Array<{ index: number; result: TaskOutput | undefined }> = [];
     let cursor = 0;
@@ -224,7 +230,7 @@ export class IteratorTaskRunner<
         const index = indices[position];
         const iterationInput = this.task.buildIterationRunInput(analysis, index, iterationCount);
         const result = await this.executeSubgraphIteration(iterationInput, index, iterationCount);
-        results.push({ index, result });
+        if (retainResults) results.push({ index, result });
         await onItemComplete?.();
       }
     });
