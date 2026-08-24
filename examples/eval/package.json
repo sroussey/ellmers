@@ -48,7 +48,7 @@
     "@workglow/xai": "workspace:*",
     "@huggingface/transformers": "catalog:",
     "commander": "catalog:",
-    "hyparquet": "^1.28.2",
+    "hyparquet": "^1.29.1",
     "hyparquet-compressors": "^1.1.1"
   },
   "publishConfig": {
