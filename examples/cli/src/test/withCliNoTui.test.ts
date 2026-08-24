@@ -10,11 +10,14 @@ import { tuiDisabledByEnv, withCli } from "../run-interactive";
 
 /**
  * `WORKGLOW_NO_TUI` is the operator's way out of the terminal UI on a run whose
- * length is set by the data rather than by a human watching it — Ink retains
- * memory per rendered element per render, in WASM linear memory that no JS gc
- * reclaims (see `tuiDisabledByEnv`). A run that draws no UI cannot leak through
- * it, so the switch has to work on a TTY, which is the only case where the
- * question arises.
+ * length is set by the data rather than by a human watching it.
+ *
+ * What it actually avoids is React's development-build profiler
+ * instrumentation: a `performance.measure()` per component per commit, retained
+ * for the process lifetime in Node's unbounded user-timing buffer. A run that
+ * draws no UI performs no commits, so it cannot accumulate them — which is why
+ * the switch has to work on a TTY, the only case where the question arises.
+ * `NODE_ENV=production` is the better fix; this is the fallback.
  */
 describe("WORKGLOW_NO_TUI", () => {
   const originalIsTTY = process.stdout.isTTY;
