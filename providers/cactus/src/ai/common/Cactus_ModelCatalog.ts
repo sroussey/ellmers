@@ -44,17 +44,19 @@ interface CactusCatalogEntryBase {
   readonly description: string;
   readonly hf_repo: string;
   readonly revision: string;
-  readonly generation: CactusNeedleGeneration;
   readonly capabilities: readonly Capability[];
 }
 
-export interface CactusV1CatalogEntry extends CactusCatalogEntryBase {
-  readonly generation: 1;
+export interface CactusLegacyV1CatalogEntry extends CactusCatalogEntryBase {
   readonly assets: {
     readonly weights: CactusAssetSpec;
     readonly vocab: CactusAssetSpec;
     readonly config: CactusAssetSpec;
   };
+}
+
+export interface CactusV1CatalogEntry extends CactusLegacyV1CatalogEntry {
+  readonly generation: 1 | undefined;
 }
 
 export interface CactusV2CatalogEntry extends CactusCatalogEntryBase {
@@ -64,7 +66,10 @@ export interface CactusV2CatalogEntry extends CactusCatalogEntryBase {
   };
 }
 
-export type CactusCatalogEntry = CactusV1CatalogEntry | CactusV2CatalogEntry;
+export type CactusCatalogEntry =
+  | CactusLegacyV1CatalogEntry
+  | CactusV1CatalogEntry
+  | CactusV2CatalogEntry;
 
 /**
  * Asserts that `s` is a lowercase hex SHA-256 (64 hex chars).
@@ -143,7 +148,7 @@ export function getCactusCatalogEntry(model_id: string): CactusCatalogEntry | un
 
 /** Asset specs for download/cache: v1 is weights, vocab, config; v2 is the .cact image. */
 export function assetSpecsOf(entry: CactusCatalogEntry): readonly CactusAssetSpec[] {
-  if (entry.generation === 2) {
+  if ("cact" in entry.assets) {
     return [entry.assets.cact];
   }
   return [entry.assets.weights, entry.assets.vocab, entry.assets.config];

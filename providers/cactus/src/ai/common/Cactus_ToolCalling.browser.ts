@@ -69,7 +69,7 @@ export const Cactus_ToolCalling: AiProviderRunFn<
       });
     });
   } else if (typeof engineWithStream.run_json === "function") {
-    const out = await engineWithStream.run_json(query, toolsJson);
+    const out = await engineWithStream.run(query, toolsJson);
     raw = typeof out === "string" ? out : String(out);
   } else {
     const out = await engineWithStream.run(query, toolsJson);

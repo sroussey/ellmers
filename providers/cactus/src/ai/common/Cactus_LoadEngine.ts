@@ -18,7 +18,7 @@ export function loadCactusEngine(
   entry: CactusCatalogEntry,
   files: Readonly<Record<string, Uint8Array>>
 ): NeedleEngine {
-  if (entry.generation === 2) {
+  if ("cact" in entry.assets) {
     const bytes = files[entry.assets.cact.filename];
     if (!bytes) {
       throw new Error(
