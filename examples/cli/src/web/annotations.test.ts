@@ -50,6 +50,28 @@ describe("command annotations", () => {
     ]);
   });
 
+  /**
+   * A downstream re-registers the same paths on purpose: a superset that adds
+   * commands after the base CLI's registration pass has to re-run it over the
+   * fuller tree, which re-states every path the first pass already covered.
+   * Replacing rather than appending is what makes that safe, so it is asserted
+   * rather than left to the reader of the two-line function.
+   */
+  it("replaces an annotation registered again for the same path", () => {
+    registerCommandAnnotation({ path: ["db", "reset"], source: "sec", badges: ["writes"] });
+    registerCommandAnnotation({
+      path: ["db", "reset"],
+      source: "sec",
+      badges: ["destructive"],
+      confirm: "This drops tables.",
+    });
+    const annotation = resolveCommandAnnotation(["db", "reset"]);
+    // Not a union with the superseded registration: the second call is the
+    // whole truth about that path, so the earlier `writes` is gone.
+    expect(annotation.badges).toEqual(["destructive"]);
+    expect(annotation.confirm).toBe("This drops tables.");
+  });
+
   it("lets the more specific note and confirmation win", () => {
     registerCommandAnnotation({ path: ["db", "**"], source: "sec", note: "touches the database" });
     registerCommandAnnotation({
@@ -128,6 +150,31 @@ describe("field annotations", () => {
     });
     const merged = resolveFieldAnnotations(["spac", "report"]);
     expect(merged.get("cik")).toEqual({ format: "sec:spac-cik", description: "any filer" });
+  });
+
+  /**
+   * The same property on the field side, which the format re-run relies on.
+   *
+   * The second registration DROPS a key the first had, which is the only shape
+   * that distinguishes replace from append here: two entries at one path merge
+   * in registration order, so a re-registration that merely changes a value
+   * looks identical either way — it is the field the re-run no longer claims
+   * that an appended duplicate would resurrect.
+   */
+  it("replaces field annotations registered again for the same path", () => {
+    registerCommandFieldAnnotations({
+      path: ["query", "entities"],
+      source: "sec",
+      fields: { format: { choices: ["table"] }, cik: { format: "sec:cik" } },
+    });
+    registerCommandFieldAnnotations({
+      path: ["query", "entities"],
+      source: "sec",
+      fields: { format: { choices: ["table", "json", "csv"] } },
+    });
+    const merged = resolveFieldAnnotations(["query", "entities"]);
+    expect(merged.get("format")?.choices).toEqual(["table", "json", "csv"]);
+    expect(merged.get("cik")).toBeUndefined();
   });
 
   it("leaves an unannotated command exactly as it was", async () => {
