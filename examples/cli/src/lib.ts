@@ -29,8 +29,12 @@ export {
 } from "./storage";
 export { renderTaskInstanceRun, renderTaskRun, renderWorkflowRun } from "./ui/render";
 export {
+  annotateCommandTree,
+  matchPathSpecificity,
   registerCommandAnnotation,
   registerCommandFieldAnnotations,
+  resolveCommandAnnotation,
+  resolveFieldAnnotations,
   type CommandFieldAnnotations,
   type WebCommandAnnotation,
   type WebCommandBadge,
@@ -40,10 +44,11 @@ export {
 export type { WebInvocation } from "./web/argv";
 export {
   registerCommandSchemaProvider,
+  resolveCommandFields,
   type CommandSchemaProvider,
   type WebField,
 } from "./web/commandFields";
-export type { WebCommandNode } from "./web/commandTree";
+export { buildCommandTree, findCommandNode, type WebCommandNode } from "./web/commandTree";
 export {
   registerWebFieldWidget,
   registerWebPanel,
