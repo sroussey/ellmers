@@ -104,6 +104,11 @@ export class MapTask<
     return this.preserveOrder;
   }
 
+  /** `.forEach()` discards results, so the runner need not retain them. */
+  public override retainsIterationResults(): boolean {
+    return !this.discardResults;
+  }
+
   public override getEmptyResult(): Output {
     const schema = this.outputSchema();
     if (typeof schema === "boolean") {

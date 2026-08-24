@@ -26,6 +26,36 @@ export type ModelKey = string | typeof UNNAMED_MODEL;
 const modelKey = (modelId: string | undefined): ModelKey => modelId ?? UNNAMED_MODEL;
 
 /**
+ * A NUL. Built rather than written as an escape sequence: a raw control
+ * character in source is invisible to a reader and makes git treat the whole
+ * file as binary, while the escape that avoids that is itself rewritten back
+ * into one by anything that carries the file through a JSON string.
+ */
+const NUL = String.fromCharCode(0);
+
+/**
+ * Task id the per-task rollup folds evicted rows into, so
+ * {@link GraphUsageAggregator.byTask} keeps summing to
+ * {@link GraphUsageAggregator.total} once the cap is reached. Prefixed with a
+ * control character that no `TaskConfig.id` can be, so it can never shadow a
+ * real task.
+ */
+export const EVICTED_TASKS = `${NUL}workglow.usage.evictedTasks`;
+
+/**
+ * Per-task rows kept before older ones fold into {@link EVICTED_TASKS}.
+ *
+ * The per-task rollup exists to label the rows of a graph a UI is rendering, so
+ * it is sized for that: a graph with more than a few hundred nodes has no
+ * per-task display to feed. The rows that blow past it are not graph nodes at
+ * all — `IteratorTaskRunner` clones its subgraph per iteration and mints a fresh
+ * uuid for every clone, so an AI map over a corpus mints one id per ITEM and the
+ * map grew by a `Usage` plus a 36-char key per filing for the life of the run,
+ * keyed by ids nothing will ever look up.
+ */
+const MAX_RETIRED_TASK_ROWS = 512;
+
+/**
  * Folds per-task token totals into one run total.
  *
  * Each task event carries that task's **cumulative** total, so live buckets are
@@ -66,6 +96,11 @@ export class GraphUsageAggregator {
    * every time it executed. A display keyed by task must fold the model axis
    * itself — a task spanning an embedding and a generation model holds two
    * live buckets, and showing whichever reported last is not its spend.
+   *
+   * Retains the most recently active {@link MAX_RETIRED_TASK_ROWS} tasks;
+   * anything older is folded into the {@link EVICTED_TASKS} row, so the map
+   * still sums to {@link total} but a specific old id may no longer be present.
+   * Look up a task you are rendering, not one you no longer hold a node for.
    */
   byTask(): ReadonlyMap<string, Usage> {
     const out = new Map(this.retiredByTask);
@@ -154,7 +189,7 @@ export class GraphUsageAggregator {
   chargeLate(taskId: string, usage: Usage, modelId: string | undefined): void {
     const key = modelKey(modelId);
     this.retired = mergeUsage(this.retired, usage);
-    this.retiredByTask.set(taskId, mergeUsage(this.retiredByTask.get(taskId), usage) ?? usage);
+    this.bumpTaskRow(taskId, usage);
     this.retiredByModel.set(key, mergeUsage(this.retiredByModel.get(key), usage) ?? usage);
     this.notifyRetire({ taskId, modelId, usage });
   }
@@ -171,12 +206,60 @@ export class GraphUsageAggregator {
     // it still contributed to `total` for as long as it was live.
     if (row.usage.estimated) return;
     this.retired = mergeUsage(this.retired, row.usage);
-    this.retiredByTask.set(
-      taskId,
-      mergeUsage(this.retiredByTask.get(taskId), row.usage) ?? row.usage
-    );
+    this.bumpTaskRow(taskId, row.usage);
+    this.evictOldestTaskRows();
     this.retiredByModel.set(key, mergeUsage(this.retiredByModel.get(key), row.usage) ?? row.usage);
     this.notifyRetire(row);
+  }
+
+  /**
+   * Records a task's spend and marks it the most recently active.
+   *
+   * Deletes before setting, because `Map.set` on a key that already exists
+   * updates the value and leaves the insertion order alone. Without the delete
+   * a task keeps the position it first took, so {@link evictOldestTaskRows}
+   * would evict a task that is still reporting while holding one that went
+   * quiet after its first execution — the opposite of what the cap is for.
+   */
+  private bumpTaskRow(taskId: string, usage: Usage): void {
+    const merged = mergeUsage(this.retiredByTask.get(taskId), usage) ?? usage;
+    this.retiredByTask.delete(taskId);
+    this.retiredByTask.set(taskId, merged);
+  }
+
+  /**
+   * Folds the oldest per-task rows into {@link EVICTED_TASKS} once the map
+   * holds more than {@link MAX_RETIRED_TASK_ROWS} real tasks.
+   *
+   * Folded rather than dropped: `byTask()` summing to `total` is a stated
+   * property of this class, and a plain eviction would break it silently — the
+   * run total would keep counting spend that no per-task row accounted for.
+   *
+   * The overflow bucket is exempt from the cap rather than counted against it.
+   * Counting it means the first overflow evicts twice: one real row leaves, the
+   * bucket arrives in its place, the size is unchanged and the loop goes round
+   * again — so the steady state would be `MAX_RETIRED_TASK_ROWS - 1` real
+   * tasks, one fewer than the constant says.
+   */
+  private evictOldestTaskRows(): void {
+    const cap = () => MAX_RETIRED_TASK_ROWS + (this.retiredByTask.has(EVICTED_TASKS) ? 1 : 0);
+    while (this.retiredByTask.size > cap()) {
+      let oldest: string | undefined;
+      for (const id of this.retiredByTask.keys()) {
+        // Never the overflow bucket itself: folding it into itself would drop
+        // the total it carries and re-break the sum it exists to preserve.
+        if (id === EVICTED_TASKS) continue;
+        oldest = id;
+        break;
+      }
+      if (oldest === undefined) return;
+      const usage = this.retiredByTask.get(oldest)!;
+      this.retiredByTask.delete(oldest);
+      this.retiredByTask.set(
+        EVICTED_TASKS,
+        mergeUsage(this.retiredByTask.get(EVICTED_TASKS), usage) ?? usage
+      );
+    }
   }
 
   /**
