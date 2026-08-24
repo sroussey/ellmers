@@ -7,7 +7,12 @@
 import type { WithModelPricing } from "@workglow/ai/worker";
 import { ModelConfigSchema, ModelRecordSchema } from "@workglow/ai/worker";
 import type { DataPortSchemaObject, FromSchema } from "@workglow/util/schema";
-import { CACTUS_DEFAULT_MODELS_DIR, CACTUS_NEEDLE_26M, LOCAL_CACTUS } from "./Cactus_Constants";
+import {
+  CACTUS_DEFAULT_MODELS_DIR,
+  CACTUS_NEEDLE_26M,
+  CACTUS_NEEDLE_V2,
+  LOCAL_CACTUS,
+} from "./Cactus_Constants";
 
 export const CactusModelSchema = {
   type: "object",
@@ -22,7 +27,7 @@ export const CactusModelSchema = {
       properties: {
         model_id: {
           type: "string",
-          enum: [CACTUS_NEEDLE_26M],
+          enum: [CACTUS_NEEDLE_26M, CACTUS_NEEDLE_V2],
           description: "Catalog id of the Cactus model.",
         },
         models_dir: {

@@ -12,8 +12,9 @@ import type {
   ToolDefinition,
 } from "@workglow/ai";
 import { extractMessageText } from "@workglow/ai/provider-utils";
-import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
+import { filterValidToolCalls } from "@workglow/ai/worker";
 import type { CactusModelConfig } from "./Cactus_ModelSchema";
+import { needleStreamPiece, parseNeedleToolCalls } from "./Cactus_ParseToolCalls";
 import { getOrLoadEngine } from "./Cactus_Runtime";
 
 function buildToolsJson(tools: ReadonlyArray<ToolDefinition>): string {
@@ -36,32 +37,6 @@ function promptText(input: ToolCallingTaskInput): string {
   return "";
 }
 
-function parseToolCalls(raw: string): ToolCalls {
-  if (!raw) return [];
-  try {
-    const obj = JSON.parse(raw);
-    if (Array.isArray(obj)) {
-      return obj.map((o, i) => ({
-        id: `call_${i}`,
-        name: String(o.name ?? ""),
-        input: sanitizeToolArgs(o.arguments ?? o.params ?? {}) as Record<string, unknown>,
-      }));
-    }
-    if (obj && typeof obj === "object" && typeof obj.name === "string") {
-      return [
-        {
-          id: "call_0",
-          name: obj.name,
-          input: sanitizeToolArgs(obj.arguments ?? obj.params ?? {}) as Record<string, unknown>,
-        },
-      ];
-    }
-  } catch {
-    /* fall through */
-  }
-  return [];
-}
-
 export const Cactus_ToolCalling: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
@@ -76,20 +51,32 @@ export const Cactus_ToolCalling: AiProviderRunFn<
 
   let raw = "";
   const engineWithStream = engine as unknown as {
-    run_stream?: (q: string, t: string, cb: (chunk: string) => void) => Promise<string>;
+    run_stream?: (
+      q: string,
+      t: string,
+      cb: (tokenIdOrChunk: number | string, piece?: string) => void
+    ) => Promise<string> | string;
+    run_json?: (q: string, t: string) => Promise<string> | string;
     run: (q: string, t: string) => Promise<string> | string;
   };
 
   if (typeof engineWithStream.run_stream === "function") {
-    raw = await engineWithStream.run_stream(query, toolsJson, (chunk) => {
-      emit({ type: "text-delta", port: "text", textDelta: chunk });
+    raw = await engineWithStream.run_stream(query, toolsJson, (tokenIdOrChunk, piece) => {
+      emit({
+        type: "text-delta",
+        port: "text",
+        textDelta: needleStreamPiece(tokenIdOrChunk, piece),
+      });
     });
+  } else if (typeof engineWithStream.run_json === "function") {
+    const out = await engineWithStream.run_json(query, toolsJson);
+    raw = typeof out === "string" ? out : String(out);
   } else {
     const out = await engineWithStream.run(query, toolsJson);
     raw = typeof out === "string" ? out : String(out);
   }
 
-  const parsed: ToolCalls = parseToolCalls(raw);
+  const parsed: ToolCalls = parseNeedleToolCalls(raw);
   const validToolCalls = filterValidToolCalls(parsed, input.tools);
   if (validToolCalls.length > 0) {
     emit({ type: "object-delta", port: "toolCalls", objectDelta: [...validToolCalls] });

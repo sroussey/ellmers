@@ -12,6 +12,7 @@
 
 import { CACTUS_CACHE_NAME } from "./Cactus_Constants";
 import { CactusIntegrityError, verifySha256 } from "./Cactus_Integrity";
+import { loadCactusEngine, type NeedleEngine, type NeedleSdkModule } from "./Cactus_LoadEngine";
 import {
   assetSpecsOf,
   cactusAssetUrl,
@@ -20,11 +21,6 @@ import {
   type CactusCatalogEntry,
 } from "./Cactus_ModelCatalog";
 import type { CactusModelConfig } from "./Cactus_ModelSchema";
-
-type NeedleSdkModule = typeof import("needle-rs");
-// `NeedleWasm` has a private constructor so `InstanceType<...>` cannot be used.
-// Recover the instance type from the static `load` method's non-undefined return.
-type NeedleEngine = NonNullable<ReturnType<NeedleSdkModule["NeedleWasm"]["load"]>>;
 
 export interface CactusModelCacheInfo {
   readonly allCached: boolean;
@@ -246,25 +242,22 @@ export async function getOrLoadEngine(model: CactusModelConfig): Promise<NeedleE
     const entry = getCactusCatalogEntry(model_id);
     if (!entry) throw new Error(`Unknown Cactus model_id: ${model_id}`);
 
-    const [weightsBytes, vocabBytes, configBytes] = await Promise.all([
-      fetchAssetBytes(model, entry.assets.weights),
-      fetchAssetBytes(model, entry.assets.vocab),
-      fetchAssetBytes(model, entry.assets.config),
-    ]);
+    const specs = assetSpecsOf(entry);
+    const blobs = await Promise.all(specs.map((spec) => fetchAssetBytes(model, spec)));
+    const files = Object.fromEntries(specs.map((spec, i) => [spec.filename, blobs[i]!]));
 
-    try {
-      const text = new TextDecoder().decode(configBytes);
-      cactusConfigJson.set(model_id, JSON.parse(text));
-    } catch {
+    if (entry.generation === 1) {
+      try {
+        const text = new TextDecoder().decode(files[entry.assets.config.filename]);
+        cactusConfigJson.set(model_id, JSON.parse(text));
+      } catch {
+        cactusConfigJson.set(model_id, null);
+      }
+    } else {
       cactusConfigJson.set(model_id, null);
     }
 
-    // needle-rs `NeedleWasm.load(weights_bytes: Uint8Array, vocab_text: string)` — vocab is a string.
-    const vocabText = new TextDecoder().decode(vocabBytes);
-    const engine = sdk.NeedleWasm.load(weightsBytes, vocabText);
-    if (!engine) {
-      throw new Error(`needle-rs NeedleWasm.load returned undefined for model ${model_id}`);
-    }
+    const engine = loadCactusEngine(sdk, entry, files);
     cactusEngines.set(model_id, engine);
     return engine;
   })().finally(() => {

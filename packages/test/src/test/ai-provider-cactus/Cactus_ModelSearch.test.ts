@@ -22,8 +22,9 @@ describe("Cactus_ModelSearch", () => {
         if (ev.type === "finish") finishData = ev.data as ModelSearchTaskOutput;
       }
     );
-    expect(finishData?.results.length).toBe(1);
-    expect(finishData?.results[0].id).toBe("needle-26m");
+    const ids = finishData?.results.map((r) => r.id) ?? [];
+    expect(ids).toEqual(expect.arrayContaining(["needle-26m", "needle-v2"]));
+    expect(finishData?.results.length).toBe(2);
     expect(finishData?.results[0].record.provider).toBe("LOCAL_CACTUS");
   });
 });

@@ -9,6 +9,8 @@ import {
   CACTUS_DEFAULT_HF_REPO,
   CACTUS_DEFAULT_REVISION,
   CACTUS_NEEDLE_26M,
+  CACTUS_NEEDLE_V2,
+  CACTUS_V2_HF_REPO,
 } from "./Cactus_Constants";
 import { CACTUS_HASH_PLACEHOLDER } from "./Cactus_Integrity";
 
@@ -34,19 +36,35 @@ export interface CactusAssetSpec {
   readonly size: number;
 }
 
-export interface CactusCatalogEntry {
+export type CactusNeedleGeneration = 1 | 2;
+
+interface CactusCatalogEntryBase {
   readonly model_id: string;
   readonly title: string;
   readonly description: string;
   readonly hf_repo: string;
   readonly revision: string;
+  readonly generation: CactusNeedleGeneration;
+  readonly capabilities: readonly Capability[];
+}
+
+export interface CactusV1CatalogEntry extends CactusCatalogEntryBase {
+  readonly generation: 1;
   readonly assets: {
     readonly weights: CactusAssetSpec;
     readonly vocab: CactusAssetSpec;
     readonly config: CactusAssetSpec;
   };
-  readonly capabilities: readonly Capability[];
 }
+
+export interface CactusV2CatalogEntry extends CactusCatalogEntryBase {
+  readonly generation: 2;
+  readonly assets: {
+    readonly cact: CactusAssetSpec;
+  };
+}
+
+export type CactusCatalogEntry = CactusV1CatalogEntry | CactusV2CatalogEntry;
 
 /**
  * Asserts that `s` is a lowercase hex SHA-256 (64 hex chars).
@@ -73,6 +91,7 @@ export const CACTUS_CATALOG: readonly CactusCatalogEntry[] = [
       "Specialized 26M-parameter tool-routing transformer. INT4 SafeTensors, 22 MB. Runs via WASM in browser and Node/Bun.",
     hf_repo: CACTUS_DEFAULT_HF_REPO,
     revision: CACTUS_DEFAULT_REVISION,
+    generation: 1,
     assets: {
       // MAINTAINER: regenerate hashes after bumping `revision` by running
       //   bun run --filter @workglow/cactus hash-catalog -- --write
@@ -97,14 +116,36 @@ export const CACTUS_CATALOG: readonly CactusCatalogEntry[] = [
     },
     capabilities: ["tool-use"],
   },
+  {
+    model_id: CACTUS_NEEDLE_V2,
+    title: "Needle 2",
+    description:
+      "Needle v2 tool-routing transformer. Single 14 MB .cact image (weights, geometry, tokenizer). Runs via WASM in browser and Node/Bun.",
+    hf_repo: CACTUS_V2_HF_REPO,
+    revision: CACTUS_DEFAULT_REVISION,
+    generation: 2,
+    assets: {
+      // MAINTAINER: regenerate hashes after bumping `revision` by running
+      //   bun run --filter @workglow/cactus hash-catalog -- --write
+      cact: {
+        filename: "needle2.cact",
+        sha256: "b43aabfcaf1a6db6acf488076eab71d823c08697c7af4521fc1d174b60ede5ba",
+        size: 13737807,
+      },
+    },
+    capabilities: ["tool-use"],
+  },
 ] as const;
 
 export function getCactusCatalogEntry(model_id: string): CactusCatalogEntry | undefined {
   return CACTUS_CATALOG.find((e) => e.model_id === model_id);
 }
 
-/** Returns all three asset specs in fixed order: weights, vocab, config. */
+/** Asset specs for download/cache: v1 is weights, vocab, config; v2 is the .cact image. */
 export function assetSpecsOf(entry: CactusCatalogEntry): readonly CactusAssetSpec[] {
+  if (entry.generation === 2) {
+    return [entry.assets.cact];
+  }
   return [entry.assets.weights, entry.assets.vocab, entry.assets.config];
 }
 
