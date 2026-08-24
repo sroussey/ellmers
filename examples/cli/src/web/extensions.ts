@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { WebTone } from "./annotations";
 import type { WebInvocation } from "./argv";
 
 /**
@@ -21,9 +22,42 @@ export type PanelData =
       readonly kind: "table";
       readonly columns: readonly string[];
       readonly rows: readonly (readonly string[])[];
+      /**
+       * Per-row tone, positionally aligned with `rows`. A triage table is read
+       * for which rows are wrong, and reading that off the text is the work
+       * the panel exists to save.
+       */
+      readonly rowTones?: readonly (WebTone | undefined)[];
+      /** Footnote under the table: what was truncated, what a column means. */
+      readonly note?: string;
     }
   | { readonly kind: "kv"; readonly items: readonly (readonly [string, string])[] }
+  /** A row of headline figures — the shape a report's summary actually has. */
+  | {
+      readonly kind: "stats";
+      readonly items: readonly {
+        readonly label: string;
+        readonly value: string;
+        readonly detail?: string;
+        readonly tone?: WebTone;
+      }[];
+    }
+  /** Dated events in order. A lifecycle is a timeline, not a table of two columns. */
+  | {
+      readonly kind: "timeline";
+      readonly events: readonly {
+        readonly date: string;
+        readonly label: string;
+        readonly detail?: string;
+        readonly tone?: WebTone;
+      }[];
+    }
   | { readonly kind: "markdown"; readonly text: string }
+  /**
+   * Nothing to show, and why. An empty table renders as a header with no rows,
+   * which reads as a failure rather than as the answer it usually is.
+   */
+  | { readonly kind: "empty"; readonly message: string }
   | { readonly kind: "error"; readonly message: string };
 
 export interface WebPanelContext {
@@ -46,24 +80,59 @@ export interface WebFieldWidgetItem {
   readonly detail: string | undefined;
 }
 
+/**
+ * The form around the field being searched.
+ *
+ * A picker is often only answerable in context: the accessions worth offering
+ * are the ones belonging to the CIK typed two fields up, and the ids a version
+ * ceremony accepts depend on the kind chosen beside them. Without this a
+ * scoped picker has to offer everything and let the operator filter, which for
+ * a filings table is not an offer at all.
+ */
+export interface WebFieldWidgetContext {
+  readonly path: readonly string[];
+  readonly args: readonly string[];
+  /** Every field's current value, keyed as the form keys them. */
+  readonly values: Readonly<Record<string, string>>;
+}
+
 export interface WebFieldWidget {
-  /** Matches a schema `format`, which is how a field opts into a widget. */
+  /** Matches a schema `format` or a field annotation, which is how a field opts in. */
   readonly format: string;
   readonly source: string;
-  search(query: string): Promise<readonly WebFieldWidgetItem[]>;
+  search(query: string, context: WebFieldWidgetContext): Promise<readonly WebFieldWidgetItem[]>;
 }
 
 export interface WebStatusMeter {
+  readonly kind?: "meter";
   readonly label: string;
   readonly value: number;
   readonly max: number;
+  readonly detail?: string;
 }
+
+/**
+ * A status line that is not a proportion.
+ *
+ * Most of what an operator checks before starting work has no denominator —
+ * which database is configured, whether the fetch queue is in a cooldown and
+ * for how long, which version slot is active. Forcing those into a meter
+ * either invents a maximum or renders a bar that means nothing.
+ */
+export interface WebStatusText {
+  readonly kind: "text";
+  readonly label: string;
+  readonly value: string;
+  readonly tone?: WebTone;
+}
+
+export type WebStatusItem = WebStatusMeter | WebStatusText;
 
 export interface WebStatusWidget {
   readonly id: string;
   readonly title: string;
   readonly source: string;
-  read(): Promise<readonly WebStatusMeter[]>;
+  read(): Promise<readonly WebStatusItem[]>;
 }
 
 const panels: WebPanel[] = [];
@@ -127,7 +196,7 @@ export async function readWebStatusWidgets(): Promise<
     readonly id: string;
     readonly title: string;
     readonly source: string;
-    readonly meters: readonly WebStatusMeter[];
+    readonly items: readonly WebStatusItem[];
   }[]
 > {
   const results = await Promise.all(
@@ -137,7 +206,9 @@ export async function readWebStatusWidgets(): Promise<
           id: widget.id,
           title: widget.title,
           source: widget.source,
-          meters: await widget.read(),
+          items: (await widget.read()).map((item) =>
+            item.kind === "text" ? item : { ...item, kind: "meter" as const }
+          ),
         };
       } catch {
         return undefined;

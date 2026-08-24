@@ -8,7 +8,7 @@ import type { RunEvent } from "../../run-events/RunEventTypes";
 import type { WebInvocation } from "../argv";
 import type { WebField } from "../commandFields";
 import type { WebCommandNode } from "../commandTree";
-import type { PanelData } from "../extensions";
+import type { PanelData, WebStatusItem } from "../extensions";
 
 export interface RunSummary {
   readonly id: string;
@@ -101,11 +101,31 @@ export function getFields(
   return api(`/api/fields?${query.toString()}`);
 }
 
+/**
+ * Asks a widget for its options, carrying the rest of the form with it.
+ *
+ * A picker is frequently only answerable in context — this CIK's accessions,
+ * this kind's version ids — so the values travel as `v.<key>` parameters and a
+ * widget that ignores them behaves exactly as it did before.
+ */
 export function searchWidget(
   format: string,
-  query: string
+  query: string,
+  context?: {
+    readonly path: readonly string[];
+    readonly args: readonly string[];
+    readonly values: Readonly<Record<string, string | boolean | undefined>>;
+  }
 ): Promise<{ readonly items: readonly { value: string; label: string; detail?: string }[] }> {
   const search = new URLSearchParams({ format, q: query });
+  if (context) {
+    search.set("path", context.path.join("."));
+    for (const arg of context.args) if (arg) search.append("arg", arg);
+    for (const [key, value] of Object.entries(context.values)) {
+      if (value === undefined || value === false || value === "") continue;
+      search.set(`v.${key}`, String(value));
+    }
+  }
   return api(`/api/widget-search?${search.toString()}`);
 }
 
@@ -114,7 +134,7 @@ export function getStatusWidgets(): Promise<{
     readonly id: string;
     readonly title: string;
     readonly source: string;
-    readonly meters: readonly { label: string; value: number; max: number }[];
+    readonly items: readonly WebStatusItem[];
   }[];
 }> {
   return api("/api/status-widgets");

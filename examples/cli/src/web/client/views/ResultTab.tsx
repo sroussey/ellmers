@@ -13,25 +13,62 @@ import type { RunViewState } from "../state";
 function Panel({ data }: { data: PanelData }): JSX.Element {
   if (data.kind === "table") {
     return (
-      <table className="tbl">
-        <thead>
-          <tr>
-            {data.columns.map((column) => (
-              <th key={column}>{column}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {data.rows.map((row, index) => (
-            <tr key={index}>
-              {row.map((cell, cellIndex) => (
-                <td key={cellIndex}>{cell}</td>
+      <>
+        <div className="tblwrap">
+          <table className="tbl">
+            <thead>
+              <tr>
+                {data.columns.map((column) => (
+                  <th key={column}>{column}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.rows.map((row, index) => (
+                <tr
+                  key={index}
+                  className={data.rowTones?.[index] ? `t-${data.rowTones[index]}` : undefined}
+                >
+                  {row.map((cell, cellIndex) => (
+                    <td key={cellIndex}>{cell}</td>
+                  ))}
+                </tr>
               ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+            </tbody>
+          </table>
+        </div>
+        {data.note ? <div className="pnote">{data.note}</div> : null}
+      </>
     );
+  }
+  if (data.kind === "stats") {
+    return (
+      <div className="stats">
+        {data.items.map((item) => (
+          <div className={`stat${item.tone ? ` t-${item.tone}` : ""}`} key={item.label}>
+            <span className="stat-l">{item.label}</span>
+            <span className="stat-v">{item.value}</span>
+            {item.detail ? <span className="stat-d">{item.detail}</span> : null}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (data.kind === "timeline") {
+    return (
+      <ol className="tline">
+        {data.events.map((event, index) => (
+          <li key={`${event.date}-${index}`} className={event.tone ? `t-${event.tone}` : undefined}>
+            <span className="tl-d">{event.date}</span>
+            <span className="tl-l">{event.label}</span>
+            {event.detail ? <span className="tl-x">{event.detail}</span> : null}
+          </li>
+        ))}
+      </ol>
+    );
+  }
+  if (data.kind === "empty") {
+    return <div className="pb cmd-d">{data.message}</div>;
   }
   if (data.kind === "kv") {
     return (

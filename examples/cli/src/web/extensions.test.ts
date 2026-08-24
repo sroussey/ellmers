@@ -123,6 +123,25 @@ describe("status widgets", () => {
     });
     const widgets = await readWebStatusWidgets();
     expect(widgets.map((w) => w.id)).toEqual(["edgar"]);
-    expect(widgets[0].meters[0]).toEqual({ label: "req/s", value: 6, max: 8 });
+    // A widget states a meter by leaving `kind` off, which is what every
+    // widget written before text lines existed does.
+    expect(widgets[0].items[0]).toEqual({ kind: "meter", label: "req/s", value: 6, max: 8 });
+  });
+
+  it("carries a text line through unchanged", async () => {
+    registerWebStatusWidget({
+      id: "db",
+      title: "Database",
+      source: "@workglow/sec",
+      read: async () => [
+        { kind: "text", label: "backend", value: "postgres", tone: "ok" },
+        { label: "pending", value: 3, max: 10 },
+      ],
+    });
+    const widgets = await readWebStatusWidgets();
+    expect(widgets[0].items).toEqual([
+      { kind: "text", label: "backend", value: "postgres", tone: "ok" },
+      { kind: "meter", label: "pending", value: 3, max: 10 },
+    ]);
   });
 });

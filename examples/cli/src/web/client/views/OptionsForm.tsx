@@ -7,31 +7,46 @@
 
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
+import type { WebCommandBadge } from "../../annotations";
 import { renderCliLine } from "../../argv";
 import type { WebField } from "../../commandFields";
 import { searchWidget } from "../api";
-import { splitFields, toInvocation, type FormValues } from "../formModel";
+import {
+  appendValue,
+  splitFields,
+  stableScopeKey,
+  toInvocation,
+  type FormValues,
+  type WidgetScope,
+} from "../formModel";
+import { CommandBadges } from "./CommandTree";
 
 type FieldWithWidget = WebField & { widget?: string };
 
 function SearchWidget({
   field,
   value,
+  scope,
   onChange,
 }: {
   field: FieldWithWidget;
   value: string;
+  scope: WidgetScope | undefined;
   onChange: (next: string) => void;
 }): JSX.Element {
   const [items, setItems] = useState<readonly { value: string; label: string; detail?: string }[]>(
     []
   );
   const [open, setOpen] = useState(false);
+  const scopeKey = scope ? stableScopeKey(scope) : "";
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    void searchWidget(field.format ?? "", value)
+    // A list field searches on the fragment being typed, not on the list: the
+    // whole value of a picked-plus-typing `--models` matches no model at all.
+    const needle = field.multiple ? (value.split(",").pop() ?? "").trim() : value;
+    void searchWidget(field.format ?? "", needle, scope)
       .then((result) => {
         if (!cancelled) setItems(result.items);
       })
@@ -39,7 +54,12 @@ function SearchWidget({
     return () => {
       cancelled = true;
     };
-  }, [open, value, field.format]);
+    // `scope` is a fresh object on every render of the form, so depending on it
+    // directly re-fires this search whenever ANY field changes — a keystroke in
+    // one box re-queries every open picker on the page. The effect depends on a
+    // serialization of what the search actually reads instead, so it re-runs
+    // when the scope's CONTENT changes and not when its identity does.
+  }, [open, value, field.format, field.multiple, scopeKey]);
 
   return (
     <div>
@@ -47,6 +67,7 @@ function SearchWidget({
         <input
           type="text"
           value={value}
+          placeholder={field.placeholder}
           onInput={(event) => onChange((event.target as HTMLInputElement).value)}
           onFocus={() => setOpen(true)}
         />
@@ -61,8 +82,8 @@ function SearchWidget({
               key={item.value}
               className="cmd"
               onClick={() => {
-                onChange(item.value);
-                setOpen(false);
+                onChange(field.multiple ? appendValue(value, item.value) : item.value);
+                if (!field.multiple) setOpen(false);
               }}
             >
               <span className="cmd-n">{item.label}</span>
@@ -78,10 +99,12 @@ function SearchWidget({
 function Control({
   field,
   value,
+  scope,
   onChange,
 }: {
   field: FieldWithWidget;
   value: string | boolean | undefined;
+  scope: WidgetScope | undefined;
   onChange: (next: string | boolean) => void;
 }): JSX.Element {
   if (field.type === "boolean") {
@@ -112,12 +135,15 @@ function Control({
     );
   }
   if (field.widget === "search") {
-    return <SearchWidget field={field} value={String(value ?? "")} onChange={onChange} />;
+    return (
+      <SearchWidget field={field} value={String(value ?? "")} scope={scope} onChange={onChange} />
+    );
   }
   if (field.type === "object" || field.type === "array" || field.description.length > 90) {
     return (
       <textarea
         value={String(value ?? "")}
+        placeholder={field.placeholder}
         onInput={(event) => onChange((event.target as HTMLTextAreaElement).value)}
       />
     );
@@ -126,6 +152,7 @@ function Control({
     <input
       type={field.type === "number" || field.type === "integer" ? "number" : "text"}
       value={String(value ?? "")}
+      placeholder={field.placeholder}
       onInput={(event) => onChange((event.target as HTMLInputElement).value)}
     />
   );
@@ -134,10 +161,12 @@ function Control({
 function FieldRows({
   fields,
   values,
+  scope,
   onChange,
 }: {
   fields: readonly FieldWithWidget[];
   values: FormValues;
+  scope: WidgetScope | undefined;
   onChange: (key: string, value: string | boolean) => void;
 }): JSX.Element {
   return (
@@ -153,6 +182,7 @@ function FieldRows({
             <Control
               field={field}
               value={values[field.key]}
+              scope={scope}
               onChange={(next) => onChange(field.key, next)}
             />
           </div>
@@ -168,6 +198,8 @@ export function OptionsForm({
   fields,
   values,
   errors,
+  badges,
+  note,
   onChange,
   onRun,
   canRun = true,
@@ -177,6 +209,8 @@ export function OptionsForm({
   fields: readonly FieldWithWidget[];
   values: FormValues;
   errors: readonly string[];
+  badges?: readonly WebCommandBadge[];
+  note?: string;
   onChange: (key: string, value: string | boolean) => void;
   onRun: (dryRun: boolean) => void;
   /** False while the CLI is not answering its heartbeat; running would just fail. */
@@ -184,28 +218,43 @@ export function OptionsForm({
 }): JSX.Element {
   const { args, inputs, advanced } = splitFields(fields);
   const line = renderCliLine(binaryName, toInvocation(fields, values, path));
+  // The picker for one field is answered from the whole form, so the scope is
+  // rebuilt from the values on every render rather than captured per field.
+  const scope: WidgetScope = {
+    path,
+    args: args.map((field) => String(values[field.key] ?? "")),
+    values,
+  };
   // Offering a flag the command does not declare produces a rejected run, so
   // the button exists only where `--dry-run` is real.
   const hasDryRun = fields.some((field) => field.key === "dry-run" && field.source === "option");
 
+  const hasBadges = badges !== undefined && badges.length > 0;
+
   return (
     <div className="wrap">
+      {hasBadges || note ? (
+        <div className={`cnote${badges?.includes("destructive") ? " danger" : ""}`}>
+          <CommandBadges badges={badges} />
+          {note ? <span>{note}</span> : null}
+        </div>
+      ) : null}
       {args.length > 0 ? (
         <>
           <h2 className="sec">Arguments</h2>
-          <FieldRows fields={args} values={values} onChange={onChange} />
+          <FieldRows fields={args} values={values} scope={scope} onChange={onChange} />
         </>
       ) : null}
       {inputs.length > 0 ? (
         <>
           <h2 className="sec">Inputs</h2>
-          <FieldRows fields={inputs} values={values} onChange={onChange} />
+          <FieldRows fields={inputs} values={values} scope={scope} onChange={onChange} />
         </>
       ) : null}
       {advanced.length > 0 ? (
         <details className="adv">
           <summary>{advanced.length} more options</summary>
-          <FieldRows fields={advanced} values={values} onChange={onChange} />
+          <FieldRows fields={advanced} values={values} scope={scope} onChange={onChange} />
         </details>
       ) : null}
 

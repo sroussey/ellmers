@@ -8,6 +8,8 @@ import type { TaskGraph } from "@workglow/task-graph";
 import { computeGraphInputSchema } from "@workglow/task-graph";
 import type { DataPortSchemaNonBoolean, DataPortSchemaObject } from "@workglow/util/schema";
 import { resolveTaskType } from "../taskTypes";
+import type { WebFieldAnnotation } from "./annotations";
+import { resolveFieldAnnotations } from "./annotations";
 import type { WebCommandNode } from "./commandTree";
 
 export interface WebField {
@@ -22,6 +24,10 @@ export interface WebField {
   readonly defaultValue: unknown;
   readonly choices: readonly string[] | undefined;
   readonly source: "argument" | "schema" | "config" | "option";
+  /** Hint text for an empty control, from a field annotation. */
+  readonly placeholder?: string;
+  /** The field takes a comma-separated list, so a pick appends to it. */
+  readonly multiple?: boolean;
 }
 
 /**
@@ -123,6 +129,29 @@ function schemaFields(schema: DataPortSchemaObject): Omit<WebField, "source">[] 
 }
 
 /**
+ * Folds a downstream annotation onto a field.
+ *
+ * Only over-stating values: an annotation names a picker or a vocabulary the
+ * CLI's own declaration cannot carry, and leaving the rest alone is what keeps
+ * an annotated command still describing itself.
+ */
+function annotate(field: WebField, annotation: WebFieldAnnotation | undefined): WebField {
+  if (!annotation) return field;
+  return {
+    ...field,
+    ...(annotation.label !== undefined ? { label: annotation.label } : {}),
+    ...(annotation.description !== undefined ? { description: annotation.description } : {}),
+    ...(annotation.format !== undefined ? { format: annotation.format } : {}),
+    ...(annotation.choices !== undefined
+      ? { choices: annotation.choices, type: field.type === "boolean" ? field.type : "enum" }
+      : {}),
+    ...(annotation.advanced !== undefined ? { advanced: annotation.advanced } : {}),
+    ...(annotation.placeholder !== undefined ? { placeholder: annotation.placeholder } : {}),
+    ...(annotation.multiple !== undefined ? { multiple: annotation.multiple } : {}),
+  };
+}
+
+/**
  * The form for one command: its positional arguments, then whatever its input
  * schema declares, then its flags.
  *
@@ -183,7 +212,14 @@ export async function resolveCommandFields(
       source: "option",
     });
   }
-  return fields;
+
+  // Applied last, over every source at once: a downstream annotates the form
+  // it sees, and the same `--cik` gets the same picker whether the command
+  // declared it as a flag or a task schema declared it as a port.
+  const annotations = resolveFieldAnnotations(node.path);
+  return annotations.size === 0
+    ? fields
+    : fields.map((field) => annotate(field, annotations.get(field.key)));
 }
 
 function asObjectSchema(schema: unknown): DataPortSchemaObject | undefined {

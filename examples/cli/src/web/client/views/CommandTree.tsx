@@ -6,7 +6,43 @@
  */
 
 import type { JSX } from "preact";
+import type { WebCommandBadge } from "../../annotations";
 import type { WebCommandNode } from "../../commandTree";
+
+/**
+ * The one-glyph form of a cost badge.
+ *
+ * A rail 266px wide has no room for the word, and the point of the badge is
+ * that it is visible BEFORE you click into a command — a `db reset` that
+ * announces itself only once you are looking at its Run button has announced
+ * itself too late.
+ */
+const BADGE_GLYPH: Readonly<Record<WebCommandBadge, string>> = {
+  ai: "AI",
+  network: "NET",
+  slow: "SLOW",
+  writes: "W",
+  destructive: "!",
+};
+
+export function CommandBadges({
+  badges,
+  className = "",
+}: {
+  badges: readonly WebCommandBadge[] | undefined;
+  className?: string;
+}): JSX.Element | null {
+  if (!badges || badges.length === 0) return null;
+  return (
+    <span className={`badges ${className}`.trim()}>
+      {badges.map((badge) => (
+        <span key={badge} className={`cb cb-${badge}`} title={badge}>
+          {BADGE_GLYPH[badge]}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 function NodeRow({
   node,
@@ -38,6 +74,7 @@ function NodeRow({
       >
         <span className="cmd-n">{node.name}</span>
         <span className="cmd-d">{node.description}</span>
+        <CommandBadges badges={node.badges} />
       </button>
     );
   }

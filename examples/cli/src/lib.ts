@@ -28,17 +28,39 @@ export {
   createWorkflowRepository,
 } from "./storage";
 export { renderTaskInstanceRun, renderTaskRun, renderWorkflowRun } from "./ui/render";
+export {
+  annotateCommandTree,
+  matchPathSpecificity,
+  registerCommandAnnotation,
+  registerCommandFieldAnnotations,
+  resolveCommandAnnotation,
+  resolveFieldAnnotations,
+  type CommandFieldAnnotations,
+  type WebCommandAnnotation,
+  type WebCommandBadge,
+  type WebFieldAnnotation,
+  type WebTone,
+} from "./web/annotations";
 export type { WebInvocation } from "./web/argv";
-export { registerCommandSchemaProvider, type CommandSchemaProvider } from "./web/commandFields";
+export {
+  registerCommandSchemaProvider,
+  resolveCommandFields,
+  type CommandSchemaProvider,
+  type WebField,
+} from "./web/commandFields";
+export { buildCommandTree, findCommandNode, type WebCommandNode } from "./web/commandTree";
 export {
   registerWebFieldWidget,
   registerWebPanel,
   registerWebStatusWidget,
   type PanelData,
   type WebFieldWidget,
+  type WebFieldWidgetContext,
   type WebFieldWidgetItem,
   type WebPanel,
   type WebPanelContext,
+  type WebStatusItem,
   type WebStatusMeter,
+  type WebStatusText,
   type WebStatusWidget,
 } from "./web/extensions";
