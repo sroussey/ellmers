@@ -116,20 +116,24 @@ export interface WithCliOptions {
  * Operator opt-out from the terminal UI: `WORKGLOW_NO_TUI=1` runs plainly even
  * on a TTY, exactly as a piped run does.
  *
- * It exists because the UI is not free to keep alive indefinitely. Ink renders
- * through `yoga-layout` compiled to WASM, and WASM linear memory is neither the
- * JS heap nor node's `external` — so what it retains is invisible to
- * `heapUsed`, survives `Bun.gc(true)`, and is never returned to the OS.
- * Measured on a bare 10-row Ink app that only re-renders: RSS grows with
- * rendered elements x renders, ~25 KB per render at 10 rows, linear in both and
- * with no plateau. A long-running sweep is the pathological case — an hours-long
- * `sync` fan-out re-renders on every task and iteration event, which measured
- * ~130 renders/second and took one process from 249 MB to 1.15 GB across 3,000
- * items while its JS heap stayed flat at ~100 MB.
+ * It exists because a run whose length is set by the size of the data can
+ * accumulate memory in proportion to how many times it re-renders. Measured on
+ * one `sync` sweep, same machine and database: 249 MB -> 1,148 MB across 3,000
+ * filings with the UI on, flat at 297 MB with it off, and ~3x faster.
  *
- * So this is a mitigation, not a fix: it removes the UI, which removes the
- * leak. The leak itself is upstream. Reach for it on any run whose length is
- * governed by the size of the data rather than by a human watching it.
+ * The cause is NOT Ink, and this flag is the blunter of the two remedies.
+ * React's DEVELOPMENT build instruments commits for the profiler, emitting
+ * `performance.measure()` per component per commit; Node's user-timing buffer
+ * is unbounded and nothing in a headless process drains it, so every entry is
+ * retained for the process lifetime. A progress UI re-rendering continuously
+ * for hours is simply the workload that makes an unbounded buffer visible.
+ *
+ * So prefer `NODE_ENV=production`, which drops the instrumentation entirely
+ * and is also markedly faster; measured over 8,000 re-renders the heap stays
+ * flat at ~15 MB and yoga node count never moves. Reach for this flag when the
+ * production build is not an option, or when the terminal output itself is
+ * unwanted — it works by removing the renders, which removes the accumulation
+ * as a side effect rather than by fixing it.
  */
 export function tuiDisabledByEnv(): boolean {
   const raw = process.env.WORKGLOW_NO_TUI?.trim().toLowerCase();
