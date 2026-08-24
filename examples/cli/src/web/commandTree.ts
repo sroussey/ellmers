@@ -5,6 +5,7 @@
  */
 
 import type { Command, Option } from "commander";
+import type { WebCommandBadge } from "./annotations";
 
 export interface WebCommandOption {
   /** Long flag without dashes, which is also how an invocation names it. */
@@ -32,6 +33,14 @@ export interface WebCommandNode {
   readonly children: readonly WebCommandNode[];
   readonly args: readonly WebCommandArgument[];
   readonly options: readonly WebCommandOption[];
+  /**
+   * Set by `annotateCommandTree` where the tree is served, never read off the
+   * commander program: commander knows a command's flags, not what running it
+   * costs or destroys.
+   */
+  readonly badges?: readonly WebCommandBadge[];
+  readonly note?: string;
+  readonly confirm?: string;
 }
 
 /** Flags that exist to print text, which is not a thing this surface can run. */

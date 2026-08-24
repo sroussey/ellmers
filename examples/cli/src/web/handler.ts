@@ -6,6 +6,7 @@
 
 import type { Command } from "commander";
 import { timingSafeEqual } from "node:crypto";
+import { annotateCommandTree } from "./annotations";
 import { validateInvocation, type WebInvocation } from "./argv";
 import { resolveCommandFields } from "./commandFields";
 import { buildCommandTree, findCommandNode } from "./commandTree";
@@ -139,7 +140,10 @@ export async function handleWebRequest(request: WebRequest, ctx: WebContext): Pr
   }
 
   if (request.path === "/api/commands") {
-    return json(200, { commands: buildCommandTree(ctx.program), binaryName: ctx.binaryName });
+    return json(200, {
+      commands: annotateCommandTree(buildCommandTree(ctx.program)),
+      binaryName: ctx.binaryName,
+    });
   }
 
   if (request.path === "/api/fields") {
@@ -159,8 +163,19 @@ export async function handleWebRequest(request: WebRequest, ctx: WebContext): Pr
   if (request.path === "/api/widget-search") {
     const widget = getWebFieldWidget(request.query.get("format") ?? undefined);
     if (!widget) return json(404, { error: "no widget for that format" });
+    // The rest of the form travels with the query: a scoped picker (this CIK's
+    // filings, this kind's ids) has no other way to know what it is scoped to.
+    const values: Record<string, string> = {};
+    for (const [key, value] of request.query.entries()) {
+      if (key.startsWith("v.")) values[key.slice(2)] = value;
+    }
+    const context = {
+      path: (request.query.get("path") ?? "").split(".").filter(Boolean),
+      args: request.query.getAll("arg"),
+      values,
+    };
     try {
-      return json(200, { items: await widget.search(request.query.get("q") ?? "") });
+      return json(200, { items: await widget.search(request.query.get("q") ?? "", context) });
     } catch (error) {
       return json(200, {
         items: [],

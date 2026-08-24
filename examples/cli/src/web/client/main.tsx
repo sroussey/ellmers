@@ -9,9 +9,10 @@ import type { JSX } from "preact";
 import { render } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { RunEvent } from "../../run-events/RunEventTypes";
+import { renderCliLine } from "../argv";
 import type { WebField } from "../commandFields";
 import { findCommandNode, type WebCommandNode } from "../commandTree";
-import type { PanelData } from "../extensions";
+import type { PanelData, WebStatusItem } from "../extensions";
 import {
   abortRun,
   answerHuman,
@@ -50,6 +51,9 @@ import { ResultTab } from "./views/ResultTab";
 import { RunConsole } from "./views/RunConsole";
 
 type Tab = "options" | "run" | "result";
+
+/** How often the rail re-reads contributed status. Slow: a widget may query a database. */
+const STATUS_POLL_MS = 15_000;
 type FieldWithWidget = WebField & { widget?: string };
 
 /** One timer drives every spinner and elapsed clock, as the terminal does. */
@@ -125,13 +129,17 @@ function App(): JSX.Element {
     readonly { id: string; title: string; source: string; data: PanelData }[]
   >([]);
   const [widgets, setWidgets] = useState<
-    readonly {
-      id: string;
-      title: string;
-      source: string;
-      meters: readonly { label: string; value: number; max: number }[];
-    }[]
+    readonly { id: string; title: string; source: string; items: readonly WebStatusItem[] }[]
   >([]);
+  /**
+   * A run held back by its command's confirmation.
+   *
+   * Kept here rather than in the form because Run has a keyboard path too, and
+   * a dialog only the button honors is not a gate.
+   */
+  const [pendingRun, setPendingRun] = useState<
+    { readonly dryRun: boolean; readonly confirm: string; readonly line: string } | undefined
+  >(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [theme, setTheme] = useState<"light" | "auto" | "dark">("auto");
   const closeStreamRef = useRef<(() => void) | undefined>(undefined);
@@ -158,9 +166,29 @@ function App(): JSX.Element {
     void listRuns()
       .then((result) => setRuns(result.runs))
       .catch(() => {});
-    void getStatusWidgets()
-      .then((result) => setWidgets(result.widgets))
-      .catch(() => {});
+  }, []);
+
+  /**
+   * Status is polled, not read once: the lines worth putting on a rail are the
+   * ones that change while you sit there — a fetch queue entering a cooldown,
+   * a sweep's dead-letter count climbing. Slow enough (15s) that a widget may
+   * query a database to answer.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    const read = (): void => {
+      void getStatusWidgets()
+        .then((result) => {
+          if (!cancelled) setWidgets(result.widgets);
+        })
+        .catch(() => {});
+    };
+    read();
+    const timer = setInterval(read, STATUS_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
   }, []);
 
   /**
@@ -258,12 +286,9 @@ function App(): JSX.Element {
     [commands, node]
   );
 
-  const onRun = useCallback(
+  const startInvocation = useCallback(
     (dryRun: boolean) => {
       if (!node) return;
-      // Guarded here as well as on the button: Run also has a keyboard path,
-      // and a request to a dead CLI fails as an unexplained network error.
-      if (!cli.online) return;
       const invocation = toInvocation(fields, values, node.path);
       const withDry = dryRun
         ? { ...invocation, options: { ...invocation.options, "dry-run": true } }
@@ -275,7 +300,29 @@ function App(): JSX.Element {
         })
         .catch((cause: Error) => setError(cause.message));
     },
-    [attach, cli.online, fields, node, values]
+    [attach, fields, node, values]
+  );
+
+  const onRun = useCallback(
+    (dryRun: boolean) => {
+      if (!node) return;
+      // Guarded here as well as on the button: Run also has a keyboard path,
+      // and a request to a dead CLI fails as an unexplained network error.
+      if (!cli.online) return;
+      // A dry run changes nothing, so it is never what the confirmation is
+      // protecting against — gating it would train the reflex that dismisses
+      // the dialog on the run that does.
+      if (node.confirm && !dryRun) {
+        setPendingRun({
+          dryRun,
+          confirm: node.confirm,
+          line: renderCliLine(binaryName, toInvocation(fields, values, node.path)),
+        });
+        return;
+      }
+      startInvocation(dryRun);
+    },
+    [binaryName, cli.online, fields, node, startInvocation, values]
   );
 
   // A finished run is where the Result tab and any contributed panels come from.
@@ -377,19 +424,54 @@ function App(): JSX.Element {
         {widgets.map((widget) => (
           <div className="railsec" key={widget.id}>
             <h4>{widget.title}</h4>
-            {widget.meters.map((meter) => (
-              <div className="meter" key={meter.label}>
-                <span>
-                  {meter.value} / {meter.max} {meter.label}
-                </span>
-                <span className="bar">
-                  <i style={`width:${Math.min(100, (meter.value / (meter.max || 1)) * 100)}%`} />
-                </span>
-              </div>
-            ))}
+            {widget.items.map((item) =>
+              item.kind === "text" ? (
+                <div className={`sline${item.tone ? ` t-${item.tone}` : ""}`} key={item.label}>
+                  <span className="sl-l">{item.label}</span>
+                  <span className="sl-v">{item.value}</span>
+                </div>
+              ) : (
+                <div className="meter" key={item.label}>
+                  <span>
+                    {item.value} / {item.max} {item.label}
+                  </span>
+                  <span className="bar">
+                    <i style={`width:${Math.min(100, (item.value / (item.max || 1)) * 100)}%`} />
+                  </span>
+                </div>
+              )
+            )}
           </div>
         ))}
       </aside>
+
+      {pendingRun ? (
+        <div className="modal" role="dialog" aria-modal="true">
+          <div className="modal-b">
+            <h3>Confirm</h3>
+            <p>{pendingRun.confirm}</p>
+            <code className="modal-c">
+              <span className="pr">$ </span>
+              {pendingRun.line}
+            </code>
+            <div className="acts">
+              <button className="ghost" onClick={() => setPendingRun(undefined)}>
+                Cancel
+              </button>
+              <button
+                className="btn danger"
+                onClick={() => {
+                  const request = pendingRun;
+                  setPendingRun(undefined);
+                  startInvocation(request.dryRun);
+                }}
+              >
+                Run anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <main className="main">
         <header className="topbar">
@@ -501,6 +583,8 @@ function App(): JSX.Element {
               fields={fields}
               values={values}
               errors={errors}
+              badges={node.badges}
+              note={node.note}
               onChange={onFieldChange}
               onRun={onRun}
               canRun={cli.online}

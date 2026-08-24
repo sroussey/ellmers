@@ -342,8 +342,27 @@ the same commands the terminal runs. Three things about it are load-bearing:
   anything there imports ink or react.
 - **Extensions cross the seam as data, never code**: `registerWebPanel`,
   `registerWebFieldWidget`, `registerWebStatusWidget`,
-  `registerCommandSchemaProvider`. A superset registers what to show; there is no
+  `registerCommandSchemaProvider`, plus `registerCommandFieldAnnotations` and
+  `registerCommandAnnotation`. A superset registers what to show; there is no
   client bundle to ship and no plugin loader to keep stable.
+
+  The two annotation seams differ from the others in that they add nothing —
+  they say something about surface the CLI already has. A commander program
+  declares `<cik>` as a string and cannot say that a picker exists for it, that
+  `--format` takes three values, or that `db reset` drops tables; a downstream
+  package can. Both match a command path where `"*"` is one segment and a
+  trailing `"**"` is the rest, and the more literal pattern wins per key — so
+  `["query", "**"]` gives every query command the CIK picker and
+  `["spac", "report"]` narrows that one to known SPACs. A command nobody
+  annotates renders exactly as it did.
+
+  A field widget's `search` receives the rest of the form (`WebFieldWidgetContext`),
+  which is what makes a scoped picker possible: the accessions worth offering are
+  the ones belonging to the CIK typed two fields up. `PanelData` covers `table`
+  (with per-row tones), `kv`, `stats`, `timeline`, `markdown`, `empty` and
+  `error`; a status widget contributes meters **or** text lines, since most of
+  what an operator checks — which database, whether the fetch queue is in a
+  cooldown — has no denominator to draw a bar against.
 
 **A downstream CLI reuses the whole thing rather than copying it.**
 `runWorkglowCli()` (`src/bootstrap.ts`, exported from `lib.ts`) is the entire
