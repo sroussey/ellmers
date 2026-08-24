@@ -11,32 +11,17 @@ import type { WebCommandBadge } from "../../annotations";
 import { renderCliLine } from "../../argv";
 import type { WebField } from "../../commandFields";
 import { searchWidget } from "../api";
-import { splitFields, toInvocation, type FormValues } from "../formModel";
+import {
+  appendValue,
+  splitFields,
+  stableScopeKey,
+  toInvocation,
+  type FormValues,
+  type WidgetScope,
+} from "../formModel";
 import { CommandBadges } from "./CommandTree";
 
 type FieldWithWidget = WebField & { widget?: string };
-
-/** What the widget needs to answer a scoped question, and nothing more. */
-export interface WidgetScope {
-  readonly path: readonly string[];
-  readonly args: readonly string[];
-  readonly values: FormValues;
-}
-
-/**
- * Appends to a comma-separated field rather than replacing it.
- *
- * `--models` and `--extractors` take lists, and picking a second model from a
- * picker that replaces is picking nothing: you get the last one you clicked.
- */
-export function appendValue(current: string, picked: string): string {
-  const parts = current
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean);
-  if (parts.includes(picked)) return parts.join(",");
-  return [...parts, picked].join(",");
-}
 
 function SearchWidget({
   field,
@@ -53,6 +38,7 @@ function SearchWidget({
     []
   );
   const [open, setOpen] = useState(false);
+  const scopeKey = scope ? stableScopeKey(scope) : "";
 
   useEffect(() => {
     if (!open) return;
@@ -68,7 +54,12 @@ function SearchWidget({
     return () => {
       cancelled = true;
     };
-  }, [open, value, field.format, field.multiple, scope]);
+    // `scope` is a fresh object on every render of the form, so depending on it
+    // directly re-fires this search whenever ANY field changes — a keystroke in
+    // one box re-queries every open picker on the page. The effect depends on a
+    // serialization of what the search actually reads instead, so it re-runs
+    // when the scope's CONTENT changes and not when its identity does.
+  }, [open, value, field.format, field.multiple, scopeKey]);
 
   return (
     <div>

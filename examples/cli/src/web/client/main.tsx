@@ -446,10 +446,16 @@ function App(): JSX.Element {
       </aside>
 
       {pendingRun ? (
-        <div className="modal" role="dialog" aria-modal="true">
+        <div
+          className="modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-title"
+          aria-describedby="confirm-body"
+        >
           <div className="modal-b">
-            <h3>Confirm</h3>
-            <p>{pendingRun.confirm}</p>
+            <h3 id="confirm-title">Confirm</h3>
+            <p id="confirm-body">{pendingRun.confirm}</p>
             <code className="modal-c">
               <span className="pr">$ </span>
               {pendingRun.line}

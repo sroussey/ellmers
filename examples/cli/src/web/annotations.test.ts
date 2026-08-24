@@ -37,6 +37,18 @@ describe("path matching", () => {
     expect(matchPathSpecificity(["version", "**"], ["version", "coverage", "resolver"])).toBe(1);
     expect(matchPathSpecificity(["**"], ["anything", "at", "all"])).toBe(0);
   });
+
+  /**
+   * `**` means "the rest", so a segment after it is one the author expected to
+   * constrain the match and that nothing can honor. Matching anyway would apply
+   * the annotation far wider than the pattern reads; matching nothing is caught
+   * by the guard that every registered pattern must reach a real command.
+   */
+  it("refuses a `**` that is not the last segment", () => {
+    expect(matchPathSpecificity(["a", "**", "b"], ["a", "b"])).toBe(-1);
+    expect(matchPathSpecificity(["a", "**", "b"], ["a", "x", "b"])).toBe(-1);
+    expect(matchPathSpecificity(["a", "**", "b"], ["a", "anything", "at", "all"])).toBe(-1);
+  });
 });
 
 describe("command annotations", () => {

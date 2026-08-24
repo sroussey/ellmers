@@ -91,3 +91,43 @@ export function splitFields(fields: readonly WebField[]): {
     advanced: fields.filter((field) => field.source !== "argument" && field.advanced),
   };
 }
+
+/** What the widget needs to answer a scoped question, and nothing more. */
+export interface WidgetScope {
+  readonly path: readonly string[];
+  readonly args: readonly string[];
+  readonly values: FormValues;
+}
+
+/**
+ * A scope's content as a string, for use as an effect dependency.
+ *
+ * Deliberately covers exactly what a widget search sends — the path, the
+ * positional arguments and the field values — so two scopes that would produce
+ * the same request compare equal however many times the form has re-rendered.
+ */
+export function stableScopeKey(scope: WidgetScope): string {
+  const values = Object.keys(scope.values)
+    .sort()
+    // The pair separator is a control character too, not `=`: a key containing
+    // `=` would otherwise serialize identically to a shorter key whose value
+    // starts with the rest of it, and the whole point of this string is that
+    // two scopes compare equal exactly when they would send the same request.
+    .map((key) => `${key}\u0002${String(scope.values[key] ?? "")}`);
+  return [scope.path.join("."), scope.args.join("\u0000"), values.join("\u0000")].join("\u0001");
+}
+
+/**
+ * Appends to a comma-separated field rather than replacing it.
+ *
+ * `--models` and `--extractors` take lists, and picking a second model from a
+ * picker that replaces is picking nothing: you get the last one you clicked.
+ */
+export function appendValue(current: string, picked: string): string {
+  const parts = current
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.includes(picked)) return parts.join(",");
+  return [...parts, picked].join(",");
+}

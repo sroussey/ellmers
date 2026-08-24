@@ -95,7 +95,15 @@ export function matchPathSpecificity(pattern: readonly string[], path: readonly 
   let literals = 0;
   for (let index = 0; index < pattern.length; index += 1) {
     const segment = pattern[index];
-    if (segment === "**") return literals;
+    if (segment === "**") {
+      // `**` means "the rest", so anything written after it is a segment the
+      // author expected to constrain the match and that nothing can honor.
+      // Matching regardless would silently apply the annotation far wider than
+      // the pattern reads; refusing makes it match nothing instead, which the
+      // downstream guard tests — every registered pattern must reach at least
+      // one real command — turn into a failure that names the pattern.
+      return index === pattern.length - 1 ? literals : -1;
+    }
     if (index >= path.length) return -1;
     if (segment === "*") continue;
     if (segment !== path[index]) return -1;
