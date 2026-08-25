@@ -10,9 +10,11 @@ import { render } from "ink";
 import { EventEmitter } from "node:events";
 import React from "react";
 import { describe, expect, it } from "vitest";
-import { deriveRunState, runStatusBarFields } from "../ui/components/RunStatusBar";
+import { deriveRunState, runStatusBarModel } from "../ui/components/RunStatusBar";
 import { taskDetailText } from "../ui/components/TaskDetailColumn";
 import { taskErrorText } from "../ui/components/TaskErrorDetail";
+import type { RunTaskCounts } from "../ui/model/runCensus";
+import { ownershipWrapperStatus } from "../ui/model/runRowModel";
 import { iterationSummaryLine } from "../ui/rows/SubtaskRows";
 import { settledTaskDurationMs } from "../ui/rows/taskDuration";
 import { WorkflowRunApp } from "../ui/WorkflowRunApp";
@@ -116,18 +118,81 @@ describe("failed row detail", () => {
 });
 
 describe("run status bar", () => {
-  it("carries spend, how much of the graph landed, and the outcome", () => {
-    expect(runStatusBarFields("↑ 1.2k ↓ 300 $0.01 2.4s", 3, 8, "running")).toEqual([
-      "Tokens ↑ 1.2k ↓ 300 $0.01 2.4s",
-      "3 / 8 tasks",
-      "running",
-    ]);
-    expect(runStatusBarFields("", 6, 6, "completed")).toEqual(["6 / 6 tasks", "completed"]);
-    // A single-task graph learns nothing from a count of one.
-    expect(runStatusBarFields("↑ 10 ↓ 2", 1, 1, "completed")).toEqual([
-      "Tokens ↑ 10 ↓ 2",
-      "completed",
-    ]);
+  const counts = (
+    done: number,
+    total: number,
+    extra: Partial<RunTaskCounts> = {}
+  ): RunTaskCounts => ({
+    done,
+    total,
+    running: 0,
+    failed: 0,
+    approximate: false,
+    ...extra,
+  });
+
+  it("carries how much of the graph landed, spend, and the outcome", () => {
+    const bar = runStatusBarModel({
+      usageLine: "↑ 1.2k ↓ 300 $0.01",
+      counts: counts(3, 8),
+      state: "running",
+      elapsedMs: 74_000,
+      hiddenRows: 0,
+    });
+    expect(bar.fields).toEqual(["3 / 8 tasks", "↑ 1.2k ↓ 300 $0.01"]);
+    expect(bar.timer).toBe("1:14");
+    expect(bar.state).toBe("running");
+  });
+
+  it("counts every task the run contains, not just the graph's top level", () => {
+    // The whole point of the census: a three-task graph whose tasks own
+    // subgraphs is a run of hundreds, and the footer says so.
+    const bar = runStatusBarModel({
+      usageLine: "",
+      counts: counts(184, 460, { running: 8 }),
+      state: "running",
+      elapsedMs: 0,
+      hiddenRows: 12,
+    });
+    expect(bar.fields).toEqual(["184 / 460 tasks", "12 hidden"]);
+    // Under a second and a half there is nothing worth clocking.
+    expect(bar.timer).toBe("");
+  });
+
+  it("marks a total the ledger stopped growing", () => {
+    const bar = runStatusBarModel({
+      usageLine: "",
+      counts: counts(9_000, 20_000, { approximate: true }),
+      state: "running",
+      elapsedMs: 3_600_000,
+      hiddenRows: 0,
+    });
+    expect(bar.fields).toEqual(["9000 / 20000+ tasks"]);
+    expect(bar.timer).toBe("1:00:00");
+  });
+
+  it("names failures the state alone would flatten to one word", () => {
+    const bar = runStatusBarModel({
+      usageLine: "",
+      counts: counts(6, 9, { failed: 3 }),
+      state: "failed",
+      elapsedMs: 2000,
+      hiddenRows: 0,
+    });
+    expect(bar.fields).toEqual(["6 / 9 tasks", "3 failed"]);
+  });
+
+  it("says nothing at all about a lone task that spent nothing", () => {
+    // A rule and the word "completed" under one ticked row is ceremony: the
+    // outcome on its own is not enough to earn a footer.
+    const bar = runStatusBarModel({
+      usageLine: "",
+      counts: counts(1, 1),
+      state: "completed",
+      elapsedMs: 400,
+      hiddenRows: 0,
+    });
+    expect(bar.visible).toBe(false);
   });
 
   it("reports the run's outcome, not the last task's", () => {
@@ -143,6 +208,24 @@ describe("run status bar", () => {
     // Settled tasks with others still queued is not a finished run.
     expect(deriveRunState(["COMPLETED", "PENDING"])).toBe("running");
     expect(deriveRunState(["COMPLETED", "DISABLED"])).toBe("completed");
+  });
+});
+
+describe("ownershipWrapperStatus", () => {
+  it("leaves a task that reports its own status alone", () => {
+    expect(ownershipWrapperStatus("PROCESSING", ["PENDING"])).toBe("PROCESSING");
+    expect(ownershipWrapperStatus("COMPLETED", ["PENDING"])).toBe("COMPLETED");
+    expect(ownershipWrapperStatus("PENDING", [])).toBe("PENDING");
+    // Nothing beneath it has started either; it really is waiting.
+    expect(ownershipWrapperStatus("PENDING", ["PENDING", "PENDING"])).toBe("PENDING");
+  });
+
+  it("reads an owned-workflow wrapper's status off the work inside it", () => {
+    expect(ownershipWrapperStatus("PENDING", ["COMPLETED", "PROCESSING"])).toBe("PROCESSING");
+    expect(ownershipWrapperStatus("PENDING", ["COMPLETED", "COMPLETED"])).toBe("COMPLETED");
+    expect(ownershipWrapperStatus("PENDING", ["COMPLETED", "FAILED"])).toBe("FAILED");
+    // Still running outranks a failure that has already landed.
+    expect(ownershipWrapperStatus("PENDING", ["FAILED", "PROCESSING"])).toBe("PROCESSING");
   });
 });
 

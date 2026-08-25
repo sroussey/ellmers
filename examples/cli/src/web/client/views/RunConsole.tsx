@@ -7,10 +7,11 @@
 
 import type { JSX } from "preact";
 import { marqueeBar, unicodeBar } from "../../../ui/model/progressBar";
+import type { RunTaskCounts } from "../../../ui/model/runCensus";
 import {
   cliTaskStatusGlyph,
   deriveRunState,
-  runStatusBarFields,
+  runStatusBarModel,
   taskDetailText,
 } from "../../../ui/model/runRowModel";
 import { consoleContent, orderedRows, runLogText, type RunRow, type RunViewState } from "../state";
@@ -128,10 +129,27 @@ export function RunConsole({
   const rows = orderedRows(state, sortByStatus);
   const statuses = rows.map((row) => row.status);
   const runState = state.state === "running" ? deriveRunState(statuses) || "running" : state.state;
-  const done = statuses.filter((status) => status === "COMPLETED").length;
   const usage = state.usage;
   const usageText = usage ? `↑ ${numberText(usage.input)} ↓ ${numberText(usage.output)}` : "";
-  const fields = runStatusBarFields(usageText, done, rows.length, runState);
+  // The console's rows already span every depth the run reports — owned
+  // subgraphs and live Map clones arrive as `task_added` with a parent — so the
+  // count is over all of them, matching what the terminal's census reports.
+  const counts: RunTaskCounts = {
+    done: statuses.filter((status) => status === "COMPLETED").length,
+    total: rows.length,
+    running: statuses.filter((status) => RUNNING.has(status)).length,
+    failed: statuses.filter((status) => status === "FAILED" || status === "ABORTED").length,
+    approximate: false,
+  };
+  // The clock lives in the screen header here, where the terminal has no room
+  // for one; passing it again would print the same seconds twice.
+  const fields = runStatusBarModel({
+    usageLine: usageText,
+    counts,
+    state: runState,
+    elapsedMs: undefined,
+    hiddenRows: 0,
+  }).fields;
   // The toggle only appears for a run that owns a map, and the grid only where
   // per-index state is retained — offering it otherwise would promise a view
   // the run cannot fill in.
@@ -205,6 +223,7 @@ export function RunConsole({
             : null}
         </div>
         <div className="scr-foot">
+          <span>{runState}</span>
           {fields.map((field) => (
             <span key={field}>{field}</span>
           ))}
