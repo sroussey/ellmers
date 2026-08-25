@@ -5,6 +5,7 @@
  */
 
 import { formatCliDuration } from "../formatCliDuration";
+import type { RunTaskCounts } from "./runCensus";
 
 /**
  * How a run row is drawn, independent of what draws it. The terminal renders
@@ -115,6 +116,61 @@ export function taskDetailText(
   return durationMs === undefined ? "" : formatCliDuration(durationMs);
 }
 
+/**
+ * The progress a row draws, given what the task reported and what a poll of the
+ * live instance found.
+ *
+ * `Task.progress` initialises to `0` and the runner re-stamps `0` the moment a
+ * task starts. Neither is announced, and neither is a measurement: the graph
+ * needs a number in the denominator of its average and zero is the honest one
+ * to put there. On a row it is a different claim entirely. A determinate bar at
+ * zero reads as "0% and stuck", which is what every task that reports no
+ * progress of its own drew for the whole of its run — a flat empty bar above a
+ * subtree visibly moving.
+ *
+ * So a polled zero is adopted only once the task has said something. Until
+ * then the row draws no bar at all, and the spinner in the status column
+ * carries "working, extent unknown" — which is the claim that is actually
+ * true, and the one that column already exists to make.
+ */
+export function adoptPolledProgress(
+  polled: number | undefined,
+  reported: number | undefined
+): number | undefined {
+  if (polled === 0 && reported === undefined) return undefined;
+  return polled;
+}
+
+/** Settled either way — the work is behind it, whatever the outcome. */
+export function cliTaskIsSettled(status: string): boolean {
+  return (
+    status === "COMPLETED" || status === "FAILED" || status === "ABORTED" || status === "DISABLED"
+  );
+}
+
+/**
+ * The run's own bar.
+ *
+ * `graph_progress` averages the task progresses, and those start at an
+ * unreported zero (see {@link adoptPolledProgress}) — so a run whose tasks
+ * report nothing of their own averages to a flat determinate zero for its
+ * entire life, and the bar heading the whole screen claims the run is stuck at
+ * the gate while the work plainly moves beneath it.
+ *
+ * A zero is therefore only a measurement once something has been measured: a
+ * task reporting a number, or a task landing. Before that the bar is
+ * indeterminate, which is the one row on screen with no spinner of its own to
+ * say so.
+ */
+export function runAggregateProgress(
+  graphProgress: number | undefined,
+  rows: readonly { readonly status: string; readonly progress?: number | undefined }[]
+): number | undefined {
+  if (graphProgress === undefined || graphProgress > 0) return graphProgress;
+  const measured = rows.some((row) => row.progress !== undefined || cliTaskIsSettled(row.status));
+  return measured ? graphProgress : undefined;
+}
+
 /** How the run as a whole ended up, derived from the statuses of its tasks. */
 export type RunState = "running" | "completed" | "failed" | "aborted" | "";
 
@@ -156,6 +212,35 @@ export function deriveRunState(statuses: readonly string[]): RunState {
   return statuses.every((s) => s === "COMPLETED" || s === "DISABLED") ? "completed" : "running";
 }
 
+/**
+ * The status a row reports once its own children contradict it.
+ *
+ * `context.own(new Workflow())` puts a wrapper task in the subgraph so the
+ * workflow's tasks have somewhere to live, and the caller then runs the
+ * workflow rather than the wrapper. The wrapper therefore never leaves
+ * PENDING — it draws a `○` beside a subtree that has plainly finished, and
+ * counts as one task that can never land. A parent whose children have started
+ * is not waiting; it is the thing they are doing, and this says so.
+ *
+ * Only ever reads up from PENDING, so a task that genuinely reports its own
+ * status keeps it.
+ */
+export function ownershipWrapperStatus(status: string, childStatuses: readonly string[]): string {
+  if (status !== "PENDING" || childStatuses.length === 0) return status;
+  let started = false;
+  let failed = false;
+  for (const child of childStatuses) {
+    if (child === "PENDING") continue;
+    started = true;
+    if (child === "PROCESSING" || child === "STREAMING" || child === "ABORTING") {
+      return "PROCESSING";
+    }
+    if (child === "FAILED" || child === "ABORTED") failed = true;
+  }
+  if (!started) return status;
+  return failed ? "FAILED" : "COMPLETED";
+}
+
 export function runStateColor(state: RunState): string | undefined {
   switch (state) {
     case "completed":
@@ -171,21 +256,83 @@ export function runStateColor(state: RunState): string | undefined {
 }
 
 /**
- * The fields the run's footer carries, in order. A task count says nothing
- * about a single-task graph that its one row does not already show, so it is
- * omitted there.
+ * Wall-clock for a run in progress, as a clock rather than a duration.
+ *
+ * {@link formatCliDuration} answers "how long did that take", and switches
+ * units as it goes — `847ms`, `12.4s`, `2m 15s` — which is right on a row that
+ * settles once and is then read at leisure. A footer timer is read while it
+ * moves, and a field that changes width every few seconds drags everything
+ * beside it back and forth, so this one keeps `M:SS` (and `H:MM:SS` past the
+ * hour) and stays put.
  */
-export function runStatusBarFields(
-  usageLine: string,
-  done: number,
-  total: number,
-  state: RunState
-): string[] {
+export function formatRunClock(ms: number | undefined): string {
+  if (ms === undefined || !Number.isFinite(ms) || ms < 0) return "";
+  const totalSec = Math.floor(ms / 1000);
+  const seconds = totalSec % 60;
+  const totalMin = Math.floor(totalSec / 60);
+  const minutes = totalMin % 60;
+  const hours = Math.floor(totalMin / 60);
+  const ss = String(seconds).padStart(2, "0");
+  if (hours === 0) return `${minutes}:${ss}`;
+  return `${hours}:${String(minutes).padStart(2, "0")}:${ss}`;
+}
+
+/** Everything the run footer reports, in the order it is laid out. */
+export interface RunStatusBarInput {
+  /** Directional token counts and cost, already formatted. */
+  readonly usageLine: string;
+  readonly counts: RunTaskCounts;
+  readonly state: RunState;
+  /** Wall-clock since the run started, or `undefined` before it has. */
+  readonly elapsedMs: number | undefined;
+  /** Sibling rows the viewport is not drawing. */
+  readonly hiddenRows: number;
+}
+
+export interface RunStatusBarModel {
+  /** Left-aligned fields, in order. */
+  readonly fields: readonly string[];
+  /** Right-aligned wall-clock; empty when the run has not started. */
+  readonly timer: string;
+  readonly state: RunState;
+  /** False when the bar would say nothing the rows above it do not already. */
+  readonly visible: boolean;
+}
+
+/** Below this a run is short enough that a timer is noise rather than news. */
+const TIMER_VISIBLE_AFTER_MS = 1500;
+
+function formatTaskCount(counts: RunTaskCounts): string {
+  const total = counts.approximate ? `${counts.total}+` : String(counts.total);
+  return `${counts.done} / ${total} tasks`;
+}
+
+/**
+ * The run's footer.
+ *
+ * Task counts come from the whole tree, not the top level: a task that owns a
+ * workflow or maps over a worklist does its work in nodes the top level never
+ * mentions, and `1 / 3 tasks` under three hundred running rows is a footer
+ * reporting on the wrong run.
+ *
+ * A single-task run with nothing to spend and nowhere to go gets no bar at all
+ * — a rule and the word "completed" under one row is ceremony, not information.
+ */
+export function runStatusBarModel(input: RunStatusBarInput): RunStatusBarModel {
+  const { counts, usageLine, state, elapsedMs, hiddenRows } = input;
+  const timer =
+    elapsedMs !== undefined && elapsedMs >= TIMER_VISIBLE_AFTER_MS ? formatRunClock(elapsedMs) : "";
+
   const fields: string[] = [];
-  if (usageLine) fields.push(`Tokens ${usageLine}`);
-  if (total > 1) fields.push(`${done} / ${total} tasks`);
-  if (state) fields.push(state);
-  return fields;
+  if (counts.total > 1) fields.push(formatTaskCount(counts));
+  if (counts.failed > 0) fields.push(`${counts.failed} failed`);
+  if (usageLine) fields.push(usageLine);
+  if (hiddenRows > 0) fields.push(`${hiddenRows} hidden`);
+
+  // The outcome alone does not earn a bar. A rule and the word "completed"
+  // under a single row that already shows a tick is ceremony, not information;
+  // the bar appears when it has a count, a spend, or a clock worth reading.
+  return { fields, timer, state, visible: fields.length > 0 || timer !== "" };
 }
 
 /**

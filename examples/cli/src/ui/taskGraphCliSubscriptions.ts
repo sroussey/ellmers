@@ -87,7 +87,11 @@ function registerTaskListeners(
       const info = prev.get(taskId);
       if (!info) return prev;
       const next = new Map(prev);
-      next.set(taskId, { ...info, status });
+      // A task entering a run has reported nothing yet in it. Clearing carries
+      // that: a reused instance re-registered for the next job would otherwise
+      // keep drawing the last job's percentage until the new one reports.
+      const starting = status === "PROCESSING" && info.status !== status;
+      next.set(taskId, starting ? { ...info, status, progress: undefined } : { ...info, status });
       if (status === "COMPLETED" && appendCompletedLog) {
         appendCompletedLog(`[COMPLETED] ${taskLabel}`);
       }

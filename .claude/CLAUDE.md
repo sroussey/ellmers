@@ -229,7 +229,25 @@ terminal runs. Three load-bearing properties:
   command already runs graphs through — which is why the console works for commands
   nobody wrote it for.
 - **Pure presentation lives in `src/ui/model/`** and imports no renderer, so Ink rows and
-  browser rows cannot disagree. A test there fails if anything imports ink or react.
+  browser rows cannot disagree. A test there fails if anything imports ink or react. Two
+  models there decide what a run looks like as a whole. `runCensus` walks the whole tree —
+  owned subgraphs and live Map clones, not just the graph's top level — into a ledger that
+  only ever grows, which is what lets the footer say `184 / 460 tasks` on a three-task
+  graph and not walk backwards when an iteration retires; a node still PENDING while its
+  own children run is an ownership wrapper (`context.own(new Workflow())`) and is counted
+  as scaffolding rather than as a task that can never land. `runViewport` turns that tree
+  into one plan of per-list caps, shrinking the **deepest** list first so a Map's own row
+  survives to explain the detail beneath it, and the region drawing them holds a
+  high-water height: it grows with its content, never shrinks on its own, and is capped by
+  the window — a footer that slides up the screen whenever a list gets shorter is a footer
+  nobody can read. What still overflows is tail-pinned behind a one-column gutter, which
+  costs no rows at exactly the moment rows ran out. `adoptPolledProgress` is the third:
+  `Task.progress` initialises to `0` and the runner re-stamps `0` at start, neither
+  announced and neither a measurement — the graph needs a number in the denominator of
+  its average — so a row (and `runAggregateProgress` for the run's own bar) takes a zero
+  only once something has actually reported or landed, and is indeterminate until then.
+  Drawn as a determinate zero it reads "0% and stuck", which is what every task that
+  reports no progress of its own showed above a subtree visibly moving.
 - **Extensions cross the seam as data, never code**: `registerWebPanel`,
   `registerWebFieldWidget`, `registerWebStatusWidget`, `registerCommandSchemaProvider`,
   `registerCommandFieldAnnotations`, `registerCommandAnnotation`. No client bundle to
