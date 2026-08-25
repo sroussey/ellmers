@@ -59,7 +59,7 @@ function SearchWidget({
     // one box re-queries every open picker on the page. The effect depends on a
     // serialization of what the search actually reads instead, so it re-runs
     // when the scope's CONTENT changes and not when its identity does.
-  }, [open, value, field.format, field.multiple, scopeKey]);
+  }, [open, value, field.format, field.multiple, scopeKey, scope]);
 
   return (
     <div>
