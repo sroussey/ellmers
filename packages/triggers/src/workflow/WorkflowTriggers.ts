@@ -263,10 +263,10 @@ export function bindWorkflowTrigger<W extends Workflow>(
   }
   const bindings = workflowBindings.get(workflow) ?? [];
   // Rejected HERE rather than at listen(): neither binding is running yet, so a
-  // `trigger.running` check cannot see this. `wf.trigger(t).trigger(t, {input})`
-  // used to be accepted and then silently honour only the first binding's
-  // options — one `ITrigger` holds one handler, so the second `start()` is a
-  // no-op and that input mapper never runs.
+  // `trigger.running` check cannot see this. One `ITrigger` holds one handler,
+  // so binding the same trigger twice would silently honour only the first
+  // binding's options — the second `start()` is a no-op and that input mapper
+  // never runs.
   if (bindings.some((binding) => binding.trigger === trigger)) {
     throw new WorkflowTriggerError(
       `Trigger "${trigger.id}" is already bound to this workflow. One trigger drives one ` +

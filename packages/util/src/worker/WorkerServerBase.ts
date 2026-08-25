@@ -194,8 +194,7 @@ export class WorkerServerBase {
    * Per-id TTL-cleanup timer handles, keyed by request id. The contract:
    *  - Exactly one timer per live entry in `pendingAborts`. `recordPendingAbort`
    *    clears any prior timer for the same id before scheduling a new one, so
-   *    a re-recorded abort always gets a full fresh TTL (previously the stale
-   *    timer would still fire and delete the renewed entry early).
+   *    a re-recorded abort always gets a full fresh TTL.
    *  - `consumePendingAbort` clears and removes the timer when it consumes
    *    (or treats as expired) a pending marker, so a consumed id never has
    *    a stale timer queued.

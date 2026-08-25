@@ -147,17 +147,17 @@ export function isNullableSchema(typeDef: JsonSchema): boolean {
  * spelling: `anyOf`/`oneOf`, or the `type: ["string", "null"]` array form.
  *
  * The array form matters as much as the others — `RunUsageSchema` and friends
- * use it — and it was previously left intact, so every caller switching on
- * `type` saw an array rather than `"string"`/`"integer"` and fell through to
- * its unknown-type branch. That made `mapPostgresType` emit
- * `TEXT /* unknown type *\/` for what should be an INTEGER column, and left
- * such columns with no derived width or range at all.
+ * use it. Leaving it uncollapsed means a caller switching on `type` sees an
+ * array rather than `"string"`/`"integer"` and falls through to its
+ * unknown-type branch, which makes `mapPostgresType` emit
+ * `TEXT /* unknown type *\/` for what should be an INTEGER column, with no
+ * derived width or range at all.
  *
- * Collapsing the array form therefore CHANGES the generated DDL for those
- * columns. `CREATE TABLE IF NOT EXISTS` never alters an existing table, so a
- * database created before this reads back `string` where a fresh one returns
- * `number`. See "Nullable columns and generated DDL" in the package README for
- * the operator-side `ALTER TABLE`.
+ * Handling the array form CHANGES the generated DDL for those columns.
+ * `CREATE TABLE IF NOT EXISTS` never alters an existing table, so a database
+ * created before this reads back `string` where a fresh one returns `number`.
+ * See "Nullable columns and generated DDL" in the package README for the
+ * operator-side `ALTER TABLE`.
  */
 export function getNonNullSchema(typeDef: JsonSchema): JsonSchema {
   if (typeof typeDef === "boolean") return typeDef;

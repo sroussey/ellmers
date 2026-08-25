@@ -195,9 +195,8 @@ export function createPolicyProfile(
       try {
         l(event);
       } catch (err) {
-        // L2 fix: isolate listener failures so one bad listener doesn't
-        // prevent later listeners from receiving the event.
-
+        // Isolate listener failures so one bad listener doesn't prevent
+        // later listeners from receiving the event.
         console.error(`[EntitlementProfile:${name}] listener threw:`, err);
       }
     }

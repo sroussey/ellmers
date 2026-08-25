@@ -153,7 +153,8 @@ export function getGeminiSeed(model: GeminiModelConfig | undefined): number | un
  * is added on top of the caller's cap to leave room for the visible answer.
  *
  * @param defaultBudget applied when the model has no configured budget and no
- *   `effort`. Prefer omitting it — structured generation no longer invents a pad.
+ *   `effort`. Prefer omitting it — structured generation derives its own thinking
+ *   budget.
  */
 export function resolveThinkingConfig(
   model: GeminiModelConfig | undefined,

@@ -225,12 +225,11 @@ export class AiJob<
    * carries no data — output rides on the `finish` event (or accumulated
    * deltas + trailing empty `finish` for streaming capabilities).
    *
-   * AiJob no longer fits Job<Input, Output>'s `execute(input, ctx): Promise<Output>`
-   * contract because the new dispatch shape is `execute(input, ctx, emit): Promise<void>`.
-   * The storage-queue path that depended on the Job contract was removed in
-   * QueuedExecutionStrategy. AiJob still uses Job's progress-event / status
-   * machinery, so we keep the inheritance but accept the intentional override
-   * signature mismatch.
+   * AiJob dispatches via `emit` rather than returning output, so it overrides
+   * `Job<Input, Output>`'s `execute(input, ctx): Promise<Output>` with an extra
+   * `emit` param and a `Promise<void>` return. It still needs Job's
+   * progress-event / status machinery, so we keep the inheritance but accept
+   * the intentional override signature mismatch.
    *
    * @override Deliberate signature deviation: adds `emit` param, returns `Promise<void>`.
    */

@@ -76,10 +76,10 @@ async function collect(stream: AsyncIterable<Uint8Array>): Promise<number[]> {
  * Conformance suite for a streaming task-output repository: JSON rows plus port
  * payloads stored as ordered blob chunks, addressed by cache ref.
  *
- * Extracted from three per-backend suites whose bodies were ~95% identical —
- * they differed only in the ref scheme, a foreign scheme, and how a sibling
- * instance is constructed. Those are the options above; everything else is
- * shared, so a behavioural fix lands for every backend at once.
+ * One shared suite parameterized per backend by its ref scheme, a foreign
+ * scheme, and how a sibling instance is constructed (the options above);
+ * everything else is shared, so a behavioural fix lands for every backend at
+ * once.
  */
 export function runStreamingTaskOutputRepositoryContract(
   opts: StreamingTaskOutputRepositoryContractOptions
