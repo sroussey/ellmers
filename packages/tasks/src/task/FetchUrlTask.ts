@@ -1007,9 +1007,8 @@ export class FetchUrlTask<
    * schema keeps the `x-stream` `body` port, so `TaskRunner` dispatches to
    * `executeStream` and normally never here — making `executeStream` the sole
    * implementation and this a thin drain over it. A second implementation
-   * would be dead code that no run ever exercises, which is exactly how the
-   * queue branch previously became unreachable without a test noticing; the
-   * constructor refuses a subclass that writes one.
+   * would be dead code that no run or test exercises, so the constructor
+   * refuses a subclass that writes one.
    *
    * A `finish` is mandatory: without one there is no output, and returning the
    * `{}` an absent finish leaves behind would hand the caller an object with

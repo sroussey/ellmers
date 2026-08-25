@@ -231,11 +231,10 @@ export interface IQueueStorage<Input, Output> {
    * the `attempts` counter. A partial overwrite — fields not present in
    * `fields` are untouched.
    *
-   * Introduced to fix the bug where `WrappedClaim.ack`/`fail` going through
-   * `complete()` incremented `attempts` on a successful execution. The
-   * lease-expiry reclaim already charged this attempt at `next()` time;
-   * charging it again at `ack()` time double-counts and rolls a successful
-   * job into MAX_ATTEMPTS_REACHED prematurely.
+   * `attempts` is not bumped here because the lease-expiry reclaim already
+   * charged this attempt at `next()` time; charging it again at `ack()`/
+   * `fail()` time would double-count and roll a successful job into
+   * MAX_ATTEMPTS_REACHED prematurely.
    *
    * The `lease_owner` / progress fields are also writable here so the
    * atomic `disable` path can release the lease and clear progress in the
