@@ -86,6 +86,6 @@
     "@workglow/util": "workspace:*"
   },
   "optionalDependencies": {
-    "papaparse": "^5.6.0"
+    "papaparse": "^5.7.0"
   }
 }
