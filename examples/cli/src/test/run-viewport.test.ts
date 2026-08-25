@@ -31,8 +31,9 @@ class FakeTerminal extends EventEmitter {
     return true;
   }
 
-  resizeTo(rows: number): void {
+  resizeTo(rows: number, columns?: number): void {
     this.rows = rows;
+    if (columns !== undefined) this.columns = columns;
     this.emit("resize");
   }
 }
@@ -55,6 +56,8 @@ function lastFrameLines(stdout: FakeTerminal): string[] {
 function indexOfLine(lines: readonly string[], text: string): number {
   return lines.findIndex((line) => line.includes(text));
 }
+
+const ERASE_SCREEN = "\u001B[2J\u001B[H";
 
 const settle = (ms = 250): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -253,6 +256,97 @@ async function runWorkflowApp(rows: number): Promise<FakeTerminal> {
   instance.unmount();
   return stdout;
 }
+
+/** A task that reports progress for long enough to be caught mid-run. */
+class ReportingTask extends Task<Record<string, never>, Record<string, never>> {
+  static override readonly type = "ReportingTask";
+  static override readonly category = "Test";
+  static override readonly cacheable = false;
+  static override inputSchema(): never {
+    return SCHEMA;
+  }
+  static override outputSchema(): never {
+    return SCHEMA;
+  }
+  override async execute(
+    _input: Record<string, never>,
+    context: IExecuteContext
+  ): Promise<Record<string, never>> {
+    for (let p = 20; p <= 80; p += 20) {
+      await context.updateProgress(p, "working");
+      await settle(120);
+    }
+    return {};
+  }
+}
+
+describe("the run's own progress row", () => {
+  it("puts its bar in the same column as the rows beneath it", async () => {
+    const workflow = new Workflow();
+    workflow.pipe(new ReportingTask({ title: "Reporting task" }) as never);
+    const stdout = new FakeTerminal(24);
+    const instance = render(
+      React.createElement(WorkflowRunApp, {
+        graph: workflow.graph,
+        input: {},
+        runExecutor: () => workflow.run({}),
+        onComplete: () => {},
+        onError: () => {},
+      }),
+      { stdout: stdout as never, patchConsole: false, exitOnCtrlC: false }
+    );
+
+    await settle(300);
+    const lines = lastFrameLines(stdout);
+    const header = lines.find((line) => line.startsWith("Workflow"));
+    const row = lines.find((line) => line.includes("Reporting task"));
+    instance.unmount();
+
+    expect(header).toBeDefined();
+    expect(row).toBeDefined();
+    // Left to `justifyContent` alone the header's three children space
+    // themselves evenly and its bar drifts to the middle of the window.
+    expect(header?.indexOf("▕")).toBe(row?.indexOf("▕"));
+    expect(header?.trimEnd().length).toBe(row?.trimEnd().length);
+  });
+});
+
+describe("resizing", () => {
+  it("repaints from a clean screen when the terminal narrows", async () => {
+    const workflow = new Workflow();
+    workflow.pipe(new OwningTask() as never);
+    const stdout = new FakeTerminal(24);
+    const instance = render(
+      React.createElement(WorkflowRunApp, {
+        graph: workflow.graph,
+        input: {},
+        runExecutor: () => workflow.run({}),
+        onComplete: () => {},
+        onError: () => {},
+      }),
+      { stdout: stdout as never, patchConsole: false, exitOnCtrlC: false }
+    );
+
+    await settle(300);
+    const before = stdout.frames.length;
+
+    // Height alone reflows nothing, so the screen is left as it is.
+    stdout.resizeTo(20);
+    await settle(200);
+    expect(stdout.frames.slice(before).some((f) => f.includes(ERASE_SCREEN))).toBe(false);
+
+    // Narrowing reflows every line the last frame wrote, which is what strands
+    // half of it above the run.
+    const beforeNarrow = stdout.frames.length;
+    stdout.resizeTo(20, 60);
+    await settle(200);
+    expect(stdout.frames.slice(beforeNarrow).some((f) => f.includes(ERASE_SCREEN))).toBe(true);
+    // Scrollback is the operator's record of the run; a resize does not take it.
+    expect(stdout.frames.slice(beforeNarrow).some((f) => f.includes("\u001B[3J"))).toBe(false);
+
+    instance.unmount();
+  });
+});
 
 describe("the run footer", () => {
   it("counts the tasks a run owns, not only the graph's top level", async () => {

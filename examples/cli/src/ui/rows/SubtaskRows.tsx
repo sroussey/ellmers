@@ -7,10 +7,8 @@
 import type { ITask, TaskGraph } from "@workglow/task-graph";
 import { Box, Text } from "ink";
 import React from "react";
-import { useCliTheme } from "../CliThemeContext";
-import { ProgressBar } from "../components/ProgressBar";
+import { AggregateProgressRow } from "../components/AggregateProgressRow";
 import { useVisibleRows } from "../components/RunViewport";
-import { TaskDetailColumn } from "../components/TaskDetailColumn";
 import { TaskErrorDetail } from "../components/TaskErrorDetail";
 import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
 import { iterationSummaryLine, ownershipWrapperStatus } from "../model/runRowModel";
@@ -241,8 +239,6 @@ export function SubtaskRows({
   overallProgress,
   variant = "compact",
 }: SubtaskRowsProps): React.ReactElement | null {
-  const theme = useCliTheme();
-  const bodyColor = theme.level === "advanced" ? theme.fg : undefined;
   const showChrome = variant === "chrome";
   const { visible, hidden } = useVisibleRows(listKey, rows);
 
@@ -251,13 +247,7 @@ export function SubtaskRows({
   const body = (
     <Box paddingLeft={2} flexDirection="column">
       {showChrome && overallProgress !== undefined && (
-        <Box flexDirection="row" justifyContent="space-between" width="100%">
-          <Text color={bodyColor}>Subgraph</Text>
-          <Box flexShrink={0} marginLeft={1}>
-            <ProgressBar progress={overallProgress} />
-          </Box>
-          <TaskDetailColumn progress={overallProgress} durationMs={undefined} running={true} />
-        </Box>
+        <AggregateProgressRow label="Subgraph" progress={overallProgress} />
       )}
       <HiddenSiblingsLine hidden={hidden} />
       {visible.map((t) => (

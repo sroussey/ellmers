@@ -26,6 +26,7 @@ import { useSubtaskRows } from "./rows/useSubtaskRows";
 import { useTaskUsageLine } from "./rows/useTaskUsageLine";
 import { cliTaskLabel } from "./taskGraphCliSubscriptions";
 import { useGraphUsageLine } from "./useGraphUsageLine";
+import { useRepaintOnResize } from "./useRepaintOnResize";
 import { useTaskRunCensus } from "./useRunCensus";
 import { useRunClock } from "./useRunClock";
 
@@ -110,6 +111,7 @@ export function TaskRunApp({
   // Ink re-reads this on every SIGWINCH, so a resized window re-prices the
   // plan on the next frame.
   const windowSize = useWindowSize();
+  useRepaintOnResize(windowSize.columns);
   const budgetRows = Math.max(MIN_REGION_ROWS, windowSize.rows - RESERVED_ROWS);
   const plan = useMemo(() => planRunViewport(census.tree, budgetRows), [census.tree, budgetRows]);
 

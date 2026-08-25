@@ -8,12 +8,10 @@ import type { TaskGraph } from "@workglow/task-graph";
 import { Box, Text, useWindowSize } from "ink";
 import React, { useEffect, useMemo, useState } from "react";
 import { sortCliTaskLinesForDisplay, startGraphTaskPoll } from "./cliTaskUi";
-import { useCliTheme } from "./CliThemeContext";
-import { ProgressBar } from "./components/ProgressBar";
+import { AggregateProgressRow } from "./components/AggregateProgressRow";
 import { deriveRunState, RunStatusBar } from "./components/RunStatusBar";
 import { RunViewportProvider, useVisibleRows } from "./components/RunViewport";
 import { ScrollRegion } from "./components/ScrollRegion";
-import { TaskDetailColumn } from "./components/TaskDetailColumn";
 import { HumanInteractionHost } from "./HumanInteractionHost";
 import { hiddenSiblingsLine, planRunViewport } from "./model/runViewport";
 import { ChatTaskRow } from "./rows/ChatTaskRow";
@@ -23,6 +21,7 @@ import { StreamingTextRow } from "./rows/StreamingTextRow";
 import type { CliTaskLine, IterationSlotRow } from "./taskGraphCliSubscriptions";
 import { subscribeTaskGraphForCli } from "./taskGraphCliSubscriptions";
 import { useGraphUsageLine } from "./useGraphUsageLine";
+import { useRepaintOnResize } from "./useRepaintOnResize";
 import { useGraphRunCensus } from "./useRunCensus";
 import { useRunClock } from "./useRunClock";
 
@@ -57,8 +56,6 @@ export function WorkflowRunApp({
   onComplete,
   onError,
 }: WorkflowRunAppProps): React.ReactElement {
-  const theme = useCliTheme();
-  const bodyColor = theme.level === "advanced" ? theme.fg : undefined;
   const [taskInfos, setTaskInfos] = useState<Map<string, CliTaskLine>>(new Map());
   const [overallProgress, setOverallProgress] = useState<number | undefined>(undefined);
   const [iterationSlots, setIterationSlots] = useState<Map<string, IterationSlotRow[]>>(new Map());
@@ -67,6 +64,7 @@ export function WorkflowRunApp({
   // Ink re-reads this on every SIGWINCH, so a window that changes size
   // re-prices the plan on the next frame rather than at the next graph event.
   const windowSize = useWindowSize();
+  useRepaintOnResize(windowSize.columns);
 
   useEffect(() => {
     const unsub = subscribeTaskGraphForCli(
@@ -101,13 +99,7 @@ export function WorkflowRunApp({
     <HumanInteractionHost>
       <Box flexDirection="column">
         {overallProgress !== undefined && (
-          <Box flexDirection="row" justifyContent="space-between" width="100%">
-            <Text color={bodyColor}>Workflow</Text>
-            <Box flexShrink={0} marginLeft={1}>
-              <ProgressBar progress={overallProgress} />
-            </Box>
-            <TaskDetailColumn progress={overallProgress} durationMs={undefined} running={true} />
-          </Box>
+          <AggregateProgressRow label="Workflow" progress={overallProgress} emphasis />
         )}
         <RunViewportProvider
           plan={plan}
