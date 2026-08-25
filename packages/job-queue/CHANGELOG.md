@@ -1,5 +1,11 @@
 # @workglow/job-queue
 
+## 0.4.3
+
+### Build
+
+- types
+
 ## 0.4.2
 
 ## 0.4.1

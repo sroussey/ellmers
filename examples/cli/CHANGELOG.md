@@ -1,5 +1,15 @@
 # @workglow/cli
 
+## 0.4.3
+
+### Bug Fixes
+
+- react hook dep
+
+### Build
+
+- types
+
 ## 0.4.2
 
 ## 0.4.1

@@ -1,5 +1,16 @@
 # @workglow/web
 
+## 0.4.3
+
+### Chores
+
+- revent @xyflow/react update
+- update deps
+
+### Updated Dependencies
+
+- `@xyflow/react`: =12.11.3
+
 ## 0.4.2
 
 ## 0.4.1

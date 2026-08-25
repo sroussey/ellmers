@@ -1,5 +1,13 @@
 # @workglow/knowledge-base
 
+## 0.4.3
+
+### Bug Fixes
+
+#### knowledge-base
+
+- stop re-expanding colspan the producer already placed
+
 ## 0.4.2
 
 ## 0.4.1

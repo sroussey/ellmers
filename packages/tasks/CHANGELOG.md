@@ -1,5 +1,11 @@
 # @workglow/tasks
 
+## 0.4.3
+
+### Chores
+
+- update deps
+
 ## 0.4.2
 
 ## 0.4.1
