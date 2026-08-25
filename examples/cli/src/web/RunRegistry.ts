@@ -6,6 +6,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import type { EventEmitter } from "node:events";
 import { createWriteStream, mkdirSync, type WriteStream } from "node:fs";
 import { join } from "node:path";
 import type { Readable, Writable } from "node:stream";
@@ -53,6 +54,11 @@ type Listener = (record: RunEventRecord) => void;
  */
 function isAlive(child: ChildProcess): boolean {
   return child.exitCode === null && child.signalCode === null;
+}
+
+/** ChildProcess implements EventEmitter at runtime; current @types omit `on`. */
+function childEvents(child: ChildProcess): EventEmitter {
+  return child as unknown as EventEmitter;
 }
 
 /**
@@ -114,11 +120,12 @@ export class RunRegistry {
     this.readLogs(run, child.stdout, "info");
     this.readLogs(run, child.stderr, "error");
 
-    child.on("error", (error) => {
+    const events = childEvents(child);
+    events.on("error", (error: Error) => {
       this.record(run, { k: "log", level: "error", text: error.message });
       this.finish(run, "failed", undefined);
     });
-    child.on("close", (code) => this.finish(run, undefined, code ?? undefined));
+    events.on("close", (code: number | null) => this.finish(run, undefined, code ?? undefined));
     return run;
   }
 
