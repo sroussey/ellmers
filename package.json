@@ -58,8 +58,7 @@
     "use-source": "bun ./scripts/bunsrc-workspace.ts source",
     "use-dist": "bun ./scripts/bunsrc-workspace.ts dist",
     "link-all": "bun ./scripts/link-all.ts link",
-    "unlink-all": "bun ./scripts/link-all.ts unlink",
-    "dev-link": "bun ./scripts/dev-link-workglow.ts"
+    "unlink-all": "bun ./scripts/link-all.ts unlink"
   },
   "dependencies": {
     "caniuse-lite": "^1.0.30001810"
