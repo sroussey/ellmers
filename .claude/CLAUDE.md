@@ -318,5 +318,5 @@ build output is never deleted) and rebuilds; `--no-build` skips the rebuild.
 `publish-workspaces.ts` refuses any workspace still containing stubs.
 
 `bun run link-all` / `unlink-all` register every workspace for `bun link` consumers (sec,
-embarc-data, builder). For the full libs → sec → embarc-data chain run `bun run dev-link`
-here, or `bun ./dev-link.ts` from the parent `workglow/` folder.
+embarc-data, builder). The full libs → sec → embarc-data chain is driven from embarc-data:
+run `bun run dev-link` there, or `bun ./dev-link.ts` from the parent `workglow/` folder.
