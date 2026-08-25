@@ -11,6 +11,7 @@ import type { RunTaskCounts } from "../../../ui/model/runCensus";
 import {
   cliTaskStatusGlyph,
   deriveRunState,
+  runAggregateProgress,
   runStatusBarModel,
   taskDetailText,
 } from "../../../ui/model/runRowModel";
@@ -153,6 +154,10 @@ export function RunConsole({
   // The toggle only appears for a run that owns a map, and the grid only where
   // per-index state is retained — offering it otherwise would promise a view
   // the run cannot fill in.
+  // Same rule the terminal's bar follows: `graph_progress` averages task
+  // progresses that start at a zero nobody reported, so a run of tasks that
+  // report nothing would sit at a measured-looking 0% for its whole life.
+  const graphProgress = runAggregateProgress(state.graphProgress, rows);
   const gridable = [...state.iterations.values()].some((map) => map.slots !== undefined);
   const content = consoleContent(rows.length, state);
 
@@ -198,8 +203,12 @@ export function RunConsole({
           {state.graphProgress !== undefined ? (
             <div className="gline">
               <span className="lb">Workflow</span>
-              <span className="bar">{unicodeBar(state.graphProgress, 22)}</span>
-              <span className="pct">{Math.round(state.graphProgress)}%</span>
+              <span className="bar">
+                {graphProgress === undefined ? marqueeBar(tick, 22) : unicodeBar(graphProgress, 22)}
+              </span>
+              <span className="pct">
+                {graphProgress === undefined ? "" : `${Math.round(graphProgress)}%`}
+              </span>
             </div>
           ) : null}
           {content === "waiting" ? (

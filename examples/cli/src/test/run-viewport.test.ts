@@ -311,6 +311,63 @@ describe("the run's own progress row", () => {
   });
 });
 
+/** Owns work and reports nothing of its own — the shape a pipeline step usually has. */
+class SilentParentTask extends Task<Record<string, never>, Record<string, never>> {
+  static override readonly type = "SilentParentTask";
+  static override readonly category = "Test";
+  static override readonly cacheable = false;
+  static override inputSchema(): never {
+    return SCHEMA;
+  }
+  static override outputSchema(): never {
+    return SCHEMA;
+  }
+  override async execute(
+    _input: Record<string, never>,
+    context: IExecuteContext
+  ): Promise<Record<string, never>> {
+    const child = context.own(new ReportingTask({ title: "Reporting child" }) as never);
+    await (child as unknown as ReportingTask).run(undefined, { signal: context.signal });
+    return {};
+  }
+}
+
+describe("a task that reports no progress of its own", () => {
+  it("draws no bar rather than an empty one, and neither does the run", async () => {
+    const workflow = new Workflow();
+    workflow.pipe(new SilentParentTask({ title: "Silent parent" }) as never);
+    const stdout = new FakeTerminal(24);
+    const instance = render(
+      React.createElement(WorkflowRunApp, {
+        graph: workflow.graph,
+        input: {},
+        runExecutor: () => workflow.run({}),
+        onComplete: () => {},
+        onError: () => {},
+      }),
+      { stdout: stdout as never, patchConsole: false, exitOnCtrlC: false }
+    );
+
+    await settle(400);
+    const lines = lastFrameLines(stdout);
+    const parent = lines.find((line) => line.includes("Silent parent")) ?? "";
+    const child = lines.find((line) => line.includes("Reporting child")) ?? "";
+    const header = lines.find((line) => line.startsWith("Workflow")) ?? "";
+    instance.unmount();
+
+    // The runner stamps `progress = 0` at start without announcing it. Drawn as
+    // a determinate bar that is "0% and stuck" above a subtree plainly moving.
+    expect(parent).not.toContain("%");
+    expect(parent).not.toContain("▕");
+    // The child does report, and still draws its bar.
+    expect(child).toMatch(/\d+%/);
+    // The run's own bar averages those unreported zeroes, so it goes
+    // indeterminate rather than claiming a measured nothing.
+    expect(header).toContain("░");
+    expect(header).not.toContain("0%");
+  });
+});
+
 describe("resizing", () => {
   it("repaints from a clean screen when the terminal narrows", async () => {
     const workflow = new Workflow();

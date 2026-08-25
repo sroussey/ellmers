@@ -13,6 +13,7 @@ import { deriveRunState, RunStatusBar } from "./components/RunStatusBar";
 import { RunViewportProvider, useVisibleRows } from "./components/RunViewport";
 import { ScrollRegion } from "./components/ScrollRegion";
 import { HumanInteractionHost } from "./HumanInteractionHost";
+import { runAggregateProgress } from "./model/runRowModel";
 import { hiddenSiblingsLine, planRunViewport } from "./model/runViewport";
 import { ChatTaskRow } from "./rows/ChatTaskRow";
 import { DefaultTaskRow } from "./rows/DefaultTaskRow";
@@ -99,7 +100,11 @@ export function WorkflowRunApp({
     <HumanInteractionHost>
       <Box flexDirection="column">
         {overallProgress !== undefined && (
-          <AggregateProgressRow label="Workflow" progress={overallProgress} emphasis />
+          <AggregateProgressRow
+            label="Workflow"
+            progress={runAggregateProgress(overallProgress, orderedTasks)}
+            emphasis
+          />
         )}
         <RunViewportProvider
           plan={plan}

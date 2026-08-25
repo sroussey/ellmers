@@ -14,7 +14,11 @@ import { deriveRunState, runStatusBarModel } from "../ui/components/RunStatusBar
 import { taskDetailText } from "../ui/components/TaskDetailColumn";
 import { taskErrorText } from "../ui/components/TaskErrorDetail";
 import type { RunTaskCounts } from "../ui/model/runCensus";
-import { ownershipWrapperStatus } from "../ui/model/runRowModel";
+import {
+  adoptPolledProgress,
+  ownershipWrapperStatus,
+  runAggregateProgress,
+} from "../ui/model/runRowModel";
 import { iterationSummaryLine } from "../ui/rows/SubtaskRows";
 import { settledTaskDurationMs } from "../ui/rows/taskDuration";
 import { WorkflowRunApp } from "../ui/WorkflowRunApp";
@@ -208,6 +212,51 @@ describe("run status bar", () => {
     // Settled tasks with others still queued is not a finished run.
     expect(deriveRunState(["COMPLETED", "PENDING"])).toBe("running");
     expect(deriveRunState(["COMPLETED", "DISABLED"])).toBe("completed");
+  });
+});
+
+describe("adoptPolledProgress", () => {
+  it("ignores the zero a task is stamped with rather than reports", () => {
+    // `Task.progress` initialises to 0 and the runner re-stamps 0 at start, so
+    // a task that reports nothing would otherwise draw an empty determinate
+    // bar — "0% and stuck" — for the whole of its run.
+    expect(adoptPolledProgress(0, undefined)).toBeUndefined();
+  });
+
+  it("takes the zero once the task has actually said something", () => {
+    expect(adoptPolledProgress(0, 40)).toBe(0);
+    expect(adoptPolledProgress(0, 0)).toBe(0);
+  });
+
+  it("passes every other reading straight through", () => {
+    expect(adoptPolledProgress(40, undefined)).toBe(40);
+    expect(adoptPolledProgress(100, 40)).toBe(100);
+    expect(adoptPolledProgress(undefined, 40)).toBeUndefined();
+  });
+});
+
+describe("runAggregateProgress", () => {
+  const row = (status: string, progress?: number) => ({ status, progress });
+
+  it("holds the run's bar indeterminate until something has been measured", () => {
+    // Every task started and none reports: the average is a real zero over
+    // values that were never measurements.
+    expect(runAggregateProgress(0, [row("PROCESSING"), row("PENDING")])).toBeUndefined();
+  });
+
+  it("takes a zero once a task reports one", () => {
+    expect(runAggregateProgress(0, [row("PROCESSING", 0), row("PENDING")])).toBe(0);
+  });
+
+  it("takes a zero once a task has landed", () => {
+    expect(runAggregateProgress(0, [row("COMPLETED"), row("PROCESSING")])).toBe(0);
+    expect(runAggregateProgress(0, [row("FAILED"), row("PROCESSING")])).toBe(0);
+  });
+
+  it("never second-guesses a measured figure", () => {
+    expect(runAggregateProgress(51, [row("PROCESSING")])).toBe(51);
+    expect(runAggregateProgress(undefined, [row("PROCESSING")])).toBeUndefined();
+    expect(runAggregateProgress(100, [])).toBe(100);
   });
 });
 

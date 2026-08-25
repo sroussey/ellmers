@@ -8,7 +8,7 @@ import type { IRunConfig, ITask } from "@workglow/task-graph";
 import { Box, Static, Text, useWindowSize } from "ink";
 import path from "node:path";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { startTaskInstancePoll, type TaskFileProgressRow } from "./cliTaskUi";
+import { adoptPolledProgress, startTaskInstancePoll, type TaskFileProgressRow } from "./cliTaskUi";
 import { useCliTheme } from "./CliThemeContext";
 import { CLI_SPINNER_FRAMES } from "./components/CliSpinner";
 import { ProgressBar } from "./components/ProgressBar";
@@ -124,7 +124,7 @@ export function TaskRunApp({
 
     const flushTaskDisplay = (): void => {
       const fileList = mapTaskFiles(task);
-      const prog = typeof task.progress === "number" ? task.progress : progressRef.current.prog;
+      const prog = adoptPolledProgress(task.progress, progressRef.current.prog);
       const msg = progressRef.current.msg;
       if (fileList.length > 0) {
         setDownloadFiles((prev) => (fileListsEqual(prev, fileList) ? prev : fileList));

@@ -11,7 +11,11 @@ import { AggregateProgressRow } from "../components/AggregateProgressRow";
 import { useVisibleRows } from "../components/RunViewport";
 import { TaskErrorDetail } from "../components/TaskErrorDetail";
 import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
-import { iterationSummaryLine, ownershipWrapperStatus } from "../model/runRowModel";
+import {
+  iterationSummaryLine,
+  ownershipWrapperStatus,
+  runAggregateProgress,
+} from "../model/runRowModel";
 import { hiddenSiblingsLine } from "../model/runViewport";
 import type { CliTaskLine, IterationSlotRow } from "../taskGraphCliSubscriptions";
 import { mergeLiveIterationGraphs, visibleIterationSlots } from "../taskGraphCliSubscriptions";
@@ -247,7 +251,10 @@ export function SubtaskRows({
   const body = (
     <Box paddingLeft={2} flexDirection="column">
       {showChrome && overallProgress !== undefined && (
-        <AggregateProgressRow label="Subgraph" progress={overallProgress} />
+        <AggregateProgressRow
+          label="Subgraph"
+          progress={runAggregateProgress(overallProgress, rows)}
+        />
       )}
       <HiddenSiblingsLine hidden={hidden} />
       {visible.map((t) => (

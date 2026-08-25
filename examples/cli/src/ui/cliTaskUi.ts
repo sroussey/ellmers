@@ -6,10 +6,12 @@
 
 import type { TaskGraph } from "@workglow/task-graph";
 import type { Dispatch, SetStateAction } from "react";
+import { adoptPolledProgress, cliTaskShowsProgressBar } from "./model/runRowModel";
 import type { CliTaskLine } from "./taskGraphCliSubscriptions";
 import { cliTaskLabel } from "./taskGraphCliSubscriptions";
 
 export {
+  adoptPolledProgress,
   cliTaskShowsProgressBar,
   cliTaskStatusGlyph,
   cliTaskStatusGlyphColor,
@@ -55,7 +57,11 @@ export function startGraphTaskPoll(
         const info = prev.get(taskId);
         if (!info) continue;
         const st = task.status;
-        const prog = task.progress;
+        // A status event this poll beat to the transition: the row's reported
+        // progress belongs to the previous run of a reused instance, not this
+        // one, so it cannot vouch for a polled zero.
+        const restarted = info.status !== st && cliTaskShowsProgressBar(st);
+        const prog = adoptPolledProgress(task.progress, restarted ? undefined : info.progress);
         // Label is re-read, not just carried over: a task instance reused for a
         // sequence of jobs is relabelled per job (`setTitle`), and the row is
         // wired once at `task_added`, so without this the row would keep naming

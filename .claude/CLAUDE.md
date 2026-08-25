@@ -241,7 +241,13 @@ terminal runs. Three load-bearing properties:
   high-water height: it grows with its content, never shrinks on its own, and is capped by
   the window — a footer that slides up the screen whenever a list gets shorter is a footer
   nobody can read. What still overflows is tail-pinned behind a one-column gutter, which
-  costs no rows at exactly the moment rows ran out.
+  costs no rows at exactly the moment rows ran out. `adoptPolledProgress` is the third:
+  `Task.progress` initialises to `0` and the runner re-stamps `0` at start, neither
+  announced and neither a measurement — the graph needs a number in the denominator of
+  its average — so a row (and `runAggregateProgress` for the run's own bar) takes a zero
+  only once something has actually reported or landed, and is indeterminate until then.
+  Drawn as a determinate zero it reads "0% and stuck", which is what every task that
+  reports no progress of its own showed above a subtree visibly moving.
 - **Extensions cross the seam as data, never code**: `registerWebPanel`,
   `registerWebFieldWidget`, `registerWebStatusWidget`, `registerCommandSchemaProvider`,
   `registerCommandFieldAnnotations`, `registerCommandAnnotation`. No client bundle to

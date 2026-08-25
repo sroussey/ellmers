@@ -116,6 +116,61 @@ export function taskDetailText(
   return durationMs === undefined ? "" : formatCliDuration(durationMs);
 }
 
+/**
+ * The progress a row draws, given what the task reported and what a poll of the
+ * live instance found.
+ *
+ * `Task.progress` initialises to `0` and the runner re-stamps `0` the moment a
+ * task starts. Neither is announced, and neither is a measurement: the graph
+ * needs a number in the denominator of its average and zero is the honest one
+ * to put there. On a row it is a different claim entirely. A determinate bar at
+ * zero reads as "0% and stuck", which is what every task that reports no
+ * progress of its own drew for the whole of its run — a flat empty bar above a
+ * subtree visibly moving.
+ *
+ * So a polled zero is adopted only once the task has said something. Until
+ * then the row draws no bar at all, and the spinner in the status column
+ * carries "working, extent unknown" — which is the claim that is actually
+ * true, and the one that column already exists to make.
+ */
+export function adoptPolledProgress(
+  polled: number | undefined,
+  reported: number | undefined
+): number | undefined {
+  if (polled === 0 && reported === undefined) return undefined;
+  return polled;
+}
+
+/** Settled either way — the work is behind it, whatever the outcome. */
+export function cliTaskIsSettled(status: string): boolean {
+  return (
+    status === "COMPLETED" || status === "FAILED" || status === "ABORTED" || status === "DISABLED"
+  );
+}
+
+/**
+ * The run's own bar.
+ *
+ * `graph_progress` averages the task progresses, and those start at an
+ * unreported zero (see {@link adoptPolledProgress}) — so a run whose tasks
+ * report nothing of their own averages to a flat determinate zero for its
+ * entire life, and the bar heading the whole screen claims the run is stuck at
+ * the gate while the work plainly moves beneath it.
+ *
+ * A zero is therefore only a measurement once something has been measured: a
+ * task reporting a number, or a task landing. Before that the bar is
+ * indeterminate, which is the one row on screen with no spinner of its own to
+ * say so.
+ */
+export function runAggregateProgress(
+  graphProgress: number | undefined,
+  rows: readonly { readonly status: string; readonly progress?: number | undefined }[]
+): number | undefined {
+  if (graphProgress === undefined || graphProgress > 0) return graphProgress;
+  const measured = rows.some((row) => row.progress !== undefined || cliTaskIsSettled(row.status));
+  return measured ? graphProgress : undefined;
+}
+
 /** How the run as a whole ended up, derived from the statuses of its tasks. */
 export type RunState = "running" | "completed" | "failed" | "aborted" | "";
 
