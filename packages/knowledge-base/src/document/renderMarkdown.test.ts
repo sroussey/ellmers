@@ -16,6 +16,75 @@ const cell = (text: string, isHeader = false) => ({
   numeric: undefined,
 });
 
+/** A cell already placed at every column index it covers, as a producer emits it. */
+const spanned = (text: string, colspan: number, isHeader = false) => ({
+  text,
+  colspan,
+  rowspan: 1,
+  isHeader,
+  numeric: undefined,
+});
+
+const tableNode = (
+  columnCount: number,
+  headerRows: ReturnType<typeof cell>[][],
+  rows: ReturnType<typeof cell>[][]
+) => ({
+  nodeId: "t",
+  kind: NodeKind.TABLE,
+  range: { startOffset: 0, endOffset: 0 },
+  text: "",
+  caption: undefined,
+  columnCount,
+  headerRows,
+  rows,
+  stitchedFrom: 1,
+});
+
+describe("renderMarkdown table columns", () => {
+  /**
+   * `columnCount` is defined as "Columns after colspan expansion", so a row
+   * arrives with one entry per column and the renderer must not expand it
+   * again. Doing so overflowed the row and the trim dropped the real cells:
+   * this exact shape — the two-column layout EDGAR filers build "The Offering"
+   * out of — rendered as the label six times with the value deleted.
+   */
+  it("renders one cell per column slot for a row of materialized spans", () => {
+    const label = spanned("Trust account", 3);
+    const value = spanned("$200,000,000 held in trust", 3);
+    const table = tableNode(6, [], [[label, label, label, value, value, value]]);
+    const out = renderMarkdown(table as unknown as DocumentNode);
+    expect(out).toContain("$200,000,000 held in trust");
+    const dataRow = out.split("\n").at(-1) ?? "";
+    expect(dataRow.split("|").filter((s) => s.trim().length > 0)).toEqual([
+      " Trust account ",
+      " Trust account ",
+      " Trust account ",
+      " $200,000,000 held in trust ",
+      " $200,000,000 held in trust ",
+      " $200,000,000 held in trust ",
+    ]);
+  });
+
+  it("pads a ragged row out to the column count", () => {
+    const table = tableNode(3, [], [[cell("only")]]);
+    expect(
+      renderMarkdown(table as unknown as DocumentNode)
+        .split("\n")
+        .at(-1)
+    ).toBe("| only |  |  |");
+  });
+
+  it("trims a row longer than the column count", () => {
+    const table = tableNode(2, [], [[cell("a"), cell("b"), cell("c")]]);
+    expect(
+      renderMarkdown(table as unknown as DocumentNode)
+        .split("\n")
+        .at(-1)
+    ).toBe("| a | b |");
+  });
+});
+
 describe("renderMarkdown", () => {
   it("escapes backslashes and pipes in table cells", () => {
     const table = {
