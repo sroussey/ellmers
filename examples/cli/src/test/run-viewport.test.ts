@@ -59,6 +59,23 @@ function indexOfLine(lines: readonly string[], text: string): number {
 
 const ERASE_SCREEN = "\u001B[2J\u001B[H";
 
+/**
+ * Ink decides whether to draw frames as it goes from `!isInCi && stdout.isTTY`,
+ * and under a CI runner that resolves to non-interactive: erase sequences and
+ * resize handling are off and only the final frame is written, at unmount. Every
+ * assertion here reads a frame mid-run, so they all found an empty screen on CI
+ * and passed on a developer's machine. The option exists for exactly this — the
+ * behaviour under test is what a terminal shows, so the tests state that they
+ * want a terminal rather than inferring one from the environment.
+ */
+const INK_OPTIONS = (stdout: FakeTerminal) =>
+  ({
+    stdout: stdout as never,
+    patchConsole: false,
+    exitOnCtrlC: false,
+    interactive: true,
+  }) as const;
+
 const settle = (ms = 250): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** A region whose content count the test drives. */
@@ -120,7 +137,7 @@ describe("the live region's height", () => {
           setCount = fn;
         },
       }),
-      { stdout: stdout as never, patchConsole: false, exitOnCtrlC: false }
+      INK_OPTIONS(stdout)
     );
 
     await settle();
@@ -148,7 +165,7 @@ describe("the live region's height", () => {
         initial: 30,
         onReady: () => {},
       }),
-      { stdout: stdout as never, patchConsole: false, exitOnCtrlC: false }
+      INK_OPTIONS(stdout)
     );
 
     await settle();
@@ -165,11 +182,10 @@ describe("the live region's height", () => {
 
   it("gives rows back when the window shrinks under it", async () => {
     const stdout = new FakeTerminal(40);
-    const instance = render(React.createElement(WindowSizedRegion, { reserveRows: 2, count: 30 }), {
-      stdout: stdout as never,
-      patchConsole: false,
-      exitOnCtrlC: false,
-    });
+    const instance = render(
+      React.createElement(WindowSizedRegion, { reserveRows: 2, count: 30 }),
+      INK_OPTIONS(stdout)
+    );
     await settle();
     // Thirty rows of content in a window with room for thirty-eight.
     expect(indexOfLine(lastFrameLines(stdout), "FOOTER")).toBe(30);
@@ -245,7 +261,7 @@ async function runWorkflowApp(rows: number): Promise<FakeTerminal> {
         finished = true;
       },
     }),
-    { stdout: stdout as never, patchConsole: false, exitOnCtrlC: false }
+    INK_OPTIONS(stdout)
   );
 
   const deadline = Date.now() + 5000;
@@ -293,7 +309,7 @@ describe("the run's own progress row", () => {
         onComplete: () => {},
         onError: () => {},
       }),
-      { stdout: stdout as never, patchConsole: false, exitOnCtrlC: false }
+      INK_OPTIONS(stdout)
     );
 
     await settle(300);
@@ -345,7 +361,7 @@ describe("a task that reports no progress of its own", () => {
         onComplete: () => {},
         onError: () => {},
       }),
-      { stdout: stdout as never, patchConsole: false, exitOnCtrlC: false }
+      INK_OPTIONS(stdout)
     );
 
     await settle(400);
@@ -381,7 +397,7 @@ describe("resizing", () => {
         onComplete: () => {},
         onError: () => {},
       }),
-      { stdout: stdout as never, patchConsole: false, exitOnCtrlC: false }
+      INK_OPTIONS(stdout)
     );
 
     await settle(300);
