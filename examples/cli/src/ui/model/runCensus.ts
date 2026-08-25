@@ -113,12 +113,18 @@ export function flattenCensus(root: CensusList): CensusSample {
 /**
  * Folds one walk of the live tree into the ledger.
  *
- * A path that was running and is no longer in the tree has been evicted, which
- * for the only thing that evicts — an iterator retiring a finished clone —
- * means it completed. Recording it as settled is what keeps `done` climbing to
- * meet `total` instead of stalling a few hundred short of it. A task released
- * with `disown` takes the same path and is credited the same way; the
+ * A path that has not settled and is no longer in the tree has been evicted,
+ * which for the only thing that evicts — an iterator retiring a finished clone
+ * — means it completed. Recording it as settled is what keeps `done` climbing
+ * to meet `total` instead of stalling a few hundred short of it. A task
+ * released with `disown` takes the same path and is credited the same way; the
  * alternative is a run that never reads as finished.
+ *
+ * Crediting turns on *not settled*, not on *running*: the walk is a 250ms poll
+ * and a short task inside a Map clone is routinely seen once as PENDING and
+ * then never again. Requiring it to have been caught mid-run would leave one
+ * un-credited key per such iteration, and `done` would stop short of `total`
+ * by however many the poll happened to miss.
  *
  * Returns the ledger unchanged when the walk taught it nothing, so a caller can
  * use identity to skip a re-render.
@@ -158,7 +164,7 @@ export function mergeRunCensus(
   }
 
   for (const [key, status] of ledger.statusByKey) {
-    if (seen.has(key) || structural.has(key) || !isRunning(status)) continue;
+    if (seen.has(key) || structural.has(key) || SETTLED.has(status)) continue;
     edit().set(key, "COMPLETED");
   }
 

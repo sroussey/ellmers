@@ -102,10 +102,35 @@ function listRows(list: CensusList, caps: Map<string, number>): number {
   return total;
 }
 
+/**
+ * The lists the plan actually draws, following each list's own visible slice.
+ *
+ * A list hanging off a node the parent already capped away is not on screen,
+ * so its cap decides nothing: shrinking it frees no row, and the siblings it
+ * holds back are not rows anyone is missing. Both the victim search and the
+ * hidden count walk this instead of every list in the tree — counting the whole
+ * tree reported "193 hidden" for a plan whose drawn rows hid fourteen.
+ */
+function visibleListKeys(root: CensusList, caps: Map<string, number>): Set<string> {
+  const keys = new Set<string>();
+  const walk = (list: CensusList): void => {
+    if (keys.has(list.key)) return;
+    keys.add(list.key);
+    const cap = caps.get(list.key) ?? MAX_VISIBLE_LIST_ROWS;
+    for (const node of visibleSlice(list.nodes, cap)) {
+      for (const child of node.lists) walk(child);
+    }
+  };
+  walk(root);
+  return keys;
+}
+
 function countHidden(root: CensusList, caps: Map<string, number>): number {
   const infos = indexLists(root);
   let hidden = 0;
-  for (const [key, info] of infos) {
+  for (const key of visibleListKeys(root, caps)) {
+    const info = infos.get(key);
+    if (!info) continue;
     const cap = caps.get(key) ?? MAX_VISIBLE_LIST_ROWS;
     hidden += Math.max(0, info.list.nodes.length - cap);
   }
@@ -135,7 +160,12 @@ export function planRunViewport(root: CensusList, budget: number): RunViewportPl
     let victim: string | undefined;
     let victimDepth = -1;
     let victimCap = 0;
-    for (const [key, info] of infos) {
+    // Only lists on screen are candidates: taking a row off a list nobody is
+    // drawing costs a step and frees nothing, and with enough hidden subtrees
+    // the search runs out of steps before it reaches a list that would help.
+    for (const key of visibleListKeys(root, caps)) {
+      const info = infos.get(key);
+      if (!info) continue;
       const cap = caps.get(key) ?? 0;
       if (cap <= MIN_VISIBLE_LIST_ROWS) continue;
       if (info.depth > victimDepth || (info.depth === victimDepth && cap > victimCap)) {

@@ -78,6 +78,24 @@ describe("run census ledger", () => {
     expect(counts.done).toBe(1);
   });
 
+  it("credits an evicted iteration the poll only ever caught as pending", () => {
+    // The walk is a 250ms poll and an iteration's inner task can start and
+    // finish between two of them. Requiring it to have been seen mid-run would
+    // leave one un-credited key per such iteration and stall `done` short of
+    // `total` by however many the poll happened to miss.
+    let ledger = mergeRunCensus(
+      EMPTY_RUN_CENSUS_LEDGER,
+      list("", [node("/m", "PROCESSING", [list("/m#0", [node("/m#0/t", "PENDING")])])])
+    );
+    expect(runTaskCounts(ledger)).toMatchObject({ done: 0, total: 2 });
+
+    ledger = mergeRunCensus(
+      ledger,
+      list("", [node("/m", "PROCESSING", [list("/m#1", [node("/m#1/t", "PROCESSING")])])])
+    );
+    expect(runTaskCounts(ledger)).toMatchObject({ done: 1, total: 3 });
+  });
+
   it("does not un-settle a task a reused node re-registered", () => {
     let ledger = mergeRunCensus(EMPTY_RUN_CENSUS_LEDGER, list("", [node("/a", "COMPLETED")]));
     ledger = mergeRunCensus(ledger, list("", [node("/a", "PENDING")]));

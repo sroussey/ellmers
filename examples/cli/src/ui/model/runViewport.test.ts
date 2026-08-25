@@ -78,6 +78,27 @@ describe("planRunViewport", () => {
     expect(listCap(plan, "/a")).toBeLessThan(6);
   });
 
+  it("counts as hidden only what the rows it draws are holding back", () => {
+    // Twelve top-level nodes, each owning twelve of its own. Only the six
+    // top-level nodes on screen have lists anyone is reading; the six capped
+    // away take their children with them, and counting those again reports a
+    // number no part of the display corresponds to.
+    const tree = listOf("", 12, (i) => listOf(`/${i}`, 12));
+    const plan = planRunViewport(tree, 200);
+    const perVisibleList = 12 - MAX_VISIBLE_LIST_ROWS;
+    expect(plan.hidden).toBe(perVisibleList + MAX_VISIBLE_LIST_ROWS * perVisibleList);
+  });
+
+  it("spends its shrink steps only on lists it is drawing", () => {
+    // A list under a node the root already capped away frees no row when it
+    // shrinks. Taking rows off those instead would burn the search's budget
+    // without the plan ever fitting.
+    const tree = listOf("", 12, (i) => listOf(`/${i}`, 12));
+    const plan = planRunViewport(tree, 20);
+    expect(plan.rows).toBeLessThanOrEqual(20);
+    expect(listCap(plan, "/0")).toBe(MAX_VISIBLE_LIST_ROWS);
+  });
+
   it("gives up rather than erasing the run when nothing more can be given back", () => {
     const plan = planRunViewport(listOf("", 3), 0);
     expect(plan.overflowing).toBe(true);

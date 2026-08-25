@@ -271,6 +271,11 @@ function useCensus(sample: (() => CensusList) | undefined): RunCensusState {
 
   useEffect(() => {
     if (!sample) return;
+    // A new subject is a new run: the previous one's paths are neither in this
+    // tree nor work this run did, and carrying them would seed the footer with
+    // a total the run can never meet.
+    ledgerRef.current = EMPTY_RUN_CENSUS_LEDGER;
+    signatureRef.current = undefined;
     const tick = (): void => {
       const tree = sample();
       const signature = censusSignature(tree);
