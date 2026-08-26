@@ -54,7 +54,7 @@ describe.skipIf(!chromeAvailable)("Browser workflow end-to-end", () => {
       },
     };
 
-    registerCommonTasks();
+    registerCommonTasks({ fileSystemTasks: true });
     await registerCliBrowserDeps(config);
   }, 30_000);
 

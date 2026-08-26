@@ -30,7 +30,7 @@ applications, per-request task allow-lists) are handled by a parallel **dependen
 | Dynamic instantiation from serialized data | `getTaskConstructors()` + `new taskClass(config)`                   |
 | Scoped / sandboxed registries              | `TASK_CONSTRUCTORS` DI token per `ServiceRegistry`                  |
 | Schema-driven input resolution             | `format: "tasks"` input resolver and compactor                      |
-| Batch registration of built-in tasks       | `registerBaseTasks()`, `registerCommonTasks()`, `registerAiTasks()` |
+| Batch registration of built-in tasks       | `registerBaseTasks()`, `registerCommonTasks(options)`, `registerAiTasks()` |
 
 ---
 
@@ -377,7 +377,7 @@ package:
 | Function                | Package                | Tasks registered                                                                                                                                                                                                              |
 | ----------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `registerBaseTasks()`   | `@workglow/task-graph` | `GraphAsTask`, `ConditionalTask`, `FallbackTask`, `MapTask`, `WhileTask`, `ReduceTask`                                                                                                                                        |
-| `registerCommonTasks()` | `@workglow/tasks`      | ~50 utility tasks: `DelayTask`, `FetchUrlTask`, `JavaScriptTask`, `LambdaTask`, `MergeTask`, `SplitTask`, string/scalar/vector math tasks, MCP tasks, `JsonPathTask`, `RegexTask`, `TemplateTask`, `DateFormatTask`, and more |
+| `registerCommonTasks(options)` | `@workglow/tasks`      | ~50 utility tasks: `DelayTask`, `FetchUrlTask`, `JavaScriptTask`, `LambdaTask`, `MergeTask`, `SplitTask`, string/scalar/vector math tasks, MCP tasks, `JsonPathTask`, `RegexTask`, `TemplateTask`, `DateFormatTask`, and more |
 | `registerAiTasks()`     | `@workglow/ai`         | ~40 AI tasks: `TextGenerationTask`, `TextEmbeddingTask`, `ImageClassificationTask`, `ChunkRetrievalTask`, `AgentTask`, `ToolCallingTask`, `StructuredGenerationTask`, and more                                                |
 
 ### Typical application bootstrap
@@ -389,7 +389,9 @@ import { registerAiTasks } from "@workglow/ai";
 
 // Register all built-in tasks
 registerBaseTasks();
-registerCommonTasks();
+// `fileSystemTasks` is required: it decides whether FileGrepTask/FileLoaderTask/
+// FileSedTask are resolvable by type name, including from graph JSON you did not author.
+registerCommonTasks({ fileSystemTasks: false });
 registerAiTasks();
 
 // Register application-specific tasks
@@ -535,7 +537,7 @@ function resolveTaskType(name: string): ITaskConstructor<any, any, any> | undefi
 | Function                | Package                | Description                                                                                                                                                         |
 | ----------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `registerBaseTasks()`   | `@workglow/task-graph` | Registers flow-control tasks: `GraphAsTask`, `ConditionalTask`, `FallbackTask`, `MapTask`, `WhileTask`, `ReduceTask`. Returns the array of registered constructors. |
-| `registerCommonTasks()` | `@workglow/tasks`      | Registers ~50 utility, string, scalar, vector, and MCP tasks. Returns the array of registered constructors.                                                         |
+| `registerCommonTasks(options)` | `@workglow/tasks`      | Registers ~50 utility, string, scalar, vector, and MCP tasks, plus the three filesystem tasks when `options.fileSystemTasks` is true. Returns the array of registered constructors.                                                         |
 | `registerAiTasks()`     | `@workglow/ai`         | Registers ~40 AI tasks spanning text, image, RAG, vision, and agent categories. Returns the array of registered constructors.                                       |
 
 ### Input resolver / compactor

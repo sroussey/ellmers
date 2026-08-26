@@ -4,10 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { registerAiTasks, setGlobalModelRepository } from "@workglow/ai";
+import { setGlobalModelRepository } from "@workglow/ai";
 import { registerHuggingFaceTransformers } from "@workglow/huggingface-transformers/ai";
-import { registerBaseTasks, registerBuiltInTransforms } from "@workglow/task-graph";
-import { registerCommonTasks } from "@workglow/tasks";
 import {
   ChainedCredentialStore,
   EnvCredentialStore,
@@ -29,6 +27,7 @@ import { registerWebCommand } from "./commands/web";
 import { registerWorkflowCommand } from "./commands/workflow";
 import { loadConfig } from "./config";
 import { lazyStore } from "./keyring";
+import { registerCliTasks } from "./registerCliTasks";
 import { ensureRunReporting } from "./run-events/runReporting";
 import { seedSamplesIfRepoEmpty } from "./samples/chatSample";
 import { createModelRepository, createWorkflowRepository } from "./storage";
@@ -79,10 +78,7 @@ export interface WorkglowCliOptions {
 export async function runWorkglowCli(options: WorkglowCliOptions = {}): Promise<void> {
   const program = options.program ?? defaultProgram;
 
-  registerBaseTasks();
-  registerCommonTasks();
-  registerAiTasks();
-  registerBuiltInTransforms();
+  registerCliTasks();
   await options.registerTasks?.();
 
   // Lazy encrypted store (unlocked on demand) + env var fallback.
