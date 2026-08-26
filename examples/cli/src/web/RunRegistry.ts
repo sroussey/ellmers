@@ -152,21 +152,29 @@ export class RunRegistry {
     return true;
   }
 
-  answerHuman(id: string, response: unknown): boolean {
+  /**
+   * Resolves to whether the answer actually reached the child.
+   *
+   * The write is asynchronous, so the liveness check above it proves nothing:
+   * a child that exits in between fails the write with EPIPE, and only the
+   * write callback knows that happened. Reporting delivery before the flush
+   * tells the page an answer landed when nobody read it. (The EPIPE itself
+   * arrives as an `error` event on a stream nobody else listens to, which Node
+   * throws — `start` installs the listener that keeps it from taking the
+   * console down.)
+   */
+  answerHuman(id: string, response: unknown): Promise<boolean> {
     const child = this.children.get(id);
-    if (!child || !isAlive(child)) return false;
+    if (!child || !isAlive(child)) return Promise.resolve(false);
     const answers = child.stdio[4] as Writable | undefined;
-    if (!answers || answers.destroyed) return false;
-    // The child can still exit between the liveness check and the write, and
-    // an EPIPE arrives as an `error` event on a stream nobody listens to —
-    // which Node throws, taking the whole console down because someone
-    // answered a prompt a moment too late. (`start` installs the listener.)
-    try {
-      answers.write(`${JSON.stringify(response)}\n`);
-    } catch {
-      return false;
-    }
-    return true;
+    if (!answers || answers.destroyed) return Promise.resolve(false);
+    return new Promise<boolean>((resolve) => {
+      try {
+        answers.write(`${JSON.stringify(response)}\n`, (error) => resolve(!error));
+      } catch {
+        resolve(false);
+      }
+    });
   }
 
   /** Replays what the subscriber missed, then streams the rest. */

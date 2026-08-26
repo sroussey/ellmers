@@ -239,7 +239,7 @@ export async function handleWebRequest(request: WebRequest, ctx: WebContext): Pr
       } catch {
         return json(400, { error: "malformed answer" });
       }
-      return json(200, { delivered: ctx.registry.answerHuman(id, payload) });
+      return json(200, { delivered: await ctx.registry.answerHuman(id, payload) });
     }
     if (action === "/panels") {
       const panels = listWebPanels(run.invocation);

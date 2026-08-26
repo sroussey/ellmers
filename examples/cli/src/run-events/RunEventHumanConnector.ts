@@ -29,7 +29,7 @@ export class RunEventHumanConnector implements IHumanConnector {
   ) {}
 
   /**
-   * The reader is opened per outstanding request and closed with the last one.
+   * The reader is opened per outstanding request and released with the last one.
    *
    * Kept open for the life of the process it does exactly one thing beyond
    * reading: it holds the event loop, so a child that has finished its work
