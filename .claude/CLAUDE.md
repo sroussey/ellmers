@@ -278,7 +278,7 @@ math, tensor types.
 
 `InputTask`, `OutputTask`, `LambdaTask`, `DelayTask`, `FetchUrlTask`, `JavaScriptTask`,
 `JsonTask`, `MergeTask`, `SplitTask`, `ArrayTask`, MCP tasks, scalar/vector math.
-Register with `registerCommonTasks()`.
+Register with `registerCommonTasks({ fileSystemTasks })` — the flag is required, and decides whether `FileGrepTask`/`FileLoaderTask`/`FileSedTask` are resolvable by type name (and so nameable by graph JSON the host did not author).
 
 ## Testing
 

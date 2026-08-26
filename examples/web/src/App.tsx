@@ -43,7 +43,7 @@ import {
 // this module finishes evaluating (static imports with TLA evaluate fully
 // before the importer's body).
 registerBaseTasks();
-registerCommonTasks();
+registerCommonTasks({ fileSystemTasks: true });
 registerAiTasks();
 
 const JsonEditor = lazy(async () => {

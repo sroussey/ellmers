@@ -569,22 +569,28 @@ const result = await task.run();
 The Node and Electron builds ship three tasks that read the local filesystem —
 `FileGrepTask`, `FileLoaderTask` and `FileSedTask`.
 
-**They are not registered by default.** `registerCommonTasks()` deliberately
-leaves them out of `TaskRegistry`, because the registry is what a _deserialized_
+**Every host says whether it wants them.** `registerCommonTasks()` takes a
+required `fileSystemTasks` flag, because the registry is what a _deserialized_
 graph resolves a task type through, and a serialized node supplies its own
 `config` — so a graph naming `FileGrepTask` also names its own `roots`, and no
 default this package picks can constrain it. The only control that survives
-untrusted graph JSON is the task not being resolvable at all.
-
-A host that intends to expose them opts in:
+untrusted graph JSON is the task not being resolvable at all. There is no
+default either way: a default would hand every host the filesystem tasks, or
+take them from a host whose stored workflows already name them, with nothing at
+the call site to say so.
 
 ```typescript
-import { registerCommonTasks, registerFileSystemTasks } from "@workglow/tasks";
+import { registerCommonTasks } from "@workglow/tasks";
 
-registerCommonTasks();
-// Only where every graph reaching the registry is trusted:
-registerFileSystemTasks();
+// A server that runs graph JSON it did not author:
+registerCommonTasks({ fileSystemTasks: false });
+
+// A local CLI or desktop app, where every graph reaching the registry is trusted:
+registerCommonTasks({ fileSystemTasks: true });
 ```
+
+`registerFileSystemTasks()` adds the three on their own, for a host that
+registers its task surface in pieces.
 
 The classes are exported either way, so constructing one directly needs no
 registration:

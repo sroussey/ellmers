@@ -37,7 +37,7 @@ describe("filesystem task registration is opt-in", () => {
   afterEach(unregisterAll);
 
   test("registerCommonTasks leaves the filesystem tasks out of the registry", () => {
-    registerCommonTasks();
+    registerCommonTasks({ fileSystemTasks: false });
 
     for (const type of FILE_SYSTEM_TASK_TYPES) {
       expect(TaskRegistry.all.has(type)).toBe(false);
@@ -45,11 +45,34 @@ describe("filesystem task registration is opt-in", () => {
   });
 
   test("registerCommonTasks does not return the filesystem tasks either", () => {
-    const returned = registerCommonTasks().map((task) => task.type);
+    const returned = registerCommonTasks({ fileSystemTasks: false }).map((task) => task.type);
 
     for (const type of FILE_SYSTEM_TASK_TYPES) {
       expect(returned).not.toContain(type);
     }
+  });
+
+  /**
+   * The option is the whole point of the split: a host asking for the wider
+   * surface says so in one place, and one that does not is a compile error away
+   * from finding out — rather than discovering at runtime that a stored graph
+   * no longer deserializes.
+   */
+  test("registerCommonTasks with fileSystemTasks registers and returns all three", () => {
+    const returned = registerCommonTasks({ fileSystemTasks: true }).map((task) => task.type);
+
+    for (const type of FILE_SYSTEM_TASK_TYPES) {
+      expect(TaskRegistry.all.has(type)).toBe(true);
+      expect(returned).toContain(type);
+    }
+  });
+
+  test("the common tasks come back either way", () => {
+    const narrow = registerCommonTasks({ fileSystemTasks: false }).map((task) => task.type);
+    unregisterAll();
+    const wide = registerCommonTasks({ fileSystemTasks: true }).map((task) => task.type);
+
+    expect(wide).toEqual([...narrow, ...FILE_SYSTEM_TASK_TYPES]);
   });
 
   test("registerFileSystemTasks puts all three in the registry", () => {
