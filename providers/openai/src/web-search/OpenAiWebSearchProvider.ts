@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { resolveApiKey } from "@workglow/ai/provider-utils";
 import type { IExecuteContext } from "@workglow/task-graph";
 import { TaskFailedError } from "@workglow/task-graph";
 import type {
@@ -46,18 +47,37 @@ export class OpenAiWebSearchProvider implements IWebSearchProvider {
     maxResultsCap: undefined,
   };
 
-  private readonly client: OpenAI;
+  private client: OpenAI | undefined;
+  private readonly apiKey: string | undefined;
   private readonly model: string;
   private readonly searchContextSize: "low" | "medium" | "high" | undefined;
 
   constructor(options: OpenAiWebSearchOptions = {}) {
-    this.client = options.client ?? new OpenAI({ apiKey: options.apiKey });
+    this.client = options.client;
+    this.apiKey = options.apiKey;
     this.model = options.model ?? DEFAULT_MODEL;
     this.searchContextSize = options.searchContextSize;
   }
 
+  /**
+   * Built on first search, not in the constructor, so registering the provider
+   * cannot throw out of the vendor SDK on a machine that has no key yet, and a
+   * missing key reports through this repo's named error rather than the SDK's.
+   */
+  private getClient(): OpenAI {
+    this.client ??= new OpenAI({
+      apiKey: resolveApiKey({
+        config: { api_key: this.apiKey },
+        envVar: "OPENAI_API_KEY",
+        providerLabel: "OpenAI",
+      }),
+    });
+    return this.client;
+  }
+
   async search(request: WebSearchRequest, context: IExecuteContext): Promise<WebSearchResponse> {
     context.signal.throwIfAborted();
+    const client = this.getClient();
 
     const tool: Record<string, unknown> = { type: "web_search" };
     if (this.searchContextSize !== undefined) tool.search_context_size = this.searchContextSize;
@@ -65,7 +85,7 @@ export class OpenAiWebSearchProvider implements IWebSearchProvider {
       tool.filters = { allowed_domains: [...request.includeDomains] };
     }
 
-    const response = (await this.client.responses.create({
+    const response = (await client.responses.create({
       model: this.model,
       input: request.query,
       tools: [tool] as never,
