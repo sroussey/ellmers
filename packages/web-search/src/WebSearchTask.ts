@@ -70,7 +70,13 @@ const inputSchema = {
     },
     credential_key: {
       type: "string",
-      format: "credential",
+      // `credential-key`, not `credential`: this port is forwarded to the
+      // `FetchUrlTask` this task owns, and that task's own runner resolves it.
+      // Resolving here too would hand the child the secret as if it were a store
+      // key — the lookup misses, the resolver returns undefined rather than
+      // echoing its input, and the request goes out with no auth header at all.
+      // The scan that unlocks the store still counts this format.
+      format: "credential-key",
       title: "Credential Key",
       description: "Key looked up in the credential store and sent as the provider's API key.",
       "x-ui-hidden": true,
