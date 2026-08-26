@@ -135,6 +135,49 @@ describe("AnthropicWebSearchProvider", () => {
     expect(out.answer).toBe("partial and the rest.");
   });
 
+  it("does not spend maxResults as the model's search budget", async () => {
+    const { create, client } = clientReturning(messageWith([{ type: "text", text: "x" }]));
+    await new AnthropicWebSearchProvider({ client: client as never }).search(
+      { query: "compare X and Y across sources", maxResults: 2 },
+      context
+    );
+    const tools = create.mock.calls[0][0].tools as Array<Record<string, unknown>>;
+    // `max_uses` caps how many searches the model may run, and overrunning it
+    // comes back as a tool error that fails the request. A caller asking for
+    // two results is not asking for the run to fail on the third search.
+    expect(tools[0].max_uses).toBeUndefined();
+  });
+
+  it("sends max_uses only when configured as its own option", async () => {
+    const { create, client } = clientReturning(messageWith([{ type: "text", text: "x" }]));
+    await new AnthropicWebSearchProvider({ client: client as never, maxUses: 3 }).search(
+      { query: "cats", maxResults: 1 },
+      context
+    );
+    const tools = create.mock.calls[0][0].tools as Array<Record<string, unknown>>;
+    expect(tools[0].max_uses).toBe(3);
+  });
+
+  it("bounds the returned results by maxResults", async () => {
+    const { client } = clientReturning(
+      messageWith([
+        {
+          type: "web_search_tool_result",
+          content: [
+            { type: "web_search_result", title: "A", url: "https://e/a" },
+            { type: "web_search_result", title: "B", url: "https://e/b" },
+            { type: "web_search_result", title: "C", url: "https://e/c" },
+          ],
+        },
+      ])
+    );
+    const out = await new AnthropicWebSearchProvider({ client: client as never }).search(
+      { query: "cats", maxResults: 2 },
+      context
+    );
+    expect(out.results.map((r) => r.title)).toEqual(["A", "B"]);
+  });
+
   it("passes includeDomains as allowed_domains", async () => {
     const { create, client } = clientReturning(messageWith([{ type: "text", text: "x" }]));
     await new AnthropicWebSearchProvider({ client: client as never }).search(

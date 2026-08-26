@@ -14,6 +14,7 @@ import type {
   WebSearchRequest,
   WebSearchResponse,
 } from "@workglow/web-search";
+import { limitResults } from "@workglow/web-search";
 
 /**
  * Dynamic-filtering web search, available on Opus 5/4.8/4.7/4.6 and Sonnet 5/4.6.
@@ -28,6 +29,13 @@ export interface AnthropicWebSearchOptions {
   readonly client?: Anthropic | undefined;
   readonly model?: string | undefined;
   readonly maxTokens?: number | undefined;
+  /**
+   * How many searches the model may run for one request — Anthropic's
+   * `max_uses`. A budget on the work done, not on the results returned, and
+   * exceeding it comes back as a tool error that fails the search. Left unset,
+   * the API applies its own default.
+   */
+  readonly maxUses?: number | undefined;
 }
 
 interface AnthropicSearchResultBlock {
@@ -52,16 +60,22 @@ export class AnthropicWebSearchProvider implements IWebSearchProvider {
   private readonly client: Anthropic;
   private readonly model: string;
   private readonly maxTokens: number;
+  private readonly maxUses: number | undefined;
 
   constructor(options: AnthropicWebSearchOptions = {}) {
     this.client = options.client ?? new Anthropic();
     this.model = options.model ?? DEFAULT_MODEL;
     this.maxTokens = options.maxTokens ?? 16000;
+    this.maxUses = options.maxUses;
   }
 
   async search(request: WebSearchRequest, context: IExecuteContext): Promise<WebSearchResponse> {
     const tool: Record<string, unknown> = { type: WEB_SEARCH_TOOL_TYPE, name: "web_search" };
-    if (request.maxResults !== undefined) tool.max_uses = request.maxResults;
+    // `maxResults` is not `max_uses`. It bounds the results handed back, while
+    // `max_uses` bounds the searches the model may run — and overrunning it is
+    // a tool error that fails the whole request. Mapping one onto the other
+    // turned a result-count hint into "the search worked, then failed".
+    if (this.maxUses !== undefined) tool.max_uses = this.maxUses;
 
     const includes = request.includeDomains ?? [];
     const excludes = request.excludeDomains ?? [];
@@ -105,7 +119,7 @@ export class AnthropicWebSearchProvider implements IWebSearchProvider {
 
       if (message.stop_reason !== "pause_turn") {
         return {
-          results,
+          results: limitResults(results, request.maxResults),
           // Gated on the caller asking, even though the model always produces
           // text: `answer` has to mean the same thing whichever provider routing
           // picked, and Tavily populates it only when requested. Reporting a

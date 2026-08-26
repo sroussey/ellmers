@@ -13,6 +13,7 @@ import type {
   WebSearchRequest,
   WebSearchResponse,
 } from "../IWebSearchProvider";
+import { limitResults } from "../limitResults";
 import { fetchSearchJson } from "./httpSearch";
 
 const BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
@@ -79,6 +80,10 @@ export class BraveWebSearchProvider implements IWebSearchProvider {
       favicon: r.meta_url?.favicon,
     }));
 
-    return { results, query: request.query, usage: { requests: 1 } };
+    return {
+      results: limitResults(results, request.maxResults),
+      query: request.query,
+      usage: { requests: 1 },
+    };
   }
 }

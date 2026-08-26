@@ -14,6 +14,7 @@ import type {
   WebSearchRequest,
   WebSearchResponse,
 } from "@workglow/web-search";
+import { limitResults } from "@workglow/web-search";
 import OpenAI from "openai";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -126,7 +127,7 @@ export class OpenRouterWebSearchProvider implements IWebSearchProvider {
     }
 
     return {
-      results,
+      results: limitResults(results, request.maxResults),
       answer:
         request.includeAnswer === true && typeof message.content === "string" && message.content
           ? message.content

@@ -95,6 +95,35 @@ describe("OpenAiWebSearchProvider", () => {
     expect(out.usage).toEqual({ inputTokens: 7, outputTokens: 9 });
   });
 
+  it("bounds the returned sources by maxResults", async () => {
+    const { client } = clientReturning({
+      output: [
+        {
+          type: "message",
+          content: [
+            {
+              type: "output_text",
+              text: "…",
+              annotations: [
+                { type: "url_citation", url: "https://e/a", title: "A" },
+                { type: "url_citation", url: "https://e/b", title: "B" },
+                { type: "url_citation", url: "https://e/c", title: "C" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    // The Responses API has no result-count parameter, so a grounded turn cites
+    // as many sources as it likes; dropping the option let that flow into a
+    // downstream prompt at several times the token cost the caller sized for.
+    const out = await new OpenAiWebSearchProvider({ client }).search(
+      { query: "t", maxResults: 2 },
+      context
+    );
+    expect(out.results.map((r) => r.title)).toEqual(["A", "B"]);
+  });
+
   it("gates the answer on includeAnswer", async () => {
     const { client } = clientReturning(PAYLOAD);
     expect(
