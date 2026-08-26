@@ -90,6 +90,32 @@ describe("unhonorableOptions", () => {
     ]);
   });
 
+  it("reports a both-lists request against a provider that takes one direction at a time", () => {
+    // Anthropic's web_search tool accepts allowed_domains or blocked_domains
+    // and rejects the pair, so serving each alone is not serving both.
+    const caps = { ...ALL, exclusiveDomainDirections: true };
+    expect(
+      unhonorableOptions(caps, {
+        query: "c",
+        includeDomains: ["arxiv.org"],
+        excludeDomains: ["spam.net"],
+      })
+    ).toEqual(["includeDomains with excludeDomains"]);
+  });
+
+  it("still serves either list alone for such a provider", () => {
+    const caps = { ...ALL, exclusiveDomainDirections: true };
+    expect(unhonorableOptions(caps, { query: "c", includeDomains: ["a.com"] })).toEqual([]);
+    expect(unhonorableOptions(caps, { query: "c", excludeDomains: ["b.com"] })).toEqual([]);
+  });
+
+  it("does not restate the pair when a direction is already refused outright", () => {
+    const caps = { ...NONE, exclusiveDomainDirections: true };
+    expect(
+      unhonorableOptions(caps, { query: "c", includeDomains: ["a.com"], excludeDomains: ["b.com"] })
+    ).toEqual(["includeDomains", "excludeDomains"]);
+  });
+
   it("does not report maxResults — it is clamped, not refused", () => {
     expect(
       unhonorableOptions({ ...NONE, maxResultsCap: 5 }, { query: "c", maxResults: 50 })

@@ -24,8 +24,22 @@ export function unhonorableOptions(
   // Exclusion support defaults to inclusion support; a provider states it
   // separately only when the two genuinely differ.
   const excludeSupport = capabilities.excludeDomainFilter ?? capabilities.domainFilter;
-  if (wantsDomains && capabilities.domainFilter === false) gaps.push("includeDomains");
-  if (wantsExcludes && excludeSupport === false) gaps.push("excludeDomains");
+  const includeBlocked = wantsDomains && capabilities.domainFilter === false;
+  const excludeBlocked = wantsExcludes && excludeSupport === false;
+  if (includeBlocked) gaps.push("includeDomains");
+  if (excludeBlocked) gaps.push("excludeDomains");
+  // Serving each direction alone is not serving both at once. Reported only
+  // when neither direction is already refused, so the pair does not restate a
+  // gap the caller has been told about.
+  if (
+    wantsDomains &&
+    wantsExcludes &&
+    !includeBlocked &&
+    !excludeBlocked &&
+    capabilities.exclusiveDomainDirections === true
+  ) {
+    gaps.push("includeDomains with excludeDomains");
+  }
   const range = request.dateRange;
   const wantsDates = range !== undefined && (range.start !== undefined || range.end !== undefined);
   if (wantsDates && !capabilities.dateFilter) gaps.push("dateRange");

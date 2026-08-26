@@ -188,6 +188,14 @@ describe("AnthropicWebSearchProvider", () => {
     expect(tools[0].allowed_domains).toEqual(["arxiv.org"]);
   });
 
+  it("declares that it takes one domain direction at a time", () => {
+    // Without this, `auto` routing scores a both-lists request as servable
+    // here and the run fails on a request another provider would have served.
+    const c = new AnthropicWebSearchProvider({ client: clientReturning().client as never })
+      .capabilities;
+    expect(c.exclusiveDomainDirections).toBe(true);
+  });
+
   it("refuses to send both domain lists, which the API rejects", async () => {
     const { client } = clientReturning(messageWith([{ type: "text", text: "x" }]));
     await expect(
