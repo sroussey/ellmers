@@ -15,6 +15,7 @@ import type {
   WebSearchRequest,
   WebSearchResponse,
 } from "@workglow/web-search";
+import { limitResults } from "@workglow/web-search";
 
 const DEFAULT_MODEL = "gemini-3.6-flash";
 /** No lower bound: `timeRangeFilter` rejects an interval with only one side set. */
@@ -123,9 +124,8 @@ export class GeminiWebSearchProvider implements IWebSearchProvider {
       });
     }
 
-    const maxResults = request.maxResults;
     return {
-      results: maxResults === undefined ? results : results.slice(0, maxResults),
+      results: limitResults(results, request.maxResults),
       answer:
         request.includeAnswer === true && typeof response.text === "string" && response.text
           ? response.text

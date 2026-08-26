@@ -13,6 +13,7 @@ import type {
   WebSearchRequest,
   WebSearchResponse,
 } from "../IWebSearchProvider";
+import { limitResults } from "../limitResults";
 import { trimTrailingSlashes } from "../urlText";
 import { fetchSearchJson } from "./httpSearch";
 
@@ -95,7 +96,10 @@ export class SearxngWebSearchProvider implements IWebSearchProvider {
 
     // SearXNG returns a full page of aggregated results and honors no count
     // parameter, so the cap is applied here.
-    const results = request.maxResults === undefined ? all : all.slice(0, request.maxResults);
-    return { results, query: request.query, usage: { requests: 1 } };
+    return {
+      results: limitResults(all, request.maxResults),
+      query: request.query,
+      usage: { requests: 1 },
+    };
   }
 }

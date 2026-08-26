@@ -12,6 +12,7 @@ import type {
   WebSearchRequest,
   WebSearchResponse,
 } from "../IWebSearchProvider";
+import { limitResults } from "../limitResults";
 import { fetchSearchJson } from "./httpSearch";
 
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
@@ -72,7 +73,7 @@ export class TavilyWebSearchProvider implements IWebSearchProvider {
     }));
 
     return {
-      results,
+      results: limitResults(results, request.maxResults),
       answer: request.includeAnswer === true ? payload.answer : undefined,
       query: request.query,
       usage: { requests: 1 },

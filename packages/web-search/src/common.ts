@@ -16,6 +16,7 @@ import { WebSearchTask } from "./WebSearchTask";
 
 export * from "./capabilityCheck";
 export * from "./IWebSearchProvider";
+export * from "./limitResults";
 export * from "./providers/BraveWebSearchProvider";
 export * from "./providers/httpSearch";
 export * from "./providers/SearxngWebSearchProvider";

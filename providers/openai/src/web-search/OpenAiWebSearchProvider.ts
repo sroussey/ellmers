@@ -14,6 +14,7 @@ import type {
   WebSearchRequest,
   WebSearchResponse,
 } from "@workglow/web-search";
+import { limitResults } from "@workglow/web-search";
 import OpenAI from "openai";
 
 const DEFAULT_MODEL = "gpt-5.5";
@@ -129,7 +130,10 @@ export class OpenAiWebSearchProvider implements IWebSearchProvider {
     }
 
     return {
-      results,
+      // The Responses API takes no result limit of its own — a grounded turn
+      // can cite fifteen sources for a caller who asked for three — so the
+      // bound is applied here rather than dropped.
+      results: limitResults(results, request.maxResults),
       answer:
         request.includeAnswer === true && answerParts.length > 0 ? answerParts.join("") : undefined,
       query: request.query,
