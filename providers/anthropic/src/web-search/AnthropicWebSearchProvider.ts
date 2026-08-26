@@ -53,6 +53,10 @@ export class AnthropicWebSearchProvider implements IWebSearchProvider {
     answer: true,
     content: false,
     domainFilter: "native",
+    // The tool takes allowed_domains or blocked_domains, never the pair — so
+    // routing has to score a both-lists request as a gap and look elsewhere,
+    // rather than land here and throw.
+    exclusiveDomainDirections: true,
     dateFilter: false,
     maxResultsCap: undefined,
   };

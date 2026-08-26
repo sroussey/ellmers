@@ -50,6 +50,47 @@ describe("WebSearchProviderRegistry", () => {
     );
   });
 
+  it("skips a one-direction-at-a-time provider for a both-lists request", () => {
+    // The Anthropic shape, registered first because its key is always present.
+    WebSearchProviderRegistry.register(
+      provider("anthropic", { domainFilter: "native", exclusiveDomainDirections: true })
+    );
+    WebSearchProviderRegistry.register(provider("tavily", { domainFilter: "native" }));
+
+    const chosen = WebSearchProviderRegistry.route({
+      query: "c",
+      includeDomains: ["arxiv.org"],
+      excludeDomains: ["spam.net"],
+    });
+
+    // Routing to anthropic here would throw out of search() on a request the
+    // provider behind it serves natively.
+    expect(chosen.name).toBe("tavily");
+  });
+
+  it("still routes to it when only one direction was asked for", () => {
+    WebSearchProviderRegistry.register(
+      provider("anthropic", { domainFilter: "native", exclusiveDomainDirections: true })
+    );
+    WebSearchProviderRegistry.register(provider("tavily", { domainFilter: "native" }));
+    expect(
+      WebSearchProviderRegistry.route({ query: "c", includeDomains: ["arxiv.org"] }).name
+    ).toBe("anthropic");
+  });
+
+  it("names the both-lists constraint when no provider can serve it", () => {
+    WebSearchProviderRegistry.register(
+      provider("anthropic", { domainFilter: "native", exclusiveDomainDirections: true })
+    );
+    expect(() =>
+      WebSearchProviderRegistry.route({
+        query: "c",
+        includeDomains: ["a.com"],
+        excludeDomains: ["b.com"],
+      })
+    ).toThrow(/includeDomains with excludeDomains/);
+  });
+
   it("throws naming the option and the rejected providers when nothing satisfies", () => {
     WebSearchProviderRegistry.register(provider("brave", {}));
     WebSearchProviderRegistry.register(provider("searxng", {}));

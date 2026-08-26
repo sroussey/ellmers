@@ -87,6 +87,18 @@ export interface WebSearchCapabilities {
    */
   readonly excludeDomainFilter?: DomainFilterSupport | undefined;
   /**
+   * `true` when the provider filters in either direction but never both in the
+   * same request — Anthropic's `web_search` tool takes `allowed_domains` or
+   * `blocked_domains` and rejects the pair.
+   *
+   * Without it such a provider over-declares exactly the way
+   * {@link excludeDomainFilter} exists to prevent: both directions look
+   * supported, `unhonorableOptions` finds no gap, `"auto"` routes to it, and
+   * `search()` throws on a request the provider registered right behind it
+   * would have served natively.
+   */
+  readonly exclusiveDomainDirections?: boolean | undefined;
+  /**
    * Date filtering is never emulated. Post-filtering by `publishedDate` breaks
    * `maxResults` and drops every result whose date the provider omitted, so a
    * provider that cannot do it server-side declares `false` and the request is

@@ -18,7 +18,7 @@ and validate the node) but **no providers**. Execution happens on a server.
 | `brave`      | `X-Subscription-Token` | no     | no      | via `site:`              | yes         |
 | `tavily`     | bearer token           | yes    | yes     | native                   | yes         |
 | `searxng`    | none (self-hosted)     | no     | no      | via `site:`              | no          |
-| `anthropic`  | vendor SDK             | yes    | no      | native                   | no          |
+| `anthropic`  | vendor SDK             | yes    | no      | native, **one list**     | no          |
 | `openai`     | vendor SDK             | yes    | no      | native, **include only** | no          |
 | `openrouter` | vendor SDK             | yes    | yes     | native                   | no          |
 | `gemini`     | vendor SDK             | yes    | no      | **none**                 | **yes**     |
@@ -34,8 +34,11 @@ import { registerGeminiWebSearchProvider } from "@workglow/google-gemini/web-sea
 ```
 
 Their capability profiles genuinely differ — OpenAI can restrict _to_ domains but not
-_away_ from them, and Gemini is the only one that filters by date while filtering by no
-domain at all. That is why `excludeDomainFilter` is separable from `domainFilter`.
+_away_ from them, Anthropic takes either list but never both in one request, and Gemini is
+the only one that filters by date while filtering by no domain at all. That is why
+`excludeDomainFilter` is separable from `domainFilter`, and why
+`exclusiveDomainDirections` exists: `auto` routing must score a request a provider cannot
+honor as a gap and move on, rather than land on it and throw.
 SearXNG needs `WEB_SEARCH_SEARXNG_URL` (or an explicit base URL) and an instance
 with `format=json` enabled.
 
