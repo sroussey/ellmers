@@ -83,6 +83,24 @@ class AnyOfNestedCredentialTask extends Task<any, any> {
   }
 }
 
+/**
+ * The shape of a task that forwards the key to an owned task rather than
+ * consuming the secret itself: the input resolver must leave the port alone,
+ * but the store still has to be unlocked before the run.
+ */
+class UnresolvedCredentialKeyTask extends Task<any, any> {
+  static override readonly type = "UnresolvedCredentialKeyTask";
+
+  static override inputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: {
+        credential_key: { type: "string", format: "credential-key" },
+      },
+    } as const satisfies DataPortSchema;
+  }
+}
+
 class NoCredentialTask extends Task<any, any> {
   static override readonly type = "NoCredentialTask";
 
@@ -159,6 +177,21 @@ describe("GraphFormatScanner", () => {
       );
       expect(result.needsCredentials).toBe(true);
       expect(result.credentialFormats.has("credential")).toBe(true);
+    });
+
+    it("detects a credential-key format, which the input resolver leaves alone", () => {
+      const result = scanGraphForCredentials(
+        makeGraph(
+          new UnresolvedCredentialKeyTask({ defaults: { credential_key: "my-key" } as any })
+        )
+      );
+      expect(result.needsCredentials).toBe(true);
+      expect(result.credentialFormats.has("credential-key")).toBe(true);
+    });
+
+    it("ignores a declared-but-unset credential-key", () => {
+      const result = scanGraphForCredentials(makeGraph(new UnresolvedCredentialKeyTask({})));
+      expect(result.needsCredentials).toBe(false);
     });
 
     it("does not detect an empty-string credential value", () => {

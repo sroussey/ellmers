@@ -8,10 +8,27 @@ import { getObjectSchema, getSchemaFormat } from "../task/InputResolver";
 import type { ITaskGraph } from "./ITaskGraph";
 
 /**
+ * Format annotations whose value names an entry in the credential store.
+ *
+ * `"credential"` is rewritten to the secret by the input resolver before
+ * `execute()` runs. `"credential-key"` is deliberately left alone: it marks a
+ * port whose value is handed to an owned task that resolves it itself, and a
+ * port resolved twice looks the *secret* up as if it were a key, misses, and
+ * sends the request unauthenticated.
+ *
+ * Either way the store has to be reachable for the run, which is what this scan
+ * decides.
+ */
+export const CREDENTIAL_KEY_FORMATS: ReadonlySet<string> = new Set([
+  "credential",
+  "credential-key",
+]);
+
+/**
  * Result of scanning a task graph for credential format annotations.
  */
 export interface GraphFormatScanResult {
-  /** Whether any task in the graph has a `format: "credential"` property in its input or config schema. */
+  /** Whether any task in the graph has a credential-key property in its input or config schema. */
   readonly needsCredentials: boolean;
   /** The set of format strings found (e.g., `"credential"`). */
   readonly credentialFormats: ReadonlySet<string>;
@@ -68,8 +85,8 @@ export function scanGraphForFormat(graph: ITaskGraph, targetFormat: string): boo
  * Scans a task graph for credential requirements.
  *
  * A task only counts as needing credentials when it has a schema property
- * annotated with `format: "credential"` **and** the corresponding value is
- * actually set on the task's config or input defaults (non-empty string).
+ * annotated with one of {@link CREDENTIAL_KEY_FORMATS} **and** the corresponding
+ * value is actually set on the task's config or input defaults (non-empty string).
  * Annotating a schema is not enough — plenty of model configs have
  * `provider_config.credential_key` available but unused (e.g. local ONNX
  * models).
@@ -118,7 +135,12 @@ function collectUsedCredentialFormats(schema: unknown, data: unknown, formats: S
   for (const [propName, propSchema] of Object.entries(properties)) {
     const format = getSchemaFormat(propSchema);
     const value = dataObj[propName];
-    if (format === "credential" && typeof value === "string" && value.length > 0) {
+    if (
+      format !== undefined &&
+      CREDENTIAL_KEY_FORMATS.has(format) &&
+      typeof value === "string" &&
+      value.length > 0
+    ) {
       formats.add(format);
     }
 
