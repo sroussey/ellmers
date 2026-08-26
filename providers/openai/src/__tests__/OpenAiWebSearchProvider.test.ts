@@ -5,7 +5,7 @@
  */
 
 import type { IExecuteContext } from "@workglow/task-graph";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OpenAiWebSearchProvider } from "../web-search/OpenAiWebSearchProvider";
 
 const context = {
@@ -127,5 +127,47 @@ describe("OpenAiWebSearchProvider", () => {
     await expect(
       new OpenAiWebSearchProvider({ client }).search({ query: "t" }, context)
     ).rejects.toThrow(/no output array/);
+  });
+});
+
+/** Reaches the lazily-built client so a test can read the key it was given. */
+interface ClientPeek {
+  getClient(): { apiKey?: string };
+}
+
+describe("OpenAiWebSearchProvider key resolution", () => {
+  let savedOpenAi: string | undefined;
+
+  beforeEach(() => {
+    savedOpenAi = process.env.OPENAI_API_KEY;
+  });
+
+  afterEach(() => {
+    if (savedOpenAi === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = savedOpenAi;
+    vi.restoreAllMocks();
+  });
+
+  it("constructs without a key, so registration cannot throw out of the vendor SDK", () => {
+    delete process.env.OPENAI_API_KEY;
+    expect(() => new OpenAiWebSearchProvider()).not.toThrow();
+  });
+
+  it("reports a missing key through this repo's named error, not the SDK's", async () => {
+    delete process.env.OPENAI_API_KEY;
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    await expect(new OpenAiWebSearchProvider().search({ query: "t" }, context)).rejects.toThrow(
+      /OPENAI_API_KEY/
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("prefers an explicitly passed apiKey over the environment", () => {
+    process.env.OPENAI_API_KEY = "sk-proj-from-env";
+
+    const provider = new OpenAiWebSearchProvider({ apiKey: "sk-proj-explicit" });
+
+    expect((provider as unknown as ClientPeek).getClient().apiKey).toBe("sk-proj-explicit");
   });
 });

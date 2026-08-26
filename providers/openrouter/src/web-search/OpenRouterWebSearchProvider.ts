@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { resolveApiKey } from "@workglow/ai/provider-utils";
 import type { IExecuteContext } from "@workglow/task-graph";
 import { TaskFailedError } from "@workglow/task-graph";
 import type {
@@ -48,23 +49,42 @@ export class OpenRouterWebSearchProvider implements IWebSearchProvider {
     maxResultsCap: undefined,
   };
 
-  private readonly client: OpenAI;
+  private client: OpenAI | undefined;
+  private readonly apiKey: string | undefined;
   private readonly model: string;
   private readonly engine: string | undefined;
 
   constructor(options: OpenRouterWebSearchOptions = {}) {
-    this.client =
-      options.client ??
-      new OpenAI({
-        apiKey: options.apiKey ?? process.env.OPENROUTER_API_KEY,
-        baseURL: OPENROUTER_BASE_URL,
-      });
+    this.client = options.client;
+    this.apiKey = options.apiKey;
     this.model = options.model ?? DEFAULT_MODEL;
     this.engine = options.engine;
   }
 
+  /**
+   * Built on first search, not in the constructor, so registering the provider
+   * cannot throw out of the vendor SDK on a machine that has no key yet.
+   *
+   * The key is resolved explicitly through {@link resolveApiKey} and passed as a
+   * string. Handing the SDK `undefined` fires its own destructuring default,
+   * which reads `OPENAI_API_KEY` — sending a live OpenAI secret to a third-party
+   * host, with nothing in the code or the error path naming which key went.
+   */
+  private getClient(): OpenAI {
+    this.client ??= new OpenAI({
+      apiKey: resolveApiKey({
+        config: { api_key: this.apiKey },
+        envVar: "OPENROUTER_API_KEY",
+        providerLabel: "OpenRouter",
+      }),
+      baseURL: OPENROUTER_BASE_URL,
+    });
+    return this.client;
+  }
+
   async search(request: WebSearchRequest, context: IExecuteContext): Promise<WebSearchResponse> {
     context.signal.throwIfAborted();
+    const client = this.getClient();
 
     const plugin: Record<string, unknown> = { id: "web" };
     if (this.engine !== undefined) plugin.engine = this.engine;
@@ -72,7 +92,7 @@ export class OpenRouterWebSearchProvider implements IWebSearchProvider {
     if (request.includeDomains?.length) plugin.include_domains = [...request.includeDomains];
     if (request.excludeDomains?.length) plugin.exclude_domains = [...request.excludeDomains];
 
-    const completion = (await this.client.chat.completions.create({
+    const completion = (await client.chat.completions.create({
       model: this.model,
       messages: [{ role: "user", content: request.query }],
       // `plugins` is an OpenRouter extension the OpenAI types do not model.

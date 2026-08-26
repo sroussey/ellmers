@@ -5,7 +5,7 @@
  */
 
 import type { IExecuteContext } from "@workglow/task-graph";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OpenRouterWebSearchProvider } from "../web-search/OpenRouterWebSearchProvider";
 
 const context = {
@@ -118,5 +118,69 @@ describe("OpenRouterWebSearchProvider", () => {
     await expect(
       new OpenRouterWebSearchProvider({ client }).search({ query: "t" }, context)
     ).rejects.toThrow(/no choices/);
+  });
+});
+
+/** Reaches the lazily-built client so a test can read the key it was given. */
+interface ClientPeek {
+  getClient(): { apiKey?: string; baseURL?: string };
+}
+
+describe("OpenRouterWebSearchProvider key resolution", () => {
+  const OPENAI_SECRET = "sk-proj-a-live-openai-secret";
+  let savedOpenRouter: string | undefined;
+  let savedOpenAi: string | undefined;
+
+  beforeEach(() => {
+    savedOpenRouter = process.env.OPENROUTER_API_KEY;
+    savedOpenAi = process.env.OPENAI_API_KEY;
+  });
+
+  afterEach(() => {
+    if (savedOpenRouter === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = savedOpenRouter;
+    if (savedOpenAi === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = savedOpenAi;
+    vi.restoreAllMocks();
+  });
+
+  it("constructs without a key, so registration cannot throw out of the vendor SDK", () => {
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    expect(() => new OpenRouterWebSearchProvider()).not.toThrow();
+  });
+
+  it("refuses the search rather than spending OPENAI_API_KEY on openrouter.ai", async () => {
+    delete process.env.OPENROUTER_API_KEY;
+    process.env.OPENAI_API_KEY = OPENAI_SECRET;
+    // Nothing may reach the network: the OpenAI SDK's own destructuring default
+    // reads OPENAI_API_KEY, so a request built at all is a request that carries
+    // a live OpenAI secret to a third-party host.
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const search = new OpenRouterWebSearchProvider().search({ query: "cats" }, context);
+
+    await expect(search).rejects.toThrow(/OPENROUTER_API_KEY/);
+    await expect(search).rejects.not.toThrow(new RegExp(OPENAI_SECRET));
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("builds the client from OPENROUTER_API_KEY even with OPENAI_API_KEY present", () => {
+    process.env.OPENAI_API_KEY = OPENAI_SECRET;
+    process.env.OPENROUTER_API_KEY = "sk-or-v1-the-openrouter-key";
+
+    const client = (new OpenRouterWebSearchProvider() as unknown as ClientPeek).getClient();
+
+    expect(client.apiKey).toBe("sk-or-v1-the-openrouter-key");
+    expect(client.baseURL).toContain("openrouter.ai");
+  });
+
+  it("prefers an explicitly passed apiKey over the environment", () => {
+    process.env.OPENROUTER_API_KEY = "sk-or-v1-from-env";
+
+    const provider = new OpenRouterWebSearchProvider({ apiKey: "sk-or-v1-explicit" });
+    const client = (provider as unknown as ClientPeek).getClient();
+
+    expect(client.apiKey).toBe("sk-or-v1-explicit");
   });
 });
