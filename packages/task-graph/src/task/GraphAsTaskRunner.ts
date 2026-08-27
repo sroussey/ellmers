@@ -48,6 +48,7 @@ export class GraphAsTaskRunner<
         outputCache: this.outputCache,
         registry: this.registry,
         resourceScope: this.resourceScope,
+        enforceEntitlements: this.task.runConfig?.enforceEntitlements,
         ...this.streamRunOptions,
       });
     } finally {
