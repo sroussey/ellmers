@@ -240,7 +240,7 @@ describe("IteratorTask", () => {
       });
 
       test("should respect custom configuration", () => {
-        const condition = (output: any, iteration: number) => iteration < 5;
+        const condition = (_output: any, iteration: number) => iteration < 5;
         const task = new WhileTask({
           condition,
           maxIterations: 50,
@@ -709,7 +709,7 @@ describe("IteratorTask", () => {
 
       workflow
         .while({
-          condition: (output, iteration) => iteration < 3,
+          condition: (_output, iteration) => iteration < 3,
           maxIterations: 10,
         })
         .addTask(RefineTask)

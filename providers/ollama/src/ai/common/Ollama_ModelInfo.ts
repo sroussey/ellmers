@@ -21,7 +21,7 @@ const OLLAMA_EMBEDDING_DIMENSIONS: Record<string, { native_dimensions: number; m
 export function createOllamaModelInfoStream(
   getClient: GetClient
 ): AiProviderRunFn<ModelInfoTaskInput, ModelInfoTaskOutput, OllamaModelConfig> {
-  return async (input, model, signal, emit) => {
+  return async (input, model, _signal, emit) => {
     if (input.detail === "dimensions") {
       if (!model) throw new Error("Model config is required for ModelInfoTask.");
       const pc = model.provider_config as Record<string, unknown>;

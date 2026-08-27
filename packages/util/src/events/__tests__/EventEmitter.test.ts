@@ -28,7 +28,7 @@ describe("EventEmitter", () => {
 
   describe("on and emit", () => {
     it("should register and trigger an event listener", () => {
-      const listener = mock((value: string) => {});
+      const listener = mock((_value: string) => {});
 
       emitter.on("test", listener);
       emitter.emit("test", "hello");
@@ -38,8 +38,8 @@ describe("EventEmitter", () => {
     });
 
     it("should handle multiple listeners for the same event", () => {
-      const listener1 = mock((value: string) => {});
-      const listener2 = mock((value: string) => {});
+      const listener1 = mock((_value: string) => {});
+      const listener2 = mock((_value: string) => {});
 
       emitter.on("test", listener1);
       emitter.on("test", listener2);
@@ -52,7 +52,7 @@ describe("EventEmitter", () => {
     });
 
     it("should handle events with multiple arguments", () => {
-      const listener = mock((arg1: string, arg2: number, arg3: boolean) => {});
+      const listener = mock((_arg1: string, _arg2: number, _arg3: boolean) => {});
 
       emitter.on("multipleArgs", listener);
       emitter.emit("multipleArgs", "test", 42, true);
@@ -74,8 +74,8 @@ describe("EventEmitter", () => {
 
   describe("off", () => {
     it("should remove a specific listener", () => {
-      const listener1 = mock((value: string) => {});
-      const listener2 = mock((value: string) => {});
+      const listener1 = mock((_value: string) => {});
+      const listener2 = mock((_value: string) => {});
 
       emitter.on("test", listener1);
       emitter.on("test", listener2);
@@ -87,8 +87,8 @@ describe("EventEmitter", () => {
     });
 
     it("should do nothing when removing a non-existent listener", () => {
-      const listener1 = mock((value: string) => {});
-      const listener2 = mock((value: string) => {});
+      const listener1 = mock((_value: string) => {});
+      const listener2 = mock((_value: string) => {});
 
       emitter.on("test", listener1);
       emitter.off("test", listener2); // listener2 was never registered
@@ -100,7 +100,7 @@ describe("EventEmitter", () => {
 
   describe("once", () => {
     it("should trigger a listener only once", () => {
-      const listener = mock((value: string) => {});
+      const listener = mock((_value: string) => {});
 
       emitter.once("test", listener);
       emitter.emit("test", "first");
@@ -111,8 +111,8 @@ describe("EventEmitter", () => {
     });
 
     it("should handle multiple once listeners", () => {
-      const listener1 = mock((value: string) => {});
-      const listener2 = mock((value: string) => {});
+      const listener1 = mock((_value: string) => {});
+      const listener2 = mock((_value: string) => {});
 
       emitter.once("test", listener1);
       emitter.once("test", listener2);
@@ -142,8 +142,8 @@ describe("EventEmitter", () => {
 
   describe("removeAllListeners", () => {
     it("should remove all listeners for a specific event", () => {
-      const testListener = mock((value: string) => {});
-      const multipleArgsListener = mock((arg1: string, arg2: number, arg3: boolean) => {});
+      const testListener = mock((_value: string) => {});
+      const multipleArgsListener = mock((_arg1: string, _arg2: number, _arg3: boolean) => {});
 
       emitter.on("test", testListener);
       emitter.on("multipleArgs", multipleArgsListener);
@@ -173,8 +173,8 @@ describe("EventEmitter", () => {
     });
 
     it("should remove all listeners for all events when no event is specified", () => {
-      const testListener = mock((value: string) => {});
-      const multipleArgsListener = mock((arg1: string, arg2: number, arg3: boolean) => {});
+      const testListener = mock((_value: string) => {});
+      const multipleArgsListener = mock((_arg1: string, _arg2: number, _arg3: boolean) => {});
 
       emitter.on("test", testListener);
       emitter.on("multipleArgs", multipleArgsListener);

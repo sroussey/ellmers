@@ -54,7 +54,7 @@ const IDLE_READY_RETRY_BASE_MS = 5;
 /**
  * Events emitted by JobQueueWorker
  */
-export type JobQueueWorkerEventListeners<Input, Output> = {
+export type JobQueueWorkerEventListeners<_Input, Output> = {
   job_start: (jobId: unknown) => void;
   job_complete: (jobId: unknown, output: Output) => void;
   job_error: (jobId: unknown, error: string, errorCode?: string) => void;

@@ -209,12 +209,12 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
     },
 
     // Realtime channel method for subscriptions
-    channel: (name: string) => {
+    channel: (_name: string) => {
       return {
-        on: (event: string, filter: any, callback: any) => {
+        on: (_event: string, _filter: any, _callback: any) => {
           // Mock realtime subscription - do nothing, just return self for chaining
           return {
-            on: (event: string, filter: any, callback: any) => {
+            on: (_event: string, _filter: any, _callback: any) => {
               return {
                 subscribe: (callback?: any) => {
                   // Mock subscribe - call callback immediately with "SUBSCRIBED" status
@@ -510,7 +510,7 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
               queryBuilder._filters.push({ column, operator: "=", value });
               return updateBuilder; // Return self for chaining
             },
-            is: (column: string, value: any) => {
+            is: (column: string, _value: any) => {
               queryBuilder._filters.push({ column, operator: "IS", value: null });
               return updateBuilder;
             },
@@ -582,7 +582,7 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
               queryBuilder._filters.push({ column, operator: "=", value });
               return deleteBuilder;
             },
-            is: (column: string, value: any) => {
+            is: (column: string, _value: any) => {
               queryBuilder._filters.push({ column, operator: "IS", value: null });
               return deleteBuilder;
             },
@@ -638,7 +638,7 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
           queryBuilder._filters.push({ column, operator: "=", value });
           return queryBuilder;
         },
-        is: (column: string, value: any) => {
+        is: (column: string, _value: any) => {
           queryBuilder._filters.push({ column, operator: "IS", value: null });
           return queryBuilder;
         },
@@ -748,7 +748,7 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
           queryBuilder._filters.push({ column, operator: "=", value });
           return deleteBuilder;
         },
-        is: (column: string, value: any) => {
+        is: (column: string, _value: any) => {
           queryBuilder._filters.push({ column, operator: "IS", value: null });
           return deleteBuilder;
         },

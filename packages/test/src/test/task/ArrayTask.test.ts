@@ -76,7 +76,7 @@ class MultiplyRunTask extends ArrayTask<
 
   public override async execute(
     input: MultiplyInput,
-    context: IExecuteContext
+    _context: IExecuteContext
   ): Promise<MultiplyOutput> {
     // Simple multiplication - at this point, we know the inputs are not arrays
     return {
@@ -173,7 +173,7 @@ class SquareRunTask extends ArrayTask<
 
   public override async execute(
     input: SquareInput,
-    context: IExecuteContext
+    _context: IExecuteContext
   ): Promise<SquareOutput> {
     return {
       result: input.a * input.a,

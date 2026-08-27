@@ -23,7 +23,7 @@ import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, expect, it } from "vitest";
 
 export class TestJob extends Job<TaskInput, TaskOutput> {
-  override async execute(input: TaskInput, context: IJobExecuteContext): Promise<TaskOutput> {
+  override async execute(input: TaskInput, _context: IJobExecuteContext): Promise<TaskOutput> {
     return { result: (input as any).a + (input as any).b };
   }
 }

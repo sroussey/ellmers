@@ -131,7 +131,7 @@ class ErrorRecoveryTask extends Task<Record<string, unknown>, { output: number }
     } as const satisfies DataPortSchema;
   }
 
-  override async execute(input: Record<string, unknown>): Promise<{ output: number }> {
+  override async execute(_input: Record<string, unknown>): Promise<{ output: number }> {
     return { output: -1 };
   }
 }

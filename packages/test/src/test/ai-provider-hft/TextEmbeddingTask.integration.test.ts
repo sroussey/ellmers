@@ -68,7 +68,7 @@ describe("TextEmbeddingTask with real models", () => {
         defaults: { model: "onnx:Xenova/gte-small:q8" },
       });
       let lastProgress: number | undefined = -1;
-      download.on("progress", (progress, message, details) => {
+      download.on("progress", (progress, _message, details) => {
         if (progress !== lastProgress) {
           logger.info(
             `Overall: ${progress}% | File: ${details?.file || "?"} @ ${(details?.progress || 0).toFixed(1)}%`

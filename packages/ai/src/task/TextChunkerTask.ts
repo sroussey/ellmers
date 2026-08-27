@@ -196,7 +196,7 @@ export class TextChunkerTask extends Task<
 
   override async execute(
     input: TextChunkerTaskInput,
-    context: IExecuteContext
+    _context: IExecuteContext
   ): Promise<TextChunkerTaskOutput> {
     const {
       text,

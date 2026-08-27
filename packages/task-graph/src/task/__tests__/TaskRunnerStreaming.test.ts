@@ -51,7 +51,7 @@ class TestStreamingAppendTask extends Task<StreamTestInput, StreamTestOutput> {
 
   async *executeStream(
     _input: StreamTestInput,
-    context: IExecuteContext
+    _context: IExecuteContext
   ): AsyncIterable<StreamEvent<StreamTestOutput>> {
     yield { type: "text-delta", port: "text", textDelta: "Hello" };
     yield { type: "text-delta", port: "text", textDelta: " " };
@@ -92,7 +92,7 @@ class TestStreamingReplaceTask extends Task<StreamTestInput, StreamTestOutput> {
 
   async *executeStream(
     _input: StreamTestInput,
-    context: IExecuteContext
+    _context: IExecuteContext
   ): AsyncIterable<StreamEvent<StreamTestOutput>> {
     yield { type: "snapshot", data: { text: "Bon" } };
     yield { type: "snapshot", data: { text: "Bonjour" } };
@@ -132,7 +132,7 @@ class TestStreamingErrorTask extends Task<StreamTestInput, StreamTestOutput> {
 
   async *executeStream(
     _input: StreamTestInput,
-    context: IExecuteContext
+    _context: IExecuteContext
   ): AsyncIterable<StreamEvent<StreamTestOutput>> {
     yield { type: "text-delta", port: "text", textDelta: "Hello" };
     yield { type: "text-delta", port: "text", textDelta: " " };
@@ -218,7 +218,7 @@ class TestStreamingCodeAppendTask extends Task<CodeTestInput, CodeTestOutput> {
 
   async *executeStream(
     _input: CodeTestInput,
-    context: IExecuteContext
+    _context: IExecuteContext
   ): AsyncIterable<StreamEvent<CodeTestOutput>> {
     yield { type: "text-delta", port: "code", textDelta: "fn main() {" };
     yield { type: "text-delta", port: "code", textDelta: ' println!("hi")' };

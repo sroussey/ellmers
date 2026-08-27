@@ -1403,8 +1403,8 @@ export class DuckDbTabularStorage<
    * @throws Error always - subscribeToChanges is not supported for DuckDB storage
    */
   public override subscribeToChanges(
-    callback: (change: TabularChangePayload<Entity>) => void,
-    options?: TabularSubscribeOptions
+    _callback: (change: TabularChangePayload<Entity>) => void,
+    _options?: TabularSubscribeOptions
   ): () => void {
     throw new Error("subscribeToChanges is not supported for DuckDbTabularStorage");
   }

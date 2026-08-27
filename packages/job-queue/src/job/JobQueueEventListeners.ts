@@ -9,7 +9,7 @@ import type { EventParameters } from "@workglow/util";
 /**
  * Events that can be emitted by the JobQueue
  */
-export type JobQueueEventListeners<Input, Output> = {
+export type JobQueueEventListeners<_Input, Output> = {
   queue_start: (queueName: string) => void;
   queue_stop: (queueName: string) => void;
   job_start: (queueName: string, jobId: unknown) => void;

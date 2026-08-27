@@ -307,7 +307,7 @@ export class PostgresTabularStorage<
     return format.startsWith("TypedArray:") || format === "TypedArray";
   }
 
-  protected getVectorDimensions(typeDef: JsonSchema): number | undefined {
+  protected getVectorDimensions(_typeDef: JsonSchema): number | undefined {
     return undefined;
   }
 
@@ -1791,8 +1791,8 @@ export class PostgresTabularStorage<
    * @throws Error always - subscribeToChanges is not supported for PostgreSQL storage
    */
   public override subscribeToChanges(
-    callback: (change: TabularChangePayload<Entity>) => void,
-    options?: TabularSubscribeOptions
+    _callback: (change: TabularChangePayload<Entity>) => void,
+    _options?: TabularSubscribeOptions
   ): () => void {
     throw new Error("subscribeToChanges is not supported for PostgresTabularStorage");
   }

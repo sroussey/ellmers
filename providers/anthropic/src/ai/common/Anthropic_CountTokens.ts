@@ -17,7 +17,7 @@ export const Anthropic_CountTokens_Stream: AiProviderRunFn<
   CountTokensTaskInput,
   CountTokensTaskOutput,
   AnthropicModelConfig
-> = async (input, model, signal, emit) => {
+> = async (input, model, _signal, emit) => {
   const client = await getClient(model);
   const result = await client.messages.countTokens({
     model: getModelName(model),

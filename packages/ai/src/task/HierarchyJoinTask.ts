@@ -162,7 +162,7 @@ export class HierarchyJoinTask extends Task<
 
   override async execute(
     input: HierarchyJoinTaskInput,
-    context: IExecuteContext
+    _context: IExecuteContext
   ): Promise<HierarchyJoinTaskOutput> {
     const {
       knowledgeBase,

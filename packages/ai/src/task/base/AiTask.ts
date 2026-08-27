@@ -430,7 +430,7 @@ export class AiTask<
 
     const modelPlainProperties = Object.entries<JsonSchema>(
       (inputSchema.properties || {}) as Record<string, JsonSchema>
-    ).filter(([key, schema]) => schemaFormat(schema) === "model");
+    ).filter(([, schema]) => schemaFormat(schema) === "model");
 
     for (const [key] of modelPlainProperties) {
       const model = input[key];

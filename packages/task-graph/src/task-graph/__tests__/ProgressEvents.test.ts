@@ -74,7 +74,7 @@ class HangingTask extends Task<TaskInput, Out> {
     } as const satisfies DataPortSchema;
   }
   override async execute(_input: TaskInput, context: IExecuteContext): Promise<Out> {
-    await new Promise((resolve, reject) => {
+    await new Promise((_resolve, reject) => {
       context.signal.addEventListener("abort", () => reject(new TaskAbortedError()), {
         once: true,
       });

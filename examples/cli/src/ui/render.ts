@@ -55,7 +55,7 @@ export async function renderWorkflowRun(
     readonly runExecutor?: () => Promise<unknown>;
   }
 ): Promise<unknown> {
-  return new Promise<unknown>((resolve, reject) => {
+  return new Promise<unknown>((resolve) => {
     const onComplete = async (result: unknown) => {
       if (!opts.suppressResultOutput) {
         await outputResult(result, opts.outputJsonFile);
@@ -95,7 +95,7 @@ export async function renderTaskInstanceRun(
     readonly runConfig?: Partial<IRunConfig>;
   }
 ): Promise<unknown> {
-  return new Promise<unknown>((resolve, reject) => {
+  return new Promise<unknown>((resolve) => {
     const onComplete = async (result: unknown) => {
       if (!opts.suppressResultOutput) {
         await outputResult(result, opts.outputJsonFile);

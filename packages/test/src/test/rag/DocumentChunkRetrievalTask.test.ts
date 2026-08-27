@@ -114,13 +114,13 @@ describe("ChunkRetrievalTask", () => {
     });
 
     // Find chunks that have text field
-    const textChunks = result.chunks.filter((chunk, idx) => {
+    const textChunks = result.chunks.filter((_chunk, idx) => {
       const meta = result.metadata[idx];
       return meta.text !== undefined;
     });
 
     expect(textChunks.length).toBeGreaterThan(0);
-    textChunks.forEach((chunk, idx) => {
+    textChunks.forEach((chunk) => {
       const originalIdx = result.chunks.indexOf(chunk);
       expect(chunk).toBe(result.metadata[originalIdx].text);
     });

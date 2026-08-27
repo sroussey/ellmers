@@ -65,7 +65,7 @@ export function runTaskOutputRepositoryContract(
       const oldTask: TaskInput = { query: "old" };
       const oldOutput: TaskOutput = { result: "old result" };
 
-      const clearListener = mock((...args) => {});
+      const clearListener = mock(() => {});
       repository.on("output_pruned", clearListener);
 
       await repository.saveOutput("test-type", recentTask, recentOutput, new Date(now));
@@ -90,7 +90,7 @@ export function runTaskOutputRepositoryContract(
       const task2: TaskInput = { query: "task2" };
       const output2: TaskOutput = { result: "result2" };
 
-      const clearListener = mock((...args) => {});
+      const clearListener = mock(() => {});
       repository.on("output_pruned", clearListener);
 
       await repository.saveOutput("test-type", task1, output1, new Date(now));

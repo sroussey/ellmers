@@ -1571,8 +1571,8 @@ export class SqliteTabularStorage<
    * @throws Error always - subscribeToChanges is not supported for SQLite storage
    */
   public override subscribeToChanges(
-    callback: (change: TabularChangePayload<Entity>) => void,
-    options?: TabularSubscribeOptions
+    _callback: (change: TabularChangePayload<Entity>) => void,
+    _options?: TabularSubscribeOptions
   ): () => void {
     throw new Error("subscribeToChanges is not supported for SqliteTabularStorage");
   }

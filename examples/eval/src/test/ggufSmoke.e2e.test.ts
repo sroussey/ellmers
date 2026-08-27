@@ -50,7 +50,7 @@ describe("gguf smoke", () => {
         instruction: undefined,
       },
       context: { columns: ["s1", "s2", "score"], labelNames: {} },
-      onProgress: (d, t, m, ok) => console.log(`[${d}/${t}] ${ok ? "ok" : "FAIL"}`),
+      onProgress: (d, t, _m, ok) => console.log(`[${d}/${t}] ${ok ? "ok" : "FAIL"}`),
     });
     const results = (await stores.results.query({ run_id: runId })) ?? [];
     for (const r of results) console.log(r.row_index, r.ok, r.predicted_value, r.error ?? "");

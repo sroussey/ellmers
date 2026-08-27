@@ -30,7 +30,7 @@ export namespace SqliteApi {
   }
 
   export interface Statement<
-    BindParameters extends unknown[] | Record<string, unknown> = unknown[],
+    _BindParameters extends unknown[] | Record<string, unknown> = unknown[],
     Result = unknown,
   > {
     run(...params: unknown[]): RunResult;

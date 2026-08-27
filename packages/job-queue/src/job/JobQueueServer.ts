@@ -43,7 +43,7 @@ export interface JobQueueStats {
 /**
  * Events emitted by JobQueueServer
  */
-export type JobQueueServerEventListeners<Input, Output> = {
+export type JobQueueServerEventListeners<_Input, Output> = {
   server_start: (queueName: string) => void;
   server_stop: (queueName: string) => void;
   job_start: (queueName: string, jobId: unknown) => void;

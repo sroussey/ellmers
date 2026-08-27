@@ -137,7 +137,7 @@ export class FsFolderTabularStorage<
   }
 
   protected override generateKeyValue(
-    columnName: string,
+    _columnName: string,
     strategy: KeyGenerationStrategy
   ): string | number {
     if (strategy === "autoincrement") {

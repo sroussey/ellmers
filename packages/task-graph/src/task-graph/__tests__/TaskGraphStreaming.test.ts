@@ -67,8 +67,8 @@ class StreamSourceTask extends Task<TextInput, TextOutput> {
   }
 
   override async execute(
-    input: TextInput,
-    context: IExecuteContext
+    _input: TextInput,
+    _context: IExecuteContext
   ): Promise<TextOutput | undefined> {
     return { text: "one two three" };
   }
@@ -102,13 +102,13 @@ class StreamConsumerTask extends Task<TextInput, TextOutput> {
     } as const satisfies DataPortSchema;
   }
 
-  override async execute(input: any, context: IExecuteContext): Promise<TextOutput | undefined> {
+  override async execute(input: any, _context: IExecuteContext): Promise<TextOutput | undefined> {
     return { text: `processed: ${input.text || ""}` };
   }
 
   async *executeStream(
     input: any,
-    context: IExecuteContext
+    _context: IExecuteContext
   ): AsyncIterable<StreamEvent<TextOutput>> {
     yield {
       type: "text-delta",
@@ -146,7 +146,7 @@ class NonStreamConsumerTask extends Task<TextInput, TextOutput> {
     } as const satisfies DataPortSchema;
   }
 
-  override async execute(input: any, context: IExecuteContext): Promise<TextOutput | undefined> {
+  override async execute(input: any, _context: IExecuteContext): Promise<TextOutput | undefined> {
     return { text: `final: ${input.text || ""}` };
   }
 }
@@ -182,7 +182,7 @@ class AppendEmptyFinishSource extends Task<TextInput, TextOutput> {
 
   async *executeStream(
     _input: TextInput,
-    context: IExecuteContext
+    _context: IExecuteContext
   ): AsyncIterable<StreamEvent<TextOutput>> {
     yield { type: "text-delta", port: "text", textDelta: "edge " };
     yield { type: "text-delta", port: "text", textDelta: "accumulated" };
@@ -191,8 +191,8 @@ class AppendEmptyFinishSource extends Task<TextInput, TextOutput> {
   }
 
   override async execute(
-    input: TextInput,
-    context: IExecuteContext
+    _input: TextInput,
+    _context: IExecuteContext
   ): Promise<TextOutput | undefined> {
     return { text: "edge accumulated" };
   }
@@ -227,7 +227,7 @@ class ReplaceSourceTask extends Task<TextInput, TextOutput> {
 
   async *executeStream(
     _input: TextInput,
-    context: IExecuteContext
+    _context: IExecuteContext
   ): AsyncIterable<StreamEvent<TextOutput>> {
     yield { type: "snapshot", data: { text: "Hello" } };
     yield { type: "snapshot", data: { text: "Hello world" } };
@@ -236,8 +236,8 @@ class ReplaceSourceTask extends Task<TextInput, TextOutput> {
   }
 
   override async execute(
-    input: TextInput,
-    context: IExecuteContext
+    _input: TextInput,
+    _context: IExecuteContext
   ): Promise<TextOutput | undefined> {
     return { text: "Hello world!" };
   }

@@ -243,7 +243,7 @@ describe("TaskGraph with format annotations", () => {
           };
         }
 
-        override async execute(input: TaskInput): Promise<any> {
+        override async execute(_input: TaskInput): Promise<any> {
           return { result: "processed" };
         }
       }
@@ -306,7 +306,7 @@ describe("TaskGraph with format annotations", () => {
           return { model: narrowed.length === 1 ? narrowed[0] : narrowed };
         }
 
-        override async execute(input: TaskInput): Promise<any> {
+        override async execute(_input: TaskInput): Promise<any> {
           return { result: "processed" };
         }
       }
@@ -374,7 +374,7 @@ describe("TaskGraph with format annotations", () => {
           } as const satisfies DataPortSchema;
         }
 
-        override async execute(input: TaskInput): Promise<any> {
+        override async execute(_input: TaskInput): Promise<any> {
           // Could return any model name
           return { model: "some-model-name" };
         }
@@ -437,7 +437,7 @@ describe("TaskGraph with format annotations", () => {
           } as const satisfies DataPortSchema;
         }
 
-        override async execute(input: TaskInput): Promise<any> {
+        override async execute(_input: TaskInput): Promise<any> {
           return { result: "generated" };
         }
       }
@@ -490,7 +490,7 @@ describe("TaskGraph with format annotations", () => {
           } as const satisfies DataPortSchema;
         }
 
-        override async execute(input: TaskInput): Promise<any> {
+        override async execute(_input: TaskInput): Promise<any> {
           return { result: "processed" };
         }
       }
@@ -548,7 +548,7 @@ describe("TaskGraph with format annotations", () => {
           } as const satisfies DataPortSchema;
         }
 
-        override async execute(input: TaskInput): Promise<any> {
+        override async execute(_input: TaskInput): Promise<any> {
           return { result: "generated text" };
         }
       }
@@ -591,7 +591,7 @@ describe("TaskGraph with format annotations", () => {
           } as const satisfies DataPortSchema;
         }
 
-        override async execute(input: TaskInput): Promise<any> {
+        override async execute(_input: TaskInput): Promise<any> {
           return { value: 42 };
         }
       }
@@ -684,7 +684,7 @@ describe("TaskGraph with format annotations", () => {
           } as const satisfies DataPortSchema;
         }
 
-        override async execute(input: TaskInput): Promise<any> {
+        override async execute(_input: TaskInput): Promise<any> {
           return { data: [1.0, 2.0, 3.0] };
         }
       }
@@ -717,7 +717,7 @@ describe("TaskGraph with format annotations", () => {
           } as const satisfies DataPortSchema;
         }
 
-        override async execute(input: TaskInput): Promise<any> {
+        override async execute(_input: TaskInput): Promise<any> {
           return { result: "processed" };
         }
       }
@@ -764,7 +764,7 @@ describe("TaskGraph with format annotations", () => {
           } as const satisfies DataPortSchema;
         }
 
-        override async execute(input: TaskInput): Promise<any> {
+        override async execute(_input: TaskInput): Promise<any> {
           return { data: [1.0, 2.0, 3.0] };
         }
       }
@@ -797,7 +797,7 @@ describe("TaskGraph with format annotations", () => {
           } as const satisfies DataPortSchema;
         }
 
-        override async execute(input: TaskInput): Promise<any> {
+        override async execute(_input: TaskInput): Promise<any> {
           return { result: "processed" };
         }
       }
@@ -862,7 +862,7 @@ describe("TaskGraph with format annotations", () => {
           return true; // Returns anything
         }
 
-        override async execute(input: TaskInput): Promise<any> {
+        override async execute(_input: TaskInput): Promise<any> {
           return {};
         }
       }
@@ -893,7 +893,7 @@ describe("TaskGraph with format annotations", () => {
           return false; // Rejects everything
         }
 
-        override async execute(input: TaskInput): Promise<any> {
+        override async execute(_input: TaskInput): Promise<any> {
           return {};
         }
       }

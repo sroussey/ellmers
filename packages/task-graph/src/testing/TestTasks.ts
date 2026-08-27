@@ -197,7 +197,7 @@ export class FailingTask extends Task {
   }
 
   override async execute(
-    input: TaskInput,
+    _input: TaskInput,
     executeContext: IExecuteContext
   ): Promise<{ out: number }> {
     // Delay so abort signal has time to take effect
@@ -571,7 +571,7 @@ export class TestInputTask extends Task<{ customInput: string }, { output: strin
 export class LongRunningTask extends Task {
   static override type = "LongRunningTask";
 
-  override async execute(input: TaskInput, executeContext: IExecuteContext): Promise<any> {
+  override async execute(_input: TaskInput, executeContext: IExecuteContext): Promise<any> {
     while (true) {
       if (executeContext.signal?.aborted) {
         throw new TaskAbortedError(ABORT_MESSAGE);
@@ -778,7 +778,7 @@ export class VectorOutputTask extends Task<{ text: string }, { vector: Float32Ar
     } as const satisfies DataPortSchema;
   }
 
-  override async execute(input: { text: string }): Promise<{ vector: Float32Array }> {
+  override async execute(_input: { text: string }): Promise<{ vector: Float32Array }> {
     return { vector: new Float32Array([0.1, 0.2, 0.3]) };
   }
 }
@@ -867,7 +867,7 @@ export class VectorOneOfOutputTask extends Task<{ text: string }, { embedding: F
     } as const satisfies DataPortSchema;
   }
 
-  override async execute(input: { text: string }): Promise<{ embedding: Float32Array }> {
+  override async execute(_input: { text: string }): Promise<{ embedding: Float32Array }> {
     return { embedding: new Float32Array([0.4, 0.5, 0.6]) };
   }
 }
@@ -1934,7 +1934,7 @@ export class ModelProviderTask extends Task<{ config: string }, { model: string 
     } as const satisfies DataPortSchema;
   }
 
-  override async execute(input: TaskInput): Promise<any> {
+  override async execute(_input: TaskInput): Promise<any> {
     return { model: "generic-model" };
   }
 }
@@ -1969,7 +1969,7 @@ export class EmbeddingModelProviderTask extends Task<{ config: string }, { model
     } as const satisfies DataPortSchema;
   }
 
-  override async execute(input: TaskInput): Promise<any> {
+  override async execute(_input: TaskInput): Promise<any> {
     return { model: "embedding-model" };
   }
 }
@@ -2052,7 +2052,7 @@ export class EmbeddingConsumerTask extends Task<{ model: string }, { embeddings:
     } as const satisfies DataPortSchema;
   }
 
-  override async execute(input: TaskInput): Promise<any> {
+  override async execute(_input: TaskInput): Promise<any> {
     return { embeddings: [1, 2, 3] };
   }
 }
@@ -2087,7 +2087,7 @@ export class PromptProviderTask extends Task<{ text: string }, { prompt: string 
     } as const satisfies DataPortSchema;
   }
 
-  override async execute(input: TaskInput): Promise<any> {
+  override async execute(_input: TaskInput): Promise<any> {
     return { prompt: "generated prompt" };
   }
 }
@@ -2122,7 +2122,7 @@ export class TextGenerationModelProviderTask extends Task<{ config: string }, { 
     } as const satisfies DataPortSchema;
   }
 
-  override async execute(input: TaskInput): Promise<any> {
+  override async execute(_input: TaskInput): Promise<any> {
     return { model: "text-generation-model" };
   }
 }
@@ -2156,7 +2156,7 @@ export class PlainStringProviderTask extends Task<{ input: string }, { output: s
     } as const satisfies DataPortSchema;
   }
 
-  override async execute(input: TaskInput): Promise<any> {
+  override async execute(_input: TaskInput): Promise<any> {
     return { output: "plain string" };
   }
 }
@@ -2190,7 +2190,7 @@ export class PlainStringConsumerTask extends Task<{ input: string }, { result: s
     } as const satisfies DataPortSchema;
   }
 
-  override async execute(input: TaskInput): Promise<any> {
+  override async execute(_input: TaskInput): Promise<any> {
     return { result: "processed" };
   }
 }
@@ -2270,7 +2270,7 @@ export class TaskCreatorTask extends Task {
   static override type = "TaskCreatorTask";
   static override category = "Test";
 
-  override async execute(input: TaskInput, context: any): Promise<TaskOutput> {
+  override async execute(_input: TaskInput, context: any): Promise<TaskOutput> {
     const simpleTask = new Task();
     context.own(simpleTask);
 

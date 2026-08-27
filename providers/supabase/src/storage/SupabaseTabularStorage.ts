@@ -1208,7 +1208,7 @@ export class SupabaseTabularStorage<
    */
   public override subscribeToChanges(
     callback: (change: TabularChangePayload<Entity>) => void,
-    options?: TabularSubscribeOptions
+    _options?: TabularSubscribeOptions
   ): () => void {
     // Create a unique channel name
     const channelName = `tabular-${this.table}-${Date.now()}`;

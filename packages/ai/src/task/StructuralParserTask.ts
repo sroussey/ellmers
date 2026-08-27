@@ -111,7 +111,7 @@ export class StructuralParserTask extends Task<
 
   override async execute(
     input: StructuralParserTaskInput,
-    context: IExecuteContext
+    _context: IExecuteContext
   ): Promise<StructuralParserTaskOutput> {
     const { text, title, format = "auto", sourceUri, doc_id: providedDocId } = input;
 

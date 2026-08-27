@@ -40,7 +40,7 @@ class WFStreamSource extends Task<TextInput, TextOutput> {
 
   async *executeStream(
     _input: TextInput,
-    context: IExecuteContext
+    _context: IExecuteContext
   ): AsyncIterable<StreamEvent<TextOutput>> {
     yield { type: "text-delta", port: "text", textDelta: "alpha" };
     await sleep(5);
@@ -196,7 +196,7 @@ describe("Workflow Streaming Events", () => {
 
       async *executeStream(
         _input: TextInput,
-        context: IExecuteContext
+        _context: IExecuteContext
       ): AsyncIterable<StreamEvent<TextOutput>> {
         yield { type: "text-delta", port: "text", textDelta: "before error" };
         yield { type: "error", error: new Error("stream failed") };

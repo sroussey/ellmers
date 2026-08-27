@@ -130,7 +130,7 @@ export class TopicSegmenterTask extends Task<
 
   override async execute(
     input: TopicSegmenterTaskInput,
-    context: IExecuteContext
+    _context: IExecuteContext
   ): Promise<TopicSegmenterTaskOutput> {
     const {
       text,

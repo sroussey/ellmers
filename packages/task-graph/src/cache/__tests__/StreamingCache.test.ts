@@ -53,7 +53,7 @@ class CacheAppendStreamTask extends Task<CacheTestInput, CacheTestOutput> {
 
   async *executeStream(
     _input: CacheTestInput,
-    context: IExecuteContext
+    _context: IExecuteContext
   ): AsyncIterable<StreamEvent<CacheTestOutput>> {
     appendStreamCallCount++;
     yield { type: "text-delta", port: "text", textDelta: "cached " };
@@ -95,7 +95,7 @@ class CacheReplaceStreamTask extends Task<CacheTestInput, CacheTestOutput> {
 
   async *executeStream(
     _input: CacheTestInput,
-    context: IExecuteContext
+    _context: IExecuteContext
   ): AsyncIterable<StreamEvent<CacheTestOutput>> {
     replaceStreamCallCount++;
     yield { type: "snapshot", data: { text: "partial" } };
@@ -135,7 +135,7 @@ class NoCacheAppendStreamTask extends Task<CacheTestInput, CacheTestOutput> {
 
   async *executeStream(
     _input: CacheTestInput,
-    context: IExecuteContext
+    _context: IExecuteContext
   ): AsyncIterable<StreamEvent<CacheTestOutput>> {
     yield { type: "text-delta", port: "text", textDelta: "no-cache " };
     yield { type: "text-delta", port: "text", textDelta: "output" };

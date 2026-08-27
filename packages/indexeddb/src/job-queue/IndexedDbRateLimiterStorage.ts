@@ -231,7 +231,7 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
     });
   }
 
-  public async releaseExecution(queueName: string, token: unknown): Promise<void> {
+  public async releaseExecution(_queueName: string, token: unknown): Promise<void> {
     if (token === null || token === undefined) return;
     const db = await this.getExecutionDb();
     const tx = db.transaction(this.executionTableName, "readwrite");

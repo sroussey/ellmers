@@ -880,8 +880,8 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
    * @throws Error always - subscribeToChanges is not supported for SQLite storage
    */
   public subscribeToChanges(
-    callback: (change: QueueChangePayload<Input, Output>) => void,
-    options?: QueueSubscribeOptions
+    _callback: (change: QueueChangePayload<Input, Output>) => void,
+    _options?: QueueSubscribeOptions
   ): () => void {
     throw new Error("subscribeToChanges is not supported for SqliteQueueStorage");
   }

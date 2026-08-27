@@ -30,7 +30,7 @@ export class NullLimiter implements ILimiter {
     return new Date();
   }
 
-  async setNextAvailableTime(date: Date): Promise<void> {}
+  async setNextAvailableTime(_date: Date): Promise<void> {}
 
   async clear(): Promise<void> {}
 }

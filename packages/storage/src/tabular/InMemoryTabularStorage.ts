@@ -179,7 +179,7 @@ export class InMemoryTabularStorage<
   }
 
   protected override generateKeyValue(
-    columnName: string,
+    _columnName: string,
     strategy: KeyGenerationStrategy
   ): string | number {
     if (strategy === "autoincrement") {
@@ -570,7 +570,7 @@ export class InMemoryTabularStorage<
   /** InMemory is both client and server, so changes flow through local events. */
   public override subscribeToChanges(
     callback: (change: TabularChangePayload<Entity>) => void,
-    options?: TabularSubscribeOptions
+    _options?: TabularSubscribeOptions
   ): () => void {
     const handlePut = (entity: Entity) => {
       callback({ type: this._lastPutWasInsert ? "INSERT" : "UPDATE", new: entity });

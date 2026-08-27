@@ -103,7 +103,7 @@ export class TestJob extends Job<TInput, TOutput> {
     }
 
     if (input.taskType === "long_running") {
-      return new Promise<TOutput>((resolve, reject) => {
+      return new Promise<TOutput>((_resolve, reject) => {
         context.signal.addEventListener(
           "abort",
           () => {

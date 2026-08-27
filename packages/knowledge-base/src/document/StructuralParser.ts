@@ -15,7 +15,7 @@ export class StructuralParser {
    * `String.prototype.slice()`).
    */
   static async parseMarkdown(
-    doc_id: string,
+    _doc_id: string,
     text: string,
     title: string
   ): Promise<DocumentRootNode> {
@@ -135,7 +135,7 @@ export class StructuralParser {
 
   /** Splits by blank lines to produce paragraph nodes. */
   static async parsePlainText(
-    doc_id: string,
+    _doc_id: string,
     text: string,
     title: string
   ): Promise<DocumentRootNode> {

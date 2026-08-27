@@ -62,7 +62,7 @@ export function isDarkMode(): boolean {
 }
 
 class WorkflowConsoleFormatter extends ConsoleFormatter {
-  header(workflow: Workflow | TaskGraph, config?: Config): JsonMLElementDef | null {
+  header(workflow: Workflow | TaskGraph, _config?: Config): JsonMLElementDef | null {
     if (workflow instanceof Workflow || workflow instanceof TaskGraph) {
       const graph: TaskGraph = workflow instanceof TaskGraph ? workflow : workflow.graph;
       const error = workflow instanceof Workflow ? workflow.error : "";
@@ -79,11 +79,11 @@ class WorkflowConsoleFormatter extends ConsoleFormatter {
     return null;
   }
 
-  hasBody(value: unknown, config?: Config): boolean {
+  hasBody(_value: unknown, _config?: Config): boolean {
     return true;
   }
 
-  body(obj: unknown, config?: Config): JsonMLElementDef {
+  body(obj: unknown, _config?: Config): JsonMLElementDef {
     const body = new JsonMLElement("div");
     const graph: TaskGraph = obj instanceof TaskGraph ? obj : (obj as Workflow).graph;
     const nodes = body.createStyledList();
@@ -150,7 +150,7 @@ class WorkflowConsoleFormatter extends ConsoleFormatter {
 }
 
 class WorkflowAPIConsoleFormatter extends ConsoleFormatter {
-  header(obj: unknown, config?: Config): JsonMLElementDef | null {
+  header(obj: unknown, _config?: Config): JsonMLElementDef | null {
     if (obj === Workflow.prototype || obj === Workflow) {
       const header = new JsonMLElement("div");
       header.sectionHeader("Workflow API");
@@ -159,7 +159,7 @@ class WorkflowAPIConsoleFormatter extends ConsoleFormatter {
     return null;
   }
 
-  hasBody(value: unknown, config?: Config): boolean {
+  hasBody(_value: unknown, _config?: Config): boolean {
     return true;
   }
 
@@ -195,7 +195,7 @@ interface WorkflowCreateObject {
 }
 
 class CreateWorkflowConsoleFormatter extends ConsoleFormatter {
-  header(obj: unknown, config?: Config): JsonMLElementDef | null {
+  header(obj: unknown, _config?: Config): JsonMLElementDef | null {
     const workflowObj = obj as WorkflowCreateObject;
     if (workflowObj.workflowCreate) {
       const header = new JsonMLElement("div");
@@ -240,11 +240,11 @@ class CreateWorkflowConsoleFormatter extends ConsoleFormatter {
     return null;
   }
 
-  hasBody(value: unknown, config?: Config): boolean {
+  hasBody(_value: unknown, _config?: Config): boolean {
     return false;
   }
 
-  body(obj: unknown, config?: Config): JsonMLElementDef | null {
+  body(_obj: unknown, _config?: Config): JsonMLElementDef | null {
     return null;
   }
 }
@@ -332,7 +332,7 @@ class TaskConsoleFormatter extends ConsoleFormatter {
     return null;
   }
 
-  hasBody(task: unknown, config?: Config): boolean {
+  hasBody(task: unknown, _config?: Config): boolean {
     return task instanceof Task;
   }
 
@@ -448,7 +448,7 @@ class TaskConsoleFormatter extends ConsoleFormatter {
 }
 
 class DAGConsoleFormatter extends ConsoleFormatter {
-  header(obj: unknown, config?: Config): JsonMLElementDef | null {
+  header(obj: unknown, _config?: Config): JsonMLElementDef | null {
     if (obj instanceof DirectedAcyclicGraph) {
       const header = new JsonMLElement("div");
       header.createTextChild("DAG");
@@ -457,11 +457,11 @@ class DAGConsoleFormatter extends ConsoleFormatter {
     return null;
   }
 
-  hasBody(value: unknown, config?: Config): boolean {
+  hasBody(_value: unknown, _config?: Config): boolean {
     return true;
   }
 
-  body(obj: unknown, config?: Config): JsonMLElementDef {
+  body(obj: unknown, _config?: Config): JsonMLElementDef {
     const body = new JsonMLElement("div");
     body.createStyledList();
     const dag = obj as DirectedAcyclicGraph<NodeWithConfig, unknown, string, unknown>;
@@ -480,7 +480,7 @@ class DAGConsoleFormatter extends ConsoleFormatter {
 }
 
 class DataflowConsoleFormatter extends ConsoleFormatter {
-  header(obj: unknown, config?: Config): JsonMLElementDef | null {
+  header(obj: unknown, _config?: Config): JsonMLElementDef | null {
     if (obj instanceof Dataflow) {
       const header = new JsonMLElement("div");
       header.highlightText("Dataflow ");
@@ -496,11 +496,11 @@ class DataflowConsoleFormatter extends ConsoleFormatter {
     return null;
   }
 
-  hasBody(value: unknown, config?: Config): boolean {
+  hasBody(_value: unknown, _config?: Config): boolean {
     return true;
   }
 
-  body(obj: unknown, config?: Config): JsonMLElementDef | null {
+  body(_obj: unknown, _config?: Config): JsonMLElementDef | null {
     return null;
   }
 }
@@ -550,11 +550,11 @@ class ReactElementConsoleFormatter extends ConsoleFormatter {
     return null;
   }
 
-  hasBody(value: unknown, config?: Config): boolean {
+  hasBody(_value: unknown, _config?: Config): boolean {
     return true;
   }
 
-  body(obj: unknown, config?: Config): JsonMLElementDef {
+  body(obj: unknown, _config?: Config): JsonMLElementDef {
     const body = new JsonMLElement("div");
     const props = body.createStyledList("Props:");
     const reactEl = obj as ReactElement;

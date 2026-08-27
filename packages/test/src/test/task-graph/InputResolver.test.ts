@@ -455,7 +455,7 @@ describe("InputResolver", () => {
   describe("registerInputResolver", () => {
     test("should register custom resolver", async () => {
       // Register a custom resolver for a test format
-      registerInputResolver("custom", (id, format, registry) => {
+      registerInputResolver("custom", (id, format, _registry) => {
         return { resolved: true, id, format };
       });
 
@@ -478,7 +478,7 @@ describe("InputResolver", () => {
     });
 
     test("should support async resolvers", async () => {
-      registerInputResolver("async", async (id, format, registry) => {
+      registerInputResolver("async", async (id, _format, _registry) => {
         await sleep(10);
         return { asyncResolved: true, id };
       });

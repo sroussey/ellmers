@@ -123,7 +123,7 @@ export class QueryExpanderTask extends Task<
 
   override async execute(
     input: QueryExpanderTaskInput,
-    context: IExecuteContext
+    _context: IExecuteContext
   ): Promise<QueryExpanderTaskOutput> {
     const { query, method = QueryExpansionMethod.MULTI_QUERY, numVariations = 3 } = input;
 

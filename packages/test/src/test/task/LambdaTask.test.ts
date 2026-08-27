@@ -124,7 +124,7 @@ describe("LambdaTask", () => {
     });
     graph.addTask(task);
     let progressCounter = 0;
-    task.on("progress", (progress: number | undefined) => {
+    task.on("progress", () => {
       progressCounter++;
     });
     const results = await graph.run();

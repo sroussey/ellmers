@@ -47,7 +47,7 @@ export const stringifyTransform: ITransformDef = {
   paramsSchema: undefined,
   inferOutputSchema: () => stringSchema,
   apply: (v) => JSON.stringify(v),
-  suggestFromSchemas(source, target) {
+  suggestFromSchemas(_source, target) {
     const t = target as any;
     return t?.type === "string" ? { score: 0.4, params: {} } : undefined;
   },
