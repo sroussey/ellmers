@@ -22,6 +22,7 @@ import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOut
 import type { Taskish } from "../task-graph/Conversions";
 import { ensureTask } from "../task-graph/Conversions";
 import { CacheCoordinator } from "./CacheCoordinator";
+import { ENTITLEMENT_ENFORCER, formatEntitlementDenial } from "./EntitlementEnforcer";
 import { resolveSchemaInputs, schemaHasFormatAnnotations } from "./InputResolver";
 import type { ConfigNotApplicableToAnExistingTask, IRunConfig, ITask } from "./ITask";
 import type { ITaskRunner } from "./ITaskRunner";
@@ -43,6 +44,7 @@ import { Task } from "./Task";
 import {
   TaskAbortedError,
   TaskConfigurationError,
+  TaskEntitlementError,
   TaskError,
   TaskFailedError,
   TaskInvalidInputError,
@@ -306,6 +308,34 @@ export class TaskRunner<
   // Public methods
   // ========================================================================
 
+  /**
+   * Applies the registered enforcer to this task when the run asks for it.
+   *
+   * `enforceEntitlements` travels with a run rather than being read off the
+   * graph, so nested work inherits it: `own()` stamps it onto the children a
+   * task takes, and `GraphAsTaskRunner` hands it to `subGraph.run`. Absent it,
+   * enforcement stopped at the top-level graph and everything below — owned
+   * children, every task inside a subgraph — ran unchecked.
+   *
+   * Missing enforcer is an error, not a silent pass: the same contract
+   * `TaskGraphRunner` states for its own pre-flight.
+   */
+  private async enforceEntitlementsForRun(config: IRunConfig): Promise<void> {
+    if (config.enforceEntitlements !== true) return;
+    if (!this.registry.has(ENTITLEMENT_ENFORCER)) {
+      throw new TaskConfigurationError(
+        "enforceEntitlements is enabled but no IEntitlementEnforcer is registered. " +
+          "Register an enforcer via ENTITLEMENT_ENFORCER before running the task."
+      );
+    }
+    const denied = await this.registry.get(ENTITLEMENT_ENFORCER).checkTask(this.task);
+    if (denied.length > 0) {
+      throw new TaskEntitlementError(
+        `Task ${this.task.type} denied entitlements: ${denied.map(formatEntitlementDenial).join(", ")}`
+      );
+    }
+  }
+
   async run(overrides: Partial<Input> = {}, config: IRunConfig = {}): Promise<Output> {
     // Reject concurrent run() on the same TaskRunner. Mirrors
     // TaskGraphRunner.handleStart's "Graph is already running" check.
@@ -360,6 +390,17 @@ export class TaskRunner<
           await this.handleAbort(ctx);
           throw new TaskAbortedError("Promise for task created and aborted before run");
         }
+
+        // Runs the graph scheduler dispatches are checked by TaskGraphRunner,
+        // which builds their config explicitly and never sets this flag — so a
+        // run reaching here with it set is one the graph never saw: a bare
+        // `task.run()`, or a child a parent took with `context.own()`. Owned
+        // children used to reach the network unchecked entirely (they run via
+        // `child.run()`, not the scheduler), leaving the owner's declaration as
+        // the only thing standing between a resolved private destination and
+        // the request. Checked here rather than at `own()` time because the
+        // child's input is only settled now, after hydration and validation.
+        await this.enforceEntitlementsForRun(effectiveConfig);
 
         const isStreamable = isTaskStreamable(this.task) || isStreamConsumer(this.task);
 
@@ -1090,6 +1131,13 @@ export class TaskRunner<
       const stamp: Partial<IRunConfig> = {
         registry: this.registry,
         signal: this.currentCtx?.abortController.signal,
+        // An owned child runs via `child.run()`, which the graph scheduler
+        // never sees, so enforcement has to travel to it explicitly or the
+        // child is checked by nothing at all. Read off the task rather than
+        // this runner's config: the scheduler marks the task it is running,
+        // and builds that run's config without the flag so the parent is not
+        // re-checked.
+        enforceEntitlements: this.task.runConfig?.enforceEntitlements,
         // An owned child's own `task.run()` needs these to reach the run total,
         // but they belong to the parent RUN, not to the child — `run()`'s
         // `finally` restores what was there before.
