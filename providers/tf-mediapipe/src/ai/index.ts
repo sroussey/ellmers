@@ -25,6 +25,7 @@ export {
 } from "./common/TFMP_Runtime";
 
 import { TFMP_RUN_FN_SPECS } from "./common/TFMP_Capabilities";
+import { toTexImageSource } from "./common/TFMP_Image";
 import { buildGenaiPrompt, resolveTfmpChatTemplate } from "./common/TFMP_ChatTemplate";
 import { resolveTfmpDelegate } from "./common/TFMP_Delegate";
 import { isGenaiBusy, withGenaiLock } from "./common/TFMP_GenaiRuntime";
@@ -41,6 +42,7 @@ export const _testOnly = {
   TFMP_RUN_FN_SPECS,
   TFMP_RUN_FNS,
   TFMP_PREVIEW_TASKS,
+  toTexImageSource,
   buildGenaiPrompt,
   resolveTfmpChatTemplate,
   resolveTfmpDelegate,

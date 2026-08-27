@@ -11,6 +11,7 @@ import type {
 } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
 import { loadTfmpTasksVisionSDK } from "./TFMP_Client";
+import { toTexImageSource } from "./TFMP_Image";
 import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
@@ -33,7 +34,7 @@ export const TFMP_PoseLandmarker: AiProviderRunFn<
     signal,
     PoseLandmarker
   );
-  const result = poseLandmarker.detect(input.image);
+  const result = poseLandmarker.detect(toTexImageSource(input.image));
 
   if (!result.landmarks) {
     throw new PermanentJobError("Failed to detect pose landmarks: Empty result");

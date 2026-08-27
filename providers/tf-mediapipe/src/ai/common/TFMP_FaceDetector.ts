@@ -7,6 +7,7 @@
 import type { AiProviderRunFn, FaceDetectorTaskInput, FaceDetectorTaskOutput } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
 import { loadTfmpTasksVisionSDK } from "./TFMP_Client";
+import { toTexImageSource } from "./TFMP_Image";
 import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
@@ -26,7 +27,7 @@ export const TFMP_FaceDetector: AiProviderRunFn<
     signal,
     FaceDetector
   );
-  const result = faceDetector.detect(input.image as any);
+  const result = faceDetector.detect(toTexImageSource(input.image));
 
   if (!result.detections) {
     throw new PermanentJobError("Failed to detect faces: Empty result");

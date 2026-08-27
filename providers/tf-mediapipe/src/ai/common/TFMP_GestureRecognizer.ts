@@ -11,6 +11,7 @@ import type {
 } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
 import { loadTfmpTasksVisionSDK } from "./TFMP_Client";
+import { toTexImageSource } from "./TFMP_Image";
 import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
@@ -32,7 +33,7 @@ export const TFMP_GestureRecognizer: AiProviderRunFn<
     signal,
     GestureRecognizer
   );
-  const result = gestureRecognizer.recognize(input.image);
+  const result = gestureRecognizer.recognize(toTexImageSource(input.image));
 
   if (!result.gestures || !result.landmarks) {
     throw new PermanentJobError("Failed to recognize gestures: Empty result");
