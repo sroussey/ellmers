@@ -12,7 +12,7 @@ import { Gemini_ModelSearch_Stream as Gemini_ModelSearch } from "@workglow/googl
 import { HFI_ModelSearch } from "@workglow/huggingface-inference/ai";
 import { OpenAI_ModelSearch_Stream as OpenAI_ModelSearch } from "@workglow/openai/ai";
 import { mapOpenRouterModels, OPENROUTER_FALLBACK_MODELS } from "@workglow/openrouter/ai";
-import { TENSORFLOW_MEDIAPIPE, TFMP_ModelSearch } from "@workglow/tf-mediapipe/ai";
+import { _testOnly as tfmp, TENSORFLOW_MEDIAPIPE, TFMP_ModelSearch } from "@workglow/tf-mediapipe/ai";
 import { Xai_ModelSearch_Stream as Xai_ModelSearch } from "@workglow/xai/ai";
 import { afterEach, describe, expect, test } from "vitest";
 
@@ -219,6 +219,33 @@ describe("provider model search samples", () => {
         collectStream
       )
     ).rejects.toThrow("HuggingFace API returned 401");
+  });
+
+  // Lifecycle/meta capabilities describe what the provider can do to a model,
+  // not what a model is for, so no catalog entry needs to advertise them.
+  const TFMP_LIFECYCLE_CAPABILITIES = new Set([
+    "model.count-tokens",
+    "model.download",
+    "model.download-remove",
+    "model.info",
+    "model.search",
+  ]);
+
+  test("TensorFlow MediaPipe search offers a model for every inference capability it serves", async () => {
+    const { results } = (await collectStream(
+      await runFnToIterable(TFMP_ModelSearch, { provider: TENSORFLOW_MEDIAPIPE, query: "" })
+    )) as { results: ModelSearchResult[] };
+
+    const offered = new Set(
+      results.flatMap((r) => (r.record as { capabilities?: string[] } | undefined)?.capabilities ?? [])
+    );
+    const served = [...new Set(tfmp.TFMP_RUN_FN_SPECS.flatMap((spec) => spec.serves))].filter(
+      (capability) => !TFMP_LIFECYCLE_CAPABILITIES.has(capability)
+    );
+
+    // A served capability with no searchable model leaves the task's model
+    // picker empty even though the provider can run it.
+    expect(served.filter((capability) => !offered.has(capability))).toEqual([]);
   });
 
   test("TensorFlow MediaPipe search includes known model records", async () => {
