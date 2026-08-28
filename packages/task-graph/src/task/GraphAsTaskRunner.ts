@@ -46,8 +46,9 @@ export class GraphAsTaskRunner<
       return await this.task.subGraph!.run<Output>(input, {
         parentSignal: this.currentCtx?.abortController.signal,
         outputCache: this.outputCache,
-        registry: this.registry,
-        resourceScope: this.resourceScope,
+        // Same accessor `GraphAsTask.executeStream` reads, so the streaming and
+        // non-streaming paths cannot hand a subgraph different run-scoped state.
+        ...this.subGraphRunContext,
         enforceEntitlements: this.task.runConfig?.enforceEntitlements,
         ...this.streamRunOptions,
       });
