@@ -178,6 +178,27 @@ export class TaskRunner<
   protected resourceScope?: ResourceScope;
 
   /**
+   * The run-scoped context a compound task must hand to a subgraph it runs
+   * itself, rather than letting that subgraph resolve its own.
+   *
+   * Both halves are `protected`, and both are needed off the runner by
+   * {@link GraphAsTask.executeStream}, which runs the subgraph from the TASK
+   * rather than from a runner subclass. Exposed as one accessor so the
+   * streaming path and {@link GraphAsTaskRunner}'s non-streaming path cannot
+   * hand a subgraph different things: a subgraph resolving its own registry
+   * misses a caller's cache overrides, and one minting its own
+   * {@link ResourceScope} owns it — so a cache checkpoint created inside a
+   * streaming group is disposed when that group ends instead of with the run,
+   * and is invisible to every sibling that should have shared it.
+   */
+  public get subGraphRunContext(): {
+    registry: ServiceRegistry;
+    resourceScope: ResourceScope | undefined;
+  } {
+    return { registry: this.registry, resourceScope: this.resourceScope };
+  }
+
+  /**
    * Where a charge that settles after this run finished is reported. Not
    * cleared in `run()`'s `finally` — the whole point is that it fires after
    * the run. It is instead replaced by every `handleStart`, supplied or not:
@@ -1033,9 +1054,11 @@ export class TaskRunner<
    *
    * `lateUsageSink` rides here rather than being threaded per call site
    * because every nested-run site already spreads this — including
-   * `GraphAsTask.executeStream`, which threads neither `registry` nor
-   * `resourceScope` and would otherwise leave a streaming subgraph's late
-   * charge in an inner aggregator the root run never reads.
+   * `GraphAsTask.executeStream`, which would otherwise leave a streaming
+   * subgraph's late charge in an inner aggregator the root run never reads.
+   * (That site takes `registry` and `resourceScope` from
+   * {@link subGraphRunContext} and passes `enforceEntitlements` alongside it;
+   * those are the run-scoped state a subgraph must not resolve for itself.)
    */
   public get streamRunOptions(): Pick<
     IRunConfig,
