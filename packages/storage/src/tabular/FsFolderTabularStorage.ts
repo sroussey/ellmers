@@ -43,6 +43,13 @@ export const FS_FOLDER_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage
   "storage.tabularRepository.fsFolder"
 );
 
+/**
+ * Ceiling on simultaneously open row files. A folder-backed store reading
+ * every row at once is how a busy box runs itself out of file descriptors,
+ * and an `EMFILE` here is indistinguishable from a row that does not exist.
+ */
+const FS_READ_CONCURRENCY = 32;
+
 class FsFolderMigrationApplier extends InMemoryTabularMigrationApplier {
   private loaded = false;
   constructor(
@@ -245,16 +252,9 @@ export class FsFolderTabularStorage<
   async get(key: PrimaryKey): Promise<Entity | undefined> {
     await this.setupDirectory();
     const filePath = await this.getFilePath(key);
-    try {
-      const buf = await readFile(filePath);
-      const data = buf.toString("utf8");
-      const entity = JSON.parse(data) as Entity;
-      safeEmit(this.events, "get", key, entity);
-      return entity;
-    } catch (error) {
-      safeEmit(this.events, "get", key, undefined);
-      return undefined;
-    }
+    const entity = await this.readRowFile(filePath, "get");
+    safeEmit(this.events, "get", key, entity);
+    return entity;
   }
 
   async delete(value: PrimaryKey | Entity): Promise<void> {
@@ -275,25 +275,11 @@ export class FsFolderTabularStorage<
   async getAll(): Promise<Entity[] | undefined> {
     await this.setupDirectory();
     try {
-      const files = await readdir(this.folderPath);
-      // Exclude internal bookkeeping files (prefixed with "_").
-      const jsonFiles = files.filter((file) => file.endsWith(".json") && !file.startsWith("_"));
+      const jsonFiles = await this.listRowFiles();
       if (jsonFiles.length === 0) {
         return undefined;
       }
-      const results = await Promise.allSettled(
-        jsonFiles.map(async (file) => {
-          const buf = await readFile(path.join(this.folderPath, file));
-          const content = buf.toString("utf8");
-          const data = JSON.parse(content) as Entity;
-          return data;
-        })
-      );
-
-      const values = results
-        .filter((result) => result.status === "fulfilled")
-        .map((result) => result.value);
-
+      const values = await this.readRowFiles(jsonFiles, "getAll");
       return values.length > 0 ? values : undefined;
     } catch (error) {
       getLogger().error("Error in getAll:", { error });
@@ -314,10 +300,75 @@ export class FsFolderTabularStorage<
 
   async size(): Promise<number> {
     await this.setupDirectory();
-    // Count data files only; exclude internal bookkeeping files (prefixed with "_").
+    return (await this.listRowFiles()).length;
+  }
+
+  /** Row files in the folder, excluding internal bookkeeping ("_"-prefixed) ones. */
+  private async listRowFiles(): Promise<string[]> {
     const files = await readdir(this.folderPath);
-    const jsonFiles = files.filter((file) => file.endsWith(".json") && !file.startsWith("_"));
-    return jsonFiles.length;
+    return files.filter((file) => file.endsWith(".json") && !file.startsWith("_"));
+  }
+
+  /**
+   * Reads the named row files, preserving their order. Reads run at bounded
+   * concurrency so listing a large folder cannot exhaust the process's file
+   * descriptors and manufacture the very failure below.
+   */
+  private async readRowFiles(fileNames: ReadonlyArray<string>, context: string): Promise<Entity[]> {
+    const results = new Array<Entity | undefined>(fileNames.length);
+    let next = 0;
+    const workers = Array.from(
+      { length: Math.min(FS_READ_CONCURRENCY, fileNames.length) },
+      async () => {
+        while (next < fileNames.length) {
+          const index = next++;
+          results[index] = await this.readRowFile(
+            path.join(this.folderPath, fileNames[index]),
+            context
+          );
+        }
+      }
+    );
+    await Promise.all(workers);
+    return results.filter((entity): entity is Entity => entity !== undefined);
+  }
+
+  /**
+   * Reads one row file. A file that is gone (deleted between the listing and
+   * the read) means "no row here" and is skipped; one whose contents do not
+   * parse is skipped too, with a warning, since that is corruption.
+   *
+   * Every other read failure is transient, and it gets one retry and is then
+   * thrown. Swallowing it would return a row set that is short but looks
+   * complete: `size()` still counts the file, and a migration backfill walking
+   * these pages would leave the row un-migrated with nothing in the log.
+   */
+  private async readRowFile(filePath: string, context: string): Promise<Entity | undefined> {
+    let content: string;
+    try {
+      content = await readFile(filePath, "utf8");
+    } catch (error) {
+      if ((error as { code?: string })?.code === "ENOENT") return undefined;
+      // CI system sometimes has issues temporarily; retry once.
+      await sleep(1);
+      try {
+        content = await readFile(filePath, "utf8");
+      } catch (retryError) {
+        if ((retryError as { code?: string })?.code === "ENOENT") return undefined;
+        throw new Error(
+          `Failed to read file "${filePath}" after retry in ${context}: ${
+            retryError instanceof Error ? retryError.message : String(retryError)
+          }`,
+          { cause: retryError }
+        );
+      }
+    }
+    try {
+      return JSON.parse(content) as Entity;
+    } catch (error) {
+      getLogger().warn(`Skipping corrupted file in ${context}`, { filePath, error });
+      return undefined;
+    }
   }
 
   async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
@@ -326,36 +377,13 @@ export class FsFolderTabularStorage<
     // fails the same way across backends instead of silently slicing.
     this.validateGetAllOptions({ offset, limit });
     await this.setupDirectory();
-    const files = await readdir(this.folderPath);
-    // Exclude internal bookkeeping files (prefixed with "_").
-    const jsonFiles = files.filter((file) => file.endsWith(".json") && !file.startsWith("_"));
+    const jsonFiles = await this.listRowFiles();
 
     if (jsonFiles.length === 0) {
       return undefined;
     }
 
-    const results = await Promise.allSettled(
-      jsonFiles.map(async (file) => {
-        const filePath = path.join(this.folderPath, file);
-        try {
-          const content = await readFile(filePath, "utf8");
-          return JSON.parse(content) as Entity;
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          throw new Error(`Failed to read or parse "${filePath}": ${message}`);
-        }
-      })
-    );
-    const allEntities: Entity[] = [];
-    for (const result of results) {
-      if (result.status === "fulfilled") {
-        allEntities.push(result.value);
-      } else {
-        getLogger().warn(
-          `Skipping corrupted file in getOffsetPage: ${result.reason?.message ?? result.reason}`
-        );
-      }
-    }
+    const allEntities = await this.readRowFiles(jsonFiles, "getOffsetPage");
 
     // Sort by primary key for deterministic ordering. O(n log n) on every
     // call — acceptable because this backend is for small datasets / tests.

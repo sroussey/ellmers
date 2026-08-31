@@ -7,7 +7,7 @@
 import { FsFolderTabularStorage } from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
-import { mkdirSync, rmSync } from "fs";
+import { mkdirSync, rmSync, writeFileSync } from "fs";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { runTabularStorageContract } from "../../contract/tabular-storage/runTabularStorageContract";
 import { runGenericTabularStorageSubscriptionTests } from "./genericTabularStorageSubscriptionTests";
@@ -87,6 +87,45 @@ describe("FsFolderTabularStorage", () => {
       } catch (error) {
         expect(error).toBeDefined();
       }
+    });
+  });
+
+  // A row file that could not be read used to be dropped from the result set,
+  // which handed callers a set that was short but looked complete: `size()`
+  // still counted the file, and a migration backfill walking these pages left
+  // that row un-migrated with nothing in the log. A directory named like a row
+  // file is the portable stand-in for the transient read failure (`EMFILE` on a
+  // loaded CI box) that produced it.
+  describe("unreadable row files", () => {
+    const seed = async () => {
+      const storage = new FsFolderTabularStorage<
+        typeof CompoundSchema,
+        typeof CompoundPrimaryKeyNames
+      >(testDir, CompoundSchema, CompoundPrimaryKeyNames);
+      await storage.setupDatabase();
+      for (let i = 0; i < 3; i++) {
+        await storage.put({ name: `n${i}`, type: "t", option: "o", success: true });
+      }
+      return storage;
+    };
+
+    test("getAll throws rather than returning the readable rows alone", async () => {
+      const storage = await seed();
+      mkdirSync(`${testDir}/unreadable.json`);
+      await expect(storage.getAll()).rejects.toThrow(/Failed to read file/);
+    });
+
+    test("getOffsetPage throws rather than returning the readable rows alone", async () => {
+      const storage = await seed();
+      mkdirSync(`${testDir}/unreadable.json`);
+      await expect(storage.getOffsetPage(0, 10)).rejects.toThrow(/Failed to read file/);
+    });
+
+    test("a corrupt row file is skipped and the readable rows still come back", async () => {
+      const storage = await seed();
+      writeFileSync(`${testDir}/corrupt.json`, "{ not json");
+      expect((await storage.getAll())?.length).toBe(3);
+      expect((await storage.getOffsetPage(0, 10))?.length).toBe(3);
     });
   });
 
