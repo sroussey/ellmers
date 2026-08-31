@@ -20,6 +20,32 @@
  */
 export type InterpreterValue = InterpreterObject | boolean | number | string | undefined | null;
 
+/**
+ * Resumes a suspended sandbox with the value an async operation produced. The
+ * RegExp paths pass `null` when the expression timed out.
+ */
+export type InterpreterCallback = (value: InterpreterValue) => void;
+
+/**
+ * A host function callable from inside the sandbox. It is applied with sandbox
+ * values for `this` and for every argument, and what it returns becomes the
+ * calling expression's sandbox value.
+ */
+export type InterpreterNativeFunction = (
+  this: InterpreterValue,
+  ...args: InterpreterValue[]
+) => InterpreterValue | void;
+
+/**
+ * A host function that resumes the sandbox through a trailing callback instead
+ * of by returning. The interpreter appends that callback after the declared
+ * arguments, which is why its arity minus one decides how many it passes.
+ */
+export type InterpreterAsyncFunction = (
+  this: InterpreterValue,
+  ...args: [...InterpreterValue[], InterpreterCallback]
+) => void;
+
 /** An AST node, as produced by the bundled Acorn parser. */
 export interface InterpreterNode {
   type: string;
@@ -130,9 +156,16 @@ export declare class Interpreter {
   createObject(constructor: InterpreterObject | null): InterpreterObject;
   createObjectProto(proto: InterpreterObject | null): InterpreterObject;
   createArray(): InterpreterObject;
-  createFunction(node: InterpreterNode, scope: InterpreterScope, opt_name?: string): InterpreterObject;
-  createNativeFunction(nativeFunc: Function, isConstructor: boolean): InterpreterObject;
-  createAsyncFunction(asyncFunc: Function): InterpreterObject;
+  createFunction(
+    node: InterpreterNode,
+    scope: InterpreterScope,
+    opt_name?: string
+  ): InterpreterObject;
+  createNativeFunction(
+    nativeFunc: InterpreterNativeFunction,
+    isConstructor: boolean
+  ): InterpreterObject;
+  createAsyncFunction(asyncFunc: InterpreterAsyncFunction): InterpreterObject;
   populateRegExp(pseudoRegexp: InterpreterObject, nativeRegexp: RegExp): void;
   populateError(pseudoError: InterpreterObject, opt_message?: string): void;
 
@@ -151,8 +184,16 @@ export declare class Interpreter {
     value: InterpreterValue,
     opt_descriptor?: object
   ): InterpreterObject | undefined;
-  setNativeFunctionPrototype(obj: InterpreterObject, name: InterpreterValue, wrapper: Function): void;
-  setAsyncFunctionPrototype(obj: InterpreterObject, name: InterpreterValue, wrapper: Function): void;
+  setNativeFunctionPrototype(
+    obj: InterpreterObject,
+    name: InterpreterValue,
+    wrapper: InterpreterNativeFunction
+  ): void;
+  setAsyncFunctionPrototype(
+    obj: InterpreterObject,
+    name: InterpreterValue,
+    wrapper: InterpreterAsyncFunction
+  ): void;
   getPrototype(value: InterpreterValue): InterpreterObject | null;
   isa(child: InterpreterValue, constructor: InterpreterObject | null): boolean;
 
@@ -160,7 +201,10 @@ export declare class Interpreter {
 
   getScope(): InterpreterScope;
   createScope(node: InterpreterNode, parentScope: InterpreterScope | null): InterpreterScope;
-  createSpecialScope(parentScope: InterpreterScope, opt_object?: InterpreterObject): InterpreterScope;
+  createSpecialScope(
+    parentScope: InterpreterScope,
+    opt_object?: InterpreterObject
+  ): InterpreterScope;
   getValueFromScope(name: string): InterpreterValue;
   setValueToScope(name: string, value: InterpreterValue): InterpreterObject | undefined;
   /** `ref` is a name, or an [object, propname] tuple. */
@@ -194,9 +238,9 @@ export declare class Interpreter {
   // ---- RegExp execution off the main thread ---------------------------------
 
   createWorker(): Worker;
-  vmCall(code: string, sandbox: object, nativeRegExp: RegExp, callback: Function): void;
-  maybeThrowRegExp(nativeRegExp: RegExp, callback: Function): boolean;
-  regExpTimeout(nativeRegExp: RegExp, worker: Worker, callback: Function): void;
+  vmCall(code: string, sandbox: object, nativeRegExp: RegExp, callback: InterpreterCallback): void;
+  maybeThrowRegExp(nativeRegExp: RegExp, callback: InterpreterCallback): boolean;
+  regExpTimeout(nativeRegExp: RegExp, worker: Worker, callback: InterpreterCallback): number;
 
   // ---- Built-in prototypes, available once the globals are initialized ------
 

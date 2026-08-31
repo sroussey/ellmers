@@ -51,7 +51,13 @@ describe("toTexImageSource", () => {
 
   it("rejects a NodeImageValue with an actionable message", () => {
     withImageBitmap(() => {
-      const nodeValue = { buffer: new Uint8Array(4), format: "png", width: 1, height: 1, previewScale: 1 };
+      const nodeValue = {
+        buffer: new Uint8Array(4),
+        format: "png",
+        width: 1,
+        height: 1,
+        previewScale: 1,
+      };
       expect(() => toTexImageSource(nodeValue)).toThrow(/browser-only/);
     });
   });

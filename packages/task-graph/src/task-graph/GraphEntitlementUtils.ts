@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ITask } from "../task/ITask";
+import type { Task } from "../task/Task";
 import {
   type EntitlementId,
   type TaskEntitlement,
@@ -13,8 +15,6 @@ import {
   EMPTY_ENTITLEMENTS,
   mergeEntitlementPair,
 } from "../task/TaskEntitlements";
-import type { ITask } from "../task/ITask";
-import type { Task } from "../task/Task";
 import type { TaskIdType } from "../task/TaskTypes";
 import { TaskStatus } from "../task/TaskTypes";
 import { DATAFLOW_ALL_PORTS } from "./Dataflow";

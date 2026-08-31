@@ -12,7 +12,11 @@ import { Gemini_ModelSearch_Stream as Gemini_ModelSearch } from "@workglow/googl
 import { HFI_ModelSearch } from "@workglow/huggingface-inference/ai";
 import { OpenAI_ModelSearch_Stream as OpenAI_ModelSearch } from "@workglow/openai/ai";
 import { mapOpenRouterModels, OPENROUTER_FALLBACK_MODELS } from "@workglow/openrouter/ai";
-import { _testOnly as tfmp, TENSORFLOW_MEDIAPIPE, TFMP_ModelSearch } from "@workglow/tf-mediapipe/ai";
+import {
+  TENSORFLOW_MEDIAPIPE,
+  _testOnly as tfmp,
+  TFMP_ModelSearch,
+} from "@workglow/tf-mediapipe/ai";
 import { Xai_ModelSearch_Stream as Xai_ModelSearch } from "@workglow/xai/ai";
 import { afterEach, describe, expect, test } from "vitest";
 
@@ -237,7 +241,9 @@ describe("provider model search samples", () => {
     )) as { results: ModelSearchResult[] };
 
     const offered = new Set(
-      results.flatMap((r) => (r.record as { capabilities?: string[] } | undefined)?.capabilities ?? [])
+      results.flatMap(
+        (r) => (r.record as { capabilities?: string[] } | undefined)?.capabilities ?? []
+      )
     );
     const served = [...new Set(tfmp.TFMP_RUN_FN_SPECS.flatMap((spec) => spec.serves))].filter(
       (capability) => !TFMP_LIFECYCLE_CAPABILITIES.has(capability)
