@@ -1,5 +1,17 @@
 # @workglow/cli
 
+## 0.4.4
+
+### Bug Fixes
+
+#### tasks
+
+- make dropping the filesystem tasks a compile-time decision
+
+#### cli
+
+- stop the answer reader from closing the parent's descriptor
+
 ## 0.4.3
 
 ### Bug Fixes

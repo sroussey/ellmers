@@ -1,5 +1,7 @@
 # @workglow/job-queue
 
+## 0.4.4
+
 ## 0.4.3
 
 ### Build

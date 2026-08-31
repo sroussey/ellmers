@@ -1,5 +1,11 @@
 # @workglow/storage
 
+## 0.4.4
+
+### Refactors
+
+- FsFolderTabularStorage for improved file handling and error management
+
 ## 0.4.3
 
 ## 0.4.2

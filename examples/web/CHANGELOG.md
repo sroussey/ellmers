@@ -1,5 +1,20 @@
 # @workglow/web
 
+## 0.4.4
+
+### Bug Fixes
+
+#### tasks
+
+- make dropping the filesystem tasks a compile-time decision
+
+### Updated Dependencies
+
+- `@codemirror/state`: 6.7.2
+- `@codemirror/view`: 6.43.10
+- `@xyflow/react`: =12.11.5
+- `@vitejs/plugin-react`: ^6.1.1
+
 ## 0.4.3
 
 ### Chores

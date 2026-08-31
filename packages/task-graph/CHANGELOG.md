@@ -1,5 +1,24 @@
 # @workglow/task-graph
 
+## 0.4.4
+
+### Features
+
+#### interpreter
+
+- enhance TypeScript definitions for interpreter functionality
+
+#### task
+
+- implement entitlement enforcement in TaskRunner and TaskGraphRunner
+- enhance GraphAsTask and GraphAsTaskRunner with entitlements support
+
+### Bug Fixes
+
+#### task-graph
+
+- give a streaming subgraph the run's resource scope
+
 ## 0.4.3
 
 ## 0.4.2

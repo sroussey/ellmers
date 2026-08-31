@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.4
+
+### Updated Dependencies
+
+- `hyparquet`: ^1.29.2
+
 ## 0.4.3
 
 ## 0.4.2

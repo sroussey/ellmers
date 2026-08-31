@@ -1,5 +1,23 @@
 # @workglow/tasks
 
+## 0.4.4
+
+### Features
+
+#### task
+
+- implement entitlement enforcement in TaskRunner and TaskGraphRunner
+
+### Bug Fixes
+
+#### tasks
+
+- make dropping the filesystem tasks a compile-time decision
+
+### Updated Dependencies
+
+- `undici`: ^8.10.1
+
 ## 0.4.3
 
 ### Chores

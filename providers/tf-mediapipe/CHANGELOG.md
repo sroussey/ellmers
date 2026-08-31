@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.4
+
+### Features
+
+#### tf-mediapipe
+
+- add Face Detector model and enhance TensorFlow MediaPipe search tests
+
+#### image
+
+- introduce toTexImageSource utility and integrate across AI components
+
 ## 0.4.3
 
 ## 0.4.2

@@ -1,5 +1,39 @@
 # @workglow/test
 
+## 0.4.4
+
+### Features
+
+#### interpreter
+
+- enhance TypeScript definitions for interpreter functionality
+
+#### task
+
+- implement entitlement enforcement in TaskRunner and TaskGraphRunner
+
+#### tf-mediapipe
+
+- add Face Detector model and enhance TensorFlow MediaPipe search tests
+
+#### image
+
+- introduce toTexImageSource utility and integrate across AI components
+
+### Bug Fixes
+
+#### tasks
+
+- make dropping the filesystem tasks a compile-time decision
+
+### Refactors
+
+- FsFolderTabularStorage for improved file handling and error management
+
+### Updated Dependencies
+
+- `miniflare`: ^5.20260828.0-alpha
+
 ## 0.4.3
 
 ## 0.4.2

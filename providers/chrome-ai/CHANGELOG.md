@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.4
+
+### Bug Fixes
+
+- update .gitignore and add TypeScript definitions for interpreter
+
 ## 0.4.3
 
 ## 0.4.2
