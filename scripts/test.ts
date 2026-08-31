@@ -337,14 +337,18 @@ let selected = needsFileFilter
 if (changedDirs !== undefined && changedDirs !== "all") {
   selected = filesInChangedPackages(needsFileFilter ? selected : allFiles, changedDirs);
 }
-const files: string[] = orderFilteredTestFiles(selected.map((f) => f.path));
+// A `@vitest-environment` file needs a DOM Bun's runner cannot provide; running
+// it there fails on the environment rather than on anything under test.
+const files: string[] = orderFilteredTestFiles(
+  selected.filter((f) => f.runner !== "vitest").map((f) => f.path)
+);
 // A `bun:test` file uses Bun-only APIs and cannot run under vitest; skip it there
 // rather than letting vitest fail on an unresolvable `bun:test` import.
 const vitestFiles: string[] = orderFilteredTestFiles(
   selected.filter((f) => f.runner !== "bun").map((f) => f.path)
 );
 
-if (needsFileFilter && files.length === 0) {
+if (needsFileFilter && selected.length === 0) {
   const kindLabel = kinds.length > 0 ? kinds.join("+") : "all";
   const sectionLabel = sections.length > 0 ? sections.join("+") : "all";
   console.log(`No test files found for kind=${kindLabel} section=${sectionLabel}`);
@@ -365,7 +369,11 @@ console.log(
 const tier = kinds.includes("end2end") ? "e2e" : "all";
 
 if (dryRun) {
-  if (wantsBun) console.log(JSON.stringify(buildBunTestArgs(files)));
+  if (wantsBun && needsFileFilter && files.length === 0) {
+    // Same trap as the vitest branch below: an empty list makes `bun test` mean
+    // "run everything under the configured root".
+    console.log("# bun: skipped — no Bun-compatible files in selection");
+  } else if (wantsBun) console.log(JSON.stringify(buildBunTestArgs(files)));
   else if (needsFileFilter && vitestFiles.length === 0) {
     // An empty file list makes `vitest run` mean "run everything", so a
     // selection that filtered down to nothing must print no vitest command
@@ -380,6 +388,10 @@ if (dryRun) {
 // ── Execute ───────────────────────────────────────────────────────────────────
 
 if (wantsBun) {
+  if (needsFileFilter && files.length === 0) {
+    console.log("No Bun-compatible files in selection (all need a vitest environment).");
+    process.exit(0);
+  }
   process.exit(await spawnRunner(buildBunTestArgs(files), "Bun test", { tier }));
 }
 

@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { REGEX_BACKTRACKS_UNBOUNDED } from "../helpers/regexEngine";
 
 describe("FileSedTask (server - local files)", () => {
   const logger = getTestingLogger();
@@ -326,19 +327,22 @@ describe("FileSedTask (server - local files)", () => {
    * blocks the event loop with no abort able to reach it; the run must instead
    * be REJECTED, and quickly.
    */
-  test("a catastrophic pattern over a local file fails on the budget", async () => {
-    const filePath = join(testDir, "evil.txt");
-    writeFileSync(filePath, "1".repeat(40) + "!\n", "utf-8");
+  test.skipIf(!REGEX_BACKTRACKS_UNBOUNDED)(
+    "a catastrophic pattern over a local file fails on the budget",
+    async () => {
+      const filePath = join(testDir, "evil.txt");
+      writeFileSync(filePath, "1".repeat(40) + "!\n", "utf-8");
 
-    const started = Date.now();
-    await expect(
-      new FileSedTask({
-        roots: [testDir],
-        defaults: { url: filePath, pattern: "(\\w|\\d)*$", replacement: "X" },
-      }).run()
-    ).rejects.toThrow(/budget/);
-    expect(Date.now() - started).toBeLessThan(5_000);
-  });
+      const started = Date.now();
+      await expect(
+        new FileSedTask({
+          roots: [testDir],
+          defaults: { url: filePath, pattern: "(\\w|\\d)*$", replacement: "X" },
+        }).run()
+      ).rejects.toThrow(/budget/);
+      expect(Date.now() - started).toBeLessThan(5_000);
+    }
+  );
 
   test("the budget does not disturb an ordinary substitution", async () => {
     const filePath = join(testDir, "groups.txt");

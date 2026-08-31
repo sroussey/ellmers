@@ -7,6 +7,15 @@
 import { dataUriToBlob } from "@workglow/util/media";
 import { describe, expect, test } from "vitest";
 
+/**
+ * The host's own `Blob` normalization of a media type. Bun appends
+ * `;charset=utf-8` to a text type where Node and the browser leave it alone, so
+ * an assertion spelled `"text/plain"` reads as a decode bug on one runtime and
+ * passes on the other; what these cases are actually about is the mime
+ * `dataUriToBlob` parsed out of the header.
+ */
+const blobType = (mime: string): string => new Blob([], { type: mime }).type;
+
 // 1x1 transparent PNG.
 const PNG_1X1 =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -24,7 +33,7 @@ describe("dataUriToBlob", () => {
 
   test("decodes a percent-encoded (non-base64) data URI", async () => {
     const blob = dataUriToBlob("data:text/plain,hello%20world");
-    expect(blob!.type).toBe("text/plain");
+    expect(blob!.type).toBe(blobType("text/plain"));
     expect(await blob!.text()).toBe("hello world");
   });
 
@@ -72,17 +81,17 @@ describe("dataUriToBlob", () => {
   });
 
   test("trims whitespace around the header", () => {
-    expect(dataUriToBlob("data: text/plain ,hi")!.type).toBe("text/plain");
+    expect(dataUriToBlob("data: text/plain ,hi")!.type).toBe(blobType("text/plain"));
   });
 
   test("defaults the mime type when the header omits one", async () => {
     const blob = dataUriToBlob("data:,plain");
-    expect(blob!.type).toBe("text/plain");
+    expect(blob!.type).toBe(blobType("text/plain"));
     expect(await blob!.text()).toBe("plain");
   });
 
   test("ignores parameters after the mime type", () => {
-    expect(dataUriToBlob("data:text/plain;charset=utf-8,hi")!.type).toBe("text/plain");
+    expect(dataUriToBlob("data:text/plain;charset=utf-8,hi")!.type).toBe(blobType("text/plain"));
   });
 
   test("returns undefined for non-data URIs", () => {

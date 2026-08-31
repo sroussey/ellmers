@@ -89,24 +89,43 @@ function parseCDPAXTree(
   }
   rootNode = nodes.find((n) => !childIds.has(n.nodeId)) ?? nodes[0];
 
-  function buildNode(cdpNode: CDPAXNode): MutableAccessibilityNode | null {
+  /**
+   * The node itself, or — when it carries no meaning of its own — whatever it
+   * wraps, spliced in where it stood.
+   *
+   * A presentational or ignored node is not an empty node: Chrome hangs a whole
+   * document off one or two `none`/`generic` wrappers, so returning nothing for
+   * one returns nothing for the page. Refs are still assigned parent-first, so a
+   * snapshot numbers its elements in document order.
+   */
+  function buildNodes(cdpNode: CDPAXNode): MutableAccessibilityNode[] {
     const role = cdpNode.role?.value ?? "";
+    const node: MutableAccessibilityNode | undefined =
+      cdpNode.ignored || IGNORED_ROLES.has(role) ? undefined : blankNode(cdpNode, role);
 
-    if (cdpNode.ignored || IGNORED_ROLES.has(role)) {
-      return null;
-    }
+    if (node !== undefined) applyProperties(node, cdpNode);
 
+    const childNodes = (cdpNode.childIds ?? []).flatMap((childId) => {
+      const childCdp = nodeMap.get(childId);
+      return childCdp ? buildNodes(childCdp) : [];
+    });
+
+    if (node === undefined) return childNodes;
+    if (childNodes.length > 0) node.children = childNodes;
+    return [node];
+  }
+
+  function blankNode(cdpNode: CDPAXNode, role: string): MutableAccessibilityNode {
     const ref = `e${++refCounter.count}`;
     refMap.set(ref, cdpNode.backendDOMNodeId ?? null);
-
-    const name = typeof cdpNode.name?.value === "string" ? cdpNode.name.value : "";
-
-    const node: MutableAccessibilityNode = {
+    return {
       ref,
       role: role as AriaRole,
-      name,
+      name: typeof cdpNode.name?.value === "string" ? cdpNode.name.value : "",
     };
+  }
 
+  function applyProperties(node: MutableAccessibilityNode, cdpNode: CDPAXNode): void {
     for (const prop of cdpNode.properties ?? []) {
       switch (prop.name) {
         case "level":
@@ -145,20 +164,6 @@ function parseCDPAXTree(
           break;
       }
     }
-
-    const childNodes: MutableAccessibilityNode[] = [];
-    for (const childId of cdpNode.childIds ?? []) {
-      const childCdp = nodeMap.get(childId);
-      if (childCdp) {
-        const child = buildNode(childCdp);
-        if (child) childNodes.push(child);
-      }
-    }
-    if (childNodes.length > 0) {
-      node.children = childNodes;
-    }
-
-    return node;
   }
 
   if (!rootNode) {
@@ -167,7 +172,7 @@ function parseCDPAXTree(
     return { ref, role: "document", name: "" };
   }
 
-  const built = buildNode(rootNode);
+  const built = buildNodes(rootNode)[0];
   if (!built) {
     const ref = `e${++refCounter.count}`;
     refMap.set(ref, null);

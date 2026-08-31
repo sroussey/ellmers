@@ -369,7 +369,10 @@ describe("CacheCheckpointTask storage-cost emission at disposal", () => {
 
     // The disposer must complete (and the registry entry must still be
     // removed) even though the usage listener threw.
-    await expect(scope.runComplete()).resolves.not.toThrow();
+    // Resolving IS the assertion: `runComplete()` returns `Promise<void>`, so
+    // `toBeUndefined` says "settled, did not reject" on both runners, where
+    // `resolves.not.toThrow()` only says it under Vitest.
+    await expect(scope.runComplete()).resolves.toBeUndefined();
     expect(getCheckpoint(out!.checkpoint)).toBeUndefined();
   });
 

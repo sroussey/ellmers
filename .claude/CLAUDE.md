@@ -297,6 +297,25 @@ is unreachable by section+kind selection. Note `packages/test/src/test/task-grap
 section `graph` — `task-graph` selects that package's co-located `__tests__`.
 `--changed` delegates package selection to Turbo, so dependents run too.
 
+**Running the same files under Bun** — `bun test` resolves `import { vi } from "vitest"` to
+its own compatibility shim, which is missing `setSystemTime`, `stubGlobal`/`stubEnv` and
+their `unstubAll*` pairs, and the async timer variants. `scripts/lib/preload-vitest-compat.ts`
+(wired in through `bunfig.toml`'s `[test].preload`) installs those on the shim's shared `vi`
+object, each guarded so a Bun release that ships its own wins. Two Bun timer quirks are
+baked into it: `advanceTimersByTime(0)` still advances a whole millisecond, so a "flush"
+spelled that way fires a timer due at `t` while the test believes it stands at `t - 1`; and
+a synchronous advance drains the microtask queue before returning, which Vitest's does not.
+
+`runnerFor()` in `scripts/lib/testDiscovery.ts` tags a file `bun` (imports `bun:test`) or
+`vitest` (declares a `@vitest-environment`, or calls into Vitest's module registry —
+`vi.mock` and friends), and the runner drops each from the other's selection. Bun has no
+test environments, and it runs `mock.module` where it is written rather than hoisted, so an
+unhoisted mock silently does nothing while the module under test already holds the real
+dependency. `testDiscovery.test.ts` fails on a file that matches either signal and is not
+tagged. A case that genuinely cannot be expressed on one engine — JavaScriptCore caps regex
+backtracking where V8 runs away, Bun swaps `undici` for an `Agent` with no `close` — gets a
+named, documented `skipIf` rather than a rewrite.
+
 **Vitest projects** — the root `vitest.config.ts` derives one project per workspace from
 the same discovery the runner uses. Anything path-shaped in shared project options must be
 **absolute**; a relative `setupFiles` or `typecheck.tsconfig` resolves against each

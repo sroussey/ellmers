@@ -19,7 +19,8 @@ import {
   SharedDocumentStorageSchema,
 } from "@workglow/knowledge-base";
 import { InMemoryTabularStorage, InMemoryVectorStorage } from "@workglow/storage";
-import { uuid4 } from "@workglow/util";
+import type { ILogger } from "@workglow/util";
+import { ConsoleLogger, getLogger, setLogger, uuid4 } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { report, snap } from "../../binding/testTiming";
@@ -137,6 +138,12 @@ describe("ScopedTabularStorage", () => {
       // Custom storage stub that doesn't extend BaseTabularStorage and
       // therefore has no `primaryKeyNames` field. The constructor should
       // log a warning but NOT throw.
+      // The constructor warns through `getLogger()`, whose default is a
+      // `NullLogger` unless the environment asks for one that writes — Vitest's
+      // Vite pipeline does (`import.meta.env.DEV`), Bun's runner does not. Install
+      // the logger the assertion needs rather than inheriting one.
+      const previousLogger: ILogger = getLogger();
+      setLogger(new ConsoleLogger({ level: "warn" }));
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
       try {
         const customInner = {
@@ -147,6 +154,7 @@ describe("ScopedTabularStorage", () => {
         expect(warnSpy.mock.calls[0][0]).toMatch(/primaryKeyNames is not exposed/);
       } finally {
         warnSpy.mockRestore();
+        setLogger(previousLogger);
       }
     });
   });

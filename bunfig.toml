@@ -4,6 +4,10 @@ linker = "isolated"
 [test]
 retry = 1
 root = "./packages/test/src/test"
-preload = ["./scripts/configure-hft-test-cache.ts", "./scripts/lib/preload-credentials.ts"]
+preload = [
+  "./scripts/lib/preload-vitest-compat.ts",
+  "./scripts/configure-hft-test-cache.ts",
+  "./scripts/lib/preload-credentials.ts",
+]
 [console]
 depth = 5

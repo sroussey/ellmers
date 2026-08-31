@@ -19,6 +19,7 @@ import {
   PACKAGE_GROUPS,
   ROOT,
   SECTION_GROUPS,
+  VITEST_MODULE_MOCKING,
 } from "./lib/testDiscovery";
 
 /**
@@ -59,6 +60,24 @@ describe("test discovery", () => {
       (f) => KNOWN_KINDS.filter((k) => matchesKind(f.path, [k])).length !== 1
     );
     expect(miskinded.map((f) => f.path.replace(ROOT + "/", ""))).toEqual([]);
+  });
+
+  it("tags a file only Vitest's runner can run so the Bun selection drops it", () => {
+    // `@vitest-environment jsdom` is how a test gets a DOM, and Vitest's module
+    // registry (`vi.mock` and friends) has no Bun equivalent. Untagged, such a
+    // file fails on the runner — or worse, passes with a mock installed after the
+    // module under test already imported the real thing.
+    const mistagged = files
+      .filter((f) => {
+        const source = readFileSync(f.path, "utf8");
+        return (
+          /^\s*(\/\/|\/\*)\s*@vitest-environment\s/m.test(source) ||
+          VITEST_MODULE_MOCKING.test(source)
+        );
+      })
+      .filter((f) => f.runner !== "vitest")
+      .map((f) => f.path.replace(ROOT + "/", ""));
+    expect(mistagged).toEqual([]);
   });
 
   it("covers in-package tests, not just the monolithic test package", () => {

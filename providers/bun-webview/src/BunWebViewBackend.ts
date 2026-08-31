@@ -35,6 +35,15 @@ type AnyWebView = any;
  *
  * This file should only be imported in Bun environments.
  */
+/** Bun's own error for a navigation started while it still thinks one is in flight. */
+function isNavigationAlreadyPending(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error as { code?: string }).code === "ERR_INVALID_STATE" &&
+    /navigation is already pending/i.test(error.message)
+  );
+}
+
 export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserContext {
   private _wv: AnyWebView | null = null;
   private _connected = false;
@@ -59,6 +68,29 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
 
   protected async cdp(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
     return this.wv.cdp(method, params);
+  }
+
+  /**
+   * Begin a navigation, waiting out a stale "pending" flag.
+   *
+   * `Bun.WebView` clears that flag some time AFTER it reports the previous
+   * navigation finished, so a caller that navigates again as soon as it is told
+   * the last one landed gets `ERR_INVALID_STATE: a navigation is already
+   * pending` for a navigation that has, by its own account, already completed.
+   * Nothing exposes the flag and nothing announces it clearing, so asking again
+   * is the only way to observe it.
+   */
+  private async beginNavigation(start: () => void, timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      try {
+        start();
+        return;
+      } catch (error) {
+        if (!isNavigationAlreadyPending(error) || Date.now() >= deadline) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
   }
 
   protected async evaluateInPage<T>(script: string): Promise<T> {
@@ -104,10 +136,14 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
       };
     });
 
+    // Before the CDP call, not after: `cdp()` reads the webview through the `wv`
+    // getter, which refuses to hand it over until the backend calls itself
+    // connected. Setting the flag last made `connect()` throw
+    // "not connected — call connect() first" out of its own last step.
+    this._connected = true;
+
     // Enable Accessibility domain for snapshot/queryAXTree
     await this.cdp("Accessibility.enable");
-
-    this._connected = true;
   }
 
   async disconnect(): Promise<void> {
@@ -116,9 +152,15 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
     // once the webview is closed below.
     this._pendingNavCancel?.();
     try {
-      if (this._wv) {
-        this._wv.close();
-      }
+      // Awaited, not fired and forgotten: `close()` reports an already-closed
+      // webview by REJECTING, and a rejection nobody is holding takes down the
+      // process rather than the call that caused it.
+      if (this._wv) await Promise.resolve(this._wv.close());
+    } catch {
+      // "WebView closed" on a webview that is already gone is the state every
+      // caller of `disconnect()` is asking for. A run's ResourceScope and an
+      // explicit `disconnectAll()` both reach here, and the second one must not
+      // turn a completed run into a failure.
     } finally {
       this._wv = null;
       this._refMap.clear();
@@ -138,8 +180,9 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
   }
 
   async navigate(url: string, options: NavigateOptions = {}): Promise<void> {
-    const settled = this.waitForNextNavigation(options.timeout ?? 30_000);
-    this.wv.navigate(url);
+    const timeout = options.timeout ?? 30_000;
+    const settled = this.waitForNextNavigation(timeout);
+    await this.beginNavigation(() => this.wv.navigate(url), timeout);
     await settled;
   }
 
@@ -183,18 +226,18 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
     });
   }
 
-  async goBack(_options: NavigateOptions = {}): Promise<void> {
-    this.wv.back();
+  async goBack(options: NavigateOptions = {}): Promise<void> {
+    await this.beginNavigation(() => this.wv.back(), options.timeout ?? 30_000);
     await this.waitForNavigation();
   }
 
-  async goForward(_options: NavigateOptions = {}): Promise<void> {
-    this.wv.forward();
+  async goForward(options: NavigateOptions = {}): Promise<void> {
+    await this.beginNavigation(() => this.wv.forward(), options.timeout ?? 30_000);
     await this.waitForNavigation();
   }
 
-  async reload(_options: NavigateOptions = {}): Promise<void> {
-    this.wv.reload();
+  async reload(options: NavigateOptions = {}): Promise<void> {
+    await this.beginNavigation(() => this.wv.reload(), options.timeout ?? 30_000);
     await this.waitForNavigation();
   }
 

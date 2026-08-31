@@ -64,7 +64,10 @@ describe("CacheJanitor", () => {
     await backing.saveOutputForRun("live", "T", { x: 1 }, { ok: "live" }, old);
     await backing.saveOutputForRun("stale", "T", { x: 1 }, { ok: "stale" }, old);
 
-    await expect(backing.clearOlderThan(1, new Set(["live"]))).resolves.not.toThrow();
+    // Resolving IS the assertion — `Promise<void>`, so the value is the proof it
+    // settled rather than rejected. `resolves.not.toThrow()` would say the same
+    // under Vitest but not under Bun, where `toThrow` still wants a function.
+    await expect(backing.clearOlderThan(1, new Set(["live"]))).resolves.toBeUndefined();
   });
 
   it("omitting liveRunIds is a compile-time error", () => {
