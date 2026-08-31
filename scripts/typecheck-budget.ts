@@ -14,6 +14,9 @@
  * exists for — e.g. a schema `allOf` change that took `tasks` from ~290k to
  * ~6.7M instantiations, or a base-generic change that doubled `ai`.
  *
+ * A package is over budget only once it exceeds BOTH the relative tolerance
+ * and the absolute slack — see {@link TypecheckBudget.slack}.
+ *
  * Usage:
  *   bun scripts/typecheck-budget.ts            # check against budgets, exit 1 on regression
  *   bun scripts/typecheck-budget.ts --update   # rewrite budgets from current measurements
@@ -24,9 +27,13 @@
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = resolve(import.meta.dir, "..");
+// `import.meta.dir` is Bun-only and this module is also imported by a vitest
+// (Node) test, so module scope stays on portable node: APIs. `Bun.Glob` below
+// is fine where it is: only `main()` reaches it.
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BUDGET_FILE = join(ROOT, "scripts", "typecheck-budget.json");
 const TSC = join(ROOT, "node_modules", ".bin", "tsc");
 
@@ -40,6 +47,14 @@ export interface TypecheckBudget {
    * produces noise).
    */
   readonly floor: number;
+  /**
+   * Absolute headroom allowed over budget, applied when it is more generous
+   * than {@link tolerance}. A few-hundred-instantiation package moves by well
+   * over 15% when one type reference is added, so the percentage alone gates
+   * the smallest packages on noise; the large packages this guard exists for
+   * are far past this in absolute terms and stay on the percentage.
+   */
+  readonly slack: number;
   /** Per-package instantiation budgets, keyed by workspace-relative dir. */
   readonly packages: Readonly<Record<string, number>>;
 }
@@ -53,6 +68,7 @@ export interface PackageMeasurement {
 
 const DEFAULT_TOLERANCE = 0.15;
 const DEFAULT_FLOOR = 50_000;
+const DEFAULT_SLACK = 2_000;
 
 function listPackageDirs(): string[] {
   const dirs: string[] = [];
@@ -98,9 +114,20 @@ function measurePackage(dir: string): PackageMeasurement {
 
 function loadBudget(): TypecheckBudget {
   if (!existsSync(BUDGET_FILE)) {
-    return { tolerance: DEFAULT_TOLERANCE, floor: DEFAULT_FLOOR, packages: {} };
+    return {
+      tolerance: DEFAULT_TOLERANCE,
+      floor: DEFAULT_FLOOR,
+      slack: DEFAULT_SLACK,
+      packages: {},
+    };
   }
-  return JSON.parse(readFileSync(BUDGET_FILE, "utf8")) as TypecheckBudget;
+  const parsed = JSON.parse(readFileSync(BUDGET_FILE, "utf8")) as Partial<TypecheckBudget>;
+  return {
+    tolerance: parsed.tolerance ?? DEFAULT_TOLERANCE,
+    floor: parsed.floor ?? DEFAULT_FLOOR,
+    slack: parsed.slack ?? DEFAULT_SLACK,
+    packages: parsed.packages ?? {},
+  };
 }
 
 function writeBudget(budget: TypecheckBudget): void {
@@ -124,13 +151,18 @@ export function checkAgainstBudget(
   for (const m of measurements) {
     const allowed = budget.packages[m.pkg];
     if (allowed === undefined) {
-      if (m.instantiations >= budget.floor) newPackages.push({ pkg: m.pkg, actual: m.instantiations });
+      if (m.instantiations >= budget.floor)
+        newPackages.push({ pkg: m.pkg, actual: m.instantiations });
       continue;
     }
-    const ceiling = Math.round(allowed * (1 + budget.tolerance));
+    const ceiling = Math.max(Math.round(allowed * (1 + budget.tolerance)), allowed + budget.slack);
+    const floorForImprovement = Math.min(
+      Math.round(allowed * (1 - budget.tolerance)),
+      allowed - budget.slack
+    );
     if (m.instantiations > ceiling) {
       regressions.push({ pkg: m.pkg, budget: allowed, actual: m.instantiations });
-    } else if (m.instantiations < Math.round(allowed * (1 - budget.tolerance))) {
+    } else if (m.instantiations < floorForImprovement) {
       improvements.push({ pkg: m.pkg, budget: allowed, actual: m.instantiations });
     }
   }
@@ -147,9 +179,9 @@ function main(): void {
   const update = args.has("--update");
   const emitJson = args.has("--json");
   const skipBuild = args.has("--no-build");
+  const existing = loadBudget();
   const tolArgIndex = process.argv.indexOf("--tolerance");
-  const tolerance =
-    tolArgIndex >= 0 ? Number(process.argv[tolArgIndex + 1]) : loadBudget().tolerance;
+  const tolerance = tolArgIndex >= 0 ? Number(process.argv[tolArgIndex + 1]) : existing.tolerance;
 
   const dirs = listPackageDirs();
   if (!existsSync(TSC)) {
@@ -179,7 +211,7 @@ function main(): void {
     for (const m of measurements.sort((a, b) => a.pkg.localeCompare(b.pkg))) {
       packages[m.pkg] = m.instantiations;
     }
-    writeBudget({ tolerance, floor: DEFAULT_FLOOR, packages });
+    writeBudget({ tolerance, floor: existing.floor, slack: existing.slack, packages });
     process.stderr.write(`typecheck-budget: wrote ${BUDGET_FILE}\n`);
     return;
   }
@@ -199,7 +231,10 @@ function main(): void {
   }
 
   if (regressions.length > 0) {
-    process.stderr.write(`\ntypecheck-budget: ${regressions.length} regression(s) over budget +${budget.tolerance * 100}%:\n`);
+    process.stderr.write(
+      `\ntypecheck-budget: ${regressions.length} regression(s) over budget ` +
+        `(+${budget.tolerance * 100}% or +${budget.slack} instantiations, whichever is larger):\n`
+    );
     for (const r of regressions) {
       process.stderr.write(
         `  ${r.pkg}: ${r.actual} instantiations vs budget ${r.budget} (${formatPct(r.actual, r.budget)})\n`
