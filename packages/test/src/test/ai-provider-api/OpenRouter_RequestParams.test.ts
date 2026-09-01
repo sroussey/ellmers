@@ -76,6 +76,21 @@ describe("buildOpenRouterExtras", () => {
     ).toEqual({ reasoning: { effort: "low" } });
   });
 
+  // The policy used to return every level for every id, which left this branch
+  // unable to reject anything: an embedding model was handed a `reasoning`.
+  it("does not map model.effort onto a non-text model", () => {
+    expect(
+      buildOpenRouterExtras(
+        cfg({ model_name: "openai/text-embedding-3-small" }, { effort: "high" })
+      )
+    ).toEqual({});
+    expect(
+      buildOpenRouterExtras(
+        cfg({ model_name: "black-forest-labs/flux-1.1-pro" }, { effort: "high" })
+      )
+    ).toEqual({});
+  });
+
   it("does not map model.effort when effort_options is empty", () => {
     expect(
       buildOpenRouterExtras(

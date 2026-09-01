@@ -159,13 +159,27 @@ describe("resolveMaxTokens", () => {
     );
   });
 
-  it("does not map model.effort on models the policy rejects", () => {
+  // One function, two branches, and only one of them consulted the policy: a
+  // model it had just declared has no reasoning was still paid the full default
+  // allowance on top of the caller's budget, whether or not effort was set.
+  it("pays no allowance on a model the policy says does not reason", () => {
     const nonThinking = {
       ...thinkingModel,
-      effort: "ultra",
       provider_config: { model_name: "deepseek-chat" },
     };
-    expect(resolveMaxTokens(nonThinking as never, 4096)).toBe(
+    expect(resolveMaxTokens({ ...nonThinking, effort: "ultra" } as never, 4096)).toBe(4096);
+    expect(resolveMaxTokens(nonThinking as never, 4096)).toBe(4096);
+  });
+
+  // `deepseek-reasoner` is the vendor's own name for the thinking model, and
+  // the policy used to deny it — so the dial fell through to the flat default.
+  it("maps model.effort on deepseek-reasoner", () => {
+    const reasoner = {
+      ...thinkingModel,
+      provider_config: { model_name: "deepseek-reasoner" },
+    };
+    expect(resolveMaxTokens({ ...reasoner, effort: "low" } as never, 4096)).toBe(4096 + 4096);
+    expect(resolveMaxTokens(reasoner as never, 4096)).toBe(
       4096 + DEEPSEEK_DEFAULT_REASONING_ALLOWANCE
     );
   });

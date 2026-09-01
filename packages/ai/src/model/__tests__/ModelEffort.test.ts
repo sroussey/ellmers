@@ -5,13 +5,18 @@
  */
 
 import { describe, expect, it } from "vitest";
+import type { ModelEffort } from "../ModelEffort";
 import {
+  EFFORT_POLICY_ALL,
+  EFFORT_POLICY_NONE,
   MODEL_EFFORTS,
   effortPlaceholder,
   enabledEffortsForModel,
   isModelEffort,
-  isModelEffortEnabled,
+  makeEffortPolicy,
   readEffortOptions,
+  readModelName,
+  resolveEnabledEffort,
   sanitizeEffortOptions,
   stampEffortOptions,
 } from "../ModelEffort";
@@ -84,21 +89,86 @@ describe("enabledEffortsForModel", () => {
   });
 });
 
-describe("isModelEffortEnabled", () => {
+describe("resolveEnabledEffort", () => {
   const policy = { supported: ["low", "high"] as const, default: "low" as const };
 
-  it("is false when effort is unset or the enabled list excludes it", () => {
-    expect(isModelEffortEnabled({}, policy)).toBe(false);
-    expect(isModelEffortEnabled({ effort: "medium" }, policy)).toBe(false);
-    expect(isModelEffortEnabled({ effort: "high", effort_options: [] }, policy)).toBe(false);
-    expect(isModelEffortEnabled({ effort: "high" }, { supported: [], default: undefined })).toBe(
-      false
-    );
+  it("is undefined when effort is unset, unknown, or the enabled list excludes it", () => {
+    expect(resolveEnabledEffort(undefined, policy)).toBeUndefined();
+    expect(resolveEnabledEffort({}, policy)).toBeUndefined();
+    expect(resolveEnabledEffort({ effort: "xhigh" }, policy)).toBeUndefined();
+    expect(resolveEnabledEffort({ effort: "medium" }, policy)).toBeUndefined();
+    expect(resolveEnabledEffort({ effort: "high", effort_options: [] }, policy)).toBeUndefined();
+    expect(resolveEnabledEffort({ effort: "high" }, EFFORT_POLICY_NONE)).toBeUndefined();
   });
 
-  it("is true when effort is in the enabled list, or when nothing restricts it", () => {
-    expect(isModelEffortEnabled({ effort: "high" }, policy)).toBe(true);
-    expect(isModelEffortEnabled({ effort: "ultra" }, undefined)).toBe(true);
+  it("returns the effort itself when enabled, or when nothing restricts it", () => {
+    expect(resolveEnabledEffort({ effort: "high" }, policy)).toBe("high");
+    expect(resolveEnabledEffort({ effort: "ultra" }, undefined)).toBe("ultra");
+  });
+
+  // The point of returning the value: a caller indexes its own map with it and
+  // needs no `as ModelEffort` to do so.
+  it("narrows to ModelEffort so callers need no cast", () => {
+    const effort = resolveEnabledEffort({ effort: "low" }, policy);
+    const budgets: Record<ModelEffort, number> = {
+      none: 0,
+      low: 1,
+      medium: 2,
+      high: 3,
+      extra: 4,
+      ultra: 5,
+    };
+    expect(effort === undefined ? -1 : budgets[effort]).toBe(1);
+  });
+});
+
+describe("readModelName", () => {
+  it("trims the provider-side id and reads an absent one as empty", () => {
+    expect(readModelName({ provider_config: { model_name: "  gpt-5  " } })).toBe("gpt-5");
+    expect(readModelName({ provider_config: {} })).toBe("");
+    expect(readModelName({})).toBe("");
+    expect(readModelName(undefined)).toBe("");
+  });
+});
+
+describe("makeEffortPolicy", () => {
+  const REASONING = { supported: MODEL_EFFORTS, default: "medium" } as const;
+  const policy = makeEffortPolicy({
+    rules: [
+      { when: /^text-embedding/i, policy: EFFORT_POLICY_NONE },
+      { when: [/^gpt-5/i, (id) => id.startsWith("o3")], policy: REASONING },
+    ],
+    fallback: EFFORT_POLICY_ALL,
+  });
+
+  it("takes the first matching rule, by regex or predicate", () => {
+    expect(policy({ provider_config: { model_name: "text-embedding-3-small" } })).toEqual(
+      EFFORT_POLICY_NONE
+    );
+    expect(policy({ provider_config: { model_name: "gpt-5.6-sol" } })).toEqual(REASONING);
+    expect(policy({ provider_config: { model_name: "o3-mini" } })).toEqual(REASONING);
+  });
+
+  // The asymmetry this replaces: an absent id answered "every level" while an
+  // unrecognized one answered "none", two different claims from the same
+  // amount of knowledge.
+  it("answers an absent id and an unrecognized one with the same fallback", () => {
+    expect(policy({ provider_config: { model_name: "brand-new-model" } })).toEqual(
+      EFFORT_POLICY_ALL
+    );
+    expect(policy({ provider_config: { model_name: "" } })).toEqual(EFFORT_POLICY_ALL);
+    expect(policy({})).toEqual(EFFORT_POLICY_ALL);
+    expect(policy(undefined)).toEqual(EFFORT_POLICY_ALL);
+  });
+
+  it("carries a restrictive fallback just as faithfully", () => {
+    const strict = makeEffortPolicy({
+      rules: [{ when: /^grok/i, policy: REASONING }],
+      fallback: EFFORT_POLICY_NONE,
+    });
+    expect(strict({ provider_config: { model_name: "grok-4" } })).toEqual(REASONING);
+    expect(strict({ provider_config: { model_name: "llama-3" } })).toEqual(EFFORT_POLICY_NONE);
+    expect(strict(undefined)).toEqual(EFFORT_POLICY_NONE);
   });
 });
 

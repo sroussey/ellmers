@@ -4,22 +4,44 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { MODEL_EFFORTS, type ModelConfig, type ModelEffortPolicy } from "@workglow/ai/worker";
+import {
+  EFFORT_POLICY_NONE,
+  makeEffortPolicy,
+  MODEL_EFFORTS,
+  type ModelEffortPolicy,
+  type ModelEffortPolicyFn,
+} from "@workglow/ai/worker";
 import { parseAnthropicModelId } from "./Anthropic_RequestParams";
 
-const ALL = { supported: MODEL_EFFORTS, default: undefined } as const satisfies ModelEffortPolicy;
 const CLAUDE = { supported: MODEL_EFFORTS, default: "none" } as const satisfies ModelEffortPolicy;
-const NONE = { supported: [], default: undefined } as const satisfies ModelEffortPolicy;
 
-function modelName(model: ModelConfig): string {
-  return String(
-    (model.provider_config as { model_name?: string } | undefined)?.model_name ?? ""
-  ).trim();
+/**
+ * Gateways prefix the vendor onto the id (`us.anthropic.claude-…`,
+ * `anthropic.claude-…`) and suffix a revision (`…-v1:0`). Stripping the prefix
+ * grades those spellings on the same generation rule as a native id, instead of
+ * having them fall out of the parser as "not a Claude id at all".
+ */
+const GATEWAY_PREFIX = /^(?:[a-z0-9-]+\.)*anthropic\./i;
+
+/** Extended thinking arrived in Claude 3.7; older generations 400 on any thinking field. */
+function isPreThinkingClaude(id: string): boolean {
+  const parsed = parseAnthropicModelId(id.replace(GATEWAY_PREFIX, ""));
+  if (parsed === undefined) return false;
+  if (parsed.major !== 3) return parsed.major < 3;
+  return (parsed.minor ?? 0) < 7;
 }
 
-export function anthropicEffortPolicy(model: ModelConfig): ModelEffortPolicy {
-  const id = modelName(model);
-  if (!id) return ALL;
-  if (parseAnthropicModelId(id) !== undefined) return CLAUDE;
-  return NONE;
-}
+/**
+ * Anthropic serves one family, and every generation from 3.7 up takes the
+ * coarse dial on one path or the other, so only the generations that predate
+ * thinking are denied. An id this package cannot parse is far likelier to be a
+ * spelling it has not seen than a model without thinking, so it keeps the dial:
+ * {@link anthropicSupportsAdaptiveThinking} already routes an unparsed id to the
+ * legacy `thinking.type = "enabled"` budget, which is the safe landing. Denying
+ * whatever the parser declined made that fallback unreachable from
+ * `model.effort` — the setting was dropped before anything could use it.
+ */
+export const anthropicEffortPolicy: ModelEffortPolicyFn = makeEffortPolicy({
+  rules: [{ when: isPreThinkingClaude, policy: EFFORT_POLICY_NONE }],
+  fallback: CLAUDE,
+});
