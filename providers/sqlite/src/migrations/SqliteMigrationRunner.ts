@@ -36,7 +36,7 @@ const isSqliteConstraintError = (err: unknown): boolean => {
  * Each migration is wrapped in an explicit `BEGIN`/`COMMIT`/`ROLLBACK` so the
  * bookkeeping INSERT and the migration's DDL commit together — and a failure
  * in `up()` rolls back any partial schema it created. We do not use
- * better-sqlite3's `transaction()` helper because it cannot span the `await`
+ * the driver's `transaction()` helper because it cannot span the `await`
  * boundary that `up()` may introduce; manual BEGIN/COMMIT works because the
  * surrounding `runLocks` mutex prevents any other migration call from
  * touching the connection mid-transaction.

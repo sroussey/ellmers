@@ -10,7 +10,7 @@ import type { Als } from "./connectionAls.shared";
  * Cross-instance connection safety for storage backends that share a single
  * underlying database handle across multiple in-process
  * {@link BaseSqlTabularStorage} instances (e.g. two SqliteTabularStorage
- * repositories wrapping the same `better-sqlite3` `Database`, or two
+ * repositories wrapping the same `node:sqlite` `DatabaseSync`, or two
  * PostgresTabularStorage repositories over one PGlite session).
  *
  * A per-instance mutex only serializes calls that reach a single storage

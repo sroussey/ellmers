@@ -7,6 +7,7 @@
 import type * as SqliteWasmPkg from "@sqlite.org/sqlite-wasm";
 
 import type { SqliteApi } from "./canonical-api";
+import { assertSyncTransactionBody } from "./canonical-api";
 
 export type { SqliteApi };
 
@@ -104,14 +105,29 @@ class BrowserStatement<
 }
 
 /**
- * better-sqlite3 / {@link Sqlite.Database}–shaped wrapper around sqlite-wasm {@link WasmDatabase}.
+ * {@link Sqlite.Database}–shaped wrapper around sqlite-wasm {@link WasmDatabase}.
  */
 export class BrowserDatabase implements SqliteApi.Database {
   private readonly inner: WasmDatabase;
+  private readonly capi: WasmSqliteModule["capi"];
+  /** Monotonic savepoint counter; never reused, so a name cannot collide. */
+  #savepointSeq = 0;
 
   constructor(filename: string = ":memory:") {
     const sqlite = assertWasmLoaded();
     this.inner = new sqlite.oo1.DB(filename);
+    this.capi = sqlite.capi;
+  }
+
+  /**
+   * SQLite's own answer, read through `sqlite3_get_autocommit` — the same
+   * primitive better-sqlite3 exposed as `inTransaction`. Autocommit is on
+   * exactly when no transaction is open, so a transaction opened any way at
+   * all is seen, a prepared `BEGIN` included, and a `ROLLBACK TO` that unwinds
+   * a savepoint correctly leaves the outer transaction reported as open.
+   */
+  get inTransaction(): boolean {
+    return this.capi.sqlite3_get_autocommit(this.inner) === 0;
   }
 
   exec(sql: string): void {
@@ -121,33 +137,58 @@ export class BrowserDatabase implements SqliteApi.Database {
   prepare<BindParameters extends unknown[] | Record<string, unknown> = unknown[], Result = unknown>(
     sql: string
   ): SqliteApi.Statement<BindParameters, Result> {
-    const sqlite = assertWasmLoaded();
     return new BrowserStatement<BindParameters, Result>(
       this.inner.prepare(sql),
       this.inner,
-      sqlite.capi
+      this.capi
     );
   }
 
   /**
-   * Same contract as better-sqlite3 / Bun: returns a function that runs `fn` inside a single
-   * SQL transaction (BEGIN → COMMIT or ROLLBACK).
+   * Returns a function that runs `fn` inside a single SQL transaction
+   * (BEGIN → COMMIT or ROLLBACK), rejecting an async body through the same
+   * shared guard the Node driver uses.
+   *
+   * A call nested inside an open transaction uses a SAVEPOINT, decided by
+   * {@link inTransaction} — SQLite's own autocommit state, so a transaction any
+   * caller opened is seen and a second `BEGIN` is never issued.
    */
   transaction<T extends unknown[]>(fn: (...args: T) => void): (...args: T) => void {
     return (...args: T) => {
+      if (this.inTransaction) {
+        this.#runInSavepoint(fn, args);
+        return;
+      }
       this.exec("BEGIN");
       try {
-        fn(...args);
+        assertSyncTransactionBody(fn(...args));
         this.exec("COMMIT");
       } catch (err) {
         try {
-          this.exec("ROLLBACK");
+          if (this.inTransaction) this.exec("ROLLBACK");
         } catch {
           // prefer the original error if rollback fails
         }
         throw err;
       }
     };
+  }
+
+  #runInSavepoint<T extends unknown[]>(fn: (...args: T) => void, args: T): void {
+    const name = `_workglow_sp_${this.#savepointSeq++}`;
+    this.exec(`SAVEPOINT ${name}`);
+    try {
+      assertSyncTransactionBody(fn(...args));
+      this.exec(`RELEASE ${name}`);
+    } catch (err) {
+      try {
+        this.exec(`ROLLBACK TO ${name}`);
+        this.exec(`RELEASE ${name}`);
+      } catch {
+        // prefer the original error if the savepoint unwind fails
+      }
+      throw err;
+    }
   }
 
   close(): void {
