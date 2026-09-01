@@ -19,6 +19,7 @@ bun run test:bun           # Bun native tests only
 bun run test:vitest        # Vitest tests only
 bun test <testfilename>    # One test file
 
+bun run lint               # ESLint across every workspace (Turbo-cached); CI runs this
 bun run format             # ESLint fix + Prettier write
 bun run clean              # Remove dist, node_modules, .turbo, tsbuildinfo
 ```
