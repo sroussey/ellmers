@@ -18,7 +18,7 @@ export function cactusWorkerRunFnSpecs(): readonly {
 type CapabilityHints = Pick<ModelRecord, "model_id" | "provider_config" | "capabilities">;
 
 /**
- * needle-rs ships a single model architecture; capability inference is constant.
+ * needle-rs v1 and v2 share one capability set; inference does not vary by generation.
  */
 export function inferCactusCapabilities(_model: CapabilityHints): readonly Capability[] {
   return ["tool-use", "model.download", "model.download-remove", "model.search", "model.info"];

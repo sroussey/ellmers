@@ -9,7 +9,7 @@ import { Entitlements, TaskEntitlementError, TaskInvalidInputError } from "@work
 import { FileLoaderTask } from "@workglow/tasks";
 import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
-import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -25,6 +25,10 @@ describe("FileLoaderTask (server - local files)", () => {
     if (!existsSync(testDir)) {
       mkdirSync(testDir, { recursive: true });
     }
+    // The task realpaths a local path before declaring or opening it, and on
+    // macOS the temp dir is a symlink (/var/folders -> /private/var/folders).
+    // Compare against the real path so the expectations match what the task sees.
+    testDir = realpathSync(testDir);
   });
 
   afterEach(() => {

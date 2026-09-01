@@ -10,6 +10,10 @@ import { expect } from "vitest";
  * A registered run-fn capability that `inferCapabilities` never returns is
  * unreachable for any model whose record was populated by inference — the
  * path the catalog exists to serve.
+ *
+ * The inferred sets are unioned across the provider's fixtures, so this
+ * answers "is this capability reachable at all" and says nothing about any one
+ * model; {@link assertInferServesInferred} is the per-model direction.
  */
 export function assertInferAdvertisesRegistered(
   name: string,

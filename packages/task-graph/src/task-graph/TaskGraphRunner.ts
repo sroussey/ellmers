@@ -29,7 +29,7 @@ import { TaskAbortedError, TaskConfigurationError, TaskEntitlementError } from "
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
 import { TaskStatus } from "../task/TaskTypes";
 import { EdgeMaterializer } from "./EdgeMaterializer";
-import { computeGraphEntitlements } from "./GraphEntitlementUtils";
+import { computeGraphEntitlements, withStaticInputProjection } from "./GraphEntitlementUtils";
 import { RunContext } from "./RunContext";
 import { RunScheduler } from "./RunScheduler";
 import { StreamPump } from "./StreamPump";
@@ -244,7 +244,7 @@ export class TaskGraphRunner {
       : config!;
 
     try {
-      await this.handleStart(effectiveConfig);
+      await this.handleStart(effectiveConfig, input as Readonly<Record<string, unknown>>);
 
       // Capture ctx locally — terminal handlers (handleAbort/Error/Complete)
       // clear this.currentCtx, but the abort signal listener may invoke
@@ -676,7 +676,10 @@ export class TaskGraphRunner {
     });
   }
 
-  protected async handleStart(config?: TaskGraphRunConfig): Promise<void> {
+  protected async handleStart(
+    config?: TaskGraphRunConfig,
+    runInput?: Readonly<Record<string, unknown>>
+  ): Promise<void> {
     // Setup registry — create child from global if not provided
     if (config?.registry !== undefined) {
       this.registry = config.registry;
@@ -844,6 +847,10 @@ export class TaskGraphRunner {
     if (ctx.abortController.signal.aborted) return;
 
     this.resetGraph(this.graph, ctx.runId);
+    const enforcing = config?.enforceEntitlements === true;
+    for (const task of this.graph.getTasks()) {
+      task.runConfig = { ...task.runConfig, enforceEntitlements: enforcing };
+    }
     this.processScheduler.reset();
     // (in-progress maps + failedTaskErrors start empty on a fresh RunContext)
 
@@ -900,7 +907,10 @@ export class TaskGraphRunner {
           );
         }
         const enforcer = this.registry.get(ENTITLEMENT_ENFORCER);
-        const denied = await enforcer.checkAll(computeGraphEntitlements(this.graph));
+        const required = withStaticInputProjection(this.graph, runInput, () =>
+          computeGraphEntitlements(this.graph)
+        );
+        const denied = await enforcer.checkAll(required);
         if (denied.length > 0) {
           throw new TaskEntitlementError(
             `Denied entitlements: ${denied.map(formatEntitlementDenial).join(", ")}`

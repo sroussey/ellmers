@@ -10,6 +10,6 @@ import { registerCommonTasks } from "@workglow/tasks";
 
 export const registerTasks = () => {
   registerBaseTasks();
-  registerCommonTasks();
+  registerCommonTasks({ fileSystemTasks: false });
   registerAiTasks();
 };

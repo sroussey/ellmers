@@ -1,5 +1,74 @@
 # @workglow/tasks
 
+## 0.4.5
+
+## 0.4.4
+
+### Features
+
+#### task
+
+- implement entitlement enforcement in TaskRunner and TaskGraphRunner
+
+### Bug Fixes
+
+#### tasks
+
+- make dropping the filesystem tasks a compile-time decision
+
+### Updated Dependencies
+
+- `undici`: ^8.10.1
+
+## 0.4.3
+
+### Chores
+
+- update deps
+
+## 0.4.2
+
+## 0.4.1
+
+## 0.4.0
+
+## 0.3.49
+
+### Breaking Changes
+
+- **bug fixes(tasks)**: declare the owned FetchUrlTask entitlements on FileLoaderTask
+
+### Bug Fixes
+
+#### tasks
+
+- bound sedLines with a search deadline and restore the node export surface
+- accept optional groups in the regex screen and bound RegexTask matching
+- declare the owned FetchUrlTask entitlements on FileLoaderTask
+
+## 0.3.48
+
+### Breaking Changes
+
+- **bug fixes(tasks)**: contain the server filesystem tasks by default
+
+### Features
+
+#### tasks
+
+- improve error body reading in FetchUrlTask
+- enhance FetchUrlJobError to include detailed HTTP error messages
+
+### Bug Fixes
+
+#### tasks
+
+- reject method HEAD paired with response_type text/json/blob/arraybuffer
+- bound the error body read instead of buffering all of it
+- contain the server filesystem tasks by default
+- keep $<name> literal when the pattern has no named groups
+- emit each grep context line once instead of replaying it
+
 ## 0.3.47
 
 ### Features

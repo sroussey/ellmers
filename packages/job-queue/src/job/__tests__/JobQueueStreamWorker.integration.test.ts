@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { EventEmitter } from "node:events";
 import { Worker } from "node:worker_threads";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -60,8 +61,10 @@ describe("worker_threads transfer mechanism — payload validation for a future 
 
     const done = await new Promise<{ firstByteLength: number; secondByteLength: number }>(
       (resolve, reject) => {
-        worker!.on("error", reject);
-        worker!.on("message", (msg: Record<string, unknown>) => {
+        // Worker implements EventEmitter at runtime; current @types omit `on`.
+        const events = worker! as unknown as EventEmitter;
+        events.on("error", reject);
+        events.on("message", (msg: Record<string, unknown>) => {
           // The host plays the role of `JobHandle.onStream` listener: collect
           // every stream event the worker emits across the thread boundary.
           if (msg.type === "binary-delta" || msg.type === "finish") {

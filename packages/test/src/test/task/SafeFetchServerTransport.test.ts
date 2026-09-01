@@ -29,6 +29,19 @@ interface TestServer {
 /** Headers of every request a test server received, in arrival order. */
 type RequestLog = Array<Readonly<Record<string, string | string[] | undefined>>>;
 
+/**
+ * Whether the dispatcher this host builds can actually be closed.
+ *
+ * Freeing the socket is `Agent.close()`'s job, and Bun resolves `undici` to a
+ * shim whose `Agent` has neither `close` nor `destroy` — `closeAgent()` in
+ * `SafeFetch.server.ts` already guards for exactly that. A case that watches the
+ * server's connection count after an aborted hop is watching a lifecycle that
+ * only exists on top of real undici; everything else in this file still runs.
+ * Asked of the runtime rather than of `Agent` itself, because `undici` is a
+ * dependency of `@workglow/tasks` and does not resolve from this package.
+ */
+const DISPATCHER_CLOSES_CONNECTIONS: boolean = typeof Bun === "undefined";
+
 const servers: http.Server[] = [];
 const timers: NodeJS.Timeout[] = [];
 
@@ -161,7 +174,9 @@ describe("SafeFetch server transport (real node:http, no mocks)", () => {
   });
 
   afterEach(async () => {
-    process.off("unhandledRejection", onUnhandledRejection);
+    // bun-types 1.4 shadows `Process.off` with a memoryPressure-only overload;
+    // the EventEmitter view still carries the generic one.
+    (process as NodeJS.EventEmitter).off("unhandledRejection", onUnhandledRejection);
     for (const timer of timers.splice(0)) clearTimeout(timer);
     for (const server of servers.splice(0)) await closeServer(server);
   });
@@ -189,26 +204,29 @@ describe("SafeFetch server transport (real node:http, no mocks)", () => {
     expect(unhandled).toEqual([]);
   });
 
-  test("a cancelled body still frees the connection for the next request", async () => {
-    const { origin, server } = await withServer((_req, res) => {
-      res.writeHead(200, { "content-type": "text/plain" });
-      res.end("ok");
-    });
+  test.skipIf(!DISPATCHER_CLOSES_CONNECTIONS)(
+    "a cancelled body still frees the connection for the next request",
+    async () => {
+      const { origin, server } = await withServer((_req, res) => {
+        res.writeHead(200, { "content-type": "text/plain" });
+        res.end("ok");
+      });
 
-    const first = await safeFetch(`${origin}/`, { allowPrivate: true });
-    await first.body!.cancel();
+      const first = await safeFetch(`${origin}/`, { allowPrivate: true });
+      await first.body!.cancel();
 
-    // The dispatcher must still be closed on the cancel path, otherwise its
-    // keep-alive socket stays open forever.
-    expect(await waitForNoConnections(server, 5000)).toBe(0);
+      // The dispatcher must still be closed on the cancel path, otherwise its
+      // keep-alive socket stays open forever.
+      expect(await waitForNoConnections(server, 5000)).toBe(0);
 
-    const second = await safeFetch(`${origin}/`, { allowPrivate: true });
-    expect(second.status).toBe(200);
-    expect(await second.text()).toBe("ok");
+      const second = await safeFetch(`${origin}/`, { allowPrivate: true });
+      expect(second.status).toBe(200);
+      expect(await second.text()).toBe("ok");
 
-    await drainRejections();
-    expect(unhandled).toEqual([]);
-  });
+      await drainRejections();
+      expect(unhandled).toEqual([]);
+    }
+  );
 
   test("a fully read body returns the complete text and raises no unhandled rejection", async () => {
     const { origin } = await withServer((_req, res) => {
@@ -302,24 +320,27 @@ describe("SafeFetch server transport (real node:http, no mocks)", () => {
   // Throwing on the status alone leaves the body unread, and undici holds the
   // connection until GC gets to it — one socket per attempt, on a path whose
   // 429/5xx are retried up to `maxAttempts`.
-  test("a non-2xx response frees its connection instead of leaking it", async () => {
-    const body = "x".repeat(200_000);
-    const { origin, server } = await withServer((_req, res) => {
-      res.writeHead(503, {
-        "content-type": "text/plain",
-        "content-length": String(body.length),
+  test.skipIf(!DISPATCHER_CLOSES_CONNECTIONS)(
+    "a non-2xx response frees its connection instead of leaking it",
+    async () => {
+      const body = "x".repeat(200_000);
+      const { origin, server } = await withServer((_req, res) => {
+        res.writeHead(503, {
+          "content-type": "text/plain",
+          "content-length": String(body.length),
+        });
+        res.end(body);
       });
-      res.end(body);
-    });
 
-    const task = new FetchUrlTask();
-    await expect(task.run({ url: `${origin}/`, response_type: "text" })).rejects.toThrow(/503/);
+      const task = new FetchUrlTask();
+      await expect(task.run({ url: `${origin}/`, response_type: "text" })).rejects.toThrow(/503/);
 
-    expect(await waitForNoConnections(server, 5000)).toBe(0);
+      expect(await waitForNoConnections(server, 5000)).toBe(0);
 
-    await drainRejections();
-    expect(unhandled).toEqual([]);
-  });
+      await drainRejections();
+      expect(unhandled).toEqual([]);
+    }
+  );
 
   test("aborting FetchUrlTask mid-body raises no unhandled rejection", async () => {
     const { origin } = await withServer((_req, res) => {
@@ -575,45 +596,51 @@ describe("SafeFetch server transport (real node:http, no mocks)", () => {
   describe("dispatcher lifetime across redirects", () => {
     const CONNECTION_WAIT_MS = 2000;
 
-    test("a redirect to a denied target frees the previous hop's connection", async () => {
-      // The leak is on exactly the denial path the SSRF work exists to
-      // exercise: hop 2 throws before anything closes hop 1's Agent.
-      const denied = await withServer((_req, res) => {
-        res.writeHead(200, { "content-type": "text/plain" });
-        res.end("should-never-be-reached");
-      });
-      const hop = await redirectingServer(`${denied.origin}/admin`);
+    test.skipIf(!DISPATCHER_CLOSES_CONNECTIONS)(
+      "a redirect to a denied target frees the previous hop's connection",
+      async () => {
+        // The leak is on exactly the denial path the SSRF work exists to
+        // exercise: hop 2 throws before anything closes hop 1's Agent.
+        const denied = await withServer((_req, res) => {
+          res.writeHead(200, { "content-type": "text/plain" });
+          res.end("should-never-be-reached");
+        });
+        const hop = await redirectingServer(`${denied.origin}/admin`);
 
-      const error = await safeFetch(`${hop.origin}/start`, {
-        allowPrivate: true,
-        privateResourceScopes: [`${hop.origin}/*`],
-      }).catch((e: unknown) => e);
+        const error = await safeFetch(`${hop.origin}/start`, {
+          allowPrivate: true,
+          privateResourceScopes: [`${hop.origin}/*`],
+        }).catch((e: unknown) => e);
 
-      expect((error as { code?: string }).code).toBe(FetchUrlErrorCode.SCOPE_DENIED);
-      expect(await waitForNoConnections(hop.server, CONNECTION_WAIT_MS)).toBe(0);
+        expect((error as { code?: string }).code).toBe(FetchUrlErrorCode.SCOPE_DENIED);
+        expect(await waitForNoConnections(hop.server, CONNECTION_WAIT_MS)).toBe(0);
 
-      await drainRejections();
-      expect(unhandled).toEqual([]);
-    });
+        await drainRejections();
+        expect(unhandled).toEqual([]);
+      }
+    );
 
-    test("exhausting the redirect budget frees every connection", async () => {
-      // The terminal throw sits outside the loop, so the final hop's Agent was
-      // never closed at all.
-      const loop = await withServer((_req, res) => {
-        res.writeHead(302, { location: "/again" });
-        res.end();
-      });
+    test.skipIf(!DISPATCHER_CLOSES_CONNECTIONS)(
+      "exhausting the redirect budget frees every connection",
+      async () => {
+        // The terminal throw sits outside the loop, so the final hop's Agent was
+        // never closed at all.
+        const loop = await withServer((_req, res) => {
+          res.writeHead(302, { location: "/again" });
+          res.end();
+        });
 
-      const error = await safeFetch(`${loop.origin}/start`, { allowPrivate: true }).catch(
-        (e: unknown) => e
-      );
+        const error = await safeFetch(`${loop.origin}/start`, { allowPrivate: true }).catch(
+          (e: unknown) => e
+        );
 
-      expect((error as { code?: string }).code).toBe(FetchUrlErrorCode.TOO_MANY_REDIRECTS);
-      expect(await waitForNoConnections(loop.server, CONNECTION_WAIT_MS)).toBe(0);
+        expect((error as { code?: string }).code).toBe(FetchUrlErrorCode.TOO_MANY_REDIRECTS);
+        expect(await waitForNoConnections(loop.server, CONNECTION_WAIT_MS)).toBe(0);
 
-      await drainRejections();
-      expect(unhandled).toEqual([]);
-    });
+        await drainRejections();
+        expect(unhandled).toEqual([]);
+      }
+    );
 
     test("a followed redirect with a non-empty body drains it and frees the connection", async () => {
       // Agent.close() waits for pending requests, and an un-cancelled redirect

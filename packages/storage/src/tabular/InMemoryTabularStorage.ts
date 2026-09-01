@@ -45,9 +45,9 @@ export const MEMORY_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
 /**
  * Whether `entity` satisfies every criterion in `criteria`.
  *
- * Extracted so `query`, `deleteSearch`, and `updateWhere` share one matcher —
- * they previously carried three byte-identical operator switches, which is
- * three places for a new operator family to be forgotten.
+ * Shared by `query`, `deleteSearch`, and `updateWhere` so there is one
+ * operator switch instead of three that could drift out of sync when a new
+ * operator family is added.
  */
 function matchesCriteria<Entity>(
   entity: Entity,

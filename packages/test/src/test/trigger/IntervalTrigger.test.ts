@@ -622,41 +622,50 @@ describe("IntervalTrigger", () => {
         expect(errors.map((error) => error.message)).toContain("stop listener boom");
         expect(rejections).toEqual([]);
       } finally {
-        process.off("unhandledRejection", onRejection);
+        // bun-types 1.4 shadows `Process.off` with a memoryPressure-only overload;
+        // the EventEmitter view still carries the generic one.
+        (process as NodeJS.EventEmitter).off("unhandledRejection", onRejection);
       }
     });
   });
 
   describe("abort", () => {
-    test("a tick queued before stop() neither fires nor invokes the handler", async () => {
-      const trigger = new IntervalTrigger({ intervalMs: PERIOD });
-      const fires: number[] = [];
-      const calls: number[] = [];
-      trigger.on("fire", (context) => fires.push(context.scheduledAt));
+    // Vitest only: the assertion below stands in the gap between a timer callback
+    // and the microtask it queued, and Bun's `advanceTimersByTime` drains the
+    // microtask queue before it returns — under Bun the chain has already run,
+    // so the window this test is about does not exist to be observed.
+    test.skipIf(typeof Bun !== "undefined")(
+      "a tick queued before stop() neither fires nor invokes the handler",
+      async () => {
+        const trigger = new IntervalTrigger({ intervalMs: PERIOD });
+        const fires: number[] = [];
+        const calls: number[] = [];
+        trigger.on("fire", (context) => fires.push(context.scheduledAt));
 
-      trigger.start((context) => {
-        calls.push(context.scheduledAt);
-      });
+        trigger.start((context) => {
+          calls.push(context.scheduledAt);
+        });
 
-      // SYNCHRONOUS advance, deliberately: `dispatch` defers the tick chain by
-      // one microtask (so it is registered in `run.pending` before it runs),
-      // and `advanceFakeTimers` flushes microtasks — which would close the very
-      // window under test. This leaves the chain queued but not yet started.
-      vi.advanceTimersByTime(PERIOD);
-      expect(fires).toEqual([]);
-      expect(calls).toEqual([]);
+        // SYNCHRONOUS advance, deliberately: `dispatch` defers the tick chain by
+        // one microtask (so it is registered in `run.pending` before it runs),
+        // and `advanceFakeTimers` flushes microtasks — which would close the very
+        // window under test. This leaves the chain queued but not yet started.
+        vi.advanceTimersByTime(PERIOD);
+        expect(fires).toEqual([]);
+        expect(calls).toEqual([]);
 
-      // `stop()` clears `run.active`, but the drain AWAITS that queued chain,
-      // so it still gets to run. Without the guard at the top of the chain, its
-      // first tick fired — emitting `fire` and invoking the handler with an
-      // already-aborted signal, after the trigger reported itself stopped.
-      await trigger.stop();
-      await flushAsyncWork();
+        // `stop()` clears `run.active`, but the drain AWAITS that queued chain,
+        // so it still gets to run. Without the guard at the top of the chain, its
+        // first tick fired — emitting `fire` and invoking the handler with an
+        // already-aborted signal, after the trigger reported itself stopped.
+        await trigger.stop();
+        await flushAsyncWork();
 
-      expect(fires).toEqual([]);
-      expect(calls).toEqual([]);
-      expect(trigger.running).toBe(false);
-    });
+        expect(fires).toEqual([]);
+        expect(calls).toEqual([]);
+        expect(trigger.running).toBe(false);
+      }
+    );
 
     test("stop() aborts the signal handed to the handler and waits for it to settle", async () => {
       const trigger = new IntervalTrigger({ intervalMs: PERIOD });

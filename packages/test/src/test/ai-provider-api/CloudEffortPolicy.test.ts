@@ -16,33 +16,53 @@ function cfg(provider: string, model_name: string) {
 }
 
 describe("anthropicEffortPolicy", () => {
-  it("returns all levels with no default when the name is empty", () => {
-    expect(anthropicEffortPolicy(cfg(ANTHROPIC, ""))).toEqual({
-      supported: [...MODEL_EFFORTS],
-      default: undefined,
-    });
-  });
-
   it("treats parsed Claude ids as all six with default none", () => {
     expect(anthropicEffortPolicy(cfg(ANTHROPIC, "claude-sonnet-5"))).toEqual({
       supported: [...MODEL_EFFORTS],
       default: "none",
     });
+    expect(anthropicEffortPolicy(cfg(ANTHROPIC, "claude-3-7-sonnet-20250219"))?.default).toBe(
+      "none"
+    );
   });
 
-  it("returns no levels for a non-Claude id", () => {
-    expect(anthropicEffortPolicy(cfg(ANTHROPIC, "not-claude"))?.supported).toEqual([]);
+  // The gateway spellings reach this provider through the `baseURL` seam. They
+  // do not parse as native ids, and denying whatever the parser declined took
+  // the dial away from them silently.
+  it("keeps the dial on gateway-prefixed spellings of a thinking generation", () => {
+    expect(
+      anthropicEffortPolicy(cfg(ANTHROPIC, "us.anthropic.claude-sonnet-4-20250514-v1:0"))?.supported
+    ).toEqual([...MODEL_EFFORTS]);
+    expect(
+      anthropicEffortPolicy(cfg(ANTHROPIC, "global.anthropic.claude-opus-4-1@20250805"))?.supported
+    ).toEqual([...MODEL_EFFORTS]);
+  });
+
+  // An id nothing recognizes is likelier a spelling this package has not seen
+  // than a model without thinking, and the legacy `thinking.type = "enabled"`
+  // path already handles it — so it keeps the dial rather than losing it.
+  it("keeps the dial on an unrecognized id, and on a model with no id at all", () => {
+    expect(anthropicEffortPolicy(cfg(ANTHROPIC, "not-claude"))?.supported).toEqual([
+      ...MODEL_EFFORTS,
+    ]);
+    expect(anthropicEffortPolicy(cfg(ANTHROPIC, ""))?.supported).toEqual([...MODEL_EFFORTS]);
+  });
+
+  // Extended thinking arrived in 3.7: everything below it 400s on a thinking
+  // field, gateway spelling included.
+  it("returns no levels for generations that predate extended thinking", () => {
+    expect(anthropicEffortPolicy(cfg(ANTHROPIC, "claude-3-5-haiku-20241022"))?.supported).toEqual(
+      []
+    );
+    expect(anthropicEffortPolicy(cfg(ANTHROPIC, "claude-3-haiku-20240307"))?.supported).toEqual([]);
+    expect(anthropicEffortPolicy(cfg(ANTHROPIC, "claude-2.1"))?.supported).toEqual([]);
+    expect(
+      anthropicEffortPolicy(cfg(ANTHROPIC, "anthropic.claude-3-5-sonnet-20241022-v2:0"))?.supported
+    ).toEqual([]);
   });
 });
 
 describe("geminiEffortPolicy", () => {
-  it("returns all levels with no default when the name is empty", () => {
-    expect(geminiEffortPolicy(cfg(GOOGLE_GEMINI, ""))).toEqual({
-      supported: [...MODEL_EFFORTS],
-      default: undefined,
-    });
-  });
-
   it("treats text gemini models as all six with default none", () => {
     expect(geminiEffortPolicy(cfg(GOOGLE_GEMINI, "gemini-3.5-flash"))).toEqual({
       supported: [...MODEL_EFFORTS],
@@ -57,37 +77,79 @@ describe("geminiEffortPolicy", () => {
     );
     expect(geminiEffortPolicy(cfg(GOOGLE_GEMINI, "gemini-3.1-flash-image"))?.supported).toEqual([]);
   });
+
+  it("answers an unrecognized id and an absent one the same way", () => {
+    expect(geminiEffortPolicy(cfg(GOOGLE_GEMINI, "palm-2"))?.supported).toEqual([]);
+    expect(geminiEffortPolicy(cfg(GOOGLE_GEMINI, ""))?.supported).toEqual([]);
+  });
 });
 
 describe("deepseekEffortPolicy", () => {
-  it("returns all levels with no default when the name is empty", () => {
-    expect(deepseekEffortPolicy(cfg(DEEPSEEK, ""))).toEqual({
-      supported: [...MODEL_EFFORTS],
-      default: undefined,
-    });
-  });
-
-  it("treats deepseek-v4 as all six with default high", () => {
+  it("treats the v4 family as all six with default high", () => {
     expect(deepseekEffortPolicy(cfg(DEEPSEEK, "deepseek-v4-flash"))).toEqual({
       supported: [...MODEL_EFFORTS],
       default: "high",
     });
+    expect(deepseekEffortPolicy(cfg(DEEPSEEK, "deepseek-v5"))?.default).toBe("high");
   });
 
-  it("returns no levels for other DeepSeek ids", () => {
+  // `deepseek-reasoner` is the vendor's own name for the thinking model, and
+  // matching only `deepseek-v4` dropped the dial on it.
+  it("treats deepseek-reasoner and the r-series as reasoning", () => {
+    expect(deepseekEffortPolicy(cfg(DEEPSEEK, "deepseek-reasoner"))).toEqual({
+      supported: [...MODEL_EFFORTS],
+      default: "high",
+    });
+    expect(deepseekEffortPolicy(cfg(DEEPSEEK, "deepseek-r1"))?.supported).toEqual([
+      ...MODEL_EFFORTS,
+    ]);
+  });
+
+  it("returns no levels for the non-thinking chat id, an unknown id, and an absent one", () => {
     expect(deepseekEffortPolicy(cfg(DEEPSEEK, "deepseek-chat"))?.supported).toEqual([]);
+    expect(deepseekEffortPolicy(cfg(DEEPSEEK, "deepseek-v3"))?.supported).toEqual([]);
+    expect(deepseekEffortPolicy(cfg(DEEPSEEK, ""))?.supported).toEqual([]);
   });
 });
 
 describe("openrouterEffortPolicy", () => {
-  it("returns all levels with no default for empty and named ids", () => {
-    expect(openrouterEffortPolicy(cfg(OPENROUTER, ""))).toEqual({
-      supported: [...MODEL_EFFORTS],
-      default: undefined,
-    });
+  // OpenRouter's catalogue is open-ended and it drops a parameter the routed
+  // model does not take, so an unrecognized id keeps every level.
+  it("returns all levels for text ids, including ones it does not recognize", () => {
     expect(openrouterEffortPolicy(cfg(OPENROUTER, "openai/gpt-5"))).toEqual({
       supported: [...MODEL_EFFORTS],
       default: undefined,
     });
+    expect(openrouterEffortPolicy(cfg(OPENROUTER, "openai/gpt-4o"))?.supported).toEqual([
+      ...MODEL_EFFORTS,
+    ]);
+    expect(openrouterEffortPolicy(cfg(OPENROUTER, "newvendor/unheard-of"))?.supported).toEqual([
+      ...MODEL_EFFORTS,
+    ]);
+    expect(openrouterEffortPolicy(cfg(OPENROUTER, ""))?.supported).toEqual([...MODEL_EFFORTS]);
+  });
+
+  // Returning every level unconditionally made the gate at the call site a
+  // no-op: an embedding id has no `reasoning` field to carry the dial.
+  it("returns no levels for the non-text modalities", () => {
+    expect(
+      openrouterEffortPolicy(cfg(OPENROUTER, "openai/text-embedding-3-small"))?.supported
+    ).toEqual([]);
+    expect(openrouterEffortPolicy(cfg(OPENROUTER, "qwen/qwen3-embedding-8b"))?.supported).toEqual(
+      []
+    );
+    expect(openrouterEffortPolicy(cfg(OPENROUTER, "mistralai/mistral-embed"))?.supported).toEqual(
+      []
+    );
+    expect(
+      openrouterEffortPolicy(cfg(OPENROUTER, "black-forest-labs/flux-1.1-pro"))?.supported
+    ).toEqual([]);
+    expect(
+      openrouterEffortPolicy(cfg(OPENROUTER, "google/gemini-2.5-flash-image"))?.supported
+    ).toEqual([]);
+    expect(openrouterEffortPolicy(cfg(OPENROUTER, "openai/whisper-1"))?.supported).toEqual([]);
+    expect(
+      openrouterEffortPolicy(cfg(OPENROUTER, "openai/omni-moderation-latest"))?.supported
+    ).toEqual([]);
   });
 });

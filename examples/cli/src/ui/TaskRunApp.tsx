@@ -5,21 +5,30 @@
  */
 
 import type { IRunConfig, ITask } from "@workglow/task-graph";
-import { Box, Static, Text } from "ink";
+import { Box, Static, Text, useWindowSize } from "ink";
 import path from "node:path";
-import React, { useEffect, useRef, useState } from "react";
-import { startTaskInstancePoll, type TaskFileProgressRow } from "./cliTaskUi";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { adoptPolledProgress, startTaskInstancePoll, type TaskFileProgressRow } from "./cliTaskUi";
 import { useCliTheme } from "./CliThemeContext";
 import { CLI_SPINNER_FRAMES } from "./components/CliSpinner";
 import { ProgressBar } from "./components/ProgressBar";
+import { deriveRunState, RunStatusBar } from "./components/RunStatusBar";
+import { RunViewportProvider } from "./components/RunViewport";
+import { ScrollRegion } from "./components/ScrollRegion";
 import { StreamOutput } from "./components/StreamOutput";
+import { TaskErrorDetail } from "./components/TaskErrorDetail";
 import { TaskStatusProgressRow } from "./components/TaskStatusProgressRow";
 import { HumanInteractionHost } from "./HumanInteractionHost";
+import { planRunViewport } from "./model/runViewport";
 import { isRedundantSubgraph, SubtaskRows } from "./rows/SubtaskRows";
+import { settledTaskDurationMs } from "./rows/taskDuration";
 import { useSubtaskRows } from "./rows/useSubtaskRows";
 import { useTaskUsageLine } from "./rows/useTaskUsageLine";
 import { cliTaskLabel } from "./taskGraphCliSubscriptions";
 import { useGraphUsageLine } from "./useGraphUsageLine";
+import { useRepaintOnResize } from "./useRepaintOnResize";
+import { useTaskRunCensus } from "./useRunCensus";
+import { useRunClock } from "./useRunClock";
 
 interface TaskRunAppProps {
   readonly task: ITask;
@@ -38,7 +47,7 @@ interface LogLine {
 /** Batched progress UI when there is no per-file download list (keeps Ink calm). */
 interface TaskRunDisplayBatch {
   readonly spin: number;
-  readonly progress: number;
+  readonly progress: number | undefined;
   readonly message: string | undefined;
 }
 
@@ -63,6 +72,12 @@ function fileListsEqual(
 /** Matches per-file {@link ProgressBar} width in download mode. */
 const DOWNLOAD_PROGRESS_BAR_WIDTH = 10;
 
+/** Footer, its rule, and a blank line before the shell prompt. */
+const RESERVED_ROWS = 3;
+
+/** A region smaller than this shows nothing useful; better to overflow the window. */
+const MIN_REGION_ROWS = 4;
+
 export function TaskRunApp({
   task,
   taskType,
@@ -74,10 +89,13 @@ export function TaskRunApp({
   const theme = useCliTheme();
   const bodyColor = theme.level === "advanced" ? theme.fg : undefined;
   const [status, setStatus] = useState("PENDING");
-  const progressRef = useRef({ prog: 0, msg: undefined as string | undefined });
+  const progressRef = useRef({
+    prog: undefined as number | undefined,
+    msg: undefined as string | undefined,
+  });
   const [batch, setBatch] = useState<TaskRunDisplayBatch>({
     spin: 0,
-    progress: 0,
+    progress: undefined,
     message: undefined,
   });
   const [downloadFiles, setDownloadFiles] = useState<TaskFileProgressRow[]>([]);
@@ -86,6 +104,16 @@ export function TaskRunApp({
   const runUsageLine = useGraphUsageLine(task.subGraph);
   const subtasks = useSubtaskRows(task);
   const usageLine = useTaskUsageLine(task);
+  const census = useTaskRunCensus(task);
+  const elapsedMs = useRunClock(
+    status !== "COMPLETED" && status !== "FAILED" && status !== "ABORTED"
+  );
+  // Ink re-reads this on every SIGWINCH, so a resized window re-prices the
+  // plan on the next frame.
+  const windowSize = useWindowSize();
+  useRepaintOnResize(windowSize.columns);
+  const budgetRows = Math.max(MIN_REGION_ROWS, windowSize.rows - RESERVED_ROWS);
+  const plan = useMemo(() => planRunViewport(census.tree, budgetRows), [census.tree, budgetRows]);
 
   const showFileDownloadList = downloadFiles.length > 0;
   /** One header row + optional file list — avoids a pre-files row (default bar width) then a second row after `files` appears. */
@@ -96,7 +124,7 @@ export function TaskRunApp({
 
     const flushTaskDisplay = (): void => {
       const fileList = mapTaskFiles(task);
-      const prog = typeof task.progress === "number" ? task.progress : progressRef.current.prog;
+      const prog = adoptPolledProgress(task.progress, progressRef.current.prog);
       const msg = progressRef.current.msg;
       if (fileList.length > 0) {
         setDownloadFiles((prev) => (fileListsEqual(prev, fileList) ? prev : fileList));
@@ -179,44 +207,60 @@ export function TaskRunApp({
           )}
         </Static>
 
-        <Box flexDirection="column">
-          <TaskStatusProgressRow
-            label={cliTaskLabel(task)}
-            status={status}
-            message={isModelDownloadTask ? undefined : batch.message}
-            barProgress={batch.progress}
-            spinnerFrame={batch.spin}
-            progressBarWidth={isModelDownloadTask ? DOWNLOAD_PROGRESS_BAR_WIDTH : undefined}
-          />
-          {usageLine ? <Text dimColor> {usageLine}</Text> : null}
-          {showFileDownloadList && (
-            <Box paddingLeft={2} flexDirection="column">
-              {downloadFiles.map((f) => (
-                <Box key={f.file} flexDirection="row" flexWrap="nowrap" alignItems="center">
-                  <Box flexGrow={1} minWidth={0} overflow="hidden" marginRight={1}>
-                    <Text dimColor wrap="truncate-end">
-                      {path.basename(f.file)}
-                    </Text>
+        <RunViewportProvider
+          plan={plan}
+          slot={
+            <ScrollRegion budgetRows={budgetRows}>
+              <Box flexDirection="column">
+                <TaskStatusProgressRow
+                  label={cliTaskLabel(task)}
+                  status={status}
+                  message={isModelDownloadTask ? undefined : batch.message}
+                  barProgress={batch.progress}
+                  durationMs={usageLine ? undefined : settledTaskDurationMs(task)}
+                  spinnerFrame={batch.spin}
+                  progressBarWidth={isModelDownloadTask ? DOWNLOAD_PROGRESS_BAR_WIDTH : undefined}
+                />
+                {usageLine ? <Text dimColor> {usageLine}</Text> : null}
+                <TaskErrorDetail task={task} status={status} />
+                {showFileDownloadList && (
+                  <Box paddingLeft={2} flexDirection="column">
+                    {downloadFiles.map((f) => (
+                      <Box key={f.file} flexDirection="row" flexWrap="nowrap" alignItems="center">
+                        <Box flexGrow={1} minWidth={0} overflow="hidden" marginRight={1}>
+                          <Text dimColor wrap="truncate-end">
+                            {path.basename(f.file)}
+                          </Text>
+                        </Box>
+                        <Box flexShrink={0}>
+                          <ProgressBar progress={f.progress} width={DOWNLOAD_PROGRESS_BAR_WIDTH} />
+                        </Box>
+                      </Box>
+                    ))}
                   </Box>
-                  <Box flexShrink={0}>
-                    <ProgressBar progress={f.progress} width={DOWNLOAD_PROGRESS_BAR_WIDTH} />
-                  </Box>
-                </Box>
-              ))}
-            </Box>
-          )}
-          {streamText && <StreamOutput text={streamText} />}
-          {showSubtasksSection && (
-            <SubtaskRows
-              rows={subtasks.rows}
-              tasks={subtasks.tasks}
-              iterationSlots={subtasks.iterationSlots}
-              overallProgress={subtasks.overallProgress}
-              variant="chrome"
-            />
-          )}
-          {runUsageLine ? <Text>{`Tokens ${runUsageLine}`}</Text> : null}
-        </Box>
+                )}
+                {streamText && <StreamOutput text={streamText} />}
+                {showSubtasksSection && (
+                  <SubtaskRows
+                    listKey={`/${String(task.id)}`}
+                    rows={subtasks.rows}
+                    tasks={subtasks.tasks}
+                    iterationSlots={subtasks.iterationSlots}
+                    overallProgress={subtasks.overallProgress}
+                    variant="chrome"
+                  />
+                )}
+              </Box>
+            </ScrollRegion>
+          }
+        />
+        <RunStatusBar
+          usageLine={runUsageLine}
+          counts={census.counts}
+          state={deriveRunState([status])}
+          elapsedMs={elapsedMs}
+          hiddenRows={plan.hidden}
+        />
       </Box>
     </HumanInteractionHost>
   );

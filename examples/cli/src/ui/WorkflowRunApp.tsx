@@ -5,12 +5,16 @@
  */
 
 import type { TaskGraph } from "@workglow/task-graph";
-import { Box, Text } from "ink";
-import React, { useEffect, useState } from "react";
+import { Box, Text, useWindowSize } from "ink";
+import React, { useEffect, useMemo, useState } from "react";
 import { sortCliTaskLinesForDisplay, startGraphTaskPoll } from "./cliTaskUi";
-import { useCliTheme } from "./CliThemeContext";
-import { ProgressBar } from "./components/ProgressBar";
+import { AggregateProgressRow } from "./components/AggregateProgressRow";
+import { deriveRunState, RunStatusBar } from "./components/RunStatusBar";
+import { RunViewportProvider, useVisibleRows } from "./components/RunViewport";
+import { ScrollRegion } from "./components/ScrollRegion";
 import { HumanInteractionHost } from "./HumanInteractionHost";
+import { runAggregateProgress } from "./model/runRowModel";
+import { hiddenSiblingsLine, planRunViewport } from "./model/runViewport";
 import { ChatTaskRow } from "./rows/ChatTaskRow";
 import { DefaultTaskRow } from "./rows/DefaultTaskRow";
 import { pickRenderer } from "./rows/pickRenderer";
@@ -18,6 +22,19 @@ import { StreamingTextRow } from "./rows/StreamingTextRow";
 import type { CliTaskLine, IterationSlotRow } from "./taskGraphCliSubscriptions";
 import { subscribeTaskGraphForCli } from "./taskGraphCliSubscriptions";
 import { useGraphUsageLine } from "./useGraphUsageLine";
+import { useRepaintOnResize } from "./useRepaintOnResize";
+import { useGraphRunCensus } from "./useRunCensus";
+import { useRunClock } from "./useRunClock";
+
+/**
+ * Rows the run keeps for itself outside the scrolling region: the footer and
+ * its rule, plus one blank line so the shell prompt does not land flush against
+ * the last row when the run ends.
+ */
+const RESERVED_ROWS = 3;
+
+/** A region smaller than this shows nothing useful; better to overflow the window. */
+const MIN_REGION_ROWS = 4;
 
 interface WorkflowRunAppProps {
   readonly graph: TaskGraph;
@@ -40,12 +57,16 @@ export function WorkflowRunApp({
   onComplete,
   onError,
 }: WorkflowRunAppProps): React.ReactElement {
-  const theme = useCliTheme();
-  const bodyColor = theme.level === "advanced" ? theme.fg : undefined;
   const [taskInfos, setTaskInfos] = useState<Map<string, CliTaskLine>>(new Map());
   const [overallProgress, setOverallProgress] = useState<number | undefined>(undefined);
   const [iterationSlots, setIterationSlots] = useState<Map<string, IterationSlotRow[]>>(new Map());
   const runUsageLine = useGraphUsageLine(graph);
+  const census = useGraphRunCensus(graph);
+  // Ink re-reads this on every SIGWINCH, so a window that changes size
+  // re-prices the plan on the next frame rather than at the next graph event.
+  const windowSize = useWindowSize();
+  useRepaintOnResize(windowSize.columns);
+
   useEffect(() => {
     const unsub = subscribeTaskGraphForCli(
       graph,
@@ -68,42 +89,83 @@ export function WorkflowRunApp({
 
   const order = new Map(graph.getTasks().map((t, i) => [String(t.id), i]));
   const orderedTasks = sortCliTaskLinesForDisplay(Array.from(taskInfos.values()), order);
+  const runState = deriveRunState(orderedTasks.map((t) => t.status));
+  const elapsedMs = useRunClock(runState === "running" || runState === "");
+
+  const headerRows = overallProgress !== undefined ? 1 : 0;
+  const budgetRows = Math.max(MIN_REGION_ROWS, windowSize.rows - RESERVED_ROWS - headerRows);
+  const plan = useMemo(() => planRunViewport(census.tree, budgetRows), [census.tree, budgetRows]);
 
   return (
     <HumanInteractionHost>
       <Box flexDirection="column">
-        <Box flexDirection="column">
-          {overallProgress !== undefined && (
-            <Box flexDirection="row" justifyContent="space-between" width="100%">
-              <Text color={bodyColor}>Workflow: </Text>
-              <Box flexShrink={0} marginLeft={1}>
-                <ProgressBar progress={overallProgress} />
-              </Box>
-            </Box>
-          )}
-          {orderedTasks.map((t) => {
-            const taskInstance = graph.getTasks().find((x) => String(x.id) === t.id);
-            // Every id in orderedTasks comes from graph.getTasks(), so this
-            // lookup should always succeed. Skip rendering if the invariant
-            // ever breaks rather than masking it with a bogus cast.
-            if (!taskInstance) return null;
-            const Row = pickRenderer(t.type, taskInstance.outputSchema(), {
-              ChatTaskRow,
-              StreamingTextRow,
-              DefaultTaskRow,
-            });
-            return (
-              <Row
-                key={t.id}
-                task={taskInstance}
-                line={t}
-                iterationSlots={iterationSlots.get(t.id)}
-              />
-            );
-          })}
-          {runUsageLine ? <Text>{`Tokens ${runUsageLine}`}</Text> : null}
-        </Box>
+        {overallProgress !== undefined && (
+          <AggregateProgressRow
+            label="Workflow"
+            progress={runAggregateProgress(overallProgress, orderedTasks)}
+            emphasis
+          />
+        )}
+        <RunViewportProvider
+          plan={plan}
+          slot={
+            <ScrollRegion budgetRows={budgetRows}>
+              <RootTaskRows graph={graph} rows={orderedTasks} iterationSlots={iterationSlots} />
+            </ScrollRegion>
+          }
+        />
+        <RunStatusBar
+          usageLine={runUsageLine}
+          counts={census.counts}
+          state={runState}
+          elapsedMs={elapsedMs}
+          hiddenRows={plan.hidden}
+        />
       </Box>
     </HumanInteractionHost>
+  );
+}
+
+/**
+ * The run's top-level rows. Capped by the same plan as every nested list — a
+ * graph of forty parallel tasks is as capable of filling a terminal as one
+ * task's map is.
+ */
+function RootTaskRows({
+  graph,
+  rows,
+  iterationSlots,
+}: {
+  readonly graph: TaskGraph;
+  readonly rows: readonly CliTaskLine[];
+  readonly iterationSlots: ReadonlyMap<string, IterationSlotRow[]>;
+}): React.ReactElement {
+  const { visible, hidden } = useVisibleRows("", rows);
+  const hiddenLine = hiddenSiblingsLine(hidden.map((row) => row.status));
+  return (
+    <Box flexDirection="column">
+      {hiddenLine ? <Text dimColor>{hiddenLine}</Text> : null}
+      {visible.map((t) => {
+        const taskInstance = graph.getTasks().find((x) => String(x.id) === t.id);
+        // Every id in rows comes from graph.getTasks(), so this lookup should
+        // always succeed. Skip rendering if the invariant ever breaks rather
+        // than masking it with a bogus cast.
+        if (!taskInstance) return null;
+        const Row = pickRenderer(t.type, taskInstance.outputSchema(), {
+          ChatTaskRow,
+          StreamingTextRow,
+          DefaultTaskRow,
+        });
+        return (
+          <Row
+            key={t.id}
+            task={taskInstance}
+            line={t}
+            nodeKey={`/${t.id}`}
+            iterationSlots={iterationSlots.get(t.id)}
+          />
+        );
+      })}
+    </Box>
   );
 }

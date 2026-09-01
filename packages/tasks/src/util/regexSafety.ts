@@ -21,6 +21,30 @@ function isUnboundedRepetitionAt(pattern: string, index: number): boolean {
   return UNBOUNDED_REPETITION_RE.test(pattern);
 }
 
+/** `{n}` / `{n,}` / `{n,m}` starting exactly at an index, sticky for the same reason. */
+const COUNTED_REPETITION_RE = /\{(\d+)(?:,(\d*))?\}/y;
+
+/**
+ * True when the quantifier at `index` permits TWO OR MORE repetitions, which is
+ * what turns a quantifying group body into a backtracking blow-up.
+ *
+ * `?` and `{0,1}` do not: they bound the group to at most one repetition, so
+ * `(\.\d+)?` stays linear no matter what its body quantifies. `{10}` does, even
+ * though it is bounded — `(a+){10}` is measurably catastrophic.
+ */
+function quantifierAllowsRepeat(pattern: string, index: number): boolean {
+  const char = pattern[index];
+  if (char === "*" || char === "+") return true;
+  if (char !== "{") return false;
+  COUNTED_REPETITION_RE.lastIndex = index;
+  const counted = COUNTED_REPETITION_RE.exec(pattern);
+  if (counted === null) return false;
+  const [, min, max] = counted;
+  if (max === undefined) return Number(min) >= 2;
+  if (max === "") return true;
+  return Number(max) >= 2;
+}
+
 interface PatternScan {
   /** Every `[` in the source, including literals inside a class. */
   readonly bracketCount: number;
@@ -80,10 +104,7 @@ function scanPattern(pattern: string): PatternScan {
         continue;
       }
 
-      const next = pattern[index + 1];
-      const groupIsQuantified = next === "*" || next === "+" || next === "?" || next === "{";
-
-      if (bodyQuantifies && groupIsQuantified) {
+      if (bodyQuantifies && quantifierAllowsRepeat(pattern, index + 1)) {
         nestedQuantifiers = true;
       }
 

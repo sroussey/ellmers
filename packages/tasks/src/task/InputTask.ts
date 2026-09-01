@@ -30,6 +30,7 @@ export class InputTask extends Task<InputTaskInput, InputTaskOutput, InputTaskCo
   static override hasDynamicSchemas = true;
   static override cachePolicy: CachePolicy = { kind: "none" };
   static override isPassthrough = true;
+  static override passthroughInputsToOutputs = true;
 
   public static override inputSchema(): DataPortSchema {
     return {

@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { REGEX_BACKTRACKS_UNBOUNDED } from "../helpers/regexEngine";
 
 describe("FileGrepTask (server - local files)", () => {
   const logger = getTestingLogger();
@@ -119,7 +120,9 @@ describe("FileGrepTask (server - local files)", () => {
       expect(result.matchCount).toBe(1);
       expect(result.groups[0].lines[0].text).toHaveLength(DEFAULT_LIMITS.grepMaxLineChars);
     } finally {
-      process.off("uncaughtException", spy);
+      // bun-types 1.4 shadows `Process.off` with a memoryPressure-only overload;
+      // the EventEmitter view still carries the generic one.
+      (process as NodeJS.EventEmitter).off("uncaughtException", spy);
     }
   });
 
@@ -350,17 +353,20 @@ describe("FileGrepTask (server - local files)", () => {
    * digits both accept, which comparing branch text cannot see — and takes
    * 657 ms at n=26, doubling per added character.
    */
-  test("a catastrophic pattern over a local file fails on the budget", async () => {
-    const filePath = join(testDir, "evil.txt");
-    writeFileSync(filePath, "1".repeat(40) + "!\n", "utf-8");
+  test.skipIf(!REGEX_BACKTRACKS_UNBOUNDED)(
+    "a catastrophic pattern over a local file fails on the budget",
+    async () => {
+      const filePath = join(testDir, "evil.txt");
+      writeFileSync(filePath, "1".repeat(40) + "!\n", "utf-8");
 
-    const started = Date.now();
-    await expect(
-      new FileGrepTask({
-        roots: [testDir],
-        defaults: { url: filePath, pattern: "(\\w|\\d)*$" },
-      }).run()
-    ).rejects.toThrow(/budget/);
-    expect(Date.now() - started).toBeLessThan(5_000);
-  });
+      const started = Date.now();
+      await expect(
+        new FileGrepTask({
+          roots: [testDir],
+          defaults: { url: filePath, pattern: "(\\w|\\d)*$" },
+        }).run()
+      ).rejects.toThrow(/budget/);
+      expect(Date.now() - started).toBeLessThan(5_000);
+    }
+  );
 });

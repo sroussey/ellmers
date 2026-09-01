@@ -5,7 +5,7 @@
  */
 
 import { isBrowserLike, resolveApiKey, validateProviderBaseUrl } from "@workglow/ai/provider-utils";
-import { isModelEffortEnabled, type ModelEffort } from "@workglow/ai/worker";
+import { resolveEnabledEffort, type ModelEffort } from "@workglow/ai/worker";
 import { deepseekEffortPolicy } from "./DeepSeek_EffortPolicy";
 import type { DeepSeekModelConfig } from "./DeepSeek_ModelSchema";
 
@@ -132,8 +132,11 @@ export const DEEPSEEK_DEFAULT_REASONING_ALLOWANCE = 16_384;
  * Turns the caller's answer-token budget into DeepSeek's `max_tokens`. Thinking
  * models bill `reasoning_tokens` against the same budget, so the wire value has
  * to cover both. Native `reasoning_allowance` wins over `model.effort`; when
- * neither is set the shared default allowance applies. Undefined budget stays
- * undefined, leaving DeepSeek's default.
+ * neither is set the shared default allowance applies — but only to a model the
+ * policy says reasons at all. Both branches read the one policy: paying the
+ * default allowance on a model it has just declared has no reasoning spends a
+ * whole extra `max_tokens` budget on tokens that are never generated.
+ * Undefined budget stays undefined, leaving DeepSeek's default.
  */
 export function resolveMaxTokens(
   model: DeepSeekModelConfig | undefined,
@@ -141,14 +144,15 @@ export function resolveMaxTokens(
 ): number | undefined {
   if (maxTokens === undefined) return undefined;
   const configured = model?.provider_config?.reasoning_allowance;
-  let allowance: number;
-  if (typeof configured === "number") {
-    allowance = configured;
-  } else if (model && isModelEffortEnabled(model, deepseekEffortPolicy(model))) {
-    allowance = EFFORT_TO_REASONING_ALLOWANCE[model.effort as ModelEffort];
-  } else {
-    allowance = DEEPSEEK_DEFAULT_REASONING_ALLOWANCE;
-  }
+  if (typeof configured === "number") return maxTokens + Math.max(0, configured);
+  const policy = deepseekEffortPolicy(model);
+  const effort = resolveEnabledEffort(model, policy);
+  const allowance =
+    effort !== undefined
+      ? EFFORT_TO_REASONING_ALLOWANCE[effort]
+      : policy.supported.length === 0
+        ? 0
+        : DEEPSEEK_DEFAULT_REASONING_ALLOWANCE;
   return maxTokens + Math.max(0, allowance);
 }
 

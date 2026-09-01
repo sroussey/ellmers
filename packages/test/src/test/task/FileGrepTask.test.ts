@@ -9,6 +9,7 @@ import { FileGrepTask, grepLines, registerSafeFetch, type SafeFetchFn } from "@w
 import { DEFAULT_LIMITS, setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { REGEX_BACKTRACKS_UNBOUNDED } from "../helpers/regexEngine";
 
 const mock = vi.fn;
 
@@ -160,6 +161,57 @@ describe("FileGrepTask", () => {
         lines: [
           { line: 4, text: "FOO delta", match: false },
           { line: 5, text: "echo foo bar", match: true },
+        ],
+      },
+    ]);
+  });
+
+  test("two matches inside beforeContext emit each line once", async () => {
+    mockText("match one\nfiller\nmatch two\n");
+
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "match",
+        beforeContext: 2,
+      },
+    }).run();
+
+    expect(result.groups).toEqual([
+      {
+        startLine: 1,
+        endLine: 3,
+        lines: [
+          { line: 1, text: "match one", match: true },
+          { line: 2, text: "filler", match: false },
+          { line: 3, text: "match two", match: true },
+        ],
+      },
+    ]);
+    expect(result.truncated).toBe(false);
+  });
+
+  test("a replayed context line is not charged against maxOutputLines", async () => {
+    mockText("match one\nfiller\nmatch two\n");
+
+    const result = await new FileGrepTask({
+      defaults: {
+        url: "https://example.com/log.txt",
+        pattern: "match",
+        beforeContext: 2,
+        maxOutputLines: 3,
+      },
+    }).run();
+
+    expect(result.truncated).toBe(false);
+    expect(result.groups).toEqual([
+      {
+        startLine: 1,
+        endLine: 3,
+        lines: [
+          { line: 1, text: "match one", match: true },
+          { line: 2, text: "filler", match: false },
+          { line: 3, text: "match two", match: true },
         ],
       },
     ]);
@@ -665,17 +717,20 @@ describe("FileGrepTask", () => {
    * cannot see that. This is exactly why the screen is documented as a
    * heuristic and the budget as the enforced bound.
    */
-  test("a guard-bypassing pattern fails on the match budget instead of hanging", async () => {
-    mockText("1".repeat(40) + "!");
+  test.skipIf(!REGEX_BACKTRACKS_UNBOUNDED)(
+    "a guard-bypassing pattern fails on the match budget instead of hanging",
+    async () => {
+      mockText("1".repeat(40) + "!");
 
-    const started = Date.now();
-    await expect(
-      new FileGrepTask({
-        defaults: { url: "https://example.com/log.txt", pattern: "(\\w|\\d)*$" },
-      }).run()
-    ).rejects.toThrow(/budget/);
-    expect(Date.now() - started).toBeLessThan(5_000);
-  });
+      const started = Date.now();
+      await expect(
+        new FileGrepTask({
+          defaults: { url: "https://example.com/log.txt", pattern: "(\\w|\\d)*$" },
+        }).run()
+      ).rejects.toThrow(/budget/);
+      expect(Date.now() - started).toBeLessThan(5_000);
+    }
+  );
 
   /**
    * The server budget wraps `matchBatch` (`RegExp.test` in `vm`). `onlyMatching`
@@ -686,21 +741,24 @@ describe("FileGrepTask", () => {
    * continues into the digits and backtracks the same way `(\w|\d)*$` alone
    * does. Pre-fix this never returned; the budget has to cover `exec` too.
    */
-  test("onlyMatching still fails on the match budget when test() matched via a fast alternative", async () => {
-    mockText("ok" + "1".repeat(40) + "!");
+  test.skipIf(!REGEX_BACKTRACKS_UNBOUNDED)(
+    "onlyMatching still fails on the match budget when test() matched via a fast alternative",
+    async () => {
+      mockText("ok" + "1".repeat(40) + "!");
 
-    const started = Date.now();
-    await expect(
-      new FileGrepTask({
-        defaults: {
-          url: "https://example.com/log.txt",
-          pattern: "ok|(\\w|\\d)*$",
-          onlyMatching: true,
-        },
-      }).run()
-    ).rejects.toThrow(/budget/);
-    expect(Date.now() - started).toBeLessThan(5_000);
-  });
+      const started = Date.now();
+      await expect(
+        new FileGrepTask({
+          defaults: {
+            url: "https://example.com/log.txt",
+            pattern: "ok|(\\w|\\d)*$",
+            onlyMatching: true,
+          },
+        }).run()
+      ).rejects.toThrow(/budget/);
+      expect(Date.now() - started).toBeLessThan(5_000);
+    }
+  );
 
   /**
    * Pre-fix the abort check ran between lines, which bought nothing: a single

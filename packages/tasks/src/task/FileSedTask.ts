@@ -105,7 +105,7 @@ const outputSchema = {
       type: "boolean",
       title: "Truncated",
       description:
-        "Output stopped before EOF because an output cap was reached or an input line was capped",
+        "Output stopped before EOF because an output cap or the search deadline was reached, or an input line was capped",
     },
   },
   required: ["text", "replacementCount", "linesChanged", "truncated"],
@@ -279,7 +279,23 @@ export function expandReplacement(replacement: string, args: unknown[]): string 
         out += char;
         continue;
       }
-      out += named?.[replacement.slice(index + 2, close)] ?? "";
+      /*
+       * With no named groups in the pattern the engine leaves `$<name>`
+       * alone — `"abc".replace(/b/, "[$<x>]")` yields `"a[$<x>]c"` — so
+       * substituting "" here would silently DELETE the caller's text.
+       * Emitting only `$` without advancing past `close` is deliberate: the
+       * `<`, the name and the `>` are then copied one character at a time by
+       * the loop's literal path, reproducing the run exactly.
+       *
+       * An UNKNOWN name in a pattern that does have named groups still
+       * expands to "", which is what the engine does.
+       */
+      if (named === undefined) {
+        out += char;
+        continue;
+      }
+
+      out += named[replacement.slice(index + 2, close)] ?? "";
       index = close;
       continue;
     }
@@ -316,10 +332,16 @@ export function expandReplacement(replacement: string, args: unknown[]): string 
 /**
  * Substitutes over `lines` in batches of {@link SECURITY_LIMITS.regexMatchBatchLines}.
  *
- * Abort is checked once per BATCH, not per line: a single `String.replace` is
- * uninterruptible, so a per-line check bought nothing a hostile pattern could
- * not ignore. The granularity that matters is therefore the batch, and the
- * substituter itself bounds how long one batch may run.
+ * Abort and the overall search deadline are checked once per BATCH, not per
+ * line: a single `String.replace` is uninterruptible, so a per-line check
+ * bought nothing a hostile pattern could not ignore. The granularity that
+ * matters is therefore the batch, and the substituter itself bounds how long
+ * one batch may run.
+ *
+ * The deadline is what stops a run under `onlyChangedLines`, where the output
+ * caps are skipped for every unchanged line: a pattern that matches nothing
+ * emits nothing, so without it EOF would be the only stopping condition and a
+ * huge source would be read to the end.
  */
 export async function sedLines(
   lines: AsyncIterable<string>,
@@ -348,6 +370,7 @@ export async function sedLines(
   const maxOutputChars = options.maxOutputChars ?? DEFAULT_LIMITS.grepMaxOutputChars;
 
   const iterator = lines[Symbol.asyncIterator]();
+  const deadline = Date.now() + DEFAULT_LIMITS.grepMaxSearchMs;
   const maxLineChars = DEFAULT_LIMITS.grepMaxLineChars;
   const batch: string[] = [];
   let exhausted = false;
@@ -377,6 +400,10 @@ export async function sedLines(
 
       if (signal?.aborted) {
         throw new TaskAbortedError("Task aborted");
+      }
+      if (Date.now() > deadline) {
+        truncated = true;
+        break outer;
       }
 
       const budget =

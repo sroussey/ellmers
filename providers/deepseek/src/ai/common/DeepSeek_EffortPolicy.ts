@@ -4,21 +4,38 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { MODEL_EFFORTS, type ModelConfig, type ModelEffortPolicy } from "@workglow/ai/worker";
+import {
+  EFFORT_POLICY_NONE,
+  makeEffortPolicy,
+  MODEL_EFFORTS,
+  type ModelEffortPolicy,
+  type ModelEffortPolicyFn,
+} from "@workglow/ai/worker";
 
-const ALL = { supported: MODEL_EFFORTS, default: undefined } as const satisfies ModelEffortPolicy;
-const V4 = { supported: MODEL_EFFORTS, default: "high" } as const satisfies ModelEffortPolicy;
-const NONE = { supported: [], default: undefined } as const satisfies ModelEffortPolicy;
+const REASONING = {
+  supported: MODEL_EFFORTS,
+  default: "high",
+} as const satisfies ModelEffortPolicy;
 
-function modelName(model: ModelConfig): string {
-  return String(
-    (model.provider_config as { model_name?: string } | undefined)?.model_name ?? ""
-  ).trim();
+/** V4 is the first family that reasons on every id; before it the mode is the id. */
+function isReasoningDeepSeekFamily(id: string): boolean {
+  const version = /^deepseek-v(\d+)/i.exec(id);
+  return version !== null && Number(version[1]) >= 4;
 }
 
-export function deepseekEffortPolicy(model: ModelConfig): ModelEffortPolicy {
-  const id = modelName(model);
-  if (!id) return ALL;
-  if (/^deepseek-v4/i.test(id)) return V4;
-  return NONE;
-}
+/**
+ * DeepSeek splits thinking by id rather than by parameter: `deepseek-reasoner`
+ * is the thinking mode of the weights `deepseek-chat` serves without it, and
+ * the V4 family reasons on every id. Matching `deepseek-v4` alone dropped the
+ * dial on `deepseek-reasoner` — the vendor's own name for the thinking model —
+ * while {@link resolveMaxTokens} still paid it the full default allowance.
+ */
+export const deepseekEffortPolicy: ModelEffortPolicyFn = makeEffortPolicy({
+  rules: [
+    {
+      when: [isReasoningDeepSeekFamily, /^deepseek-reasoner/i, /^deepseek-r\d/i],
+      policy: REASONING,
+    },
+  ],
+  fallback: EFFORT_POLICY_NONE,
+});

@@ -6,7 +6,7 @@ dist
 *.d.ts
 *.d.ts.map
 !examples/web/src/vite-env.d.ts
-!packages/tasks/src/util/interpreter.d.ts
+!packages/javascript/src/task/interpreter.d.ts
 storybook-static/
 packages/cli-web/
 packages/cli-sec/

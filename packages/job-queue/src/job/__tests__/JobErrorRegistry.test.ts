@@ -24,8 +24,21 @@ import {
   wrapQueueStorage,
   type IJobExecuteContext,
 } from "@workglow/job-queue";
-import { sleep } from "@workglow/util";
+import type { ILogger } from "@workglow/util";
+import { ConsoleLogger, getLogger, setLogger, sleep } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+/**
+ * The registry warns through `getLogger()`, and the default logger is a
+ * `NullLogger` unless the environment asks for one that writes — which Vitest's
+ * Vite pipeline does (`import.meta.env.DEV`) and Bun's runner does not. A test
+ * about the warning installs the logger it needs rather than inheriting one.
+ */
+function withConsoleLogger(): { restore: () => void } {
+  const previous: ILogger = getLogger();
+  setLogger(new ConsoleLogger({ level: "warn" }));
+  return { restore: () => setLogger(previous) };
+}
 
 // ---------------------------------------------------------------------------
 // Helpers — expose the protected reconstruction path so we can assert the
@@ -116,6 +129,7 @@ describe("JobErrorRegistry", () => {
   });
 
   test("registering different fn against same prefix warns and overwrites", () => {
+    const logger = withConsoleLogger();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       registerErrorCodeReconstructor("X_", (_c, m) => new FooError(m));
@@ -130,10 +144,12 @@ describe("JobErrorRegistry", () => {
       expect(client.buildErrorFromCodePublic("m", "X_CODE")).toBeInstanceOf(BarError);
     } finally {
       warn.mockRestore();
+      logger.restore();
     }
   });
 
   test("registering identical fn against same prefix is idempotent (no warning)", () => {
+    const logger = withConsoleLogger();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const fn = (_c: string, m: string) => new FooError(m);
@@ -142,6 +158,7 @@ describe("JobErrorRegistry", () => {
       expect(warn).not.toHaveBeenCalled();
     } finally {
       warn.mockRestore();
+      logger.restore();
     }
   });
 

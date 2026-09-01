@@ -340,30 +340,35 @@ export async function grepLines(
   }
 
   function emitLine(entry: GrepLine): boolean {
+    /*
+     * Entries are appended in strictly increasing line order, so a line at or
+     * below endLine has already been emitted; only the last one can be it.
+     * The scan this replaces existed solely to skip replayed beforeBuffer
+     * entries, and those always carry match: false, so no flag is lost.
+     *
+     * Decided BEFORE the output caps, because this branch emits nothing: a
+     * line already in the group must not be charged against the caps, nor
+     * refused by them — a cap reached by replayed lines would otherwise drop
+     * the real matches that follow.
+     *
+     * Skipped entirely under onlyMatching, where one line legitimately yields
+     * several entries and merging them would collapse repeated matches
+     * into one.
+     */
+    if (currentGroup && !options.onlyMatching && entry.line <= currentGroup.endLine) {
+      const last = currentGroup.lines[currentGroup.lines.length - 1];
+      if (entry.match && last?.line === entry.line) {
+        last.match = true;
+      }
+
+      return true;
+    }
+
     if (!canEmit(entry.text)) {
       return false;
     }
 
     if (currentGroup && entry.line <= currentGroup.endLine + 1) {
-      /*
-       * Entries are appended in strictly increasing line order, so a line at or
-       * below endLine has already been emitted; only the last one can be it.
-       * The scan this replaces existed solely to skip replayed beforeBuffer
-       * entries, and those always carry match: false, so no flag is lost.
-       *
-       * Skipped entirely under onlyMatching, where one line legitimately yields
-       * several entries and merging them would collapse repeated matches
-       * into one.
-       */
-      if (!options.onlyMatching && entry.line <= currentGroup.endLine) {
-        const last = currentGroup.lines[currentGroup.lines.length - 1];
-        if (entry.match && last?.line === entry.line) {
-          last.match = true;
-        }
-
-        return true;
-      }
-
       currentGroup.lines.push(entry);
       currentGroup.endLine = entry.line;
     } else {
@@ -543,14 +548,6 @@ export async function grepLines(
           }
 
           continue;
-        }
-
-        /*
-         * A non-matching line outside trailing context means any future
-         * match is separated from the current group.
-         */
-        if (!matched && afterRemaining === 0) {
-          currentGroup = undefined;
         }
       }
     }

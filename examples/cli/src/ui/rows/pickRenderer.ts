@@ -13,6 +13,12 @@ export interface TaskRowProps {
   readonly task: ITask;
   readonly line: CliTaskLine;
   readonly iterationSlots: ReadonlyArray<IterationSlotRow> | undefined;
+  /**
+   * This row's path in the run census. Everything the row draws beneath itself
+   * — an owned subgraph, a Map's live iterations — is keyed off it, which is
+   * how the viewport plan reaches a list nested three levels down.
+   */
+  readonly nodeKey: string;
 }
 
 export function hasAppendStream(schema: DataPortSchema | undefined): boolean {

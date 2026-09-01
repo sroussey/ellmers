@@ -71,16 +71,39 @@ export interface TestFile {
    * `bun` when the file imports `bun:test` — it uses Bun-only APIs
    * (`Bun.spawn`, `import.meta.dir`) and cannot run under vitest, so vitest
    * selection must skip it rather than fail on an unresolvable import.
+   *
+   * `vitest` when the file needs something only Vitest's runner provides:
+   *
+   * - `@vitest-environment`, which is how a test gets a DOM. Bun's runner has no
+   *   environments, so the file fails on `document is not defined`.
+   * - Vitest's module-mocking machinery. `vi.mock` is hoisted above the imports;
+   *   Bun's `mock.module` runs where it is written, so the module under test has
+   *   already imported the real dependency — the mock quietly does nothing — and
+   *   an un-awaited async factory blocks the whole file. `vi.doMock`,
+   *   `vi.importActual` and `vi.resetModules` have no Bun equivalent at all.
    */
-  readonly runner: "bun" | "any";
+  readonly runner: "bun" | "vitest" | "any";
 }
 
-function runnerFor(path: string): "bun" | "any" {
+/**
+ * A call to Vitest's module registry, at the start of a line so a mention in
+ * prose does not count. Shared with `testDiscovery.test.ts`, which fails if a
+ * file matching it is not tagged `vitest`.
+ */
+export const VITEST_MODULE_MOCKING =
+  /^\s*(await\s+)?vi\.(mock|doMock|unmock|doUnmock|importActual|importMock|resetModules)\(/m;
+
+function runnerFor(path: string): "bun" | "vitest" | "any" {
+  let source: string;
   try {
-    return /from\s*["']bun:test["']/.test(readFileSync(path, "utf8")) ? "bun" : "any";
+    source = readFileSync(path, "utf8");
   } catch {
     return "any";
   }
+  if (/from\s*["']bun:test["']/.test(source)) return "bun";
+  if (/^\s*(\/\/|\/\*)\s*@vitest-environment\s/m.test(source)) return "vitest";
+  if (VITEST_MODULE_MOCKING.test(source)) return "vitest";
+  return "any";
 }
 
 function dirToSection(): Map<string, string> {

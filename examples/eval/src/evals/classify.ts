@@ -82,7 +82,7 @@ export function makeClassifyExecutor(
     additionalProperties: false,
   };
 
-  return async (row, onStreamChunk) => {
+  return async (row, onStreamChunk, owner) => {
     const text = String(row[options.textColumn] ?? "");
     const workflow = new Workflow();
     workflow.structuredGeneration({
@@ -95,7 +95,7 @@ export function makeClassifyExecutor(
     const output = await runWithStreamChunks<{
       object?: { label?: unknown };
       [USAGE_OUTPUT_KEY]?: Usage;
-    }>(workflow, onStreamChunk);
+    }>(workflow, onStreamChunk, owner);
     return {
       expected: expectedLabel(row, options.labelColumn, context.labelNames, labels),
       predicted: String(output.object?.label ?? ""),

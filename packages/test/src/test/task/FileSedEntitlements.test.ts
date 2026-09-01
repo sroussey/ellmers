@@ -19,7 +19,7 @@ import {
 import { FileSedTask, registerSafeFetch, type SafeFetchFn } from "@workglow/tasks";
 import { Container, ServiceRegistry, setLogger } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
-import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
@@ -53,6 +53,10 @@ describe("FileSedTask entitlement enforcement", () => {
   beforeEach(() => {
     testDir = join(tmpdir(), `filesed-ent-${Date.now()}`);
     mkdirSync(testDir, { recursive: true });
+    // The task realpaths a local path before declaring or opening it, and on
+    // macOS the temp dir is a symlink (/var/folders -> /private/var/folders).
+    // Compare against the real path so the expectations match what the task sees.
+    testDir = realpathSync(testDir);
   });
 
   afterEach(() => {

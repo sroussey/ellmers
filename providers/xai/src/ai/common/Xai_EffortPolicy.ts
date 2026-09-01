@@ -4,25 +4,27 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { MODEL_EFFORTS, type ModelConfig, type ModelEffortPolicy } from "@workglow/ai/worker";
+import {
+  EFFORT_POLICY_NONE,
+  makeEffortPolicy,
+  MODEL_EFFORTS,
+  type ModelEffortPolicy,
+  type ModelEffortPolicyFn,
+} from "@workglow/ai/worker";
 
-const ALL = { supported: MODEL_EFFORTS, default: undefined } as const satisfies ModelEffortPolicy;
 const REASONING = {
   supported: MODEL_EFFORTS,
   default: "medium",
 } as const satisfies ModelEffortPolicy;
-const NONE = { supported: [], default: undefined } as const satisfies ModelEffortPolicy;
 
-function modelName(model: ModelConfig): string {
-  return String(
-    (model.provider_config as { model_name?: string } | undefined)?.model_name ?? ""
-  ).trim();
-}
-
-export function xaiEffortPolicy(model: ModelConfig): ModelEffortPolicy {
-  const id = modelName(model);
-  if (!id) return ALL;
-  if (/(?:^|-)image(?:-|$)/i.test(id) || /non-reasoning/i.test(id)) return NONE;
-  if (/^grok/i.test(id)) return REASONING;
-  return NONE;
-}
+/**
+ * xAI serves reasoning only on the Grok text ids, and rejects
+ * `reasoning_effort` elsewhere, so an id outside them keeps the plain path.
+ */
+export const xaiEffortPolicy: ModelEffortPolicyFn = makeEffortPolicy({
+  rules: [
+    { when: [/(?:^|-)image(?:-|$)/i, /non-reasoning/i], policy: EFFORT_POLICY_NONE },
+    { when: /^grok/i, policy: REASONING },
+  ],
+  fallback: EFFORT_POLICY_NONE,
+});

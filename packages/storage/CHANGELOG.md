@@ -1,5 +1,31 @@
 # @workglow/storage
 
+## 0.4.5
+
+## 0.4.4
+
+### Refactors
+
+- FsFolderTabularStorage for improved file handling and error management
+
+## 0.4.3
+
+## 0.4.2
+
+## 0.4.1
+
+## 0.4.0
+
+### Bug Fixes
+
+#### tests
+
+- remove process listeners through the EventEmitter view
+
+## 0.3.49
+
+## 0.3.48
+
 ## 0.3.47
 
 ### Features

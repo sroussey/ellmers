@@ -11,6 +11,7 @@ import type {
 } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
 import { loadTfmpTasksVisionSDK } from "./TFMP_Client";
+import { toTexImageSource } from "./TFMP_Image";
 import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
@@ -29,7 +30,7 @@ export const TFMP_ImageClassification: AiProviderRunFn<
     signal,
     ImageClassifier
   );
-  const result = imageClassifier.classify(input.image);
+  const result = imageClassifier.classify(toTexImageSource(input.image));
 
   if (!result.classifications?.[0]?.categories) {
     throw new PermanentJobError("Failed to classify image: Empty result");

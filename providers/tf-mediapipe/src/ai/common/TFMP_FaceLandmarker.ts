@@ -11,6 +11,7 @@ import type {
 } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
 import { loadTfmpTasksVisionSDK } from "./TFMP_Client";
+import { toTexImageSource } from "./TFMP_Image";
 import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
@@ -34,7 +35,7 @@ export const TFMP_FaceLandmarker: AiProviderRunFn<
     signal,
     FaceLandmarker
   );
-  const result = faceLandmarker.detect(input.image as any);
+  const result = faceLandmarker.detect(toTexImageSource(input.image));
 
   if (!result.faceLandmarks) {
     throw new PermanentJobError("Failed to detect face landmarks: Empty result");

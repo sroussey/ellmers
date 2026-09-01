@@ -1,7 +1,7 @@
 {
   "name": "@workglow/postgres",
   "type": "module",
-  "version": "0.3.47",
+  "version": "0.4.5",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

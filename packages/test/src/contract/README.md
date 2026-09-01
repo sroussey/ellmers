@@ -116,6 +116,37 @@ Capability flags:
 | `IHumanConnector`                       | `contract/human-connector/runHumanConnectorConformance`         | MockHumanConnector, McpElicitationConnector                                |
 | Worker-proxy parity                     | `contract/worker-proxy/runWorkerProxyBoundary`                  | _harness only — no adapters wired yet_                                     |
 
+## Billing failures: skipped on CI, failed locally
+
+Live provider suites run against real accounts, so "we ran out of money" is a
+condition every one of them can hit. `contract/creditExhaustedSkip.ts` detects
+it — 402s, `insufficient_quota`, `insufficient_credits`, DeepSeek's
+`Insufficient Balance`, Anthropic's credit-balance error — and the `it` exported
+from that module (which every conformance assertion imports) decides what to do
+with it:
+
+| where         | behavior | why                                                                                                                                            |
+| ------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| CI            | skip     | nobody watching a build can top an account up, and one exhausted key would turn every provider suite red for a change that touched no provider |
+| anywhere else | fail     | the developer running the suite IS the person who can act on it                                                                                |
+
+`CI` / `GITHUB_ACTIONS` select the branch; `WORKGLOW_CREDIT_EXHAUSTED_SKIP=1`
+forces the skip locally and `=0` forces the failure on CI.
+
+The detector reads the **message** as well as the numeric status, and that is
+load-bearing rather than belt-and-braces: `classifyProviderError` rebuilds a
+provider error as a `PermanentJobError` carrying the message and neither
+`status` nor `cause`, so by the time a test body catches a DeepSeek 402 the
+number survives only as the `402 Insufficient Balance` text the OpenAI SDK put
+in the message. A status-only detector reads that as an ordinary permanent
+failure — which is exactly how DeepSeek kept failing suites while every other
+provider skipped. Message matching for a bare `402` is anchored to an
+HTTP-shaped position (line start, or after a summary line's colon) so prose
+that merely contains the number is not scavenged as a status.
+
+Rate limits (429 + `rate_limit_exceeded`) are deliberately NOT this: they are
+transient and the retry policy handles them.
+
 ## How to add a new contract suite
 
 1. Pick a contract surface (an interface or abstract base class).

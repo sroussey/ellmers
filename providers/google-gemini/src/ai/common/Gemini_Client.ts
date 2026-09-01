@@ -6,7 +6,7 @@
 
 import type { GoogleGenAI } from "@google/genai";
 import { resolveApiKey } from "@workglow/ai/provider-utils";
-import { isModelEffortEnabled, type ModelEffort } from "@workglow/ai/worker";
+import { resolveEnabledEffort, type ModelEffort } from "@workglow/ai/worker";
 import { geminiEffortPolicy } from "./Gemini_EffortPolicy";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 
@@ -125,9 +125,8 @@ export function getModelName(model: GeminiModelConfig | undefined): string {
 export function getThinkingBudget(model: GeminiModelConfig | undefined): number | undefined {
   const configured = model?.provider_config?.thinking_budget;
   if (typeof configured === "number") return configured;
-  if (model && isModelEffortEnabled(model, geminiEffortPolicy(model))) {
-    return EFFORT_TO_THINKING_BUDGET[model.effort as ModelEffort];
-  }
+  const effort = resolveEnabledEffort(model, geminiEffortPolicy(model));
+  if (effort !== undefined) return EFFORT_TO_THINKING_BUDGET[effort];
   return undefined;
 }
 
@@ -153,7 +152,8 @@ export function getGeminiSeed(model: GeminiModelConfig | undefined): number | un
  * is added on top of the caller's cap to leave room for the visible answer.
  *
  * @param defaultBudget applied when the model has no configured budget and no
- *   `effort`. Prefer omitting it — structured generation no longer invents a pad.
+ *   `effort`. Prefer omitting it — structured generation derives its own thinking
+ *   budget.
  */
 export function resolveThinkingConfig(
   model: GeminiModelConfig | undefined,

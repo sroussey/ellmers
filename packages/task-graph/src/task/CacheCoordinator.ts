@@ -58,9 +58,8 @@ export interface CacheReplayContext {
 /**
  * @internal
  * Cache key normalization, lookup, save, and cache-hit stream-event emission
- * for streamable tasks. The three previously module-private helpers
- * (serializeOutputPorts, deserializeOutputPorts, normalizeInputsForCacheKey)
- * are private statics here.
+ * for streamable tasks, built on the private statics serializeOutputPorts,
+ * deserializeOutputPorts, and normalizeInputsForCacheKey.
  *
  * outputCache is passed as a method argument (not stored as a class field)
  * because the facade resolves it per-run in handleStart and may differ

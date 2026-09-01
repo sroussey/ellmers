@@ -34,6 +34,11 @@ describe("LlamaCppQueuedProvider.inferCapabilities", () => {
     const caps = provider.inferCapabilities(model("nomic-embed-text-v1.5.Q4_K_M.gguf"));
     expect(caps).toContain("text.embedding");
     expect(caps).not.toContain("text.generation");
+    // Both act on a chat session an embedding GGUF has no wrapper to build:
+    // advertised, either one clears model selection and throws inside the
+    // provider instead of being rejected with a capability message.
+    expect(caps).not.toContain("cache.checkpoint");
+    expect(caps).not.toContain("session.dispose");
   });
 
   it("defaults to full generative for any other GGUF", () => {

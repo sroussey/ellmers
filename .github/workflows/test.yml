@@ -59,6 +59,27 @@ jobs:
       - name: Test discovery guard
         run: bun scripts/test.ts --check-sections
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun i
+      # The only thing that runs ESLint under CI. `prepare` skips husky when $CI
+      # is set, so the pre-commit hook -- which `--no-verify` bypasses anyway --
+      # is otherwise ESLint's sole invoker, and the `error`-level rules in
+      # eslint.config.js can never fail a build.
+      #
+      # Deliberately not `needs: build`: the config sets no `parserOptions.project`,
+      # so no rule reads type information and nothing has to be compiled first.
+      - name: Lint
+        run: bun run lint
+
   build:
     runs-on: ubuntu-latest
     steps:
