@@ -1,5 +1,7 @@
 # @workglow/tasks
 
+## 0.4.5
+
 ## 0.4.4
 
 ### Features

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.5
+
+### Bug Fixes
+
+#### ai
+
+- make the effort policies a gate rather than UI metadata
+
 ## 0.4.4
 
 ## 0.4.3

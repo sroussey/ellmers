@@ -1,5 +1,17 @@
 # @workglow/test
 
+## 0.4.5
+
+### Bug Fixes
+
+#### ai
+
+- make the effort policies a gate rather than UI metadata
+
+#### node-llama-cpp
+
+- stop embedding GGUFs advertising chat-session capabilities
+
 ## 0.4.4
 
 ### Features

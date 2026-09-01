@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.5
+
+### Bug Fixes
+
+#### node-llama-cpp
+
+- stop embedding GGUFs advertising chat-session capabilities
+
 ## 0.4.4
 
 ## 0.4.3

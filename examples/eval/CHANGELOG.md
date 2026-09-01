@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.5
+
+### CI
+
+- run ESLint in CI, behind a cached turbo task
+
 ## 0.4.4
 
 ### Updated Dependencies
