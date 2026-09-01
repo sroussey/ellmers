@@ -158,6 +158,37 @@ describe("DuckDbTabularStorage", () => {
       }
     });
 
+    it("putBulk inside a connection transaction opens no BEGIN of its own", async () => {
+      // putBulk normally brackets itself in BEGIN/COMMIT. Inside a connection
+      // transaction it must not, or its COMMIT would commit the enclosing
+      // transaction's work. The flag that suppresses it is `inTransaction`,
+      // which runSingleSessionConnectionTransaction sets on every participant.
+      const s = pathStorage("bulk");
+      await s.setupDatabase();
+      try {
+        await expect(
+          withConnectionTransaction([s], async () => {
+            await s.putBulk([
+              { name: "b1", type: "x", option: "v1", success: true },
+              { name: "b2", type: "x", option: "v2", success: true },
+            ]);
+            throw new Error("forced rollback");
+          })
+        ).rejects.toThrow("forced rollback");
+        // Both rows roll back with the enclosing transaction — proof that
+        // putBulk did not commit them itself.
+        expect(await s.get({ name: "b1", type: "x" })).toBeUndefined();
+        expect(await s.get({ name: "b2", type: "x" })).toBeUndefined();
+
+        await withConnectionTransaction([s], async () => {
+          await s.putBulk([{ name: "b3", type: "x", option: "v3", success: true }]);
+        });
+        expect(await s.get({ name: "b3", type: "x" })).toMatchObject({ option: "v3" });
+      } finally {
+        s.destroy?.();
+      }
+    });
+
     it("still refuses two path-constructed storages as participants", async () => {
       // Two separate databases really cannot commit together; only the
       // single-participant case became legal.

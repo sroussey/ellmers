@@ -32,7 +32,6 @@ import {
   buildSearchWhere,
   DuckDbDialect,
   enqueueDeferredPut,
-  isEnlistedInConnectionTx,
   MIGRATIONS_TABLE,
   pickCoveringIndex,
   runInTransactionOnConnection,
@@ -745,9 +744,11 @@ export class DuckDbTabularStorage<
       return result.rows.map((row) => this.hydrateRow(row));
     };
 
-    // Already inside an outer transaction (via the `tx` view or a connection-
-    // scoped transaction): no own BEGIN.
-    if (this.inTransaction || isEnlistedInConnectionTx(this)) {
+    // Already inside an outer transaction — a `withTransaction` body reached
+    // through the `tx` view, or a connection-scoped transaction, which sets
+    // this flag on every participant. Either way: no own BEGIN, whose COMMIT
+    // would commit the enclosing transaction's work.
+    if (this.inTransaction) {
       const { aligned, distinct } = await this.runBulkPut(entities, dialect, 30000, exec);
       for (const entity of distinct) this.emitPut(entity);
       return aligned;

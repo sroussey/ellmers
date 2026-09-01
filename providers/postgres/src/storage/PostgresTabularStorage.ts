@@ -1049,9 +1049,16 @@ export class PostgresTabularStorage<
         return (result.rows ?? []).map((row) => this.hydrateRow(row));
       };
 
-    // Already inside an outer transaction (via the `tx` view or a connection-
-    // scoped transaction): run on the swapped `this.db` without opening our
-    // own BEGIN/COMMIT.
+    // Already inside an outer transaction: run on the swapped `this.db`
+    // without opening our own BEGIN/COMMIT, whose COMMIT would commit the
+    // enclosing transaction's work.
+    //
+    // Both disjuncts are load-bearing, because this method serves both
+    // Postgres arms. `inTransaction` covers a `withTransaction` body reached
+    // through the `tx` view, and a connection transaction on the PGlite arm,
+    // which flags every participant. The real-pool arm deliberately flags
+    // nobody — it runs on a checked-out client rather than a shared session —
+    // so there the enlistment check is the only thing that answers.
     if (this.inTransaction || isEnlistedInConnectionTx(this)) {
       const { aligned, distinct } = await this.runBulkPut(
         entities,
