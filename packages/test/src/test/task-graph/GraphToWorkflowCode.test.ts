@@ -88,6 +88,7 @@ function rebuildFromCode(code: string, taskBindings: Record<string, unknown> = {
   const rebuilt = new Workflow();
   const bindingNames = Object.keys(taskBindings);
   const bindingValues = Object.values(taskBindings);
+  // oxlint-disable-next-line typescript/no-implied-eval -- running the generated code is the assertion
   const fn = new Function("workflow", ...bindingNames, code);
   fn(rebuilt, ...bindingValues);
   return rebuilt;

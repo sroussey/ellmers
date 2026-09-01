@@ -24,8 +24,7 @@
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "build-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
-    "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "build-types": "rm -f tsconfig.tsbuildinfo && tsc",
     "build-test": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/test-entry.ts",
     "test": "vitest run --config ../../vitest.config.ts --project task-graph",
     "watch-test": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/test-entry.ts"

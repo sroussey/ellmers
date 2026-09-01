@@ -37,6 +37,7 @@ async function getElectron(): Promise<Record<string, any>> {
     // The `Function` cast avoids a static "cannot find module" TS error
     // when electron types are not installed in the current environment.
 
+    // oxlint-disable-next-line typescript/no-implied-eval -- the Function wrapper IS the point
     electronModule = (await new Function("m", "return import(m)")("electron")) as Record<
       string,
       any

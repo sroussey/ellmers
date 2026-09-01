@@ -33,10 +33,12 @@ only variables were source + `tsconfig`. Two metrics were used:
   `tsbuildinfo` removed to force a full re-check. **Instantiations** is the
   headline number: it is deterministic and machine-independent, unlike wall time.
 
-> Caveat: these measurements use `tsc`. The repo's `build-types` runs **`tsgo`**
-> per package, which is much faster and masks code regressions in day-to-day
-> builds. `tsc` cost still matters for editor / `tsserver` responsiveness, and
-> the relative trends hold regardless of compiler.
+> Caveat, as measured: these numbers came from `tsc` while the repo's
+> `build-types` ran **`tsgo`** per package, which is much faster and masked code
+> regressions in day-to-day builds. That split is gone — the repo is on
+> TypeScript 7, where `tsc` **is** the native compiler, so both paths now run the
+> same thing and the instantiation counts below are not comparable to what the
+> budget guard records today. The relative trends still hold.
 
 ## Timeline
 
@@ -120,10 +122,12 @@ There is no surgical fix. Real remediation is either:
   member instantiations in a single mega-interface) and/or how AI task input
   types are derived, so the prototype assignments don't each relate a large
   `Workflow<I,O>`. This is a multi-day design effort and must be validated under
-  **both** `tsc` and `tsgo` before investing.
-- **Operational** — confirm whether the user-felt slowness is `tsserver`
-  (still `tsc`) vs `build-types` (already `tsgo`); the latter largely sidesteps
-  this. The biggest absolute cost, `packages/test` (~12s), is mostly legitimate
+  the compiler before investing — at the time that meant **both** `tsc` and
+  `tsgo`, which TypeScript 7 has since collapsed into one.
+- **Operational** — confirm whether the user-felt slowness is `tsserver` vs
+  `build-types`. When this was written those ran different compilers (`tsc` and
+  `tsgo`) and the latter largely sidestepped the problem; on TypeScript 7 they
+  are the same binary. The biggest absolute cost, `packages/test` (~12s), is mostly legitimate
   file-count growth exercising the same machinery ×N and is not addressed by any
   of the above.
 

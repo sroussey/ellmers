@@ -26,8 +26,7 @@
     "build-tasks-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/tasks ./src/tasks/browser.ts",
     "build-tasks-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/tasks ./src/tasks/node.ts",
     "build-util": "bun build --sourcemap=external --packages=external --outdir ./dist/util ./src/util/index.ts",
-    "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "build-types": "rm -f tsconfig.tsbuildinfo && tsc",
     "test": "vitest run --config ../../vitest.config.ts --project mcp"
   },
   "exports": {

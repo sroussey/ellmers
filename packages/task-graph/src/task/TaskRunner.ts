@@ -874,6 +874,9 @@ export class TaskRunner<
       await this.handleErrorPreview();
     } finally {
       ctx.dispose();
+      // Deliberate: runPreview always yields whatever preview output the task
+      // holds, including after the catch ran.
+      // oxlint-disable-next-line no-unsafe-finally
       return this.task.runOutputData as Output;
     }
   }

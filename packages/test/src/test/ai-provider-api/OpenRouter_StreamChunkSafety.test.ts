@@ -150,7 +150,7 @@ describe("OpenRouter streaming run-fns tolerate SDK chunks without choices/delta
   // these suites guard against, so the usage assertions belong right here.
   describe("usage from the terminal include_usage frame", () => {
     const requestBody = (): Record<string, unknown> =>
-      JSON.parse(String((fetchSpy.mock.calls[0]?.[1] as RequestInit).body));
+      JSON.parse(String((fetchSpy.mock.calls[0]![1] as RequestInit).body));
 
     it("asks for usage and carries OpenRouter's cost through extra", async () => {
       fetchSpy.mockResolvedValueOnce(

@@ -616,12 +616,10 @@ describe("LlamaCpp tool-calling checkpoint lifecycle", () => {
     // sequence advances in place, so the second consumer's turn was
     // corrupted. With stealLlamaCppSession, exactly one wins; the other
     // observes `undefined` and re-encodes via the missing-state fallback.
-    const [a, b] = await Promise.all([
+    await Promise.all([
       callToolWithPrompt("Consumer A prompt.", { sessionId: "checkpoint-shared", prefix }),
       callToolWithPrompt("Consumer B prompt.", { sessionId: "checkpoint-shared", prefix }),
     ]);
-    void a;
-    void b;
 
     // Exactly two LlamaChat generations happened — one on the warmed
     // sequence (winner) and one on a re-encoded sequence (loser).

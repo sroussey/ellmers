@@ -20,8 +20,7 @@
     "build-package": "concurrently -c 'auto' -n 'js,types' 'bun run build-js' 'bun run build-types'",
     "build-js": "bun run build.ts",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
-    "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "build-types": "rm -f tsconfig.tsbuildinfo && tsc"
   },
   "exports": {
     ".": {

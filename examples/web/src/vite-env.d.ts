@@ -6,5 +6,5 @@
 
 /// <reference types="vite/client" />
 
-/** Plain CSS side-effect imports — duplicated here so `tsgo`/CI sees them even if `vite/client` types resolution differs from `tsc`. */
+/** Plain CSS side-effect imports — duplicated here so CI sees them even if `vite/client` types resolution differs. */
 declare module "*.css" {}

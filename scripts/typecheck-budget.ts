@@ -14,6 +14,11 @@
  * exists for — e.g. a schema `allOf` change that took `tasks` from ~290k to
  * ~6.7M instantiations, or a base-generic change that doubled `ai`.
  *
+ * The committed numbers are what **TypeScript 7's** `tsc` counts. They are not
+ * comparable to a TypeScript 6 baseline — the same tree measured 19-216% higher
+ * on the move to 7 — so a compiler bump means re-baselining with `--update`
+ * rather than reading the jump as a regression.
+ *
  * A package is over budget only once it exceeds BOTH the relative tolerance
  * and the absolute slack — see {@link TypecheckBudget.slack}.
  *

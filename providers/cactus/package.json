@@ -24,9 +24,8 @@
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-code": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/ai.ts ./src/ai-runtime.ts",
     "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/ai.browser.ts ./src/ai-runtime.browser.ts",
-    "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "hash-catalog": "bun scripts/hash-catalog.ts",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "build-types": "rm -f tsconfig.tsbuildinfo && tsc",
+    "hash-catalog": "bun scripts/hash-catalog.ts"
   },
   "exports": {
     "./ai": {

@@ -93,7 +93,6 @@ export async function installAndHydrate(
       value = await encrypted.get(credKey);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      // eslint-disable-next-line no-console
       console.warn(
         `[test-credentials] Failed to decrypt "${credKey}" — wrong passphrase or stale ciphertext. Fix the passphrase and run \`bun scripts/credentials.ts rotate\`, or re-import keys with \`import-env\`. Underlying error: ${msg}`
       );

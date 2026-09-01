@@ -8,6 +8,9 @@ Use **Node.js 24+**. The SQLite backend is the built-in `node:sqlite`, stable on
 Node 24 (experimental and flag-gated before that) — Vitest or `npx` under an older Node
 produces misleading SQLite failures.
 
+**TypeScript 7.** `tsc` is the native (Go) compiler, so `build-types` calls it directly and
+there is no separate `tsgo` binary or `@typescript/native-preview` dependency any more.
+
 ```sh
 bun run build              # Full build (packages + integrations + examples, via Turbo)
 bun run build:packages     # Packages only
@@ -20,13 +23,36 @@ bun run test:bun           # Bun native tests only
 bun run test:vitest        # Vitest tests only
 bun test <testfilename>    # One test file
 
-bun run lint               # ESLint across every workspace (Turbo-cached); CI runs this
-bun run format             # ESLint fix + Prettier write
+bun run lint               # oxlint (+ tsgolint type-aware) across the repo; CI runs this
+bun run format             # oxlint --fix + Prettier write
 bun run clean              # Remove dist, node_modules, .turbo, tsbuildinfo
 ```
 
 **Run the narrowest test slice you can** — the full suite is very slow. Prefer
 `bun scripts/test.ts <section> vitest` (see [Testing](#testing)).
+
+## Linting
+
+`oxlint` replaces ESLint; `oxlint-tsgolint` supplies the type-aware rules. One
+`.oxlintrc.json` at the root covers every workspace -- oxlint walks up to find
+it, so `bunx oxlint` works from any package directory. There are no per-package
+`lint` scripts and no turbo `lint` task: the whole tree lints in under a second,
+which is less than the fan-out cost.
+
+`bun run lint` builds types first (`build:types`, turbo-cached) because
+`--type-aware` resolves cross-package imports through `dist/*.d.ts`. Without
+them every such import types as `any` and the type-aware rules quietly find
+nothing instead of failing.
+
+Two things ESLint checked that oxlint cannot: `eslint-plugin-regexp` (60 rules,
+`no-super-linear-backtracking` among them -- the ReDoS guard) and
+`react/no-deprecated`. Most type-aware rules are staged off with the finding
+counts recorded beside them in the config; each is a cleanup of its own, not
+part of the linter swap.
+
+Disable comments still work spelled either way -- `eslint-disable-next-line` and
+the ESLint plugin names (`@typescript-eslint/no-namespace`,
+`react-hooks/exhaustive-deps`) both resolve -- so existing ones were left alone.
 
 ## Monorepo structure
 
@@ -94,6 +120,19 @@ Exceptions: `providers/*` ship `./ai` and `./ai-runtime` instead of browser/node
 ### Formatting (`.prettierrc`)
 
 Spaces, double quotes, semicolons, trailing commas (es5), 100 char width.
+
+Imports are organized by `@sroussey/prettier-plugin-organize-imports`. The upstream
+`prettier-plugin-organize-imports` cannot work here: it drives the TypeScript language
+service, which TypeScript 7 no longer exposes from the `typescript` package, and under 7 it
+silently formatted nothing rather than failing. The fork carries its own
+`@typescript/typescript6` and drives that, so the repo stays on TypeScript 7 while imports
+still get sorted and unused ones pruned.
+
+It honours `// organize-imports-ignore`, which 223 files here carry — barrel and entry
+modules whose import order is load-bearing, because they register into `TaskRegistry` and
+the provider registries as a module side effect. Any replacement has to honour that marker:
+a sorter that hoists imports to the top of the module reorders those registrations and
+displaces the license header.
 
 ### License header
 

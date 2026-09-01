@@ -73,13 +73,16 @@ jobs:
         with:
           bun-version: 1.4.0
       - run: bun i
-      # The only thing that runs ESLint under CI. `prepare` skips husky when $CI
+      # The only thing that runs oxlint under CI. `prepare` skips husky when $CI
       # is set, so the pre-commit hook -- which `--no-verify` bypasses anyway --
-      # is otherwise ESLint's sole invoker, and the `error`-level rules in
-      # eslint.config.js can never fail a build.
+      # is otherwise oxlint's sole invoker, and the `error`-level rules in
+      # .oxlintrc.json can never fail a build.
       #
-      # Deliberately not `needs: build`: the config sets no `parserOptions.project`,
-      # so no rule reads type information and nothing has to be compiled first.
+      # Still not `needs: build`, but no longer because nothing reads types: the
+      # `lint` script builds them itself (turbo-cached `build:types`), because
+      # `--type-aware` resolves cross-package imports through `dist/*.d.ts` and
+      # types every one of them as `any` when they are missing -- so tsgolint
+      # silently finds nothing rather than failing.
       - name: Lint
         run: bun run lint
 
