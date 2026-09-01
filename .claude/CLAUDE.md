@@ -120,9 +120,18 @@ Exceptions: `providers/*` ship `./ai` and `./ai-runtime` instead of browser/node
 
 Spaces, double quotes, semicolons, trailing commas (es5), 100 char width.
 
-`prettier-plugin-organize-imports` is **gone**: it drives the TypeScript language service,
-which TypeScript 7 no longer exposes from the `typescript` package, and under 7 it silently
-formatted nothing rather than failing. Nothing sorts or prunes imports automatically now.
+Imports are organized by `@sroussey/prettier-plugin-organize-imports`. The upstream
+`prettier-plugin-organize-imports` cannot work here: it drives the TypeScript language
+service, which TypeScript 7 no longer exposes from the `typescript` package, and under 7 it
+silently formatted nothing rather than failing. The fork carries its own
+`@typescript/typescript6` and drives that, so the repo stays on TypeScript 7 while imports
+still get sorted and unused ones pruned.
+
+It honours `// organize-imports-ignore`, which 223 files here carry — barrel and entry
+modules whose import order is load-bearing, because they register into `TaskRegistry` and
+the provider registries as a module side effect. Any replacement has to honour that marker:
+a sorter that hoists imports to the top of the module reorders those registrations and
+displaces the license header.
 
 ### License header
 
