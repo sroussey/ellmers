@@ -105,18 +105,58 @@ class BrowserStatement<
 }
 
 /**
+ * How a statement changes whether a transaction is open, for the browser
+ * driver's {@link BrowserDatabase.inTransaction} bookkeeping.
+ *
+ * sqlite-wasm exposes no `isTransaction`, so the flag is tracked rather than
+ * read back. Only the transaction-control statements this package issues are
+ * recognised, which is every one it has: `SAVEPOINT` / `RELEASE` /
+ * `ROLLBACK TO` deliberately report `"none"` — they move within a transaction
+ * without opening or ending the outer one.
+ */
+function transactionEffect(sql: string): "begin" | "end" | "none" {
+  const head = sql.replace(/^[\s;]+/, "").toUpperCase();
+  if (head.startsWith("BEGIN")) return "begin";
+  if (head.startsWith("COMMIT") || head.startsWith("END")) return "end";
+  // `ROLLBACK TO <savepoint>` unwinds to a savepoint and leaves the
+  // transaction open; a bare `ROLLBACK` ends it.
+  if (head.startsWith("ROLLBACK")) return /^ROLLBACK\s+TO\b/.test(head) ? "none" : "end";
+  return "none";
+}
+
+/**
  * {@link Sqlite.Database}–shaped wrapper around sqlite-wasm {@link WasmDatabase}.
  */
 export class BrowserDatabase implements SqliteApi.Database {
   private readonly inner: WasmDatabase;
+  /**
+   * Tracked, not read back: sqlite-wasm surfaces no `isTransaction`. Updated
+   * only after the statement succeeds, so a rejected `BEGIN` does not leave
+   * the driver believing in a transaction that never opened.
+   */
+  #inTransaction = false;
 
   constructor(filename: string = ":memory:") {
     const sqlite = assertWasmLoaded();
     this.inner = new sqlite.oo1.DB(filename);
   }
 
+  /**
+   * Whether a transaction this driver executed is open.
+   *
+   * Covers every transaction this package opens, which all arrive through
+   * {@link exec} or {@link transaction}. It cannot see one opened through a
+   * prepared `BEGIN` — the Node driver reads SQLite directly and does.
+   */
+  get inTransaction(): boolean {
+    return this.#inTransaction;
+  }
+
   exec(sql: string): void {
     this.inner.exec(sql);
+    const effect = transactionEffect(sql);
+    if (effect === "begin") this.#inTransaction = true;
+    else if (effect === "end") this.#inTransaction = false;
   }
 
   prepare<BindParameters extends unknown[] | Record<string, unknown> = unknown[], Result = unknown>(
@@ -135,11 +175,13 @@ export class BrowserDatabase implements SqliteApi.Database {
    * (BEGIN → COMMIT or ROLLBACK), rejecting an async body through the same
    * shared guard the Node driver uses.
    *
-   * One contract difference remains: sqlite-wasm surfaces no `isTransaction`,
-   * so this driver cannot detect an already-open transaction and downgrade to a
-   * SAVEPOINT the way the Node driver does. A nested call therefore fails on
-   * SQLite's own "cannot start a transaction within a transaction" rather than
-   * nesting.
+   * One contract difference remains: this driver does not downgrade a nested
+   * call to a SAVEPOINT the way the Node driver does, so a nested call fails on
+   * SQLite\'s own "cannot start a transaction within a transaction". Its
+   * {@link inTransaction} is tracked rather than read from SQLite, and a
+   * transaction opened through a prepared `BEGIN` is invisible to it — so a
+   * downgrade decided on that flag would silently nest a second `BEGIN` in the
+   * one case the flag is wrong. Failing loudly is the safer half.
    */
   transaction<T extends unknown[]>(fn: (...args: T) => void): (...args: T) => void {
     return (...args: T) => {

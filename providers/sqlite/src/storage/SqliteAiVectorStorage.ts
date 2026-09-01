@@ -492,8 +492,7 @@ export class SqliteAiVectorStorage<
     // (or one vector storage and one plain SqliteTabularStorage) queue on the
     // same lock instead of racing on the shared connection. Skip when we are
     // already inside an outer `withTransaction` — the chain lock is held there.
-    const dbWithFlag = this.database as unknown as { readonly inTransaction?: boolean };
-    const alreadyInTx = this.inTransaction || dbWithFlag.inTransaction === true;
+    const alreadyInTx = this.inTransaction || this.database.inTransaction;
     const handle = this.connectionHandle();
     if (handle !== null && !alreadyInTx) {
       return runOnConnection(handle, this, () => this.runVectorPutBulkOnHandle(entities));
@@ -503,15 +502,11 @@ export class SqliteAiVectorStorage<
 
   private async runVectorPutBulkOnHandle(entities: any[]): Promise<Entity[]> {
     const updatedEntities: Entity[] = [];
-    // Some drivers expose `inTransaction` as a runtime getter on the underlying
-    // handle; the canonical API doesn't surface it. When it's
-    // present and true (e.g. an outer `withTransaction` BEGIN is open and the
-    // proxy routed `tx.putBulk` here), iterate rows directly so we don't open a
-    // nested SQLite transaction. Browser-WASM has no such flag and never wraps
-    // mutating calls in `withTransaction` via the Proxy, so falling through to
-    // the inner `db.transaction(...)` is safe there.
-    const dbWithFlag = this.database as unknown as { readonly inTransaction?: boolean };
-    if (dbWithFlag.inTransaction) {
+    // With a transaction already open (an outer `withTransaction` BEGIN that the
+    // proxy routed `tx.putBulk` into, or one another storage opened on this
+    // shared connection), iterate rows directly rather than opening a nested
+    // SQLite transaction.
+    if (this.database.inTransaction) {
       for (const item of entities) {
         updatedEntities.push(this.executeVectorPutSync(item, false));
       }

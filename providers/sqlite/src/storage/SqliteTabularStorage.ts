@@ -789,11 +789,10 @@ export class SqliteTabularStorage<
     // Manual BEGIN/COMMIT (not db.transaction, whose body must be sync) keeps
     // every chunk in one atomic unit. All statement execution is synchronous
     // sqlite work, so no other writer interleaves between BEGIN and COMMIT.
-    // Prefer our own `inTransaction` flag: the driver-wrapped `Sqlite.Database`
-    // does not surface a native `inTransaction` getter, so reading through the
-    // wrapper misses the nested-tx signal.
-    const nativeFlag = (this.db as unknown as { inTransaction?: boolean }).inTransaction === true;
-    const alreadyInTx = this.inTransaction || nativeFlag;
+    // Either flag is enough. Ours covers a `withTransaction` the proxy routed
+    // here; the driver's covers a BEGIN another storage opened on this shared
+    // connection, which ours cannot see.
+    const alreadyInTx = this.inTransaction || this.db.inTransaction;
     if (!alreadyInTx) this.db.exec("BEGIN");
     let result: { aligned: Entity[]; distinct: Entity[] };
     try {

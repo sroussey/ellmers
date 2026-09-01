@@ -105,6 +105,45 @@ describe("SQLite driver — transaction()", () => {
     expect(countRows(db)).toBe(0);
   });
 
+  it("reports inTransaction across every way a transaction opens and ends", () => {
+    expect(db.inTransaction).toBe(false);
+
+    db.exec("BEGIN");
+    expect(db.inTransaction).toBe(true);
+    db.exec("ROLLBACK");
+    expect(db.inTransaction).toBe(false);
+
+    // A prepared BEGIN is invisible to a driver that tracks its own statements;
+    // reading SQLite directly sees it.
+    db.prepare("BEGIN").run();
+    expect(db.inTransaction).toBe(true);
+    db.exec("COMMIT");
+    expect(db.inTransaction).toBe(false);
+  });
+
+  it("reports inTransaction inside a transaction body but not after it commits", () => {
+    let seenInside = false;
+    db.transaction(() => {
+      seenInside = db.inTransaction;
+    })();
+    expect(seenInside).toBe(true);
+    expect(db.inTransaction).toBe(false);
+  });
+
+  it("keeps inTransaction true while a savepoint unwinds inside an outer transaction", () => {
+    db.exec("BEGIN");
+    expect(() =>
+      db.transaction(() => {
+        throw new Error("boom");
+      })()
+    ).toThrow("boom");
+    // The savepoint rolled back, but the outer transaction is still open — the
+    // signal `runPutBulkOnHandle` reads before deciding whether to BEGIN.
+    expect(db.inTransaction).toBe(true);
+    db.exec("ROLLBACK");
+    expect(db.inTransaction).toBe(false);
+  });
+
   it("still commits after a COMMIT that failed because nothing was open", () => {
     expect(() => db.exec("COMMIT")).toThrow();
     db.transaction(() => {

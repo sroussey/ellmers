@@ -419,6 +419,16 @@ export class NodeSqliteDatabase implements SqliteApi.Database {
     }
   }
 
+  /**
+   * SQLite's own answer, so a transaction opened any way at all is seen —
+   * through {@link transaction}, through `exec("BEGIN")`, or through a
+   * prepared `BEGIN` — including one opened by a different storage sharing
+   * this connection.
+   */
+  get inTransaction(): boolean {
+    return this.#inner.isTransaction;
+  }
+
   /** Runs `sql`, translating the SQLite error code on failure. */
   exec(sql: string): void {
     try {
@@ -450,7 +460,7 @@ export class NodeSqliteDatabase implements SqliteApi.Database {
    */
   transaction<T extends unknown[]>(fn: (...args: T) => void): (...args: T) => void {
     return (...args: T) => {
-      if (this.#inner.isTransaction) {
+      if (this.inTransaction) {
         this.#runInSavepoint(fn, args);
         return;
       }
@@ -460,7 +470,7 @@ export class NodeSqliteDatabase implements SqliteApi.Database {
         this.exec("COMMIT");
       } catch (err) {
         try {
-          if (this.#inner.isTransaction) this.exec("ROLLBACK");
+          if (this.inTransaction) this.exec("ROLLBACK");
         } catch {
           // prefer the original error if rollback fails
         }

@@ -70,6 +70,21 @@ export namespace SqliteApi {
   }
 
   export interface Database {
+    /**
+     * Whether a transaction is open on this connection right now.
+     *
+     * Several storages share one connection, so a caller that wants to batch
+     * writes in its own `BEGIN`/`COMMIT` has to know whether someone else
+     * already opened one — issuing a second `BEGIN` is SQLite's "cannot start a
+     * transaction within a transaction", not a nested transaction.
+     *
+     * The Node driver reads SQLite's own `DatabaseSync.isTransaction`, so it
+     * sees a transaction opened any way at all. The browser (WASM) driver has
+     * no such getter and tracks the statements it executes instead, which
+     * covers `exec` and `transaction` but not a transaction opened through a
+     * prepared `BEGIN`.
+     */
+    readonly inTransaction: boolean;
     exec(sql: string): void;
     prepare<
       BindParameters extends unknown[] | Record<string, unknown> = unknown[],
