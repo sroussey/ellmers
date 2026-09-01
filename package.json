@@ -155,7 +155,7 @@
     "{packages,providers,examples}/*/src/**/*.json": "prettier --write"
   },
   "overrides": {
-    "hono": "^4.13.2",
-    "adm-zip": "^0.6.0"
+    "adm-zip": "^0.6.0",
+    "sharp": "0.35.4"
   }
 }
