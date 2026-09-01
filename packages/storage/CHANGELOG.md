@@ -28,6 +28,12 @@
 
 ## 0.3.47
 
+### Features
+
+#### storage
+
+- add `withConnectionTransaction` so sibling tabular storages on one SQLite, Postgres, or DuckDB handle commit and roll back together
+
 ## 0.3.46
 
 ### Features

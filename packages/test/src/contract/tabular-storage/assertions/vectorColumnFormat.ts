@@ -33,6 +33,7 @@ export function vectorColumnFormatBlock(opts: TabularStorageContractOpts): void 
     afterEach(async () => {
       await storage.deleteAll();
       storage.destroy?.();
+      await opts.releaseStorage?.(storage);
     });
 
     itImpl(

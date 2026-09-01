@@ -40,6 +40,7 @@ export * from "./tabular/SqlTabularMigrationApplier";
 export * from "./tabular/StorageError";
 export * from "./tabular/TabularStorageRegistry";
 export * from "./tabular/TelemetryTabularStorage";
+export * from "./tabular/withConnectionTransaction";
 
 export * from "./kv/IKvStorage";
 export * from "./kv/InMemoryKvStorage";

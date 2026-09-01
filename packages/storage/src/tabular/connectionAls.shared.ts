@@ -14,10 +14,80 @@
 
 import type { ConnectionAlsApi } from "./defineConnectionMutex";
 
+/**
+ * The checked-out client a connection transaction routes its participants' SQL
+ * through.
+ *
+ * Deliberately the narrowest shape every backend's client already satisfies —
+ * SQL text plus positional parameters — rather than a driver type, which would
+ * make this package depend on `pg`. Naming the parameters (instead of a
+ * catch-all rest) is what lets an enlisted storage actually CALL the handle:
+ * a `(...args: never[])` signature accepts any function on the way in but is
+ * uncallable on the way out, so both ends had to cast around it.
+ */
+export interface ConnectionTxQuery {
+  query: (sql: string, params?: readonly unknown[]) => Promise<unknown>;
+}
+
 export interface AlsContext {
   readonly txId: symbol;
+  /** Lead owner (first enlisted participant); used in re-entry error labels. */
   readonly owner: object;
+  /** Every storage instance enlisted in this connection-scoped transaction. */
+  readonly owners: ReadonlySet<object>;
+  /**
+   * Key of the chain slot this transaction holds. Equal to
+   * {@link groupHandle} on every single-session backend; a real `pg.Pool`
+   * transaction may key its chain on the checked-out client instead, so the
+   * two are separate fields.
+   */
   readonly handle: object;
+  /**
+   * The physical connection this transaction owns — the pool/database object
+   * every participant reported from `sharedConnectionHandle()`. Used to group
+   * participants and, with {@link active}, to detect a nested
+   * `withConnectionTransaction` on the same connection.
+   */
+  readonly groupHandle: object;
+  /**
+   * `false` once COMMIT/ROLLBACK has run. The store itself outlives the
+   * transaction — `afterCommit` listeners and any continuation of the body
+   * still see it — so accessors that answer "is a transaction open on this
+   * connection" must consult this flag rather than the store's presence.
+   */
+  active: boolean;
+  /**
+   * `true` only while a connection-scoped transaction (see
+   * `runNativeConnectionTransaction`) is deferring `put` events. A plain
+   * `withTransaction` installs a store too, but buffers its events on the `tx`
+   * proxy and never drains {@link deferredPuts} — so without this flag a `put`
+   * that reaches the base `emitPut` in that window is queued and silently
+   * lost. Set from INSIDE the ALS scope, and cleared at deactivation.
+   */
+  deferPuts: boolean;
+  /**
+   * `put` events deferred until COMMIT of a connection-scoped transaction.
+   * Callers drain this after COMMIT, once the store has been deactivated, so a
+   * listener that writes in response emits (and commits) normally instead of
+   * queueing onto a fresh buffer nothing drains.
+   */
+  readonly deferredPuts: WeakMap<object, unknown[]>;
+  /**
+   * Dedicated query handle for a real `pg.Pool` transaction. Enlisted
+   * Postgres storages route writes through this so every participant shares
+   * one client. Written after the store is created, once the client is
+   * checked out.
+   */
+  txQuery: ConnectionTxQuery | undefined;
+  /**
+   * The store that was installed when this one opened, if any. A transaction
+   * on a DIFFERENT connection may legally nest inside this one, and
+   * `store.run` shadows rather than merges — so without this link every
+   * accessor would see only the innermost transaction and report the outer
+   * one's participants as un-enlisted. Consumers walk this chain instead of
+   * reading `getStore()` directly.
+   */
+  readonly parent: AlsContext | undefined;
 }
 
 export interface Als {
