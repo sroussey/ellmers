@@ -100,10 +100,21 @@ describe("DuckDbTabularStorage", () => {
     return repo;
   });
 
+  // The contract needs two storages on ONE handle, so the handle is opened
+  // here rather than by the storage. `destroy()` deliberately leaves a
+  // caller-provided database open, so this file owns closing them.
+  const contractDbs: Array<Awaited<ReturnType<typeof DuckDb.open>>> = [];
+  afterAll(async () => {
+    for (const db of contractDbs.splice(0)) {
+      await db.close();
+    }
+  });
+
   runTabularStorageContract({
     name: "DuckDbTabularStorage",
     createStorage: async () => {
       const db = await DuckDb.open(":memory:");
+      contractDbs.push(db);
       const storage = new DuckDbTabularStorage<
         typeof CompoundSchema,
         typeof CompoundPrimaryKeyNames

@@ -35,12 +35,12 @@ export * from "./tabular/HuggingFaceTabularStorage";
 export * from "./tabular/InMemoryTabularMigrationApplier";
 export * from "./tabular/InMemoryTabularStorage";
 export * from "./tabular/ITabularStorage";
-export * from "./tabular/withConnectionTransaction";
 export * from "./tabular/sqlMigrationDdl";
 export * from "./tabular/SqlTabularMigrationApplier";
 export * from "./tabular/StorageError";
 export * from "./tabular/TabularStorageRegistry";
 export * from "./tabular/TelemetryTabularStorage";
+export * from "./tabular/withConnectionTransaction";
 
 export * from "./kv/IKvStorage";
 export * from "./kv/InMemoryKvStorage";

@@ -30,15 +30,9 @@ export function isConnectionTransactionHost(
   );
 }
 
+/** Identity dedupe, first occurrence wins (`Set` preserves insertion order). */
 function dedupeByIdentity(participants: readonly AnyTabularStorage[]): AnyTabularStorage[] {
-  const seen = new Set<AnyTabularStorage>();
-  const unique: AnyTabularStorage[] = [];
-  for (const participant of participants) {
-    if (seen.has(participant)) continue;
-    seen.add(participant);
-    unique.push(participant);
-  }
-  return unique;
+  return Array.from(new Set(participants));
 }
 
 /**

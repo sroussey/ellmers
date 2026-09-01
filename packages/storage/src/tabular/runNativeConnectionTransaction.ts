@@ -33,23 +33,59 @@
  * | {@link takeDeferredPuts}          | no              | it drains the queue in that very window |
  * | {@link discardDeferredPuts}       | no              | same, on the rollback path              |
  *
+ * {@link enqueueDeferredPut} additionally requires `AlsContext.deferPuts`,
+ * which only this host sets: a plain `withTransaction` installs a store too but
+ * buffers its events on the `tx` proxy and never drains the ALS queue, so a
+ * `put` enqueued against that store would be silently dropped.
+ *
+ * ## The innermost store is not the only store
+ *
+ * A transaction on a DIFFERENT connection may legally nest inside this one, and
+ * `store.run` shadows the enclosing store rather than merging with it. Every
+ * accessor therefore walks {@link AlsContext.parent} (see {@link findStore})
+ * and answers for the transaction that actually enlisted the storage being
+ * asked about — reading only `getAlsStore()` would report an outer
+ * transaction's participants as un-enlisted from inside the inner body.
+ *
  * ## Nesting detection
  *
  * {@link assertSharedConnectionHandle} refuses a second connection-scoped
- * transaction on a connection that already has a live one. Detection is
- * ALS-store based, so it is precise under a real `AsyncLocalStorage`: only a
- * genuine async descendant of the open body carries the store. It is ABSENT
+ * transaction on a connection that already has a live one, via
+ * {@link isConnectionTxOpenOn}. Detection is ALS-store based, so it is precise
+ * under a real `AsyncLocalStorage`: only a genuine async descendant of the open
+ * body carries the store. It is ABSENT
  * under {@link createShimAls}, whose store dies at the body's first `await` —
  * no server backend selects the shim in production, and the guard's job there
  * falls back to whatever the backend's own `inTransaction` flag catches.
  */
 
+import type { AlsContext } from "./connectionAls.shared";
 import { getAlsStore, runInTransactionOnConnection } from "./ConnectionMutex.server";
+import { connectionOwnerLabel } from "./defineConnectionMutex";
 import type { AnyTabularStorage } from "./ITabularStorage";
 import {
   isConnectionTransactionHost,
   type ConnectionTransactionHost,
 } from "./withConnectionTransaction";
+
+/**
+ * First store in the chain satisfying `match`.
+ *
+ * A transaction on a DIFFERENT connection may legally nest inside this one,
+ * and `AsyncLocalStorage.run` shadows the enclosing store rather than merging
+ * with it — so `getAlsStore()` alone answers only for the innermost
+ * transaction. Every accessor below walks instead, or an outer transaction's
+ * participants would look un-enlisted from inside the inner body: their writes
+ * would route to the pool instead of the outer client (real `pg.Pool`), their
+ * `put` events would escape deferral, and on a single-session backend they
+ * would block forever on a chain slot only the outer transaction can release.
+ */
+function findStore(match: (ctx: AlsContext) => boolean): AlsContext | undefined {
+  for (let ctx = getAlsStore(); ctx !== undefined; ctx = ctx.parent) {
+    if (match(ctx)) return ctx;
+  }
+  return undefined;
+}
 
 /**
  * Thrown when `withConnectionTransaction` is called from inside an open
@@ -90,7 +126,7 @@ export function assertSharedConnectionHandle(
   lead: ConnectionTransactionHost,
   participants: readonly AnyTabularStorage[]
 ): object {
-  const leadTable = storageTable(lead);
+  const leadTable = connectionOwnerLabel(lead);
   const handle = lead.sharedConnectionHandle();
   if (handle === null) {
     throw new Error(
@@ -99,8 +135,11 @@ export function assertSharedConnectionHandle(
   }
   // Identity against THIS connection only: a transaction on a different
   // database nested inside this one stays legal, and a sequential second
-  // transaction is not nesting (the first store is no longer active).
-  if (activeConnectionTxGroupHandle() === handle) {
+  // transaction is not nesting (the first store is no longer active). The
+  // whole chain is consulted, not just the innermost store — otherwise a
+  // legal hop through another database would hide the first transaction and
+  // let a third one re-open this connection.
+  if (isConnectionTxOpenOn(handle)) {
     throw new NestedConnectionTransactionError(leadTable);
   }
   for (const participant of participants) {
@@ -108,24 +147,13 @@ export function assertSharedConnectionHandle(
       ? participant.sharedConnectionHandle()
       : undefined;
     if (other !== handle) {
-      const otherTable = storageTable(participant) ?? "other";
+      const otherTable = connectionOwnerLabel(participant) ?? "other";
       throw new Error(
         `withConnectionTransaction: participants do not share a connection handle (${leadTable ?? "storage"} vs ${otherTable})`
       );
     }
   }
   return handle;
-}
-
-/**
- * Best-effort label for an error message. Storage instances carry their table
- * name on a PROTECTED `table` property, so it cannot be reached through a
- * public structural type — declaring one in the parameter type made every
- * concrete storage fail to satisfy it.
- */
-function storageTable(value: object): string | undefined {
-  const table = (value as { readonly table?: unknown }).table;
-  return typeof table === "string" ? table : undefined;
 }
 
 /**
@@ -174,6 +202,8 @@ export async function runNativeConnectionTransaction<T>(options: {
     options.chainHandle ?? options.handle,
     options.participants,
     async () => {
+      // Inside the ALS scope: from here on the base `emitPut` may queue.
+      enableDeferredPuts();
       try {
         await options.begin();
       } catch (err) {
@@ -181,12 +211,10 @@ export async function runNativeConnectionTransaction<T>(options: {
         deactivate();
         throw err;
       }
+      let result: T;
       try {
-        const result = await options.fn();
+        result = await options.fn();
         await options.commit();
-        deactivate();
-        options.afterCommit();
-        return result;
       } catch (err) {
         try {
           await options.rollback();
@@ -197,6 +225,13 @@ export async function runNativeConnectionTransaction<T>(options: {
         options.afterRollback();
         throw err;
       }
+      // Deliberately outside the try: COMMIT has already taken, so a throw
+      // from teardown or from a `put`-flush listener must not issue a ROLLBACK
+      // against a connection with no open transaction and report the committed
+      // work as failed.
+      deactivate();
+      options.afterCommit();
+      return result;
     },
     options.handle
   );
@@ -213,7 +248,20 @@ export function deactivateConnectionTxStore(): void {
   const store = getAlsStore();
   if (store === undefined) return;
   store.active = false;
+  store.deferPuts = false;
   store.txQuery = undefined;
+}
+
+/**
+ * Opts this store into `put` deferral. MUST be called from inside the ALS
+ * scope. Only a connection-scoped transaction drains {@link takeDeferredPuts},
+ * so only it may enqueue: a plain `withTransaction` installs a store of its
+ * own and buffers events on the `tx` proxy, and a `put` queued against that
+ * store would never be flushed.
+ */
+function enableDeferredPuts(): void {
+  const store = getAlsStore();
+  if (store !== undefined) store.deferPuts = true;
 }
 
 /**
@@ -223,13 +271,21 @@ export function deactivateConnectionTxStore(): void {
  * @internal
  */
 export function activeConnectionTxGroupHandle(): object | undefined {
-  const store = getAlsStore();
-  return store !== undefined && store.active ? store.groupHandle : undefined;
+  return findStore((ctx) => ctx.active)?.groupHandle;
+}
+
+/**
+ * `true` when a connection-scoped transaction is open on `handle` anywhere in
+ * this async context — including one that a legal transaction on another
+ * connection is currently nested inside.
+ */
+function isConnectionTxOpenOn(handle: object): boolean {
+  return findStore((ctx) => ctx.active && ctx.groupHandle === handle) !== undefined;
 }
 
 export function enqueueDeferredPut(owner: object, entity: unknown): boolean {
-  const store = getAlsStore();
-  if (store === undefined || !store.active || !store.owners.has(owner)) return false;
+  const store = findStore((ctx) => ctx.active && ctx.deferPuts && ctx.owners.has(owner));
+  if (store === undefined) return false;
   let queue = store.deferredPuts.get(owner);
   if (queue === undefined) {
     queue = [];
@@ -241,26 +297,32 @@ export function enqueueDeferredPut(owner: object, entity: unknown): boolean {
 
 /** Drains the post-commit queue; runs after deactivation, so it ignores `active`. */
 export function takeDeferredPuts(owner: object): unknown[] {
-  const store = getAlsStore();
+  const store = findStore((ctx) => ctx.deferredPuts.has(owner));
   const queue = store?.deferredPuts.get(owner);
-  if (queue === undefined) return [];
-  store!.deferredPuts.delete(owner);
+  if (store === undefined || queue === undefined) return [];
+  store.deferredPuts.delete(owner);
   return queue;
 }
 
 /** Drops the queue after ROLLBACK; runs after deactivation, so it ignores `active`. */
 export function discardDeferredPuts(owner: object): void {
-  getAlsStore()?.deferredPuts.delete(owner);
+  findStore((ctx) => ctx.deferredPuts.has(owner))?.deferredPuts.delete(owner);
 }
 
 export function isEnlistedInConnectionTx(owner: object): boolean {
-  const store = getAlsStore();
-  return store !== undefined && store.active && store.owners.has(owner);
+  return findStore((ctx) => ctx.active && ctx.owners.has(owner)) !== undefined;
 }
 
-export function connectionTxQuery(): { query: (...args: never[]) => Promise<unknown> } | undefined {
-  const store = getAlsStore();
-  return store !== undefined && store.active ? store.txQuery : undefined;
+/**
+ * The dedicated query handle of the live connection transaction `owner` is
+ * enlisted in, or `undefined`. Pass the owner: without it a transaction nested
+ * on another connection would answer for a storage it never enlisted, routing
+ * that storage's writes onto the wrong client.
+ */
+export function connectionTxQuery(
+  owner?: object
+): { query: (...args: never[]) => Promise<unknown> } | undefined {
+  return findStore((ctx) => ctx.active && (owner === undefined || ctx.owners.has(owner)))?.txQuery;
 }
 
 export function setConnectionTxQuery(

@@ -42,6 +42,15 @@ export interface AlsContext {
    */
   active: boolean;
   /**
+   * `true` only while a connection-scoped transaction (see
+   * `runNativeConnectionTransaction`) is deferring `put` events. A plain
+   * `withTransaction` installs a store too, but buffers its events on the `tx`
+   * proxy and never drains {@link deferredPuts} — so without this flag a `put`
+   * that reaches the base `emitPut` in that window is queued and silently
+   * lost. Set from INSIDE the ALS scope, and cleared at deactivation.
+   */
+  deferPuts: boolean;
+  /**
    * `put` events deferred until COMMIT of a connection-scoped transaction.
    * Callers drain this after COMMIT, once the store has been deactivated, so a
    * listener that writes in response emits (and commits) normally instead of
@@ -55,6 +64,15 @@ export interface AlsContext {
    * checked out.
    */
   txQuery: { query: (...args: never[]) => Promise<unknown> } | undefined;
+  /**
+   * The store that was installed when this one opened, if any. A transaction
+   * on a DIFFERENT connection may legally nest inside this one, and
+   * `store.run` shadows rather than merges — so without this link every
+   * accessor would see only the innermost transaction and report the outer
+   * one's participants as un-enlisted. Consumers walk this chain instead of
+   * reading `getStore()` directly.
+   */
+  readonly parent: AlsContext | undefined;
 }
 
 export interface Als {

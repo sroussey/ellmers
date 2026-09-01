@@ -84,6 +84,18 @@ function leadOwner(owners: Set<object>): object {
   return owners.values().next().value as object;
 }
 
+/**
+ * Best-effort label lookup for a storage instance. Instances carry their table
+ * name on a PROTECTED `table` property, so it cannot be reached through a
+ * public structural type; when present it is included in error messages so
+ * operators can see the offending callers without leaking arbitrary state.
+ */
+export function connectionOwnerLabel(owner: object | undefined): string | undefined {
+  if (owner === undefined) return undefined;
+  const value = (owner as { readonly table?: unknown }).table;
+  return typeof value === "string" ? value : undefined;
+}
+
 type ReentryDecision = "throw" | "inline" | "chain";
 
 /**
@@ -161,18 +173,6 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     return state;
   }
 
-  /**
-   * Best-effort label lookup for an owner. Storage instances expose their
-   * table name as a protected `table` property; when present it is included in
-   * a {@link ConnectionReentryError} message so operators can see both
-   * offending callers without leaking arbitrary object state.
-   */
-  function ownerTable(owner: object | undefined): string | undefined {
-    if (owner === undefined) return undefined;
-    const value = (owner as { readonly table?: unknown }).table;
-    return typeof value === "string" ? value : undefined;
-  }
-
   function activeLead(state: HandleState): object | undefined {
     return state.txOwners !== null ? leadOwner(state.txOwners) : undefined;
   }
@@ -193,9 +193,17 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     if (state.txOwners !== null && !state.txOwners.has(owner)) {
       return "throw";
     }
-    const alsStore = store.getStore();
-    if (alsStore !== undefined && alsStore.handle === handle && alsStore.owners.has(owner)) {
-      return "inline";
+    // Walk the whole store chain, not just the innermost store: a transaction
+    // on a different connection may nest inside ours, and it shadows our store
+    // rather than replacing it. Reading only `getStore()` there would classify
+    // a genuine descendant as "chain" and block it on a slot only its own
+    // enclosing transaction can release. `active` is required because the
+    // store outlives COMMIT — `afterCommit` listeners are no longer inside the
+    // transaction and must take the chain like any other caller.
+    for (let ctx = store.getStore(); ctx !== undefined; ctx = ctx.parent) {
+      if (ctx.active && ctx.handle === handle && ctx.owners.has(owner)) {
+        return "inline";
+      }
     }
     // Synchronous shim only: a descendant of our own transaction body loses the
     // store at the body's first `await` and lands here with none. Chain-waiting
@@ -235,8 +243,8 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     // ensureAls first, so the shim path (browser) still fails fast.
     if (state.txOwners !== null && !state.txOwners.has(owner)) {
       throw new ConnectionReentryError(
-        ownerTable(activeLead(state)),
-        ownerTable(owner),
+        connectionOwnerLabel(activeLead(state)),
+        connectionOwnerLabel(owner),
         "sibling-op"
       );
     }
@@ -244,8 +252,8 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     const decision = classifyReentry(state, owner, handle, store);
     if (decision === "throw") {
       throw new ConnectionReentryError(
-        ownerTable(activeLead(state) ?? owner),
-        ownerTable(owner),
+        connectionOwnerLabel(activeLead(state) ?? owner),
+        connectionOwnerLabel(owner),
         "sibling-op"
       );
     }
@@ -297,8 +305,8 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     const state = getState(handle);
     if (state.txOwners !== null && !state.txOwners.has(lead)) {
       throw new ConnectionReentryError(
-        ownerTable(activeLead(state)),
-        ownerTable(lead),
+        connectionOwnerLabel(activeLead(state)),
+        connectionOwnerLabel(lead),
         "nested-transaction"
       );
     }
@@ -306,8 +314,8 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     const decision = classifyReentry(state, lead, handle, store);
     if (decision === "throw") {
       throw new ConnectionReentryError(
-        ownerTable(activeLead(state) ?? lead),
-        ownerTable(lead),
+        connectionOwnerLabel(activeLead(state) ?? lead),
+        connectionOwnerLabel(lead),
         "nested-transaction"
       );
     }
@@ -334,8 +342,12 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
       handle,
       groupHandle,
       active: true,
+      deferPuts: false,
       deferredPuts: new WeakMap(),
       txQuery: undefined,
+      // `store.run` shadows the enclosing store; keep a link to it so accessors
+      // can still see a transaction open on another connection.
+      parent: store.getStore(),
     };
     try {
       return await store.run(ctx, () => fn());
@@ -349,6 +361,7 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
         // reachable from any continuation that captured it, so mark it dead
         // here too.
         ctx.active = false;
+        ctx.deferPuts = false;
         ctx.txQuery = undefined;
       }
       release();
