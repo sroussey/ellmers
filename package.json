@@ -30,6 +30,7 @@
     "clean": "rm -rf node_modules packages/*/node_modules packages/*/*tsbuildinfo packages/*/dist packages/*/src/**/*\\.d\\.ts packages/*/src/**/*\\.map integrations/*/node_modules integrations/*/dist integrations/*/src/**/*\\.d\\.ts integrations/*/src/**/*\\.map examples/*/node_modules examples/*/dist examples/*/src/**/*\\.d\\.ts examples/*/src/**/*\\.map .turbo */*/.turbo",
     "dev": "turbo run dev --concurrency=15",
     "docs": "typedoc",
+    "lint": "turbo run lint --concurrency=15",
     "format": "eslint --fix && prettier \"{packages,providers,examples}/*/src/**/*.{js,ts,tsx,json}\" --check --write",
     "build:release": "turbo run build-js build-types --concurrency=15",
     "test": "bun scripts/test.ts",

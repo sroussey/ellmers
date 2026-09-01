@@ -63,6 +63,15 @@
         "dist/**/*.js.map"
       ]
     },
+    "lint": {
+      "inputs": [
+        "src/**/*.ts",
+        "src/**/*.tsx",
+        "package.json",
+        "$TURBO_ROOT$/eslint.config.js"
+      ],
+      "outputs": []
+    },
     "test": {
       "dependsOn": [
         "build-types",
