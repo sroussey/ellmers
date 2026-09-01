@@ -1,0 +1,176 @@
+# Typechecks the downstream consumers of this repo against THIS repo's source,
+# rather than against the last release they happen to be pinned to.
+#
+# Every other job in this repo answers "is libs self-consistent"; a consumer's
+# own CI answers "is the consumer consistent with the release it pinned". Neither
+# asks whether libs' `main` and a consumer's `main` agree, so an API-shape change
+# is discovered only when a release ships and the consumer adopts it — days
+# later, in a repo whose author did not make the change. This job asks that
+# question on the commit that changes the shape.
+#
+# It is deliberately NOT part of `Build & Test`: it can go red for something that
+# landed in a consumer, which must not block a merge here.
+name: Downstream consumers
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+  # A consumer can land code against an API this repo does not have yet, so the
+  # answer changes when nothing here does.
+  schedule:
+    - cron: "37 8 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+  DO_NOT_TRACK: "1"
+  TURBO_TELEMETRY_DISABLED: "1"
+
+jobs:
+  build-libs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun i
+      - run: bun run build
+      # Built once and fanned out: each consumer leg still has to install this
+      # repo's own dependencies (a `.d.ts` under `packages/*/dist` resolves its
+      # third-party types from `libs/node_modules`, not the consumer's), but it
+      # does not have to repeat the build.
+      - name: Upload libs dist
+        uses: actions/upload-artifact@v7
+        with:
+          name: libs-dist
+          path: |
+            packages/*/dist/**
+            providers/*/dist/**
+            examples/*/dist/**
+          retention-days: 1
+
+  sec:
+    needs: build-libs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # `sec/scripts/link-workglow-packages.ts` resolves this repo as `../libs`,
+      # so the two checkouts have to be siblings under the workspace root and
+      # this one has to be named `libs`.
+      - uses: actions/checkout@v6
+        with:
+          path: libs
+      - uses: actions/checkout@v6
+        with:
+          repository: workglow-dev/sec
+          ref: main
+          path: sec
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install libs dependencies
+        run: bun i
+        working-directory: libs
+      - name: Download libs dist
+        uses: actions/download-artifact@v8
+        with:
+          name: libs-dist
+          path: libs
+      - name: Register libs workspaces as global links
+        run: bun run link-all
+        working-directory: libs
+      - name: Install sec dependencies
+        run: bun i
+        working-directory: sec
+      # Must follow sec's own install: `bun i` restores the registry copies over
+      # any link, which is why sec's own docs say to re-run this after one.
+      - name: Point sec at this checkout
+        run: bun run link-workglow
+        working-directory: sec
+      # `build` is `bun build` plus `tsc`; the `tsc` half is what reads the
+      # linked declarations. No test suites — this job is about the seam.
+      - name: Build sec against linked libs
+        run: bun run build
+        working-directory: sec
+
+  builder:
+    needs: build-libs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # workglow-dev/builder is private and this repository is public, so this
+      # leg cannot use the workflow's own `GITHUB_TOKEN` and does not run until
+      # a token with `contents: read` on builder is configured. Note what that
+      # buys and costs: a public run log would then carry builder's file paths
+      # and tsc messages. The alternative with neither a secret nor that
+      # exposure is the mirror of this job living in builder itself, checking
+      # out this (public) repo with builder's own `GITHUB_TOKEN`. Every step
+      # below is gated so the job is a clean no-op until one of the two is
+      # chosen.
+      DOWNSTREAM_TOKEN: ${{ secrets.DOWNSTREAM_CHECKOUT_TOKEN }}
+      # Builder's own CI sets this; its Storybook tests need Playwright, CI
+      # does not.
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    steps:
+      - name: Report skip
+        if: env.DOWNSTREAM_TOKEN == ''
+        run: echo "DOWNSTREAM_CHECKOUT_TOKEN is not set — skipping the builder leg."
+      - uses: actions/checkout@v6
+        if: env.DOWNSTREAM_TOKEN != ''
+        with:
+          path: libs
+      - uses: actions/checkout@v6
+        if: env.DOWNSTREAM_TOKEN != ''
+        with:
+          repository: workglow-dev/builder
+          ref: main
+          path: builder
+          token: ${{ secrets.DOWNSTREAM_CHECKOUT_TOKEN }}
+      - uses: actions/setup-node@v6
+        if: env.DOWNSTREAM_TOKEN != ''
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        if: env.DOWNSTREAM_TOKEN != ''
+        with:
+          bun-version: latest
+      - name: Install libs dependencies
+        if: env.DOWNSTREAM_TOKEN != ''
+        run: bun i
+        working-directory: libs
+      - name: Download libs dist
+        if: env.DOWNSTREAM_TOKEN != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: libs-dist
+          path: libs
+      - name: Register libs workspaces as global links
+        if: env.DOWNSTREAM_TOKEN != ''
+        run: bun run link-all
+        working-directory: libs
+      # Rewrites builder's root catalog to `link:@workglow/*` and installs, so
+      # the typecheck below resolves this checkout instead of the pinned
+      # release. Builder already ships this script; nothing invokes it in CI.
+      - name: Point builder at this checkout
+        if: env.DOWNSTREAM_TOKEN != ''
+        run: bun scripts/link-workglow-packages.ts link
+        working-directory: builder
+      - name: Typecheck builder against linked libs
+        if: env.DOWNSTREAM_TOKEN != ''
+        run: bun run types
+        working-directory: builder
