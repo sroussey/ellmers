@@ -102,9 +102,12 @@ function fromDuckDbValue(value: unknown): unknown {
  *
  * A single handle carries a single connection: statements issued through one
  * handle share one transaction context, so `BEGIN`/`COMMIT` issued through it
- * bracket every other statement on the same handle. Do not share one handle
- * across storages that use transactions — give each storage its own handle
- * (or just pass the same path; the cache dedupes the instance).
+ * bracket every other statement on the same handle. Storages that share a
+ * handle therefore cannot transact independently — either give each one its
+ * own handle (or just pass the same path; the cache dedupes the instance), or
+ * transact them TOGETHER through `withConnectionTransaction`, which exists for
+ * exactly this shape: one BEGIN/COMMIT on the shared handle with every
+ * participant enlisted, and a refusal for anyone who is not.
  */
 export class DuckDbDatabase {
   readonly #instance: DuckDBInstance;
