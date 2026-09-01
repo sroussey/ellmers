@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.6
+
+### Features
+
+- add withConnectionTransaction for sibling storages on one handle. (#842)
+
+### Chores
+
+- migrate from ESLint to oxlint; upgrade to TypeScript 7 (#884)
+
 ## 0.4.5
 
 ## 0.4.4

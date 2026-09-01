@@ -1,5 +1,11 @@
 # @workglow/tasks
 
+## 0.4.6
+
+### Chores
+
+- migrate from ESLint to oxlint; upgrade to TypeScript 7 (#884)
+
 ## 0.4.5
 
 ## 0.4.4

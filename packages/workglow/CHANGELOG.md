@@ -1,5 +1,15 @@
 # workglow
 
+## 0.4.6
+
+### Features
+
+- migrate SQLite driver from better-sqlite3 to node:sqlite (#710)
+
+### Chores
+
+- migrate from ESLint to oxlint; upgrade to TypeScript 7 (#884)
+
 ## 0.4.5
 
 ## 0.4.4

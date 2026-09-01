@@ -1,5 +1,16 @@
 # @workglow/web
 
+## 0.4.6
+
+### Chores
+
+- update deps
+- migrate from ESLint to oxlint; upgrade to TypeScript 7 (#884)
+
+### Updated Dependencies
+
+- `@xyflow/react`: =12.11.6
+
 ## 0.4.5
 
 ## 0.4.4
