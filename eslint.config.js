@@ -8,6 +8,48 @@ import regexpPlugin from "eslint-plugin-regexp";
 import { defineConfig } from "eslint/config";
 import globals from "globals";
 
+// Main-thread-only state from `@workglow/util`. A worker bundle evaluates these
+// modules against its own `globalServiceRegistry`, so the import resolves to a
+// different, empty registry at runtime.
+const WORKER_MAIN_THREAD_STATE_PATHS = [
+  {
+    name: "@workglow/util",
+    importNames: ["globalServiceRegistry", "getGlobalCredentialStore", "setGlobalCredentialStore"],
+    message:
+      "Main-thread-only state is unavailable in workers. Resolve it in the task class (e.g. AiTask.getJobInput()) and pass it through the serialized job input.",
+  },
+  {
+    name: "@workglow/util/worker",
+    importNames: ["globalServiceRegistry"],
+    message:
+      "Main-thread-only state is unavailable in workers. Resolve it in the task class (e.g. AiTask.getJobInput()) and pass it through the serialized job input.",
+  },
+];
+
+// Effort helpers that resolve identically from `@workglow/ai/worker`, which is
+// what keeps the 50+ task classes out of a worker bundle. `allowTypeImports`
+// keeps `import type { ModelEffort } from "@workglow/ai"` legal, which matters
+// because those types sit beside every one of these value imports.
+const AI_BARREL_EFFORT_PATHS = [
+  {
+    name: "@workglow/ai",
+    importNames: [
+      "MODEL_EFFORTS",
+      "isModelEffort",
+      "sanitizeEffortOptions",
+      "readEffortOptions",
+      "stampEffortOptions",
+      "enabledEffortsForModel",
+      "effortPlaceholder",
+    ],
+    allowTypeImports: true,
+    message:
+      "Import effort helpers from @workglow/ai/worker. The root barrel " +
+      "pulls all task classes and a second copy of AiProviderRegistry / " +
+      "CheckpointRegistry into the worker bundle.",
+  },
+];
+
 export default defineConfig(
   {
     ignores: ["**/dist", "**/storybook-static", "**/node_modules"],
@@ -65,76 +107,35 @@ export default defineConfig(
     },
   },
   {
+    // Provider `src/ai/common/**` files are re-exported from each provider's
+    // `runtime.ts`, so they are evaluated inside worker bundles.
+    //
+    // Restricted by NAME rather than by path: several files in this directory
+    // legitimately import error classes and task types the worker barrel does
+    // not re-export yet, and a path-wide restriction would only buy a wall of
+    // eslint-disable comments.
+    files: ["providers/*/src/ai/common/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": ["error", { paths: AI_BARREL_EFFORT_PATHS }],
+    },
+  },
+  {
     // `*_JobRunFns.ts` files execute inside workers, which have an isolated
     // runtime with their own `globalServiceRegistry`. Importing main-thread-only
     // state (the global service registry or credential stores) resolves against a
     // different, empty registry at runtime. Resolve such state in the task class on
     // the main thread and pass it through the serialized job input instead.
+    //
+    // Must stay AFTER the `src/ai/common/**` block and repeat its paths: every
+    // run-fn in the repo also lives in that directory, and a later block REPLACES
+    // a rule's options rather than merging them. Spelling this as the base
+    // `no-restricted-imports` while the block above turned that rule off is what
+    // silently disabled this restriction on every file it was written to guard.
     files: ["**/*_JobRunFns.ts"],
     rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          paths: [
-            {
-              name: "@workglow/util",
-              importNames: [
-                "globalServiceRegistry",
-                "getGlobalCredentialStore",
-                "setGlobalCredentialStore",
-              ],
-              message:
-                "Main-thread-only state is unavailable in workers. Resolve it in the task class (e.g. AiTask.getJobInput()) and pass it through the serialized job input.",
-            },
-            {
-              name: "@workglow/util/worker",
-              importNames: ["globalServiceRegistry"],
-              message:
-                "Main-thread-only state is unavailable in workers. Resolve it in the task class (e.g. AiTask.getJobInput()) and pass it through the serialized job input.",
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    // Provider `src/ai/common/**` files are re-exported from each provider's
-    // `runtime.ts`, so they are evaluated inside worker bundles.
-    // `@workglow/ai/worker` exists to keep the 50+ task classes out of those
-    // bundles; the effort helpers below resolve identically from it.
-    //
-    // Restricted by NAME rather than by path: several files in this directory
-    // legitimately import error classes and task types the worker barrel does
-    // not re-export yet, and a path-wide restriction would only buy a wall of
-    // eslint-disable comments. `allowTypeImports` keeps `import type
-    // { ModelEffort } from "@workglow/ai"` legal, which matters because those
-    // types sit beside every one of these value imports.
-    files: ["providers/*/src/ai/common/**/*.ts"],
-    rules: {
-      "no-restricted-imports": "off",
       "@typescript-eslint/no-restricted-imports": [
         "error",
-        {
-          paths: [
-            {
-              name: "@workglow/ai",
-              importNames: [
-                "MODEL_EFFORTS",
-                "isModelEffort",
-                "sanitizeEffortOptions",
-                "readEffortOptions",
-                "stampEffortOptions",
-                "enabledEffortsForModel",
-                "effortPlaceholder",
-              ],
-              allowTypeImports: true,
-              message:
-                "Import effort helpers from @workglow/ai/worker. The root barrel " +
-                "pulls all task classes and a second copy of AiProviderRegistry / " +
-                "CheckpointRegistry into the worker bundle.",
-            },
-          ],
-        },
+        { paths: [...WORKER_MAIN_THREAD_STATE_PATHS, ...AI_BARREL_EFFORT_PATHS] },
       ],
     },
   }
