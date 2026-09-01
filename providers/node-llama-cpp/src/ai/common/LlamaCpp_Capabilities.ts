@@ -39,15 +39,17 @@ export function inferLlamaCppCapabilities(model: CapabilityHints): readonly Capa
   const baseName = (id.split("/").pop() ?? id).toLowerCase();
 
   if (/embed|minilm|bge-|gte-|e5-/i.test(baseName)) {
+    // No "cache.checkpoint" / "session.dispose": both act on a chat session,
+    // which an embedding GGUF has no chat wrapper to build. Advertised, they
+    // clear model selection and throw inside the provider; withheld, selection
+    // rejects the model and says why.
     return [
       "text.embedding",
-      "cache.checkpoint",
       "model.count-tokens",
       "model.download",
       "model.download-remove",
       "model.info",
       "model.search",
-      "session.dispose",
     ];
   }
 
