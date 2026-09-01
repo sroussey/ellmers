@@ -56,7 +56,7 @@ export {
   setConnectionTxQuery,
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   takeDeferredPuts,
-} from "./tabular/runNativeConnectionTransaction";
+} from "./tabular/NativeConnectionTransaction.server";
 
 export * from "./tabular/FsFolderTabularStorage";
 
