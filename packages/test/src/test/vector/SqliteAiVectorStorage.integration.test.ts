@@ -28,10 +28,15 @@ if (extensionPath !== undefined) {
   // would hide the regression behind a green suite, so let it throw.
   await Sqlite.init();
   const db = new Sqlite.Database(":memory:");
-  db.loadExtension(extensionPath);
-  db.exec("SELECT vector_version()");
-  db.close();
-  sqliteVectorAvailable = true;
+  try {
+    db.loadExtension(extensionPath);
+    db.exec("SELECT vector_version()");
+    sqliteVectorAvailable = true;
+  } finally {
+    // The probe rethrows, and this file is expected to fail rather than skip when
+    // it does — but not while also leaking the connection it opened to find out.
+    db.close();
+  }
 }
 
 const VectorSchema = {

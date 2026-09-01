@@ -49,6 +49,9 @@
       "import": "./dist/job-queue/node.js"
     }
   },
+  "engines": {
+    "node": ">=24"
+  },
   "peerDependencies": {
     "@sqlite.org/sqlite-wasm": "catalog:",
     "@sqliteai/sqlite-vector": "catalog:",

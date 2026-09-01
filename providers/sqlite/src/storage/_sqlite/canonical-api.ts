@@ -22,6 +22,30 @@
  */
 export const SQLITE_BUSY_TIMEOUT_MS = 5000;
 
+/**
+ * Rejects an async {@link SqliteApi.Database.transaction} body.
+ *
+ * Every driver commits as soon as `fn` returns, so an `async` body would commit
+ * at its first `await` and a later throw could not roll anything back. The
+ * returned promise is given a no-op `catch` first: the body's own eventual
+ * rejection is nobody's to handle once its transaction is gone, and left alone
+ * it would surface as an unhandled rejection on top of this `TypeError`.
+ *
+ * Shared by every driver so the contract does not differ per platform — a
+ * browser build that silently committed half a transaction would be the same
+ * bug the Node seam refuses outright.
+ */
+export function assertSyncTransactionBody(result: unknown): void {
+  if (
+    result != null &&
+    (typeof result === "object" || typeof result === "function") &&
+    typeof (result as { then?: unknown }).then === "function"
+  ) {
+    void Promise.resolve(result).catch(() => {});
+    throw new TypeError("Transaction function cannot return a promise");
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace SqliteApi {
   export interface RunResult {

@@ -139,9 +139,28 @@ describe("SQLite driver — constructor options", () => {
     ["fileMustExist", { fileMustExist: true }],
     ["verbose", { verbose: () => {} }],
     ["nativeBinding", { nativeBinding: "/nope.node" }],
+    // Deferred open: `DatabaseSync` accepts it, but this wrapper has no `open()`
+    // and every accessor it needs throws ERR_INVALID_STATE until the db is open.
+    ["open", { open: false }],
     ["nonsense", { nonsense: 1 }],
   ])("rejects the %s option", (_name, options) => {
     expect(() => new Sqlite.Database(":memory:", options as never)).toThrow(TypeError);
+  });
+
+  it("names an inherited Object.prototype key as an unknown option", () => {
+    // A plain-object lookup would resolve `toString` through Object.prototype and
+    // report it as a legacy better-sqlite3 option with a native function body.
+    expect(() => new Sqlite.Database(":memory:", { toString: 1 } as never)).toThrow(
+      /Unknown SQLite option "toString"/
+    );
+  });
+
+  it("closes idempotently, as better-sqlite3 and bun:sqlite did", () => {
+    const db = new Sqlite.Database(":memory:");
+    db.close();
+    // node:sqlite throws ERR_INVALID_STATE on the second close; a duplicated
+    // teardown must not mask the error that caused it.
+    expect(() => db.close()).not.toThrow();
   });
 
   it("accepts the supported options", () => {
@@ -190,11 +209,36 @@ describe("SQLite driver — result rows", () => {
     expect(rows[1]!.n).toBe(BigInt(Number.MAX_SAFE_INTEGER) + 10n);
   });
 
+  it("keeps a column named __proto__ as an own property", () => {
+    const row = db
+      .prepare<unknown[], Record<string, unknown>>("SELECT 1 AS __proto__, 2 AS x")
+      .get();
+    expect(Object.getOwnPropertyNames(row)).toEqual(["__proto__", "x"]);
+    expect(Object.getPrototypeOf(row)).toBe(Object.prototype);
+  });
+
   it("binds undefined as SQL NULL", () => {
     db.exec("CREATE TABLE nullable (id INTEGER PRIMARY KEY, v TEXT)");
     db.prepare("INSERT INTO nullable (id, v) VALUES (?, ?)").run(1, undefined);
     const row = db.prepare<unknown[], { v: string | null }>("SELECT v FROM nullable").get();
     expect(row?.v).toBeNull();
+  });
+
+  it("binds undefined as SQL NULL inside a named-parameter object", () => {
+    db.exec("CREATE TABLE named (id INTEGER PRIMARY KEY, v TEXT)");
+    // The canonical Statement generic advertises `Record<string, unknown>`
+    // bindings, so the undefined→NULL substitution has to reach inside the bag
+    // too — node:sqlite rejects the raw `undefined` outright.
+    db.prepare("INSERT INTO named (id, v) VALUES ($id, $v)").run({ id: 1, v: undefined });
+    const row = db.prepare<unknown[], { v: string | null }>("SELECT v FROM named").get();
+    expect(row?.v).toBeNull();
+  });
+
+  it("leaves a Uint8Array binding intact rather than treating it as a named bag", () => {
+    db.exec("CREATE TABLE blobs (id INTEGER PRIMARY KEY, b BLOB)");
+    db.prepare("INSERT INTO blobs (id, b) VALUES (?, ?)").run(1, new Uint8Array([1, 2, 3]));
+    const row = db.prepare<unknown[], { b: Uint8Array }>("SELECT b FROM blobs").get();
+    expect(Array.from(row!.b)).toEqual([1, 2, 3]);
   });
 });
 
@@ -295,7 +339,9 @@ describe("SQLite driver — file-backed database", () => {
       }
       const waited = Date.now() - start;
 
-      expect((caught as { code?: string }).code).toBe("SQLITE_BUSY");
+      // SQLite reports the expired busy handler as SQLITE_BUSY, or as the extended
+      // SQLITE_BUSY_TIMEOUT where the build uses a blocking lock.
+      expect((caught as { code?: string }).code).toMatch(/^SQLITE_BUSY(_TIMEOUT)?$/);
       // Without a busy timeout the write fails in microseconds; the driver's
       // default makes it wait out the configured window first.
       expect(waited).toBeGreaterThanOrEqual(200);

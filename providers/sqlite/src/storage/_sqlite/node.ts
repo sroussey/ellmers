@@ -5,7 +5,7 @@
  */
 
 import type { SqliteApi } from "./canonical-api";
-import { SQLITE_BUSY_TIMEOUT_MS } from "./canonical-api";
+import { assertSyncTransactionBody, SQLITE_BUSY_TIMEOUT_MS } from "./canonical-api";
 
 export type { SqliteApi };
 
@@ -21,7 +21,6 @@ type NodeStatementSync = ReturnType<NodeDatabaseSync["prepare"]>;
  * extend it.
  */
 export interface NodeSqliteOptions {
-  readonly open?: boolean;
   readonly readOnly?: boolean;
   /**
    * Enforce `REFERENCES` constraints. Defaults to `false`.
@@ -42,7 +41,6 @@ export interface NodeSqliteOptions {
 
 /** Keys {@link NodeSqliteOptions} forwards to `DatabaseSync`. */
 const ALLOWED_OPTIONS: ReadonlySet<string> = new Set([
-  "open",
   "readOnly",
   "enableForeignKeyConstraints",
   "enableDoubleQuotedStringLiterals",
@@ -51,7 +49,8 @@ const ALLOWED_OPTIONS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * better-sqlite3 option names `node:sqlite` renamed or does not have.
+ * Options this seam refuses: better-sqlite3 names `node:sqlite` renamed or does
+ * not have, plus `node:sqlite` options this wrapper cannot honour.
  *
  * `DatabaseSync` ignores unknown constructor keys, so a leftover
  * `readonly: true` would open the database read-**write** and a
@@ -64,42 +63,25 @@ const LEGACY_OPTIONS: Readonly<Record<string, string>> = {
   fileMustExist: "no node:sqlite equivalent; check the file exists before opening",
   verbose: "no node:sqlite equivalent",
   nativeBinding: "no node:sqlite equivalent",
+  // `DatabaseSync` accepts `open: false`, but this wrapper exposes no `open()` to
+  // finish the job, and every accessor it needs (`isTransaction`, `exec`) throws
+  // ERR_INVALID_STATE on an unopened handle. Rejecting it beats handing back a
+  // Database that can only throw.
+  open: "deferred open is unsupported; construct the Database when you want it open",
 };
 
 function assertKnownOptions(options: NodeSqliteOptions | undefined): void {
   if (options === undefined) return;
   for (const key of Object.keys(options)) {
-    const guidance = LEGACY_OPTIONS[key];
+    const guidance = Object.hasOwn(LEGACY_OPTIONS, key) ? LEGACY_OPTIONS[key] : undefined;
     if (guidance !== undefined) {
-      throw new TypeError(`Unsupported better-sqlite3 option "${key}": ${guidance}.`);
+      throw new TypeError(`Unsupported SQLite option "${key}": ${guidance}.`);
     }
     if (!ALLOWED_OPTIONS.has(key)) {
       throw new TypeError(
         `Unknown SQLite option "${key}". Supported options: ${[...ALLOWED_OPTIONS].join(", ")}.`
       );
     }
-  }
-}
-
-/**
- * Rejects an async {@link SqliteApi.Database.transaction} body.
- *
- * The wrapper commits as soon as `fn` returns, so an `async` body would commit
- * at its first `await` and a later throw could not roll anything back —
- * better-sqlite3 refused such a body outright and callers here still rely on
- * that rejection. The returned promise is given a no-op `catch` first: the
- * body's own eventual rejection is nobody's to handle once its transaction is
- * gone, and left alone it would surface as an unhandled rejection on top of
- * this `TypeError`.
- */
-function assertSyncTransactionBody(result: unknown): void {
-  if (
-    result != null &&
-    (typeof result === "object" || typeof result === "function") &&
-    typeof (result as { then?: unknown }).then === "function"
-  ) {
-    void Promise.resolve(result).catch(() => {});
-    throw new TypeError("Transaction function cannot return a promise");
   }
 }
 
@@ -159,7 +141,8 @@ const EXTENDED_RESULT_CODES: Readonly<Record<number, string>> = {
   261: "SQLITE_BUSY_RECOVERY",
   517: "SQLITE_BUSY_SNAPSHOT",
   773: "SQLITE_BUSY_TIMEOUT",
-  516: "SQLITE_READONLY_ROLLBACK",
+  516: "SQLITE_ABORT_ROLLBACK",
+  776: "SQLITE_READONLY_ROLLBACK",
 };
 
 /** Primary (low byte) result codes, used when the extended code is unmapped. */
@@ -179,14 +162,19 @@ const PRIMARY_RESULT_CODES: Readonly<Record<number, string>> = {
   13: "SQLITE_FULL",
   14: "SQLITE_CANTOPEN",
   15: "SQLITE_PROTOCOL",
+  16: "SQLITE_EMPTY",
   17: "SQLITE_SCHEMA",
   18: "SQLITE_TOOBIG",
   19: "SQLITE_CONSTRAINT",
   20: "SQLITE_MISMATCH",
   21: "SQLITE_MISUSE",
+  22: "SQLITE_NOLFS",
   23: "SQLITE_AUTH",
+  24: "SQLITE_FORMAT",
   25: "SQLITE_RANGE",
   26: "SQLITE_NOTADB",
+  27: "SQLITE_NOTICE",
+  28: "SQLITE_WARNING",
 };
 
 function sqliteCodeName(errcode: number): string | undefined {
@@ -233,30 +221,68 @@ function narrowBigInt(value: bigint): number | bigint {
  */
 function narrowRow(row: unknown): unknown {
   if (row === null || typeof row !== "object") return row;
-  const record = row as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  for (const column in record) {
-    const value = record[column];
-    out[column] = typeof value === "bigint" ? narrowBigInt(value) : value;
+  // Spread, not a keyed copy onto `{}`: `out[column] = ...` would run
+  // `Object.prototype.__proto__`'s setter for a column named `__proto__` and drop
+  // the cell. Spread creates own data properties and restores `Object.prototype`.
+  const out: Record<string, unknown> = { ...(row as Record<string, unknown>) };
+  for (const column of Object.keys(out)) {
+    const value = out[column];
+    if (typeof value === "bigint") out[column] = narrowBigInt(value);
   }
   return out;
 }
 
 /**
- * Substitutes `null` for `undefined` bindings.
+ * A named-parameter bag rather than a bound value: a plain object, never a
+ * `Uint8Array` BLOB or any other class instance.
+ */
+function isNamedParams(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== "object") return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/** `null`-substituted copy of a named-parameter bag, or the bag itself. */
+function bindableNamedParams(bag: Record<string, unknown>): Record<string, unknown> {
+  let out: Record<string, unknown> | undefined;
+  for (const key of Object.keys(bag)) {
+    if (bag[key] === undefined) {
+      out ??= { ...bag };
+      out[key] = null;
+    }
+  }
+  return out ?? bag;
+}
+
+/**
+ * Substitutes `null` for `undefined` bindings, positional and named alike.
  *
  * better-sqlite3 bound `undefined` as SQL NULL; `node:sqlite` rejects it with
  * "Provided value cannot be bound to SQLite parameter N". Callers rely on the
- * old behavior for columns they leave unset, so the seam keeps it. The input
- * array is returned untouched unless it actually holds an `undefined`.
+ * old behavior for columns they leave unset, so the seam keeps it — including
+ * inside a named-parameter object, which the canonical `Statement` generic
+ * (`BindParameters extends unknown[] | Record<string, unknown>`) advertises and
+ * the browser driver accepts. The input is returned untouched unless it
+ * actually holds an `undefined`.
  */
 function toBindable(params: unknown[]): unknown[] {
+  let out: unknown[] | undefined;
   for (let i = 0; i < params.length; i++) {
-    if (params[i] === undefined) {
-      return params.map((param) => (param === undefined ? null : param));
+    const param = params[i];
+    if (param === undefined) {
+      out ??= [...params];
+      out[i] = null;
+      continue;
+    }
+    if (isNamedParams(param)) {
+      const bindable = bindableNamedParams(param);
+      if (bindable !== param) {
+        out ??= [...params];
+        out[i] = bindable;
+      }
     }
   }
-  return params;
+  return out ?? params;
 }
 
 /**
@@ -278,6 +304,11 @@ class NodeSqliteStatement<
 
   constructor(stmt: NodeStatementSync) {
     this.#stmt = stmt;
+    if (typeof stmt.setReadBigInts !== "function") {
+      throw new Error(
+        "node:sqlite is too old: StatementSync.setReadBigInts is required by @workglow/sqlite/storage."
+      );
+    }
     stmt.setReadBigInts(true);
   }
 
@@ -332,6 +363,13 @@ export class NodeSqliteDatabase implements SqliteApi.Database {
    * a savepoint left open by a failed RELEASE.
    */
   #savepointSeq = 0;
+  /**
+   * Set once the connection is provably gone, which makes `close()` idempotent
+   * as it was on better-sqlite3 and `bun:sqlite`. `DatabaseSync.close()` throws
+   * `ERR_INVALID_STATE` on an already-closed handle, which turns a duplicated
+   * teardown into a failure that hides the real one.
+   */
+  #closed = false;
 
   constructor(filename?: string, options?: NodeSqliteOptions) {
     assertKnownOptions(options);
@@ -354,30 +392,40 @@ export class NodeSqliteDatabase implements SqliteApi.Database {
     } catch (err) {
       rethrow(err);
     }
-    if (typeof this.#inner.isTransaction !== "boolean") {
-      throw new Error(
-        "node:sqlite is too old: DatabaseSync.isTransaction is required by @workglow/sqlite/storage."
-      );
-    }
-    // WAL gives readers and writers concurrency across the several connections
-    // that open the same DB file. It needs a real file — skip in-memory dbs,
-    // where journal_mode stays "memory".
-    if (resolved !== ":memory:" && options?.open !== false) {
-      this.#exec("PRAGMA journal_mode = WAL");
+    // The handle is open from here on, and a constructor that throws never
+    // hands anyone a `close()` to call — so every failure below releases it
+    // rather than leaving a file descriptor (and, for a file db, its lock)
+    // pinned until the GC gets around to the orphan.
+    try {
+      if (typeof this.#inner.isTransaction !== "boolean") {
+        throw new Error(
+          "node:sqlite is too old: DatabaseSync.isTransaction is required by @workglow/sqlite/storage."
+        );
+      }
+      // WAL gives readers and writers concurrency across the several connections
+      // that open the same DB file. It needs a real file — skip in-memory dbs,
+      // where journal_mode stays "memory".
+      if (resolved !== ":memory:") {
+        this.exec("PRAGMA journal_mode = WAL");
+      }
+    } catch (err) {
+      this.#closed = true;
+      try {
+        this.#inner.close();
+      } catch {
+        // prefer the error that actually failed the open
+      }
+      throw err;
     }
   }
 
   /** Runs `sql`, translating the SQLite error code on failure. */
-  #exec(sql: string): void {
+  exec(sql: string): void {
     try {
       this.#inner.exec(sql);
     } catch (err) {
       rethrow(err);
     }
-  }
-
-  exec(sql: string): void {
-    this.#exec(sql);
   }
 
   prepare<BindParameters extends unknown[] | Record<string, unknown> = unknown[], Result = unknown>(
@@ -406,13 +454,13 @@ export class NodeSqliteDatabase implements SqliteApi.Database {
         this.#runInSavepoint(fn, args);
         return;
       }
-      this.#exec("BEGIN");
+      this.exec("BEGIN");
       try {
         assertSyncTransactionBody(fn(...args));
-        this.#exec("COMMIT");
+        this.exec("COMMIT");
       } catch (err) {
         try {
-          if (this.#inner.isTransaction) this.#exec("ROLLBACK");
+          if (this.#inner.isTransaction) this.exec("ROLLBACK");
         } catch {
           // prefer the original error if rollback fails
         }
@@ -423,14 +471,14 @@ export class NodeSqliteDatabase implements SqliteApi.Database {
 
   #runInSavepoint<T extends unknown[]>(fn: (...args: T) => void, args: T): void {
     const name = `_workglow_sp_${this.#savepointSeq++}`;
-    this.#exec(`SAVEPOINT ${name}`);
+    this.exec(`SAVEPOINT ${name}`);
     try {
       assertSyncTransactionBody(fn(...args));
-      this.#exec(`RELEASE ${name}`);
+      this.exec(`RELEASE ${name}`);
     } catch (err) {
       try {
-        this.#exec(`ROLLBACK TO ${name}`);
-        this.#exec(`RELEASE ${name}`);
+        this.exec(`ROLLBACK TO ${name}`);
+        this.exec(`RELEASE ${name}`);
       } catch {
         // prefer the original error if the savepoint unwind fails
       }
@@ -439,7 +487,22 @@ export class NodeSqliteDatabase implements SqliteApi.Database {
   }
 
   close(): void {
-    this.#inner.close();
+    if (this.#closed) return;
+    try {
+      this.#inner.close();
+    } catch (err) {
+      // Someone closed the raw handle already: the connection is gone, which is
+      // all this method promises, so record it and stay idempotent.
+      if ((err as { code?: unknown } | null)?.code === "ERR_INVALID_STATE") {
+        this.#closed = true;
+        return;
+      }
+      // Any other failure leaves the handle OPEN. Latching `#closed` here would
+      // turn every retry into a silent no-op and strand the connection, so the
+      // flag is set only once the close actually happened.
+      rethrow(err);
+    }
+    this.#closed = true;
   }
 
   loadExtension(path: string, entryPoint?: string): void {

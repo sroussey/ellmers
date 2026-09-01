@@ -14,6 +14,8 @@ name: Nightly Bun runtime parity
 # rewrite it off the mocking API, but do not change product code to satisfy the
 # shim.
 
+# `bun-version: canary` matches `engines.bun` / `packageManager`: no tagged Bun
+# release carries `node:sqlite` yet, which @workglow/sqlite/storage requires.
 permissions:
   contents: read
 
@@ -42,7 +44,7 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: canary
       - run: bun i
       - run: bun run build
       # Excluded on purpose: the live tier (model downloads, paid APIs) belongs

@@ -7,6 +7,7 @@
 import type * as SqliteWasmPkg from "@sqlite.org/sqlite-wasm";
 
 import type { SqliteApi } from "./canonical-api";
+import { assertSyncTransactionBody } from "./canonical-api";
 
 export type { SqliteApi };
 
@@ -130,14 +131,21 @@ export class BrowserDatabase implements SqliteApi.Database {
   }
 
   /**
-   * Same contract as the Node and Bun drivers: returns a function that runs `fn` inside a single
-   * SQL transaction (BEGIN → COMMIT or ROLLBACK).
+   * Returns a function that runs `fn` inside a single SQL transaction
+   * (BEGIN → COMMIT or ROLLBACK), rejecting an async body through the same
+   * shared guard the Node driver uses.
+   *
+   * One contract difference remains: sqlite-wasm surfaces no `isTransaction`,
+   * so this driver cannot detect an already-open transaction and downgrade to a
+   * SAVEPOINT the way the Node driver does. A nested call therefore fails on
+   * SQLite's own "cannot start a transaction within a transaction" rather than
+   * nesting.
    */
   transaction<T extends unknown[]>(fn: (...args: T) => void): (...args: T) => void {
     return (...args: T) => {
       this.exec("BEGIN");
       try {
-        fn(...args);
+        assertSyncTransactionBody(fn(...args));
         this.exec("COMMIT");
       } catch (err) {
         try {
