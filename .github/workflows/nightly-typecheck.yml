@@ -1,3 +1,6 @@
+# Bun is pinned exactly, matching `packageManager`: @workglow/sqlite/storage needs
+# `node:sqlite`, which Bun ships from 1.4.0. Floating tags would let an unrelated
+# Bun regression redden every PR on a day nobody touched the code.
 name: Nightly type-drift guard
 permissions:
   contents: read
@@ -19,7 +22,7 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.4.0
       - run: bun i
       - name: Build type declarations
         run: bun run build:types

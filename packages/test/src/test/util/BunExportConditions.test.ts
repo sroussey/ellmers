@@ -18,15 +18,18 @@ const workspaceRoots = ["packages", "providers"] as const;
  *
  * - `@workglow/util .`        — `Worker.bun` vs `Worker.node`
  * - `@workglow/util ./worker` — `dist/worker-bun.js` vs `dist/worker-node.js`
- * - `@workglow/sqlite ./storage` — `bun:sqlite` vs the better-sqlite3 driver
+ *
+ * `@workglow/sqlite ./storage` was a third until both runtimes moved onto the
+ * shared `node:sqlite` driver: with no `bun:sqlite` build left to select, the
+ * condition named the same bundle the default `"import"` already resolves.
  *
  * Everywhere else Bun resolves the default `"import"` and loads the node build,
  * which is byte-identical to what a duplicated `src/bun.ts` would have produced.
  *
  * This fixture is deliberately exact, so it fails in both directions: on a
- * redundant `"bun"` condition added back, and on one of the three being deleted
- * (deleting `@workglow/util`'s `"./worker"` would silently swap every Bun
- * consumer onto `Worker.node` and `node:worker_threads`).
+ * redundant `"bun"` condition added back, and on either of the two being
+ * deleted (deleting `@workglow/util`'s `"./worker"` would silently swap every
+ * Bun consumer onto `Worker.node` and `node:worker_threads`).
  *
  * Changing it means changing prose too — the same list is stated in
  * `.claude/CLAUDE.md` ("No `bun` entry unless it differs") and twice in
@@ -34,11 +37,7 @@ const workspaceRoots = ["packages", "providers"] as const;
  * and the "Extended Pattern (util)" build table). `docs/technical/18-multi-runtime-abstraction.md`
  * also describes `@workglow/util`'s `./worker` condition as the exception.
  */
-const EXPECTED_BUN_CONDITIONS = [
-  "@workglow/sqlite ./storage",
-  "@workglow/util .",
-  "@workglow/util ./worker",
-] as const;
+const EXPECTED_BUN_CONDITIONS = ["@workglow/util .", "@workglow/util ./worker"] as const;
 
 interface ExportsNode {
   readonly [condition: string]: string | ExportsNode | undefined;
@@ -104,7 +103,14 @@ describe("bun export conditions", () => {
     expect(utilExports["."].import).toBe("./dist/node.js");
     expect(utilExports["./worker"].bun.import).toBe("./dist/worker-bun.js");
     expect(utilExports["./worker"].import).toBe("./dist/worker-node.js");
-    expect(sqliteExports["./storage"].bun.import).toBe("./dist/storage/bun.js");
+
+    // The inverse, kept rather than deleted: `./storage` must carry NO `bun`
+    // condition and still route to the node build, which is what makes Bun and
+    // Node share the one `node:sqlite` driver. Dropping the assertion with the
+    // condition would leave the migration's whole point unpinned — a
+    // reintroduced `bun:sqlite` branch would then only trip the exact-set test
+    // above, with nothing saying which driver Bun actually loads.
+    expect(sqliteExports["./storage"].bun).toBeUndefined();
     expect(sqliteExports["./storage"].import).toBe("./dist/storage/node.js");
   });
 });

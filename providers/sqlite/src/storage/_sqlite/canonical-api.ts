@@ -5,13 +5,13 @@
  */
 
 /**
- * Canonical SQLite surface for `@workglow/sqlite/storage` across Node (better-sqlite3),
- * Bun (native, via adapter), and browser (WASM).
+ * Canonical SQLite surface for `@workglow/sqlite/storage` across Node and Bun
+ * (both on the built-in `node:sqlite`) and the browser (WASM).
  *
  * On every platform, call `await Sqlite.init()` once before `new Sqlite.Database(...)`.
  *
  * **Generic order:** `prepare<BindParameters, Result>(sql)` — bindings first,
- * row/result second (better-sqlite3 order), not `bun:sqlite`’s reversed order.
+ * row/result second.
  */
 
 /**
@@ -21,6 +21,30 @@
  * immediately with `SQLITE_BUSY` instead of waiting for the lock to clear.
  */
 export const SQLITE_BUSY_TIMEOUT_MS = 5000;
+
+/**
+ * Rejects an async {@link SqliteApi.Database.transaction} body.
+ *
+ * Every driver commits as soon as `fn` returns, so an `async` body would commit
+ * at its first `await` and a later throw could not roll anything back. The
+ * returned promise is given a no-op `catch` first: the body's own eventual
+ * rejection is nobody's to handle once its transaction is gone, and left alone
+ * it would surface as an unhandled rejection on top of this `TypeError`.
+ *
+ * Shared by every driver so the contract does not differ per platform — a
+ * browser build that silently committed half a transaction would be the same
+ * bug the Node seam refuses outright.
+ */
+export function assertSyncTransactionBody(result: unknown): void {
+  if (
+    result != null &&
+    (typeof result === "object" || typeof result === "function") &&
+    typeof (result as { then?: unknown }).then === "function"
+  ) {
+    void Promise.resolve(result).catch(() => {});
+    throw new TypeError("Transaction function cannot return a promise");
+  }
+}
 
 // eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace SqliteApi {
@@ -36,10 +60,31 @@ export namespace SqliteApi {
     run(...params: unknown[]): RunResult;
     get(...params: unknown[]): Result | undefined;
     all(...params: unknown[]): Result[];
+    /**
+     * Releases the statement where the driver supports it. On `node:sqlite`
+     * this is a no-op today: there is no explicit finalizer and `StatementSync`
+     * exposes no `Symbol.dispose`, so statements are released only on GC or
+     * when the database closes. Only the browser (WASM) driver frees eagerly.
+     */
     finalize(): void;
   }
 
   export interface Database {
+    /**
+     * Whether a transaction is open on this connection right now.
+     *
+     * Several storages share one connection, so a caller that wants to batch
+     * writes in its own `BEGIN`/`COMMIT` has to know whether someone else
+     * already opened one — issuing a second `BEGIN` is SQLite's "cannot start a
+     * transaction within a transaction", not a nested transaction.
+     *
+     * The Node driver reads SQLite's own `DatabaseSync.isTransaction`, so it
+     * sees a transaction opened any way at all. The browser (WASM) driver has
+     * no such getter and tracks the statements it executes instead, which
+     * covers `exec` and `transaction` but not a transaction opened through a
+     * prepared `BEGIN`.
+     */
+    readonly inTransaction: boolean;
     exec(sql: string): void;
     prepare<
       BindParameters extends unknown[] | Record<string, unknown> = unknown[],

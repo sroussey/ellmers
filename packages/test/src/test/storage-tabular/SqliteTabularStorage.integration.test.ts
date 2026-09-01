@@ -724,3 +724,59 @@ describe("SqliteTabularStorage shared-connection safety", () => {
     });
   });
 });
+
+describe("SqliteTabularStorage entity prototypes", () => {
+  const row = {
+    id: "p1",
+    category: "a",
+    subcategory: "x",
+    value: 1,
+    createdAt: "2025-01-01T00:00:00Z",
+    updatedAt: "2025-01-01T00:00:00Z",
+  };
+
+  // Each storage opens its own `:memory:` database, so one fixed table name
+  // cannot collide with another test's.
+  async function makeStorage(): Promise<
+    SqliteTabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>
+  > {
+    const storage = new SqliteTabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>(
+      ":memory:",
+      "proto_probe",
+      SearchSchema,
+      SearchPrimaryKeyNames
+    );
+    await storage.setupDatabase();
+    return storage;
+  }
+
+  it("returns get() entities as plain objects", async () => {
+    const storage = await makeStorage();
+    try {
+      await storage.put(row);
+      const got = await storage.get({ id: "p1" });
+      // The driver hands back null-prototype rows; anything that reaches a caller
+      // has to look like the plain objects every other backend returns.
+      expect(Object.getPrototypeOf(got)).toBe(Object.prototype);
+      // Every nullable column SearchSchema declares comes back as an explicit
+      // null, `tag` included -- a column added to the schema has to be listed
+      // here or toStrictEqual fails on the extra key.
+      expect(got).toStrictEqual({ ...row, kind: null, tag: null });
+    } finally {
+      // A failed expectation must not strand the connection for the rest of the run.
+      storage.destroy();
+    }
+  });
+
+  it("returns updateWhere() entities as plain objects", async () => {
+    const storage = await makeStorage();
+    try {
+      await storage.put(row);
+      const updated = await storage.updateWhere({ id: "p1" }, { value: 42 });
+      expect(Object.getPrototypeOf(updated)).toBe(Object.prototype);
+      expect(updated).toStrictEqual({ ...row, kind: null, tag: null, value: 42 });
+    } finally {
+      storage.destroy();
+    }
+  });
+});
