@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { isModelEffort, isModelEffortEnabled, type ModelEffort } from "@workglow/ai/worker";
+import { resolveEnabledEffort, type ModelEffort } from "@workglow/ai/worker";
 import { getLogger } from "@workglow/util/worker";
 import { anthropicEffortPolicy } from "./Anthropic_EffortPolicy";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
@@ -96,13 +96,8 @@ export function buildAnthropicThinkingParams(
     return result;
   }
 
-  const effort = model?.effort;
-  if (
-    model === undefined ||
-    !isModelEffortEnabled(model, anthropicEffortPolicy(model)) ||
-    !isModelEffort(effort) ||
-    effort === "none"
-  ) {
+  const effort = resolveEnabledEffort(model, anthropicEffortPolicy(model));
+  if (effort === undefined || effort === "none") {
     return { max_tokens: maxTokens };
   }
 

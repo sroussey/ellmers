@@ -5,7 +5,7 @@
  */
 
 import type { TextGenerationTaskInput } from "@workglow/ai";
-import { isModelEffortEnabled, toOpenAIMessages, type ModelEffort } from "@workglow/ai/worker";
+import { resolveEnabledEffort, toOpenAIMessages, type ModelEffort } from "@workglow/ai/worker";
 import type { OpenRouterProviderConfig } from "./OpenRouter_Client";
 import { getModelName } from "./OpenRouter_Client";
 import { openrouterEffortPolicy } from "./OpenRouter_EffortPolicy";
@@ -69,8 +69,9 @@ export function buildOpenRouterExtras(
   const extras: Record<string, unknown> = {};
   if (pc?.provider_routing) extras.provider = pc.provider_routing;
   if (pc?.reasoning) extras.reasoning = pc.reasoning;
-  else if (model && isModelEffortEnabled(model, openrouterEffortPolicy(model))) {
-    extras.reasoning = mapEffortToOpenRouterReasoning(model.effort as ModelEffort);
+  else {
+    const effort = resolveEnabledEffort(model, openrouterEffortPolicy(model));
+    if (effort !== undefined) extras.reasoning = mapEffortToOpenRouterReasoning(effort);
   }
   if (pc?.web_search) {
     extras.plugins = [pc.web_search === true ? { id: "web" } : { id: "web", ...pc.web_search }];

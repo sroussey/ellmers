@@ -18,11 +18,9 @@ function cfg(model_name: string, extra?: Partial<XaiModelConfig>): XaiModelConfi
 }
 
 describe("xaiEffortPolicy", () => {
-  it("returns all levels with no default when the name is empty", () => {
-    expect(xaiEffortPolicy(cfg(""))).toEqual({
-      supported: [...MODEL_EFFORTS],
-      default: undefined,
-    });
+  it("returns no levels for an unrecognized id and for an absent one", () => {
+    expect(xaiEffortPolicy(cfg(""))).toEqual({ supported: [], default: undefined });
+    expect(xaiEffortPolicy(cfg("llama-3-70b"))?.supported).toEqual([]);
   });
 
   it("treats reasoning Grok ids as all six with default medium", () => {
