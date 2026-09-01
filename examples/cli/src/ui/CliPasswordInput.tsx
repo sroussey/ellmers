@@ -9,11 +9,11 @@
  * Adapted from @inkjs/ui (MIT) password-input components.
  */
 
-import chalk from "chalk";
 import { Text, useInput, usePaste } from "ink";
+import pc from "picocolors";
 import { useCallback, useEffect, useMemo, useReducer, type ReactElement } from "react";
 
-const cursor = chalk.inverse(" ");
+const cursor = pc.inverse(" ");
 
 type PasswordReducerState = {
   previousValue: string;
@@ -149,11 +149,12 @@ function useCliPasswordInput({
 }): { inputValue: string } {
   const renderedPlaceholder = useMemo(() => {
     if (isDisabled) {
-      return placeholder ? chalk.dim(placeholder) : "";
+      return placeholder ? pc.dim(placeholder) : "";
     }
-    return placeholder && placeholder.length > 0
-      ? chalk.inverse(placeholder[0]) + chalk.dim(placeholder.slice(1))
-      : cursor;
+    if (!placeholder || placeholder.length === 0) return cursor;
+    // pc.dim("") still emits an open/close pair, so skip it for a one-character placeholder.
+    const rest = placeholder.slice(1);
+    return pc.inverse(placeholder[0]) + (rest.length > 0 ? pc.dim(rest) : "");
   }, [isDisabled, placeholder]);
 
   const renderedValue = useMemo(() => {
@@ -164,7 +165,7 @@ function useCliPasswordInput({
     let index = 0;
     let result = value.length > 0 ? "" : cursor;
     for (const char of value) {
-      result += index === state.cursorOffset ? chalk.inverse(char) : char;
+      result += index === state.cursorOffset ? pc.inverse(char) : char;
       index++;
     }
     if (value.length > 0 && state.cursorOffset === state.value.length) {
