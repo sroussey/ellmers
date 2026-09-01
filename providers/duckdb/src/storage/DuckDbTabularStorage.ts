@@ -142,13 +142,28 @@ export class DuckDbTabularStorage<
    * {@link DuckDbDatabase} share one connection, so they need the shared
    * `ConnectionMutex` chain — the per-instance mutex cannot see a sibling
    * instance's writes, letting a sibling `putBulk` interleave inside this
-   * instance's `BEGIN`/`COMMIT`. A path-constructed instance opens its own
-   * database, so there is no cross-instance handle to guard.
+   * instance's `BEGIN`/`COMMIT`.
+   *
+   * A path-constructed instance opens its own database, so it has no SIBLING
+   * to guard against — but it is still a connection, and it identifies itself.
+   * Returning `null` there made it a storage with no connection identity at
+   * all, which `withConnectionTransaction` refuses outright: a lone
+   * path-constructed storage could not open one, even though it owns a
+   * perfectly good connection and a one-participant transaction needs no
+   * grouping. Naming itself also keeps the chain available as the ordering
+   * mechanism during that transaction, which matters because
+   * `withConnectionTransaction` has no `tx` proxy — the body calls ordinary
+   * methods, so an external concurrent write would otherwise land inside the
+   * open `BEGIN` with nothing to hold it back.
+   *
+   * The identity is per-instance, so two path-constructed storages still
+   * report different handles and are correctly refused as participants in one
+   * transaction: they really are two separate databases.
    */
-  protected override connectionHandle(): object | null {
+  protected override connectionHandle(): object {
     return typeof this.dbOrPath === "object" && this.dbOrPath !== null
       ? (this.dbOrPath as object)
-      : null;
+      : this;
   }
 
   async runConnectionTransaction<T>(
@@ -176,11 +191,7 @@ export class DuckDbTabularStorage<
    * chain slot, interleaving into a sibling instance's next transaction.
    */
   private guardedWrite<T>(fn: () => Promise<T>): Promise<T> {
-    const handle = this.connectionHandle();
-    if (handle !== null) {
-      return runOnConnection(handle, this, () => this.mutex(fn));
-    }
-    return this.mutex(fn);
+    return runOnConnection(this.connectionHandle(), this, () => this.mutex(fn));
   }
 
   /**
@@ -827,11 +838,9 @@ export class DuckDbTabularStorage<
           "Refactor to a single transaction."
       );
     }
-    const handle = this.connectionHandle();
-    if (handle !== null) {
-      return runInTransactionOnConnection(handle, this, () => this.runTransactionBody(fn));
-    }
-    return this.runTransactionBody(fn);
+    return runInTransactionOnConnection(this.connectionHandle(), this, () =>
+      this.runTransactionBody(fn)
+    );
   }
 
   private async runTransactionBody<T>(fn: (tx: this) => Promise<T>): Promise<T> {

@@ -5,6 +5,7 @@
  */
 
 import { DuckDb, DuckDbTabularStorage } from "@workglow/duckdb/storage";
+import { NestedConnectionTransactionError, withConnectionTransaction } from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { getTestingLogger } from "@workglow/util/test";
@@ -112,6 +113,85 @@ describe("DuckDbTabularStorage", () => {
   afterAll(async () => {
     for (const db of contractDbs.values()) await db.close();
     contractDbs.clear();
+  });
+
+  describe("withConnectionTransaction on a path-constructed storage", () => {
+    // A path-constructed instance opens its own database, so it has no
+    // sibling to group with — but it is still a connection, and a
+    // one-participant transaction needs no grouping. It used to be refused
+    // outright with "has no shared connection handle".
+    function pathStorage(tag: string) {
+      return new DuckDbTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+        ":memory:",
+        `lone_${tag}_${uuid4().replace(/-/g, "_")}`,
+        CompoundSchema,
+        CompoundPrimaryKeyNames
+      );
+    }
+
+    it("commits", async () => {
+      const s = pathStorage("commit");
+      await s.setupDatabase();
+      try {
+        await withConnectionTransaction([s], async () => {
+          await s.put({ name: "a", type: "x", option: "v", success: true });
+        });
+        expect(await s.get({ name: "a", type: "x" })).toMatchObject({ option: "v" });
+      } finally {
+        s.destroy?.();
+      }
+    });
+
+    it("rolls back when the callback throws", async () => {
+      const s = pathStorage("rollback");
+      await s.setupDatabase();
+      try {
+        await expect(
+          withConnectionTransaction([s], async () => {
+            await s.put({ name: "b", type: "x", option: "v", success: true });
+            throw new Error("forced rollback");
+          })
+        ).rejects.toThrow("forced rollback");
+        expect(await s.get({ name: "b", type: "x" })).toBeUndefined();
+      } finally {
+        s.destroy?.();
+      }
+    });
+
+    it("still refuses two path-constructed storages as participants", async () => {
+      // Two separate databases really cannot commit together; only the
+      // single-participant case became legal.
+      const a = pathStorage("pair_a");
+      const b = pathStorage("pair_b");
+      await a.setupDatabase();
+      await b.setupDatabase();
+      try {
+        await expect(withConnectionTransaction([a, b], async () => {})).rejects.toThrow(
+          /do not share a connection handle/
+        );
+      } finally {
+        a.destroy?.();
+        b.destroy?.();
+      }
+    });
+
+    it("refuses nesting on the same instance", async () => {
+      const s = pathStorage("nest");
+      await s.setupDatabase();
+      try {
+        let nested: unknown;
+        await withConnectionTransaction([s], async () => {
+          try {
+            await withConnectionTransaction([s], async () => {});
+          } catch (err) {
+            nested = err;
+          }
+        });
+        expect(nested).toBeInstanceOf(NestedConnectionTransactionError);
+      } finally {
+        s.destroy?.();
+      }
+    });
   });
 
   runTabularStorageContract({
