@@ -15,18 +15,16 @@ export * from "./common";
 // and are versioned in lockstep with this package. Application code should use
 // `withConnectionTransaction` instead; these names are not covered by semver.
 export {
-  /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
-  __resetAlsForTesting,
   ConnectionReentryError,
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   getAlsStore,
-  /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
-  isSynchronousAls,
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   runInTransactionOnConnection,
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   runOnConnection,
 } from "./tabular/ConnectionMutex.server";
+
+export { _internal } from "./tabular/connectionMutexTestSeam.server";
 
 export {
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
@@ -40,14 +38,20 @@ export {
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   deactivateConnectionTxStore,
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
+  discardAllDeferredPuts,
+  /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   discardDeferredPuts,
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   enqueueDeferredPut,
+  /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
+  flushDeferredPuts,
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   isEnlistedInConnectionTx,
   NestedConnectionTransactionError,
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   runNativeConnectionTransaction,
+  /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
+  runSingleSessionConnectionTransaction,
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   setConnectionTxQuery,
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */

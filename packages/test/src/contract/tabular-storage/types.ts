@@ -59,6 +59,19 @@ interface TabularStorageContractBaseOpts {
     primary: ITabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>
   ) => Promise<ITabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>>;
   /**
+   * Releases whatever a factory allocated that the storage itself does not
+   * own — typically a connection handle the adapter opened so `createStorage`
+   * and `createSiblingStorage` could share one. Called from every `afterEach`
+   * after `destroy()`, and passed the same instance the factory returned.
+   *
+   * Without it an adapter that opens its own handle has nowhere to close it:
+   * `destroy()` deliberately leaves a caller-provided handle open, so the
+   * handles pile up until the file ends. The parameter is `object` because
+   * the hook is identity-keyed — the contract creates storages of two
+   * different schema types and a release hook only ever looks its argument up.
+   */
+  readonly releaseStorage?: (storage: object) => void | Promise<void>;
+  /**
    * Names of contract assertions currently broken in this adapter; each
    * named test wraps with `itExpectFail`. The string-literal union catches
    * typos at compile time.

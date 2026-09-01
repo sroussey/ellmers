@@ -28,21 +28,18 @@ import type {
   ValueOptionType,
 } from "@workglow/storage";
 import {
-  assertSharedConnectionHandle,
   BaseSqlTabularStorage,
   buildSearchWhere,
-  discardDeferredPuts,
   DuckDbDialect,
   enqueueDeferredPut,
   isEnlistedInConnectionTx,
   MIGRATIONS_TABLE,
   pickCoveringIndex,
   runInTransactionOnConnection,
-  runNativeConnectionTransaction,
   runOnConnection,
+  runSingleSessionConnectionTransaction,
   safeEmit,
   SqlTabularMigrationApplier,
-  takeDeferredPuts,
   TYPED_ARRAY_CTORS,
 } from "@workglow/storage";
 import { createServiceToken, uuid4 } from "@workglow/util";
@@ -158,44 +155,13 @@ export class DuckDbTabularStorage<
     participants: readonly AnyTabularStorage[],
     fn: () => Promise<T>
   ): Promise<T> {
-    const handle = assertSharedConnectionHandle(this, participants);
-    const siblings = participants as unknown as Array<
-      DuckDbTabularStorage<Schema, PrimaryKeyNames, Entity, PrimaryKey, Value, InsertType>
-    >;
     const db = await this.getDb();
-    return runNativeConnectionTransaction({
-      handle,
+    return runSingleSessionConnectionTransaction({
+      lead: this,
       participants,
-      begin: async () => {
-        for (const sibling of siblings) sibling.inTransaction = true;
-        await db.exec("BEGIN");
-      },
-      commit: async () => {
-        await db.exec("COMMIT");
-      },
-      rollback: async () => {
-        await db.exec("ROLLBACK");
-      },
-      // Clearing `inTransaction` here — before `afterCommit` — is what lets a
-      // deferred `put` listener's own write take its own BEGIN. Runs on every
-      // exit path, including a failed BEGIN.
-      onDeactivate: () => {
-        for (const sibling of siblings) sibling.inTransaction = false;
-      },
-      afterCommit: () => {
-        for (const sibling of siblings) sibling.flushAlsDeferredPuts();
-      },
-      afterRollback: () => {
-        for (const sibling of siblings) discardDeferredPuts(sibling);
-      },
+      exec: (sql) => db.exec(sql),
       fn,
     });
-  }
-
-  private flushAlsDeferredPuts(): void {
-    for (const entity of takeDeferredPuts(this) as Entity[]) {
-      safeEmit(this.events, "put", entity);
-    }
   }
 
   /**
@@ -713,41 +679,6 @@ export class DuckDbTabularStorage<
       mintUuidClientSide: true,
     };
   }
-
-  /**
-   * Per-instance promise-chain mutex. DuckDB runs every statement on one
-   * shared connection, so all public read/write methods queue behind the
-   * previous holder; `withTransaction` holds the lock for the duration of
-   * the user's callback so concurrent calls from outside `fn` queue behind
-   * the transaction instead of slipping into it.
-   *
-   * The Proxy returned by {@link createTxView} routes back to the private
-   * `_*Internal` methods directly, so calls made *through* the `tx` handle
-   * inside `fn` do not deadlock against the mutex held by `withTransaction`.
-   */
-  private mutexChain: Promise<void> = Promise.resolve();
-  protected async mutex<T>(fn: () => Promise<T>): Promise<T> {
-    const prev = this.mutexChain;
-    let release!: () => void;
-    this.mutexChain = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await prev;
-    try {
-      return await fn();
-    } finally {
-      release();
-    }
-  }
-
-  /**
-   * True while the instance is between `BEGIN` and `COMMIT`/`ROLLBACK`. Used
-   * to fail fast when `fn` captures the *original* storage instead of the
-   * `tx` handle and recursively calls `withTransaction` — that would
-   * deadlock against its own mutex. Calls routed through `tx` hit the
-   * proxy's `withTransaction` override before reaching here.
-   */
-  private inTransaction: boolean = false;
 
   /**
    * Emits a `put` event. Overridden on the {@link createTxView} proxy to

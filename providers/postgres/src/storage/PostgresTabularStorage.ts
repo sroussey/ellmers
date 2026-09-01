@@ -31,8 +31,9 @@ import {
   BaseSqlTabularStorage,
   buildSearchWhere,
   connectionTxQuery,
-  discardDeferredPuts,
+  discardAllDeferredPuts,
   enqueueDeferredPut,
+  flushDeferredPuts,
   isEnlistedInConnectionTx,
   mapPostgresType,
   MIGRATIONS_TABLE,
@@ -41,10 +42,10 @@ import {
   runInTransactionOnConnection,
   runNativeConnectionTransaction,
   runOnConnection,
+  runSingleSessionConnectionTransaction,
   safeEmit,
   setConnectionTxQuery,
   SqlTabularMigrationApplier,
-  takeDeferredPuts,
   TYPED_ARRAY_CTORS,
   type VectorIndexOptions,
 } from "@workglow/storage";
@@ -861,21 +862,11 @@ export class PostgresTabularStorage<
   }
 
   /**
-   * Per-instance promise-chain mutex. Only meaningful on single-connection
-   * backends (PGlite / PGLitePool) — there `withTransaction` runs on the
-   * shared session and we need to keep external callers from slipping into
-   * the open transaction. On a real `pg.Pool` (anything exposing
-   * `connect()`) the mutex would serialize independent reads/writes that
-   * Postgres is happy to fan across separate pool clients, turning the
-   * pool's main benefit into a per-instance bottleneck — so we short-circuit
-   * to a no-op on that path. Real-pool isolation comes from
-   * `withTransaction` dedicating its own client via `pool.connect()`.
-   *
-   * The Proxy returned by {@link createTxView} routes back to the private
-   * `_*Internal` methods directly, so calls made *through* the `tx` handle
-   * inside `fn` do not deadlock against the mutex held by `withTransaction`.
+   * The base's per-instance chain is only meaningful on the single-connection
+   * backends (PGlite / PGLitePool), where `withTransaction` runs on the shared
+   * session and external callers must be kept from slipping into an open
+   * transaction. See the {@link mutex} override for the real-pool case.
    */
-  private mutexChain: Promise<void> = Promise.resolve();
   private get serializeOps(): boolean {
     return typeof (this.pool as unknown as { connect?: unknown }).connect !== "function";
   }
@@ -928,12 +919,8 @@ export class PostgresTabularStorage<
     participants: readonly AnyTabularStorage[],
     fn: () => Promise<T>
   ): Promise<T> {
-    const handle = assertSharedConnectionHandle(this, participants);
-    const siblings = participants as unknown as Array<
-      PostgresTabularStorage<Schema, PrimaryKeyNames, Entity, PrimaryKey, Value, InsertType>
-    >;
-
     if (!this.serializeOps) {
+      const handle = assertSharedConnectionHandle(this, participants);
       const client = await (
         this.pool as unknown as {
           connect: () => Promise<{ query: Pool["query"]; release: () => void }>;
@@ -960,12 +947,8 @@ export class PostgresTabularStorage<
           rollback: async () => {
             await client.query("ROLLBACK");
           },
-          afterCommit: () => {
-            for (const sibling of siblings) sibling.flushAlsDeferredPuts();
-          },
-          afterRollback: () => {
-            for (const sibling of siblings) discardDeferredPuts(sibling);
-          },
+          afterCommit: () => flushDeferredPuts(participants),
+          afterRollback: () => discardAllDeferredPuts(participants),
           fn,
         });
       } finally {
@@ -976,64 +959,26 @@ export class PostgresTabularStorage<
       }
     }
 
-    return runNativeConnectionTransaction({
-      handle,
+    return runSingleSessionConnectionTransaction({
+      lead: this,
       participants,
-      begin: async () => {
-        for (const sibling of siblings) sibling.inTransaction = true;
-        await this.pool.query("BEGIN");
-      },
-      commit: async () => {
-        await this.pool.query("COMMIT");
-      },
-      rollback: async () => {
-        await this.pool.query("ROLLBACK");
-      },
-      // Clearing `inTransaction` here — before `afterCommit` — is what lets a
-      // deferred `put` listener's own write take its own BEGIN. Runs on every
-      // exit path, including a failed BEGIN.
-      onDeactivate: () => {
-        for (const sibling of siblings) sibling.inTransaction = false;
-      },
-      afterCommit: () => {
-        for (const sibling of siblings) sibling.flushAlsDeferredPuts();
-      },
-      afterRollback: () => {
-        for (const sibling of siblings) discardDeferredPuts(sibling);
+      exec: async (sql) => {
+        await this.pool.query(sql);
       },
       fn,
     });
   }
 
-  private flushAlsDeferredPuts(): void {
-    for (const entity of takeDeferredPuts(this) as Entity[]) {
-      safeEmit(this.events, "put", entity);
-    }
-  }
-  private async mutex<T>(fn: () => Promise<T>): Promise<T> {
-    if (!this.serializeOps) return fn();
-    const prev = this.mutexChain;
-    let release!: () => void;
-    this.mutexChain = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await prev;
-    try {
-      return await fn();
-    } finally {
-      release();
-    }
-  }
-
   /**
-   * True while the parent instance is between `BEGIN` and `COMMIT`/`ROLLBACK`.
-   * Used only to fail fast when `fn` captures the *original* storage instead
-   * of the `tx` handle and tries to recursively call `withTransaction` —
-   * that would deadlock against its own mutex on the PGlite path. Calls
-   * routed through `tx` hit the proxy's `withTransaction` override before
-   * reaching here.
+   * A real `pg.Pool` isolates per checked-out client, so serializing through
+   * the base's per-instance chain would turn the pool's main benefit into a
+   * per-instance bottleneck for no safety gained. Isolation there comes from
+   * `withTransaction` dedicating its own client via `pool.connect()`.
    */
-  private inTransaction: boolean = false;
+  protected override async mutex<T>(fn: () => Promise<T>): Promise<T> {
+    if (!this.serializeOps) return fn();
+    return super.mutex(fn);
+  }
 
   /**
    * Emits a `put` event. Overridden on the {@link createTxView} proxy to

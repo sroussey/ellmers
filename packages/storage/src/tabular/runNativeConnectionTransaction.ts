@@ -318,6 +318,94 @@ export function isEnlistedInConnectionTx(owner: object): boolean {
 }
 
 /**
+ * The part of a participant a connection-scoped transaction drives. Every
+ * concrete participant is a `BaseSqlTabularStorage`, which supplies both; the
+ * structural type is what keeps this module from importing that class, and
+ * with it the browser-side entry that must not pull in `node:async_hooks`.
+ */
+interface ConnectionTransactionMember {
+  setConnectionTransactionActive(active: boolean): void;
+  emitCommittedPut(entity: never): void;
+}
+
+function members(
+  participants: readonly AnyTabularStorage[]
+): readonly ConnectionTransactionMember[] {
+  return participants as unknown as readonly ConnectionTransactionMember[];
+}
+
+/**
+ * Emits every `put` a participant deferred, now that COMMIT has taken.
+ *
+ * Goes through `emitCommittedPut` rather than the participant's own `emitPut`,
+ * which would see the store still installed and queue the event straight back.
+ */
+export function flushDeferredPuts(participants: readonly AnyTabularStorage[]): void {
+  for (const member of members(participants)) {
+    for (const entity of takeDeferredPuts(member)) {
+      member.emitCommittedPut(entity as never);
+    }
+  }
+}
+
+/** Drops every participant's deferred `put` queue after ROLLBACK. */
+export function discardAllDeferredPuts(participants: readonly AnyTabularStorage[]): void {
+  for (const participant of participants) discardDeferredPuts(participant);
+}
+
+/**
+ * The single-session shape of a connection-scoped transaction: one BEGIN /
+ * COMMIT / ROLLBACK issued on the shared handle, every participant flagged
+ * in-transaction for the duration, and their deferred `put` events flushed
+ * after COMMIT or dropped after ROLLBACK.
+ *
+ * SQLite, DuckDB and PGlite differ only in how a statement reaches the
+ * connection, which is all `exec` supplies. Keeping the rest here is the
+ * point: the ordering it encodes — deactivate BEFORE `afterCommit`, so a
+ * deferred `put` listener's own write can take its own `BEGIN` — was
+ * previously written out three times, and a correction to it had to be made
+ * three times.
+ *
+ * A real `pg.Pool` deliberately does NOT use this. It checks out its own
+ * client, chains on that client rather than on the pool, and never flags its
+ * participants, because nothing on that path shares a session to protect.
+ */
+export function runSingleSessionConnectionTransaction<T>(options: {
+  readonly lead: ConnectionTransactionHost;
+  readonly participants: readonly AnyTabularStorage[];
+  readonly exec: (sql: "BEGIN" | "COMMIT" | "ROLLBACK") => void | Promise<void>;
+  readonly fn: () => Promise<T>;
+}): Promise<T> {
+  const handle = assertSharedConnectionHandle(options.lead, options.participants);
+  const setActive = (active: boolean): void => {
+    for (const member of members(options.participants)) {
+      member.setConnectionTransactionActive(active);
+    }
+  };
+  return runNativeConnectionTransaction({
+    handle,
+    participants: options.participants,
+    begin: async () => {
+      setActive(true);
+      await options.exec("BEGIN");
+    },
+    commit: async () => {
+      await options.exec("COMMIT");
+    },
+    rollback: async () => {
+      await options.exec("ROLLBACK");
+    },
+    // Clearing the flag here — before `afterCommit` — is what lets a deferred
+    // `put` listener's own write take its own BEGIN. Runs on every exit path,
+    // including a failed BEGIN.
+    onDeactivate: () => setActive(false),
+    afterCommit: () => flushDeferredPuts(options.participants),
+    afterRollback: () => discardAllDeferredPuts(options.participants),
+    fn: options.fn,
+  });
+}
+
+/**
  * Refuses a write from `owner` when a connection-scoped transaction it is NOT
  * enlisted in owns `groupHandle`.
  *

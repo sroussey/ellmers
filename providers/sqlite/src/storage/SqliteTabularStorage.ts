@@ -27,20 +27,17 @@ import type {
   ValueOptionType,
 } from "@workglow/storage";
 import {
-  assertSharedConnectionHandle,
   BaseSqlTabularStorage,
   buildSearchWhere,
-  discardDeferredPuts,
   enqueueDeferredPut,
   MIGRATIONS_TABLE,
   pickCoveringIndex,
   runInTransactionOnConnection,
-  runNativeConnectionTransaction,
   runOnConnection,
+  runSingleSessionConnectionTransaction,
   safeEmit,
   SqliteDialect,
   SqlTabularMigrationApplier,
-  takeDeferredPuts,
   TYPED_ARRAY_CTORS,
 } from "@workglow/storage";
 import { createServiceToken, uuid4 } from "@workglow/util";
@@ -113,43 +110,14 @@ export class SqliteTabularStorage<
     participants: readonly AnyTabularStorage[],
     fn: () => Promise<T>
   ): Promise<T> {
-    const handle = assertSharedConnectionHandle(this, participants);
-    const siblings = participants as unknown as Array<
-      SqliteTabularStorage<Schema, PrimaryKeyNames, Entity, PrimaryKey, Value, InsertType>
-    >;
-    return runNativeConnectionTransaction({
-      handle,
+    return runSingleSessionConnectionTransaction({
+      lead: this,
       participants,
-      begin: () => {
-        for (const sibling of siblings) sibling.inTransaction = true;
-        this.db.exec("BEGIN");
-      },
-      commit: () => {
-        this.db.exec("COMMIT");
-      },
-      rollback: () => {
-        this.db.exec("ROLLBACK");
-      },
-      // Clearing `inTransaction` here — before `afterCommit` — is what lets a
-      // deferred `put` listener's own write take its own BEGIN. Runs on every
-      // exit path, including a failed BEGIN.
-      onDeactivate: () => {
-        for (const sibling of siblings) sibling.inTransaction = false;
-      },
-      afterCommit: () => {
-        for (const sibling of siblings) sibling.flushAlsDeferredPuts();
-      },
-      afterRollback: () => {
-        for (const sibling of siblings) discardDeferredPuts(sibling);
+      exec: (sql) => {
+        this.db.exec(sql);
       },
       fn,
     });
-  }
-
-  private flushAlsDeferredPuts(): void {
-    for (const entity of takeDeferredPuts(this) as Entity[]) {
-      safeEmit(this.events, "put", entity);
-    }
   }
 
   /**
@@ -876,37 +844,6 @@ export class SqliteTabularStorage<
   }
 
   /**
-   * Per-instance promise-chain mutex. Every public read/write method awaits
-   * the previous holder before running and yields the lock when it settles;
-   * `withTransaction` holds it for the duration of the user's callback so
-   * concurrent calls from outside `fn` queue behind the transaction instead
-   * of slipping into it.
-   *
-   * The Proxy returned by {@link createTxView} routes back to the private
-   * `_*Internal` methods directly, so calls made *through* the `tx` handle
-   * inside `fn` do not deadlock against the mutex held by `withTransaction`.
-   *
-   * `protected` so subclasses that fully override `put`/`putBulk` (e.g.
-   * {@link SqliteAiVectorStorage}, which builds its own vector-encoding SQL)
-   * can serialize through the same lock instead of running their statements
-   * on the shared connection while a `withTransaction` BEGIN is open.
-   */
-  private mutexChain: Promise<void> = Promise.resolve();
-  protected async mutex<T>(fn: () => Promise<T>): Promise<T> {
-    const prev = this.mutexChain;
-    let release!: () => void;
-    this.mutexChain = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await prev;
-    try {
-      return await fn();
-    } finally {
-      release();
-    }
-  }
-
-  /**
    * Build a Proxy view of `this` for the `withTransaction` callback. The
    * proxy:
    *
@@ -972,15 +909,6 @@ export class SqliteTabularStorage<
    * outer transaction implicitly. Use {@link Sqlite.Database} `SAVEPOINT`s
    * directly if you need nested rollback boundaries.
    */
-  /**
-   * True while the parent instance is between `BEGIN` and `COMMIT`/`ROLLBACK`.
-   * Used only to fail fast when `fn` captures the *original* storage instead
-   * of the `tx` handle and tries to recursively call `withTransaction` —
-   * that would deadlock against its own mutex. Calls routed through `tx`
-   * hit the proxy's `withTransaction` override before reaching here.
-   */
-  protected inTransaction: boolean = false;
-
   override async withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
     if (this.inTransaction) {
       throw new Error(

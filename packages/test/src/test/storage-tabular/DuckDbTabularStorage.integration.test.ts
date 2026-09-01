@@ -102,25 +102,35 @@ describe("DuckDbTabularStorage", () => {
 
   // The contract needs two storages on ONE handle, so the handle is opened
   // here rather than by the storage. `destroy()` deliberately leaves a
-  // caller-provided database open, so this file owns closing them.
-  const contractDbs: Array<Awaited<ReturnType<typeof DuckDb.open>>> = [];
+  // caller-provided database open, so this file owns closing them, and the
+  // contract's `releaseStorage` hook is where that happens — one open handle
+  // at a time instead of one per test held until the file ends. Keyed on the
+  // storage the hook is handed back; siblings share the primary's handle and
+  // are not keyed, so releasing one is a no-op.
+  const contractDbs = new Map<object, Awaited<ReturnType<typeof DuckDb.open>>>();
+  // Backstop only: a `beforeEach` that throws never reaches an `afterEach`.
   afterAll(async () => {
-    for (const db of contractDbs.splice(0)) {
-      await db.close();
-    }
+    for (const db of contractDbs.values()) await db.close();
+    contractDbs.clear();
   });
 
   runTabularStorageContract({
     name: "DuckDbTabularStorage",
     createStorage: async () => {
       const db = await DuckDb.open(":memory:");
-      contractDbs.push(db);
       const storage = new DuckDbTabularStorage<
         typeof CompoundSchema,
         typeof CompoundPrimaryKeyNames
       >(db, `contract_test_${uuid4().replace(/-/g, "_")}`, CompoundSchema, CompoundPrimaryKeyNames);
       await storage.setupDatabase();
+      contractDbs.set(storage, db);
       return storage;
+    },
+    releaseStorage: async (storage) => {
+      const db = contractDbs.get(storage);
+      if (db === undefined) return;
+      contractDbs.delete(storage);
+      await db.close();
     },
     createSiblingStorage: async (primary) => {
       const handle = (

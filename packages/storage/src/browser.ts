@@ -13,17 +13,15 @@ export * from "./common";
 // than covered by semver. Application code should use
 // `withConnectionTransaction` instead.
 export {
-  /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
-  __resetAlsForTesting,
   ConnectionReentryError,
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   getAlsStore,
-  /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
-  isSynchronousAls,
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   runInTransactionOnConnection,
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   runOnConnection,
 } from "./tabular/ConnectionMutex.browser";
+
+export { _internal } from "./tabular/connectionMutexTestSeam.browser";
 
 export * from "./tabular/SharedInMemoryTabularStorage";

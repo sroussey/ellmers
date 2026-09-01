@@ -5,13 +5,11 @@
  */
 
 import {
-  __resetAlsForTesting,
   activeConnectionTxGroupHandle,
   assertSharedConnectionHandle,
   connectionTxQuery,
   enqueueDeferredPut,
   isEnlistedInConnectionTx,
-  isSynchronousAls,
   NestedConnectionTransactionError,
   runNativeConnectionTransaction,
   setConnectionTxQuery,
@@ -19,6 +17,7 @@ import {
   type AnyTabularStorage,
   type ConnectionTransactionHost,
 } from "@workglow/storage";
+import { __resetAlsForTesting, isSynchronousAls } from "@workglow/storage/test";
 import { afterEach, describe, expect, it } from "vitest";
 
 /**

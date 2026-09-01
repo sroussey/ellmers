@@ -6,10 +6,10 @@
 
 import {
   ConnectionReentryError,
-  __resetAlsForTesting,
   runInTransactionOnConnection,
   runOnConnection,
 } from "@workglow/storage";
+import { __resetAlsForTesting } from "@workglow/storage/test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 describe("ConnectionMutex F1: cross-instance re-entry is ALS-independent", () => {

@@ -129,6 +129,63 @@ export abstract class BaseSqlTabularStorage<
     return this.connectionHandle();
   }
 
+  /**
+   * True while this instance is between `BEGIN` and `COMMIT`/`ROLLBACK`. Fails
+   * fast when a `withTransaction` callback captures the *original* storage
+   * instead of the `tx` handle and recursively opens a transaction, which
+   * would deadlock against its own {@link mutex}. Calls routed through `tx`
+   * hit the proxy's override before reaching here.
+   */
+  protected inTransaction: boolean = false;
+
+  /**
+   * Sets {@link inTransaction} for the whole life of a connection-scoped
+   * transaction.
+   *
+   * Public only because a connection transaction flags every PARTICIPANT, not
+   * just the instance hosting it, so the driving code sits outside the class
+   * hierarchy and cannot reach a `protected` member. Not for general use — the
+   * flag is meaningless unless a `BEGIN` really is open on the connection.
+   *
+   * @internal
+   */
+  public setConnectionTransactionActive(active: boolean): void {
+    this.inTransaction = active;
+  }
+
+  /**
+   * Per-instance promise-chain mutex. On a backend that runs every statement
+   * on one shared connection, all public read/write methods queue behind the
+   * previous holder, and `withTransaction` holds the lock for the duration of
+   * the user's callback — so concurrent calls from outside `fn` queue behind
+   * the transaction instead of slipping into it.
+   *
+   * The Proxy returned by a backend's `createTxView` routes back to the private
+   * `_*Internal` methods, so calls made *through* the `tx` handle inside `fn`
+   * do not deadlock against the lock `withTransaction` is holding.
+   *
+   * `protected` so subclasses that fully override `put`/`putBulk` (e.g.
+   * `SqliteAiVectorStorage`, which builds its own vector-encoding SQL) can
+   * serialize through the same lock instead of running their statements on the
+   * shared connection while a `BEGIN` is open. A backend whose isolation is
+   * per-connection overrides this to a no-op rather than serializing queries
+   * the database is happy to run in parallel.
+   */
+  private mutexChain: Promise<void> = Promise.resolve();
+  protected async mutex<T>(fn: () => Promise<T>): Promise<T> {
+    const prev = this.mutexChain;
+    let release!: () => void;
+    this.mutexChain = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+
   protected constructPrimaryKeyColumns($delimiter: string = ""): string {
     let cached = this._pkColsCache.get($delimiter);
     if (cached === undefined) {

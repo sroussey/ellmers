@@ -44,6 +44,9 @@ export function withConnectionTransactionBlock(opts: TabularStorageContractOpts)
       sibling?.destroy?.();
       await primary?.deleteAll();
       primary?.destroy?.();
+      // Siblings share `primary`'s handle, so they are released with it —
+      // release last, after every storage on that handle is destroyed.
+      await opts.releaseStorage?.(primary);
     });
 
     itImpl(
