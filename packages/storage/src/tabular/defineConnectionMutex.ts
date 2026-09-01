@@ -178,19 +178,41 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
   }
 
   /**
+   * First owner in `owners` that `enlisted` does not contain, or `undefined`
+   * when every one of them is enlisted.
+   *
+   * EVERY owner is checked, not just the lead. A participant set that is only
+   * partly enlisted is not a descendant of the open transaction — it is a
+   * different transaction that happens to share a member. Judging it by its
+   * lead alone let `withConnectionTransaction([a, c])` run inline inside a
+   * transaction owning `{a, b}`, which issues a nested `BEGIN` whose `COMMIT`
+   * commits the outer transaction's work, and skipped `c`'s sibling-op check
+   * entirely.
+   */
+  function firstUnenlisted(
+    owners: ReadonlySet<object>,
+    enlisted: ReadonlySet<object>
+  ): object | undefined {
+    for (const owner of owners) {
+      if (!enlisted.has(owner)) return owner;
+    }
+    return undefined;
+  }
+
+  /**
    * Classify the current call against the state of the shared handle. Order
-   * matters: an active owner set that does **not** contain our owner is always
-   * a cross-instance re-entry — regardless of whether the ALS store is present.
-   * Only if the caller is enlisted (matching ALS store) do we inline; anything
-   * else queues through the chain.
+   * matters: an active owner set that does **not** contain every one of our
+   * owners is always a cross-instance re-entry — regardless of whether the ALS
+   * store is present. Only if the whole caller is enlisted (matching ALS
+   * store) do we inline; anything else queues through the chain.
    */
   function classifyReentry(
     state: HandleState,
-    owner: object,
+    owners: ReadonlySet<object>,
     handle: object,
     store: Als
   ): ReentryDecision {
-    if (state.txOwners !== null && !state.txOwners.has(owner)) {
+    if (state.txOwners !== null && firstUnenlisted(owners, state.txOwners) !== undefined) {
       return "throw";
     }
     // Walk the whole store chain, not just the innermost store: a transaction
@@ -201,7 +223,11 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     // store outlives COMMIT — `afterCommit` listeners are no longer inside the
     // transaction and must take the chain like any other caller.
     for (let ctx = store.getStore(); ctx !== undefined; ctx = ctx.parent) {
-      if (ctx.active && ctx.handle === handle && ctx.owners.has(owner)) {
+      if (
+        ctx.active &&
+        ctx.handle === handle &&
+        firstUnenlisted(owners, ctx.owners) === undefined
+      ) {
         return "inline";
       }
     }
@@ -211,9 +237,13 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     // `finally`, which is awaiting this call — so fall back to handle state.
     // This cannot distinguish a descendant from an unrelated concurrent call on
     // the same instance, so it stays off wherever a real ALS store exists.
-    // (`txOwners.has(owner)` here implies an open transaction: `txOwners` and
-    // `txId` are always written and cleared together.)
-    if (store.synchronousOnly === true && state.txOwners !== null && state.txOwners.has(owner)) {
+    // (a fully-enlisted `txOwners` here implies an open transaction: `txOwners`
+    // and `txId` are always written and cleared together.)
+    if (
+      store.synchronousOnly === true &&
+      state.txOwners !== null &&
+      firstUnenlisted(owners, state.txOwners) === undefined
+    ) {
       return "inline";
     }
     return "chain";
@@ -249,7 +279,11 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
       );
     }
     const store = als.ensureAls();
-    const decision = classifyReentry(state, owner, handle, store);
+    const decision = classifyReentry(state, new Set([owner]), handle, store);
+    // Unreachable today — the guard above throws on the same condition — but
+    // kept deliberately: without it a "throw" classification would fall
+    // through to the chain and HANG instead of erroring, which is a far worse
+    // failure than a redundant branch.
     if (decision === "throw") {
       throw new ConnectionReentryError(
         connectionOwnerLabel(activeLead(state) ?? owner),
@@ -303,15 +337,23 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     const owners = ownerSet(owner);
     const lead = leadOwner(owners);
     const state = getState(handle);
-    if (state.txOwners !== null && !state.txOwners.has(lead)) {
+    // Every participant is checked, not just the lead: a set that is only
+    // partly enlisted is a DIFFERENT transaction sharing a member, and running
+    // it inline would issue a nested BEGIN whose COMMIT commits the open
+    // transaction's work. The error names the participant that is actually
+    // un-enlisted, which is the one the caller has to remove or hoist.
+    const intruder = state.txOwners !== null ? firstUnenlisted(owners, state.txOwners) : undefined;
+    if (intruder !== undefined) {
       throw new ConnectionReentryError(
         connectionOwnerLabel(activeLead(state)),
-        connectionOwnerLabel(lead),
+        connectionOwnerLabel(intruder),
         "nested-transaction"
       );
     }
     const store = als.ensureAls();
-    const decision = classifyReentry(state, lead, handle, store);
+    const decision = classifyReentry(state, owners, handle, store);
+    // Unreachable today, kept for the same reason as in `runOnConnection`: a
+    // "throw" that fell through would hang on the chain rather than error.
     if (decision === "throw") {
       throw new ConnectionReentryError(
         connectionOwnerLabel(activeLead(state) ?? lead),
