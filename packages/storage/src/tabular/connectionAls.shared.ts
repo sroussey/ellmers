@@ -14,6 +14,21 @@
 
 import type { ConnectionAlsApi } from "./defineConnectionMutex";
 
+/**
+ * The checked-out client a connection transaction routes its participants' SQL
+ * through.
+ *
+ * Deliberately the narrowest shape every backend's client already satisfies —
+ * SQL text plus positional parameters — rather than a driver type, which would
+ * make this package depend on `pg`. Naming the parameters (instead of a
+ * catch-all rest) is what lets an enlisted storage actually CALL the handle:
+ * a `(...args: never[])` signature accepts any function on the way in but is
+ * uncallable on the way out, so both ends had to cast around it.
+ */
+export interface ConnectionTxQuery {
+  query: (sql: string, params?: readonly unknown[]) => Promise<unknown>;
+}
+
 export interface AlsContext {
   readonly txId: symbol;
   /** Lead owner (first enlisted participant); used in re-entry error labels. */
@@ -63,7 +78,7 @@ export interface AlsContext {
    * one client. Written after the store is created, once the client is
    * checked out.
    */
-  txQuery: { query: (...args: never[]) => Promise<unknown> } | undefined;
+  txQuery: ConnectionTxQuery | undefined;
   /**
    * The store that was installed when this one opened, if any. A transaction
    * on a DIFFERENT connection may legally nest inside this one, and

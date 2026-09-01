@@ -70,12 +70,14 @@
  * surfaces only when a consumer bundles for a real browser.
  */
 
-import type { AlsContext } from "./connectionAls.shared";
+import type { AlsContext, ConnectionTxQuery } from "./connectionAls.shared";
 import type { ConnectionMutexApi } from "./defineConnectionMutex";
 import { ConnectionReentryError, connectionOwnerLabel } from "./defineConnectionMutex";
 import type { AnyTabularStorage } from "./ITabularStorage";
 import type { ConnectionTransactionHost } from "./withConnectionTransaction";
 import { isConnectionTransactionHost } from "./withConnectionTransaction";
+
+export type { ConnectionTxQuery } from "./connectionAls.shared";
 
 /**
  * Thrown when `withConnectionTransaction` is called from inside an open
@@ -131,11 +133,6 @@ export interface NativeConnectionTransactionApi {
   readonly assertNotForeignConnectionTx: (owner: object, groupHandle: object) => void;
   readonly connectionTxQuery: (owner?: object) => ConnectionTxQuery | undefined;
   readonly setConnectionTxQuery: (query: ConnectionTxQuery | undefined) => void;
-}
-
-/** A checked-out client a connection transaction routes its participants' SQL through. */
-export interface ConnectionTxQuery {
-  query: (...args: never[]) => Promise<unknown>;
 }
 
 export interface RunNativeConnectionTransactionOptions<T> {

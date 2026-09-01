@@ -158,10 +158,16 @@ export class PostgresTabularStorage<
    * `withConnectionTransaction` installs a dedicated client on the ALS store;
    * enlisted instances read that here so every participant shares one session.
    * Otherwise this is {@link pool}.
+   *
+   * The widening cast is deliberate and one-directional. `ConnectionTxQuery`
+   * is the narrowest shape every backend's client satisfies, because
+   * `@workglow/storage` must not depend on `pg`; callers here want the driver's
+   * typed result rows. What is installed on the store IS a `pg` client, so the
+   * cast restores what the seam erased rather than asserting anything new.
    */
   protected get db(): Pool {
     const enlisted = connectionTxQuery(this);
-    return enlisted !== undefined ? (enlisted as Pool) : this.pool;
+    return enlisted !== undefined ? (enlisted as unknown as Pool) : this.pool;
   }
 
   /**
@@ -938,7 +944,7 @@ export class PostgresTabularStorage<
           chainHandle: client,
           participants,
           begin: async () => {
-            setConnectionTxQuery({ query: client.query.bind(client) as Pool["query"] });
+            setConnectionTxQuery({ query: client.query.bind(client) });
             await client.query("BEGIN");
           },
           commit: async () => {
