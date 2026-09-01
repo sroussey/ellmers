@@ -571,6 +571,147 @@ describe("PostgresTabularStorage", () => {
     });
   });
 
+  describe("shared-connection safety (pool path)", () => {
+    /**
+     * A pool-shaped facade over one PGlite session. `connect()` is the only
+     * thing {@link PostgresTabularStorage} reads to decide it is talking to a
+     * real `pg.Pool`, and that branch behaves differently in the way that
+     * matters here: `connectionHandle()` returns null, so no chain is taken
+     * and `runOnConnection`'s cross-instance guard never runs.
+     *
+     * The clients handed out share the single PGlite session, which is enough
+     * to exercise the guard under test — it is ALS-scoped and never consults
+     * the connection — but it is NOT a substitute for real pooling, so these
+     * tests assert only on who is refused, never on physical isolation
+     * between clients.
+     */
+    function poolLike(pglite: PGlite): Pool {
+      const query = (...args: unknown[]): Promise<unknown> =>
+        (pglite as unknown as { query: (...a: unknown[]) => Promise<unknown> }).query(...args);
+      return {
+        query,
+        connect: async () => ({ query, release: () => {} }),
+      } as unknown as Pool;
+    }
+
+    async function makePoolTrio(
+      pool: Pool
+    ): Promise<
+      readonly PostgresTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>[]
+    > {
+      const storages = ["a", "b", "out"].map(
+        (tag) =>
+          new PostgresTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+            pool,
+            `pool_${tag}_${uuid4().replace(/-/g, "_")}`,
+            CompoundSchema,
+            CompoundPrimaryKeyNames
+          )
+      );
+      for (const storage of storages) await storage.setupDatabase();
+      return storages;
+    }
+
+    it("throws sibling-op for a storage that was not enlisted", async () => {
+      const pglite = new PGlite();
+      try {
+        const [a, b, outsider] = await makePoolTrio(poolLike(pglite));
+        let error: unknown;
+        await withConnectionTransaction([a!, b!], async () => {
+          await a!.put({ name: "enlisted", type: "x", option: "ok", success: true });
+          try {
+            await outsider!.put({ name: "outsider", type: "x", option: "no", success: true });
+          } catch (err) {
+            error = err;
+          }
+        });
+
+        expect(error).toBeInstanceOf(ConnectionReentryError);
+        expect((error as ConnectionReentryError).mode).toBe("sibling-op");
+        expect(await outsider!.get({ name: "outsider", type: "x" })).toBeUndefined();
+        expect(await a!.get({ name: "enlisted", type: "x" })).toBeDefined();
+      } finally {
+        await pglite.close();
+      }
+    });
+
+    it("leaves a concurrent caller outside the transaction body alone", async () => {
+      const pglite = new PGlite();
+      try {
+        const [a, b, outsider] = await makePoolTrio(poolLike(pglite));
+        let releaseBody: () => void = () => {};
+        const bodyCanFinish = new Promise<void>((resolve) => {
+          releaseBody = resolve;
+        });
+        let signalStarted: () => void = () => {};
+        const bodyStarted = new Promise<void>((resolve) => {
+          signalStarted = resolve;
+        });
+
+        const txPromise = withConnectionTransaction([a!, b!], async () => {
+          await a!.put({ name: "in-tx", type: "x", option: "v", success: true });
+          signalStarted();
+          await bodyCanFinish;
+        });
+        await bodyStarted;
+
+        // Issued from the test body, which is not an async descendant of the
+        // transaction: it carries no ALS store, so the guard must not fire.
+        // This is the property that keeps a pool a pool.
+        const outsiderPromise = outsider!.put({
+          name: "concurrent",
+          type: "x",
+          option: "v",
+          success: true,
+        });
+        releaseBody();
+        await txPromise;
+        await expect(outsiderPromise).resolves.toMatchObject({ name: "concurrent" });
+      } finally {
+        await pglite.close();
+      }
+    });
+
+    it("commits enlisted participants together", async () => {
+      const pglite = new PGlite();
+      try {
+        const [a, b] = await makePoolTrio(poolLike(pglite));
+        await withConnectionTransaction([a!, b!], async () => {
+          await a!.put({ name: "from-a", type: "x", option: "va", success: true });
+          await b!.put({ name: "from-b", type: "x", option: "vb", success: true });
+        });
+        expect(await a!.get({ name: "from-a", type: "x" })).toMatchObject({ option: "va" });
+        expect(await b!.get({ name: "from-b", type: "x" })).toMatchObject({ option: "vb" });
+      } finally {
+        await pglite.close();
+      }
+    });
+
+    it("refuses withTransaction nested inside a connection transaction", async () => {
+      const pglite = new PGlite();
+      try {
+        const [a, b] = await makePoolTrio(poolLike(pglite));
+        let nested: unknown;
+        await withConnectionTransaction([a!, b!], async () => {
+          try {
+            await a!.withTransaction(async (tx) => {
+              await tx.put({ name: "nested", type: "x", option: "v", success: true });
+            });
+          } catch (err) {
+            nested = err;
+          }
+        });
+        // A second pooled client would run an independent transaction whose
+        // writes outlive the enclosing ROLLBACK.
+        expect(nested).toBeInstanceOf(Error);
+        expect((nested as Error).message).toContain("cannot nest inside withConnectionTransaction");
+        expect(await a!.get({ name: "nested", type: "x" })).toBeUndefined();
+      } finally {
+        await pglite.close();
+      }
+    });
+  });
+
   runTabularStorageContract({
     name: "PostgresTabularStorage",
     createStorage: async () => {

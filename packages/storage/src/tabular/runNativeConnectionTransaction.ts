@@ -60,7 +60,11 @@
  */
 
 import type { AlsContext } from "./connectionAls.shared";
-import { getAlsStore, runInTransactionOnConnection } from "./ConnectionMutex.server";
+import {
+  ConnectionReentryError,
+  getAlsStore,
+  runInTransactionOnConnection,
+} from "./ConnectionMutex.server";
 import { connectionOwnerLabel } from "./defineConnectionMutex";
 import type { AnyTabularStorage } from "./ITabularStorage";
 import {
@@ -311,6 +315,33 @@ export function discardDeferredPuts(owner: object): void {
 
 export function isEnlistedInConnectionTx(owner: object): boolean {
   return findStore((ctx) => ctx.active && ctx.owners.has(owner)) !== undefined;
+}
+
+/**
+ * Refuses a write from `owner` when a connection-scoped transaction it is NOT
+ * enlisted in owns `groupHandle`.
+ *
+ * Backends whose `connectionHandle()` is null never reach
+ * {@link runOnConnection}, so its cross-instance guard never runs for them and
+ * this is their only sibling-op check. A real `pg.Pool` is the case that
+ * matters: returning null there is deliberate — chaining every pooled query
+ * behind one slot would erase the pool — but it also meant an un-enlisted
+ * sibling could write from inside a transaction body onto a second pooled
+ * client, commit immediately, and survive the enclosing ROLLBACK.
+ *
+ * Detection is ALS-scoped rather than handle-state based, which is what keeps
+ * the pool a pool: an unrelated concurrent caller carries no store and is
+ * untouched, while a descendant of the transaction body — the only caller
+ * whose write can silently escape the transaction — is refused.
+ */
+export function assertNotForeignConnectionTx(owner: object, groupHandle: object): void {
+  const ctx = findStore((c) => c.active && c.groupHandle === groupHandle);
+  if (ctx === undefined || ctx.owners.has(owner)) return;
+  throw new ConnectionReentryError(
+    connectionOwnerLabel(ctx.owner),
+    connectionOwnerLabel(owner),
+    "sibling-op"
+  );
 }
 
 /**

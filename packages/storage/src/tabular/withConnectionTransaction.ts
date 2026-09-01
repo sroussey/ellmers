@@ -55,8 +55,15 @@ function dedupeByIdentity(participants: readonly AnyTabularStorage[]): AnyTabula
  * use a `SAVEPOINT`.
  *
  * Inside `fn`, call ordinary methods on the original storage instances — not a
- * `tx` proxy. Enlisted writes join the open `BEGIN`; a storage that was not
- * passed in still throws `ConnectionReentryError`.
+ * `tx` proxy. Enlisted writes join the open `BEGIN`; a write from a storage
+ * that was not passed in throws `ConnectionReentryError` instead of quietly
+ * landing outside the transaction.
+ *
+ * That refusal reaches async DESCENDANTS of `fn` — the callers whose writes
+ * could otherwise escape the transaction. An unrelated concurrent caller on
+ * the same connection is a different matter and is not refused here: on a
+ * pooled backend it simply runs on another client, and on a single-session
+ * backend the connection chain makes it wait.
  */
 export async function withConnectionTransaction<T>(
   participants: readonly AnyTabularStorage[],

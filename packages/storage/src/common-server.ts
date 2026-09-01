@@ -32,6 +32,8 @@ export {
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   activeConnectionTxGroupHandle,
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
+  assertNotForeignConnectionTx,
+  /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   assertSharedConnectionHandle,
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   connectionTxQuery,
