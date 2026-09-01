@@ -155,21 +155,18 @@ describe("TaskGraphRunner", () => {
 
       // Override the executePreview method to be long-running and check for abort signal
       longRunningTask.executePreview = async () => {
-        try {
-          await new Promise((resolve, reject) => {
-            const timeout = setTimeout(resolve, 1000);
-            // Check if we're aborted and clean up
-            // @ts-expect-error ts(2445)
-            longRunningTask.abortController?.signal.addEventListener("abort", () => {
-              clearTimeout(timeout);
-              reject(new TaskAbortedError("Aborted"));
-            });
+        // Rejection is left to propagate -- the task's own error handling is
+        // what this test is exercising.
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(resolve, 1000);
+          // Check if we're aborted and clean up
+          // @ts-expect-error ts(2445)
+          longRunningTask.abortController?.signal.addEventListener("abort", () => {
+            clearTimeout(timeout);
+            reject(new TaskAbortedError("Aborted"));
           });
-          return { output: "completed" };
-        } catch (error) {
-          // This should be caught by the task's error handling
-          throw error;
-        }
+        });
+        return { output: "completed" };
       };
 
       graph.addTask(longRunningTask);

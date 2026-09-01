@@ -19,13 +19,36 @@ bun run test:bun           # Bun native tests only
 bun run test:vitest        # Vitest tests only
 bun test <testfilename>    # One test file
 
-bun run lint               # ESLint across every workspace (Turbo-cached); CI runs this
-bun run format             # ESLint fix + Prettier write
+bun run lint               # oxlint (+ tsgolint type-aware) across the repo; CI runs this
+bun run format             # oxlint --fix + Prettier write
 bun run clean              # Remove dist, node_modules, .turbo, tsbuildinfo
 ```
 
 **Run the narrowest test slice you can** — the full suite is very slow. Prefer
 `bun scripts/test.ts <section> vitest` (see [Testing](#testing)).
+
+## Linting
+
+`oxlint` replaces ESLint; `oxlint-tsgolint` supplies the type-aware rules. One
+`.oxlintrc.json` at the root covers every workspace -- oxlint walks up to find
+it, so `bunx oxlint` works from any package directory. There are no per-package
+`lint` scripts and no turbo `lint` task: the whole tree lints in under a second,
+which is less than the fan-out cost.
+
+`bun run lint` builds types first (`build:types`, turbo-cached) because
+`--type-aware` resolves cross-package imports through `dist/*.d.ts`. Without
+them every such import types as `any` and the type-aware rules quietly find
+nothing instead of failing.
+
+Two things ESLint checked that oxlint cannot: `eslint-plugin-regexp` (60 rules,
+`no-super-linear-backtracking` among them -- the ReDoS guard) and
+`react/no-deprecated`. Most type-aware rules are staged off with the finding
+counts recorded beside them in the config; each is a cleanup of its own, not
+part of the linter swap.
+
+Disable comments still work spelled either way -- `eslint-disable-next-line` and
+the ESLint plugin names (`@typescript-eslint/no-namespace`,
+`react-hooks/exhaustive-deps`) both resolve -- so existing ones were left alone.
 
 ## Monorepo structure
 

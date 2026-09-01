@@ -936,7 +936,7 @@ export class IndexedDbTabularStorage<
 
     const db = await this.getDb();
 
-    return new Promise(async (resolve, reject) => {
+    return new Promise((resolve, reject) => {
       try {
         const transaction = db.transaction(this.table, "readwrite");
         const store = transaction.objectStore(this.table);

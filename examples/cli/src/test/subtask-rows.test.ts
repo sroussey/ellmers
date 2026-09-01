@@ -79,7 +79,7 @@ class CapturingStdout extends EventEmitter {
 }
 
 // eslint-disable-next-line no-control-regex
-const stripAnsi = (s: string): string => s.replace(/\[[0-9;]*[A-Z]/gi, "");
+const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*[A-Z]/gi, "");
 
 describe("WorkflowRunApp subtask rows", () => {
   it("renders the tasks a running task owns", async () => {

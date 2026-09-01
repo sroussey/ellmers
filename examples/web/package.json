@@ -14,7 +14,6 @@
     "build-code": "vite build",
     "analyze": "ANALYZE=1 vite build",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview --port 3800",
     "test": "vitest run --config ../../vitest.config.ts --project web"
   },

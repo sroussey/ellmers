@@ -135,7 +135,7 @@ interface RankedItem {
  * paste inside a character class as well.
  */
 function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\\-]/g, "\\$&");
+  return value.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&");
 }
 
 /**

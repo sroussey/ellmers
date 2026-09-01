@@ -151,7 +151,7 @@ describe("xAI streaming run-fns tolerate SDK chunks without choices/delta", () =
   // these suites guard against, so the usage assertions belong right here.
   describe("usage from the terminal include_usage frame", () => {
     const requestBody = (): Record<string, unknown> =>
-      JSON.parse(String((fetchSpy.mock.calls[0]?.[1] as RequestInit).body));
+      JSON.parse(String((fetchSpy.mock.calls[0]![1] as RequestInit).body));
 
     it("asks for usage and maps the terminal frame onto finish", async () => {
       fetchSpy.mockResolvedValueOnce(
@@ -239,7 +239,7 @@ describe("xAI streaming run-fns tolerate SDK chunks without choices/delta", () =
       () => {}
     );
 
-    const body = JSON.parse(String((fetchSpy.mock.calls[0]?.[1] as RequestInit).body));
+    const body = JSON.parse(String((fetchSpy.mock.calls[0]![1] as RequestInit).body));
     expect(body.response_format).toEqual({
       type: "json_schema",
       json_schema: {

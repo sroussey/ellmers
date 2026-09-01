@@ -309,7 +309,7 @@ export function isLoopbackHostname(host: string): boolean {
  * {@link isLocalHostname}'s strict-literal grammar.
  */
 export function extractRawHost(rawUrl: string): string | null {
-  const m = rawUrl.match(/^[A-Z][A-Z0-9+.\-]*:\/\/(?:[^/?#@]*@)?(\[[^\]]+\]|[^:/?#]+)/i);
+  const m = rawUrl.match(/^[A-Z][A-Z0-9+.-]*:\/\/(?:[^/?#@]*@)?(\[[^\]]+\]|[^:/?#]+)/i);
   if (m === null) return null;
   let host = m[1] ?? "";
   if (host.startsWith("[") && host.endsWith("]")) {

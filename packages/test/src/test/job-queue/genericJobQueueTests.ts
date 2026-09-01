@@ -128,6 +128,7 @@ export class TestJob extends Job<TInput, TOutput> {
       });
     }
     if (input.taskType === "progress") {
+      // oxlint-disable-next-line no-async-promise-executor -- body is wrapped in try/catch → reject
       return new Promise<TOutput>(async (resolve, reject) => {
         context.signal.addEventListener(
           "abort",

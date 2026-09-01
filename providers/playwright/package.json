@@ -22,8 +22,7 @@
     "build-js": "bun run build-code",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-code": "bun build --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/index.ts",
-    "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "build-types": "rm -f tsconfig.tsbuildinfo && tsgo"
   },
   "exports": {
     ".": {

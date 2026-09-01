@@ -953,11 +953,9 @@ export class SupabaseTabularStorage<
       const start = options?.offset ?? 0;
       if (options?.limit !== undefined) {
         query = query.range(start, start + options.limit - 1);
-      } else if (options?.offset !== undefined) {
+      } else {
         query = query.range(start, start + 999999);
       }
-    } else if (options?.limit !== undefined) {
-      query = query.limit(options.limit);
     }
 
     const { data, error } = await query;

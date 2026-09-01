@@ -23,7 +23,6 @@
     "build-js-worker-hft": "bun build --target=node --packages=external --outdir ./dist ./src/worker_hft.ts",
     "build-lib": "bun build --target=bun --packages=external --outdir ./dist ./src/lib.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "vitest run --config ../../vitest.config.ts --project cli",
     "test:watch": "vitest",
     "build-web": "bun build --target=browser --minify --outdir ./dist/web ./src/web/client/main.tsx && cp src/web/client/index.html src/web/client/app.css dist/web/"

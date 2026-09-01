@@ -20,7 +20,6 @@ const passphrase = process.env[PASSPHRASE_ENV];
 const { unlocked, hydrated } = await installAndHydrate(passphrase);
 
 if (unlocked && hydrated.length > 0) {
-  // eslint-disable-next-line no-console
   console.log(
     `[test-preload] Unlocked encrypted credentials, hydrated env: ${hydrated.join(", ")}`
   );

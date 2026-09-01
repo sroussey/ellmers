@@ -71,8 +71,8 @@ describe("DocumentUpsertTask", () => {
     const doc = await kb.getDocument(doc_id);
     expect(doc?.metadata.title).toBe("Metadata Title");
     expect(doc?.metadata.sourceUri).toBe("/raw/workglow.dev/blog/post/example.mdx");
-    expect((doc?.metadata as Record<string, unknown>).author).toBe("Workglow Team");
-    expect((doc?.metadata as Record<string, unknown>).tags).toEqual(["task-graph"]);
+    expect((doc!.metadata as Record<string, unknown>).author).toBe("Workglow Team");
+    expect((doc!.metadata as Record<string, unknown>).tags).toEqual(["task-graph"]);
   });
 
   it("lets explicit title override metadata.title when both are provided", async () => {
