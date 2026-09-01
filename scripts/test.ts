@@ -18,6 +18,8 @@
  */
 
 import { relative } from "node:path";
+import type { ChangedPackages } from "./lib/changedPackages";
+import { filesInChangedPackages, resolveChangedPackageDirs } from "./lib/changedPackages";
 import type { Kind } from "./lib/testDiscovery";
 import {
   discoverTestFiles,
@@ -68,7 +70,8 @@ Runners:  ${KNOWN_RUNNERS.join(", ")} (default: vitest; pass 'bun' to use Bun in
 Options:
   --all             Run the full suite with no kind/section filter (very slow)
   --changed [base]  Run only packages affected by changes vs base (default origin/main),
-                    via Turbo. Delegates package selection to the dependency graph.
+                    via Turbo. Alone, delegates to turbo run test. With a kind/section,
+                    filters the file list so CI slices still apply.
   --except a,b      Run every section EXCEPT these (the sections that have their own
                     CI job). Complements the positional section list.
   --check-sections  Verify every test file is reachable by section+kind selection
@@ -81,7 +84,8 @@ Examples:
   bun scripts/test.ts storage unit          # Run only unit tests in storage dirs
   bun scripts/test.ts bun storage unit      # Run storage unit tests under Bun
   bun scripts/test.ts integration --except rag,browser
-  bun scripts/test.ts --changed             # Only packages affected since origin/main
+  bun scripts/test.ts --changed             # turbo test for packages affected since origin/main
+  bun scripts/test.ts --changed unit        # unit tests in those packages (what CI uses)
 `);
 }
 
@@ -158,7 +162,7 @@ const KNOWN_SECTIONS = listSections(allFiles);
 
 // ── Parse args ────────────────────────────────────────────────────────────────
 
-const rawArgs = process.argv.slice(2);
+let rawArgs = process.argv.slice(2);
 
 if (rawArgs.includes("--help")) {
   showHelp(KNOWN_SECTIONS);
@@ -211,11 +215,15 @@ const dryRun = rawArgs.includes("--dry-run");
  * changed since base, plus everything that depends on them" — the transitive
  * half is the part a hand-rolled diff would get wrong.
  *
- * Only workspaces with a `test` script participate. Tooling tests that live
- * outside any workspace (`scripts/`) are NOT covered by this mode; run them
- * with `bun scripts/test.ts scripts`.
+ * Alone (no kind/section/`--except`/`--all`) this is `turbo run test`, which
+ * is the unit tier. With a selector, Turbo only names the packages; the file
+ * list is still filtered by kind/section so CI jobs keep their slices.
+ *
+ * Tooling tests outside any workspace (`scripts/`) are included when the git
+ * diff touches `scripts/`. A root lockfile/config change is unfiltered.
  */
 const changedIdx = rawArgs.indexOf("--changed");
+let changedBase: string | undefined;
 if (changedIdx !== -1) {
   const next = rawArgs[changedIdx + 1];
   // Only a token that is not itself a selector can be the base. Otherwise
@@ -226,17 +234,11 @@ if (changedIdx !== -1) {
     ((KNOWN_KINDS as readonly string[]).includes(next) ||
       KNOWN_SECTIONS.includes(next) ||
       (KNOWN_RUNNERS as readonly string[]).includes(next));
-  const base = next !== undefined && !next.startsWith("-") && !isSelector ? next : "origin/main";
-  const args = ["npx", "turbo", "run", "test", `--filter=...[${base}]`];
-  console.log(`\nRunning tests for packages affected since ${base}\n`);
-  if (dryRun) {
-    console.log(JSON.stringify(args));
-    process.exit(0);
-  }
-  process.exit(await spawnRunner(args, "Turbo test", {}));
+  const takeBase = next !== undefined && !next.startsWith("-") && !isSelector;
+  changedBase = takeBase ? next : "origin/main";
+  rawArgs = rawArgs.filter((_, i) => i !== changedIdx && !(takeBase && i === changedIdx + 1));
 }
 
-// `--changed` exits above, so only the plain flags need stripping here.
 const exceptIdx = rawArgs.indexOf("--except");
 const exceptValue = exceptIdx === -1 ? undefined : rawArgs[exceptIdx + 1];
 const excludedSections = (exceptValue ?? "")
@@ -262,7 +264,12 @@ if (exceptIdx !== -1 && (excludedSections.length === 0 || unknownExcluded.length
   process.exit(1);
 }
 
-if (!runAll && filteredArgs.length === 0 && excludedSections.length === 0) {
+if (
+  !runAll &&
+  filteredArgs.length === 0 &&
+  excludedSections.length === 0 &&
+  changedBase === undefined
+) {
   showHelp(KNOWN_SECTIONS);
   process.exit(0);
 }
@@ -292,23 +299,56 @@ if (unknown.length > 0) {
   process.exit(1);
 }
 
+if (
+  changedBase !== undefined &&
+  kinds.length === 0 &&
+  sections.length === 0 &&
+  excludedSections.length === 0 &&
+  !runAll
+) {
+  const args = ["npx", "turbo", "run", "test", `--filter=...[${changedBase}]`];
+  console.log(`\nRunning tests for packages affected since ${changedBase}\n`);
+  if (dryRun) {
+    console.log(JSON.stringify(args));
+    process.exit(0);
+  }
+  process.exit(await spawnRunner(args, "Turbo test", {}));
+}
+
+let changedDirs: ChangedPackages | undefined;
+if (changedBase !== undefined) {
+  console.log(`\nSelecting packages affected since ${changedBase}\n`);
+  changedDirs = await resolveChangedPackageDirs(changedBase);
+}
+
 // ── Collect test files (when section or kind filter is given) ──────────────────
 
-const needsFileFilter = sections.length > 0 || kinds.length > 0 || excludedSections.length > 0;
-const selected = needsFileFilter
+const needsFileFilter =
+  sections.length > 0 ||
+  kinds.length > 0 ||
+  excludedSections.length > 0 ||
+  (changedDirs !== undefined && changedDirs !== "all");
+let selected = needsFileFilter
   ? allFiles
       .filter((f) => (sections.length === 0 ? true : sections.includes(f.section)))
       .filter((f) => !excludedSections.includes(f.section))
       .filter((f) => matchesKind(f.path, kinds))
   : [];
-const files: string[] = orderFilteredTestFiles(selected.map((f) => f.path));
+if (changedDirs !== undefined && changedDirs !== "all") {
+  selected = filesInChangedPackages(needsFileFilter ? selected : allFiles, changedDirs);
+}
+// A `@vitest-environment` file needs a DOM Bun's runner cannot provide; running
+// it there fails on the environment rather than on anything under test.
+const files: string[] = orderFilteredTestFiles(
+  selected.filter((f) => f.runner !== "vitest").map((f) => f.path)
+);
 // A `bun:test` file uses Bun-only APIs and cannot run under vitest; skip it there
 // rather than letting vitest fail on an unresolvable `bun:test` import.
 const vitestFiles: string[] = orderFilteredTestFiles(
   selected.filter((f) => f.runner !== "bun").map((f) => f.path)
 );
 
-if (needsFileFilter && files.length === 0) {
+if (needsFileFilter && selected.length === 0) {
   const kindLabel = kinds.length > 0 ? kinds.join("+") : "all";
   const sectionLabel = sections.length > 0 ? sections.join("+") : "all";
   console.log(`No test files found for kind=${kindLabel} section=${sectionLabel}`);
@@ -329,7 +369,11 @@ console.log(
 const tier = kinds.includes("end2end") ? "e2e" : "all";
 
 if (dryRun) {
-  if (wantsBun) console.log(JSON.stringify(buildBunTestArgs(files)));
+  if (wantsBun && needsFileFilter && files.length === 0) {
+    // Same trap as the vitest branch below: an empty list makes `bun test` mean
+    // "run everything under the configured root".
+    console.log("# bun: skipped — no Bun-compatible files in selection");
+  } else if (wantsBun) console.log(JSON.stringify(buildBunTestArgs(files)));
   else if (needsFileFilter && vitestFiles.length === 0) {
     // An empty file list makes `vitest run` mean "run everything", so a
     // selection that filtered down to nothing must print no vitest command
@@ -344,6 +388,10 @@ if (dryRun) {
 // ── Execute ───────────────────────────────────────────────────────────────────
 
 if (wantsBun) {
+  if (needsFileFilter && files.length === 0) {
+    console.log("No Bun-compatible files in selection (all need a vitest environment).");
+    process.exit(0);
+  }
   process.exit(await spawnRunner(buildBunTestArgs(files), "Bun test", { tier }));
 }
 

@@ -45,9 +45,8 @@ export class CactusIntegrityError extends Error {
 export async function sha256Hex(bytes: Uint8Array | ArrayBuffer): Promise<string> {
   // Copy into a fresh ArrayBuffer so we hand crypto.subtle.digest a concrete
   // `BufferSource` whose backing buffer is `ArrayBuffer` (not `ArrayBufferLike`).
-  // The recent lib.dom tightening on Uint8Array's default generic argument made
-  // the previous `new Uint8Array(bytes)` path no longer assignable to digest's
-  // parameter type.
+  // lib.dom types Uint8Array's default generic argument as `ArrayBufferLike`,
+  // which digest's parameter type does not accept.
   const src = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes as ArrayBuffer);
   const buf = new ArrayBuffer(src.byteLength);
   new Uint8Array(buf).set(src);

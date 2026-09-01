@@ -19,6 +19,7 @@ import {
   PACKAGE_GROUPS,
   ROOT,
   SECTION_GROUPS,
+  VITEST_MODULE_MOCKING,
 } from "./lib/testDiscovery";
 
 /**
@@ -61,6 +62,24 @@ describe("test discovery", () => {
     expect(miskinded.map((f) => f.path.replace(ROOT + "/", ""))).toEqual([]);
   });
 
+  it("tags a file only Vitest's runner can run so the Bun selection drops it", () => {
+    // `@vitest-environment jsdom` is how a test gets a DOM, and Vitest's module
+    // registry (`vi.mock` and friends) has no Bun equivalent. Untagged, such a
+    // file fails on the runner — or worse, passes with a mock installed after the
+    // module under test already imported the real thing.
+    const mistagged = files
+      .filter((f) => {
+        const source = readFileSync(f.path, "utf8");
+        return (
+          /^\s*(\/\/|\/\*)\s*@vitest-environment\s/m.test(source) ||
+          VITEST_MODULE_MOCKING.test(source)
+        );
+      })
+      .filter((f) => f.runner !== "vitest")
+      .map((f) => f.path.replace(ROOT + "/", ""));
+    expect(mistagged).toEqual([]);
+  });
+
   it("covers in-package tests, not just the monolithic test package", () => {
     // The previous runner selected zero of these, so they never ran in CI.
     const inPackage = files.filter((f) => !f.path.includes("/packages/test/src/"));
@@ -86,6 +105,31 @@ describe("test discovery", () => {
       .filter((f) => !roots.some((r) => f.path === r || f.path.startsWith(r + "/")))
       .map((f) => f.path.replace(ROOT + "/", ""));
     expect(uncovered).toEqual([]);
+  });
+
+  it("forwards CLI --typecheck onto the ai project", async () => {
+    // Vitest's project `cliOverrides` whitelist omits `typecheck`, so
+    // `vitest run --typecheck --typecheck.only <file.test-d.ts>` would collect
+    // zero files unless the ai project sets enabled/only from argv. Other
+    // projects stay off: tsconfig.typecheck.json only includes packages/ai.
+    const mod = await import("../vitest.config");
+    expect(mod.typecheckFromArgv(["vitest", "run"])).toEqual({ enabled: false, only: false });
+    expect(mod.typecheckFromArgv(["vitest", "run", "--typecheck", "--typecheck.only"])).toEqual({
+      enabled: true,
+      only: true,
+    });
+    const expected = mod.typecheckFromArgv(process.argv);
+    const projects = (mod.default.test?.projects ?? []) as Array<{
+      test: { name: string; typecheck: { enabled: boolean; only: boolean } };
+    }>;
+    const ai = projects.find((p) => p.test.name === "ai");
+    expect(ai).toBeDefined();
+    expect(ai!.test.typecheck.enabled).toBe(expected.enabled);
+    expect(ai!.test.typecheck.only).toBe(expected.only);
+    for (const p of projects) {
+      if (p.test.name === "ai") continue;
+      expect(p.test.typecheck.enabled).toBe(false);
+    }
   });
 
   it("gives every workspace that holds tests a `test` script for Turbo to run", () => {

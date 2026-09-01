@@ -334,6 +334,41 @@ describe("queued fetch streams over the job channel", () => {
         await storage.deleteAll();
       }
     });
+
+    // A body of no bytes produces no delta and is still a complete delivery —
+    // the job emits its terminal marker either way. So the undelivered-stream
+    // check below must key on that marker and not on a delta count, which
+    // would condemn this run as having received nothing.
+    test(`does not mistake a zero-length body for an undelivered stream (${backend.name})`, async () => {
+      const queueName = `queued-stream-empty-body-${backend.name}`;
+      const { storage, server } = await registerQueue(queueName, backend.make(queueName));
+      responder = () =>
+        Promise.resolve(
+          new Response(new Uint8Array(0), {
+            status: 200,
+            headers: { "content-type": "application/octet-stream", "content-length": "0" },
+          })
+        );
+
+      try {
+        await server.start();
+        const task = new FetchUrlTask({ queue: queueName });
+        const seen: StreamEvent[] = [];
+        task.on("stream_chunk", (e: StreamEvent) => seen.push(e));
+
+        const out = (await task.run({
+          url: "https://example.com/empty.bin",
+          response_type: "stream",
+        })) as FetchUrlTaskOutput;
+
+        expect(out.metadata?.status).toBe(200);
+        expect(totalDeltaBytes(seen)).toBe(0);
+        expect(seen.at(-1)?.type).toBe("finish");
+      } finally {
+        await server.stop();
+        await storage.deleteAll();
+      }
+    });
   }
 
   // A cross-process carrier hands back a handle with no `onStream` at all — no
@@ -398,6 +433,63 @@ describe("queued fetch streams over the job channel", () => {
     // the empty-bodied finish this exists to prevent.
     expect(waitFor).not.toHaveBeenCalled();
     expect(seen.some((e) => e.type === "finish")).toBe(false);
+  });
+
+  // A handle that DOES advertise `onStream` is only the possibility of
+  // delivery. A durable queue's job may be claimed by a worker in another
+  // process, which publishes its deltas nowhere this client can see — and no
+  // advertise-time check can know that, because which process claims a job is
+  // not decided until long after `send`. So the drain has to catch it: a
+  // locally-claimed job always produces the terminal marker, so a stream that
+  // settles successfully without one delivered nothing.
+  test("fails loudly when a handle advertising onStream delivers nothing", async () => {
+    const queueName = "queued-stream-undelivered";
+    const stub = makeStubHandle();
+    registerStubQueue(queueName, stub.handle);
+
+    const task = new FetchUrlTask({ queue: queueName });
+    const seen: StreamEvent[] = [];
+    task.on("stream_chunk", (e: StreamEvent) => seen.push(e));
+
+    const failure = task
+      .run({ url: "https://example.com/f.bin", response_type: "stream" })
+      .catch((e: unknown) => e);
+
+    await stub.listening;
+    // Settles SUCCESSFULLY, carrying the metadata-only payload a "stream" job
+    // returns — and never invokes the listener. That is precisely the shape a
+    // remotely-claimed job has here.
+    stub.settle({ metadata: { status: 200 } } as FetchUrlTaskOutput);
+
+    const error = await failure;
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).toMatch(/stream/i);
+    expect(String(error)).toMatch(/empty body/i);
+    expect(String(error)).toMatch(/never reached/i);
+    expect(seen.some((e) => e.type === "finish")).toBe(false);
+  });
+
+  // ...and the same undelivering handle is perfectly fine for a materializing
+  // response_type, whose bytes travel in the settled output rather than as
+  // deltas. The check must be inert there, or it would break the channel-less
+  // path that already works.
+  test("a materializing response_type still passes the settled output through", async () => {
+    const queueName = "queued-stream-undelivered-text";
+    const stub = makeStubHandle();
+    registerStubQueue(queueName, stub.handle);
+
+    const task = new FetchUrlTask({ queue: queueName });
+    const running = task
+      .run({ url: "https://example.com/f.txt", response_type: "text" })
+      .catch((e: unknown) => e);
+
+    await stub.listening;
+    stub.settle({ text: "hello", metadata: { status: 200 } } as FetchUrlTaskOutput);
+
+    const out = await running;
+    expect(out).not.toBeInstanceOf(Error);
+    expect((out as FetchUrlTaskOutput).text).toBe("hello");
+    expect((out as FetchUrlTaskOutput).metadata?.status).toBe(200);
   });
 
   // ---------------------------------------------------------------------------
@@ -762,7 +854,12 @@ describe("FetchUrlTask subclass dispatch", () => {
       .execute({ url: "https://example.com/keys/abc", response_type: "stream" }, executeContext())
       .catch((e: unknown) => e);
 
-    await stub.listening;
+    const listener = await stub.listening;
+    // The stream itself completed — the marker is what says so — and the job
+    // then settled carrying nothing. Without the marker the run fails as an
+    // undelivered stream instead, which is a different (and correct) complaint
+    // that has no resolved request to name.
+    void listener({ type: "finish", data: { metadata: { status: 200 } } });
     stub.settle(undefined as unknown as FetchUrlTaskOutput);
 
     const error = await failure;
@@ -995,6 +1092,10 @@ describe("queued fetch stream adapter", () => {
               port: "body",
               binaryDelta: new Uint8Array([9, 9]),
             });
+            // Behind it, so the loop still has to notice the late delta on its
+            // own: a marker delivered here can only END the loop, never
+            // resurrect an event the loop already walked past.
+            void listener?.({ type: "finish", data: { metadata: { status: 200 } } });
           }, 0);
         }
       }
@@ -1031,7 +1132,15 @@ describe("queued fetch stream adapter", () => {
         seen.push(event as StreamEvent);
         if (event.type !== "binary-delta") continue;
         const next = trailing.shift();
-        if (next === undefined) continue;
+        if (next === undefined) {
+          // The chain is spent, so close it the way a carrier does. Registered
+          // on a timer like every link before it, hence still strictly after
+          // the loop's termination check for the delta just yielded.
+          setTimeout(() => {
+            void listener?.({ type: "finish", data: { metadata: { status: 200 } } });
+          }, 0);
+          continue;
+        }
         setTimeout(() => {
           void listener?.({
             type: "binary-delta",
@@ -1142,7 +1251,10 @@ describe("queued fetch stream adapter", () => {
       .execute({ url: "https://example.com/a.bin", response_type: "stream" }, executeContext())
       .catch((e: unknown) => e);
 
-    await stub.listening;
+    const listener = await stub.listening;
+    // A complete delivery — marker and all — whose job then settled on
+    // nothing. The output is what is missing here, not the stream.
+    void listener({ type: "finish", data: { metadata: { status: 200 } } });
     stub.settle(undefined as unknown as FetchUrlTaskOutput);
 
     const error = await failure;
@@ -1201,6 +1313,9 @@ describe("queued fetch stream adapter", () => {
     for (const chunk of flood) {
       void listener({ type: "binary-delta", port: "body", binaryDelta: chunk });
     }
+    // Delivered while the whole flood is still queued, so it also pins that the
+    // marker ends the loop only after everything ahead of it has been drained.
+    void listener({ type: "finish", data: { metadata: { status: 200 } } });
     stub.settle({ metadata: { status: 200 } } as FetchUrlTaskOutput);
 
     await run;

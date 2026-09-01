@@ -17,12 +17,14 @@ const {
 function model(opts: {
   model_name: string;
   effort?: string;
+  effort_options?: readonly string[];
   thinking?: Record<string, unknown>;
   output_config?: Record<string, unknown>;
 }) {
   return {
     provider: "ANTHROPIC",
     effort: opts.effort,
+    effort_options: opts.effort_options,
     provider_config: {
       model_name: opts.model_name,
       ...(opts.thinking ? { thinking: opts.thinking } : {}),
@@ -54,6 +56,53 @@ describe("buildAnthropicThinkingParams", () => {
     });
     expect(
       buildAnthropicThinkingParams(model({ model_name: "claude-sonnet-5", effort: "none" }), 4096)
+    ).toEqual({ max_tokens: 4096 });
+  });
+
+  // The documented fallback for an id nothing parses is the legacy budget, and
+  // it has to stay reachable from `model.effort`: a policy that denied whatever
+  // the parser declined dropped the setting before this path could run.
+  it("routes an unparsed id — a gateway spelling included — to the legacy budget", () => {
+    expect(
+      buildAnthropicThinkingParams(model({ model_name: "not-a-claude", effort: "high" }), 4096)
+    ).toEqual({
+      thinking: { type: "enabled", budget_tokens: 2048 },
+      max_tokens: 4096 + 2048,
+    });
+    expect(
+      buildAnthropicThinkingParams(
+        model({ model_name: "us.anthropic.claude-sonnet-4-20250514-v1:0", effort: "high" }),
+        4096
+      )
+    ).toEqual({
+      thinking: { type: "enabled", budget_tokens: 2048 },
+      max_tokens: 4096 + 2048,
+    });
+  });
+
+  // Extended thinking arrived in Claude 3.7; sending any thinking field to an
+  // older generation is a 400, so the policy denies the dial there.
+  it("does not map model.effort on a generation that predates thinking", () => {
+    expect(
+      buildAnthropicThinkingParams(
+        model({ model_name: "claude-3-5-haiku-20241022", effort: "high" }),
+        4096
+      )
+    ).toEqual({ max_tokens: 4096 });
+    expect(
+      buildAnthropicThinkingParams(
+        model({ model_name: "anthropic.claude-3-5-sonnet-20241022-v2:0", effort: "high" }),
+        4096
+      )
+    ).toEqual({ max_tokens: 4096 });
+  });
+
+  it("honours effort_options even when the class policy would allow the effort", () => {
+    expect(
+      buildAnthropicThinkingParams(
+        model({ model_name: "claude-sonnet-5", effort: "high", effort_options: [] }),
+        4096
+      )
     ).toEqual({ max_tokens: 4096 });
   });
 

@@ -378,6 +378,29 @@ export function isDeltaStreamMode(
 }
 
 /**
+ * True when `schema` declares at least one streaming output port and EVERY one
+ * of them is `binary` — the port shape whose deltas can go straight to a cache
+ * sink with no in-memory accumulator behind them.
+ *
+ * The binary-only half is what makes it safe, and it is not a simplification:
+ * only binary ports get sinks on the unflagged path, so an `append`/`object`
+ * port sitting alongside them would end up with neither a sink nor (with
+ * accumulation skipped) an accumulator, and its deltas would be dropped in
+ * silence. The count is free — each binary port gets its own sink and its own
+ * {@link CacheRef}.
+ *
+ * Shared by the two places that make that call — the graph's
+ * `StreamPump.canStreamBinaryToCache` and `TaskRunner`'s standalone-run
+ * relaxation — so the two cannot answer the port-shape question differently.
+ * Each still adds the gate the other cannot see: consumer analysis for the
+ * graph, "no caller stated a preference" for the standalone run.
+ */
+export function allStreamingPortsAreBinary(schema: DataPortSchema): boolean {
+  const ports = getStreamingPorts(schema);
+  return ports.length > 0 && ports.every((p) => p.mode === "binary");
+}
+
+/**
  * Reads the per-port `x-validate-stream` opt-in from an input schema: a port
  * that sets it wants its stream materialized and validated as a whole value,
  * opting out of both the validation exemption for stream-wired ports and the

@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.4.5
+
+### CI
+
+- run ESLint in CI, behind a cached turbo task
+
+## 0.4.4
+
+### Updated Dependencies
+
+- `hyparquet`: ^1.29.2
+
+## 0.4.3
+
+## 0.4.2
+
+## 0.4.1
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `hyparquet`: ^1.29.1
+
+## 0.4.0
+
+## 0.3.49
+
+### Features
+
+#### eval
+
+- make a sweep one graph, with each row visible while it runs
+- give the eval CLI the console and run reporting
+
+## 0.3.48
+
+## 0.3.47
+
+## 0.3.46
+
+### Features
+
+#### tests
+
+- add credit exhaustion handling and skip logic for provider tests
+
 ## 0.3.45
 
 ### Bug Fixes

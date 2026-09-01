@@ -58,9 +58,8 @@ export { runTaskGraphRepositoryContract } from "./testing/taskGraphRepositoryCon
 
 /**
  * Conformance suite for a STREAMING task-output repository (JSON rows plus port
- * payloads as ordered blob chunks). Extracted from three per-backend suites that
- * were ~95% identical; adapters supply only their ref scheme and how to build a
- * sibling instance.
+ * payloads as ordered blob chunks). One shared suite; adapters supply only
+ * their ref scheme and how to build a sibling instance.
  */
 export { runStreamingTaskOutputRepositoryContract } from "./testing/streamingTaskOutputRepositoryContract";
 export type {

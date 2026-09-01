@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { it } from "vitest";
+import { isCreditExhaustedError, it } from "./creditExhaustedSkip";
 
 type ItFn = (name: string, fn: () => Promise<void> | void, timeout?: number) => void;
 
@@ -28,7 +28,9 @@ export const itExpectFail: ItFn = (name, fn, timeout) => {
       try {
         await fn();
         passed = true;
-      } catch {
+      } catch (err) {
+        // Billing exhaustion is not the adapter bug this marker records.
+        if (isCreditExhaustedError(err)) throw err;
         // expected; the test was supposed to fail
       }
       if (passed) {

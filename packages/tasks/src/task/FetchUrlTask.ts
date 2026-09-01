@@ -26,6 +26,7 @@ import {
   TaskConfigurationError,
   TaskEntitlementError,
   TaskFailedError,
+  TaskInvalidInputError,
   Workflow,
 } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
@@ -57,7 +58,7 @@ const inputSchema = {
       format: "uri",
     },
     method: {
-      enum: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+      enum: ["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH"],
       title: "Method",
       description: "The HTTP method to use",
       default: "GET",
@@ -142,6 +143,7 @@ const outputSchema = {
         status: { type: "number" },
         notModified: { type: "boolean" },
       },
+      required: ["contentType", "headers", "status", "notModified"],
       additionalProperties: false,
       title: "Response Metadata",
       description: "HTTP response metadata: content type, headers, status, and 304 state",
@@ -410,7 +412,37 @@ function assertResponseType(
   );
 }
 
-function buildHttpError(url: string, response: Response): Error {
+/**
+ * Rejects a `response_type` the request METHOD cannot produce a value for.
+ *
+ * A HEAD response carries no representation body, so the fetch answers with
+ * metadata alone. Pairing it with a derived `response_type` therefore
+ * completes successfully with `text`/`json`/`blob` undefined — the same silent
+ * success with no value that {@link assertResponseType} exists to prevent,
+ * arrived at from the other direction. `"stream"` is the only type HEAD can
+ * honestly satisfy: it materializes nothing.
+ *
+ * `INVALID_RESPONSE_TYPE` is outside `FETCH_URL_RETRYABLE_ERROR_CODES`, so
+ * this is a permanent failure that burns no retry budget.
+ */
+function assertMethodAllowsResponseType(
+  method: string | undefined,
+  responseType: FetchUrlResponseType,
+  url: string
+): void {
+  if ((method ?? "GET").toUpperCase() !== "HEAD" || responseType === "stream") {
+    return;
+  }
+  throw createFetchUrlJobError(
+    FetchUrlErrorCode.INVALID_RESPONSE_TYPE,
+    `Fetch of ${url} pairs method HEAD with response_type '${responseType}'. A HEAD response ` +
+      `has no body, so no value can be derived from it — use response_type 'stream' and read ` +
+      `the metadata, or use GET.`,
+    { url }
+  );
+}
+
+async function buildHttpError(url: string, response: Response): Promise<Error> {
   let retryDate: Date | undefined;
   if (response.status === 429 || response.status === 503 || response.headers.get("Retry-After")) {
     const retryAfterStr = response.headers.get("Retry-After");
@@ -424,7 +456,56 @@ function buildHttpError(url: string, response: Response): Error {
       }
     }
   }
-  return createFetchUrlHttpError(url, response.status, response.statusText, retryDate);
+  const body = await readHttpErrorBody(response);
+  return createFetchUrlHttpError(url, response.status, response.statusText, retryDate, body);
+}
+
+const HTTP_ERROR_BODY_MAX_BYTES = 4096;
+
+/**
+ * Budget for peeking at a non-2xx body. `response.text()` waits for the stream
+ * to close, which is how an abandoned error body used to leak a connection: a
+ * never-ending readable never settles, so the undici Agent stays checked out.
+ * Cancelling the reader when this budget expires (and after a successful peek)
+ * is what settles it. In-memory JSON error bodies complete well under this;
+ * a hung 5xx stream fails the fetch on status instead of waiting forever.
+ */
+const HTTP_ERROR_BODY_READ_MS = 100;
+
+async function readHttpErrorBody(response: Response): Promise<string | undefined> {
+  if (!response.body) return undefined;
+  const reader = response.body.getReader();
+  const timer = setTimeout(() => {
+    void reader.cancel().catch(() => {});
+  }, HTTP_ERROR_BODY_READ_MS);
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  try {
+    while (received < HTTP_ERROR_BODY_MAX_BYTES) {
+      const { done, value } = await reader.read();
+      if (done || value === undefined) break;
+      if (value.byteLength === 0) continue;
+      const take = Math.min(value.byteLength, HTTP_ERROR_BODY_MAX_BYTES - received);
+      chunks.push(take === value.byteLength ? value : value.subarray(0, take));
+      received += take;
+    }
+  } catch {
+    // Timeout cancel rejects an in-flight read. The HTTP status is still the error.
+  } finally {
+    clearTimeout(timer);
+    await reader.cancel().catch(() => {});
+  }
+  if (received === 0) return undefined;
+  let total = 0;
+  for (const c of chunks) total += c.byteLength;
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    merged.set(c, offset);
+    offset += c.byteLength;
+  }
+  const text = new TextDecoder().decode(merged);
+  return text.length === 0 ? undefined : text;
 }
 
 /**
@@ -577,6 +658,7 @@ export class FetchUrlJob<
     // for should not spend a network call, and failing ahead of the first delta
     // keeps the retry rule in `classifyBodyFailure` out of it entirely.
     assertResponseType(input.response_type, input.url!);
+    assertMethodAllowsResponseType(input.method, input.response_type, input.url!);
 
     const response = await this.issueRequest(input, context);
     const metadata = buildMetadata(response);
@@ -592,8 +674,25 @@ export class FetchUrlJob<
     }
 
     if (!response.ok) {
+      // No `discardBody` here. `buildHttpError` always calls
+      // `readHttpErrorBody`, which cancels its reader in a `finally` — on the
+      // byte ceiling, on the read budget, or at EOF — so the socket is already
+      // released. With a body there is nothing left to cancel and the stream is
+      // still reader-locked, so a second `cancel()` only raises a TypeError for
+      // `discardBody` to swallow; with no body it was a no-op to begin with.
+      const error = await buildHttpError(input.url!, response);
+      throw error;
+    }
+
+    if ((input.method ?? "GET").toUpperCase() === "HEAD") {
+      // HEAD has no representation body. `response.body` is typically null, and
+      // Content-Length describes what a GET would return — not the (empty)
+      // bytes we receive. Streaming it would throw NO_RESPONSE_BODY or
+      // CONTENT_LENGTH_MISMATCH. Metadata is the whole answer.
       await discardBody(response);
-      throw buildHttpError(input.url!, response);
+      await this.emitStreamEnd(metadata, context);
+      yield { type: "finish", data: { metadata } } as StreamEvent<Output>;
+      return;
     }
 
     const chunks: Uint8Array[] = [];
@@ -739,6 +838,44 @@ function toJobFailure(reason: unknown): unknown {
   return new Error(`Queued fetch job rejected without a reason (${String(reason)})`);
 }
 
+/**
+ * Entitlements a fetch of `url` requires. A task that OWNS a `FetchUrlTask`
+ * must declare these itself: the graph snapshot is taken over
+ * `graph.getTasks()` before any `execute()` runs, so an owned child created
+ * inside `execute()` is never in it.
+ *
+ * `url` may be unknown at evaluation time (root-task input is not applied
+ * yet), in which case this fails closed and requires an unscoped
+ * `network:private` rather than under-declaring it.
+ */
+export function fetchUrlEntitlementsFor(url: string | undefined): TaskEntitlements {
+  const base = FetchUrlTask.entitlements();
+  if (typeof url !== "string" || url.length === 0) {
+    return mergeEntitlements(base, {
+      entitlements: [
+        {
+          id: Entitlements.NETWORK_PRIVATE,
+          reason:
+            "Runtime URL is not yet available during entitlement evaluation; private/internal destinations must be explicitly allowed",
+        },
+      ],
+    });
+  }
+  const classification = classifyUrl(url);
+  if (classification.kind !== "private") {
+    return base;
+  }
+  return mergeEntitlements(base, {
+    entitlements: [
+      {
+        id: Entitlements.NETWORK_PRIVATE,
+        reason: `URL targets private/internal host: ${classification.reason ?? classification.host ?? "unknown"}`,
+        resources: [urlResourcePattern(url)],
+      },
+    ],
+  });
+}
+
 export class FetchUrlTask<
   Input extends FetchUrlTaskInput = FetchUrlTaskInput,
   Output extends FetchUrlTaskOutput = FetchUrlTaskOutput,
@@ -779,6 +916,31 @@ export class FetchUrlTask<
     }
   }
 
+  /**
+   * Belt and braces with {@link assertMethodAllowsResponseType}: the job layer
+   * fails closed on a persisted payload, and this fails the same combination at
+   * the task layer, before anything is enqueued.
+   */
+  public override async validateInput(
+    input: Input,
+    skipPorts?: ReadonlySet<string>
+  ): Promise<boolean> {
+    const valid = await super.validateInput(input, skipPorts);
+    const responseType = input.response_type;
+    if (
+      responseType !== undefined &&
+      responseType !== "stream" &&
+      (input.method ?? "GET").toUpperCase() === "HEAD"
+    ) {
+      throw new TaskInvalidInputError(
+        `${this.type}: method HEAD has no response body, so response_type ` +
+          `'${responseType}' can never be produced — use 'stream' and read the metadata, ` +
+          `or use GET.`
+      );
+    }
+    return valid;
+  }
+
   public static override entitlements(): TaskEntitlements {
     return {
       entitlements: [
@@ -798,38 +960,9 @@ export class FetchUrlTask<
    * via the URL's origin so grants can be resource-limited (e.g. a dev-mode
    * grant for `http://localhost:*`). The graph runner evaluates this before
    * `execute()` runs, so a denied private URL never issues a network call.
-   *
-   * Root-task input may not yet be applied when entitlements are evaluated.
-   * If the URL is not available at this point, fail closed and require the
-   * private-network entitlement rather than under-declaring it.
    */
   public override entitlements(): TaskEntitlements {
-    const base = FetchUrlTask.entitlements();
-    const url = this.runInputData?.url;
-    if (typeof url !== "string" || url.length === 0) {
-      return mergeEntitlements(base, {
-        entitlements: [
-          {
-            id: Entitlements.NETWORK_PRIVATE,
-            reason:
-              "Runtime URL is not yet available during entitlement evaluation; private/internal destinations must be explicitly allowed",
-          },
-        ],
-      });
-    }
-    const classification = classifyUrl(url);
-    if (classification.kind !== "private") {
-      return base;
-    }
-    return mergeEntitlements(base, {
-      entitlements: [
-        {
-          id: Entitlements.NETWORK_PRIVATE,
-          reason: `URL targets private/internal host: ${classification.reason ?? classification.host ?? "unknown"}`,
-          resources: [urlResourcePattern(url)],
-        },
-      ],
-    });
+    return fetchUrlEntitlementsFor(this.runInputData?.url);
   }
 
   public static override configSchema(): DataPortSchema {
@@ -874,9 +1007,8 @@ export class FetchUrlTask<
    * schema keeps the `x-stream` `body` port, so `TaskRunner` dispatches to
    * `executeStream` and normally never here — making `executeStream` the sole
    * implementation and this a thin drain over it. A second implementation
-   * would be dead code that no run ever exercises, which is exactly how the
-   * queue branch previously became unreachable without a test noticing; the
-   * constructor refuses a subclass that writes one.
+   * would be dead code that no run or test exercises, so the constructor
+   * refuses a subclass that writes one.
    *
    * A `finish` is mandatory: without one there is no output, and returning the
    * `{}` an absent finish leaves behind would hand the caller an object with
@@ -1174,7 +1306,7 @@ export class FetchUrlTask<
         return;
       }
 
-      yield* this.consumeJobStream(handle);
+      yield* this.consumeJobStream(handle, input.response_type === "stream");
     } catch (err: any) {
       throw new JobTaskFailedError(err);
     } finally {
@@ -1230,8 +1362,26 @@ export class FetchUrlTask<
    * An `error` event is not decoration on any of this: it is the only in-band
    * report of a failure the completion signal may not carry, so it is queued
    * in order and raised as a throw when the consumer reaches it.
+   *
+   * **`requireStreamDelivery` closes the gap a handle's own capability cannot.**
+   * `onStream` is advertised whenever the client has an attached server, which
+   * on a durable queue is the *possibility* of delivery rather than a
+   * guarantee: the job may be claimed by a worker in another process, whose
+   * events never reach here. Which process claims a job is not knowable at
+   * `send` time, so the only honest advertise-time answer would be to withhold
+   * `onStream` from every durable queue — refusing streaming for the ordinary
+   * single-process deployment that works today. The discriminator is available
+   * here instead, and it is the terminal marker rather than a delta count: a
+   * locally-claimed job always emits it (`FetchUrlJob.executeStream` calls
+   * `emitStreamEnd` whenever the context carries `emitStreamEvent`, which
+   * `JobQueueWorker.executeJob` supplies unconditionally), even for a 304 or a
+   * zero-length body, while a remotely-claimed one produces nothing and this
+   * loop exits through its settlement fallback with `streamEnded` false.
    */
-  private async *consumeJobStream(handle: JobHandle<Output>): AsyncIterable<StreamEvent<Output>> {
+  private async *consumeJobStream(
+    handle: JobHandle<Output>,
+    requireStreamDelivery: boolean
+  ): AsyncIterable<StreamEvent<Output>> {
     const pending: Array<{ readonly event: StreamEventLike; readonly release: () => void }> = [];
     let wake: (() => void) | undefined;
     let closed = false;
@@ -1316,6 +1466,18 @@ export class FetchUrlTask<
       }
       await settlement;
       if (failed) throw toJobFailure(failure);
+      // Ordered after the failure check on purpose: a job that genuinely failed
+      // should report its own cause, which is the better diagnosis. This
+      // complaint is only for a job that SUCCEEDED while delivering nothing.
+      if (requireStreamDelivery && !streamEnded) {
+        throw new TaskFailedError(
+          `FetchUrlTask: the queue's stream events never reached this process — the job was ` +
+            `likely claimed by a worker in another process — so response_type "stream" would ` +
+            `report a successful fetch with an empty body. Use a materializing response_type ` +
+            `(text/json/blob/arraybuffer), which travels in the job's settled output, a carrier ` +
+            `implementing the stream channel, or run the worker in-process.`
+        );
+      }
       yield { type: "finish", data: output } as StreamEvent<Output>;
     } finally {
       closed = true;

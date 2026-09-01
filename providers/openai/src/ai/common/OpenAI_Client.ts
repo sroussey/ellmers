@@ -5,7 +5,8 @@
  */
 
 import { isBrowserLike, resolveApiKey, validateProviderBaseUrl } from "@workglow/ai/provider-utils";
-import { isModelEffort, type ModelEffort } from "@workglow/ai/worker";
+import { resolveEnabledEffort, type ModelEffort } from "@workglow/ai/worker";
+import { openaiEffortPolicy } from "./OpenAI_EffortPolicy";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /** Maps coarse {@link ModelEffort} to OpenAI Responses `reasoning.effort`. */
@@ -131,9 +132,8 @@ export function getReasoningConfig(
   if (reasoning && (reasoning.effort !== undefined || reasoning.mode !== undefined)) {
     return reasoning;
   }
-  if (isModelEffort(model?.effort)) {
-    return { effort: EFFORT_TO_OPENAI[model.effort] };
-  }
+  const effort = resolveEnabledEffort(model, openaiEffortPolicy(model));
+  if (effort !== undefined) return { effort: EFFORT_TO_OPENAI[effort] };
   return undefined;
 }
 

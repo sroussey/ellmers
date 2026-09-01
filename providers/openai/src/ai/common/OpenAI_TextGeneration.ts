@@ -74,8 +74,7 @@ function buildResponsesParams(
     params.top_p = (input as { topP?: number }).topP;
 
   // frequency_penalty / presence_penalty are silently dropped by the Responses
-  // API. Warn once per (model, param) so callers who set them notice the
-  // regression from the pre-Responses pipeline (which passed them through).
+  // API. Warn once per (model, param) so callers who set them notice.
   const modelName = getModelName(model);
   if (input.frequencyPenalty !== undefined) {
     warnPenaltyDroppedOnce(modelName, "frequencyPenalty");

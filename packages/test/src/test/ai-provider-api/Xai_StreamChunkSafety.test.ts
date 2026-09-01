@@ -221,4 +221,37 @@ describe("xAI streaming run-fns tolerate SDK chunks without choices/delta", () =
       expect(usage.total).toBeUndefined();
     });
   });
+
+  it("sends json_schema strict:true after rewriting TypeBox nullable unions", async () => {
+    fetchSpy.mockResolvedValueOnce(sseResponse([{ choices: [{ delta: { content: '{"a":1}' } }] }]));
+
+    const nullableSchema = {
+      type: "object",
+      additionalProperties: false,
+      required: ["a"],
+      properties: { a: { anyOf: [{ type: "number" }, { type: "null" }] } },
+    };
+
+    await structuredGenFn(
+      { prompt: "hi", outputSchema: nullableSchema } as any,
+      model,
+      new AbortController().signal,
+      () => {}
+    );
+
+    const body = JSON.parse(String((fetchSpy.mock.calls[0]?.[1] as RequestInit).body));
+    expect(body.response_format).toEqual({
+      type: "json_schema",
+      json_schema: {
+        name: "structured_output",
+        strict: true,
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          required: ["a"],
+          properties: { a: { type: ["number", "null"] } },
+        },
+      },
+    });
+  });
 });

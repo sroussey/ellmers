@@ -5,7 +5,9 @@
  */
 
 import { structuredGeneration } from "@workglow/ai";
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
+
+import { it } from "../../creditExhaustedSkip";
 
 import type { AiProviderConformanceOpts, ConformanceFixture } from "../types";
 

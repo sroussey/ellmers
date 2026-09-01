@@ -1,5 +1,58 @@
 # @workglow/task-graph
 
+## 0.4.5
+
+## 0.4.4
+
+### Features
+
+#### interpreter
+
+- enhance TypeScript definitions for interpreter functionality
+
+#### task
+
+- implement entitlement enforcement in TaskRunner and TaskGraphRunner
+- enhance GraphAsTask and GraphAsTaskRunner with entitlements support
+
+### Bug Fixes
+
+#### task-graph
+
+- give a streaming subgraph the run's resource scope
+
+## 0.4.3
+
+## 0.4.2
+
+## 0.4.1
+
+## 0.4.0
+
+## 0.3.49
+
+## 0.3.48
+
+## 0.3.47
+
+## 0.3.46
+
+### Features
+
+#### triggers
+
+- add the triggers package with cron, interval, and polling triggers
+
+### Bug Fixes
+
+#### storage
+
+- scope InMemory column constraints to a backend mode and document the nullable-column DDL change
+
+#### task-graph
+
+- let a standalone binary-only run skip the accumulator too (#822)
+
 ## 0.3.45
 
 ### Breaking Changes

@@ -41,6 +41,15 @@ export const FetchUrlErrorCode = {
    * before the first byte reached anyone and stays retryable.
    */
   BODY_TRUNCATED: "FETCH_BODY_TRUNCATED",
+  /**
+   * A 307/308 redirect crossed to a different origin while the request carried
+   * a body. 307/308 preserve method and body by definition, so there is no
+   * downgrade that both withholds the body and still performs the write the
+   * caller asked for. Deliberately absent from
+   * {@link FETCH_URL_RETRYABLE_ERROR_CODES}: a retry re-issues the same hop and
+   * meets the same refusal.
+   */
+  REDIRECT_BODY_NOT_REPLAYED: "FETCH_REDIRECT_BODY_NOT_REPLAYED",
 } as const;
 
 export type FetchUrlErrorCodeValue = (typeof FetchUrlErrorCode)[keyof typeof FetchUrlErrorCode];
@@ -69,6 +78,7 @@ export interface FetchUrlJobErrorDetails {
   readonly url?: string;
   readonly httpStatus?: number;
   readonly httpStatusText?: string;
+  readonly httpErrorMessage?: string;
 }
 
 export type FetchUrlJobErrorInstance = JobError & {
@@ -76,6 +86,7 @@ export type FetchUrlJobErrorInstance = JobError & {
   url?: string;
   httpStatus?: number;
   httpStatusText?: string;
+  httpErrorMessage?: string;
   retryDate?: Date;
 };
 
@@ -94,6 +105,9 @@ function attachFetchUrlFields(
   }
   if (details?.httpStatusText !== undefined) {
     withCode.httpStatusText = details.httpStatusText;
+  }
+  if (details?.httpErrorMessage !== undefined) {
+    withCode.httpErrorMessage = details.httpErrorMessage;
   }
   return withCode;
 }
@@ -168,16 +182,38 @@ export function createFetchUrlHttpError(
   url: string,
   status: number,
   statusText: string,
-  retryDate?: Date
+  retryDate?: Date,
+  body?: string
 ): FetchUrlJobErrorInstance {
   const code = httpStatusToFetchUrlErrorCode(status);
-  const message = `Failed to fetch ${url}: ${status} ${statusText}`;
+  const httpErrorMessage = jsonMessageFromHttpBody(body);
+  const statusPart = `${status} ${statusText}`;
+  const message =
+    httpErrorMessage !== undefined
+      ? `Failed to fetch ${url}: ${statusPart}: ${httpErrorMessage}`
+      : `Failed to fetch ${url}: ${statusPart}`;
   return createFetchUrlJobError(code, message, {
     url,
     httpStatus: status,
     httpStatusText: statusText,
+    httpErrorMessage,
     retryDate,
   });
+}
+
+/** Reads `{message}` from a JSON error body, if that field is a non-empty string. */
+export function jsonMessageFromHttpBody(body: string | undefined): string | undefined {
+  if (body === undefined || body.trim() === "") return undefined;
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (parsed === null || typeof parsed !== "object") return undefined;
+    const message = (parsed as { message?: unknown }).message;
+    if (typeof message !== "string") return undefined;
+    const trimmed = message.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

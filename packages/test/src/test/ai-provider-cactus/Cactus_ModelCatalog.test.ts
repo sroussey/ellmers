@@ -23,7 +23,12 @@
  * with the env var set so the import-time throw is observable.
  */
 
-import { _testOnly, CACTUS_CATALOG, CATALOG_HAS_PLACEHOLDERS } from "@workglow/cactus/ai";
+import {
+  _testOnly,
+  assetSpecsOf,
+  CACTUS_CATALOG,
+  CATALOG_HAS_PLACEHOLDERS,
+} from "@workglow/cactus/ai";
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,13 +40,31 @@ describe("Cactus_ModelCatalog module-load guards", () => {
   it("loads cleanly without CACTUS_REQUIRE_REAL_HASHES (dev-friendly default)", () => {
     // Reaching this line at all means the module loaded — the test imports
     // the catalog at the top of the file. The catalog must be non-empty and
-    // every entry must have all three asset specs.
+    // every entry must expose at least one asset spec.
     expect(CACTUS_CATALOG.length).toBeGreaterThan(0);
     for (const entry of CACTUS_CATALOG) {
-      expect(entry.assets.weights).toBeDefined();
-      expect(entry.assets.vocab).toBeDefined();
-      expect(entry.assets.config).toBeDefined();
+      expect(assetSpecsOf(entry).length).toBeGreaterThan(0);
     }
+  });
+
+  it("includes a Needle v2 catalog entry with a single .cact asset", () => {
+    const v2 = CACTUS_CATALOG.find((entry) => entry.generation === 2);
+    expect(v2).toBeDefined();
+    expect(v2?.model_id).toBe("needle-v2");
+    expect(v2 && "cact" in v2.assets).toBe(true);
+    if (v2 && "cact" in v2.assets) {
+      expect(v2.assets.cact.filename).toMatch(/\.cact$/);
+      expect(v2.assets.cact.size).toBeGreaterThan(0);
+    }
+    expect(assetSpecsOf(v2!).length).toBe(1);
+  });
+
+  it("keeps the Needle v1 catalog entry with weights, vocab, and config", () => {
+    const v1 = CACTUS_CATALOG.find((entry) => entry.generation === 1);
+    expect(v1).toBeDefined();
+    expect(v1?.model_id).toBe("needle-26m");
+    expect(v1 && "weights" in v1.assets).toBe(true);
+    expect(assetSpecsOf(v1!).length).toBe(3);
   });
 
   it("exports CATALOG_HAS_PLACEHOLDERS that reflects current catalog state", () => {
@@ -50,7 +73,7 @@ describe("Cactus_ModelCatalog module-load guards", () => {
     // non-positive size, it must be `true`.
     let expected = false;
     for (const entry of CACTUS_CATALOG) {
-      for (const asset of [entry.assets.weights, entry.assets.vocab, entry.assets.config]) {
+      for (const asset of assetSpecsOf(entry)) {
         if (asset.sha256 === CACTUS_HASH_PLACEHOLDER || asset.size <= 0) {
           expected = true;
         }

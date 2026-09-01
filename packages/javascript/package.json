@@ -4,7 +4,7 @@
   "sideEffects": [
     "./dist/task.js"
   ],
-  "version": "0.3.45",
+  "version": "0.4.5",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -23,7 +23,7 @@
     "build-package": "bun run build-js && bun run build-types",
     "build-js": "bun build --sourcemap=external --packages=external --outdir ./dist ./src/task.ts",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
-    "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
+    "build-types": "rm -f tsconfig.tsbuildinfo && tsgo && mkdir -p dist/task && cp src/task/interpreter.d.ts dist/task/interpreter.d.ts",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "exports": {

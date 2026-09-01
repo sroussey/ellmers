@@ -1,5 +1,35 @@
 # @workglow/job-queue
 
+## 0.4.5
+
+## 0.4.4
+
+## 0.4.3
+
+### Build
+
+- types
+
+## 0.4.2
+
+## 0.4.1
+
+## 0.4.0
+
+## 0.3.49
+
+## 0.3.48
+
+## 0.3.47
+
+## 0.3.46
+
+### Bug Fixes
+
+#### tasks
+
+- fail a queued "stream" fetch whose deltas never arrived
+
 ## 0.3.45
 
 ### Breaking Changes

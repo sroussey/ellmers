@@ -207,6 +207,25 @@ const TFMP_MODEL_RESULTS: ModelSearchResultItem[] = [
     raw: { source: "mediapipe" },
   },
   {
+    id: "face-detector",
+    label: "Face Detector",
+    description: "Detects faces with bounding boxes and keypoints",
+    record: {
+      provider: TENSORFLOW_MEDIAPIPE,
+      title: "Face Detector",
+      description: "Detects faces with bounding boxes and keypoints",
+      capabilities: ["vision.face-detection"],
+      provider_config: {
+        model_path:
+          "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+        task_engine: "vision",
+        pipeline: "vision-face-detector",
+      },
+      metadata: {},
+    },
+    raw: { source: "mediapipe" },
+  },
+  {
     id: "face-landmarker",
     label: "Face Landmarker",
     description: "Detects 478 facial landmarks with blendshapes",

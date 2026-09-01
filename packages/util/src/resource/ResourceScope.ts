@@ -80,9 +80,9 @@ export class ResourceScope {
    * Call all disposers via Promise.allSettled (best-effort), then clear
    * (escape hatch — bypasses the strategy). This intentionally does NOT throw,
    * so it is safe in teardown paths (`[Symbol.asyncDispose]`, `await using`)
-   * where one failing disposer must not prevent the rest from running. Failures
-   * are no longer silent: each rejected disposer is logged so cleanup failures
-   * (e.g. a connection that errors on close) are visible to operators.
+   * where one failing disposer must not prevent the rest from running. Each
+   * rejected disposer is logged so cleanup failures (e.g. a connection that
+   * errors on close) are visible to operators.
    */
   async disposeAll(): Promise<void> {
     const fns = [...this.disposers.values()];

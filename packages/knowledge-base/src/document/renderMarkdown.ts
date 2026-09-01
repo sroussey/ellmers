@@ -92,16 +92,10 @@ function escapeInlineText(text: string): string {
 }
 
 /**
- * Expand a possibly-ragged row to exactly `columnCount` cells, honoring colspan.
- * Rowspan is assumed already materialized into rows by the producer (each spanned
- * cell repeated per row), so it is not re-expanded here.
+ * Pad or trim a possibly-ragged row to exactly `columnCount` cells.
  */
 function flattenRow(row: TableCell[], columnCount: number): string[] {
-  const out: string[] = [];
-  for (const c of row) {
-    const text = escapeCell(c.text);
-    for (let i = 0; i < Math.max(1, c.colspan); i++) out.push(text);
-  }
+  const out = row.map((c) => escapeCell(c.text));
   while (out.length < columnCount) out.push("");
   return out.slice(0, columnCount);
 }

@@ -1,7 +1,7 @@
 {
   "name": "workglow",
   "type": "module",
-  "version": "0.3.45",
+  "version": "0.4.5",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -220,6 +220,7 @@
     "@workglow/sqlite": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/task-graph": "workspace:*",
+    "@workglow/triggers": "workspace:*",
     "@workglow/browser-control": "workspace:*",
     "@workglow/javascript": "workspace:*",
     "@workglow/mcp": "workspace:*",

@@ -15,8 +15,8 @@ import { deleteGeminiCachedContent } from "./Gemini_CacheStore";
  * entry, the fallback is to retry inline WITHOUT the handle (see
  * {@link generateGeminiStreamWithCacheFallback}).
  *
- * A false positive here no longer destroys shared state — eviction is gated on
- * the retry actually succeeding — but it still buys a second, doomed API call
+ * Eviction is gated on the retry actually succeeding, so a false positive here
+ * cannot destroy shared state — but it still buys a second, doomed API call
  * for an error the handle had nothing to do with, so the matcher stays tight.
  * A model misconfiguration ("model not found"), a missing File part, a
  * tokenizer / function-declaration message, or a 404 on an unrelated URL must

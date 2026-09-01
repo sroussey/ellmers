@@ -6,7 +6,7 @@
 
 import type { ModelConfig, ModelPricing } from "@workglow/ai";
 import { estimateCost } from "@workglow/ai";
-import type { StreamEvent, Usage } from "@workglow/task-graph";
+import type { IExecuteContext, StreamEvent, Usage } from "@workglow/task-graph";
 import type { DatasetRow } from "../hf/types";
 import type { EvalKind } from "../models";
 import { ensureEmbeddingDimensions, ensureModelDownloaded, resolveModelConfig } from "../models";
@@ -32,6 +32,12 @@ export interface SweepOptions {
    * pays nothing for it.
    */
   readonly onStreamChunk?: ((event: StreamEvent) => void) | undefined;
+  /**
+   * The sweep task's own context. Given one, each row's workflow is owned for
+   * its duration, so the run is a single task graph the progress surfaces can
+   * see into rather than a loop of invisible standalone runs.
+   */
+  readonly owner?: IExecuteContext | undefined;
 }
 
 /**
@@ -141,7 +147,13 @@ export async function runSweep(
         outcome = failedOutcome(parseError ?? "invalid stored row");
       } else {
         try {
-          const prediction = await executor(row, options.onStreamChunk);
+          const prediction = await executor(
+            row,
+            options.onStreamChunk,
+            options.owner
+              ? { context: options.owner, title: `${modelId} · row ${record.row_index}` }
+              : undefined
+          );
           outcomeUsage = prediction.usage;
           outcome = {
             ok: 1,

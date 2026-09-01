@@ -19,7 +19,7 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: canary
+          bun-version: 1.4.0
       - run: bun i
       - run: bun run build
       # Publish every workspace under packages/* and providers/* as a PR-

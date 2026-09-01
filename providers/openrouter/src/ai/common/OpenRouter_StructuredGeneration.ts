@@ -12,7 +12,7 @@ import type {
 } from "@workglow/ai";
 import {
   createEstimatedOutputUsageReporter,
-  isStrictCompatibleSchema,
+  jsonModeChatParts,
   OPENAI_STREAM_USAGE_OPTIONS,
 } from "@workglow/ai/provider-utils";
 import { createPartialJsonStream } from "@workglow/util/worker";
@@ -34,32 +34,19 @@ export const OpenRouter_StructuredGeneration_Stream: AiProviderRunFn<
   const client = await getClient(model);
   const modelName = getModelName(model);
   const schema = input.outputSchema ?? outputSchema;
-
-  // With a schema, request strict json_schema mode; without one, fall back to
-  // json_object so the request never carries an undefined schema (which the API
-  // rejects).
-  const responseFormat = schema
-    ? {
-        type: "json_schema" as never,
-        json_schema: {
-          name: "structured_output",
-          schema: schema,
-          strict: isStrictCompatibleSchema(schema),
-        },
-      }
-    : { type: "json_object" as never };
+  const { prompt, responseFormat } = jsonModeChatParts(input.prompt, schema);
 
   // OpenRouter only attaches billed usage to the final empty-choices chunk, so
   // without a provisional estimate the CLI row stays on a static "Generating"
   // for the whole call. Emit ↑ before the request so it appears during TTFB;
   // finish.usage below still carries the provider total.
   const provisionalUsage = createEstimatedOutputUsageReporter(emit);
-  provisionalUsage.onPrompt(input.prompt);
+  provisionalUsage.onPrompt(prompt);
 
   const stream = await client.chat.completions.create(
     {
       model: modelName,
-      messages: [{ role: "user", content: input.prompt }],
+      messages: [{ role: "user", content: prompt }],
       response_format: responseFormat as never,
       max_completion_tokens: input.maxTokens,
       temperature: input.temperature,

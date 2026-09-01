@@ -231,6 +231,81 @@ describe("FetchUrlTask", () => {
     expect(mockFetch.mock.calls.length).toBe(1);
   });
 
+  test("surfaces JSON message from a non-2xx body", async () => {
+    mockFetch.mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            error: "Internal server error",
+            message: "upstream rejected the request",
+          }),
+          {
+            status: 500,
+            statusText: "Internal Server Error",
+            headers: { "Content-Type": "application/json" },
+          }
+        )
+      )
+    );
+
+    const error = await fetchUrl({
+      url: "https://api.example.com/items",
+      response_type: "json",
+    }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(JobTaskFailedError);
+    const jobFailed = error as JobTaskFailedError;
+    expect(jobFailed.jobError.message).toContain("upstream rejected the request");
+    expect(isFetchUrlJobError(jobFailed.jobError)).toBe(true);
+    if (isFetchUrlJobError(jobFailed.jobError)) {
+      expect(jobFailed.jobError.httpErrorMessage).toBe("upstream rejected the request");
+    }
+  });
+
+  test("reads only a bounded prefix of a huge error body", async () => {
+    const CHUNK = new Uint8Array(1024 * 1024).fill(0x61);
+    const TOTAL_CHUNKS = 64;
+    let pulls = 0;
+
+    mockFetch.mockImplementation(() => {
+      let sent = 0;
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulls++;
+          if (sent >= TOTAL_CHUNKS) {
+            controller.close();
+            return;
+          }
+          sent++;
+          controller.enqueue(CHUNK);
+        },
+      });
+
+      return Promise.resolve(
+        new Response(body, {
+          status: 500,
+          statusText: "Internal Server Error",
+          headers: { "Content-Type": "text/plain" },
+        })
+      );
+    });
+
+    const error = await fetchUrl({
+      url: "https://api.example.com/huge-error",
+      response_type: "json",
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(JobTaskFailedError);
+    const jobFailed = error as JobTaskFailedError;
+    expect(isFetchUrlJobError(jobFailed.jobError)).toBe(true);
+    if (isFetchUrlJobError(jobFailed.jobError)) {
+      expect(jobFailed.jobError.httpStatus).toBe(500);
+    }
+
+    // The body is 64 MiB in 1 MiB chunks; the reader must stop at its ceiling
+    // rather than buffering the whole thing to slice a few kilobytes out.
+    expect(pulls).toBeLessThanOrEqual(32);
+  });
+
   test("handles network errors", async () => {
     mockFetch.mockImplementation(() => Promise.reject(new Error("Network error")));
 
@@ -1149,6 +1224,105 @@ describe("FetchUrlTask", () => {
     });
   });
 
+  describe("HEAD requests", () => {
+    // The schema enum is what the UI and validateInput both read. Without HEAD
+    // in it a caller that asks for metadata-only is rejected before any request
+    // is issued, and the method never reaches SafeFetch.
+    test("validateInput accepts method HEAD", async () => {
+      const task = new FetchUrlTask();
+      await expect(
+        task.validateInput({
+          url: "https://example.com/big.zip",
+          method: "HEAD",
+          response_type: "stream",
+        })
+      ).resolves.toBe(true);
+    });
+
+    // A real HEAD 200 has no body: `Response.body` is null, and Content-Length
+    // describes the representation a GET would return, not the (empty) bytes
+    // we receive. Streaming that as a GET would throw NO_RESPONSE_BODY or
+    // CONTENT_LENGTH_MISMATCH. HEAD exists to read status and headers.
+    test("a HEAD 200 with no body finishes with metadata and does not stream bytes", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(
+          new Response(null, {
+            status: 200,
+            headers: {
+              "Content-Type": "application/zip",
+              "Content-Length": "12345",
+              ETag: '"v1"',
+            },
+          })
+        )
+      );
+
+      const result = await fetchUrl({
+        url: "https://example.com/big.zip",
+        method: "HEAD",
+        response_type: "stream",
+      });
+
+      const options = mockFetch.mock.calls.at(-1)?.[1] as { method?: string } | undefined;
+      expect(options?.method).toBe("HEAD");
+      expect(result.metadata?.status).toBe(200);
+      expect(result.metadata?.contentType).toBe("application/zip");
+      expect(result.metadata?.headers.etag).toBe('"v1"');
+      expect(result.metadata?.headers["content-length"]).toBe("12345");
+      expect(result.text).toBeUndefined();
+      expect(result.json).toBeUndefined();
+      expect(result.blob).toBeUndefined();
+    });
+
+    // A HEAD response carries no representation body, so the HEAD branch
+    // finishes with metadata alone regardless of response_type — which let
+    // {method: "HEAD", response_type: "json"} complete SUCCESSFULLY with
+    // json undefined. Same silent success with no value the required
+    // response_type change exists to prevent, reached from the other side.
+    // Through the job directly, because the task layer rejects it first.
+    test("a persisted HEAD payload with a derived response_type fails before fetching", async () => {
+      mockFetch.mockImplementation(() => Promise.resolve(new Response(null, { status: 200 })));
+      const input = {
+        url: "https://example.com/big.zip",
+        method: "HEAD",
+        response_type: "json",
+      } as FetchUrlTaskInput;
+      const job = new FetchUrlJob<FetchUrlTaskInput, FetchUrlTaskOutput>({ input });
+
+      const error = await job
+        .execute(input, { signal: new AbortController().signal, updateProgress: async () => {} })
+        .catch((e: unknown) => e);
+
+      expect(isFetchUrlJobError(error)).toBe(true);
+      expect((error as { code?: string }).code).toBe(FetchUrlErrorCode.INVALID_RESPONSE_TYPE);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    test("validateInput rejects HEAD paired with a derived response_type", async () => {
+      const task = new FetchUrlTask();
+      await expect(
+        task.validateInput({
+          url: "https://example.com/big.zip",
+          method: "HEAD",
+          response_type: "text",
+        })
+      ).rejects.toThrow(TaskInvalidInputError);
+    });
+
+    test("a HEAD error status still throws", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.resolve(new Response(null, { status: 404, statusText: "Not Found" }))
+      );
+      await expect(
+        fetchUrl({
+          url: "https://example.com/missing.zip",
+          method: "HEAD",
+          response_type: "stream",
+        })
+      ).rejects.toThrow();
+    });
+  });
+
   // -------------------------------------------------------------------------
   // C1 regression: SafeFetch throws permanent FETCH_* errors (SSRF deny, DNS
   // failure, invalid URL, etc). The outer catches in the old fetch helper /
@@ -1172,6 +1346,10 @@ describe("FetchUrlTask", () => {
       { label: "DNS_FAILED", code: FetchUrlErrorCode.DNS_FAILED },
       { label: "REDIRECT_MISSING_LOCATION", code: FetchUrlErrorCode.REDIRECT_MISSING_LOCATION },
       { label: "TOO_MANY_REDIRECTS", code: FetchUrlErrorCode.TOO_MANY_REDIRECTS },
+      {
+        label: "REDIRECT_BODY_NOT_REPLAYED",
+        code: FetchUrlErrorCode.REDIRECT_BODY_NOT_REPLAYED,
+      },
       { label: "NO_RESPONSE_BODY", code: FetchUrlErrorCode.NO_RESPONSE_BODY },
       { label: "CONFIGURATION", code: FetchUrlErrorCode.CONFIGURATION },
     ];

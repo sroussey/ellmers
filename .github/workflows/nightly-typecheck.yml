@@ -1,5 +1,6 @@
-# `bun-version: canary` matches `engines.bun` / `packageManager`: no tagged Bun
-# release carries `node:sqlite` yet, which @workglow/sqlite/storage requires.
+# Bun is pinned exactly, matching `packageManager`: @workglow/sqlite/storage needs
+# `node:sqlite`, which Bun ships from 1.4.0. Floating tags would let an unrelated
+# Bun regression redden every PR on a day nobody touched the code.
 name: Nightly type-drift guard
 permissions:
   contents: read
@@ -21,7 +22,7 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: canary
+          bun-version: 1.4.0
       - run: bun i
       - name: Build type declarations
         run: bun run build:types

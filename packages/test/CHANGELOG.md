@@ -1,5 +1,211 @@
 # @workglow/test
 
+## 0.4.5
+
+### Bug Fixes
+
+#### ai
+
+- make the effort policies a gate rather than UI metadata
+
+#### node-llama-cpp
+
+- stop embedding GGUFs advertising chat-session capabilities
+
+## 0.4.4
+
+### Features
+
+#### interpreter
+
+- enhance TypeScript definitions for interpreter functionality
+
+#### task
+
+- implement entitlement enforcement in TaskRunner and TaskGraphRunner
+
+#### tf-mediapipe
+
+- add Face Detector model and enhance TensorFlow MediaPipe search tests
+
+#### image
+
+- introduce toTexImageSource utility and integrate across AI components
+
+### Bug Fixes
+
+#### tasks
+
+- make dropping the filesystem tasks a compile-time decision
+
+### Refactors
+
+- FsFolderTabularStorage for improved file handling and error management
+
+### Updated Dependencies
+
+- `miniflare`: ^5.20260828.0-alpha
+
+## 0.4.3
+
+## 0.4.2
+
+## 0.4.1
+
+### Bug Fixes
+
+- address PR review feedback for cactus v2 paths
+
+### Refactors
+
+- enhance Cactus model loading and tool calling functionality
+
+### Chores
+
+- fix tests
+- update deps
+
+### Updated Dependencies
+
+- `miniflare`: ^5.20260820.0-alpha
+
+## 0.4.0
+
+### Bug Fixes
+
+#### tests
+
+- remove process listeners through the EventEmitter view
+
+## 0.3.49
+
+### Breaking Changes
+
+- **bug fixes(tasks)**: declare the owned FetchUrlTask entitlements on FileLoaderTask
+
+### Bug Fixes
+
+#### test
+
+- detect DeepSeek billing failures, and split credit skips CI vs local
+
+#### tasks
+
+- bound sedLines with a search deadline and restore the node export surface
+- accept optional groups in the regex screen and bound RegexTask matching
+- declare the owned FetchUrlTask entitlements on FileLoaderTask
+
+## 0.3.48
+
+### Breaking Changes
+
+- **bug fixes(tasks)**: contain the server filesystem tasks by default
+
+### Features
+
+#### tasks
+
+- enhance FetchUrlJobError to include detailed HTTP error messages
+
+### Bug Fixes
+
+#### tasks
+
+- reject method HEAD paired with response_type text/json/blob/arraybuffer
+- bound the error body read instead of buffering all of it
+- contain the server filesystem tasks by default
+- keep $<name> literal when the pattern has no named groups
+- emit each grep context line once instead of replaying it
+
+## 0.3.47
+
+### Features
+
+- thinking policy for models
+
+#### tasks
+
+- enhance FileGrepTask with extractBatch functionality
+- add support for HEAD HTTP method in FetchUrlTask
+- add onlyMatching to FileGrepTask
+- add FileGrepTask for server-side file grepping
+
+### Bug Fixes
+
+#### tasks
+
+- apply default output caps to FileSedTask
+- cap FileSedTask line length instead of accumulating unterminated lines
+- name the configured root that cannot be resolved
+- declare the owned FetchUrlTask entitlements on FileSedTask
+- declare filesystem:read and resolve FileSedTask paths against roots
+- bound FileSedTask regex substitution with an interruptible budget
+- reconcile the ReDoS guard with the base branch's scanner
+- apply default output caps and report match/truncated honestly
+- cap FileGrepTask line length instead of accumulating unterminated lines
+- declare the owned FetchUrlTask entitlements on FileGrepTask
+- declare filesystem:read and resolve FileGrepTask paths against opt-in roots
+- bound FileGrepTask regex matching with an interruptible time budget
+- make the ReDoS guard linear, and add FileSedTask
+
+### Refactors
+
+#### tasks
+
+- share the regex ReDoS guard between RegexTask and FileGrepTask
+
+### Performance
+
+#### tasks
+
+- make FileGrepTask group de-duplication O(1) per line
+
+### Tests
+
+#### tasks
+
+- pin the escaped-bracket case the class-stripping regex missed
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `miniflare`: ^5.20260815.0-alpha
+
+## 0.3.46
+
+### Features
+
+#### schema
+
+- enhance JSON schema handling for strict compatibility
+
+#### tests
+
+- add tests for compound-key chunking behavior in PostgresTabularStorage
+- add credit exhaustion handling and skip logic for provider tests
+
+#### triggers
+
+- add the triggers package with cron, interval, and polling triggers
+
+#### storage
+
+- enforce varchar width and NOT NULL in InMemoryTabularStorage
+
+### Bug Fixes
+
+#### ai
+
+- stop reporting nullable-object schemas as OpenAI strict-compatible
+
+#### tasks
+
+- stop replaying method and body across SafeFetch redirects
+- fail a queued "stream" fetch whose deltas never arrived
+
 ## 0.3.45
 
 ### Breaking Changes

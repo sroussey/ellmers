@@ -384,7 +384,18 @@ describe("updateWhere (InMemory)", () => {
       SearchPrimaryKeyNames
     );
     await repo.setupDatabase?.();
-    await repo.put({ id: "a", category: "x", subcategory: "s", value: 1 } as never);
+    // `createdAt`/`updatedAt` are in SearchSchema's `required` list, so they are
+    // NOT NULL columns on every backend — supply them rather than relying on
+    // InMemory being the one store that used to let them slide.
+    const now = new Date().toISOString();
+    await repo.put({
+      id: "a",
+      category: "x",
+      subcategory: "s",
+      value: 1,
+      createdAt: now,
+      updatedAt: now,
+    } as never);
 
     const updated = await repo.updateWhere(
       { id: "a", value: { value: 5, operator: "<" } } as never,

@@ -4,30 +4,166 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IExecuteContext, TaskConfig } from "@workglow/task-graph";
-import { CreateWorkflow, TaskAbortedError, Workflow } from "@workglow/task-graph";
+import type { IExecuteContext, TaskEntitlements } from "@workglow/task-graph";
+import {
+  CreateWorkflow,
+  Entitlements,
+  mergeEntitlements,
+  TaskAbortedError,
+  TaskConfigSchema,
+  TaskEntitlementError,
+  Workflow,
+} from "@workglow/task-graph";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { readFile } from "node:fs/promises";
 
-import type { FileLoaderTaskInput, FileLoaderTaskOutput } from "./FileLoaderTask";
+import {
+  isHttpUrl,
+  localFilePathFromUrl,
+  resolveLocalFilePath,
+} from "../util/LocalFilePath.server";
+import { fetchUrlEntitlementsFor } from "./FetchUrlTask";
+import type {
+  FileLoaderTaskConfig,
+  FileLoaderTaskInput,
+  FileLoaderTaskOutput,
+} from "./FileLoaderTask";
 import { FileLoaderTask as BaseFileLoaderTask } from "./FileLoaderTask";
 
-export type { FileLoaderTaskInput, FileLoaderTaskOutput };
+export type { FileLoaderTaskConfig, FileLoaderTaskInput, FileLoaderTaskOutput };
+
+const fileLoaderTaskConfigSchema = {
+  type: "object",
+  properties: {
+    ...TaskConfigSchema["properties"],
+    roots: {
+      type: "array",
+      items: { type: "string" },
+      title: "Roots",
+      description:
+        "Directories a local path must resolve inside (after symlink resolution). Defaults to the process working directory",
+      "x-ui-hidden": true,
+    },
+    allowAnyRoot: {
+      type: "boolean",
+      title: "Allow Any Root",
+      description: "Skip root containment entirely and read any path the process can open",
+      "x-ui-hidden": true,
+    },
+  },
+  additionalProperties: false,
+} as const satisfies DataPortSchema;
 
 /**
  * Server-only task for loading documents from the filesystem.
  * Uses Node.js/Bun file APIs directly for better performance.
  * Only available in Node.js and Bun environments.
  *
+ * A local path is resolved and realpath'd before it is opened, and constrained
+ * to `config.roots` — which defaults to the process working directory, so a
+ * task with no stated root reads from there and nowhere else. Set
+ * `config.allowAnyRoot` to opt out. Reading requires the `filesystem:read`
+ * entitlement, declared scoped to the resolved path.
+ *
  * For cross-platform document loading (including browser), use FileLoaderTask with URLs.
  */
-export class FileLoaderTask extends BaseFileLoaderTask {
+export class FileLoaderTask extends BaseFileLoaderTask<FileLoaderTaskConfig> {
+  public static override hasDynamicEntitlements: boolean = true;
+
+  public static override configSchema(): DataPortSchema {
+    return fileLoaderTaskConfigSchema as DataPortSchema;
+  }
+
+  /**
+   * The owned `FetchUrlTask` does the network access for the http(s) branch,
+   * but an owned child is created inside `execute()` and so is absent from the
+   * graph-start snapshot `computeGraphEntitlements` takes. Declaring the
+   * fetch's entitlements here is what puts them in front of the enforcer,
+   * alongside the read this build adds.
+   */
+  public static override entitlements(): TaskEntitlements {
+    return mergeEntitlements(super.entitlements(), {
+      entitlements: [
+        {
+          id: Entitlements.FILESYSTEM_READ,
+          reason: "Reads a local file or file:// URL from disk",
+        },
+      ],
+    });
+  }
+
+  /**
+   * Declares whichever half of the surface this url actually uses: the fetch
+   * entitlements for http(s), otherwise `filesystem:read` scoped to the
+   * resolved real path. An unknown url fails closed to both, unscoped.
+   *
+   * Never throws — entitlement evaluation runs before `execute()` and must
+   * produce a declaration for any input, so an unresolvable path degrades to
+   * the unscoped declaration and is refused later, at open time.
+   */
+  public override entitlements(): TaskEntitlements {
+    const url = this.runInputData?.url;
+    const unscopedRead: TaskEntitlements = {
+      entitlements: [{ id: Entitlements.FILESYSTEM_READ, reason: "Reads a local file from disk" }],
+    };
+
+    if (typeof url !== "string" || url.length === 0) {
+      return mergeEntitlements(fetchUrlEntitlementsFor(undefined), unscopedRead);
+    }
+
+    if (isHttpUrl(url)) {
+      return fetchUrlEntitlementsFor(url);
+    }
+
+    try {
+      return {
+        entitlements: [
+          {
+            id: Entitlements.FILESYSTEM_READ,
+            reason: "Reads a local file from disk",
+            resources: [
+              resolveLocalFilePath(url, {
+                roots: this.config.roots,
+                allowAnyRoot: this.config.allowAnyRoot,
+              }),
+            ],
+          },
+        ],
+      };
+    } catch {
+      return unscopedRead;
+    }
+  }
+
+  /**
+   * Refuses a path the instance did not declare. Entitlements are evaluated
+   * on the unresolved input, so without this a declare-then-swap would let the
+   * open authorize itself — and a standalone `fileLoader(...)` with no graph
+   * and no enforcer would honour no `roots` at all.
+   */
+  private assertResolvedPathDeclared(file: string): void {
+    const declared = this.entitlements().entitlements.find(
+      (entitlement) => entitlement.id === Entitlements.FILESYSTEM_READ
+    );
+    if (declared?.resources === undefined) {
+      throw new TaskEntitlementError(
+        `Refusing to read ${file}: the path could not be resolved when entitlements were declared`
+      );
+    }
+    if (!declared.resources.includes(file)) {
+      throw new TaskEntitlementError(
+        `Refusing to read ${file}: it differs from the declared path ${declared.resources.join(", ")}`
+      );
+    }
+  }
+
   override async execute(
     input: FileLoaderTaskInput,
     context: IExecuteContext
   ): Promise<FileLoaderTaskOutput> {
-    let { url, format = "auto" } = input;
+    const { url: inputUrl, format = "auto" } = input;
 
-    if (url.startsWith("http://") || url.startsWith("https://")) {
+    if (isHttpUrl(inputUrl)) {
       return super.execute(input, context);
     }
 
@@ -36,9 +172,15 @@ export class FileLoaderTask extends BaseFileLoaderTask {
     }
     await context.updateProgress(0, "Detecting file format");
 
-    if (url.startsWith("file://")) {
-      url = url.slice(7);
-    }
+    // The path as the caller named it, with a `file:` scheme decoded away: it
+    // is what the output reports and what the extension sniffing reads. `file`
+    // is the real, contained path, and is the only one opened.
+    const url = localFilePathFromUrl(inputUrl);
+    const file = resolveLocalFilePath(inputUrl, {
+      roots: this.config.roots,
+      allowAnyRoot: this.config.allowAnyRoot,
+    });
+    this.assertResolvedPathDeclared(file);
 
     const detectedFormat = this.detectFormat(url, format);
     const title = url.split("/").pop() || url;
@@ -49,7 +191,7 @@ export class FileLoaderTask extends BaseFileLoaderTask {
     await context.updateProgress(10, `Reading ${detectedFormat} file from filesystem`);
 
     if (detectedFormat === "json") {
-      const fileContent = await readFile(url, { encoding: "utf-8" });
+      const fileContent = await readFile(file, { encoding: "utf-8" });
       if (context.signal.aborted) {
         throw new TaskAbortedError("Task aborted");
       }
@@ -78,7 +220,7 @@ export class FileLoaderTask extends BaseFileLoaderTask {
     }
 
     if (detectedFormat === "csv") {
-      const fileContent = await readFile(url, { encoding: "utf-8" });
+      const fileContent = await readFile(file, { encoding: "utf-8" });
       if (!fileContent) {
         throw new Error(`Failed to load CSV from ${url}`);
       }
@@ -109,7 +251,7 @@ export class FileLoaderTask extends BaseFileLoaderTask {
     }
 
     if (detectedFormat === "image") {
-      const fileBuffer = await readFile(url);
+      const fileBuffer = await readFile(file);
       if (context.signal.aborted) {
         throw new TaskAbortedError("Task aborted");
       }
@@ -139,7 +281,7 @@ export class FileLoaderTask extends BaseFileLoaderTask {
     }
 
     if (detectedFormat === "pdf") {
-      const fileBuffer = await readFile(url);
+      const fileBuffer = await readFile(file);
       if (context.signal.aborted) {
         throw new TaskAbortedError("Task aborted");
       }
@@ -169,7 +311,7 @@ export class FileLoaderTask extends BaseFileLoaderTask {
     }
 
     // text, markdown, or html
-    const fileContent = await readFile(url, { encoding: "utf-8" });
+    const fileContent = await readFile(file, { encoding: "utf-8" });
     if (!fileContent) {
       throw new Error(`Failed to load content from ${url}`);
     }
@@ -225,13 +367,13 @@ export class FileLoaderTask extends BaseFileLoaderTask {
   }
 }
 
-export const fileLoader = (input: FileLoaderTaskInput, config?: TaskConfig) => {
+export const fileLoader = (input: FileLoaderTaskInput, config?: FileLoaderTaskConfig) => {
   return new FileLoaderTask(config).run(input);
 };
 
 declare module "@workglow/task-graph" {
   interface Workflow {
-    fileLoader: CreateWorkflow<FileLoaderTaskInput, FileLoaderTaskOutput, TaskConfig>;
+    fileLoader: CreateWorkflow<FileLoaderTaskInput, FileLoaderTaskOutput, FileLoaderTaskConfig>;
   }
 }
 

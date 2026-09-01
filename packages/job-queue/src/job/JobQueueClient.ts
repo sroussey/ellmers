@@ -901,6 +901,13 @@ export class JobQueueClient<Input, Output> {
     // not knowable at send time, so the alternative — withholding `onStream`
     // from every durable-storage queue — would refuse streaming for the
     // ordinary single-process deployment that works today.
+    //
+    // That gap is closed at drain time instead, where the answer is observable:
+    // a locally-claimed job always publishes a terminal `finish` marker, so a
+    // consumer whose delivery is mandatory (`FetchUrlTask`'s
+    // `consumeJobStream`, under `requireStreamDelivery`) fails a stream that
+    // settled successfully without ever producing one, rather than reporting an
+    // empty body as a successful read.
     if (this.server || this.hasStreamChannel()) {
       handle.onStream = (callback: JobStreamListener) => this.onJobStream(id, callback);
     }

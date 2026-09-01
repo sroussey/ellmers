@@ -27,6 +27,47 @@ describe("scripts/test.ts", () => {
     expect(stdout).not.toContain(".integration.test.ts");
   });
 
+  test("--changed without a kind still delegates to turbo run test", async () => {
+    const proc = Bun.spawn(["bun", "scripts/test.ts", "--changed", "HEAD", "--dry-run"], {
+      cwd: import.meta.dir + "/..",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout).toContain('"turbo","run","test"');
+    expect(stdout).toContain("--filter=...[HEAD]");
+  });
+
+  test("--changed with a kind does not hand the run to turbo run test", async () => {
+    // CI jobs pass a kind (unit, integration, …) alongside --changed. If
+    // --changed still short-circuits to `turbo run test`, those jobs run the
+    // unit tier instead of their slice — rag/provider integration never runs,
+    // or worse, a unit job's coverage is reported as the integration job's.
+    const proc = Bun.spawn(["bun", "scripts/test.ts", "--changed", "HEAD", "unit", "--dry-run"], {
+      cwd: import.meta.dir + "/..",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout).not.toContain('"turbo","run","test"');
+  });
+
   test("provider-nodellama vitest dry-run disables file parallelism", async () => {
     const proc = Bun.spawn(
       ["bun", "scripts/test.ts", "integration", "provider-nodellama", "vitest", "--dry-run"],

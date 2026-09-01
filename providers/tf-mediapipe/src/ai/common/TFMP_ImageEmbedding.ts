@@ -11,6 +11,7 @@ import type {
 } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
 import { loadTfmpTasksVisionSDK } from "./TFMP_Client";
+import { toTexImageSource } from "./TFMP_Image";
 import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
@@ -25,7 +26,7 @@ export const TFMP_ImageEmbedding: AiProviderRunFn<
   if (Array.isArray(input.image)) {
     const vectors: Float32Array[] = [];
     for (const image of input.image) {
-      const result = imageEmbedder.embed(image as any);
+      const result = imageEmbedder.embed(toTexImageSource(image));
       if (!result.embeddings?.[0]?.floatEmbedding) {
         throw new PermanentJobError("Failed to generate embedding: Empty result");
       }
@@ -35,7 +36,7 @@ export const TFMP_ImageEmbedding: AiProviderRunFn<
     return;
   }
 
-  const result = imageEmbedder.embed(input.image as any);
+  const result = imageEmbedder.embed(toTexImageSource(input.image));
 
   if (!result.embeddings?.[0]?.floatEmbedding) {
     throw new PermanentJobError("Failed to generate embedding: Empty result");

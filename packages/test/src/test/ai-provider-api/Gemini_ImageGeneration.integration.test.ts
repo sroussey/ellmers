@@ -7,7 +7,9 @@
 import { ImageEditTask, ImageGenerateTask } from "@workglow/ai";
 import { registerGeminiInline } from "@workglow/google-gemini/ai-runtime";
 import "@workglow/tasks";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect } from "vitest";
+
+import { it } from "../../contract/creditExhaustedSkip";
 
 const RUN = !!process.env.GOOGLE_API_KEY || !!process.env.GEMINI_API_KEY;
 const IMAGE_MODEL_ID = "gemini-2.5-flash-image";

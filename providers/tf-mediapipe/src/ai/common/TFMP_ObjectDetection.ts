@@ -11,6 +11,7 @@ import type {
 } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
 import { loadTfmpTasksVisionSDK } from "./TFMP_Client";
+import { toTexImageSource } from "./TFMP_Image";
 import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
@@ -29,7 +30,7 @@ export const TFMP_ObjectDetection: AiProviderRunFn<
     signal,
     ObjectDetector
   );
-  const result = objectDetector.detect(input.image);
+  const result = objectDetector.detect(toTexImageSource(input.image));
 
   if (!result.detections) {
     throw new PermanentJobError("Failed to detect objects: Empty result");

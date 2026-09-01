@@ -8,15 +8,27 @@ import type { DataPortSchemaObject } from "@workglow/util/worker";
 import type { ModelEffort } from "./ModelEffort";
 
 export {
+  EFFORT_POLICY_ALL,
+  EFFORT_POLICY_NONE,
   effortPlaceholder,
   enabledEffortsForModel,
   isModelEffort,
+  makeEffortPolicy,
   MODEL_EFFORTS,
   readEffortOptions,
+  readModelName,
+  resolveEnabledEffort,
   sanitizeEffortOptions,
   stampEffortOptions,
 } from "./ModelEffort";
-export type { ModelEffort, ModelEffortPolicy } from "./ModelEffort";
+export type {
+  EffortIdMatcher,
+  EffortPolicyRule,
+  EffortPolicySpec,
+  ModelEffort,
+  ModelEffortPolicy,
+  ModelEffortPolicyFn,
+} from "./ModelEffort";
 
 /**
  * A model configuration suitable for task/job inputs.

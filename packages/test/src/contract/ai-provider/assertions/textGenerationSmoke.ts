@@ -7,7 +7,9 @@
 import type { Capability } from "@workglow/ai";
 import { getAiProviderRegistry, getGlobalModelRepository, textGeneration } from "@workglow/ai";
 import type { StreamEvent, TaskOutput } from "@workglow/task-graph";
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
+
+import { it } from "../../creditExhaustedSkip";
 
 import type { AiProviderConformanceOpts, ConformanceFixture } from "../types";
 

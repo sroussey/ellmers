@@ -10,6 +10,7 @@ import type {
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
+import { promptWithJsonSchema } from "@workglow/ai/provider-utils";
 import { createPartialJsonStream } from "@workglow/util/worker";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import {
@@ -20,15 +21,6 @@ import {
 } from "./HFT_Pipeline";
 import { createStreamingTextStreamer } from "./HFT_Streaming";
 
-function buildStructuredGenerationPrompt(input: StructuredGenerationTaskInput): string {
-  const schemaStr = JSON.stringify(input.outputSchema, null, 2);
-  return (
-    `${input.prompt}\n\n` +
-    `You MUST respond with ONLY a valid JSON object conforming to this JSON schema:\n${schemaStr}\n\n` +
-    `Output ONLY the JSON object, no other text.`
-  );
-}
-
 export const HFT_StructuredGeneration: AiProviderRunFn<
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
@@ -37,7 +29,7 @@ export const HFT_StructuredGeneration: AiProviderRunFn<
   await withHftPipelineInUse(getPipelineCacheKey(model!), async () => {
     const generateText = (await getPipeline(model!, emit, {}, signal)) as TextGenerationPipeline;
     const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
-    const prompt = buildStructuredGenerationPrompt(input);
+    const prompt = promptWithJsonSchema(input.prompt, input.outputSchema);
 
     const messages: Message[] = [{ role: "user", content: prompt }];
 

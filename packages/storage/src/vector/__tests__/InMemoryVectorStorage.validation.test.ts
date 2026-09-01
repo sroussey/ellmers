@@ -165,11 +165,22 @@ describe("InMemoryVectorStorage validation", () => {
     it("treats a present-but-null metadata value as a non-match under a filter (no throw)", async () => {
       // A row whose metadata column is null must not crash a filtered search;
       // it is coalesced to {} and excluded by the filter rather than matched.
+      //
+      // VecSchema marks `metadata` required and non-nullable, so `put` now
+      // rejects a null the way a NOT NULL column would. The read path still has
+      // to cope with such a row — it can arrive from a backend whose metadata
+      // column is nullable, or predate the column's constraint — so seed it
+      // directly into the row map instead of writing it through `put`.
       await storage.put({
         id: "null-meta",
         vector: new Float32Array([1, 0, 0, 0]),
-        metadata: null as unknown as Record<string, unknown>,
+        metadata: {},
       });
+      for (const row of storage.values.values()) {
+        if ((row as { id: string }).id === "null-meta") {
+          (row as { metadata: unknown }).metadata = null;
+        }
+      }
       await storage.put({
         id: "tagged",
         vector: new Float32Array([1, 0, 0, 0]),

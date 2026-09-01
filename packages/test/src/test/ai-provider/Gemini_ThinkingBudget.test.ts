@@ -62,4 +62,32 @@ describe("resolveThinkingConfig", () => {
       expect(result.maxOutputTokens).toBe(budget > 0 ? 100 + budget : 100);
     }
   });
+
+  it("does not map model.effort on embedding or image models", () => {
+    expect(
+      resolveThinkingConfig(
+        model({
+          effort: "high",
+          provider_config: { model_name: "gemini-embedding-001" },
+        }),
+        1000
+      )
+    ).toEqual({ thinkingConfig: undefined, maxOutputTokens: 1000 });
+    expect(
+      resolveThinkingConfig(
+        model({
+          effort: "ultra",
+          provider_config: { model_name: "imagen-4.0-generate-001" },
+        }),
+        1000
+      )
+    ).toEqual({ thinkingConfig: undefined, maxOutputTokens: 1000 });
+  });
+
+  it("honours effort_options even when the class policy would allow the effort", () => {
+    expect(resolveThinkingConfig(model({ effort: "high", effort_options: [] }), 1000)).toEqual({
+      thinkingConfig: undefined,
+      maxOutputTokens: 1000,
+    });
+  });
 });

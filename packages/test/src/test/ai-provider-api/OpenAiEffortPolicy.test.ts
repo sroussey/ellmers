@@ -13,11 +13,14 @@ function cfg(model_name: string) {
 }
 
 describe("openaiEffortPolicy", () => {
-  it("returns all levels with no default when the name is empty", () => {
+  // OpenAI 400s on `reasoning` for the chat models that do not take it, so an
+  // id this list does not place answers the same way an absent one does.
+  it("returns no levels for an unrecognized id and for an absent one", () => {
     expect(openaiEffortPolicy({ provider: OPENAI, provider_config: { model_name: "" } })).toEqual({
-      supported: [...MODEL_EFFORTS],
+      supported: [],
       default: undefined,
     });
+    expect(openaiEffortPolicy(cfg("babbage-002"))?.supported).toEqual([]);
   });
 
   it("treats gpt-5 and o-series as reasoning with default medium", () => {

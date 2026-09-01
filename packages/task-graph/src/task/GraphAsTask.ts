@@ -281,6 +281,8 @@ export class GraphAsTask<
         .run<Output>(input, {
           parentSignal: context.signal,
           accumulateLeafOutputs: false,
+          ...this.runner.subGraphRunContext,
+          enforceEntitlements: this.runConfig?.enforceEntitlements,
           ...this.runner.streamRunOptions,
         })
         .then(

@@ -14,7 +14,8 @@
  * `--unhandled-rejections=throw` terminates the process.
  */
 
-import { FetchUrlTask, getSafeFetchImpl, safeFetch } from "@workglow/tasks";
+import { PermanentJobError } from "@workglow/job-queue";
+import { FetchUrlErrorCode, FetchUrlTask, getSafeFetchImpl, safeFetch } from "@workglow/tasks";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { gzipSync } from "node:zlib";
@@ -27,6 +28,19 @@ interface TestServer {
 
 /** Headers of every request a test server received, in arrival order. */
 type RequestLog = Array<Readonly<Record<string, string | string[] | undefined>>>;
+
+/**
+ * Whether the dispatcher this host builds can actually be closed.
+ *
+ * Freeing the socket is `Agent.close()`'s job, and Bun resolves `undici` to a
+ * shim whose `Agent` has neither `close` nor `destroy` — `closeAgent()` in
+ * `SafeFetch.server.ts` already guards for exactly that. A case that watches the
+ * server's connection count after an aborted hop is watching a lifecycle that
+ * only exists on top of real undici; everything else in this file still runs.
+ * Asked of the runtime rather than of `Agent` itself, because `undici` is a
+ * dependency of `@workglow/tasks` and does not resolve from this package.
+ */
+const DISPATCHER_CLOSES_CONNECTIONS: boolean = typeof Bun === "undefined";
 
 const servers: http.Server[] = [];
 const timers: NodeJS.Timeout[] = [];
@@ -65,6 +79,75 @@ async function drainRejections(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
+/** Method and collected body of every request a test server received. */
+interface RecordedCall {
+  readonly method: string;
+  readonly body: string;
+}
+
+/**
+ * Records every inbound request and answers 200 with "landed". `seen` carries
+ * the headers; `calls` carries the method and the collected body, which is what
+ * a redirect must never replay to a target the caller did not choose.
+ */
+async function recordingServer(): Promise<{
+  target: TestServer;
+  seen: RequestLog;
+  calls: RecordedCall[];
+}> {
+  const seen: RequestLog = [];
+  const calls: RecordedCall[] = [];
+  const target = await withServer((req, res) => {
+    seen.push({ ...req.headers });
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => {
+      calls.push({ method: req.method ?? "", body: Buffer.concat(chunks).toString("utf8") });
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end("landed");
+    });
+  });
+  return { target, seen, calls };
+}
+
+/** Answers every request with a redirect to `location`. */
+async function redirectingServer(location: string, status = 302): Promise<TestServer> {
+  return withServer((req, res) => {
+    // Drain the request body before answering, so node does not destroy the
+    // socket on an unconsumed POST and turn a redirect test into a reset.
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(status, { location });
+      res.end();
+    });
+  });
+}
+
+/**
+ * A redirect whose body can never complete: it states a Content-Length far
+ * larger than the bytes it sends and never ends. That makes the leak assertions
+ * deterministic — a merely large body is sometimes swallowed whole by socket
+ * buffers, which frees the connection for reasons that have nothing to do with
+ * dispatcher lifetime. Here only cancelling the body can free it.
+ *
+ * `location` may be omitted to produce a 302 with no Location header.
+ */
+async function stallingRedirectServer(location: string | undefined): Promise<TestServer> {
+  return withServer((req, res) => {
+    req.resume();
+    // The client destroys the socket when it cancels; the write that loses is
+    // not a test failure.
+    res.on("error", () => {});
+    const headers: Record<string, string> = {
+      "content-type": "text/plain",
+      "content-length": "50000000",
+    };
+    if (location !== undefined) headers.location = location;
+    res.writeHead(302, headers);
+    res.write("x".repeat(65_536));
+  });
+}
+
 async function waitForNoConnections(server: http.Server, timeoutMs: number): Promise<number> {
   const deadline = Date.now() + timeoutMs;
   let count = await new Promise<number>((resolve) =>
@@ -91,7 +174,9 @@ describe("SafeFetch server transport (real node:http, no mocks)", () => {
   });
 
   afterEach(async () => {
-    process.off("unhandledRejection", onUnhandledRejection);
+    // bun-types 1.4 shadows `Process.off` with a memoryPressure-only overload;
+    // the EventEmitter view still carries the generic one.
+    (process as NodeJS.EventEmitter).off("unhandledRejection", onUnhandledRejection);
     for (const timer of timers.splice(0)) clearTimeout(timer);
     for (const server of servers.splice(0)) await closeServer(server);
   });
@@ -119,26 +204,29 @@ describe("SafeFetch server transport (real node:http, no mocks)", () => {
     expect(unhandled).toEqual([]);
   });
 
-  test("a cancelled body still frees the connection for the next request", async () => {
-    const { origin, server } = await withServer((_req, res) => {
-      res.writeHead(200, { "content-type": "text/plain" });
-      res.end("ok");
-    });
+  test.skipIf(!DISPATCHER_CLOSES_CONNECTIONS)(
+    "a cancelled body still frees the connection for the next request",
+    async () => {
+      const { origin, server } = await withServer((_req, res) => {
+        res.writeHead(200, { "content-type": "text/plain" });
+        res.end("ok");
+      });
 
-    const first = await safeFetch(`${origin}/`, { allowPrivate: true });
-    await first.body!.cancel();
+      const first = await safeFetch(`${origin}/`, { allowPrivate: true });
+      await first.body!.cancel();
 
-    // The dispatcher must still be closed on the cancel path, otherwise its
-    // keep-alive socket stays open forever.
-    expect(await waitForNoConnections(server, 5000)).toBe(0);
+      // The dispatcher must still be closed on the cancel path, otherwise its
+      // keep-alive socket stays open forever.
+      expect(await waitForNoConnections(server, 5000)).toBe(0);
 
-    const second = await safeFetch(`${origin}/`, { allowPrivate: true });
-    expect(second.status).toBe(200);
-    expect(await second.text()).toBe("ok");
+      const second = await safeFetch(`${origin}/`, { allowPrivate: true });
+      expect(second.status).toBe(200);
+      expect(await second.text()).toBe("ok");
 
-    await drainRejections();
-    expect(unhandled).toEqual([]);
-  });
+      await drainRejections();
+      expect(unhandled).toEqual([]);
+    }
+  );
 
   test("a fully read body returns the complete text and raises no unhandled rejection", async () => {
     const { origin } = await withServer((_req, res) => {
@@ -232,24 +320,27 @@ describe("SafeFetch server transport (real node:http, no mocks)", () => {
   // Throwing on the status alone leaves the body unread, and undici holds the
   // connection until GC gets to it — one socket per attempt, on a path whose
   // 429/5xx are retried up to `maxAttempts`.
-  test("a non-2xx response frees its connection instead of leaking it", async () => {
-    const body = "x".repeat(200_000);
-    const { origin, server } = await withServer((_req, res) => {
-      res.writeHead(503, {
-        "content-type": "text/plain",
-        "content-length": String(body.length),
+  test.skipIf(!DISPATCHER_CLOSES_CONNECTIONS)(
+    "a non-2xx response frees its connection instead of leaking it",
+    async () => {
+      const body = "x".repeat(200_000);
+      const { origin, server } = await withServer((_req, res) => {
+        res.writeHead(503, {
+          "content-type": "text/plain",
+          "content-length": String(body.length),
+        });
+        res.end(body);
       });
-      res.end(body);
-    });
 
-    const task = new FetchUrlTask();
-    await expect(task.run({ url: `${origin}/`, response_type: "text" })).rejects.toThrow(/503/);
+      const task = new FetchUrlTask();
+      await expect(task.run({ url: `${origin}/`, response_type: "text" })).rejects.toThrow(/503/);
 
-    expect(await waitForNoConnections(server, 5000)).toBe(0);
+      expect(await waitForNoConnections(server, 5000)).toBe(0);
 
-    await drainRejections();
-    expect(unhandled).toEqual([]);
-  });
+      await drainRejections();
+      expect(unhandled).toEqual([]);
+    }
+  );
 
   test("aborting FetchUrlTask mid-body raises no unhandled rejection", async () => {
     const { origin } = await withServer((_req, res) => {
@@ -282,25 +373,6 @@ describe("SafeFetch server transport (real node:http, no mocks)", () => {
   // guard.
   // ---------------------------------------------------------------------------
   describe("cross-origin redirect header strip", () => {
-    /** Records every inbound request's headers and answers 200 with "landed". */
-    async function recordingServer(): Promise<{ target: TestServer; seen: RequestLog }> {
-      const seen: RequestLog = [];
-      const target = await withServer((req, res) => {
-        seen.push({ ...req.headers });
-        res.writeHead(200, { "content-type": "text/plain" });
-        res.end("landed");
-      });
-      return { target, seen };
-    }
-
-    /** Answers every request with a 302 to `location`. */
-    async function redirectingServer(location: string): Promise<TestServer> {
-      return withServer((_req, res) => {
-        res.writeHead(302, { location });
-        res.end();
-      });
-    }
-
     test("a cross-origin 302 drops Authorization before the second hop", async () => {
       // The finding itself: a vendor that answers 302 to an attacker origin
       // would otherwise receive the bearer token verbatim.
@@ -445,6 +517,177 @@ describe("SafeFetch server transport (real node:http, no mocks)", () => {
       const finalHop = seen.find((headers) => headers["x-path"] === "/final");
       expect(finalHop).toBeDefined();
       expect(finalHop!.authorization).toBeUndefined();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Redirect method / body handling, over the real transport.
+  //
+  // The server loop is an independent implementation of the browser one, so the
+  // decisive cases are mirrored here: only a real server can report the method
+  // and the bytes that actually arrived, and only a real transport shows whether
+  // a stated Content-Length still matches the request it rode in on.
+  // ---------------------------------------------------------------------------
+  describe("cross-origin redirect method and body", () => {
+    const SECRET_BODY = JSON.stringify({ client_secret: "sk-body-secret-1234567890" });
+
+    test("a cross-origin 303 arrives as a bodiless GET with no Content-Length", async () => {
+      const { target, seen, calls } = await recordingServer();
+      const hop = await redirectingServer(`${target.origin}/landed`, 303);
+
+      const response = await safeFetch(`${hop.origin}/start`, {
+        allowPrivate: true,
+        method: "POST",
+        body: SECRET_BODY,
+        headers: { "content-type": "application/json" },
+      });
+
+      expect(await response.text()).toBe("landed");
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.method).toBe("GET");
+      expect(calls[0]!.body).toBe("");
+      expect(seen[0]!["content-length"]).toBeUndefined();
+      expect(seen[0]!["content-type"]).toBeUndefined();
+    });
+
+    test("a cross-origin 302 on a POST arrives as a bodiless GET", async () => {
+      const { target, seen, calls } = await recordingServer();
+      const hop = await redirectingServer(`${target.origin}/landed`, 302);
+
+      const response = await safeFetch(`${hop.origin}/start`, {
+        allowPrivate: true,
+        method: "POST",
+        body: SECRET_BODY,
+        headers: { "content-type": "application/json" },
+      });
+
+      expect(await response.text()).toBe("landed");
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.method).toBe("GET");
+      expect(calls[0]!.body).toBe("");
+      expect(seen[0]!["content-length"]).toBeUndefined();
+    });
+
+    test("a cross-origin 307 carrying a body is refused and never reaches the target", async () => {
+      const { target, calls } = await recordingServer();
+      const hop = await redirectingServer(`${target.origin}/landed`, 307);
+
+      const error = await safeFetch(`${hop.origin}/start`, {
+        allowPrivate: true,
+        method: "POST",
+        body: SECRET_BODY,
+        headers: { "content-type": "application/json" },
+      }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(PermanentJobError);
+      expect((error as { code?: string }).code).toBe(FetchUrlErrorCode.REDIRECT_BODY_NOT_REPLAYED);
+      expect(calls).toHaveLength(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Dispatcher lifetime on the redirect paths.
+  //
+  // Each hop gets its own undici Agent, and an Agent that is never closed keeps
+  // its keep-alive socket open — so the server's own connection count is a real,
+  // unmocked assertion about dispatcher lifetime. The waits are generous on
+  // purpose: a fix that merely DELAYS the close must still fail.
+  // ---------------------------------------------------------------------------
+  describe("dispatcher lifetime across redirects", () => {
+    const CONNECTION_WAIT_MS = 2000;
+
+    test.skipIf(!DISPATCHER_CLOSES_CONNECTIONS)(
+      "a redirect to a denied target frees the previous hop's connection",
+      async () => {
+        // The leak is on exactly the denial path the SSRF work exists to
+        // exercise: hop 2 throws before anything closes hop 1's Agent.
+        const denied = await withServer((_req, res) => {
+          res.writeHead(200, { "content-type": "text/plain" });
+          res.end("should-never-be-reached");
+        });
+        const hop = await redirectingServer(`${denied.origin}/admin`);
+
+        const error = await safeFetch(`${hop.origin}/start`, {
+          allowPrivate: true,
+          privateResourceScopes: [`${hop.origin}/*`],
+        }).catch((e: unknown) => e);
+
+        expect((error as { code?: string }).code).toBe(FetchUrlErrorCode.SCOPE_DENIED);
+        expect(await waitForNoConnections(hop.server, CONNECTION_WAIT_MS)).toBe(0);
+
+        await drainRejections();
+        expect(unhandled).toEqual([]);
+      }
+    );
+
+    test.skipIf(!DISPATCHER_CLOSES_CONNECTIONS)(
+      "exhausting the redirect budget frees every connection",
+      async () => {
+        // The terminal throw sits outside the loop, so the final hop's Agent was
+        // never closed at all.
+        const loop = await withServer((_req, res) => {
+          res.writeHead(302, { location: "/again" });
+          res.end();
+        });
+
+        const error = await safeFetch(`${loop.origin}/start`, { allowPrivate: true }).catch(
+          (e: unknown) => e
+        );
+
+        expect((error as { code?: string }).code).toBe(FetchUrlErrorCode.TOO_MANY_REDIRECTS);
+        expect(await waitForNoConnections(loop.server, CONNECTION_WAIT_MS)).toBe(0);
+
+        await drainRejections();
+        expect(unhandled).toEqual([]);
+      }
+    );
+
+    test("a followed redirect with a non-empty body drains it and frees the connection", async () => {
+      // Agent.close() waits for pending requests, and an un-cancelled redirect
+      // body IS one — so without the drain the close never completes.
+      const { target } = await recordingServer();
+      const hop = await stallingRedirectServer(`${target.origin}/landed`);
+
+      const response = await safeFetch(`${hop.origin}/start`, { allowPrivate: true });
+      expect(await response.text()).toBe("landed");
+
+      expect(await waitForNoConnections(hop.server, CONNECTION_WAIT_MS)).toBe(0);
+
+      await drainRejections();
+      expect(unhandled).toEqual([]);
+    });
+
+    test("a 302 with no Location frees the connection", async () => {
+      const hop = await stallingRedirectServer(undefined);
+
+      const error = await safeFetch(`${hop.origin}/start`, { allowPrivate: true }).catch(
+        (e: unknown) => e
+      );
+
+      expect((error as { code?: string }).code).toBe(FetchUrlErrorCode.REDIRECT_MISSING_LOCATION);
+      expect(await waitForNoConnections(hop.server, CONNECTION_WAIT_MS)).toBe(0);
+
+      await drainRejections();
+      expect(unhandled).toEqual([]);
+    });
+
+    test("redirect:'manual' still hands the caller a readable body", async () => {
+      // The caller owns that body, so nothing may cancel it on their behalf.
+      const hop = await withServer((_req, res) => {
+        res.writeHead(302, { location: "/elsewhere", "content-type": "text/plain" });
+        res.end("manual-body");
+      });
+
+      const response = await safeFetch(`${hop.origin}/start`, {
+        allowPrivate: true,
+        redirect: "manual",
+      });
+
+      expect(response.status).toBe(302);
+      expect(await response.text()).toBe("manual-body");
+
+      await drainRejections();
+      expect(unhandled).toEqual([]);
     });
   });
 });

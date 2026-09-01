@@ -15,6 +15,8 @@ import {
   firstNonStrictReason,
   isStrictCompatibleSchema,
   mapOpenAIResponsesUsage,
+  promptWithJsonSchema,
+  rewriteNullableUnionsForStrict,
 } from "@workglow/ai/provider-utils";
 import { createPartialJsonStream } from "@workglow/util/worker";
 import { finalizeResponsesRequest, getClient, getModelName } from "./OpenAI_Client";
@@ -38,23 +40,26 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
   const modelName = getModelName(model);
 
   const schema = input.outputSchema ?? outputSchema;
-
-  const strict = isStrictCompatibleSchema(schema);
+  const rewritten = rewriteNullableUnionsForStrict(schema);
+  const strict = isStrictCompatibleSchema(rewritten);
+  const prompt = strict ? input.prompt : promptWithJsonSchema(input.prompt, schema);
   if (!strict) {
-    // Downshifted to strict:false; the request still succeeds but the
-    // provider-side strict guarantee is off. Consumer re-validates.
-    const reason = firstNonStrictReason(schema) ?? "unknown reason";
+    // Responses still wants json_schema; without strict the model is free to
+    // ignore the shape, so the schema also travels in the prompt.
+    const reason = firstNonStrictReason(rewritten) ?? "unknown reason";
     warnStrictDowngradedOnce(modelName, reason);
   }
 
   const params: Record<string, unknown> = {
     model: modelName,
-    input: input.prompt,
+    input: prompt,
     text: {
       format: {
         type: "json_schema",
         name: "structured_output",
-        schema: schema,
+        // The nullable-union rewrite is a strict-mode accommodation; a
+        // downshifted request sends the schema as the caller wrote it.
+        schema: strict ? rewritten : schema,
         strict,
       },
     },
@@ -68,7 +73,7 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
   // for the whole TTFB wait. Emit ↑ before the request so it appears during
   // connect; finish.usage below still carries the provider total.
   const provisionalUsage = createEstimatedOutputUsageReporter(emit);
-  provisionalUsage.onPrompt(typeof input.prompt === "string" ? input.prompt : "");
+  provisionalUsage.onPrompt(typeof prompt === "string" ? prompt : "");
 
   const stream = await client.responses.create(
     { ...params, stream: true } as Parameters<typeof client.responses.create>[0],

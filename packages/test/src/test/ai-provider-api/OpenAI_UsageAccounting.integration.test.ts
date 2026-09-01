@@ -5,7 +5,9 @@
  */
 
 import { mapOpenAIResponsesUsage } from "@workglow/ai/provider-utils";
-import { describe, expect, it } from "vitest";
+import { describe, expect } from "vitest";
+
+import { it } from "../../contract/creditExhaustedSkip";
 
 /**
  * Pins, against the live Responses API, the arithmetic

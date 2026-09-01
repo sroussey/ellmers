@@ -27,7 +27,7 @@ import {
 
 beforeAll(() => {
   registerBaseTasks();
-  registerCommonTasks();
+  registerCommonTasks({ fileSystemTasks: true });
   registerAiTasks();
 });
 

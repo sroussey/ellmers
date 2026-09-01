@@ -133,7 +133,7 @@ export function makeExtractExecutor(
     ? buildItemsSchema(explicitFields, options.keyField)
     : undefined;
 
-  return async (row, onStreamChunk) => {
+  return async (row, onStreamChunk, owner) => {
     const text = String(row[options.textColumn] ?? "");
     const expectedRows = parseExpectedRows(row[options.expectedColumn], options.expectedColumn);
     const fields =
@@ -151,7 +151,7 @@ export function makeExtractExecutor(
     const output = await runWithStreamChunks<{
       object?: { items?: unknown };
       [USAGE_OUTPUT_KEY]?: Usage;
-    }>(workflow, onStreamChunk);
+    }>(workflow, onStreamChunk, owner);
     const items = Array.isArray(output.object?.items)
       ? (output.object.items as ExtractedRow[])
       : [];

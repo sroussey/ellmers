@@ -12,7 +12,7 @@ import type {
 } from "@workglow/ai";
 import {
   createEstimatedOutputUsageReporter,
-  isStrictCompatibleSchema,
+  jsonModeChatParts,
   mapOpenAIChatUsage,
   OPENAI_STREAM_USAGE_OPTIONS,
 } from "@workglow/ai/provider-utils";
@@ -35,27 +35,21 @@ export const Xai_StructuredGeneration_Stream: AiProviderRunFn<
   const modelName = getModelName(model);
 
   const schema = input.outputSchema ?? outputSchema;
+  const { prompt, responseFormat } = jsonModeChatParts(input.prompt, schema);
 
   // xAI only attaches billed usage to the final empty-choices chunk, so without
   // a provisional estimate the CLI row stays on a static "Preparing" for the
   // whole TTFB wait. Emit ↑ before the request so it appears during connect;
   // finish.usage below still carries the provider total.
   const provisionalUsage = createEstimatedOutputUsageReporter(emit);
-  provisionalUsage.onPrompt(input.prompt);
+  provisionalUsage.onPrompt(prompt);
   const reasoningEffort = getXaiReasoningEffort(model);
 
   const stream = await client.chat.completions.create(
     {
       model: modelName,
-      messages: [{ role: "user", content: input.prompt }],
-      response_format: {
-        type: "json_schema" as never,
-        json_schema: {
-          name: "structured_output",
-          schema: schema,
-          strict: isStrictCompatibleSchema(schema),
-        },
-      } as never,
+      messages: [{ role: "user", content: prompt }],
+      response_format: responseFormat as never,
       max_completion_tokens: input.maxTokens,
       temperature: input.temperature,
       stream: true,

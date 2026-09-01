@@ -24,6 +24,17 @@ export interface WorkflowRunConfig {
    * multiple runs, then dispose at app shutdown.
    */
   readonly resourceScope?: ResourceScope;
+  /**
+   * Caller-owned cancellation for THIS run only.
+   *
+   * It is bridged onto the run's own controller, so aborting it cancels this
+   * run and nothing else — the listener is removed when the run ends, so a
+   * long-lived signal driving many runs accumulates nothing. That is the
+   * difference from `Workflow.abort()`, which trips the single current-run
+   * controller and therefore cancels whichever run started last — the wrong
+   * granularity when several callers (e.g. two triggers) drive one workflow.
+   */
+  readonly signal?: AbortSignal | undefined;
 }
 
 export interface IWorkflow<

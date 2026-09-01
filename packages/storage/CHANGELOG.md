@@ -1,5 +1,49 @@
 # @workglow/storage
 
+## 0.4.5
+
+## 0.4.4
+
+### Refactors
+
+- FsFolderTabularStorage for improved file handling and error management
+
+## 0.4.3
+
+## 0.4.2
+
+## 0.4.1
+
+## 0.4.0
+
+### Bug Fixes
+
+#### tests
+
+- remove process listeners through the EventEmitter view
+
+## 0.3.49
+
+## 0.3.48
+
+## 0.3.47
+
+## 0.3.46
+
+### Features
+
+#### storage
+
+- enforce numeric bounds and integer column range
+- enforce varchar width and NOT NULL in InMemoryTabularStorage
+
+### Bug Fixes
+
+#### storage
+
+- scope InMemory column constraints to a backend mode and document the nullable-column DDL change
+- close two gaps in column-constraint derivation
+
 ## 0.3.45
 
 ## 0.3.44

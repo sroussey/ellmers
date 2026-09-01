@@ -171,6 +171,23 @@ describe("AnthropicQueuedProvider.inferCapabilities", () => {
       "vision-input",
     ]);
   });
+
+  it("infers exact capability set for claude-sonnet-5", () => {
+    const caps = provider.inferCapabilities(model("claude-sonnet-5"));
+    const sorted = [...caps].sort();
+    expect(sorted).toEqual([
+      "cache.checkpoint",
+      "json-mode",
+      "model.count-tokens",
+      "model.info",
+      "model.search",
+      "text.generation",
+      "text.rewriter",
+      "text.summary",
+      "tool-use",
+      "vision-input",
+    ]);
+  });
 });
 
 describe("ANTHROPIC_FALLBACK", () => {

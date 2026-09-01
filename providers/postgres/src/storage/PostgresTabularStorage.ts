@@ -69,6 +69,20 @@ function assertPositiveInt(value: number | undefined, label: string): void {
 const pad = (n: number, width = 2): string => String(n).padStart(width, "0");
 
 /**
+ * Most row-value tuples to put in one compound-key `IN` list.
+ *
+ * Postgres parses `(a, b) IN ((..), (..), ...)` into a nested expression tree,
+ * so the list length is bounded by `max_stack_depth` rather than by the 65535
+ * bind-parameter cap. A stock server (2MB) fails past 6534 tuples with `stack
+ * depth limit exceeded`, and at the same 6534 for both 2- and 3-column keys —
+ * the count of tuples is what matters, not the count of parameters. Since
+ * `max_stack_depth` is server-side configuration a client cannot read, this
+ * keeps roughly 3x headroom under that measured ceiling instead of sitting
+ * just below it. The cost is only extra round-trips on very large reads.
+ */
+const COMPOUND_IN_TUPLE_LIMIT = 2000;
+
+/**
  * Renders a Date the driver produced for a TIMESTAMP / DATE column back into
  * the string its schema declares.
  *
@@ -1189,11 +1203,24 @@ export class PostgresTabularStorage<
    * Postgres caps a single statement at 65535 bind parameters; inputs that
    * would exceed the cap are chunked so each round-trip stays well under
    * it. The same chunking shape is shared with the SQLite backend.
+   *
+   * The bind-parameter cap is not the only ceiling. A compound key's row-value
+   * list is parsed as a nested expression tree, so a long one exhausts the
+   * server's `max_stack_depth` (2MB by default) and fails with `stack depth
+   * limit exceeded` long before 65535 parameters are in sight — measured at
+   * 6534 tuples on a stock server, and identically for 2- and 3-column keys,
+   * which is what shows the limit tracks the number of TUPLES rather than the
+   * number of parameters. Compound keys are therefore additionally bounded by
+   * {@link COMPOUND_IN_TUPLE_LIMIT}. Single-column keys emit a flat placeholder
+   * list, which does not nest, and keep the parameter-derived size.
    */
   override async getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]> {
     if (keys.length === 0) return [];
     const pkColCount = this.primaryKeyColumns().length;
-    const chunkSize = Math.max(1, Math.floor(30000 / pkColCount));
+    const chunkSize =
+      pkColCount === 1
+        ? 30000
+        : Math.max(1, Math.min(COMPOUND_IN_TUPLE_LIMIT, Math.floor(30000 / pkColCount)));
     let rows: Entity[];
     if (keys.length <= chunkSize) {
       rows = await this.mutex(() => this._getBulkInternal(keys));

@@ -6,7 +6,9 @@
 
 export const LOCAL_CACTUS = "LOCAL_CACTUS";
 export const CACTUS_NEEDLE_26M = "needle-26m";
+export const CACTUS_NEEDLE_V2 = "needle-v2";
 export const CACTUS_DEFAULT_HF_REPO = "Abdalrahman/needle-rs-safetensors";
+export const CACTUS_V2_HF_REPO = "Cactus-Compute/needle2";
 export const CACTUS_DEFAULT_REVISION = "main";
 
 /** Browser Cache Storage name used by `fetchAssetBytes` and `removeCachedAssets`. */

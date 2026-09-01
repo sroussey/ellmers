@@ -1,0 +1,51 @@
+/**
+ * @license
+ * Copyright 2026 Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { BaseError } from "@workglow/util";
+
+/** Base class for every error raised by the triggers package. */
+export class TriggerError extends BaseError {
+  public static override type = "TriggerError";
+}
+
+/** Raised when a trigger is constructed or started with invalid options. */
+export class TriggerConfigurationError extends TriggerError {
+  public static override type = "TriggerConfigurationError";
+}
+
+/** Raised when a {@link PollingTrigger}'s poll exceeds `pollTimeoutMs`. */
+export class TriggerPollTimeoutError extends TriggerError {
+  public static override type = "TriggerPollTimeoutError";
+}
+
+/**
+ * Raised when a `stop()` deadline expires with handlers still in flight.
+ *
+ * Reported on the `error` event rather than thrown from `stop()`: the deadline
+ * exists so the caller can get on with shutting down, and rejecting would make
+ * the abandoned work harder to observe, not easier.
+ */
+export class TriggerStopTimeoutError extends TriggerError {
+  public static override type = "TriggerStopTimeoutError";
+}
+
+/** Raised when a cron expression cannot be parsed. */
+export class CronExpressionError extends TriggerError {
+  public static override type = "CronExpressionError";
+}
+
+/**
+ * Raised when a syntactically valid cron expression matches no instant within
+ * the search horizon (for example `0 0 30 2 *` — February never has 30 days).
+ */
+export class CronUnsatisfiableError extends TriggerError {
+  public static override type = "CronUnsatisfiableError";
+}
+
+/** Raised by the `Workflow.trigger()` / `Workflow.listen()` bindings. */
+export class WorkflowTriggerError extends TriggerError {
+  public static override type = "WorkflowTriggerError";
+}

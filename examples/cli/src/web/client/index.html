@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Workglow Web Console</title>
+    <link rel="stylesheet" href="/app.css" />
+    <!--
+      The webfont is loaded without blocking rendering: a deferred module script
+      waits on pending stylesheets, so a console served on a machine that cannot
+      reach the font CDN — offline, behind a firewall, in CI — would show a
+      blank page until the request timed out. Every family in app.css declares a
+      real fallback stack, so the page is correct before this arrives and just
+      gets nicer when it does.
+    -->
+    <link
+      rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600&display=swap"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>

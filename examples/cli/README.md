@@ -6,6 +6,18 @@ A command-line interface for running Workglow AI tasks and workflows.
 
 The Workglow CLI provides a terminal-based interface for creating, managing, and executing AI task pipelines. It features an interactive task runner with real-time progress visualization, making it easy to run AI workflows from the command line.
 
+A run renders as the graph it is: one row per task, with its status glyph, whatever
+detail the task is reporting, a progress bar and — once it settles — how long it took,
+over a bar for the run as a whole and a status line counting completed tasks.
+
+![A workflow running in the terminal](./docs/cli.png)
+
+The same commands are also available in a browser, served by this CLI itself with
+[`workglow web`](#web-console). It is the same graph, the same forms, and the same
+run — see below.
+
+![The web console running the same workflow](./docs/cli-web.png)
+
 ## Features
 
 - **Real-time Visualization**: Live updates of task execution progress
@@ -40,11 +52,15 @@ bun src/workglow.ts
 # Show help
 workglow --help
 
-# Run a simple text generation task
-workglow generate --model "onnx:Xenova/LaMini-Flan-T5-783M:q8" "Write a story about a robot"
+# Run one task by type, passing its config with a single dash
+workglow task run Delay -delay 2000
 
-# Create an embedding from text
-workglow embedding --model "onnx:Xenova/LaMini-Flan-T5-783M:q8" "Hello world"
+# Run a saved workflow, and list what is saved
+workglow workflow list
+workglow workflow run my-pipeline
+
+# Serve the same commands in a browser
+workglow web
 ```
 
 ### Example Workflows
@@ -101,19 +117,113 @@ cat workflow.json | workglow json
 
 ### Commands
 
-#### `generate`
+Run `workglow --help` for the current list; each group has its own `--help`.
 
-Generate text using AI models.
+- `init` — create the configuration and directories
+- `model` — list, search and manage models
+- `mcp` — manage MCP servers
+- `workflow` — list, add, edit and run saved workflows
+- `agent` — the same, for agents
+- `task` — list task types and run one by type
+- `credential` — manage encrypted credentials
+- `web` — serve the web console described below
 
-```bash
-workglow generate [options] <text>
+## Web console
+
+`workglow web` serves a local page for the same commands the terminal runs:
+pick one, fill in its options, press Run, and watch the task graph execute
+live. Nothing is duplicated — the command tree is read off the commander
+program, the form fields come from the same schemas the terminal prompts
+from, and the line at the bottom of the form is exactly what gets executed.
+
+```sh
+workglow web                 # http://127.0.0.1:8787/?t=<session token>
+workglow web --port 9000
 ```
 
-Options:
+The console binds **loopback** and has no authentication beyond a per-process
+session token printed in the URL. Its buttons start runs that spend model and
+API quota, so exposing it to a network has to be said out loud (`--host`),
+and the command warns when you do.
 
-- `--model, -m <model>`: AI model to use
-- `--max-length <length>`: Maximum output length
-- `--temperature <temp>`: Sampling temperature (0.0-1.0)
+### How a run works
+
+Each run is a **child process of the same binary**, spawned with the argv the
+page shows you, and handed two extra descriptors: fd 3 for a stream of run
+events (NDJSON — one line per task added, status, progress, token usage,
+stream chunk) and fd 4 for answers to anything the run asks its operator. The
+server replays that stream over SSE, so the page mounts once and is patched
+per event, and a reconnect resumes from `Last-Event-ID` rather than starting
+over.
+
+That shape is why the console works for commands nobody wrote it for: the
+reporting branch lives in `withCli`, which every command in this package —
+and in every CLI built on it — already runs its graphs through. It also means
+a per-run environment override belongs to that run rather than to the server,
+and that aborting is the same SIGINT Ctrl-C sends.
+
+### Adding the console to your own CLI
+
+```ts
+import { registerWebCommand } from "@workglow/cli";
+
+registerWebCommand(program, { binaryName: "sec" });
+```
+
+Your commands, however deeply nested, appear with nothing to keep in sync.
+
+### Contributing UI from a package
+
+Data crosses this seam, never code — a package registers what to show, and the
+console renders it. There is no client bundle to ship and no plugin loader to
+keep stable.
+
+```ts
+import { registerWebPanel, registerWebFieldWidget, registerWebStatusWidget } from "@workglow/cli";
+
+// An extra panel on a finished run's Result tab.
+registerWebPanel({
+  id: "sec:extractions",
+  title: "Extraction rows",
+  source: "@workglow/sec",
+  appliesTo: (invocation) => invocation.path[0] === "spac",
+  load: async ({ invocation }) => ({
+    kind: "table",
+    columns: ["table", "rows"],
+    rows: await countRowsForIssuer(invocation.args[0]),
+  }),
+});
+
+// A picker for any field whose schema says `format: "sec:cik"`.
+registerWebFieldWidget({
+  format: "sec:cik",
+  source: "@workglow/sec",
+  search: async (query) => findIssuers(query),
+});
+
+// A meter in the rail.
+registerWebStatusWidget({
+  id: "sec:edgar",
+  title: "EDGAR fetch budget",
+  source: "@workglow/sec",
+  read: async () => [{ label: "req/s", value: currentRate(), max: 8 }],
+});
+```
+
+A panel that throws is reported as a panel rather than taking the page down,
+and a status widget that cannot answer is dropped from the rail.
+
+A command whose real input lives in a schema can say so, which is how
+`task run` and `workflow run` get their forms:
+
+```ts
+import { registerCommandSchemaProvider } from "@workglow/cli";
+
+registerCommandSchemaProvider({
+  path: ["spac", "process"],
+  resolve: async (args) => ({ input: schemaForIssuer(args[0]), config: undefined }),
+});
+```
 
 ## Configuration
 

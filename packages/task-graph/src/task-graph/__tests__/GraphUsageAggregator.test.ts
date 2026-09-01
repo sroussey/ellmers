@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import type { Usage } from "../../task/StreamTypes";
 import type { RetiredUsage } from "../GraphUsageAggregator";
-import { GraphUsageAggregator, UNNAMED_MODEL } from "../GraphUsageAggregator";
+import { EVICTED_TASKS, GraphUsageAggregator, UNNAMED_MODEL } from "../GraphUsageAggregator";
 
 const usage = (input: number, output: number): Usage => ({
   input,
@@ -138,6 +138,66 @@ describe("GraphUsageAggregator", () => {
 
       expect(agg.byModel().get(UNNAMED_MODEL)).toEqual(usage(10, 1));
       expect(agg.byModel().get("unnamed")).toEqual(usage(20, 2));
+    });
+
+    it("bounds the per-task rollup without losing the spend it accounted for", () => {
+      // A map over a corpus mints a fresh clone id per item, so the per-task
+      // rollup would otherwise grow one row per item for the life of the run.
+      const agg = new GraphUsageAggregator();
+      const items = 2_000;
+      for (let i = 0; i < items; i++) {
+        agg.observe(`clone-${i}`, usage(1, 1), "m");
+        agg.retire(`clone-${i}`);
+      }
+
+      const byTask = agg.byTask();
+      // 512 real tasks plus the overflow bucket. The bucket is exempt from the
+      // cap rather than counted against it: counted, the first overflow evicts
+      // twice (a row leaves, the bucket takes its place, the size is unchanged)
+      // and the steady state is one real task short of the constant.
+      expect(byTask.size).toBe(513);
+      expect([...byTask.keys()].filter((k) => k !== EVICTED_TASKS)).toHaveLength(512);
+
+      const sum = (rows: Iterable<Usage>): Usage =>
+        [...rows].reduce((a, b) => usage(a.input! + b.input!, a.output! + b.output!), usage(0, 0));
+      // Evicted rows fold into one bucket rather than vanishing, so the rollup
+      // still sums to the run total.
+      expect(sum(byTask.values())).toEqual(usage(items, items));
+      expect(agg.total).toEqual(usage(items, items));
+      expect(byTask.get(EVICTED_TASKS)).toBeDefined();
+      // The most recent tasks stay individually addressable.
+      expect(byTask.get(`clone-${items - 1}`)).toEqual(usage(1, 1));
+    });
+
+    it("keeps a task that is still reporting, and evicts one that went quiet", () => {
+      // `Map.set` on an existing key updates the value and leaves the insertion
+      // order alone, so recording spend has to delete-then-set for the eviction
+      // order to mean "least recently active" rather than "first ever seen".
+      const agg = new GraphUsageAggregator();
+      agg.observe("busy", usage(1, 1), "m");
+      agg.retire("busy");
+      agg.observe("quiet", usage(1, 1), "m");
+      agg.retire("quiet");
+
+      // Enough fresh tasks to overflow the cap, with `busy` reporting throughout.
+      for (let i = 0; i < 600; i++) {
+        agg.observe(`clone-${i}`, usage(1, 1), "m");
+        agg.retire(`clone-${i}`);
+        agg.observe("busy", usage(1, 1), "m");
+        agg.retire("busy");
+      }
+
+      const byTask = agg.byTask();
+      // Asserting the ACCUMULATED total, not mere presence: an evicted task is
+      // re-added by its next retire, so `toBeDefined()` passes either way and
+      // detects nothing. Only a row carrying all 601 executions proves `busy`
+      // was never folded into the bucket and restarted.
+      expect(byTask.get("busy")).toEqual(usage(601, 601));
+      expect(byTask.get("quiet")).toBeUndefined();
+      // Still nothing lost: the quiet task's spend lives in the overflow bucket.
+      const sum = (rows: Iterable<Usage>): Usage =>
+        [...rows].reduce((a, b) => usage(a.input! + b.input!, a.output! + b.output!), usage(0, 0));
+      expect(sum(byTask.values())).toEqual(agg.total);
     });
 
     it("clears both rollups for a fresh run", () => {

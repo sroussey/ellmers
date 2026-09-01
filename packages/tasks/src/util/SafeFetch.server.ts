@@ -28,6 +28,7 @@ import {
 } from "../task/FetchUrlJobError";
 import {
   applyCrossOriginHeaderStrip,
+  applyRedirectMethodAndBody,
   registerSafeFetch,
   type SafeFetchFn,
   type SafeFetchOptions,
@@ -48,6 +49,21 @@ function closeAgent(dispatcher: Agent): void {
 
 async function closeAgentAsync(dispatcher: Agent): Promise<void> {
   await dispatcher.close?.().catch(() => {});
+}
+
+/**
+ * Cancel a response body nobody is going to read.
+ *
+ * Not merely tidy: `Agent.close()` waits for pending requests to complete, and
+ * an un-cancelled redirect body IS one — so cancelling first is what lets the
+ * close actually finish instead of hanging with the socket held open.
+ *
+ * Fire-and-forget with a swallowed rejection: cancelling an already-errored
+ * source rejects, and an unhandled rejection exits the process under Node's
+ * default `--unhandled-rejections=throw`.
+ */
+function discardResponseBody(response: Response): void {
+  void response.body?.cancel().catch(() => {});
 }
 
 interface ResolvedAddress {
@@ -208,78 +224,101 @@ export const serverSafeFetch: SafeFetchFn = async (url, options) => {
   let fetchInit: HopInit = initialFetchInit;
   let prevDispatcher: Agent | undefined;
 
-  for (let hops = 0; hops <= MAX_REDIRECT_HOPS; hops += 1) {
-    const { response, dispatcher } = await fetchOneHop(currentUrl, opts, fetchInit);
+  // Every exit from the loop — a hop that throws (scope/private deny, DNS
+  // failure, socket error), a refused redirect, and the terminal
+  // TOO_MANY_REDIRECTS below — must still close the dispatcher of the hop that
+  // got us here. Those are exactly the redirect-denial paths this file exists
+  // to exercise, so leaking an Agent on them leaks on every denial.
+  try {
+    for (let hops = 0; hops <= MAX_REDIRECT_HOPS; hops += 1) {
+      const { response, dispatcher } = await fetchOneHop(currentUrl, opts, fetchInit);
 
-    // Close the previous hop's dispatcher now that we have the next response.
+      // Close the previous hop's dispatcher now that we have the next response,
+      // and forget it so the `finally` cannot close it a second time.
+      if (prevDispatcher !== undefined) {
+        closeAgent(prevDispatcher);
+        prevDispatcher = undefined;
+      }
+
+      if (!isRedirectStatus(response.status)) {
+        // Pipe through a passthrough TransformStream so the dispatcher is
+        // closed once the body is fully consumed or cancelled. The body belongs
+        // to the caller from here on, so nothing may cancel it on their behalf.
+        const body = response.body;
+        if (body !== null) {
+          const { readable, writable } = new TransformStream();
+          // `.catch` after `.finally` so the dispatcher closes on both paths.
+          // Cancelling the returned readable errors the writable, so `pipeTo`
+          // rejects with the cancel reason — `undefined` for a bare `cancel()` —
+          // and an unhandled rejection exits the process under Node's default
+          // `--unhandled-rejections=throw`. Nothing is lost by swallowing it:
+          // the consumer observes any real pipe error through the readable it
+          // holds.
+          void body
+            .pipeTo(writable)
+            .finally(() => {
+              closeAgent(dispatcher);
+            })
+            .catch(() => {});
+          return new Response(readable, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+          });
+        }
+        closeAgent(dispatcher);
+        return response;
+      }
+
+      if (requestedRedirectMode === "manual") {
+        // The caller receives this response and owns its body; leave it intact.
+        closeAgent(dispatcher);
+        return response;
+      }
+
+      if (requestedRedirectMode === "error") {
+        discardResponseBody(response);
+        closeAgent(dispatcher);
+        throw new TypeError(
+          `Fetch for ${currentUrl} failed because redirect mode was set to 'error'.`
+        );
+      }
+
+      const location = response.headers.get("location");
+      if (!location) {
+        discardResponseBody(response);
+        closeAgent(dispatcher);
+        throw createFetchUrlJobError(
+          FetchUrlErrorCode.REDIRECT_MISSING_LOCATION,
+          `Refusing to follow redirect from ${currentUrl}: missing Location header.`,
+          { url: currentUrl }
+        );
+      }
+
+      // Nobody reads a redirect's body; leaving it pending would block this
+      // dispatcher's close.
+      discardResponseBody(response);
+      prevDispatcher = dispatcher;
+      const nextUrl = new URL(location, currentUrl).toString();
+      // Keep these two adjacent: a credential can ride on a header or in the
+      // body, and the pair is what covers both.
+      fetchInit = applyRedirectMethodAndBody(fetchInit, response.status, currentUrl, nextUrl);
+      // Credential-bearing headers never survive an origin change; the strip is
+      // carried forward, so it is never undone by a later same-origin hop.
+      fetchInit = applyCrossOriginHeaderStrip(fetchInit, currentUrl, nextUrl, sensitiveHeaders);
+      currentUrl = nextUrl;
+    }
+
+    throw createFetchUrlJobError(
+      FetchUrlErrorCode.TOO_MANY_REDIRECTS,
+      `Refusing to fetch ${url}: too many redirects.`,
+      { url }
+    );
+  } finally {
     if (prevDispatcher !== undefined) {
       closeAgent(prevDispatcher);
     }
-
-    if (!isRedirectStatus(response.status)) {
-      // Pipe through a passthrough TransformStream so the dispatcher is
-      // closed once the body is fully consumed or cancelled.
-      const body = response.body;
-      if (body !== null) {
-        const { readable, writable } = new TransformStream();
-        // `.catch` after `.finally` so the dispatcher closes on both paths.
-        // Cancelling the returned readable errors the writable, so `pipeTo`
-        // rejects with the cancel reason — `undefined` for a bare `cancel()` —
-        // and an unhandled rejection exits the process under Node's default
-        // `--unhandled-rejections=throw`. Nothing is lost by swallowing it:
-        // the consumer observes any real pipe error through the readable it
-        // holds.
-        void body
-          .pipeTo(writable)
-          .finally(() => {
-            closeAgent(dispatcher);
-          })
-          .catch(() => {});
-        return new Response(readable, {
-          status: response.status,
-          statusText: response.statusText,
-          headers: response.headers,
-        });
-      }
-      closeAgent(dispatcher);
-      return response;
-    }
-
-    if (requestedRedirectMode === "manual") {
-      closeAgent(dispatcher);
-      return response;
-    }
-
-    if (requestedRedirectMode === "error") {
-      closeAgent(dispatcher);
-      throw new TypeError(
-        `Fetch for ${currentUrl} failed because redirect mode was set to 'error'.`
-      );
-    }
-
-    const location = response.headers.get("location");
-    if (!location) {
-      closeAgent(dispatcher);
-      throw createFetchUrlJobError(
-        FetchUrlErrorCode.REDIRECT_MISSING_LOCATION,
-        `Refusing to follow redirect from ${currentUrl}: missing Location header.`,
-        { url: currentUrl }
-      );
-    }
-
-    prevDispatcher = dispatcher;
-    const nextUrl = new URL(location, currentUrl).toString();
-    // Credential-bearing headers never survive an origin change; the strip is
-    // carried forward, so it is never undone by a later same-origin hop.
-    fetchInit = applyCrossOriginHeaderStrip(fetchInit, currentUrl, nextUrl, sensitiveHeaders);
-    currentUrl = nextUrl;
   }
-
-  throw createFetchUrlJobError(
-    FetchUrlErrorCode.TOO_MANY_REDIRECTS,
-    `Refusing to fetch ${url}: too many redirects.`,
-    { url }
-  );
 };
 
 registerSafeFetch(serverSafeFetch);

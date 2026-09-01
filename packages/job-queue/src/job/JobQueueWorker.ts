@@ -799,8 +799,8 @@ export class JobQueueWorker<
       // the main loop (or processNext). We register the abort controller
       // BEFORE validateJobState so the controller is observable from inside
       // validateJobState (which checks activeJobAbortControllers for a
-      // pre-execute abort flag). Previously the controller was created
-      // AFTER validation, making that abort-before-execute branch dead code.
+      // pre-execute abort flag) — the abort-before-execute branch depends on
+      // that ordering.
       const abortController = this.createAbortController(job.id);
 
       try {

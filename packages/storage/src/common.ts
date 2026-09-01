@@ -9,6 +9,7 @@
 export * from "./tabular/BaseSqlTabularStorage";
 export * from "./tabular/BaseTabularStorage";
 export * from "./tabular/CachedTabularStorage";
+export * from "./tabular/columnConstraints";
 export * from "./tabular/CoveringIndexMissingError";
 export { pickCoveringIndex } from "./tabular/coveringIndexPicker";
 export type {

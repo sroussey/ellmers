@@ -77,20 +77,15 @@ function isCrossOrigin(fromUrl: string, toUrl: string): boolean {
 }
 
 /**
- * Returns a copy of `headers` with the credential-bearing entries removed,
- * preserving the caller's `HeadersInit` shape (`Headers`, entry pairs, or a
- * plain record). Never mutates its argument.
+ * Returns a copy of `headers` without the entries `drop` selects (by header
+ * name), preserving the caller's `HeadersInit` shape (`Headers`, entry pairs, or
+ * a plain record). Never mutates its argument.
  */
-export function stripSensitiveHeaders(
+function removeHeaders(
   headers: HeadersInit | undefined,
-  sensitiveHeaders: readonly string[] | undefined
+  drop: (name: string) => boolean
 ): HeadersInit | undefined {
   if (headers === undefined) return undefined;
-  const extra = new Set((sensitiveHeaders ?? []).map((name) => name.toLowerCase()));
-  const drop = (name: string): boolean => {
-    const lower = name.toLowerCase();
-    return CROSS_ORIGIN_STRIPPED_HEADERS.includes(lower) || extra.has(lower);
-  };
 
   if (typeof Headers !== "undefined" && headers instanceof Headers) {
     const next = new Headers();
@@ -107,6 +102,22 @@ export function stripSensitiveHeaders(
     if (!drop(key)) next[key] = value;
   }
   return next;
+}
+
+/**
+ * Returns a copy of `headers` with the credential-bearing entries removed,
+ * preserving the caller's `HeadersInit` shape (`Headers`, entry pairs, or a
+ * plain record). Never mutates its argument.
+ */
+export function stripSensitiveHeaders(
+  headers: HeadersInit | undefined,
+  sensitiveHeaders: readonly string[] | undefined
+): HeadersInit | undefined {
+  const extra = new Set((sensitiveHeaders ?? []).map((name) => name.toLowerCase()));
+  return removeHeaders(headers, (name) => {
+    const lower = name.toLowerCase();
+    return CROSS_ORIGIN_STRIPPED_HEADERS.includes(lower) || extra.has(lower);
+  });
 }
 
 /**
@@ -127,6 +138,75 @@ export function applyCrossOriginHeaderStrip<T extends { headers?: HeadersInit | 
 ): T {
   if (!isCrossOrigin(fromUrl, toUrl)) return init;
   return { ...init, headers: stripSensitiveHeaders(init.headers, sensitiveHeaders) };
+}
+
+/**
+ * Entity headers that describe a request body. Dropped alongside the body when
+ * a redirect downgrades a request to a bodiless GET.
+ *
+ * This is load-bearing rather than cosmetic: leaving `Content-Length: 47` on a
+ * request that now carries no body makes undici state a length no body
+ * satisfies.
+ */
+export const REDIRECT_BODY_HEADERS: readonly string[] = [
+  "content-encoding",
+  "content-language",
+  "content-length",
+  "content-location",
+  "content-type",
+];
+
+/**
+ * Applies the redirect's method/body rules to a request init, returning the init
+ * for the next hop.
+ *
+ * Without this, every hop replayed the original method and body verbatim, so a
+ * POST whose body carries a `client_secret` was re-POSTed to whatever origin the
+ * previous server's Location header named — the header strip protects headers
+ * only, and a body is not a header.
+ *
+ * - **303 (any method but HEAD), and 301/302 on POST** downgrade to a bodiless
+ *   `GET`. That is what the Fetch spec, browsers, `curl -L` and undici's own
+ *   follow mode all do, so matching it is compatibility rather than a policy of
+ *   ours.
+ * - **307/308 (and 301/302 on a non-POST)** preserve method and body by
+ *   definition. Crossing origins with a body then THROWS
+ *   {@link FetchUrlErrorCode.REDIRECT_BODY_NOT_REPLAYED} rather than silently
+ *   downgrading: a downgrade would suppress the leak but also silently not
+ *   perform the write the caller asked for, and then report success.
+ *
+ * Otherwise `init` is returned unchanged (identity), so a same-origin 307 keeps
+ * its method, body and `Content-Type`.
+ */
+export function applyRedirectMethodAndBody<T extends RequestInit>(
+  init: T,
+  status: number,
+  fromUrl: string,
+  toUrl: string
+): T {
+  const method = (init.method ?? "GET").toUpperCase();
+  const toBodilessGet = (): T => ({
+    ...init,
+    method: "GET",
+    body: undefined,
+    headers: removeHeaders(init.headers, (name) =>
+      REDIRECT_BODY_HEADERS.includes(name.toLowerCase())
+    ),
+  });
+
+  if (status === 303 && method !== "HEAD") return toBodilessGet();
+  if ((status === 301 || status === 302) && method === "POST") return toBodilessGet();
+
+  if (init.body !== undefined && init.body !== null && isCrossOrigin(fromUrl, toUrl)) {
+    throw createFetchUrlJobError(
+      FetchUrlErrorCode.REDIRECT_BODY_NOT_REPLAYED,
+      `Refusing to follow the ${status} redirect from ${fromUrl} to ${toUrl}: a ${status} ` +
+        `preserves the request method and body, and replaying the body cross-origin would ` +
+        `disclose it to an origin the caller did not choose.`,
+      { url: toUrl }
+    );
+  }
+  return init;
 }
 
 export type SafeFetchFn = (url: string, options: SafeFetchOptions) => Promise<Response>;
@@ -226,6 +306,9 @@ async function defaultSafeFetch(url: string, options: SafeFetchOptions): Promise
     }
 
     const nextUrl = new URL(location, currentUrl).toString();
+    // Keep these two adjacent: a credential can ride on a header or in the
+    // body, and the pair is what covers both.
+    fetchOptions = applyRedirectMethodAndBody(fetchOptions, response.status, currentUrl, nextUrl);
     // Credential-bearing headers never survive an origin change; the strip is
     // carried forward, so it is never undone by a later same-origin hop.
     fetchOptions = applyCrossOriginHeaderStrip(fetchOptions, currentUrl, nextUrl, sensitiveHeaders);

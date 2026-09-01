@@ -1,5 +1,6 @@
-# `bun-version: canary` matches `engines.bun` / `packageManager`: no tagged Bun
-# release carries `node:sqlite` yet, which @workglow/sqlite/storage requires.
+# Bun is pinned exactly, matching `packageManager`: @workglow/sqlite/storage needs
+# `node:sqlite`, which Bun ships from 1.4.0. Floating tags would let an unrelated
+# Bun regression redden every PR on a day nobody touched the code.
 name: Build & Test
 permissions:
   contents: read
@@ -19,6 +20,8 @@ env:
   CI: "true"
   DO_NOT_TRACK: "1"
   TURBO_TELEMETRY_DISABLED: "1"
+  # PRs: only packages the change can reach. Push/dispatch: full suite.
+  TEST_CHANGED: ${{ github.event_name == 'pull_request' && format('--changed {0}', github.event.pull_request.base.sha) || '' }}
 
 jobs:
   typecheck-budget:
@@ -30,7 +33,7 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: canary
+          bun-version: 1.4.0
       - run: bun i
       # Fails the PR if any package's type-instantiation count grows past its
       # committed budget (scripts/typecheck-budget.json). Re-baseline intentional
@@ -52,12 +55,33 @@ jobs:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: canary
+          bun-version: 1.4.0
       - run: bun i
       # Fails if any test file is unreachable by section+kind selection. Every
       # other job passes a kind, so an unreachable file silently never runs.
       - name: Test discovery guard
         run: bun scripts/test.ts --check-sections
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun i
+      # The only thing that runs ESLint under CI. `prepare` skips husky when $CI
+      # is set, so the pre-commit hook -- which `--no-verify` bypasses anyway --
+      # is otherwise ESLint's sole invoker, and the `error`-level rules in
+      # eslint.config.js can never fail a build.
+      #
+      # Deliberately not `needs: build`: the config sets no `parserOptions.project`,
+      # so no rule reads type information and nothing has to be compiled first.
+      - name: Lint
+        run: bun run lint
 
   build:
     runs-on: ubuntu-latest
@@ -68,7 +92,7 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: canary
+          bun-version: 1.4.0
       - run: bun i
       - run: bun run build
       - name: Upload build artifacts
@@ -86,12 +110,14 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: canary
+          bun-version: 1.4.0
       - run: bun i
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -99,9 +125,14 @@ jobs:
           name: build-output
           path: .
       - name: Run unit tests via vitest
-        run: bun run test:vitest:unit
+        run: bun run test:vitest:unit -- ${{ env.TEST_CHANGED }}
       - name: Copy Vitest coverage fragment
-        run: cp coverage/coverage-final.json vitest-unit-coverage.json
+        run: |
+          if [ -f coverage/coverage-final.json ]; then
+            cp coverage/coverage-final.json vitest-unit-coverage.json
+          else
+            echo '{}' > vitest-unit-coverage.json
+          fi
       - name: Upload Vitest coverage fragment
         uses: actions/upload-artifact@v7
         with:
@@ -114,12 +145,14 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: canary
+          bun-version: 1.4.0
       - run: bun i
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -129,9 +162,14 @@ jobs:
       - name: Run integration tests via vitest
         env:
           WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
-        run: bun run test:vitest:integration
+        run: bun run test:vitest:integration -- ${{ env.TEST_CHANGED }}
       - name: Copy Vitest coverage fragment
-        run: cp coverage/coverage-final.json vitest-integration-coverage.json
+        run: |
+          if [ -f coverage/coverage-final.json ]; then
+            cp coverage/coverage-final.json vitest-integration-coverage.json
+          else
+            echo '{}' > vitest-integration-coverage.json
+          fi
       - name: Upload Vitest coverage fragment
         uses: actions/upload-artifact@v7
         with:
@@ -145,12 +183,14 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: canary
+          bun-version: 1.4.0
       - run: bun i
       - name: Cache Hugging Face model downloads
         uses: actions/cache@v4
@@ -167,9 +207,14 @@ jobs:
       - name: Run rag tests via vitest
         env:
           WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
-        run: bun run test:vitest:rag
+        run: bun run test:vitest:rag -- ${{ env.TEST_CHANGED }}
       - name: Copy Vitest coverage fragment
-        run: cp coverage/coverage-final.json vitest-rag-coverage.json
+        run: |
+          if [ -f coverage/coverage-final.json ]; then
+            cp coverage/coverage-final.json vitest-rag-coverage.json
+          else
+            echo '{}' > vitest-rag-coverage.json
+          fi
       - name: Upload Vitest coverage fragment
         uses: actions/upload-artifact@v7
         with:
@@ -182,12 +227,14 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: canary
+          bun-version: 1.4.0
       - run: bun i
       - name: Cache Hugging Face model downloads
         uses: actions/cache@v4
@@ -204,9 +251,14 @@ jobs:
       - name: Run HuggingFace Transformers provider tests via vitest
         env:
           WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
-        run: bun run test:vitest:ai-provider-hft
+        run: bun run test:vitest:ai-provider-hft -- ${{ env.TEST_CHANGED }}
       - name: Copy Vitest coverage fragment
-        run: cp coverage/coverage-final.json vitest-ai-provider-hft-coverage.json
+        run: |
+          if [ -f coverage/coverage-final.json ]; then
+            cp coverage/coverage-final.json vitest-ai-provider-hft-coverage.json
+          else
+            echo '{}' > vitest-ai-provider-hft-coverage.json
+          fi
       - name: Upload Vitest coverage fragment
         uses: actions/upload-artifact@v7
         with:
@@ -219,12 +271,14 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: canary
+          bun-version: 1.4.0
       - run: bun i
       - name: Cache Hugging Face / GGUF model downloads
         uses: actions/cache@v4
@@ -241,9 +295,14 @@ jobs:
       - name: Run LlamaCpp provider tests via vitest
         env:
           WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
-        run: bun run test:vitest:ai-provider-nodellama
+        run: bun run test:vitest:ai-provider-nodellama -- ${{ env.TEST_CHANGED }}
       - name: Copy Vitest coverage fragment
-        run: cp coverage/coverage-final.json vitest-ai-provider-nodellama-coverage.json
+        run: |
+          if [ -f coverage/coverage-final.json ]; then
+            cp coverage/coverage-final.json vitest-ai-provider-nodellama-coverage.json
+          else
+            echo '{}' > vitest-ai-provider-nodellama-coverage.json
+          fi
       - name: Upload Vitest coverage fragment
         uses: actions/upload-artifact@v7
         with:
@@ -256,12 +315,14 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: canary
+          bun-version: 1.4.0
       - run: bun i
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -271,9 +332,14 @@ jobs:
       - name: Run API provider tests via vitest
         env:
           WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
-        run: bun run test:vitest:ai-provider-api
+        run: bun run test:vitest:ai-provider-api -- ${{ env.TEST_CHANGED }}
       - name: Copy Vitest coverage fragment
-        run: cp coverage/coverage-final.json vitest-ai-provider-api-coverage.json
+        run: |
+          if [ -f coverage/coverage-final.json ]; then
+            cp coverage/coverage-final.json vitest-ai-provider-api-coverage.json
+          else
+            echo '{}' > vitest-ai-provider-api-coverage.json
+          fi
       - name: Upload Vitest coverage fragment
         uses: actions/upload-artifact@v7
         with:
@@ -297,7 +363,7 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: canary
+          bun-version: 1.4.0
       - run: bun i
       - name: Download Vitest coverage fragments
         run: mkdir -p coverage-parts
@@ -327,6 +393,13 @@ jobs:
           path: coverage-parts
       - name: Merge coverage (nyc) and emit HTML/LCOV
         run: |
+          shopt -s nullglob
+          parts=(coverage-parts/*.json)
+          if [ ${#parts[@]} -eq 0 ]; then
+            echo "No coverage fragments (no tests ran for this change)"
+            mkdir -p coverage
+            exit 0
+          fi
           bunx nyc merge coverage-parts merged.json
           mkdir -p .nyc_output
           cp merged.json .nyc_output/out.json
@@ -338,7 +411,7 @@ jobs:
           path: coverage
           retention-days: 1
       - name: Report Coverage
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && hashFiles('coverage/coverage-summary.json') != ''
         uses: davelosert/vitest-coverage-report-action@v2
 
   cleanup:

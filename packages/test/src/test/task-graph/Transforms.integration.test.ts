@@ -23,7 +23,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 describe("Transforms end-to-end", () => {
   beforeAll(() => {
     registerBaseTasks();
-    registerCommonTasks();
+    registerCommonTasks({ fileSystemTasks: false });
     registerBuiltInTransforms();
   });
 

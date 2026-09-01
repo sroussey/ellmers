@@ -18,11 +18,9 @@ function cfg(model_name: string, extra?: Partial<XaiModelConfig>): XaiModelConfi
 }
 
 describe("xaiEffortPolicy", () => {
-  it("returns all levels with no default when the name is empty", () => {
-    expect(xaiEffortPolicy(cfg(""))).toEqual({
-      supported: [...MODEL_EFFORTS],
-      default: undefined,
-    });
+  it("returns no levels for an unrecognized id and for an absent one", () => {
+    expect(xaiEffortPolicy(cfg(""))).toEqual({ supported: [], default: undefined });
+    expect(xaiEffortPolicy(cfg("llama-3-70b"))?.supported).toEqual([]);
   });
 
   it("treats reasoning Grok ids as all six with default medium", () => {
@@ -57,5 +55,32 @@ describe("getXaiReasoningEffort", () => {
 
   it("returns undefined when neither native nor effort is set", () => {
     expect(getXaiReasoningEffort(cfg("grok-4"))).toBeUndefined();
+  });
+
+  it("does not map model.effort when the policy supports no levels", () => {
+    expect(
+      getXaiReasoningEffort(cfg("grok-4-fast-non-reasoning", { effort: "high" }))
+    ).toBeUndefined();
+    expect(getXaiReasoningEffort(cfg("grok-2-image-1212", { effort: "ultra" }))).toBeUndefined();
+  });
+
+  it("honours effort_options even when the class policy would allow the effort", () => {
+    expect(
+      getXaiReasoningEffort(cfg("grok-4", { effort: "high", effort_options: [] }))
+    ).toBeUndefined();
+  });
+
+  it("still sends a native reasoning_effort on a non-reasoning id", () => {
+    expect(
+      getXaiReasoningEffort(
+        cfg("grok-4-fast-non-reasoning", {
+          effort: "high",
+          provider_config: {
+            model_name: "grok-4-fast-non-reasoning",
+            reasoning_effort: "low",
+          },
+        })
+      )
+    ).toBe("low");
   });
 });

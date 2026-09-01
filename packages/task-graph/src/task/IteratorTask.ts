@@ -370,6 +370,22 @@ export abstract class IteratorTask<
     return false;
   }
 
+  /**
+   * Whether the runner must keep each iteration's merged output until the batch
+   * ends so {@link collectResults} can fold them.
+   *
+   * `ForEachTask` answers false: it discards results by contract, and holding
+   * them costs one retained output per item for the life of the batch — with
+   * `batchSize` unset that is the WHOLE iteration set, however large. What the
+   * outputs carry is the caller's business (a `.forEach()` over a sweep's
+   * worklist may return only a status flag; another may return a document), so
+   * the ceiling is not knowable from here and is not worth paying for a value
+   * nothing reads.
+   */
+  public retainsIterationResults(): boolean {
+    return true;
+  }
+
   /** Initial accumulator for reduce mode. */
   public getInitialAccumulator(): Output {
     return {} as Output;

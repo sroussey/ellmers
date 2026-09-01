@@ -13,6 +13,13 @@ export type CliTheme =
       readonly fg: string;
       readonly bg: string;
       readonly medium: string;
+      /**
+       * One step further from the page than {@link CliTheme.medium}, for the
+       * few marks that outrank their neighbours — the run's own progress bar
+       * against the per-task ones. Close enough to still read as the same
+       * family of chrome; the difference is meant to be noticed, not announced.
+       */
+      readonly strong: string;
     };
 
 export const DEFAULT_CLI_THEME: CliTheme = { level: "basic" };
@@ -27,7 +34,7 @@ export function getCliTheme(): CliTheme {
   return cachedCliTheme;
 }
 
-interface TerminalRgb {
+export interface TerminalRgb {
   readonly r: number;
   readonly g: number;
   readonly b: number;
@@ -171,12 +178,25 @@ export async function detectCliTheme(): Promise<CliTheme> {
     return DEFAULT_CLI_THEME;
   }
 
-  /** 75% background, 25% foreground — lighter bar that stays close to the page color */
-  const medium = mixRgb(fg, bg, 0.75);
+  return cliPaletteFromRgb(fg, bg);
+}
+
+/**
+ * The palette every mark in the UI is drawn from, mixed out of the terminal's
+ * own two colors so chrome sits on the page rather than on top of it.
+ *
+ * Both greys are stated as a distance from the background, which is what makes
+ * them work in either direction: on a dark terminal they come out brighter than
+ * the page, on a light one darker, without either being special-cased.
+ */
+export function cliPaletteFromRgb(fg: TerminalRgb, bg: TerminalRgb): CliTheme {
   return {
     level: "advanced",
     fg: rgbToHex(fg),
     bg: rgbToHex(bg),
-    medium: rgbToHex(medium),
+    /** A quarter of the way to the foreground: chrome that stays out of the way. */
+    medium: rgbToHex(mixRgb(fg, bg, 0.75)),
+    /** Halfway: for the few marks that outrank their neighbours. */
+    strong: rgbToHex(mixRgb(fg, bg, 0.5)),
   };
 }

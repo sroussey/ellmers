@@ -75,7 +75,19 @@ Packages:
 
 ### CLI
 
+[examples/cli](examples/cli/README.md) is a full CLI built on the library. It runs any
+saved workflow, agent, or single task as a task graph, and renders that graph live —
+a row per task with its status, detail, progress and duration, over a bar for the run
+as a whole.
+
 ![CLI](docs/developers/img/cli.png)
+
+The same commands are also available in a local web console, served by the CLI itself
+with `workglow web`. It reads the command tree off the live program, so every command
+— including those a downstream CLI adds — gets a form built from the same schemas the
+terminal prompts from, and the run it starts streams into the same graph view.
+
+![Web console](docs/developers/img/cli-web.png)
 
 ### Web
 
