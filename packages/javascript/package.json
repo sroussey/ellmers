@@ -23,7 +23,7 @@
     "build-package": "bun run build-js && bun run build-types",
     "build-js": "bun build --sourcemap=external --packages=external --outdir ./dist ./src/task.ts",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
-    "build-types": "rm -f tsconfig.tsbuildinfo && tsgo && mkdir -p dist/task && cp src/task/interpreter.d.ts dist/task/interpreter.d.ts"
+    "build-types": "rm -f tsconfig.tsbuildinfo && tsc && mkdir -p dist/task && cp src/task/interpreter.d.ts dist/task/interpreter.d.ts"
   },
   "exports": {
     "./task": {

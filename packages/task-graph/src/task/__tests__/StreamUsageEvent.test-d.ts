@@ -16,7 +16,7 @@ import type { StreamEvent, StreamUsage, Usage } from "../StreamTypes";
  * `__tests__`/`*.test.ts` from type-checking, and `import type` is erased at
  * runtime, so a plain assignment compiles away to nothing and the test can
  * never fail no matter what `StreamUsage` looks like. `.test-d.ts` files run
- * through `tsgo -p packages/task-graph/tsconfig.test.json` (`bun run
+ * through `tsc -p packages/task-graph/tsconfig.test.json` (`bun run
  * typecheck:tests`), a real compiler pass that keeps these assertions live.
  */
 describe("StreamUsage in the StreamEvent union", () => {

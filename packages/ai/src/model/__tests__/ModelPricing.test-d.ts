@@ -14,7 +14,7 @@ import type { ModelPricing } from "../ModelSchema";
  * catch this: `import type` is erased before execution and vitest does not
  * type-check `.test.ts` files, so a plain object-literal assignment compiles
  * away to nothing no matter what `ModelPricing` looks like. `.test-d.ts`
- * files run through `tsgo -p packages/ai/tsconfig.test.json` (`bun run
+ * files run through `tsc -p packages/ai/tsconfig.test.json` (`bun run
  * typecheck:tests`), a real compiler pass that keeps this assertion live.
  */
 describe("ModelPricing", () => {

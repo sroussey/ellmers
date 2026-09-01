@@ -24,7 +24,7 @@
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-storage-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/browser.ts",
     "build-storage-node-bun": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/node.ts",
-    "build-types": "rm -f tsconfig.tsbuildinfo && tsgo"
+    "build-types": "rm -f tsconfig.tsbuildinfo && tsc"
   },
   "exports": {
     "./storage": {

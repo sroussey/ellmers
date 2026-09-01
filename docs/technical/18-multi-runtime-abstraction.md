@@ -425,7 +425,7 @@ The `--packages=external` flag ensures that all dependencies are left as `import
 the output (not bundled), matching the expectations of the Node.js/Bun module resolvers and
 allowing tree-shaking in browser bundlers.
 
-Type declarations are generated separately via `tsgo` (the native TypeScript compiler). The
+Type declarations are generated separately via `tsc` (TypeScript 7, which is the native compiler). The
 `tsconfig.json` lists all entry point files explicitly:
 
 ```json

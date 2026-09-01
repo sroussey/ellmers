@@ -13,7 +13,7 @@
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-code": "vite build",
     "analyze": "ANALYZE=1 vite build",
-    "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
+    "build-types": "rm -f tsconfig.tsbuildinfo && tsc",
     "preview": "vite preview --port 3800",
     "test": "vitest run --config ../../vitest.config.ts --project web"
   },

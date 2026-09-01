@@ -7,6 +7,9 @@ Guidance for Claude Code (claude.ai/code) working in this repository.
 Use **Node.js 24+**. Native deps (`better-sqlite3`) are built against the active Node ABI —
 Vitest or `npx` under Node 20 produces misleading SQLite failures.
 
+**TypeScript 7.** `tsc` is the native (Go) compiler, so `build-types` calls it directly and
+there is no separate `tsgo` binary or `@typescript/native-preview` dependency any more.
+
 ```sh
 bun run build              # Full build (packages + integrations + examples, via Turbo)
 bun run build:packages     # Packages only
@@ -116,6 +119,10 @@ Exceptions: `providers/*` ship `./ai` and `./ai-runtime` instead of browser/node
 ### Formatting (`.prettierrc`)
 
 Spaces, double quotes, semicolons, trailing commas (es5), 100 char width.
+
+`prettier-plugin-organize-imports` is **gone**: it drives the TypeScript language service,
+which TypeScript 7 no longer exposes from the `typescript` package, and under 7 it silently
+formatted nothing rather than failing. Nothing sorts or prunes imports automatically now.
 
 ### License header
 
