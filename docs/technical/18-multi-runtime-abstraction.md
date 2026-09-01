@@ -52,8 +52,8 @@ Bun supports every Node.js API the packages here rely on, so a `bun.ts` that is 
 copy of `node.ts` buys nothing but a third build target and a third `.d.ts` to keep in sync. With
 no `"bun"` condition in `exports`, Bun falls through to the `"import"`/`"types"` default and gets
 the Node entry — the same code the duplicated file would have given it. Only two entries in the
-monorepo earn a Bun build: `@workglow/util` (`Worker.bun` vs `Worker.node`) and
-`@workglow/sqlite`'s `./storage` sub-path (`bun:sqlite` vs the Node driver).
+monorepo earn a Bun build, both in `@workglow/util`: its `"."` (`Worker.bun` vs `Worker.node`)
+and its `"./worker"` sub-path (`dist/worker-bun.js` vs `dist/worker-node.js`).
 
 Each platform entry point re-exports everything from `common.ts` and then layers on
 platform-specific modules. For `@workglow/util`, the entry points look like this:

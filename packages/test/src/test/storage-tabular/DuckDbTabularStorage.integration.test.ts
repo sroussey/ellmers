@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { DuckDbTabularStorage } from "@workglow/duckdb/storage";
+import { DuckDb, DuckDbTabularStorage } from "@workglow/duckdb/storage";
+import { NestedConnectionTransactionError, withConnectionTransaction } from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { getTestingLogger } from "@workglow/util/test";
@@ -100,15 +101,161 @@ describe("DuckDbTabularStorage", () => {
     return repo;
   });
 
+  // The contract needs two storages on ONE handle, so the handle is opened
+  // here rather than by the storage. `destroy()` deliberately leaves a
+  // caller-provided database open, so this file owns closing them, and the
+  // contract's `releaseStorage` hook is where that happens — one open handle
+  // at a time instead of one per test held until the file ends. Keyed on the
+  // storage the hook is handed back; siblings share the primary's handle and
+  // are not keyed, so releasing one is a no-op.
+  const contractDbs = new Map<object, Awaited<ReturnType<typeof DuckDb.open>>>();
+  // Backstop only: a `beforeEach` that throws never reaches an `afterEach`.
+  afterAll(async () => {
+    for (const db of contractDbs.values()) await db.close();
+    contractDbs.clear();
+  });
+
+  describe("withConnectionTransaction on a path-constructed storage", () => {
+    // A path-constructed instance opens its own database, so it has no
+    // sibling to group with — but it is still a connection, and a
+    // one-participant transaction needs no grouping. It used to be refused
+    // outright with "has no shared connection handle".
+    function pathStorage(tag: string) {
+      return new DuckDbTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+        ":memory:",
+        `lone_${tag}_${uuid4().replace(/-/g, "_")}`,
+        CompoundSchema,
+        CompoundPrimaryKeyNames
+      );
+    }
+
+    it("commits", async () => {
+      const s = pathStorage("commit");
+      await s.setupDatabase();
+      try {
+        await withConnectionTransaction([s], async () => {
+          await s.put({ name: "a", type: "x", option: "v", success: true });
+        });
+        expect(await s.get({ name: "a", type: "x" })).toMatchObject({ option: "v" });
+      } finally {
+        s.destroy?.();
+      }
+    });
+
+    it("rolls back when the callback throws", async () => {
+      const s = pathStorage("rollback");
+      await s.setupDatabase();
+      try {
+        await expect(
+          withConnectionTransaction([s], async () => {
+            await s.put({ name: "b", type: "x", option: "v", success: true });
+            throw new Error("forced rollback");
+          })
+        ).rejects.toThrow("forced rollback");
+        expect(await s.get({ name: "b", type: "x" })).toBeUndefined();
+      } finally {
+        s.destroy?.();
+      }
+    });
+
+    it("putBulk inside a connection transaction opens no BEGIN of its own", async () => {
+      // putBulk normally brackets itself in BEGIN/COMMIT. Inside a connection
+      // transaction it must not, or its COMMIT would commit the enclosing
+      // transaction's work. The flag that suppresses it is `inTransaction`,
+      // which runSingleSessionConnectionTransaction sets on every participant.
+      const s = pathStorage("bulk");
+      await s.setupDatabase();
+      try {
+        await expect(
+          withConnectionTransaction([s], async () => {
+            await s.putBulk([
+              { name: "b1", type: "x", option: "v1", success: true },
+              { name: "b2", type: "x", option: "v2", success: true },
+            ]);
+            throw new Error("forced rollback");
+          })
+        ).rejects.toThrow("forced rollback");
+        // Both rows roll back with the enclosing transaction — proof that
+        // putBulk did not commit them itself.
+        expect(await s.get({ name: "b1", type: "x" })).toBeUndefined();
+        expect(await s.get({ name: "b2", type: "x" })).toBeUndefined();
+
+        await withConnectionTransaction([s], async () => {
+          await s.putBulk([{ name: "b3", type: "x", option: "v3", success: true }]);
+        });
+        expect(await s.get({ name: "b3", type: "x" })).toMatchObject({ option: "v3" });
+      } finally {
+        s.destroy?.();
+      }
+    });
+
+    it("still refuses two path-constructed storages as participants", async () => {
+      // Two separate databases really cannot commit together; only the
+      // single-participant case became legal.
+      const a = pathStorage("pair_a");
+      const b = pathStorage("pair_b");
+      await a.setupDatabase();
+      await b.setupDatabase();
+      try {
+        await expect(withConnectionTransaction([a, b], async () => {})).rejects.toThrow(
+          /do not share a connection handle/
+        );
+      } finally {
+        a.destroy?.();
+        b.destroy?.();
+      }
+    });
+
+    it("refuses nesting on the same instance", async () => {
+      const s = pathStorage("nest");
+      await s.setupDatabase();
+      try {
+        let nested: unknown;
+        await withConnectionTransaction([s], async () => {
+          try {
+            await withConnectionTransaction([s], async () => {});
+          } catch (err) {
+            nested = err;
+          }
+        });
+        expect(nested).toBeInstanceOf(NestedConnectionTransactionError);
+      } finally {
+        s.destroy?.();
+      }
+    });
+  });
+
   runTabularStorageContract({
     name: "DuckDbTabularStorage",
     createStorage: async () => {
+      const db = await DuckDb.open(":memory:");
+      const storage = new DuckDbTabularStorage<
+        typeof CompoundSchema,
+        typeof CompoundPrimaryKeyNames
+      >(db, `contract_test_${uuid4().replace(/-/g, "_")}`, CompoundSchema, CompoundPrimaryKeyNames);
+      await storage.setupDatabase();
+      contractDbs.set(storage, db);
+      return storage;
+    },
+    releaseStorage: async (storage) => {
+      const db = contractDbs.get(storage);
+      if (db === undefined) return;
+      contractDbs.delete(storage);
+      await db.close();
+    },
+    createSiblingStorage: async (primary) => {
+      const handle = (
+        primary as unknown as { sharedConnectionHandle: () => object | null }
+      ).sharedConnectionHandle();
+      if (handle == null) {
+        throw new Error("DuckDbTabularStorage contract storage has no shared handle");
+      }
       const storage = new DuckDbTabularStorage<
         typeof CompoundSchema,
         typeof CompoundPrimaryKeyNames
       >(
-        ":memory:",
-        `contract_test_${uuid4().replace(/-/g, "_")}`,
+        handle as Awaited<ReturnType<typeof DuckDb.open>>,
+        `contract_sib_${uuid4().replace(/-/g, "_")}`,
         CompoundSchema,
         CompoundPrimaryKeyNames
       );

@@ -28,6 +28,7 @@ export function withTransactionRollbackBlock(opts: TabularStorageContractOpts): 
     afterEach(async () => {
       await storage.deleteAll();
       storage.destroy?.();
+      await opts.releaseStorage?.(storage);
     });
 
     itImpl(

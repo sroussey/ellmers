@@ -4,8 +4,9 @@ Guidance for Claude Code (claude.ai/code) working in this repository.
 
 ## Commands
 
-Use **Node.js 24+**. Native deps (`better-sqlite3`) are built against the active Node ABI —
-Vitest or `npx` under Node 20 produces misleading SQLite failures.
+Use **Node.js 24+**. The SQLite backend is the built-in `node:sqlite`, stable only from
+Node 24 (experimental and flag-gated before that) — Vitest or `npx` under an older Node
+produces misleading SQLite failures.
 
 **TypeScript 7.** `tsc` is the native (Go) compiler, so `build-types` calls it directly and
 there is no separate `tsgo` binary or `@typescript/native-preview` dependency any more.
@@ -88,10 +89,10 @@ re-exported by both. Types via `tsc` (composite + incremental). Conditional `exp
 **No `"bun"` export condition unless the Bun code genuinely differs** — without one, Bun
 resolves `"import"` and loads the node build. Adding one means a `src/bun.ts`, a
 `--target=bun` build and the export condition: a third bundle and a third `.d.ts` to keep in
-sync for no behavior change. Exactly three entries qualify today — `@workglow/util` `"."`
-(`Worker.bun` vs `Worker.node`), `@workglow/util` `"./worker"` (`dist/worker-bun.js` vs
-`dist/worker-node.js`), and `@workglow/sqlite` `"./storage"` (`bun:sqlite` vs the node
-driver); the set is pinned by
+sync for no behavior change. Exactly two entries qualify today — `@workglow/util` `"."`
+(`Worker.bun` vs `Worker.node`) and `@workglow/util` `"./worker"` (`dist/worker-bun.js` vs
+`dist/worker-node.js`). `@workglow/sqlite` `"./storage"` was a third until both runtimes
+moved onto the shared `node:sqlite` driver. The set is pinned by
 `packages/test/src/test/util/BunExportConditions.test.ts`, which fails until the fixture
 and this paragraph are updated together.
 

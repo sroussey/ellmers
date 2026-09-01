@@ -59,6 +59,7 @@ export function subscribeToChangesBlock(opts: TabularStorageContractOpts): void 
       afterEach(async () => {
         await storage.deleteAll();
         storage.destroy?.();
+        await opts.releaseStorage?.(storage);
       });
 
       itImpl(
@@ -103,6 +104,7 @@ export function subscribeToChangesBlock(opts: TabularStorageContractOpts): void 
     afterEach(async () => {
       await storage.deleteAll();
       storage.destroy?.();
+      await opts.releaseStorage?.(storage);
     });
 
     itImpl(

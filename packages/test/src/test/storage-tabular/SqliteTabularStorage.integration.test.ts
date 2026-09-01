@@ -5,7 +5,12 @@
  */
 
 import { Sqlite, SqliteTabularStorage } from "@workglow/sqlite/storage";
-import { ConnectionReentryError, StorageValidationError } from "@workglow/storage";
+import {
+  ConnectionReentryError,
+  NestedConnectionTransactionError,
+  StorageValidationError,
+  withConnectionTransaction,
+} from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { getTestingLogger } from "@workglow/util/test";
@@ -136,6 +141,25 @@ describe("SqliteTabularStorage", async () => {
       >(
         ":memory:",
         `contract_test_${uuid4().replace(/-/g, "_")}`,
+        CompoundSchema,
+        CompoundPrimaryKeyNames
+      );
+      await storage.setupDatabase();
+      return storage;
+    },
+    createSiblingStorage: async (primary) => {
+      const handle = (
+        primary as unknown as { sharedConnectionHandle: () => object | null }
+      ).sharedConnectionHandle();
+      if (handle == null) {
+        throw new Error("SqliteTabularStorage contract storage has no shared handle");
+      }
+      const storage = new SqliteTabularStorage<
+        typeof CompoundSchema,
+        typeof CompoundPrimaryKeyNames
+      >(
+        handle as Sqlite.Database,
+        `contract_sib_${uuid4().replace(/-/g, "_")}`,
         CompoundSchema,
         CompoundPrimaryKeyNames
       );
@@ -552,5 +576,207 @@ describe("SqliteTabularStorage shared-connection safety", () => {
     expect(await a.get({ name: "n1", type: "x" })).toBeDefined();
     expect(await a.get({ name: "n2", type: "x" })).toBeDefined();
     expect(await a.get({ name: "n3", type: "x" })).toBeDefined();
+  });
+
+  it("withConnectionTransaction commits writes across two tables", async () => {
+    const [a, b] = await makeSharedPair();
+    await withConnectionTransaction([a, b], async () => {
+      await a.put({ name: "from-a", type: "x", option: "va", success: true });
+      await b.put({ name: "from-b", type: "x", option: "vb", success: true });
+    });
+    expect(await a.get({ name: "from-a", type: "x" })).toMatchObject({ option: "va" });
+    expect(await b.get({ name: "from-b", type: "x" })).toMatchObject({ option: "vb" });
+  });
+
+  it("withConnectionTransaction rolls back both tables when the callback throws", async () => {
+    const [a, b] = await makeSharedPair();
+    await a.put({ name: "kept", type: "x", option: "base", success: true });
+
+    await expect(
+      withConnectionTransaction([a, b], async () => {
+        await a.put({ name: "from-a", type: "x", option: "va", success: true });
+        await b.put({ name: "from-b", type: "x", option: "vb", success: true });
+        throw new Error("forced rollback");
+      })
+    ).rejects.toThrow("forced rollback");
+
+    expect(await a.get({ name: "kept", type: "x" })).toBeDefined();
+    expect(await a.get({ name: "from-a", type: "x" })).toBeUndefined();
+    expect(await b.get({ name: "from-b", type: "x" })).toBeUndefined();
+  });
+
+  it("withConnectionTransaction still throws sibling-op for a non-enlisted storage", async () => {
+    const [a, b, db] = await makeSharedPair();
+    const c = new SqliteTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      db,
+      `shared_c_${uuid4().replace(/-/g, "_")}`,
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+    await c.setupDatabase();
+
+    let error: unknown;
+    await withConnectionTransaction([a, b], async () => {
+      await a.put({ name: "enlisted", type: "x", option: "ok", success: true });
+      try {
+        await c.put({ name: "outsider", type: "x", option: "no", success: true });
+      } catch (err) {
+        error = err;
+      }
+    });
+
+    expect(error).toBeInstanceOf(ConnectionReentryError);
+    expect((error as ConnectionReentryError).mode).toBe("sibling-op");
+    expect(await c.get({ name: "outsider", type: "x" })).toBeUndefined();
+    expect(await a.get({ name: "enlisted", type: "x" })).toBeDefined();
+  });
+
+  it("withConnectionTransaction rejects participants on different connections", async () => {
+    const [a] = await makeSharedPair();
+    const [other] = await makeSharedPair();
+    await expect(withConnectionTransaction([a, other], async () => undefined)).rejects.toThrow(
+      /do not share a connection handle/
+    );
+  });
+
+  it("withConnectionTransaction refuses to nest on the same connection", async () => {
+    const [a, b] = await makeSharedPair();
+
+    let nested: unknown;
+    await withConnectionTransaction([a, b], async () => {
+      await a.put({ name: "outer", type: "x", option: "outer", success: true });
+      try {
+        await withConnectionTransaction([a, b], async () => {
+          await b.put({ name: "inner", type: "x", option: "inner", success: true });
+        });
+      } catch (err) {
+        nested = err;
+      }
+    });
+
+    expect(nested).toBeInstanceOf(NestedConnectionTransactionError);
+    expect((nested as Error).message).toContain("SAVEPOINT");
+    // The inner call must fail BEFORE issuing its own BEGIN, so the outer
+    // transaction is untouched and still commits its own work.
+    expect(await a.get({ name: "outer", type: "x" })).toMatchObject({ option: "outer" });
+    expect(await b.get({ name: "inner", type: "x" })).toBeUndefined();
+  });
+
+  it("a rejected nested transaction leaves the outer transaction able to write", async () => {
+    const [a, b] = await makeSharedPair();
+
+    await withConnectionTransaction([a, b], async () => {
+      await expect(withConnectionTransaction([a, b], async () => undefined)).rejects.toBeInstanceOf(
+        NestedConnectionTransactionError
+      );
+      // A write AFTER the rejected nesting attempt must still join the outer
+      // BEGIN — the failed inner call must not have cleared `inTransaction`.
+      await a.put({ name: "after-nested", type: "x", option: "va", success: true });
+      await b.put({ name: "after-nested", type: "x", option: "vb", success: true });
+      throw new Error("forced rollback");
+    }).catch((err: unknown) => {
+      expect((err as Error).message).toBe("forced rollback");
+    });
+
+    expect(await a.get({ name: "after-nested", type: "x" })).toBeUndefined();
+    expect(await b.get({ name: "after-nested", type: "x" })).toBeUndefined();
+  });
+
+  it("withConnectionTransaction on a DIFFERENT database may nest", async () => {
+    const [a, b] = await makeSharedPair();
+    const [c, d] = await makeSharedPair();
+
+    await withConnectionTransaction([a, b], async () => {
+      await a.put({ name: "outer", type: "x", option: "outer", success: true });
+      await withConnectionTransaction([c, d], async () => {
+        await c.put({ name: "inner", type: "x", option: "inner", success: true });
+      });
+    });
+
+    expect(await a.get({ name: "outer", type: "x" })).toMatchObject({ option: "outer" });
+    expect(await c.get({ name: "inner", type: "x" })).toMatchObject({ option: "inner" });
+  });
+
+  it("a deferred put listener that writes commits, and its own put event fires", async () => {
+    const [a, b] = await makeSharedPair();
+
+    const seen: string[] = [];
+    let writing = false;
+    b.on("put", (entity: { name: string }) => {
+      seen.push(entity.name);
+      if (writing) return;
+      writing = true;
+      // A listener reacting to the flushed commit event by writing back
+      // through the same storage: the write must take its own transaction and
+      // its own `put` event must reach this listener rather than being queued
+      // onto a buffer nothing drains.
+      void b.put({ name: "marker", type: "x", option: "from-listener", success: true });
+    });
+
+    await withConnectionTransaction([a, b], async () => {
+      await b.put({ name: "in-tx", type: "x", option: "vb", success: true });
+    });
+
+    await vi.waitFor(() => expect(seen).toContain("marker"));
+    expect(seen[0]).toBe("in-tx");
+    expect(await b.get({ name: "marker", type: "x" })).toMatchObject({
+      option: "from-listener",
+    });
+  });
+});
+
+describe("SqliteTabularStorage entity prototypes", () => {
+  const row = {
+    id: "p1",
+    category: "a",
+    subcategory: "x",
+    value: 1,
+    createdAt: "2025-01-01T00:00:00Z",
+    updatedAt: "2025-01-01T00:00:00Z",
+  };
+
+  // Each storage opens its own `:memory:` database, so one fixed table name
+  // cannot collide with another test's.
+  async function makeStorage(): Promise<
+    SqliteTabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>
+  > {
+    const storage = new SqliteTabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>(
+      ":memory:",
+      "proto_probe",
+      SearchSchema,
+      SearchPrimaryKeyNames
+    );
+    await storage.setupDatabase();
+    return storage;
+  }
+
+  it("returns get() entities as plain objects", async () => {
+    const storage = await makeStorage();
+    try {
+      await storage.put(row);
+      const got = await storage.get({ id: "p1" });
+      // The driver hands back null-prototype rows; anything that reaches a caller
+      // has to look like the plain objects every other backend returns.
+      expect(Object.getPrototypeOf(got)).toBe(Object.prototype);
+      // Every nullable column SearchSchema declares comes back as an explicit
+      // null, `tag` included -- a column added to the schema has to be listed
+      // here or toStrictEqual fails on the extra key.
+      expect(got).toStrictEqual({ ...row, kind: null, tag: null });
+    } finally {
+      // A failed expectation must not strand the connection for the rest of the run.
+      storage.destroy();
+    }
+  });
+
+  it("returns updateWhere() entities as plain objects", async () => {
+    const storage = await makeStorage();
+    try {
+      await storage.put(row);
+      const updated = await storage.updateWhere({ id: "p1" }, { value: 42 });
+      expect(Object.getPrototypeOf(updated)).toBe(Object.prototype);
+      expect(updated).toStrictEqual({ ...row, kind: null, tag: null, value: 42 });
+    } finally {
+      storage.destroy();
+    }
   });
 });

@@ -15,17 +15,19 @@
   "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
-    "watch-js": "concurrently -c 'auto' -n 'browser,node' 'bun run watch-browser' 'bun run watch-node'",
+    "watch-js": "concurrently -c 'auto' -n 'browser,node,test' 'bun run watch-browser' 'bun run watch-node' 'bun run watch-test'",
     "watch-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "watch-node": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "bun run build-js && bun run build-types",
-    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'browser,node' 'bun run build-browser' 'bun run build-node'",
+    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'browser,node,test' 'bun run build-browser' 'bun run build-node' 'bun run build-test'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "build-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsc",
-    "test": "vitest run --config ../../vitest.config.ts --project storage"
+    "test": "vitest run --config ../../vitest.config.ts --project storage",
+    "build-test": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/test-entry.ts",
+    "watch-test": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/test-entry.ts"
   },
   "peerDependencies": {
     "@workglow/util": "workspace:*"
@@ -46,6 +48,10 @@
       },
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js"
+    },
+    "./test": {
+      "types": "./dist/test-entry.d.ts",
+      "import": "./dist/test-entry.js"
     }
   },
   "files": [

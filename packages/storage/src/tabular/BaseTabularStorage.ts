@@ -222,6 +222,23 @@ export abstract class BaseTabularStorage<
     return this.events.waitOn(name) as Promise<TabularEventParameters<Event, PrimaryKey, Entity>>;
   }
 
+  /**
+   * Emits a `put` that has already cleared deferral, bypassing an `emitPut`
+   * override that would re-queue it. This is how a connection-scoped
+   * transaction drains a participant's post-commit queue.
+   *
+   * Public only because the draining code lives outside the class hierarchy —
+   * a transaction flushes every PARTICIPANT, not just itself, so a `protected`
+   * method would be unreachable. Nothing else should call it: emitting a `put`
+   * for a row that has not committed is exactly what the deferral exists to
+   * prevent.
+   *
+   * @internal
+   */
+  emitCommittedPut(entity: Entity): void {
+    safeEmit(this.events, "put", entity);
+  }
+
   abstract put(value: InsertType): Promise<Entity>;
   abstract putBulk(values: InsertType[]): Promise<Entity[]>;
   abstract get(key: PrimaryKey): Promise<Entity | undefined>;

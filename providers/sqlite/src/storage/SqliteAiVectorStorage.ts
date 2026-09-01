@@ -17,7 +17,6 @@ import {
   getMetadataProperty,
   getVectorProperty,
   matchesFilter,
-  runOnConnection,
   validateVectorEntities,
 } from "@workglow/storage";
 import type {
@@ -424,7 +423,7 @@ export class SqliteAiVectorStorage<
    * base put() if the extension is not available.
    */
   public override async put(entity: any): Promise<Entity> {
-    return this.mutex(() => this._putInternal(entity));
+    return this.guardedWrite(() => this._putInternal(entity));
   }
 
   /**
@@ -439,7 +438,7 @@ export class SqliteAiVectorStorage<
    * commits so listeners never observe rows that are about to roll back.
    */
   public override async putBulk(entities: any[]): Promise<Entity[]> {
-    return this.mutex(() => this._putBulkInternal(entities));
+    return this.guardedWrite(() => this._putBulkInternal(entities));
   }
 
   /**
@@ -466,7 +465,7 @@ export class SqliteAiVectorStorage<
    * Internal `putBulk` that the proxy dispatches to from `tx.putBulk(...)`.
    * When already inside an outer `withTransaction` BEGIN we cannot open a
    * second `db.transaction(...)` here — that would be a nested transaction
-   * (better-sqlite3 turns it into a SAVEPOINT, but we still want all
+   * (the driver turns it into a SAVEPOINT, but we still want all
    * row-level rollback to fall under the outer BEGIN). In that case we
    * iterate the rows directly; otherwise we wrap them in a SQLite
    * transaction to collapse N fsyncs into one COMMIT.
@@ -487,31 +486,20 @@ export class SqliteAiVectorStorage<
       return super._putBulkInternal(entities);
     }
 
-    // Route the vector-encoding write through the shared connection chain so
-    // two SqliteAiVectorStorage instances that wrap the same underlying handle
-    // (or one vector storage and one plain SqliteTabularStorage) queue on the
-    // same lock instead of racing on the shared connection. Skip when we are
-    // already inside an outer `withTransaction` — the chain lock is held there.
-    const dbWithFlag = this.database as unknown as { readonly inTransaction?: boolean };
-    const alreadyInTx = this.inTransaction || dbWithFlag.inTransaction === true;
-    const handle = this.connectionHandle();
-    if (handle !== null && !alreadyInTx) {
-      return runOnConnection(handle, this, () => this.runVectorPutBulkOnHandle(entities));
-    }
+    // The shared connection chain slot is already held by whoever reached
+    // here: the public `putBulk` takes it in `guardedWrite`, and a call
+    // arriving through the `tx` proxy runs inside the transaction that holds
+    // it. Re-taking it here would await a slot only this call can release.
     return this.runVectorPutBulkOnHandle(entities);
   }
 
   private async runVectorPutBulkOnHandle(entities: any[]): Promise<Entity[]> {
     const updatedEntities: Entity[] = [];
-    // better-sqlite3 / bun:sqlite expose `inTransaction` as a runtime getter
-    // on the underlying handle; the canonical API doesn't surface it. When it's
-    // present and true (e.g. an outer `withTransaction` BEGIN is open and the
-    // proxy routed `tx.putBulk` here), iterate rows directly so we don't open a
-    // nested SQLite transaction. Browser-WASM has no such flag and never wraps
-    // mutating calls in `withTransaction` via the Proxy, so falling through to
-    // the inner `db.transaction(...)` is safe there.
-    const dbWithFlag = this.database as unknown as { readonly inTransaction?: boolean };
-    if (dbWithFlag.inTransaction) {
+    // With a transaction already open (an outer `withTransaction` BEGIN that the
+    // proxy routed `tx.putBulk` into, or one another storage opened on this
+    // shared connection), iterate rows directly rather than opening a nested
+    // SQLite transaction.
+    if (this.database.inTransaction) {
       for (const item of entities) {
         updatedEntities.push(this.executeVectorPutSync(item, false));
       }

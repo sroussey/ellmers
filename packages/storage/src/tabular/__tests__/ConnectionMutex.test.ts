@@ -6,10 +6,10 @@
 
 import {
   ConnectionReentryError,
-  __resetAlsForTesting,
   runInTransactionOnConnection,
   runOnConnection,
 } from "@workglow/storage";
+import { __resetAlsForTesting } from "@workglow/storage/test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 describe("ConnectionMutex F1: cross-instance re-entry is ALS-independent", () => {
@@ -23,6 +23,71 @@ describe("ConnectionMutex F1: cross-instance re-entry is ALS-independent", () =>
   ] as const)("%s", (_label, useShim) => {
     beforeEach(() => {
       __resetAlsForTesting(useShim);
+    });
+
+    it("refuses a participant set whose lead is enlisted but whose sibling is not", async () => {
+      // The set {a, c} shares its lead with the open transaction's {a, b} but
+      // is a DIFFERENT transaction. Judged by its lead alone it classified as
+      // an enlisted descendant and ran inline — a nested BEGIN whose COMMIT
+      // commits the outer transaction's work, with `c` never checked at all.
+      const handle = {};
+      const ownerA = { table: "table_a" };
+      const ownerB = { table: "table_b" };
+      const ownerC = { table: "table_c" };
+
+      let releaseTx: () => void = () => {};
+      const txCanFinish = new Promise<void>((resolve) => {
+        releaseTx = resolve;
+      });
+      let signalTxStarted: () => void = () => {};
+      const txStarted = new Promise<void>((resolve) => {
+        signalTxStarted = resolve;
+      });
+
+      let innerRan = false;
+      const txPromise = runInTransactionOnConnection(handle, [ownerA, ownerB], async () => {
+        signalTxStarted();
+        await txCanFinish;
+      });
+      await txStarted;
+
+      const start = Date.now();
+      let error: unknown;
+      try {
+        await runInTransactionOnConnection(handle, [ownerA, ownerC], async () => {
+          innerRan = true;
+        });
+      } catch (err) {
+        error = err;
+      }
+      const elapsed = Date.now() - start;
+
+      expect(innerRan).toBe(false);
+      expect(error).toBeInstanceOf(ConnectionReentryError);
+      expect((error as ConnectionReentryError).mode).toBe("nested-transaction");
+      // Names the participant that is actually un-enlisted, not the lead.
+      expect((error as ConnectionReentryError).message).toContain("table_c");
+      // Fails fast rather than queueing on a slot the outer transaction holds.
+      expect(elapsed).toBeLessThan(500);
+
+      releaseTx();
+      await txPromise;
+    });
+
+    it("still inlines a participant set that is wholly enlisted", async () => {
+      const handle = {};
+      const ownerA = { table: "table_a" };
+      const ownerB = { table: "table_b" };
+
+      let innerRan = false;
+      await runInTransactionOnConnection(handle, [ownerA, ownerB], async () => {
+        // A genuine descendant re-entering with the same participants must not
+        // be caught by the tightened check.
+        await runInTransactionOnConnection(handle, [ownerA, ownerB], async () => {
+          innerRan = true;
+        });
+      });
+      expect(innerRan).toBe(true);
     });
 
     it("runOnConnection throws ConnectionReentryError when a sibling instance calls during a transaction", async () => {
@@ -225,6 +290,39 @@ describe("ConnectionMutex F1: cross-instance re-entry is ALS-independent", () =>
         expect(order).toEqual(["BEGIN", "COMMIT", "SIBLING-OP"]);
       }
     );
+
+    it("inlines an enlisted sibling owner instead of throwing sibling-op", async () => {
+      const handle = {};
+      const ownerA = { table: "table_a" };
+      const ownerB = { table: "table_b" };
+      let enlistedResult: string | undefined;
+
+      await runInTransactionOnConnection(handle, [ownerA, ownerB], async () => {
+        enlistedResult = await runOnConnection(handle, ownerB, async () => "joined");
+      });
+
+      expect(enlistedResult).toBe("joined");
+    });
+
+    it("still throws sibling-op for an owner that was not enlisted", async () => {
+      const handle = {};
+      const ownerA = { table: "table_a" };
+      const ownerB = { table: "table_b" };
+      const ownerC = { table: "table_c" };
+
+      let error: unknown;
+      await runInTransactionOnConnection(handle, [ownerA, ownerB], async () => {
+        try {
+          await runOnConnection(handle, ownerC, async () => "unreachable");
+        } catch (err) {
+          error = err;
+        }
+      });
+
+      expect(error).toBeInstanceOf(ConnectionReentryError);
+      expect((error as ConnectionReentryError).mode).toBe("sibling-op");
+      expect((error as ConnectionReentryError).blockedTable).toBe("table_c");
+    });
   });
 });
 

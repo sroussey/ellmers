@@ -43,6 +43,7 @@ export function inListCriterionBlock(opts: TabularStorageContractOpts): void {
     afterEach(async () => {
       await storage.deleteAll();
       storage.destroy?.();
+      await opts.releaseStorage?.(storage);
     });
 
     const names = (found: readonly { name: string }[]): string[] => found.map((r) => r.name).sort();
