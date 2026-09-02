@@ -413,8 +413,6 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
       handle,
       groupHandle,
       active: true,
-      deferPuts: false,
-      deferredPuts: new WeakMap(),
       txQuery: undefined,
       // `store.run` shadows the enclosing store; keep a link to it so accessors
       // can still see a transaction open on another connection.
@@ -432,7 +430,6 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
         // reachable from any continuation that captured it, so mark it dead
         // here too.
         ctx.active = false;
-        ctx.deferPuts = false;
         ctx.txQuery = undefined;
       }
       release();

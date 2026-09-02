@@ -944,6 +944,11 @@ export class PostgresTabularStorage<
           // connection for nesting detection.
           chainHandle: client,
           participants,
+          // The pool keeps serving unrelated callers on other clients while
+          // this transaction runs, and their rows survive its ROLLBACK — so
+          // deferral must follow enlistment rather than cover the participants
+          // wholesale.
+          ownsSession: false,
           begin: async () => {
             setConnectionTxQuery({ query: client.query.bind(client) });
             await client.query("BEGIN");
