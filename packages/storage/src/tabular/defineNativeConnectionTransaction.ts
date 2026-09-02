@@ -39,8 +39,14 @@
  * the first `await` inside {@link runNativeConnectionTransaction} (`await
  * begin()`). A store-keyed buffer therefore stops answering for every
  * participant `put` the body makes, each one fires while the transaction can
- * still ROLLBACK, and the flush drains nothing. Cross-instance re-entry
- * (`HandleState.txOwners`) is handle-state based for the same reason.
+ * still ROLLBACK, and the flush drains nothing. The connection mutex meets the
+ * same wall and cannot dodge it: its question — is this caller an async
+ * DESCENDANT of the open body — is one only the store can answer, so under the
+ * shim it falls back to handle state (`HandleState.txOwners`) and gives up
+ * telling a descendant from an unrelated concurrent caller. Deferral asks a
+ * narrower question — which transaction is this participant enlisted in — and
+ * a per-participant buffer answers that one exactly on both runtimes, so it
+ * pays none of that price.
  *
  * The exception is a transaction that does NOT own its participants' session —
  * a real `pg.Pool`, which checks out one client while unrelated callers keep
