@@ -937,11 +937,13 @@ export class PostgresTabularStorage<
         return await runNativeConnectionTransaction({
           handle,
           // Each real-pool transaction owns its own checked-out client, so it
-          // must NOT chain on the pool: two concurrent
-          // `withConnectionTransaction` calls with different participants would
-          // otherwise see each other's owner set on the pool's chain slot and
-          // throw `ConnectionReentryError`. `handle` (the pool) still names the
-          // connection for nesting detection.
+          // must NOT chain on the pool: the pool's chain slot admits one holder
+          // at a time, so chaining there would make every pooled transaction
+          // wait for every other one and erase the pool. Concurrent callers are
+          // no longer REFUSED for sharing a slot — an unrelated one queues and
+          // opens its own `BEGIN` after the first commits — so what is at stake
+          // here is throughput, not an error. `handle` (the pool) still names
+          // the connection for nesting detection.
           chainHandle: client,
           participants,
           // The pool keeps serving unrelated callers on other clients while
