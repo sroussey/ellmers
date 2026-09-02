@@ -134,7 +134,74 @@ function createAbortError(signal: AbortSignal): Error {
   return new Error(String(reason ?? "Fetch aborted"));
 }
 
-function wrapAbortableResponse(response: Response, signal: AbortSignal | undefined): Response {
+// ============================================================================
+// Stall watchdog for model-file fetches
+// ============================================================================
+
+/**
+ * Thrown when a model-file fetch delivers no bytes for
+ * {@link getHftFetchStallTimeoutMs} milliseconds — either no response headers
+ * at all, or a body stream that has gone silent mid-transfer.
+ *
+ * A dropped connection in the browser frequently does *not* reject the fetch:
+ * the pending `reader.read()` simply never settles, so without this watchdog a
+ * download freezes with no error, no progress, and no way for the UI to tell a
+ * stall apart from a slow link. The name deliberately avoids `AbortError` and
+ * the message avoids the "aborted" patterns that {@link classifyProviderError}
+ * maps to a user cancellation — a stall is a failure, not a cancel.
+ */
+export class HftDownloadStalledError extends Error {
+  public override readonly name = "DownloadStalledError";
+  constructor(
+    public readonly url: string,
+    public readonly stallMs: number,
+    public readonly bytesReceived: number
+  ) {
+    super(
+      `Download stalled: no data received for ${Math.round(stallMs / 1000)}s ` +
+        `(${bytesReceived} bytes received) while fetching ${url}`
+    );
+  }
+}
+
+const DEFAULT_FETCH_STALL_TIMEOUT_MS = 60_000;
+
+let _fetchStallTimeoutMs: number = (() => {
+  if (typeof process === "undefined" || !process.env) return DEFAULT_FETCH_STALL_TIMEOUT_MS;
+  const raw = process.env.HFT_FETCH_STALL_TIMEOUT_MS;
+  if (!raw) return DEFAULT_FETCH_STALL_TIMEOUT_MS;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_FETCH_STALL_TIMEOUT_MS;
+})();
+
+/**
+ * Override the fetch stall timeout. `0` disables the watchdog. Defaults to
+ * 60s, or `HFT_FETCH_STALL_TIMEOUT_MS` where `process.env` exists.
+ */
+export function setHftFetchStallTimeoutMs(ms: number): void {
+  _fetchStallTimeoutMs = Math.max(0, ms);
+}
+
+export function getHftFetchStallTimeoutMs(): number {
+  return _fetchStallTimeoutMs;
+}
+
+/**
+ * Wrap `response.body` so that every read is bounded by the stall timeout and
+ * the whole transfer is cancelled by `signal`.
+ *
+ * `stall` is the controller {@link abortableFetch} folded into `signal`; firing
+ * it with a {@link HftDownloadStalledError} tears down the underlying fetch and
+ * errors the wrapped stream with that same error, so the consumer
+ * (transformers.js `readResponse`) rejects with a stall, not a generic abort.
+ *
+ * @internal Exported for unit tests.
+ */
+export function wrapAbortableResponse(
+  response: Response,
+  signal: AbortSignal | undefined,
+  stall?: { controller: AbortController; url: string }
+): Response {
   if (!signal || !response.body) {
     return response;
   }
@@ -150,15 +217,57 @@ function wrapAbortableResponse(response: Response, signal: AbortSignal | undefin
   // drain would buffer the entire response body in memory, which is fatal for
   // large model files (hundreds of MB to several GB).
   let reader: ReadableStreamDefaultReader<Uint8Array>;
+  type SourceReadResult = Awaited<ReturnType<ReadableStreamDefaultReader<Uint8Array>["read"]>>;
   let abortHandler: (() => void) | undefined;
   let loaded = 0;
+  let stallTimer: ReturnType<typeof setTimeout> | undefined;
+  let stallError: HftDownloadStalledError | undefined;
+  const stallMs = stall ? _fetchStallTimeoutMs : 0;
+
+  const clearStallTimer = () => {
+    if (stallTimer !== undefined) {
+      clearTimeout(stallTimer);
+      stallTimer = undefined;
+    }
+  };
 
   const cleanup = () => {
+    clearStallTimer();
     if (abortHandler) {
       signal.removeEventListener("abort", abortHandler);
       abortHandler = undefined;
     }
     reader?.releaseLock();
+  };
+
+  /**
+   * Bound a single `reader.read()` by the stall timeout. On expiry, fire the
+   * stall controller so the browser tears down the socket, cancel the source
+   * reader so the pending read settles, and reject with the stall error.
+   */
+  const readWithStallWatchdog = (): Promise<SourceReadResult> => {
+    if (stallMs <= 0 || !stall) return reader.read();
+    return new Promise<SourceReadResult>((resolve, reject) => {
+      stallTimer = setTimeout(() => {
+        stallTimer = undefined;
+        stallError = new HftDownloadStalledError(stall.url, stallMs, loaded);
+        stall.controller.abort(stallError);
+        reader.cancel(stallError).catch(() => {
+          /* the source may already be errored */
+        });
+        reject(stallError);
+      }, stallMs);
+      reader.read().then(
+        (result) => {
+          clearStallTimer();
+          resolve(result);
+        },
+        (error) => {
+          clearStallTimer();
+          reject(stallError ?? error);
+        }
+      );
+    });
   };
 
   const body = new ReadableStream<Uint8Array>({
@@ -173,11 +282,14 @@ function wrapAbortableResponse(response: Response, signal: AbortSignal | undefin
     },
     async pull(controller) {
       try {
+        if (stallError) {
+          throw stallError;
+        }
         if (signal.aborted) {
           throw createAbortError(signal);
         }
 
-        const { done, value } = await reader.read();
+        const { done, value } = await readWithStallWatchdog();
         if (done) {
           if (signal.aborted) {
             throw createAbortError(signal);
@@ -212,7 +324,20 @@ function wrapAbortableResponse(response: Response, signal: AbortSignal | undefin
   });
 }
 
-function abortableFetch(url: string, options?: RequestInit): Promise<Response> {
+/**
+ * The `env.fetch` installed into transformers.js. Folds three signals into
+ * the request: the caller's own `options.signal`, every live per-model
+ * controller registered for the URL's `model_path`, and a stall watchdog that
+ * fires when no headers arrive (here) or no body bytes arrive
+ * ({@link wrapAbortableResponse}) within {@link getHftFetchStallTimeoutMs}.
+ *
+ * Already-aborted controllers are intentionally still honoured: a cancelled
+ * load that is between files when its signal fires must have its *next*
+ * fetch die immediately rather than pull a multi-GB weight file to completion.
+ *
+ * @internal Exported for unit tests.
+ */
+export function abortableFetch(url: string, options?: RequestInit): Promise<Response> {
   let modelSignal: AbortSignal | undefined;
   try {
     const pathname = new URL(url).pathname;
@@ -232,11 +357,57 @@ function abortableFetch(url: string, options?: RequestInit): Promise<Response> {
   } catch {
     /* not a parseable URL, proceed without abort */
   }
-  const combinedSignal = options?.signal
+
+  const stallMs = _fetchStallTimeoutMs;
+  const stallController = new AbortController();
+  const stall = stallMs > 0 ? { controller: stallController, url } : undefined;
+
+  let combinedSignal = options?.signal
     ? combineAbortSignals(options.signal, modelSignal)
     : modelSignal;
-  return fetch(url, { ...options, ...(combinedSignal ? { signal: combinedSignal } : {}) }).then(
-    (response) => wrapAbortableResponse(response, combinedSignal)
+  if (stall) {
+    combinedSignal = combineAbortSignals(combinedSignal, stallController.signal);
+  }
+
+  const request = fetch(url, {
+    ...options,
+    ...(combinedSignal ? { signal: combinedSignal } : {}),
+  });
+
+  if (!stall) {
+    return request.then((response) => wrapAbortableResponse(response, combinedSignal));
+  }
+
+  // Headers-phase watchdog: a fetch whose connection dies before the response
+  // arrives can hang just as silently as a dead body stream.
+  let headersTimer: ReturnType<typeof setTimeout> | undefined;
+  const headersStall = new Promise<never>((_, reject) => {
+    headersTimer = setTimeout(() => {
+      headersTimer = undefined;
+      const error = new HftDownloadStalledError(url, stallMs, 0);
+      stallController.abort(error);
+      reject(error);
+    }, stallMs);
+  });
+  const clearHeadersTimer = () => {
+    if (headersTimer !== undefined) {
+      clearTimeout(headersTimer);
+      headersTimer = undefined;
+    }
+  };
+
+  return Promise.race([request, headersStall]).then(
+    (response) => {
+      clearHeadersTimer();
+      return wrapAbortableResponse(response, combinedSignal, stall);
+    },
+    (error: unknown) => {
+      clearHeadersTimer();
+      // If the watchdog fired, surface the stall rather than the fetch's own
+      // AbortError so the failure classifies as a network fault, not a cancel.
+      const reason = stallController.signal.reason;
+      throw reason instanceof HftDownloadStalledError ? reason : error;
+    }
   );
 }
 
@@ -482,8 +653,14 @@ export function disposeHftSessionsForCacheKey(cacheKey: string): void {
   }
 }
 
-/** In-flight pipeline loads by cache key. Ensures only one load per model at a time to avoid corrupt ONNX files (Protobuf parsing failed). */
-const pipelineLoadPromises = new Map<string, Promise<any>>();
+/**
+ * In-flight pipeline loads by cache key. Ensures only one load per model at a
+ * time to avoid corrupt ONNX files (Protobuf parsing failed). Joining callers
+ * wait on the entry cancellably (see {@link getPipeline}).
+ *
+ * @internal Exported for unit tests.
+ */
+export const pipelineLoadPromises = new Map<string, Promise<any>>();
 
 /**
  * Vision/image pipeline types that require an image processor to be loaded.
@@ -661,9 +838,23 @@ export async function getPipeline(
   // ONNX cache path (which can yield "Protobuf parsing failed" when one process reads while another writes).
   const inFlight = pipelineLoadPromises.get(cacheKey);
   if (inFlight) {
+    // Tell the caller why nothing is happening yet — without this the task
+    // sits on its initial "Starting download…" state with no progress event.
+    emit({
+      type: "phase",
+      message: "Waiting for an earlier load of this model to finish",
+      progress: undefined,
+    });
     try {
-      await inFlight;
-    } catch {
+      // Race the join against this caller's own signal. A join that only
+      // awaited the other load could not be cancelled at all: the worker
+      // reports the abort back to the main thread immediately, so the caller
+      // believed it had cancelled while this promise sat here forever.
+      await raceWithAbort(inFlight, signal);
+    } catch (error) {
+      if (signal?.aborted) {
+        throw signal.reason instanceof Error ? signal.reason : new Error("Pipeline load aborted");
+      }
       // First load failed (e.g. aborted) — fall through to retry below.
     }
     const cached = pipelines.get(cacheKey);
@@ -671,18 +862,46 @@ export async function getPipeline(
     // Load failed for the other caller; fall through to retry (we remove from map in finally).
   }
 
-  const loadPromise = doGetPipeline(
-    model,
-    emit,
-    options,
-    progressScaleMax,
-    cacheKey,
-    signal
-  ).finally(() => {
-    pipelineLoadPromises.delete(cacheKey);
-  });
+  // The aborted load is deliberately left in the map until it settles. Abort
+  // tears down its in-flight fetch synchronously (see wrapAbortableResponse),
+  // so the unwind is prompt whenever the load is in a download phase; when it
+  // is instead inside ONNX session creation — which cannot be interrupted —
+  // a retry must wait rather than build a second multi-GB session alongside
+  // it. transformers.js also dedupes per-file downloads internally, so a
+  // retry that raced ahead would only join that lower-level in-flight load.
+  const loadPromise = doGetPipeline(model, emit, options, progressScaleMax, cacheKey, signal);
   pipelineLoadPromises.set(cacheKey, loadPromise);
-  return loadPromise;
+  return loadPromise.finally(() => {
+    // Only delete our own entry so a later load that replaced it is left alone.
+    if (pipelineLoadPromises.get(cacheKey) === loadPromise) {
+      pipelineLoadPromises.delete(cacheKey);
+    }
+  });
+}
+
+/**
+ * Await `promise`, but reject as soon as `signal` fires. Listener is removed
+ * once the promise settles so a long-lived signal doesn't accumulate closures.
+ */
+function raceWithAbort<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) {
+    return Promise.reject(signal.reason ?? new Error("Aborted"));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new Error("Aborted"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      }
+    );
+  });
 }
 
 const doGetPipeline = async (
