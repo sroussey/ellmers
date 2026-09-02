@@ -64,6 +64,28 @@ always reported on the `provider` output port.
 A pinned provider that cannot honor an option throws rather than quietly
 rerouting or ignoring the option.
 
+## Credentials
+
+`credential_key` names one credential-store entry and belongs with a **pinned**
+provider, where the vendor receiving it is settled before the run. With `"auto"`
+it is refused: routing chooses the vendor at run time, so an unnamed key would be
+sent wherever routing landed.
+
+Name the key per provider instead, and `"auto"` stays usable:
+
+```ts
+const out = await new WebSearchTask().run({
+  query: "transformer architecture",
+  provider: "auto",
+  includeAnswer: true,
+  credential_keys: { tavily: "tavily-api-key", brave: "brave-api-key" },
+});
+```
+
+The key sent is the one named for the provider that actually runs, so a key
+issued for one vendor cannot reach another; routing prefers a provider a key is
+named for, and a provider none was named for is simply searched unauthenticated.
+
 ## Adding a provider
 
 Implement `IWebSearchProvider` and register it:

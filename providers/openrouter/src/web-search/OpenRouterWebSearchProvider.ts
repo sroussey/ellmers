@@ -93,12 +93,15 @@ export class OpenRouterWebSearchProvider implements IWebSearchProvider {
     if (request.includeDomains?.length) plugin.include_domains = [...request.includeDomains];
     if (request.excludeDomains?.length) plugin.exclude_domains = [...request.excludeDomains];
 
-    const completion = (await client.chat.completions.create({
-      model: this.model,
-      messages: [{ role: "user", content: request.query }],
-      // `plugins` is an OpenRouter extension the OpenAI types do not model.
-      ...({ plugins: [plugin] } as Record<string, unknown>),
-    } as never)) as {
+    const completion = (await client.chat.completions.create(
+      {
+        model: this.model,
+        messages: [{ role: "user", content: request.query }],
+        // `plugins` is an OpenRouter extension the OpenAI types do not model.
+        ...({ plugins: [plugin] } as Record<string, unknown>),
+      } as never,
+      { signal: context.signal }
+    )) as {
       choices?: ReadonlyArray<{
         message?: { content?: string | null; annotations?: readonly UrlCitationAnnotation[] };
       }>;

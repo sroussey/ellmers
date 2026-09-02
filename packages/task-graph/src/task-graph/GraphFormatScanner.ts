@@ -35,9 +35,20 @@ export interface GraphFormatScanResult {
 }
 
 /**
+ * The value schema of a map port — `additionalProperties` written as a schema
+ * rather than a boolean. A port holding a map of credential keys annotates the
+ * format there, where the per-property walk never looks.
+ */
+function getMapValueSchema(schema: unknown): unknown {
+  if (typeof schema !== "object" || schema === null) return undefined;
+  const additional = (schema as Record<string, unknown>).additionalProperties;
+  return typeof additional === "object" && additional !== null ? additional : undefined;
+}
+
+/**
  * Recursively walks a JSON Schema's properties looking for any property whose
- * format annotation matches `targetFormat`. Handles nested objects and
- * `oneOf`/`anyOf` wrappers.
+ * format annotation matches `targetFormat`. Handles nested objects, map values
+ * and `oneOf`/`anyOf` wrappers.
  */
 function schemaHasFormat(schema: unknown, targetFormat: string): boolean {
   if (typeof schema !== "object" || schema === null) return false;
@@ -48,6 +59,8 @@ function schemaHasFormat(schema: unknown, targetFormat: string): boolean {
     for (const propSchema of Object.values(properties)) {
       const format = getSchemaFormat(propSchema);
       if (format === targetFormat) return true;
+
+      if (getSchemaFormat(getMapValueSchema(propSchema)) === targetFormat) return true;
 
       // Recurse into nested object schemas
       const objectSchema = getObjectSchema(propSchema);
@@ -117,10 +130,19 @@ export function scanGraphForCredentials(graph: ITaskGraph): GraphFormatScanResul
   };
 }
 
+/** Whether a map value holds at least one non-empty string. */
+function hasNonEmptyStringValue(data: unknown): boolean {
+  if (typeof data !== "object" || data === null) return false;
+  return Object.values(data as Record<string, unknown>).some(
+    (value) => typeof value === "string" && value.length > 0
+  );
+}
+
 /**
  * Walk schema and data in parallel. When a property is annotated with a
  * credential format AND the corresponding data value is a non-empty string,
- * record the format. Recurses into nested object schemas.
+ * record the format. A map port annotated on its value schema counts the same
+ * way, once it holds an entry. Recurses into nested object schemas.
  */
 function collectUsedCredentialFormats(schema: unknown, data: unknown, formats: Set<string>): void {
   if (typeof schema === "boolean" || typeof schema !== "object" || schema === null) return;
@@ -142,6 +164,15 @@ function collectUsedCredentialFormats(schema: unknown, data: unknown, formats: S
       value.length > 0
     ) {
       formats.add(format);
+    }
+
+    const mapValueFormat = getSchemaFormat(getMapValueSchema(propSchema));
+    if (
+      mapValueFormat !== undefined &&
+      CREDENTIAL_KEY_FORMATS.has(mapValueFormat) &&
+      hasNonEmptyStringValue(value)
+    ) {
+      formats.add(mapValueFormat);
     }
 
     // Recurse into nested object schemas with the matching nested data

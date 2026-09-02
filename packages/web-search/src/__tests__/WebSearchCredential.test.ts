@@ -143,11 +143,75 @@ describe("WebSearchTask credential forwarding", () => {
     expect(JSON.stringify(headers)).not.toContain("absent-key-name");
   });
 
+  it("never sends a Tavily-named key to Brave when routing chooses the provider", async () => {
+    // Brave registers first, so insertion-order routing lands on it. The key is
+    // named for tavily and nothing else, and a secret issued for one vendor
+    // reaching another is not recoverable by rotating anything but that key.
+    WebSearchProviderRegistry.register(new BraveWebSearchProvider());
+    WebSearchProviderRegistry.register(new TavilyWebSearchProvider());
+    const registry = await credentialRegistry();
+
+    const out = await new WebSearchTask().run(
+      { query: "cats", provider: "auto", credential_keys: { tavily: STORE_KEY } },
+      { registry }
+    );
+
+    expect(out.provider).toBe("tavily");
+    const [url, options] = mockFetch.mock.calls.at(-1) ?? [];
+    expect(url).toContain("api.tavily.com");
+    expect(JSON.stringify(options)).not.toContain("X-Subscription-Token");
+    for (const [calledUrl, calledOptions] of mockFetch.mock.calls) {
+      if (String(calledUrl).includes("brave")) {
+        expect(JSON.stringify(calledOptions)).not.toContain(SECRET);
+      }
+    }
+  });
+
+  it("sends no key at all when routing lands on a provider none was named for", async () => {
+    WebSearchProviderRegistry.register(new BraveWebSearchProvider());
+    const registry = await credentialRegistry();
+
+    const out = await new WebSearchTask().run(
+      { query: "cats", provider: "auto", credential_keys: { tavily: STORE_KEY } },
+      { registry }
+    );
+
+    // An unauthenticated search that fails is recoverable; the Tavily secret
+    // arriving at Brave is not.
+    expect(out.provider).toBe("brave");
+    expect(JSON.stringify(mockFetch.mock.calls.at(-1))).not.toContain(SECRET);
+  });
+
+  it("refuses a bare credential_key alongside provider 'auto'", async () => {
+    WebSearchProviderRegistry.register(new BraveWebSearchProvider());
+    WebSearchProviderRegistry.register(new TavilyWebSearchProvider());
+    const registry = await credentialRegistry();
+
+    await expect(
+      new WebSearchTask().run(
+        { query: "cats", provider: "auto", credential_key: STORE_KEY },
+        { registry }
+      )
+    ).rejects.toThrow(/credential_keys/);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it("is still seen by the graph credential scan that unlocks the store", () => {
     const graph = new TaskGraph();
     graph.addTask(
       new WebSearchTask({
         defaults: { query: "cats", provider: "tavily", credential_key: STORE_KEY },
+      })
+    );
+
+    expect(scanGraphForCredentials(graph).needsCredentials).toBe(true);
+  });
+
+  it("is still seen by that scan when the key is named in the per-provider map", () => {
+    const graph = new TaskGraph();
+    graph.addTask(
+      new WebSearchTask({
+        defaults: { query: "cats", provider: "auto", credential_keys: { tavily: STORE_KEY } },
       })
     );
 

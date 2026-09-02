@@ -38,7 +38,7 @@ const PAYLOAD = {
 };
 
 function clientReturning(payload: unknown, spy?: (body: unknown) => void) {
-  const create = vi.fn(async (body: unknown) => {
+  const create = vi.fn(async (body: unknown, _options?: unknown) => {
     spy?.(body);
     return payload;
   });
@@ -53,6 +53,18 @@ describe("OpenRouterWebSearchProvider", () => {
     expect(c.answer).toBe(true);
     expect(c.content).toBe(true);
     expect(c.dateFilter).toBe(false);
+  });
+
+  it("hands the abort signal to the SDK, not just to a check before it", async () => {
+    const { create, client } = clientReturning(PAYLOAD);
+    const controller = new AbortController();
+    await new OpenRouterWebSearchProvider({ client }).search({ query: "cats" }, {
+      ...context,
+      signal: controller.signal,
+    } as IExecuteContext);
+    // Without it an aborted run leaves a grounded turn in flight, and the run
+    // is billed for tokens nobody will read.
+    expect((create.mock.calls[0][1] as { signal?: AbortSignal }).signal).toBe(controller.signal);
   });
 
   it("enables the web plugin and passes both domain lists", async () => {

@@ -26,13 +26,25 @@ interface BraveResult {
   readonly meta_url?: { readonly favicon?: string };
 }
 
-/** Brave's `freshness` takes `YYYY-MM-DDtoYYYY-MM-DD`; an open end is left off. */
+/** No lower bound: `freshness` takes a closed interval and accepts any start date. */
+const OPEN_INTERVAL_START = "1970-01-01";
+
+function isoDay(value: string | undefined): string | undefined {
+  const day = value?.slice(0, 10);
+  return day === undefined || day.length === 0 ? undefined : day;
+}
+
+/**
+ * Brave's `freshness` takes `YYYY-MM-DDtoYYYY-MM-DD`. Either side of this task's
+ * `dateRange` may be open, so the missing one is filled rather than dropped —
+ * dropping it sends the search unfiltered while `dateFilter: true` reports the
+ * bound as honored.
+ */
 function freshnessParam(range: WebSearchDateRange): string | undefined {
-  const start = range.start?.slice(0, 10);
-  const end = range.end?.slice(0, 10);
-  if (start && end) return `${start}to${end}`;
-  if (start) return `${start}to${new Date().toISOString().slice(0, 10)}`;
-  return undefined;
+  const start = isoDay(range.start);
+  const end = isoDay(range.end);
+  if (start === undefined && end === undefined) return undefined;
+  return `${start ?? OPEN_INTERVAL_START}to${end ?? new Date().toISOString().slice(0, 10)}`;
 }
 
 export class BraveWebSearchProvider implements IWebSearchProvider {

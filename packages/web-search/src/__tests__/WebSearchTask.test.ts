@@ -125,6 +125,89 @@ describe("WebSearchTask", () => {
     expect(out.query).toBe("cats site:a.com");
   });
 
+  it("hands a provider only the credential named for it", async () => {
+    const brave = vi.fn();
+    const tavily = vi.fn();
+    WebSearchProviderRegistry.register(fake("brave", {}, brave));
+    WebSearchProviderRegistry.register(fake("tavily", {}, tavily));
+
+    await new WebSearchTask().run({
+      query: "cats",
+      provider: "tavily",
+      credential_keys: { brave: "brave-key", tavily: "tavily-key" },
+    });
+
+    expect(brave).not.toHaveBeenCalled();
+    expect(tavily).toHaveBeenCalledWith(expect.objectContaining({ credentialKey: "tavily-key" }));
+  });
+
+  it("routes to the provider a credential is named for, not the first registered", async () => {
+    const seen = vi.fn();
+    WebSearchProviderRegistry.register(fake("brave", {}));
+    WebSearchProviderRegistry.register(fake("tavily", {}, seen));
+
+    const out = await new WebSearchTask().run({
+      query: "cats",
+      provider: "auto",
+      credential_keys: { tavily: "tavily-key" },
+    });
+
+    expect(out.provider).toBe("tavily");
+    expect(seen).toHaveBeenCalledWith(expect.objectContaining({ credentialKey: "tavily-key" }));
+  });
+
+  it("prefers a credentialed provider only among those that can serve the request", async () => {
+    const seen = vi.fn();
+    WebSearchProviderRegistry.register(fake("brave", { answer: true }, seen));
+    WebSearchProviderRegistry.register(fake("tavily", {}));
+
+    // The named provider cannot synthesize an answer, so the preference yields
+    // to the capability check rather than overriding it.
+    const out = await new WebSearchTask().run({
+      query: "cats",
+      provider: "auto",
+      includeAnswer: true,
+      credential_keys: { tavily: "tavily-key" },
+    });
+
+    expect(out.provider).toBe("brave");
+    expect(seen).toHaveBeenCalledWith(expect.objectContaining({ credentialKey: undefined }));
+  });
+
+  it("sends no credential to a routed provider none was named for", async () => {
+    const seen = vi.fn();
+    WebSearchProviderRegistry.register(fake("brave", {}, seen));
+
+    await new WebSearchTask().run({
+      query: "cats",
+      provider: "auto",
+      credential_keys: { tavily: "tavily-key" },
+    });
+
+    expect(seen).toHaveBeenCalledWith(expect.objectContaining({ credentialKey: undefined }));
+  });
+
+  it("refuses an unnamed credential_key with provider auto", async () => {
+    WebSearchProviderRegistry.register(fake("brave", {}));
+    await expect(
+      new WebSearchTask().run({ query: "cats", provider: "auto", credential_key: "some-key" })
+    ).rejects.toThrow(/credential_keys/);
+  });
+
+  it("lets the per-provider map override the bare key for a pinned provider", async () => {
+    const seen = vi.fn();
+    WebSearchProviderRegistry.register(fake("tavily", {}, seen));
+
+    await new WebSearchTask().run({
+      query: "cats",
+      provider: "tavily",
+      credential_key: "fallback-key",
+      credential_keys: { tavily: "tavily-key" },
+    });
+
+    expect(seen).toHaveBeenCalledWith(expect.objectContaining({ credentialKey: "tavily-key" }));
+  });
+
   it("reports zero results as success, not failure", async () => {
     WebSearchProviderRegistry.register({
       name: "empty",

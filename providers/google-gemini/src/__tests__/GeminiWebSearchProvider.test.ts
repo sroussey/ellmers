@@ -52,6 +52,20 @@ describe("GeminiWebSearchProvider", () => {
     expect(c.content).toBe(false);
   });
 
+  it("hands the abort signal to the SDK, not just to a check before it", async () => {
+    const seen = vi.fn();
+    const { client } = clientReturning(PAYLOAD, seen);
+    const controller = new AbortController();
+    await new GeminiWebSearchProvider({ client }).search({ query: "cats" }, {
+      ...context,
+      signal: controller.signal,
+    } as IExecuteContext);
+    // Without it an aborted run leaves a grounded turn in flight, and the run
+    // is billed for tokens nobody will read.
+    const body = seen.mock.calls[0][0] as { config: { abortSignal?: AbortSignal } };
+    expect(body.config.abortSignal).toBe(controller.signal);
+  });
+
   it("enables the googleSearch tool", async () => {
     const seen = vi.fn();
     const { client } = clientReturning(PAYLOAD, seen);

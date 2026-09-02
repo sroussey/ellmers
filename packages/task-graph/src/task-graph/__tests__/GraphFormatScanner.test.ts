@@ -101,6 +101,27 @@ class UnresolvedCredentialKeyTask extends Task<any, any> {
   }
 }
 
+/**
+ * A port holding a MAP of credential keys — the format is annotated on the
+ * `additionalProperties` value schema, since the key names are not known ahead
+ * of time (they are provider names supplied by the caller).
+ */
+class MapCredentialKeyTask extends Task<any, any> {
+  static override readonly type = "MapCredentialKeyTask";
+
+  static override inputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: {
+        credential_keys: {
+          type: "object",
+          additionalProperties: { type: "string", format: "credential-key" },
+        },
+      },
+    } as const satisfies DataPortSchema;
+  }
+}
+
 class NoCredentialTask extends Task<any, any> {
   static override readonly type = "NoCredentialTask";
 
@@ -187,6 +208,31 @@ describe("GraphFormatScanner", () => {
       );
       expect(result.needsCredentials).toBe(true);
       expect(result.credentialFormats.has("credential-key")).toBe(true);
+    });
+
+    it("detects a credential-key annotated on a map's value schema", () => {
+      // The key names are provider names the caller chooses, so the format can
+      // only be declared on `additionalProperties`. Missed there, the store is
+      // never unlocked and every keyed request goes out unauthenticated.
+      const result = scanGraphForCredentials(
+        makeGraph(new MapCredentialKeyTask({ defaults: { credential_keys: { tavily: "k" } } }))
+      );
+      expect(result.needsCredentials).toBe(true);
+      expect(result.credentialFormats.has("credential-key")).toBe(true);
+    });
+
+    it("ignores an empty credential-key map", () => {
+      const result = scanGraphForCredentials(
+        makeGraph(new MapCredentialKeyTask({ defaults: { credential_keys: {} } }))
+      );
+      expect(result.needsCredentials).toBe(false);
+    });
+
+    it("ignores a credential-key map whose only entry is an empty string", () => {
+      const result = scanGraphForCredentials(
+        makeGraph(new MapCredentialKeyTask({ defaults: { credential_keys: { tavily: "" } } }))
+      );
+      expect(result.needsCredentials).toBe(false);
     });
 
     it("ignores a declared-but-unset credential-key", () => {
@@ -292,6 +338,12 @@ describe("GraphFormatScanner", () => {
 
     it("returns true for oneOf credential format", () => {
       expect(scanGraphForFormat(makeGraph(new OneOfCredentialTask({})), "credential")).toBe(true);
+    });
+
+    it("returns true for a format annotated on a map's value schema", () => {
+      expect(scanGraphForFormat(makeGraph(new MapCredentialKeyTask({})), "credential-key")).toBe(
+        true
+      );
     });
   });
 });
