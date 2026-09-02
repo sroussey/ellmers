@@ -52,6 +52,7 @@ export { buildCommandTree, findCommandNode, type WebCommandNode } from "./web/co
 export {
   registerWebFieldWidget,
   registerWebPanel,
+  registerWebStatusReadCleanup,
   registerWebStatusWidget,
   type PanelData,
   type WebFieldWidget,

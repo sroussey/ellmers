@@ -13,6 +13,7 @@ import {
   readWebStatusWidgets,
   registerWebFieldWidget,
   registerWebPanel,
+  registerWebStatusReadCleanup,
   registerWebStatusWidget,
   resetWebExtensionsForTesting,
 } from "./extensions";
@@ -143,5 +144,40 @@ describe("status widgets", () => {
       { kind: "text", label: "backend", value: "postgres", tone: "ok" },
       { kind: "meter", label: "pending", value: 3, max: 10 },
     ]);
+  });
+
+  it("runs cleanup after the read so stats connections do not linger", async () => {
+    const order: string[] = [];
+    registerWebStatusReadCleanup(async () => {
+      order.push("cleanup");
+    });
+    registerWebStatusWidget({
+      id: "db",
+      title: "Database",
+      source: "test",
+      read: async () => {
+        order.push("read");
+        return [{ kind: "text", label: "backend", value: "postgres" }];
+      },
+    });
+    await readWebStatusWidgets();
+    expect(order).toEqual(["read", "cleanup"]);
+  });
+
+  it("runs cleanup after the read even when a widget cannot answer", async () => {
+    let closed = 0;
+    registerWebStatusReadCleanup(async () => {
+      closed += 1;
+    });
+    registerWebStatusWidget({
+      id: "broken",
+      title: "Broken",
+      source: "test",
+      read: async () => {
+        throw new Error("no connection");
+      },
+    });
+    await readWebStatusWidgets();
+    expect(closed).toBe(1);
   });
 });

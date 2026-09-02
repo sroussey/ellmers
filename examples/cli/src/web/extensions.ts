@@ -138,6 +138,7 @@ export interface WebStatusWidget {
 const panels: WebPanel[] = [];
 const fieldWidgets = new Map<string, WebFieldWidget>();
 const statusWidgets: WebStatusWidget[] = [];
+const statusReadCleanups: Array<() => Promise<void>> = [];
 
 export function registerWebPanel(panel: WebPanel): void {
   const at = panels.findIndex((candidate) => candidate.id === panel.id);
@@ -186,6 +187,17 @@ export function registerWebStatusWidget(widget: WebStatusWidget): void {
   else statusWidgets.push(widget);
 }
 
+/**
+ * Runs after every status-rail read, success or failure.
+ *
+ * The rail is polled while the console is open. A package whose widgets open
+ * database connections registers a cleanup here so those backends are closed
+ * before the next 15s poll, instead of sitting idle until process exit.
+ */
+export function registerWebStatusReadCleanup(cleanup: () => Promise<void>): void {
+  statusReadCleanups.push(cleanup);
+}
+
 export function listWebStatusWidgets(): readonly WebStatusWidget[] {
   return [...statusWidgets];
 }
@@ -199,27 +211,41 @@ export async function readWebStatusWidgets(): Promise<
     readonly items: readonly WebStatusItem[];
   }[]
 > {
-  const results = await Promise.all(
-    statusWidgets.map(async (widget) => {
+  try {
+    const results = await Promise.all(
+      statusWidgets.map(async (widget) => {
+        try {
+          return {
+            id: widget.id,
+            title: widget.title,
+            source: widget.source,
+            items: (await widget.read()).map((item) =>
+              item.kind === "text" ? item : { ...item, kind: "meter" as const }
+            ),
+          };
+        } catch {
+          return undefined;
+        }
+      })
+    );
+    return results.filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);
+  } finally {
+    // Close connections the widgets opened for this poll. A thrown cleanup
+    // must not fail the rail: the numbers already landed, and a close error
+    // is not something the operator can act on from this page.
+    for (const cleanup of statusReadCleanups) {
       try {
-        return {
-          id: widget.id,
-          title: widget.title,
-          source: widget.source,
-          items: (await widget.read()).map((item) =>
-            item.kind === "text" ? item : { ...item, kind: "meter" as const }
-          ),
-        };
+        await cleanup();
       } catch {
-        return undefined;
+        /* ignore */
       }
-    })
-  );
-  return results.filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);
+    }
+  }
 }
 
 export function resetWebExtensionsForTesting(): void {
   panels.length = 0;
   fieldWidgets.clear();
   statusWidgets.length = 0;
+  statusReadCleanups.length = 0;
 }
