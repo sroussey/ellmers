@@ -86,7 +86,10 @@ function readArguments(command: Command): WebCommandArgument[] {
 }
 
 function isRunnable(command: Command): boolean {
-  if (command.name() === "help") return false;
+  const name = command.name();
+  // `web` is this surface: listing it would offer a button that starts another
+  // console from inside the one already running.
+  if (name === "help" || name === "web") return false;
   return !(command as unknown as { _hidden?: boolean })._hidden;
 }
 

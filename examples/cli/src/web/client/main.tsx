@@ -373,7 +373,7 @@ function App(): JSX.Element {
 
   return (
     <div className="app" data-pane={pane}>
-      <aside className="rail">
+      <aside className="rail rail-l" aria-label="Commands">
         <div className="brand">
           <div className="mark">w</div>
           <div>
@@ -404,45 +404,6 @@ function App(): JSX.Element {
           }
           onSelect={selectNode}
         />
-        <div className="railsec">
-          <h4>Runs</h4>
-          {runs.length === 0 ? <div className="cmd-d">Nothing has run yet.</div> : null}
-          {runs.slice(0, 6).map((summary) => (
-            <button key={summary.id} className="runitem" onClick={() => attach(summary)}>
-              <span
-                className={`dot ${summary.state === "running" ? "run" : summary.state === "completed" ? "ok" : "fail"}`}
-              />
-              <span className="lbl">{summary.cli.replace(`${binaryName} `, "")}</span>
-              <span className="t">
-                {summary.endedAt
-                  ? `${((summary.endedAt - summary.startedAt) / 1000).toFixed(1)}s`
-                  : "…"}
-              </span>
-            </button>
-          ))}
-        </div>
-        {widgets.map((widget) => (
-          <div className="railsec" key={widget.id}>
-            <h4>{widget.title}</h4>
-            {widget.items.map((item) =>
-              item.kind === "text" ? (
-                <div className={`sline${item.tone ? ` t-${item.tone}` : ""}`} key={item.label}>
-                  <span className="sl-l">{item.label}</span>
-                  <span className="sl-v">{item.value}</span>
-                </div>
-              ) : (
-                <div className="meter" key={item.label}>
-                  <span>
-                    {item.value} / {item.max} {item.label}
-                  </span>
-                  <span className="bar">
-                    <i style={`width:${Math.min(100, (item.value / (item.max || 1)) * 100)}%`} />
-                  </span>
-                </div>
-              )
-            )}
-          </div>
-        ))}
       </aside>
 
       {pendingRun ? (
@@ -644,6 +605,51 @@ function App(): JSX.Element {
           <span>No page reloads — the document is mounted once and patched per event</span>
         </footer>
       </main>
+
+      {/* Status lives on its own rail so the command tree keeps the left one:
+          runs first, then whatever the CLI contributed (fetch state, database
+          size, …). Read on a slow poll; see the effect above. */}
+      <aside className="rail rail-r" aria-label="Status">
+        <div className="railsec">
+          <h4>Runs</h4>
+          {runs.length === 0 ? <div className="cmd-d">Nothing has run yet.</div> : null}
+          {runs.slice(0, 6).map((summary) => (
+            <button key={summary.id} className="runitem" onClick={() => attach(summary)}>
+              <span
+                className={`dot ${summary.state === "running" ? "run" : summary.state === "completed" ? "ok" : "fail"}`}
+              />
+              <span className="lbl">{summary.cli.replace(`${binaryName} `, "")}</span>
+              <span className="t">
+                {summary.endedAt
+                  ? `${((summary.endedAt - summary.startedAt) / 1000).toFixed(1)}s`
+                  : "…"}
+              </span>
+            </button>
+          ))}
+        </div>
+        {widgets.map((widget) => (
+          <div className="railsec" key={widget.id}>
+            <h4>{widget.title}</h4>
+            {widget.items.map((item) =>
+              item.kind === "text" ? (
+                <div className={`sline${item.tone ? ` t-${item.tone}` : ""}`} key={item.label}>
+                  <span className="sl-l">{item.label}</span>
+                  <span className="sl-v">{item.value}</span>
+                </div>
+              ) : (
+                <div className="meter" key={item.label}>
+                  <span>
+                    {item.value} / {item.max} {item.label}
+                  </span>
+                  <span className="bar">
+                    <i style={`width:${Math.min(100, (item.value / (item.max || 1)) * 100)}%`} />
+                  </span>
+                </div>
+              )
+            )}
+          </div>
+        ))}
+      </aside>
     </div>
   );
 }

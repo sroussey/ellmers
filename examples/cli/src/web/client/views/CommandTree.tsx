@@ -61,17 +61,11 @@ function NodeRow({
 }): JSX.Element {
   const key = node.path.join(".");
   const isOpen = open.has(key);
-  const padding = 8 + depth * 13;
 
   if (node.children.length === 0) {
     const current = selectedPath.join(".") === key;
     return (
-      <button
-        className="cmd"
-        style={`padding-left:${padding}px`}
-        aria-current={current}
-        onClick={() => onSelect(node)}
-      >
+      <button className="cmd" aria-current={current} onClick={() => onSelect(node)}>
         <span className="cmd-n">{node.name}</span>
         <span className="cmd-d">{node.description}</span>
         <CommandBadges badges={node.badges} />
@@ -79,8 +73,12 @@ function NodeRow({
     );
   }
 
-  const children = isOpen
-    ? node.children.map((child) => (
+  // Children live in their own box, indented and ruled down the left, so a leaf
+  // that FOLLOWS a collapsed sub-group reads as the sub-group's sibling and not
+  // as its child. Depth carried by padding alone could not say which it was.
+  const children = isOpen ? (
+    <div className="kids">
+      {node.children.map((child) => (
         <NodeRow
           key={child.path.join(".")}
           node={child}
@@ -90,26 +88,19 @@ function NodeRow({
           onToggle={onToggle}
           onSelect={onSelect}
         />
-      ))
-    : null;
+      ))}
+    </div>
+  ) : null;
 
   return (
     <>
       {depth === 0 ? (
-        <button
-          className="grp-h"
-          style={`padding-left:${padding - 2}px`}
-          onClick={() => onToggle(key)}
-        >
+        <button className="grp-h" onClick={() => onToggle(key)}>
           <span className="caret">{isOpen ? "▾" : "▸"}</span>
           <span>{node.name}</span>
         </button>
       ) : (
-        <button
-          className="cmd grp"
-          style={`padding-left:${padding - 11}px`}
-          onClick={() => onToggle(key)}
-        >
+        <button className="cmd sub" aria-expanded={isOpen} onClick={() => onToggle(key)}>
           <span className="caret">{isOpen ? "▾" : "▸"}</span>
           <span className="cmd-n">{node.name}</span>
           <span className="cmd-d">{node.description}</span>

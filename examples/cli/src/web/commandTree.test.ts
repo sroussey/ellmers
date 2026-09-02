@@ -53,6 +53,14 @@ describe("buildCommandTree", () => {
     const process = buildCommandTree(fixture())[0].children[0];
     expect(process.options.map((o) => o.name)).not.toContain("help");
   });
+
+  it("omits web — the console is already that command", () => {
+    const program = fixture();
+    program.command("web").description("Serve a local web console");
+    const names = buildCommandTree(program).map((c) => c.name);
+    expect(names).not.toContain("web");
+    expect(names).toContain("spac");
+  });
 });
 
 describe("findCommandNode", () => {

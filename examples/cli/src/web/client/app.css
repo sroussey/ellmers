@@ -126,18 +126,33 @@ textarea {
 /* ---------- shell ---------- */
 .app {
   display: grid;
-  grid-template-columns: 266px minmax(0, 1fr);
+  grid-template-columns: 266px minmax(0, 1fr) 248px;
+  grid-template-areas: "rail main status";
   height: 100dvh;
   min-height: 560px;
 }
 .rail {
   background: var(--panel);
-  border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
+/* Commands on the left, status on the right: the tree gets the full height it
+   needs, and the runs/fetch/database lines stop pushing it up. */
+.rail-l {
+  grid-area: rail;
+  border-right: 1px solid var(--line);
+}
+.rail-r {
+  grid-area: status;
+  border-left: 1px solid var(--line);
+  overflow-y: auto;
+}
+.rail-r .railsec:first-child {
+  border-top: 0;
+}
 .main {
+  grid-area: main;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   min-width: 0;
@@ -263,16 +278,26 @@ textarea {
   color: var(--accent-2);
   font-weight: 600;
 }
+/* The name is the thing being chosen: it never wraps or truncates. The
+   description is the concession — it takes what is left and ellipsizes. */
 .cmd-n {
   font-family: var(--mono);
   font-size: var(--fs-12);
+  flex: none;
+  white-space: nowrap;
 }
 .cmd-d {
   font-size: var(--fs-11);
   color: var(--ink-3);
+  flex: 1 1 0;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.cmd .badges {
+  flex: none;
+  margin-left: auto;
 }
 .grp-h {
   background: none;
@@ -292,12 +317,29 @@ textarea {
   flex: none;
   display: inline-block;
 }
-.cmd.grp .cmd-n {
-  color: var(--ink);
-  font-weight: 500;
+/* A sub-group row is set exactly like the leaves around it — the caret is
+   what says it opens; a heavier face would outrank the group heading above. */
+.cmd.sub .cmd-n {
+  color: inherit;
+  font-weight: 400;
 }
-.cmd.grp .cmd-d {
-  font-size: 10px;
+/* One box per subtree: the rule runs from under the parent's caret past its
+   last child, so where a subtree ends is drawn, not inferred from indent. */
+.kids {
+  margin-left: 10px;
+  padding-left: 3px;
+  border-left: 1px solid var(--line);
+}
+.kids .kids {
+  margin-left: 12px;
+  margin-top: 1px;
+  margin-bottom: 4px;
+}
+.kids .cmd {
+  padding-left: 6px;
+}
+.cmd.sub[aria-expanded="true"] .caret {
+  color: var(--ink-2);
 }
 .railsec {
   border-top: 1px solid var(--line-2);
@@ -1682,9 +1724,27 @@ pre.json .n {
     transition: none !important;
   }
 }
+@media (max-width: 1080px) {
+  .app {
+    grid-template-columns: 266px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "rail main"
+      "status main";
+  }
+  .rail-r {
+    border-left: 0;
+    border-right: 1px solid var(--line);
+    border-top: 1px solid var(--line);
+    max-height: 40dvh;
+  }
+}
 @media (max-width: 820px) {
   .app {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "rail"
+      "status";
   }
   .app[data-pane="list"] .main {
     display: none;
@@ -1697,6 +1757,9 @@ pre.json .n {
   }
   .rail {
     border-right: 0;
+  }
+  .app[data-pane="detail"] {
+    grid-template-areas: "main";
   }
   .field {
     grid-template-columns: minmax(0, 1fr);
