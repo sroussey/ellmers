@@ -126,6 +126,48 @@ export function withConnectionTransactionBlock(opts: TabularStorageContractOpts)
     );
 
     itImpl(
+      "does not refuse a concurrent transaction whose participant set merely differs",
+      async () => {
+        // Two units of work on one handle, neither inside the other, opening
+        // transactions over overlapping-but-unequal participant sets — the
+        // shape any concurrent sweep produces. On a single-session backend only
+        // one BEGIN can be open at a time, so the second waits; on a pool it
+        // takes another client. Either way it must not be refused.
+        let releaseFirst: () => void = () => {};
+        const firstCanFinish = new Promise<void>((resolve) => {
+          releaseFirst = resolve;
+        });
+        let signalStarted: () => void = () => {};
+        const firstStarted = new Promise<void>((resolve) => {
+          signalStarted = resolve;
+        });
+
+        const first = withConnectionTransaction([primary, sibling], async () => {
+          await primary.put({ name: "first", type: "x", option: "one", success: true });
+          signalStarted();
+          await firstCanFinish;
+        });
+        await firstStarted;
+
+        let secondError: unknown;
+        const second = withConnectionTransaction([sibling, outsider], async () => {
+          await outsider.put({ name: "second", type: "x", option: "two", success: true });
+        }).catch((err: unknown) => {
+          secondError = err;
+        });
+
+        releaseFirst();
+        await first;
+        await second;
+
+        expect(secondError).toBeUndefined();
+        expect(await primary.get({ name: "first", type: "x" })).toBeDefined();
+        expect(await outsider.get({ name: "second", type: "x" })).toBeDefined();
+      },
+      opts.timeout
+    );
+
+    itImpl(
       "throws sibling-op for a storage that was not enlisted",
       async () => {
         let error: unknown;

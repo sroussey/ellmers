@@ -52,7 +52,10 @@ function dedupeByIdentity(participants: readonly AnyTabularStorage[]): AnyTabula
  * Calling this from inside an open connection-scoped transaction on the SAME
  * connection throws `NestedConnectionTransactionError` — SQLite and Postgres
  * have no autonomous `BEGIN`, so hoist the participants into the outer call or
- * use a `SAVEPOINT`.
+ * use a `SAVEPOINT`. "From inside" is literal: a call from another task that
+ * merely OVERLAPS an open transaction in time is not nesting and is not
+ * refused, whatever its participant list. On a single-session backend it waits
+ * for the open transaction to commit and then opens its own.
  *
  * Inside `fn`, call ordinary methods on the original storage instances — not a
  * `tx` proxy. Enlisted writes join the open `BEGIN`; a write from a storage

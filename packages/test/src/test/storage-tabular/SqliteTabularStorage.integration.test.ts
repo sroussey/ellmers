@@ -627,6 +627,63 @@ describe("SqliteTabularStorage shared-connection safety", () => {
     expect(await b.get({ name: "from-b", type: "x" })).toMatchObject({ option: "vb" });
   });
 
+  it("two concurrent withConnectionTransaction calls with overlapping participant sets both commit", async () => {
+    const [a, b, db] = await makeSharedPair();
+    const c = new SqliteTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      db,
+      `shared_c_${uuid4().replace(/-/g, "_")}`,
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+    await c.setupDatabase();
+
+    // The shape a concurrent sweep produces: one unit of work opens a
+    // transaction over {a, b} and another, in a different task on the same
+    // handle, opens one over {b, c}. The sets overlap but are not equal, and
+    // neither call is an async descendant of the other. Only one BEGIN can be
+    // open on a single SQLite handle, so the second waits — refusing it would
+    // fail a unit of work that has nothing wrong with it.
+    const order: string[] = [];
+    let releaseFirst: () => void = () => {};
+    const firstCanFinish = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let signalFirstStarted: () => void = () => {};
+    const firstStarted = new Promise<void>((resolve) => {
+      signalFirstStarted = resolve;
+    });
+
+    const first = withConnectionTransaction([a, b], async () => {
+      order.push("BEGIN-1");
+      await a.put({ name: "first", type: "x", option: "va", success: true });
+      signalFirstStarted();
+      await firstCanFinish;
+      order.push("END-1");
+    });
+    await firstStarted;
+
+    let secondError: unknown;
+    const second = withConnectionTransaction([b, c], async () => {
+      order.push("BEGIN-2");
+      await c.put({ name: "second", type: "x", option: "vc", success: true });
+    }).catch((err: unknown) => {
+      secondError = err;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(secondError).toBeUndefined();
+    expect(order).toEqual(["BEGIN-1"]);
+
+    releaseFirst();
+    await first;
+    await second;
+
+    expect(secondError).toBeUndefined();
+    expect(order).toEqual(["BEGIN-1", "END-1", "BEGIN-2"]);
+    expect(await a.get({ name: "first", type: "x" })).toMatchObject({ option: "va" });
+    expect(await c.get({ name: "second", type: "x" })).toMatchObject({ option: "vc" });
+  });
+
   it("withConnectionTransaction rolls back both tables when the callback throws", async () => {
     const [a, b] = await makeSharedPair();
     await a.put({ name: "kept", type: "x", option: "base", success: true });
