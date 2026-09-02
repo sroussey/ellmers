@@ -449,7 +449,7 @@ describe("PostgresTabularStorage", () => {
       return [a, b, pglite] as const;
     }
 
-    it("sibling single-op throws ConnectionReentryError during a transaction on the same handle", async () => {
+    it("unrelated concurrent sibling op waits for the transaction instead of being refused", async () => {
       const [a, b, pglite] = await makeSharedPair();
       try {
         let releaseInner: () => void = () => {};
@@ -461,23 +461,65 @@ describe("PostgresTabularStorage", () => {
           signalTxStarted = resolve;
         });
 
+        const order: string[] = [];
         const txPromise = a.withTransaction(async (tx) => {
           await tx.put({ name: "tx-row", type: "x", option: "tx", success: true });
           signalTxStarted();
           await innerCanFinish;
+          order.push("TX-BODY-END");
         });
 
         await txStarted;
 
-        // Sibling put from a different instance on the same handle: must
-        // fail fast with ConnectionReentryError(mode="sibling-op"), not
-        // silently block until the tx releases.
+        // Sibling put from a different instance on the same handle, issued from
+        // a task that is NOT an async descendant of the transaction body. It
+        // cannot escape the BEGIN, so it queues on the connection chain instead
+        // of being refused in a caller that did nothing wrong.
         let siblingErr: unknown;
-        await b
+        const sibling = b
           .put({ name: "sibling-row", type: "x", option: "sib", success: true })
-          .catch((err) => {
+          .then(() => {
+            order.push("SIBLING-WRITE");
+          })
+          .catch((err: unknown) => {
             siblingErr = err;
           });
+
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(siblingErr).toBeUndefined();
+        expect(order).toEqual([]);
+
+        releaseInner();
+        await txPromise;
+        await sibling;
+
+        expect(siblingErr).toBeUndefined();
+        expect(order).toEqual(["TX-BODY-END", "SIBLING-WRITE"]);
+        expect(await b.get({ name: "sibling-row", type: "x" })).toBeDefined();
+
+        expect(await a.get({ name: "tx-row", type: "x" })).toBeDefined();
+        // After the tx releases the connection, a further sibling put succeeds.
+        await b.put({ name: "post-tx-row", type: "x", option: "sib", success: true });
+        expect(await b.get({ name: "post-tx-row", type: "x" })).toBeDefined();
+      } finally {
+        await pglite.close();
+      }
+    });
+
+    it("sibling single-op from inside the transaction body still throws ConnectionReentryError", async () => {
+      const [a, b, pglite] = await makeSharedPair();
+      try {
+        // A descendant of the body is the caller whose write WOULD escape the
+        // BEGIN — it must still be refused, and its row must not exist.
+        let siblingErr: unknown;
+        await a.withTransaction(async (tx) => {
+          await tx.put({ name: "tx-row", type: "x", option: "tx", success: true });
+          await b
+            .put({ name: "sibling-row", type: "x", option: "sib", success: true })
+            .catch((err: unknown) => {
+              siblingErr = err;
+            });
+        });
 
         expect(siblingErr).toBeInstanceOf(ConnectionReentryError);
         const reentry = siblingErr as ConnectionReentryError;
@@ -487,13 +529,8 @@ describe("PostgresTabularStorage", () => {
         expect(reentry.message).toContain("SAVEPOINT");
         expect(reentry.message).toContain("single storage instance");
 
-        releaseInner();
-        await txPromise;
-
+        expect(await b.get({ name: "sibling-row", type: "x" })).toBeUndefined();
         expect(await a.get({ name: "tx-row", type: "x" })).toBeDefined();
-        // After the tx releases the connection, a sibling put succeeds.
-        await b.put({ name: "post-tx-row", type: "x", option: "sib", success: true });
-        expect(await b.get({ name: "post-tx-row", type: "x" })).toBeDefined();
       } finally {
         await pglite.close();
       }

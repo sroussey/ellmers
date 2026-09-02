@@ -474,7 +474,9 @@ export function defineNativeConnectionTransaction(
    * Detection is ALS-scoped rather than handle-state based, which is what keeps
    * the pool a pool: an unrelated concurrent caller carries no store and is
    * untouched, while a descendant of the transaction body — the only caller
-   * whose write can silently escape the transaction — is refused.
+   * whose write can silently escape the transaction — is refused. That is the
+   * same question the connection mutex asks, so a backend with a shared handle
+   * and one without refuse the same callers.
    */
   function assertNotForeignConnectionTx(owner: object, groupHandle: object): void {
     const ctx = findStore((c) => c.active && c.groupHandle === groupHandle);
