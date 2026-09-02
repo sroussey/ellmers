@@ -57,22 +57,6 @@ export interface AlsContext {
    */
   active: boolean;
   /**
-   * `true` only while a connection-scoped transaction (see
-   * `runNativeConnectionTransaction`) is deferring `put` events. A plain
-   * `withTransaction` installs a store too, but buffers its events on the `tx`
-   * proxy and never drains {@link deferredPuts} — so without this flag a `put`
-   * that reaches the base `emitPut` in that window is queued and silently
-   * lost. Set from INSIDE the ALS scope, and cleared at deactivation.
-   */
-  deferPuts: boolean;
-  /**
-   * `put` events deferred until COMMIT of a connection-scoped transaction.
-   * Callers drain this after COMMIT, once the store has been deactivated, so a
-   * listener that writes in response emits (and commits) normally instead of
-   * queueing onto a fresh buffer nothing drains.
-   */
-  readonly deferredPuts: WeakMap<object, unknown[]>;
-  /**
    * Dedicated query handle for a real `pg.Pool` transaction. Enlisted
    * Postgres storages route writes through this so every participant shares
    * one client. Written after the store is created, once the client is
