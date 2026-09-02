@@ -35,7 +35,9 @@ export interface EmitQueue<E> {
 
 export function createEmitQueue<E>(): EmitQueue<E> {
   type QueueItem =
-    { kind: "event"; data: E } | { kind: "done" } | { kind: "error"; error: unknown };
+    | { kind: "event"; data: E }
+    | { kind: "done" }
+    | { kind: "error"; error: unknown };
 
   const queue: QueueItem[] = [];
   let waiting: ((value: void) => void) | null = null;

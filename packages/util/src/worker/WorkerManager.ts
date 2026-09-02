@@ -433,7 +433,9 @@ export class WorkerManager {
 
       // Push-queue pattern: messages push items, async generator pulls them
       type QueueItem =
-        { kind: "event"; data: T } | { kind: "done" } | { kind: "error"; error: Error };
+        | { kind: "event"; data: T }
+        | { kind: "done" }
+        | { kind: "error"; error: Error };
 
       const queue: QueueItem[] = [];
       let waiting: ((value: void) => void) | null = null;

@@ -23,7 +23,8 @@ export function dropColumnBlock(
       [{ id: "u1", name: "alice", removed_field: "old" }]
     );
     const row = (await storage.get({ id: "u1" })) as
-      { id: string; name: string; removed_field?: string } | undefined;
+      | { id: string; name: string; removed_field?: string }
+      | undefined;
     expect(row).toBeDefined();
     expect(row!.name).toBe("alice");
     expect((row as Record<string, unknown>).removed_field).toBeUndefined();

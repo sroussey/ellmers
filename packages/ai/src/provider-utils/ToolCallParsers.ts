@@ -515,7 +515,8 @@ function parseDeepSeekV31Calls(text: string): ToolCall[] {
     if (endIdx === -1) break;
 
     const args = tryParseJson(text.slice(pos, endIdx).trim()) as
-      Record<string, unknown> | undefined;
+      | Record<string, unknown>
+      | undefined;
     if (args) {
       calls.push(makeToolCall(name, args));
     }

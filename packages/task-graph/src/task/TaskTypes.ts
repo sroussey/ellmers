@@ -17,7 +17,13 @@ import type { Task } from "./Task";
  *  PENDING -> DISABLED
  */
 export type TaskStatus =
-  "PENDING" | "DISABLED" | "PROCESSING" | "STREAMING" | "COMPLETED" | "ABORTING" | "FAILED";
+  | "PENDING"
+  | "DISABLED"
+  | "PROCESSING"
+  | "STREAMING"
+  | "COMPLETED"
+  | "ABORTING"
+  | "FAILED";
 
 export const TaskStatus = {
   /** Task is created but not yet started */

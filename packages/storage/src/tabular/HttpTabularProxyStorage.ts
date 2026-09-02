@@ -49,7 +49,8 @@ export interface HttpTabularProxyOptions<
   readonly schema: Schema;
   readonly primaryKey: PrimaryKeyNames;
   readonly indexes?: readonly (
-    keyof Schema["properties"] | readonly (keyof Schema["properties"])[]
+    | keyof Schema["properties"]
+    | readonly (keyof Schema["properties"])[]
   )[];
   /** Optional base path. Defaults to `/api/storage`. Trailing slashes are stripped. */
   readonly basePath?: string;

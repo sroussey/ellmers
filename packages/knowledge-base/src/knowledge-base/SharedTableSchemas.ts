@@ -68,9 +68,11 @@ export const SharedChunkPrimaryKey = ["kb_id", "chunk_id"] as const;
 export type SharedChunkPrimaryKey = typeof SharedChunkPrimaryKey;
 
 export const SharedDocumentIndexes = [["kb_id"]] as const satisfies readonly (
-  keyof any | readonly (keyof any)[]
+  | keyof any
+  | readonly (keyof any)[]
 )[];
 
 export const SharedChunkIndexes = [["kb_id"], ["kb_id", "doc_id"]] as const satisfies readonly (
-  keyof any | readonly (keyof any)[]
+  | keyof any
+  | readonly (keyof any)[]
 )[];

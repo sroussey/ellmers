@@ -161,7 +161,8 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     return new Promise((resolve, reject) => {
       request.onsuccess = () => {
         const job = request.result as
-          (JobStorageFormat<Input, Output> & Record<string, unknown>) | undefined;
+          | (JobStorageFormat<Input, Output> & Record<string, unknown>)
+          | undefined;
         if (job && job.queue === this.queueName && this.matchesPrefixes(job)) {
           resolve(job);
         } else {
@@ -417,7 +418,8 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
       const getReq = store.get(job.id as string);
       getReq.onsuccess = () => {
         const existing = getReq.result as
-          (JobStorageFormat<Input, Output> & Record<string, unknown>) | undefined;
+          | (JobStorageFormat<Input, Output> & Record<string, unknown>)
+          | undefined;
         if (!existing || existing.queue !== this.queueName || !this.matchesPrefixes(existing)) {
           // Contract: complete() must silently no-op (not throw) when the row is
           // missing or belongs to another queue. Lease-expiry races can legitimately
@@ -654,7 +656,8 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     return new Promise((resolve, reject) => {
       request.onsuccess = () => {
         const job = request.result as
-          (JobStorageFormat<Input, Output> & Record<string, unknown>) | undefined;
+          | (JobStorageFormat<Input, Output> & Record<string, unknown>)
+          | undefined;
         if (job && this.matchesPrefixes(job)) {
           resolve(job.output ?? null);
         } else {

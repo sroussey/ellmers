@@ -184,7 +184,8 @@ export interface DialogInfo {
 }
 
 export type DialogAction =
-  { readonly accept: true; readonly promptText?: string } | { readonly accept: false };
+  | { readonly accept: true; readonly promptText?: string }
+  | { readonly accept: false };
 
 // ---------------------------------------------------------------------------
 // Tabs

@@ -11,7 +11,7 @@
       "extensions": [
         "oven.bun-vscode",
         "dbaeumer.vscode-eslint",
-        "esbenp.prettier-vscode",
+        "oxc.oxc-vscode",
         "zardoy.ts-essential-plugins",
         "bradlc.vscode-tailwindcss",
         "vscode-icons-team.vscode-icons"

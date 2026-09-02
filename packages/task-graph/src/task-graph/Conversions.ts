@@ -22,7 +22,10 @@ export type PipeFunction<I extends DataPorts = any, O extends DataPorts = any> =
 ) => O | Promise<O>;
 
 export type Taskish<A extends DataPorts = DataPorts, B extends DataPorts = DataPorts> =
-  PipeFunction<A, B> | ITask<A, B> | ITaskGraph | IWorkflow<A, B>;
+  | PipeFunction<A, B>
+  | ITask<A, B>
+  | ITaskGraph
+  | IWorkflow<A, B>;
 
 // ============================================================================
 // GraphAsTask wrapper factory (deferred seam)

@@ -588,7 +588,8 @@ describe("Source-task streaming accumulation", () => {
       await task.run({ prompt: "test" });
 
       const finishEvent = emitted.find((e) => e.type === "finish") as
-        (StreamFinish<{ text: string }> & { usage?: Usage }) | undefined;
+        | (StreamFinish<{ text: string }> & { usage?: Usage })
+        | undefined;
       expect(finishEvent).toBeDefined();
       // The finish is enriched with accumulated text AND still carries usage.
       expect(finishEvent!.data.text).toBe("hello world");

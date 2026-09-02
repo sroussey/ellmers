@@ -7,7 +7,11 @@
 export const WEB_BROWSER = "WEB_BROWSER";
 
 export type WebBrowserPipelineTask =
-  "summarizer" | "language-detector" | "translator" | "prompt" | "rewriter";
+  | "summarizer"
+  | "language-detector"
+  | "translator"
+  | "prompt"
+  | "rewriter";
 
 export const WebBrowserPipelineTask = {
   summarizer: "summarizer",

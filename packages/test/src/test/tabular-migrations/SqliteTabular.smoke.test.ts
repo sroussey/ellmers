@@ -70,7 +70,8 @@ describe("SqliteTabular migration smoke", () => {
 
     // Column should now exist; the existing row carries NULL for archived.
     const row = (await v1.get({ id: "u1" })) as
-      { id: string; name: string; archived?: boolean | null } | undefined;
+      | { id: string; name: string; archived?: boolean | null }
+      | undefined;
     expect(row).toBeDefined();
     expect(row!.id).toBe("u1");
     // SQLite returns null for newly added columns on existing rows

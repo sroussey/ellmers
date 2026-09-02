@@ -58,7 +58,8 @@ export interface RunViewState {
   readonly error: string | undefined;
   readonly output: unknown;
   readonly humanRequest:
-    { readonly requestId: string; readonly message: string; readonly schema: unknown } | undefined;
+    | { readonly requestId: string; readonly message: string; readonly schema: unknown }
+    | undefined;
   readonly lastSeq: number;
   readonly nextOrder: number;
 }

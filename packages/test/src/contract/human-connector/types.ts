@@ -42,7 +42,8 @@ export interface HumanConnectorCapabilities {
  * Either an exact response, or a request-aware function. FIFO consumption.
  */
 export type MockResponseEntry =
-  IHumanResponse | ((req: IHumanRequest) => IHumanResponse | Promise<IHumanResponse>);
+  | IHumanResponse
+  | ((req: IHumanRequest) => IHumanResponse | Promise<IHumanResponse>);
 
 /**
  * Test-side handle for driving the human side of an `IHumanConnector`. Every

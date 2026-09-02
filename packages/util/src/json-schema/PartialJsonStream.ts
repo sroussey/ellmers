@@ -118,7 +118,12 @@ type PendingSlot =
 
 /** Any value `JSON.parse` can produce. */
 export type JsonValue =
-  string | number | boolean | null | readonly JsonValue[] | { readonly [key: string]: JsonValue };
+  | string
+  | number
+  | boolean
+  | null
+  | readonly JsonValue[]
+  | { readonly [key: string]: JsonValue };
 
 export interface PartialJsonStreamOptions {
   /**

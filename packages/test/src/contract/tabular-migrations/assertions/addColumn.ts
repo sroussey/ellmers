@@ -33,7 +33,8 @@ export function addColumnBlock(
       [{ id: "u1", name: "alice" }]
     );
     const row = (await storage.get({ id: "u1" })) as
-      { id: string; name: string; archived?: boolean | null } | undefined;
+      | { id: string; name: string; archived?: boolean | null }
+      | undefined;
     expect(row).toBeDefined();
     expect(row!.id).toBe("u1");
     expect(row!.archived ?? null).toBeNull();

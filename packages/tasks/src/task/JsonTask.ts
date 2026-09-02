@@ -76,7 +76,9 @@ export class JsonTask<
   public override regenerateGraph() {
     if (!this.runInputData.json) return;
     const data = JSON.parse(this.runInputData.json) as
-      TaskGraphJson | JsonTaskItem[] | JsonTaskItem;
+      | TaskGraphJson
+      | JsonTaskItem[]
+      | JsonTaskItem;
 
     if (
       data &&

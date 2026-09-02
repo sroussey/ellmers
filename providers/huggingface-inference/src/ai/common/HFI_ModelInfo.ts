@@ -44,7 +44,8 @@ function modelNameOf(model: HfInferenceModelConfig | undefined): string {
 
 function apiKeyOf(model: HfInferenceModelConfig | undefined): string | undefined {
   const config = model?.provider_config as
-    { credential_key?: string; api_key?: string } | undefined;
+    | { credential_key?: string; api_key?: string }
+    | undefined;
   try {
     return resolveApiKey({
       config,

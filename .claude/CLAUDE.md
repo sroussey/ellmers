@@ -24,7 +24,8 @@ bun run test:vitest        # Vitest tests only
 bun test <testfilename>    # One test file
 
 bun run lint               # oxlint (+ tsgolint type-aware) across the repo; CI runs this
-bun run format             # oxlint --fix + Prettier write
+bun run format             # oxlint --fix + oxfmt write
+bun run format-check       # oxfmt --check
 bun run clean              # Remove dist, node_modules, .turbo, tsbuildinfo
 ```
 
@@ -117,22 +118,16 @@ Exceptions: `providers/*` ship `./ai` and `./ai-runtime` instead of browser/node
 - **`I` prefix** for public interfaces (`ITask`, `IKvStorage`, `IWorkflow`)
 - **Concise JSDoc** only when behavior isn't self-evident; use `@link`; none for obvious code
 
-### Formatting (`.prettierrc`)
+### Formatting (`.oxfmtrc.json`)
 
-Spaces, double quotes, semicolons, trailing commas (es5), 100 char width.
+Spaces, double quotes, semicolons, trailing commas (es5), 100 char width. Format with `oxfmt`
+(`bun run format` / `bun run format-check`).
 
-Imports are organized by `@sroussey/prettier-plugin-organize-imports`. The upstream
-`prettier-plugin-organize-imports` cannot work here: it drives the TypeScript language
-service, which TypeScript 7 no longer exposes from the `typescript` package, and under 7 it
-silently formatted nothing rather than failing. The fork carries its own
-`@typescript/typescript6` and drives that, so the repo stays on TypeScript 7 while imports
-still get sorted and unused ones pruned.
-
-It honours `// organize-imports-ignore`, which 223 files here carry — barrel and entry
-modules whose import order is load-bearing, because they register into `TaskRegistry` and
-the provider registries as a module side effect. Any replacement has to honour that marker:
-a sorter that hoists imports to the top of the module reorders those registrations and
-displaces the license header.
+Imports are organized by the editor's TypeScript Organize Imports action on save
+(`source.organizeImports`). Barrel and entry modules whose import order is load-bearing
+(they register into `TaskRegistry` and the provider registries as a module side effect)
+carry `// organize-imports-ignore`. The editor does not honor that marker; do not run
+Organize Imports on those files.
 
 ### License header
 

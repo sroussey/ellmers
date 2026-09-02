@@ -42,7 +42,8 @@ type CapabilityHints = Pick<ModelRecord, "model_id" | "provider_config" | "capab
  */
 export function inferLlamaCppServerCapabilities(model: CapabilityHints): readonly Capability[] {
   const pc = model.provider_config as
-    { model_path?: string; model_name?: string; native_dimensions?: number } | undefined;
+    | { model_path?: string; model_name?: string; native_dimensions?: number }
+    | undefined;
   const id = String(pc?.model_path ?? pc?.model_name ?? model.model_id ?? "");
   const base = (id.split("/").pop() ?? "").toLowerCase();
 

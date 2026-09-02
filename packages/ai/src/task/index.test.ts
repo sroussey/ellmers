@@ -14,7 +14,8 @@ import { StructuredGenerationTask } from "./StructuredGenerationTask";
 import { ToolCallingTask } from "./ToolCallingTask";
 
 const imageEmbeddingInputImageIsTyped: ImageEmbeddingTaskInput["image"] extends
-  ImageValue | readonly ImageValue[]
+  | ImageValue
+  | readonly ImageValue[]
   ? true
   : false = true;
 

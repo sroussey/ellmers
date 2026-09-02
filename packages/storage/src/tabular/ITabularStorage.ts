@@ -100,7 +100,12 @@ export interface TabularSubscribeOptions {
 }
 
 export type JSONValue =
-  string | number | boolean | null | JSONValue[] | { [key: string]: JSONValue };
+  | string
+  | number
+  | boolean
+  | null
+  | JSONValue[]
+  | { [key: string]: JSONValue };
 
 export type SearchOperator = "=" | "!=" | "<" | "<=" | ">" | ">=";
 
@@ -156,7 +161,9 @@ export interface SearchInCondition<T> {
  */
 export type DeleteSearchCriteria<Entity> = {
   readonly [K in keyof Entity]?:
-    Entity[K] | SearchCondition<Entity[K]> | SearchInCondition<Entity[K]>;
+    | Entity[K]
+    | SearchCondition<Entity[K]>
+    | SearchInCondition<Entity[K]>;
 };
 
 export type SearchCriteria<Entity> = DeleteSearchCriteria<Entity>;

@@ -150,7 +150,8 @@ export class HuggingFaceTabularStorage<
       schema,
       primaryKeyNames,
       (options?.indexes ?? []) as readonly (
-        keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[]
+        | keyof NoInfer<Entity>
+        | readonly (keyof NoInfer<Entity>)[]
       )[],
       "never", // HF datasets don't support client-provided keys.
       tabularMigrations,

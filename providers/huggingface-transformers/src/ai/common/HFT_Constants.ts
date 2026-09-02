@@ -115,7 +115,10 @@ const MultimodalPipelineUseCase = {
 } as const satisfies Record<MultimodalPipelineUseCase, MultimodalPipelineUseCase>;
 
 export type PipelineUseCase =
-  TextPipelineUseCase | VisionPipelineUseCase | AudioPipelineUseCase | MultimodalPipelineUseCase;
+  | TextPipelineUseCase
+  | VisionPipelineUseCase
+  | AudioPipelineUseCase
+  | MultimodalPipelineUseCase;
 
 export const PipelineUseCase = {
   ...TextPipelineUseCase,

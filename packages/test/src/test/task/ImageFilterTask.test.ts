@@ -98,7 +98,8 @@ describe("ImageFilterTask", () => {
     const value = rawValue(new Uint8ClampedArray([10, 0, 0, 255]), 1, 1);
     const t = new BumpTask();
     const out = (await t.execute({ image: value, delta: 5 } as BumpInput, makeContext())) as
-      ImageFilterOutput | undefined;
+      | ImageFilterOutput
+      | undefined;
     expect(out).toBeDefined();
     const pixels = await readPixels(out!.image);
     expect(pixels[0]).toBe(15);
@@ -108,7 +109,8 @@ describe("ImageFilterTask", () => {
     const value = rawValue(new Uint8ClampedArray([10, 0, 0, 255]), 1, 1);
     const t = new BumpTask();
     const prev = (await t.executePreview({ image: value, delta: 5 } as BumpInput, previewCtx)) as
-      ImageFilterOutput | undefined;
+      | ImageFilterOutput
+      | undefined;
     expect(prev).toBeDefined();
     const pixels = await readPixels(prev!.image);
     expect(pixels[0]).toBe(15);
@@ -118,7 +120,8 @@ describe("ImageFilterTask", () => {
     const value = rawValue(new Uint8ClampedArray([10, 0, 0, 255]), 1, 1, 0.25);
     const t = new BumpTask();
     const out = (await t.execute({ image: value, delta: 0 } as BumpInput, makeContext())) as
-      ImageFilterOutput | undefined;
+      | ImageFilterOutput
+      | undefined;
     expect(out!.image.previewScale).toBe(0.25);
   });
 

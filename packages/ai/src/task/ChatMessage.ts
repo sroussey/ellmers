@@ -40,7 +40,9 @@ export type ContentBlockToolUse = {
  * under a larger document such as `ToolCallingInputSchema`).
  */
 export type ContentBlockInToolResultBody =
-  ContentBlockText | ContentBlockImage | ContentBlockToolUse;
+  | ContentBlockText
+  | ContentBlockImage
+  | ContentBlockToolUse;
 
 export type ContentBlockToolResult = {
   readonly type: "tool_result";
@@ -50,7 +52,10 @@ export type ContentBlockToolResult = {
 };
 
 export type ContentBlock =
-  ContentBlockText | ContentBlockImage | ContentBlockToolUse | ContentBlockToolResult;
+  | ContentBlockText
+  | ContentBlockImage
+  | ContentBlockToolUse
+  | ContentBlockToolResult;
 
 export type ChatRole = "user" | "assistant" | "tool" | "system";
 

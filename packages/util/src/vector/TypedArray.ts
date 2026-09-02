@@ -31,7 +31,13 @@ if (typeof globalThis.Float16Array === "undefined") {
  * - Uint16Array: 16-bit unsigned integer (quantization)
  */
 export type TypedArray =
-  Float32Array | Float16Array | Float64Array | Int8Array | Uint8Array | Int16Array | Uint16Array;
+  | Float32Array
+  | Float16Array
+  | Float64Array
+  | Int8Array
+  | Uint8Array
+  | Int16Array
+  | Uint16Array;
 
 export type TypedArrayConstructor =
   | typeof Float16Array

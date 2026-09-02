@@ -703,7 +703,8 @@ describe("WebBrowser_StructuredGeneration validation", () => {
         schema
       );
       const finish = events.find((e) => (e as { type?: string }).type === "finish") as
-        { data: { object: { x: number } } } | undefined;
+        | { data: { object: { x: number } } }
+        | undefined;
       expect(finish).toBeDefined();
       expect(finish?.data.object).toEqual({ x: 1 });
     } finally {
@@ -727,7 +728,8 @@ describe("WebBrowser_StructuredGeneration validation", () => {
         schema
       );
       const finish = events.find((e) => (e as { type?: string }).type === "finish") as
-        { data: { object: Record<string, unknown> } } | undefined;
+        | { data: { object: Record<string, unknown> } }
+        | undefined;
       expect(finish?.data.object).toEqual({});
     } finally {
       restore();
@@ -750,7 +752,8 @@ describe("WebBrowser_StructuredGeneration validation", () => {
         schema
       );
       const finish = events.find((e) => (e as { type?: string }).type === "finish") as
-        { data: { object: { x: string } } } | undefined;
+        | { data: { object: { x: string } } }
+        | undefined;
       expect(finish?.data.object).toEqual({ x: "oops" });
     } finally {
       restore();

@@ -31,7 +31,8 @@
     "dev": "turbo run dev --concurrency=15",
     "docs": "typedoc",
     "lint": "bun run build:types && oxlint --type-aware --report-unused-disable-directives --deny-warnings",
-    "format": "oxlint --fix && prettier \"{packages,providers,examples}/*/src/**/*.{js,ts,tsx,json}\" --check --write",
+    "format": "oxlint --fix && oxfmt \"{packages,providers,examples}/*/src/**/*.{js,ts,tsx,json}\"",
+    "format-check": "oxfmt --check \"{packages,providers,examples}/*/src/**/*.{js,ts,tsx,json}\"",
     "build:release": "turbo run build-js build-types --concurrency=15",
     "test": "bun scripts/test.ts",
     "test:bun:unit": "bun scripts/test.ts bun unit",
@@ -120,11 +121,10 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.4.1",
     "nyc": "^18.0.0",
+    "oxfmt": "^0.66.0",
     "oxlint": "^1.81.0",
     "oxlint-tsgolint": "^7.0.2001",
     "pkg-pr-new": "^0.0.88",
-    "@sroussey/prettier-plugin-organize-imports": "^1.0.0",
-    "prettier": "^3.9.6",
     "turbo": "^2.10.12",
     "typescript": "7.0.2",
     "vitest": "catalog:"
@@ -143,9 +143,9 @@
   "lint-staged": {
     "{packages,providers,examples}/*/src/**/*.{ts,tsx}": [
       "oxlint --fix",
-      "prettier --write"
+      "oxfmt --no-error-on-unmatched-pattern"
     ],
-    "{packages,providers,examples}/*/src/**/*.json": "prettier --write"
+    "{packages,providers,examples}/*/src/**/*.json": "oxfmt --no-error-on-unmatched-pattern"
   },
   "overrides": {
     "adm-zip": "^0.6.0",

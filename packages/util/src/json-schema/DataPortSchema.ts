@@ -23,4 +23,5 @@ export type DataPortSchemaObject<EXTENSION extends JSONSchemaExtension = JsonSch
 export type PropertySchema = NonNullable<DataPortSchemaObject["properties"]>[string];
 
 export type DataPortSchema<EXTENSION extends JSONSchemaExtension = JsonSchemaCustomProps> =
-  boolean | DataPortSchemaObject<EXTENSION>;
+  | boolean
+  | DataPortSchemaObject<EXTENSION>;

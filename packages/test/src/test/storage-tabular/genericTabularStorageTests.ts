@@ -1065,7 +1065,8 @@ export function runGenericTabularStorageTests(
         );
         expect((updated as { category?: string } | undefined)?.category).toBe("b");
         const read = (await repository.get({ id: "u1" } as never)) as
-          { category?: string } | undefined;
+          | { category?: string }
+          | undefined;
         expect(read?.category).toBe("b");
       });
 
@@ -1092,7 +1093,8 @@ export function runGenericTabularStorageTests(
         );
         expect(miss).toBeUndefined();
         const read = (await repository.get({ id: "u2" } as never)) as
-          { category?: string } | undefined;
+          | { category?: string }
+          | undefined;
         expect(read?.category).toBe("hit");
       });
 
@@ -1168,7 +1170,8 @@ export function runGenericTabularStorageTests(
         const winners = [a, b].filter(Boolean) as Array<{ value: number }>;
         expect(winners).toHaveLength(1);
         const row = (await repository.get({ id: "cas1" } as never)) as
-          { value: number } | undefined;
+          | { value: number }
+          | undefined;
         expect(row?.value).toBe(winners[0]!.value);
       });
     });

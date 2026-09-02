@@ -168,7 +168,8 @@ export class JobQueueWorker<
   protected readonly deadLetter: IMessageQueue<DeadLetter<Input>> | "discard";
   protected readonly prefetch: number;
   protected readonly onStreamEvent:
-    ((jobId: unknown, event: StreamEventLike) => Promise<void>) | undefined;
+    | ((jobId: unknown, event: StreamEventLike) => Promise<void>)
+    | undefined;
 
   protected running = false;
 

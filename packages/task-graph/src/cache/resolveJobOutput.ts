@@ -26,7 +26,8 @@ export interface JobHandleLike<Output> {
  * `TaskOutputRepository` exposes).
  */
 export type RefBacking =
-  CacheRefResolver | { readonly getOutputByRef?: (ref: CacheRef) => Promise<Blob | undefined> };
+  | CacheRefResolver
+  | { readonly getOutputByRef?: (ref: CacheRef) => Promise<Blob | undefined> };
 
 /**
  * Await a job's completion and hydrate every {@link CacheRef} inside its

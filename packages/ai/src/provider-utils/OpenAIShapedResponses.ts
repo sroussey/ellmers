@@ -90,7 +90,10 @@ export interface OpenAIResponsesTool {
 }
 
 export type OpenAIResponsesToolChoice =
-  "auto" | "none" | "required" | { readonly type: "function"; readonly name: string };
+  | "auto"
+  | "none"
+  | "required"
+  | { readonly type: "function"; readonly name: string };
 
 /**
  * Build the Responses `input` + `instructions` from the unified text-generation

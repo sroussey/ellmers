@@ -70,7 +70,8 @@ describe("PostgresTabular migration smoke", () => {
     expect((r.rows as Array<{ version: number }>).map((x) => Number(x.version))).toEqual([1]);
 
     const row = (await v1.get({ id: "u1" })) as
-      { id: string; name: string; archived?: boolean | null } | undefined;
+      | { id: string; name: string; archived?: boolean | null }
+      | undefined;
     expect(row).toBeDefined();
     expect(row!.archived ?? null).toBeNull();
 
