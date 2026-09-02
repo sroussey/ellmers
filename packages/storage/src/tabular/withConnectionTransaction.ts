@@ -63,7 +63,9 @@ function dedupeByIdentity(participants: readonly AnyTabularStorage[]): AnyTabula
  * could otherwise escape the transaction. An unrelated concurrent caller on
  * the same connection is a different matter and is not refused here: on a
  * pooled backend it simply runs on another client, and on a single-session
- * backend the connection chain makes it wait.
+ * backend the connection chain makes it wait. The one exception is the
+ * browser's synchronous ALS shim, whose store is gone at the body's first
+ * `await`: it cannot tell the two apart and refuses both.
  */
 export async function withConnectionTransaction<T>(
   participants: readonly AnyTabularStorage[],

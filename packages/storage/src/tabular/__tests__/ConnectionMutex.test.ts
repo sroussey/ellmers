@@ -12,7 +12,7 @@ import {
 import { __resetAlsForTesting } from "@workglow/storage/test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-describe("ConnectionMutex F1: cross-instance re-entry is ALS-independent", () => {
+describe("ConnectionMutex F1: re-entry is classified from the async context", () => {
   afterEach(() => {
     __resetAlsForTesting();
   });
@@ -90,49 +90,107 @@ describe("ConnectionMutex F1: cross-instance re-entry is ALS-independent", () =>
       expect(innerRan).toBe(true);
     });
 
-    it("runOnConnection throws ConnectionReentryError when a sibling instance calls during a transaction", async () => {
-      const handle = {};
-      const ownerA = { table: "table_a" };
-      const ownerB = { table: "table_b" };
+    it.skipIf(!useShim)(
+      "the shim still refuses an unrelated concurrent caller, which it cannot tell from a descendant",
+      async () => {
+        const handle = {};
+        const ownerA = { table: "table_a" };
+        const ownerB = { table: "table_b" };
 
-      let releaseTx: () => void = () => {};
-      const txCanFinish = new Promise<void>((resolve) => {
-        releaseTx = resolve;
-      });
-      let signalTxStarted: () => void = () => {};
-      const txStarted = new Promise<void>((resolve) => {
-        signalTxStarted = resolve;
-      });
+        let releaseTx: () => void = () => {};
+        const txCanFinish = new Promise<void>((resolve) => {
+          releaseTx = resolve;
+        });
+        let signalTxStarted: () => void = () => {};
+        const txStarted = new Promise<void>((resolve) => {
+          signalTxStarted = resolve;
+        });
 
-      const txPromise = runInTransactionOnConnection(handle, ownerA, async () => {
-        // signal runs *inside* als.run's synchronous entry, which is after
-        // state.txOwner has been set. Awaiting txStarted below guarantees
-        // the sibling call sees the established transaction owner.
-        signalTxStarted();
-        await txCanFinish;
-      });
-      await txStarted;
+        const txPromise = runInTransactionOnConnection(handle, ownerA, async () => {
+          // signal runs *inside* als.run's synchronous entry, which is after
+          // state.txOwners has been set. Awaiting txStarted below guarantees
+          // the sibling call sees the established transaction owner.
+          signalTxStarted();
+          await txCanFinish;
+        });
+        await txStarted;
 
-      const start = Date.now();
-      let error: unknown;
-      try {
-        await runOnConnection(handle, ownerB, async () => "unreachable");
-      } catch (err) {
-        error = err;
+        const start = Date.now();
+        let error: unknown;
+        try {
+          await runOnConnection(handle, ownerB, async () => "unreachable");
+        } catch (err) {
+          error = err;
+        }
+        const elapsed = Date.now() - start;
+
+        expect(error).toBeInstanceOf(ConnectionReentryError);
+        expect((error as ConnectionReentryError).mode).toBe("sibling-op");
+        expect((error as ConnectionReentryError).activeTable).toBe("table_a");
+        expect((error as ConnectionReentryError).blockedTable).toBe("table_b");
+        // Chain-waiting would deadlock on this runtime, so the shim refuses
+        // rather than queues: the throw is immediate, not a chain wait.
+        expect(elapsed).toBeLessThan(200);
+
+        releaseTx();
+        await txPromise;
       }
-      const elapsed = Date.now() - start;
+    );
 
-      expect(error).toBeInstanceOf(ConnectionReentryError);
-      expect((error as ConnectionReentryError).mode).toBe("sibling-op");
-      expect((error as ConnectionReentryError).activeTable).toBe("table_a");
-      expect((error as ConnectionReentryError).blockedTable).toBe("table_b");
-      // No hang: even on the shim path the throw is synchronous relative to
-      // the pending outer tx (no chain wait needed).
-      expect(elapsed).toBeLessThan(200);
+    it.skipIf(useShim)(
+      "an unenlisted unrelated concurrent caller waits for the transaction instead of being refused",
+      async () => {
+        // The regression: the writer is started BEFORE the critical section and
+        // is not an async descendant of the body, so its write cannot escape the
+        // BEGIN. Refusing it lands a ConnectionReentryError in a task that did
+        // nothing wrong, which is what made the primitive unusable in any
+        // concurrent process. Under a real ALS the absent store is what proves
+        // it is unrelated, so it queues on the chain and runs after COMMIT.
+        const handle = {};
+        const ownerA = { table: "table_a" };
+        const ownerB = { table: "table_b" };
+        const order: string[] = [];
 
-      releaseTx();
-      await txPromise;
-    });
+        let releaseTx: () => void = () => {};
+        const txCanFinish = new Promise<void>((resolve) => {
+          releaseTx = resolve;
+        });
+        let signalTxStarted: () => void = () => {};
+        const txStarted = new Promise<void>((resolve) => {
+          signalTxStarted = resolve;
+        });
+
+        const txPromise = runInTransactionOnConnection(handle, ownerA, async () => {
+          order.push("BEGIN");
+          signalTxStarted();
+          await txCanFinish;
+          order.push("COMMIT");
+        });
+        await txStarted;
+
+        // Captured rather than awaited here: a pre-fix refusal must surface as
+        // a failed expectation, not as an unhandled rejection.
+        let unrelatedError: unknown;
+        const unrelated = runOnConnection(handle, ownerB, async () => {
+          order.push("UNRELATED-WRITE");
+          return "ok";
+        }).catch((err: unknown) => {
+          unrelatedError = err;
+          return "refused";
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        // Waiting, not refused and not slipped inside the open BEGIN.
+        expect(unrelatedError).toBeUndefined();
+        expect(order).toEqual(["BEGIN"]);
+
+        releaseTx();
+        await txPromise;
+        expect(await unrelated).toBe("ok");
+        expect(unrelatedError).toBeUndefined();
+        expect(order).toEqual(["BEGIN", "COMMIT", "UNRELATED-WRITE"]);
+      }
+    );
 
     it("runInTransactionOnConnection throws ConnectionReentryError when a different owner tries a nested transaction", async () => {
       const handle = {};
@@ -175,23 +233,21 @@ describe("ConnectionMutex F1: cross-instance re-entry is ALS-independent", () =>
       const handle = {};
       const ownerA = { table: "table_a" };
       const ownerB = { table: "table_b" };
-      let signalTxStarted: () => void = () => {};
-      const txStarted = new Promise<void>((resolve) => {
-        signalTxStarted = resolve;
-      });
 
       let step = "before-tx";
-      const txDone = runInTransactionOnConnection(handle, ownerA, async () => {
-        signalTxStarted();
+      let siblingError: unknown;
+      await runInTransactionOnConnection(handle, ownerA, async () => {
         step = "in-tx";
+        // Issued from inside the body, so it is an async descendant on both
+        // runtimes — the caller whose write would escape the BEGIN, and the
+        // one that is still refused.
+        await runOnConnection(handle, ownerB, async () => "unreachable").catch((err: unknown) => {
+          siblingError = err;
+        });
       });
-      await txStarted;
 
-      await expect(
-        runOnConnection(handle, ownerB, async () => "unreachable")
-      ).rejects.toBeInstanceOf(ConnectionReentryError);
-
-      await txDone;
+      expect(siblingError).toBeInstanceOf(ConnectionReentryError);
+      expect((siblingError as ConnectionReentryError).mode).toBe("sibling-op");
       expect(step).toBe("in-tx");
 
       // The chain slot must be released — a subsequent A op runs cleanly.
@@ -358,27 +414,19 @@ describe("ConnectionMutex F2: ConnectionReentryError message and mode", () => {
     const handle = {};
     const ownerA = { table: "issuer" };
     const ownerB = { table: "filing" };
-    let releaseTx: () => void = () => {};
-    const txCanFinish = new Promise<void>((resolve) => {
-      releaseTx = resolve;
-    });
-    let signalTxStarted: () => void = () => {};
-    const txStarted = new Promise<void>((resolve) => {
-      signalTxStarted = resolve;
-    });
-
-    const txPromise = runInTransactionOnConnection(handle, ownerA, async () => {
-      signalTxStarted();
-      await txCanFinish;
-    });
-    await txStarted;
 
     let err: unknown;
-    try {
-      await runOnConnection(handle, ownerB, async () => "unreachable");
-    } catch (e) {
-      err = e;
-    }
+    // A descendant of the transaction body: the reach-through this error is
+    // named for. An unrelated concurrent caller queues instead of erroring, so
+    // it has no message to assert on.
+    await runInTransactionOnConnection(handle, ownerA, async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      try {
+        await runOnConnection(handle, ownerB, async () => "unreachable");
+      } catch (e) {
+        err = e;
+      }
+    });
     const casted = err as ConnectionReentryError;
     expect(casted).toBeInstanceOf(ConnectionReentryError);
     expect(casted.mode).toBe("sibling-op");
@@ -390,9 +438,6 @@ describe("ConnectionMutex F2: ConnectionReentryError message and mode", () => {
     expect(casted.message).toContain("'tx' proxy");
     expect(casted.message).toContain("SAVEPOINT");
     expect(casted.message).toContain("single storage instance");
-
-    releaseTx();
-    await txPromise;
   });
 
   it("carries mode='nested-transaction' for a nested withTransaction reach-through", async () => {
@@ -434,35 +479,21 @@ describe("ConnectionMutex F2: ConnectionReentryError message and mode", () => {
     const handle = {};
     const ownerA = {}; // no table property
     const ownerB = {};
-    let releaseTx: () => void = () => {};
-    const txCanFinish = new Promise<void>((resolve) => {
-      releaseTx = resolve;
-    });
-    let signalTxStarted: () => void = () => {};
-    const txStarted = new Promise<void>((resolve) => {
-      signalTxStarted = resolve;
-    });
-
-    const txPromise = runInTransactionOnConnection(handle, ownerA, async () => {
-      signalTxStarted();
-      await txCanFinish;
-    });
-    await txStarted;
 
     let err: unknown;
-    try {
-      await runOnConnection(handle, ownerB, async () => "unreachable");
-    } catch (e) {
-      err = e;
-    }
+    await runInTransactionOnConnection(handle, ownerA, async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      try {
+        await runOnConnection(handle, ownerB, async () => "unreachable");
+      } catch (e) {
+        err = e;
+      }
+    });
     const casted = err as ConnectionReentryError;
     expect(casted).toBeInstanceOf(ConnectionReentryError);
     expect(casted.activeTable).toBeUndefined();
     expect(casted.blockedTable).toBeUndefined();
     expect(casted.message).toContain("another storage instance");
     expect(casted.message).toContain("an unlabeled storage instance");
-
-    releaseTx();
-    await txPromise;
   });
 });

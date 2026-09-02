@@ -21,24 +21,33 @@ import type { Als, AlsContext } from "./connectionAls.shared";
  *
  * This module keeps a module-level {@link WeakMap} keyed on the connection
  * handle so every instance that binds the same handle chains through the same
- * promise. Cross-instance re-entry detection lives on the handle state
- * itself (`txOwners`), so it is **ALS-independent**: the module works
- * identically on Node (real `AsyncLocalStorage`) and in the browser (the
- * synchronous shim), even when the caller `await`s between the outer
- * transaction opening and the sibling call.
+ * promise.
  *
- * Same-instance re-entry is classified from the `AsyncLocalStorage` store,
- * which is precise: only a genuine async descendant of the transaction body
- * carries it, so an unrelated concurrent call on the same instance still
- * queues on the chain instead of slipping inside the open transaction.
+ * Re-entry is classified from the `AsyncLocalStorage` store, and the question
+ * it asks is not "is this owner enlisted" but "is this call an async
+ * DESCENDANT of the open transaction body". That is the only caller whose
+ * write could escape the `BEGIN`, and the store is what proves it: a
+ * descendant carries it across every `await`, an unrelated concurrent caller
+ * never does. So a descendant that is wholly enlisted re-enters inline, a
+ * descendant that is not is refused, and an unrelated concurrent call — on an
+ * enlisted instance or on one the transaction never named — queues on the
+ * chain and runs after COMMIT.
+ *
+ * Refusing that last caller instead is what made this primitive unusable from
+ * more than one task at a time. Ten concurrent units of work over one handle,
+ * one of them holding a transaction whose body awaits: every other write in
+ * that window was refused, in its OWN task, where the transaction's caller
+ * cannot catch it.
  *
  * The browser shim has no async context — its store is gone at the first
- * `await` inside the transaction body — so on that runtime only, a descendant
- * is recognized from handle state (`state.txOwners.has(owner)`). Chain-waiting
- * there would deadlock: the chain slot is released by the outer transaction's
- * `finally`, which is itself awaiting the inner call. That fallback cannot
- * tell a descendant from an unrelated concurrent call, which is why it is
- * gated to the runtime that has no better option.
+ * `await` inside the transaction body — so on that runtime only, the question
+ * is answered from handle state (`state.txOwners`) instead. Chain-waiting a
+ * descendant there would deadlock: the chain slot is released by the outer
+ * transaction's `finally`, which is itself awaiting the inner call. That
+ * fallback cannot tell a descendant from an unrelated concurrent call, so it
+ * takes the conservative side and refuses both. It is the one behavioural
+ * difference between the runtimes, and it is gated to the runtime that has no
+ * better option.
  *
  * KNOWN LIMIT of the store-based classification: carrying the store proves a
  * descendant, but *lacking* it does not prove the opposite. A descendant whose
@@ -49,7 +58,10 @@ import type { Als, AlsContext } from "./connectionAls.shared";
  * also poisons the handle, since the waiter has already installed itself as
  * `state.chain`. Transaction bodies must therefore reach this connection
  * directly (or via the `tx` proxy), never by handing work to an outside
- * scheduler and awaiting it.
+ * scheduler and awaiting it. The limit covers un-enlisted owners as well as
+ * enlisted ones: refusing every un-enlisted owner outright would turn that
+ * deadlock into an error, but only by also refusing every legitimate
+ * concurrent writer, which is the far commoner call.
  *
  * Platform ALS is injected by {@link defineConnectionMutex} so the browser
  * entry can wire the shim via a relative import (never `node:async_hooks`)
@@ -200,11 +212,15 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
   }
 
   /**
-   * Classify the current call against the state of the shared handle. Order
-   * matters: an active owner set that does **not** contain every one of our
-   * owners is always a cross-instance re-entry — regardless of whether the ALS
-   * store is present. Only if the whole caller is enlisted (matching ALS
-   * store) do we inline; anything else queues through the chain.
+   * Classify the current call against the open transaction on this handle.
+   *
+   * The deciding question is whether the caller is an async DESCENDANT of the
+   * open transaction body, not merely whether its owners are enlisted. Only a
+   * descendant's write can escape the `BEGIN`, and only the ALS store can
+   * prove one: it rides every `await` out of the body and an unrelated
+   * concurrent caller never holds it. So a descendant inlines when every one
+   * of its owners is enlisted and is refused when any is not, while everyone
+   * else queues through the chain.
    */
   function classifyReentry(
     state: HandleState,
@@ -212,9 +228,6 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     handle: object,
     store: Als
   ): ReentryDecision {
-    if (state.txOwners !== null && firstUnenlisted(owners, state.txOwners) !== undefined) {
-      return "throw";
-    }
     // Walk the whole store chain, not just the innermost store: a transaction
     // on a different connection may nest inside ours, and it shadows our store
     // rather than replacing it. Reading only `getStore()` there would classify
@@ -223,28 +236,26 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     // store outlives COMMIT — `afterCommit` listeners are no longer inside the
     // transaction and must take the chain like any other caller.
     for (let ctx = store.getStore(); ctx !== undefined; ctx = ctx.parent) {
-      if (
-        ctx.active &&
-        ctx.handle === handle &&
-        firstUnenlisted(owners, ctx.owners) === undefined
-      ) {
-        return "inline";
+      if (ctx.active && ctx.handle === handle) {
+        // A descendant of the body holding THIS connection. Wholly enlisted
+        // joins the open BEGIN; anything else would write outside it. At most
+        // one store in the chain can match — a second transaction on the same
+        // handle is refused before it installs one — so the first wins.
+        return firstUnenlisted(owners, ctx.owners) === undefined ? "inline" : "throw";
       }
     }
     // Synchronous shim only: a descendant of our own transaction body loses the
     // store at the body's first `await` and lands here with none. Chain-waiting
     // would deadlock — the chain slot is released by the outer transaction's
     // `finally`, which is awaiting this call — so fall back to handle state.
-    // This cannot distinguish a descendant from an unrelated concurrent call on
-    // the same instance, so it stays off wherever a real ALS store exists.
-    // (a fully-enlisted `txOwners` here implies an open transaction: `txOwners`
-    // and `txId` are always written and cleared together.)
-    if (
-      store.synchronousOnly === true &&
-      state.txOwners !== null &&
-      firstUnenlisted(owners, state.txOwners) === undefined
-    ) {
-      return "inline";
+    // That fallback cannot tell a descendant from an unrelated concurrent call,
+    // so it answers as if every caller were a descendant: enlisted inlines,
+    // un-enlisted is refused. Erring the other way would deadlock, which is why
+    // this stays off wherever a real ALS store exists.
+    // (a non-null `txOwners` here implies an open transaction: `txOwners` and
+    // `txId` are always written and cleared together.)
+    if (store.synchronousOnly === true && state.txOwners !== null) {
+      return firstUnenlisted(owners, state.txOwners) === undefined ? "inline" : "throw";
     }
     return "chain";
   }
@@ -252,16 +263,20 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
   /**
    * Runs `fn` in a chain shared across every caller bound to `handle`.
    *
-   * The handle state (`txOwners`) is checked first: if another instance holds
-   * the transaction and this owner is not enlisted, this throws
-   * {@link ConnectionReentryError} synchronously — no `await ensureAls()`
-   * needed on the throw path, so browser shim and Node behave identically.
-   *
    * An enlisted descendant of an open transaction body runs `fn` inline —
-   * re-taking the chain would deadlock. It is recognized from the
-   * `AsyncLocalStorage` store on Node and from handle state on the browser
-   * shim (which has no async context). An unrelated concurrent call on an
-   * enlisted instance still queues on the chain under a real ALS.
+   * re-taking the chain would deadlock. An un-enlisted descendant is refused
+   * with {@link ConnectionReentryError}: its write is the one that would land
+   * outside the open `BEGIN`. Everyone else queues on the chain, including an
+   * unrelated concurrent caller on an instance the transaction never enlisted
+   * — it is not inside the transaction, so its write cannot escape it, and it
+   * simply runs once the transaction commits.
+   *
+   * The store answers both questions, so it is consulted before either. That
+   * costs nothing: `ensureAls()` is synchronous, and handle state alone cannot
+   * tell a descendant from an unrelated caller. The browser shim, whose store
+   * dies at the body's first `await`, falls back to handle state and refuses
+   * every un-enlisted owner while a transaction is open — the conservative
+   * side of a distinction it cannot make.
    */
   async function runOnConnection<T>(
     handle: object,
@@ -269,21 +284,8 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     fn: () => Promise<T>
   ): Promise<T> {
     const state = getState(handle);
-    // Fast, synchronous throw on cross-instance sibling ops — do NOT await
-    // ensureAls first, so the shim path (browser) still fails fast.
-    if (state.txOwners !== null && !state.txOwners.has(owner)) {
-      throw new ConnectionReentryError(
-        connectionOwnerLabel(activeLead(state)),
-        connectionOwnerLabel(owner),
-        "sibling-op"
-      );
-    }
     const store = als.ensureAls();
     const decision = classifyReentry(state, new Set([owner]), handle, store);
-    // Unreachable today — the guard above throws on the same condition — but
-    // kept deliberately: without it a "throw" classification would fall
-    // through to the chain and HANG instead of erroring, which is a far worse
-    // failure than a redundant branch.
     if (decision === "throw") {
       throw new ConnectionReentryError(
         connectionOwnerLabel(activeLead(state) ?? owner),
@@ -316,10 +318,12 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
    * `owner` is either a single storage instance (the one-participant
    * `withTransaction` case) or every participant of a connection-scoped
    * transaction. Cross-instance re-entry from a non-enlisted descendant throws
-   * {@link ConnectionReentryError} the same way {@link runOnConnection} does,
-   * with `mode === "nested-transaction"` at the transaction-opening call
-   * site. The synchronous throw path here is symmetric with `runOnConnection`
-   * — the handle state is checked before awaiting ALS.
+   * {@link ConnectionReentryError} with `mode === "nested-transaction"` at the
+   * transaction-opening call site. Unlike {@link runOnConnection}, that refusal
+   * is decided from handle state alone and so also catches an unrelated
+   * concurrent caller: a participant set that is only partly enlisted is a
+   * different transaction sharing a member, and there is no autonomous `BEGIN`
+   * to give a wholly separate one on this connection either way.
    *
    * `handle` keys the chain slot; `groupHandle` names the physical connection
    * the transaction owns and defaults to `handle`. They differ only where a
@@ -352,8 +356,10 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     }
     const store = als.ensureAls();
     const decision = classifyReentry(state, owners, handle, store);
-    // Unreachable today, kept for the same reason as in `runOnConnection`: a
-    // "throw" that fell through would hang on the chain rather than error.
+    // Unreachable today: the guard above already refused every owner set the
+    // classifier could throw on. Kept deliberately — without it a "throw"
+    // classification would fall through to the chain and HANG instead of
+    // erroring, which is a far worse failure than a redundant branch.
     if (decision === "throw") {
       throw new ConnectionReentryError(
         connectionOwnerLabel(activeLead(state) ?? lead),

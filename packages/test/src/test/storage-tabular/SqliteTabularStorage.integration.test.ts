@@ -490,7 +490,7 @@ describe("SqliteTabularStorage shared-connection safety", () => {
     return [a, b, db] as const;
   }
 
-  it("sibling single-op throws ConnectionReentryError during a transaction on the same handle", async () => {
+  it("unrelated concurrent sibling op waits for the transaction instead of being refused", async () => {
     const [a, b] = await makeSharedPair();
     let releaseInner: () => void = () => {};
     const innerCanFinish = new Promise<void>((resolve) => {
@@ -501,24 +501,69 @@ describe("SqliteTabularStorage shared-connection safety", () => {
       signalTxStarted = resolve;
     });
 
+    const order: string[] = [];
     const txPromise = a.withTransaction(async (tx) => {
       // After this awaited put returns, we are provably inside the tx body,
       // which means the shared ConnectionMutex has already set
-      // `state.txOwner = a`.
+      // `state.txOwners = {a}`.
       await tx.put({ name: "tx-row", type: "x", option: "tx", success: true });
       signalTxStarted();
       await innerCanFinish;
+      order.push("TX-BODY-END");
     });
 
     await txStarted;
 
-    // A sibling put from a *different* storage instance on the same handle
-    // must fail fast, not sneak into the tx BEGIN/COMMIT window and not
-    // block silently. The connection mutex throws ConnectionReentryError
-    // synchronously with mode="sibling-op".
+    // A sibling put from a *different* storage instance on the same handle,
+    // issued from a task that is NOT an async descendant of the transaction
+    // body. Its write cannot escape the BEGIN, so refusing it would only
+    // dead-letter a caller that did nothing wrong — in its own task, where the
+    // transaction's caller cannot catch it. It queues on the connection chain.
     let siblingErr: unknown;
-    await b.put({ name: "sibling-row", type: "x", option: "sib", success: true }).catch((err) => {
-      siblingErr = err;
+    const sibling = b
+      .put({ name: "sibling-row", type: "x", option: "sib", success: true })
+      .then(() => {
+        order.push("SIBLING-WRITE");
+      })
+      .catch((err: unknown) => {
+        siblingErr = err;
+      });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // Neither refused nor slipped inside the open BEGIN: reads do not take the
+    // chain, so this observes the row's absence directly.
+    expect(siblingErr).toBeUndefined();
+    expect(order).toEqual([]);
+    expect(await b.get({ name: "sibling-row", type: "x" })).toBeUndefined();
+
+    releaseInner();
+    await txPromise;
+    await sibling;
+
+    expect(siblingErr).toBeUndefined();
+    expect(order).toEqual(["TX-BODY-END", "SIBLING-WRITE"]);
+    expect(await b.get({ name: "sibling-row", type: "x" })).toBeDefined();
+
+    // The outer tx still commits cleanly, and the shared connection is
+    // released so a further sibling put also succeeds.
+    expect(await a.get({ name: "tx-row", type: "x" })).toBeDefined();
+    await b.put({ name: "post-tx-row", type: "x", option: "sib", success: true });
+    expect(await b.get({ name: "post-tx-row", type: "x" })).toBeDefined();
+  });
+
+  it("sibling single-op from inside the transaction body still throws ConnectionReentryError", async () => {
+    const [a, b] = await makeSharedPair();
+
+    // A descendant of the body is the caller whose write WOULD escape the
+    // BEGIN — it must still be refused, and its row must not exist.
+    let siblingErr: unknown;
+    await a.withTransaction(async (tx) => {
+      await tx.put({ name: "tx-row", type: "x", option: "tx", success: true });
+      await b
+        .put({ name: "sibling-row", type: "x", option: "sib", success: true })
+        .catch((err: unknown) => {
+          siblingErr = err;
+        });
     });
 
     expect(siblingErr).toBeInstanceOf(ConnectionReentryError);
@@ -529,14 +574,8 @@ describe("SqliteTabularStorage shared-connection safety", () => {
     expect(reentry.message).toContain("SAVEPOINT");
     expect(reentry.message).toContain("single storage instance");
 
-    releaseInner();
-    await txPromise;
-
-    // The outer tx still commits cleanly, and the shared connection is
-    // released so a normal sibling put now succeeds.
+    expect(await b.get({ name: "sibling-row", type: "x" })).toBeUndefined();
     expect(await a.get({ name: "tx-row", type: "x" })).toBeDefined();
-    await b.put({ name: "post-tx-row", type: "x", option: "sib", success: true });
-    expect(await b.get({ name: "post-tx-row", type: "x" })).toBeDefined();
   });
 
   it("rejects cross-instance nested withTransaction within 500ms (no hang)", async () => {

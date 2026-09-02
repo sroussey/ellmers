@@ -83,6 +83,49 @@ export function withConnectionTransactionBlock(opts: TabularStorageContractOpts)
     );
 
     itImpl(
+      "does not refuse an unrelated concurrent caller",
+      async () => {
+        // Issued from outside the transaction body, so it is not an async
+        // descendant and its write cannot escape the BEGIN. Refusing it would
+        // land the error in a caller that did nothing wrong. Whether it waits
+        // for COMMIT (single-session backends chain) or runs at once (a pool
+        // hands it another client) is a backend detail — that it completes is
+        // not.
+        let releaseBody: () => void = () => {};
+        const bodyCanFinish = new Promise<void>((resolve) => {
+          releaseBody = resolve;
+        });
+        let signalStarted: () => void = () => {};
+        const bodyStarted = new Promise<void>((resolve) => {
+          signalStarted = resolve;
+        });
+
+        const txPromise = withConnectionTransaction([primary, sibling], async () => {
+          await primary.put({ name: "enlisted", type: "x", option: "ok", success: true });
+          signalStarted();
+          await bodyCanFinish;
+        });
+        await bodyStarted;
+
+        let outsiderError: unknown;
+        const concurrent = outsider
+          .put({ name: "concurrent", type: "x", option: "yes", success: true })
+          .catch((err: unknown) => {
+            outsiderError = err;
+          });
+
+        releaseBody();
+        await txPromise;
+        await concurrent;
+
+        expect(outsiderError).toBeUndefined();
+        expect(await outsider.get({ name: "concurrent", type: "x" })).toBeDefined();
+        expect(await primary.get({ name: "enlisted", type: "x" })).toBeDefined();
+      },
+      opts.timeout
+    );
+
+    itImpl(
       "throws sibling-op for a storage that was not enlisted",
       async () => {
         let error: unknown;
