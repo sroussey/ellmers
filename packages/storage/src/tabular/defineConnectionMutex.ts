@@ -25,19 +25,31 @@ import type { Als, AlsContext } from "./connectionAls.shared";
  *
  * Re-entry is classified from the `AsyncLocalStorage` store, and the question
  * it asks is not "is this owner enlisted" but "is this call an async
- * DESCENDANT of the open transaction body". That is the only caller whose
- * write could escape the `BEGIN`, and the store is what proves it: a
- * descendant carries it across every `await`, an unrelated concurrent caller
- * never does. So a descendant that is wholly enlisted re-enters inline, a
- * descendant that is not is refused, and an unrelated concurrent call — on an
- * enlisted instance or on one the transaction never named — queues on the
- * chain and runs after COMMIT.
+ * DESCENDANT of the open transaction body". A descendant is the only caller
+ * whose write could escape the open `BEGIN`, or whose own `BEGIN` would nest
+ * inside it, and the store is what proves it: a descendant carries it across
+ * every `await`, an unrelated concurrent caller never does. So a descendant
+ * whose owners are wholly enlisted re-enters inline, a descendant whose owners
+ * are not is refused, and an unrelated concurrent call — on an enlisted
+ * instance, on one the transaction never named, or opening a transaction of
+ * its own over a different participant set — queues on the chain and runs
+ * after COMMIT.
  *
- * Refusing that last caller instead is what made this primitive unusable from
- * more than one task at a time. Ten concurrent units of work over one handle,
- * one of them holding a transaction whose body awaits: every other write in
- * that window was refused, in its OWN task, where the transaction's caller
- * cannot catch it.
+ * {@link ConnectionMutexApi.runOnConnection} and
+ * {@link ConnectionMutexApi.runInTransactionOnConnection} both go through
+ * {@link classifyReentry} for this, and differ only in the error a refusal
+ * raises (`sibling-op` vs `nested-transaction`). Answering it two ways is what
+ * let them disagree.
+ *
+ * Refusing that unrelated caller instead is what made this primitive unusable
+ * from more than one task at a time. Ten concurrent units of work over one
+ * handle, one of them holding a transaction whose body awaits: every other
+ * write in that window was refused, and so was every other transaction whose
+ * participants were not a subset of the open one's — in its OWN task, where
+ * the transaction's caller cannot catch it. Overlapping-but-unequal sets are
+ * the common case, not the exotic one: a caller that transacts over the person
+ * tables and a caller that transacts over the company tables share a
+ * provenance table and nothing else.
  *
  * The browser shim has no async context — its store is gone at the first
  * `await` inside the transaction body — so on that runtime only, the question
@@ -92,7 +104,7 @@ function ownerSet(owner: TransactionOwners): Set<object> {
   return new Set([owner as object]);
 }
 
-function leadOwner(owners: Set<object>): object {
+function leadOwner(owners: ReadonlySet<object>): object {
   return owners.values().next().value as object;
 }
 
@@ -109,6 +121,18 @@ export function connectionOwnerLabel(owner: object | undefined): string | undefi
 }
 
 type ReentryDecision = "throw" | "inline" | "chain";
+
+interface ReentryClassification {
+  readonly decision: ReentryDecision;
+  /**
+   * Participants of the open transaction the decision was judged against, or
+   * `undefined` when no open transaction was consulted — the decision is then
+   * always `"chain"`. A refusal names the first of the caller's owners missing
+   * from this set (the participant to hoist or remove) rather than its lead,
+   * which may well be enlisted already.
+   */
+  readonly enlisted: ReadonlySet<object> | undefined;
+}
 
 /**
  * Thrown when a storage instance tries to reach a shared connection while a
@@ -185,21 +209,18 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     return state;
   }
 
-  function activeLead(state: HandleState): object | undefined {
-    return state.txOwners !== null ? leadOwner(state.txOwners) : undefined;
-  }
-
   /**
    * First owner in `owners` that `enlisted` does not contain, or `undefined`
    * when every one of them is enlisted.
    *
    * EVERY owner is checked, not just the lead. A participant set that is only
-   * partly enlisted is not a descendant of the open transaction — it is a
-   * different transaction that happens to share a member. Judging it by its
-   * lead alone let `withConnectionTransaction([a, c])` run inline inside a
-   * transaction owning `{a, b}`, which issues a nested `BEGIN` whose `COMMIT`
-   * commits the outer transaction's work, and skipped `c`'s sibling-op check
-   * entirely.
+   * partly enlisted is not a MEMBER of the open transaction — it is a different
+   * transaction that happens to share one. Judging it by its lead alone let
+   * `withConnectionTransaction([a, c])` run inline inside a transaction owning
+   * `{a, b}`, which issues a nested `BEGIN` whose `COMMIT` commits the outer
+   * transaction's work, and skipped `c`'s sibling-op check entirely. Whether
+   * such a caller is refused or queued is a separate question, and only the
+   * async context answers it — see {@link classifyReentry}.
    */
   function firstUnenlisted(
     owners: ReadonlySet<object>,
@@ -227,7 +248,7 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     owners: ReadonlySet<object>,
     handle: object,
     store: Als
-  ): ReentryDecision {
+  ): ReentryClassification {
     // Walk the whole store chain, not just the innermost store: a transaction
     // on a different connection may nest inside ours, and it shadows our store
     // rather than replacing it. Reading only `getStore()` there would classify
@@ -238,10 +259,14 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     for (let ctx = store.getStore(); ctx !== undefined; ctx = ctx.parent) {
       if (ctx.active && ctx.handle === handle) {
         // A descendant of the body holding THIS connection. Wholly enlisted
-        // joins the open BEGIN; anything else would write outside it. At most
-        // one store in the chain can match — a second transaction on the same
-        // handle is refused before it installs one — so the first wins.
-        return firstUnenlisted(owners, ctx.owners) === undefined ? "inline" : "throw";
+        // joins the open BEGIN; anything else would write, or open its own
+        // BEGIN, outside it. At most one store in the chain can match — a
+        // second transaction on the same handle never installs one while this
+        // one is active — so the first wins.
+        return {
+          decision: firstUnenlisted(owners, ctx.owners) === undefined ? "inline" : "throw",
+          enlisted: ctx.owners,
+        };
       }
     }
     // Synchronous shim only: a descendant of our own transaction body loses the
@@ -255,9 +280,12 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     // (a non-null `txOwners` here implies an open transaction: `txOwners` and
     // `txId` are always written and cleared together.)
     if (store.synchronousOnly === true && state.txOwners !== null) {
-      return firstUnenlisted(owners, state.txOwners) === undefined ? "inline" : "throw";
+      return {
+        decision: firstUnenlisted(owners, state.txOwners) === undefined ? "inline" : "throw",
+        enlisted: state.txOwners,
+      };
     }
-    return "chain";
+    return { decision: "chain", enlisted: undefined };
   }
 
   /**
@@ -285,10 +313,10 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
   ): Promise<T> {
     const state = getState(handle);
     const store = als.ensureAls();
-    const decision = classifyReentry(state, new Set([owner]), handle, store);
+    const { decision, enlisted } = classifyReentry(state, new Set([owner]), handle, store);
     if (decision === "throw") {
       throw new ConnectionReentryError(
-        connectionOwnerLabel(activeLead(state) ?? owner),
+        connectionOwnerLabel(enlisted !== undefined ? leadOwner(enlisted) : owner),
         connectionOwnerLabel(owner),
         "sibling-op"
       );
@@ -317,13 +345,19 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
    *
    * `owner` is either a single storage instance (the one-participant
    * `withTransaction` case) or every participant of a connection-scoped
-   * transaction. Cross-instance re-entry from a non-enlisted descendant throws
-   * {@link ConnectionReentryError} with `mode === "nested-transaction"` at the
-   * transaction-opening call site. Unlike {@link runOnConnection}, that refusal
-   * is decided from handle state alone and so also catches an unrelated
-   * concurrent caller: a participant set that is only partly enlisted is a
-   * different transaction sharing a member, and there is no autonomous `BEGIN`
-   * to give a wholly separate one on this connection either way.
+   * transaction.
+   *
+   * It classifies exactly as {@link runOnConnection} does, and for the same
+   * reason. A DESCENDANT of the open body whose participants are not all
+   * enlisted is a different transaction sharing a member: running it would
+   * issue a nested `BEGIN` whose `COMMIT` commits the outer transaction's
+   * work, so it throws {@link ConnectionReentryError} with
+   * `mode === "nested-transaction"`, naming the participant to hoist. An
+   * UNRELATED concurrent transaction whose participants merely differ is not
+   * inside anything — on a single-session backend only one `BEGIN` can be open
+   * at a time, so it queues on the chain and opens its own once the first
+   * commits. Refusing it would make `withConnectionTransaction` unusable from
+   * more than one task, which is the same defect the sibling-op path had.
    *
    * `handle` keys the chain slot; `groupHandle` names the physical connection
    * the transaction owns and defaults to `handle`. They differ only where a
@@ -341,29 +375,18 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
     const owners = ownerSet(owner);
     const lead = leadOwner(owners);
     const state = getState(handle);
-    // Every participant is checked, not just the lead: a set that is only
-    // partly enlisted is a DIFFERENT transaction sharing a member, and running
-    // it inline would issue a nested BEGIN whose COMMIT commits the open
-    // transaction's work. The error names the participant that is actually
-    // un-enlisted, which is the one the caller has to remove or hoist.
-    const intruder = state.txOwners !== null ? firstUnenlisted(owners, state.txOwners) : undefined;
-    if (intruder !== undefined) {
-      throw new ConnectionReentryError(
-        connectionOwnerLabel(activeLead(state)),
-        connectionOwnerLabel(intruder),
-        "nested-transaction"
-      );
-    }
     const store = als.ensureAls();
-    const decision = classifyReentry(state, owners, handle, store);
-    // Unreachable today: the guard above already refused every owner set the
-    // classifier could throw on. Kept deliberately — without it a "throw"
-    // classification would fall through to the chain and HANG instead of
-    // erroring, which is a far worse failure than a redundant branch.
+    const { decision, enlisted } = classifyReentry(state, owners, handle, store);
     if (decision === "throw") {
+      // Every participant was checked, not just the lead, and the error names
+      // the one that is actually un-enlisted — the participant the caller has
+      // to hoist into the outer call or remove. Its lead is no use here: it is
+      // routinely enlisted already, which is exactly how a partly-enlisted set
+      // used to pass for a member of the open transaction.
+      const intruder = enlisted !== undefined ? firstUnenlisted(owners, enlisted) : undefined;
       throw new ConnectionReentryError(
-        connectionOwnerLabel(activeLead(state) ?? lead),
-        connectionOwnerLabel(lead),
+        connectionOwnerLabel(enlisted !== undefined ? leadOwner(enlisted) : lead),
+        connectionOwnerLabel(intruder ?? lead),
         "nested-transaction"
       );
     }

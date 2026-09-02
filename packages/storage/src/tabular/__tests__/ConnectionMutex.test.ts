@@ -25,42 +25,36 @@ describe("ConnectionMutex F1: re-entry is classified from the async context", ()
       __resetAlsForTesting(useShim);
     });
 
-    it("refuses a participant set whose lead is enlisted but whose sibling is not", async () => {
+    it("refuses a DESCENDANT whose lead is enlisted but whose sibling is not", async () => {
       // The set {a, c} shares its lead with the open transaction's {a, b} but
       // is a DIFFERENT transaction. Judged by its lead alone it classified as
       // an enlisted descendant and ran inline — a nested BEGIN whose COMMIT
       // commits the outer transaction's work, with `c` never checked at all.
+      //
+      // Issued from INSIDE the body, after an `await`: that is what makes it a
+      // descendant on the real ALS, and the shim's fallback answers the same
+      // way. An unrelated concurrent caller with this same set queues instead —
+      // see the PARTIALLY OVERLAPPING test below.
       const handle = {};
       const ownerA = { table: "table_a" };
       const ownerB = { table: "table_b" };
       const ownerC = { table: "table_c" };
 
-      let releaseTx: () => void = () => {};
-      const txCanFinish = new Promise<void>((resolve) => {
-        releaseTx = resolve;
-      });
-      let signalTxStarted: () => void = () => {};
-      const txStarted = new Promise<void>((resolve) => {
-        signalTxStarted = resolve;
-      });
-
       let innerRan = false;
-      const txPromise = runInTransactionOnConnection(handle, [ownerA, ownerB], async () => {
-        signalTxStarted();
-        await txCanFinish;
-      });
-      await txStarted;
-
-      const start = Date.now();
       let error: unknown;
-      try {
-        await runInTransactionOnConnection(handle, [ownerA, ownerC], async () => {
-          innerRan = true;
-        });
-      } catch (err) {
-        error = err;
-      }
-      const elapsed = Date.now() - start;
+      let elapsed = 0;
+      await runInTransactionOnConnection(handle, [ownerA, ownerB], async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        const start = Date.now();
+        try {
+          await runInTransactionOnConnection(handle, [ownerA, ownerC], async () => {
+            innerRan = true;
+          });
+        } catch (err) {
+          error = err;
+        }
+        elapsed = Date.now() - start;
+      });
 
       expect(innerRan).toBe(false);
       expect(error).toBeInstanceOf(ConnectionReentryError);
@@ -69,10 +63,205 @@ describe("ConnectionMutex F1: re-entry is classified from the async context", ()
       expect((error as ConnectionReentryError).message).toContain("table_c");
       // Fails fast rather than queueing on a slot the outer transaction holds.
       expect(elapsed).toBeLessThan(500);
-
-      releaseTx();
-      await txPromise;
     });
+
+    it.skipIf(useShim)(
+      "an unrelated concurrent transaction with a DISJOINT participant set waits instead of being refused",
+      async () => {
+        // Only one BEGIN can be open on a single-session backend, so waiting is
+        // the whole point of the chain. Refusing here makes the primitive
+        // unusable from any concurrent caller.
+        const handle = {};
+        const ownerA = { table: "table_a" };
+        const ownerB = { table: "table_b" };
+        const ownerC = { table: "table_c" };
+        const ownerD = { table: "table_d" };
+        const order: string[] = [];
+
+        let releaseTx: () => void = () => {};
+        const txCanFinish = new Promise<void>((resolve) => {
+          releaseTx = resolve;
+        });
+        let signalTxStarted: () => void = () => {};
+        const txStarted = new Promise<void>((resolve) => {
+          signalTxStarted = resolve;
+        });
+
+        const txPromise = runInTransactionOnConnection(handle, [ownerA, ownerB], async () => {
+          order.push("BEGIN-1");
+          signalTxStarted();
+          await txCanFinish;
+          order.push("COMMIT-1");
+        });
+        await txStarted;
+
+        let secondError: unknown;
+        const second = runInTransactionOnConnection(handle, [ownerC, ownerD], async () => {
+          order.push("BEGIN-2");
+          return "ok";
+        }).catch((err: unknown) => {
+          secondError = err;
+          return "refused";
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(secondError).toBeUndefined();
+        expect(order).toEqual(["BEGIN-1"]);
+
+        releaseTx();
+        await txPromise;
+        expect(await second).toBe("ok");
+        expect(secondError).toBeUndefined();
+        expect(order).toEqual(["BEGIN-1", "COMMIT-1", "BEGIN-2"]);
+      }
+    );
+
+    it.skipIf(useShim)(
+      "an unrelated concurrent transaction with a PARTIALLY OVERLAPPING participant set waits instead of being refused",
+      async () => {
+        // The shape a consumer actually runs: one transaction over the person
+        // participants and another over the company participants, sharing the
+        // provenance table. Two units of work ten wide on one handle overlap in
+        // time constantly, and neither is inside the other.
+        const handle = {};
+        const provenance = { table: "observation_provenance" };
+        const personLink = { table: "person_identity_link" };
+        const personObs = { table: "person_observations" };
+        const companyLink = { table: "company_identity_link" };
+        const companyObs = { table: "company_observations" };
+        const order: string[] = [];
+
+        let releaseTx: () => void = () => {};
+        const txCanFinish = new Promise<void>((resolve) => {
+          releaseTx = resolve;
+        });
+        let signalTxStarted: () => void = () => {};
+        const txStarted = new Promise<void>((resolve) => {
+          signalTxStarted = resolve;
+        });
+
+        const personTx = runInTransactionOnConnection(
+          handle,
+          [personLink, provenance, personObs],
+          async () => {
+            order.push("BEGIN-person");
+            signalTxStarted();
+            await txCanFinish;
+            order.push("COMMIT-person");
+          }
+        );
+        await txStarted;
+
+        let companyError: unknown;
+        const companyTx = runInTransactionOnConnection(
+          handle,
+          [companyLink, provenance, companyObs],
+          async () => {
+            order.push("BEGIN-company");
+            return "ok";
+          }
+        ).catch((err: unknown) => {
+          companyError = err;
+          return "refused";
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(companyError).toBeUndefined();
+        expect(order).toEqual(["BEGIN-person"]);
+
+        releaseTx();
+        await personTx;
+        expect(await companyTx).toBe("ok");
+        expect(companyError).toBeUndefined();
+        expect(order).toEqual(["BEGIN-person", "COMMIT-person", "BEGIN-company"]);
+      }
+    );
+
+    it.skipIf(useShim)(
+      "an unrelated concurrent transaction with IDENTICAL participants waits, like any other",
+      async () => {
+        // Repeated reaps take this path. It reached the chain before only as a
+        // side effect of being wholly enlisted; now it chains for the same
+        // reason every unrelated caller does — no store, so not a descendant.
+        const handle = {};
+        const ownerA = { table: "table_a" };
+        const ownerB = { table: "table_b" };
+        const order: string[] = [];
+
+        let releaseTx: () => void = () => {};
+        const txCanFinish = new Promise<void>((resolve) => {
+          releaseTx = resolve;
+        });
+        let signalTxStarted: () => void = () => {};
+        const txStarted = new Promise<void>((resolve) => {
+          signalTxStarted = resolve;
+        });
+
+        const first = runInTransactionOnConnection(handle, [ownerA, ownerB], async () => {
+          order.push("BEGIN-1");
+          signalTxStarted();
+          await txCanFinish;
+          order.push("COMMIT-1");
+        });
+        await txStarted;
+
+        const second = runInTransactionOnConnection(handle, [ownerA, ownerB], async () => {
+          order.push("BEGIN-2");
+          return "ok";
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(order).toEqual(["BEGIN-1"]);
+
+        releaseTx();
+        await first;
+        expect(await second).toBe("ok");
+        expect(order).toEqual(["BEGIN-1", "COMMIT-1", "BEGIN-2"]);
+      }
+    );
+
+    it.skipIf(!useShim)(
+      "the shim still refuses an unrelated concurrent transaction whose participants differ",
+      async () => {
+        // No async context, so a descendant opening a partly-enlisted nested
+        // transaction is indistinguishable from this. Refusing is the
+        // conservative side: a nested BEGIN would commit the outer's work.
+        const handle = {};
+        const ownerA = { table: "table_a" };
+        const ownerB = { table: "table_b" };
+        const ownerC = { table: "table_c" };
+
+        let releaseTx: () => void = () => {};
+        const txCanFinish = new Promise<void>((resolve) => {
+          releaseTx = resolve;
+        });
+        let signalTxStarted: () => void = () => {};
+        const txStarted = new Promise<void>((resolve) => {
+          signalTxStarted = resolve;
+        });
+
+        const txPromise = runInTransactionOnConnection(handle, [ownerA, ownerB], async () => {
+          signalTxStarted();
+          await txCanFinish;
+        });
+        await txStarted;
+
+        const start = Date.now();
+        let error: unknown;
+        try {
+          await runInTransactionOnConnection(handle, [ownerA, ownerC], async () => "unreachable");
+        } catch (err) {
+          error = err;
+        }
+        expect(error).toBeInstanceOf(ConnectionReentryError);
+        expect((error as ConnectionReentryError).mode).toBe("nested-transaction");
+        expect((error as ConnectionReentryError).message).toContain("table_c");
+        expect(Date.now() - start).toBeLessThan(200);
+
+        releaseTx();
+        await txPromise;
+      }
+    );
 
     it("still inlines a participant set that is wholly enlisted", async () => {
       const handle = {};
@@ -192,41 +381,28 @@ describe("ConnectionMutex F1: re-entry is classified from the async context", ()
       }
     );
 
-    it("runInTransactionOnConnection throws ConnectionReentryError when a different owner tries a nested transaction", async () => {
+    it("throws ConnectionReentryError when a DESCENDANT with a different owner opens a nested transaction", async () => {
       const handle = {};
       const ownerA = { table: "table_a" };
       const ownerB = { table: "table_b" };
 
-      let releaseTx: () => void = () => {};
-      const txCanFinish = new Promise<void>((resolve) => {
-        releaseTx = resolve;
-      });
-      let signalTxStarted: () => void = () => {};
-      const txStarted = new Promise<void>((resolve) => {
-        signalTxStarted = resolve;
-      });
-
-      const txPromise = runInTransactionOnConnection(handle, ownerA, async () => {
-        signalTxStarted();
-        await txCanFinish;
-      });
-      await txStarted;
-
-      const start = Date.now();
       let error: unknown;
-      try {
-        await runInTransactionOnConnection(handle, ownerB, async () => "unreachable");
-      } catch (err) {
-        error = err;
-      }
-      const elapsed = Date.now() - start;
+      let elapsed = 0;
+      await runInTransactionOnConnection(handle, ownerA, async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        const start = Date.now();
+        try {
+          await runInTransactionOnConnection(handle, ownerB, async () => "unreachable");
+        } catch (err) {
+          error = err;
+        }
+        elapsed = Date.now() - start;
+      });
 
       expect(error).toBeInstanceOf(ConnectionReentryError);
       expect((error as ConnectionReentryError).mode).toBe("nested-transaction");
+      // Fails fast rather than queueing on a slot its own transaction holds.
       expect(elapsed).toBeLessThan(200);
-
-      releaseTx();
-      await txPromise;
     });
 
     it("cross-instance sibling throw does not corrupt the outer transaction's chain", async () => {
@@ -444,35 +620,26 @@ describe("ConnectionMutex F2: ConnectionReentryError message and mode", () => {
     const handle = {};
     const ownerA = { table: "issuer" };
     const ownerB = { table: "filing" };
-    let releaseTx: () => void = () => {};
-    const txCanFinish = new Promise<void>((resolve) => {
-      releaseTx = resolve;
-    });
-    let signalTxStarted: () => void = () => {};
-    const txStarted = new Promise<void>((resolve) => {
-      signalTxStarted = resolve;
-    });
 
-    const txPromise = runInTransactionOnConnection(handle, ownerA, async () => {
-      signalTxStarted();
-      await txCanFinish;
-    });
-    await txStarted;
-
+    // A descendant of the body, which is what "nested" names. An unrelated
+    // concurrent transaction queues instead of erroring, so it has no message
+    // to assert on.
     let err: unknown;
-    try {
-      await runInTransactionOnConnection(handle, ownerB, async () => "unreachable");
-    } catch (e) {
-      err = e;
-    }
+    await runInTransactionOnConnection(handle, ownerA, async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      try {
+        await runInTransactionOnConnection(handle, ownerB, async () => "unreachable");
+      } catch (e) {
+        err = e;
+      }
+    });
     const casted = err as ConnectionReentryError;
     expect(casted).toBeInstanceOf(ConnectionReentryError);
     expect(casted.mode).toBe("nested-transaction");
+    expect(casted.activeTable).toBe("issuer");
+    expect(casted.blockedTable).toBe("filing");
     expect(casted.message).toContain("open its own transaction");
     expect(casted.message).toContain("SAVEPOINT");
-
-    releaseTx();
-    await txPromise;
   });
 
   it("falls back to generic labels when the owner has no `table` property", async () => {

@@ -49,11 +49,16 @@
  *
  * ## Nesting detection
  *
- * {@link assertSharedConnectionHandle} refuses a second connection-scoped
- * transaction on a connection that already has a live one, via
+ * {@link assertSharedConnectionHandle} refuses a connection-scoped transaction
+ * opened from INSIDE a live one on the same connection, via
  * {@link isConnectionTxOpenOn}. Detection is ALS-store based, so it is precise
  * under a real `AsyncLocalStorage`: only a genuine async descendant of the open
- * body carries the store. It is ABSENT
+ * body carries the store, and a merely concurrent second transaction — which
+ * has its own `BEGIN` to open once the first commits, whatever its participant
+ * list — passes and takes the connection chain. That is the same distinction
+ * the connection mutex draws, and the two must agree: a guard that refused
+ * every second transaction would make the primitive unusable from more than
+ * one task. It is ABSENT
  * under {@link createShimAls}, whose store dies at the body's first `await` —
  * the guard's job there falls back to whatever the backend's own
  * `inTransaction` flag catches.
