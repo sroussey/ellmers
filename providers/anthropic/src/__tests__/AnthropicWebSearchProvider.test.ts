@@ -196,6 +196,24 @@ describe("AnthropicWebSearchProvider", () => {
     expect(c.exclusiveDomainDirections).toBe(true);
   });
 
+  it("hands the abort signal to every request, not just the loop condition", async () => {
+    const { create, client } = clientReturning(
+      messageWith([{ type: "text", text: "partial " }], "pause_turn"),
+      messageWith([{ type: "text", text: "and the rest." }])
+    );
+    const controller = new AbortController();
+    await new AnthropicWebSearchProvider({ client: client as never }).search({ query: "cats" }, {
+      ...context,
+      signal: controller.signal,
+    } as IExecuteContext);
+    // Checking the signal between turns only stops the next one from starting;
+    // without the SDK option the request already in flight runs to completion
+    // and is billed at max_tokens.
+    for (const call of create.mock.calls) {
+      expect((call[1] as { signal?: AbortSignal }).signal).toBe(controller.signal);
+    }
+  });
+
   it("refuses to send both domain lists, which the API rejects", async () => {
     const { client } = clientReturning(messageWith([{ type: "text", text: "x" }]));
     await expect(

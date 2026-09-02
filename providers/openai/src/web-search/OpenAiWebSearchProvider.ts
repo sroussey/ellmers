@@ -86,11 +86,14 @@ export class OpenAiWebSearchProvider implements IWebSearchProvider {
       tool.filters = { allowed_domains: [...request.includeDomains] };
     }
 
-    const response = (await client.responses.create({
-      model: this.model,
-      input: request.query,
-      tools: [tool] as never,
-    } as never)) as {
+    const response = (await client.responses.create(
+      {
+        model: this.model,
+        input: request.query,
+        tools: [tool] as never,
+      } as never,
+      { signal: context.signal }
+    )) as {
       output?: readonly {
         type?: string;
         content?: readonly { type?: string; text?: string; annotations?: readonly UrlCitation[] }[];

@@ -92,7 +92,7 @@ export class GeminiWebSearchProvider implements IWebSearchProvider {
     const response = (await this.client.models.generateContent({
       model: this.model,
       contents: request.query,
-      config: { tools: [{ googleSearch }] },
+      config: { tools: [{ googleSearch }], abortSignal: context.signal },
     } as never)) as {
       text?: string;
       candidates?: readonly {

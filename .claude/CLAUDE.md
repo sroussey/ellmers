@@ -233,12 +233,25 @@ honor it and the adapter would throw after selection rather than before.
 
 Date filtering is **never emulated** — post-filtering by `publishedDate` breaks `maxResults`
 and drops every result whose date the provider omitted, so `dateFilter: false` means such a
-request is refused rather than approximated.
+request is refused rather than approximated. The other half of that rule is that a provider
+declaring `dateFilter: true` has to send something for every range this task accepts: both
+Brave's `freshness` and Gemini's `timeRangeFilter` take a closed interval, so a half-open
+range is filled at the open end. Dropping it reports a bound as honored on a search that ran
+unfiltered, which is worse than refusing the request.
 
 `provider` is a required input with no default, mirroring `response_type` on `FetchUrlTask` —
 which provider serves a request decides its cost, rate limit and quality. `"auto"` opts into
 capability routing; the provider that ran is always reported on the `provider` output port. A
 **pinned** provider that cannot honor an option throws rather than rerouting.
+
+**A credential is named for a provider, never for the request.** `credential_keys` maps
+provider name → credential-store key, and the key sent is the one named for the provider that
+runs, so a key issued for one vendor cannot reach another; routing prefers a provider a key is
+named for, since naming one states which vendors the caller holds a key for. The single
+`credential_key` port stays for a pinned provider, where the vendor is unambiguous, and is
+refused with `"auto"` — routing picks the vendor at run time, so an unnamed key would go
+wherever it landed. `scanGraphForCredentials` reads the map through its `additionalProperties`
+value schema, which is what still unlocks the store for the run.
 
 Seven providers ship: `brave`, `tavily`, `searxng` here; `anthropic`, `openai`, `openrouter`,
 `gemini` as a `./web-search` subpath on their vendor package, registered explicitly
@@ -252,6 +265,8 @@ per-attempt timeouts and the response cache. They do **not** inherit the queue's
 secret included), so every keyed provider runs inline, and bounding a `MapTask` fan-out against
 a metered quota is the caller's job. The grounded adapters live in their vendor packages and
 use the vendor SDK, which is what keeps this package free of any dependency on `@workglow/ai`.
+Each hands `context.signal` to the SDK call, not just to a `throwIfAborted()` before it —
+otherwise an aborted run leaves a grounded turn in flight and pays for it.
 
 Two Anthropic-specific traps the adapter handles: a `web_search_tool_result` block carries a
 **list** on success and an error **object** on failure — at HTTP 200, raising nothing — so

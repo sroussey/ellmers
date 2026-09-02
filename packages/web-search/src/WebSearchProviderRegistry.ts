@@ -44,12 +44,21 @@ class Registry {
    * Picks a registered provider that can serve every option the request states,
    * in registration order.
    *
+   * A provider named in `credentialed` is considered first. Naming a credential
+   * key for a provider states which vendors the caller actually holds a key for,
+   * and only a key named for the provider that runs is ever sent — so without
+   * this, routing lands on a provider with no key and the request goes out
+   * unauthenticated while a usable one sits behind it.
+   *
    * The failure message names which option ruled out which provider: with
    * several registered, "nothing satisfies this request" leaves an operator with
    * no way to tell whether to add a key, register another provider, or drop an
    * option.
    */
-  route(request: WebSearchRequest): IWebSearchProvider {
+  route(
+    request: WebSearchRequest,
+    credentialed: ReadonlySet<string> = new Set()
+  ): IWebSearchProvider {
     const candidates = this.list();
     if (candidates.length === 0) {
       throw new TaskConfigurationError(
@@ -57,8 +66,15 @@ class Registry {
           "from a server runtime, or register one with registerWebSearchProvider()."
       );
     }
+    const ordered =
+      credentialed.size === 0
+        ? candidates
+        : [
+            ...candidates.filter((c) => credentialed.has(c.name)),
+            ...candidates.filter((c) => !credentialed.has(c.name)),
+          ];
     const rejected: string[] = [];
-    for (const candidate of candidates) {
+    for (const candidate of ordered) {
       const gaps = unhonorableOptions(candidate.capabilities, request);
       if (gaps.length === 0) return candidate;
       rejected.push(`${candidate.name} (cannot serve: ${gaps.join(", ")})`);

@@ -49,7 +49,7 @@ const PAYLOAD = {
 };
 
 function clientReturning(payload: unknown, spy?: (body: unknown) => void) {
-  const create = vi.fn(async (body: unknown) => {
+  const create = vi.fn(async (body: unknown, _options?: unknown) => {
     spy?.(body);
     return payload;
   });
@@ -84,6 +84,18 @@ describe("OpenAiWebSearchProvider", () => {
     );
     const tools = (seen.mock.calls[0][0] as { tools: Array<Record<string, never>> }).tools;
     expect(tools[0].filters).toEqual({ allowed_domains: ["arxiv.org"] });
+  });
+
+  it("hands the abort signal to the SDK, not just to a check before it", async () => {
+    const { create, client } = clientReturning(PAYLOAD);
+    const controller = new AbortController();
+    await new OpenAiWebSearchProvider({ client }).search({ query: "cats" }, {
+      ...context,
+      signal: controller.signal,
+    } as IExecuteContext);
+    // Without it an aborted run leaves a grounded turn in flight, and the run
+    // is billed for tokens nobody will read.
+    expect((create.mock.calls[0][1] as { signal?: AbortSignal }).signal).toBe(controller.signal);
   });
 
   it("de-duplicates a source cited at several spans", async () => {

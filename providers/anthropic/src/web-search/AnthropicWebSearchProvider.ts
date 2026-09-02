@@ -106,12 +106,18 @@ export class AnthropicWebSearchProvider implements IWebSearchProvider {
     // answer is silently truncated with no error raised anywhere.
     for (let attempt = 0; attempt <= MAX_PAUSE_RESUMES; attempt++) {
       context.signal.throwIfAborted();
-      const message = (await this.client.messages.create({
-        model: this.model,
-        max_tokens: this.maxTokens,
-        tools: [tool] as never,
-        messages: messages as never,
-      })) as {
+      const message = (await this.client.messages.create(
+        {
+          model: this.model,
+          max_tokens: this.maxTokens,
+          tools: [tool] as never,
+          messages: messages as never,
+        },
+        // Checking the signal only bounds how many turns start. Handing it to
+        // the SDK is what stops the one already in flight, which is where the
+        // tokens are being spent.
+        { signal: context.signal }
+      )) as {
         content: readonly unknown[];
         stop_reason?: string;
         usage?: { input_tokens?: number; output_tokens?: number };

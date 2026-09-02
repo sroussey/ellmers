@@ -78,7 +78,20 @@ const inputSchema = {
       // The scan that unlocks the store still counts this format.
       format: "credential-key",
       title: "Credential Key",
-      description: "Key looked up in the credential store and sent as the provider's API key.",
+      description:
+        "Key looked up in the credential store and sent as the provider's API key. Only " +
+        "valid alongside a pinned provider — with 'auto' the vendor is not known yet, so " +
+        "name the key per provider in credential_keys instead.",
+      "x-ui-hidden": true,
+    },
+    credential_keys: {
+      type: "object",
+      additionalProperties: { type: "string", format: "credential-key" },
+      title: "Credential Keys",
+      description:
+        "Credential-store keys by provider name. The key sent is the one named for the " +
+        "provider that runs, so a key issued for one vendor never reaches another, and " +
+        "routing prefers a provider a key is named for.",
       "x-ui-hidden": true,
     },
   },
@@ -138,6 +151,24 @@ export type WebSearchTaskOutput = {
   count: number;
   usage?: WebSearchUsage | undefined;
 };
+
+function namedProviders(keys: Readonly<Record<string, string>> | undefined): ReadonlySet<string> {
+  return new Set(Object.keys(keys ?? {}));
+}
+
+/**
+ * The credential handed to a provider is the one named for that provider.
+ *
+ * Under `"auto"` a key named for nothing in particular is never forwarded: the
+ * vendor is chosen at run time, so the secret would go wherever routing landed.
+ * A pinned provider is unambiguous, so the bare `credential_key` still serves it.
+ */
+function credentialKeyFor(provider: string, input: WebSearchTaskInput): string | undefined {
+  return (
+    input.credential_keys?.[provider] ??
+    (input.provider === "auto" ? undefined : input.credential_key)
+  );
+}
 
 export class WebSearchTask extends Task<WebSearchTaskInput, WebSearchTaskOutput> {
   static override readonly type = "WebSearchTask";
@@ -200,6 +231,9 @@ export class WebSearchTask extends Task<WebSearchTaskInput, WebSearchTaskOutput>
     input: WebSearchTaskInput,
     context: IExecuteContext
   ): Promise<WebSearchTaskOutput> {
+    // No credential on the base request: which provider serves it is not settled
+    // until routing has run, and a key attached before then is a key attached to
+    // whichever vendor routing happens to pick.
     const baseRequest: WebSearchRequest = {
       query: input.query,
       maxResults: input.maxResults,
@@ -208,11 +242,13 @@ export class WebSearchTask extends Task<WebSearchTaskInput, WebSearchTaskOutput>
       dateRange: input.dateRange,
       includeAnswer: input.includeAnswer,
       includeContent: input.includeContent,
-      credentialKey: input.credential_key,
     };
 
-    const provider = this.resolveProvider(input.provider, baseRequest);
-    const request = this.adaptRequest(provider, baseRequest);
+    const provider = this.resolveProvider(input, baseRequest);
+    const request = this.adaptRequest(provider, {
+      ...baseRequest,
+      credentialKey: credentialKeyFor(provider.name, input),
+    });
 
     await context.updateProgress(undefined, `Searching via ${provider.name}`);
     const response = await provider.search(request, context);
@@ -232,8 +268,21 @@ export class WebSearchTask extends Task<WebSearchTaskInput, WebSearchTaskOutput>
    * cost and quota, so an option it cannot serve is an error rather than a
    * reroute to a provider the caller did not ask to be billed for.
    */
-  private resolveProvider(name: string, request: WebSearchRequest): IWebSearchProvider {
-    if (name === "auto") return WebSearchProviderRegistry.route(request);
+  private resolveProvider(
+    input: WebSearchTaskInput,
+    request: WebSearchRequest
+  ): IWebSearchProvider {
+    const name = input.provider;
+    if (name === "auto") {
+      if (input.credential_key !== undefined) {
+        throw new TaskConfigurationError(
+          "WebSearchTask: credential_key cannot be combined with provider 'auto'. Routing " +
+            "picks the vendor at run time, so an unnamed key would be sent to whichever one " +
+            "it landed on. Name it per provider in credential_keys instead."
+        );
+      }
+      return WebSearchProviderRegistry.route(request, namedProviders(input.credential_keys));
+    }
     const provider = WebSearchProviderRegistry.require(name);
     const gaps = unhonorableOptions(provider.capabilities, request);
     if (gaps.length > 0) {

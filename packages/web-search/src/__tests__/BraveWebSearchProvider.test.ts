@@ -105,10 +105,23 @@ describe("BraveWebSearchProvider", () => {
     expect(url.searchParams.get("freshness")).toBe(`2026-01-01to${today}`);
   });
 
-  it("sends no freshness for an end-only range it cannot express", async () => {
+  it("opens the start of an end-only date range rather than dropping the filter", async () => {
     const seen = vi.fn();
     await new BraveWebSearchProvider().search(
       { query: "cats", dateRange: { end: "2026-06-01" } },
+      contextWithResponse(BRAVE_PAYLOAD, seen)
+    );
+    const url = new URL((seen.mock.calls[0][0] as { url: string }).url);
+    // Dropping it would run the search unfiltered while `dateFilter: true` says
+    // the bound was honored, so the caller gets undated results reported as a
+    // successful date-bounded search.
+    expect(url.searchParams.get("freshness")).toBe("1970-01-01to2026-06-01");
+  });
+
+  it("sends no freshness when neither end of the range is set", async () => {
+    const seen = vi.fn();
+    await new BraveWebSearchProvider().search(
+      { query: "cats", dateRange: {} },
       contextWithResponse(BRAVE_PAYLOAD, seen)
     );
     const url = new URL((seen.mock.calls[0][0] as { url: string }).url);
