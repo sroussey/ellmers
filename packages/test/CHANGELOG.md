@@ -1,5 +1,18 @@
 # @workglow/test
 
+## 0.4.7
+
+### Bug Fixes
+
+#### storage
+
+- queue concurrent transactions whose participants differ
+- queue unrelated concurrent callers on the connection mutex
+
+### Chores
+
+- migrate from Prettier to oxfmt for code formatting
+
 ## 0.4.6
 
 ### Features

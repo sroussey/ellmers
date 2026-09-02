@@ -1,5 +1,25 @@
 # @workglow/storage
 
+## 0.4.7
+
+### Bug Fixes
+
+#### storage
+
+- keep connection-transaction put deferral off the ALS store
+- queue concurrent transactions whose participants differ
+- queue unrelated concurrent callers on the connection mutex
+
+### Documentation
+
+#### storage
+
+- correct the re-entry precedent cited by put deferral
+
+### Chores
+
+- migrate from Prettier to oxfmt for code formatting
+
 ## 0.4.6
 
 ### Features

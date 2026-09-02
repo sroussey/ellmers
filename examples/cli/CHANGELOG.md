@@ -1,5 +1,15 @@
 # @workglow/cli
 
+## 0.4.7
+
+### Features
+
+- enhance command tree and UI layout for nested items, filter out web when running web
+
+### Chores
+
+- migrate from Prettier to oxfmt for code formatting
+
 ## 0.4.6
 
 ### Chores
