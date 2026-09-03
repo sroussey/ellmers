@@ -70,6 +70,18 @@ function registerBuiltInFieldWidgets(): void {
  * Adds `web` to a commander program. A downstream CLI gets the console — its
  * own commands included — by calling this once.
  */
+/**
+ * The command whose tree the console serves: the root of whatever `web` was
+ * registered on. A CLI that files `web` under a group (`setup web`) still
+ * means "this CLI's commands", not the group's — and the root is also where
+ * the binary name lives, which the console prints in front of every run.
+ */
+export function consoleRoot(command: Command): Command {
+  let root = command;
+  while (root.parent !== null) root = root.parent;
+  return root;
+}
+
 export function registerWebCommand(
   program: Command,
   options: RegisterWebCommandOptions = {}
@@ -94,6 +106,9 @@ export function registerWebCommand(
       DEFAULT_WEB_HOST
     )
     .action(async (opts: { port: number; host: string }) => {
+      // Resolved here, not at registration: the group `web` hangs off is only
+      // attached to its parents once the whole tree is built.
+      const root = consoleRoot(program);
       const config = await loadConfig();
       const workflowRepo = createWorkflowRepository(config);
       await workflowRepo.setupDatabase();
@@ -103,8 +118,8 @@ export function registerWebCommand(
       const handle = await startWebServer({
         port: opts.port,
         host: opts.host,
-        program,
-        binaryName: options.binaryName ?? program.name() ?? "workglow",
+        program: root,
+        binaryName: options.binaryName ?? root.name() ?? "workglow",
         binary: options.binary ?? defaultBinary(),
         cwd: process.cwd(),
         logDir: options.logDir ?? join(config.directories.cache, "web-runs"),
