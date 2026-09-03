@@ -471,6 +471,63 @@ describe("FetchUrlTask", () => {
     expect(mockFetch.mock.calls.length).toBe(1);
   });
 
+  test("keeps a Retry-After of 0, which means retry now rather than no guidance", async () => {
+    const beforeTest = Date.now();
+    mockFetch.mockImplementation(() =>
+      Promise.resolve(
+        new Response("Too Many Requests", {
+          status: 429,
+          statusText: "Too Many Requests",
+          headers: { "Retry-After": "0" },
+        })
+      )
+    );
+
+    const error = await fetchUrl({
+      url: "https://api.example.com/retry-now",
+      response_type: "stream",
+    }).catch((e) => e);
+
+    expect(error).toBeInstanceOf(JobTaskFailedError);
+    expect(error.code).toBe(FetchUrlErrorCode.HTTP_RATE_LIMITED);
+    expect(error.jobError).toBeInstanceOf(RetryableJobError);
+    // The value a caller reads to decide how long to wait. Left unset, a zero
+    // is indistinguishable from a response carrying no Retry-After at all, and
+    // a caller with its own backoff applies its no-guidance default to a
+    // response that asked for none.
+    expect(error.jobError.retryDate).toBeInstanceOf(Date);
+    const waitMs = error.jobError.retryDate.getTime() - beforeTest;
+    expect(waitMs).toBeGreaterThanOrEqual(0);
+    expect(waitMs).toBeLessThan(1000);
+  });
+
+  test("ignores a negative Retry-After, which delta-seconds cannot express", async () => {
+    mockFetch.mockImplementation(() =>
+      Promise.resolve(
+        new Response("Too Many Requests", {
+          status: 429,
+          statusText: "Too Many Requests",
+          headers: { "Retry-After": "-5" },
+        })
+      )
+    );
+
+    const error = await fetchUrl({
+      url: "https://api.example.com/negative-retry-after",
+      response_type: "stream",
+    }).catch((e) => e);
+
+    // The kind of error matters as much as the missing date: an absent
+    // `retryDate` alone would also hold for a PermanentJobError, which never
+    // carries one, so on its own it cannot tell "still a retryable rate limit,
+    // just with no usable guidance" from "stopped being retryable at all".
+    expect(error).toBeInstanceOf(JobTaskFailedError);
+    expect(error.code).toBe(FetchUrlErrorCode.HTTP_RATE_LIMITED);
+    expect(error.jobError).toBeInstanceOf(RetryableJobError);
+    expect(error.jobError.retryDate).toBeUndefined();
+    expect(mockFetch.mock.calls.length).toBe(1);
+  });
+
   test("handles service unavailable with default retry time", async () => {
     mockFetch.mockImplementation(() =>
       Promise.resolve(
