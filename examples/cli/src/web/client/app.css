@@ -142,11 +142,15 @@ textarea {
 .rail-l {
   grid-area: rail;
   border-right: 1px solid var(--line);
+  position: relative;
+  z-index: 1;
 }
 .rail-r {
   grid-area: status;
   border-left: 1px solid var(--line);
   overflow-y: auto;
+  position: relative;
+  z-index: 1;
 }
 .rail-r .railsec:first-child {
   border-top: 0;
@@ -154,9 +158,21 @@ textarea {
 .main {
   grid-area: main;
   display: grid;
+  /* An implicit `auto` column sizes to min-content. WebKit then lets the
+     form's max-width (and Safari's intrinsic <input> minimum) blow the
+     middle track out over the status rail. Pin one shrinking column. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
+  /* Clip rather than scroll: a vertical scrollport here would steal
+     position:sticky from .body. Isolation keeps a sticky cmdbar from
+     compositing over the status rail. */
+  overflow-x: clip;
+  isolation: isolate;
+}
+.main > * {
+  min-width: 0;
 }
 
 /* ---------- rail ---------- */
@@ -449,7 +465,9 @@ textarea {
   gap: 6px;
   font-family: var(--mono);
   font-size: var(--fs-13);
+  flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 .crumb b {
   font-weight: 600;
@@ -592,12 +610,22 @@ textarea {
 /* ---------- body ---------- */
 .body {
   overflow: auto;
+  min-width: 0;
   min-height: 0;
   padding: 18px;
+  /* Flex centering, not margin:auto. WebKit resolves auto side margins on a
+     max-width block inside a grid item against the outer grid (the whole
+     app), which shifts .wrap over the status rail and leaves the main
+     column empty on the left. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 .wrap {
+  width: 100%;
   max-width: 1040px;
-  margin: 0 auto;
+  min-width: 0;
+  flex-shrink: 0;
 }
 .lede {
   color: var(--ink-2);
@@ -632,6 +660,8 @@ h2.sec:first-child {
   border: 1px solid var(--line);
   border-radius: var(--r);
   box-shadow: var(--shadow);
+  min-width: 0;
+  max-width: 100%;
 }
 .field {
   display: grid;
@@ -639,6 +669,8 @@ h2.sec:first-child {
   gap: 14px;
   padding: 11px 14px;
   border-bottom: 1px solid var(--line-2);
+  min-width: 0;
+  max-width: 100%;
 }
 .field:last-child {
   border-bottom: 0;
@@ -666,11 +698,16 @@ h2.sec:first-child {
   font-size: 10px;
   color: var(--ink-3);
 }
+.fc {
+  min-width: 0;
+}
 .fc input[type="text"],
 .fc input[type="number"],
 .fc select,
 .fc textarea {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   background: var(--sunk);
   border: 1px solid transparent;
   border-radius: var(--r-sm);
@@ -833,6 +870,8 @@ details.adv > summary:hover {
   position: sticky;
   bottom: -18px;
   margin-top: 16px;
+  width: 100%;
+  max-width: 100%;
   background: var(--screen);
   border: 1px solid var(--screen-line);
   border-radius: var(--r);
@@ -847,6 +886,7 @@ details.adv > summary:hover {
   font-size: var(--fs-12);
   color: var(--scr-fg);
   flex: 1;
+  min-width: 0;
   overflow-x: auto;
   white-space: nowrap;
   padding-bottom: 2px;
@@ -889,6 +929,8 @@ details.adv > summary:hover {
   font-size: var(--fs-12);
   overflow: hidden;
   box-shadow: var(--shadow);
+  min-width: 0;
+  max-width: 100%;
 }
 .scr-head {
   display: flex;
@@ -1518,6 +1560,11 @@ pre.json .n {
   background: var(--sunk);
   color: var(--ink-2);
   font-size: var(--fs-12);
+  min-width: 0;
+  max-width: 100%;
+}
+.cnote > span {
+  min-width: 0;
 }
 .cnote .badges {
   margin-left: 0;
