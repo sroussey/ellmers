@@ -490,6 +490,7 @@ describe("FetchUrlTask", () => {
 
     expect(error).toBeInstanceOf(JobTaskFailedError);
     expect(error.code).toBe(FetchUrlErrorCode.HTTP_RATE_LIMITED);
+    expect(error.jobError).toBeInstanceOf(RetryableJobError);
     // The value a caller reads to decide how long to wait. Left unset, a zero
     // is indistinguishable from a response carrying no Retry-After at all, and
     // a caller with its own backoff applies its no-guidance default to a
@@ -516,8 +517,15 @@ describe("FetchUrlTask", () => {
       response_type: "stream",
     }).catch((e) => e);
 
+    // The kind of error matters as much as the missing date: an absent
+    // `retryDate` alone would also hold for a PermanentJobError, which never
+    // carries one, so on its own it cannot tell "still a retryable rate limit,
+    // just with no usable guidance" from "stopped being retryable at all".
     expect(error).toBeInstanceOf(JobTaskFailedError);
+    expect(error.code).toBe(FetchUrlErrorCode.HTTP_RATE_LIMITED);
+    expect(error.jobError).toBeInstanceOf(RetryableJobError);
     expect(error.jobError.retryDate).toBeUndefined();
+    expect(mockFetch.mock.calls.length).toBe(1);
   });
 
   test("handles service unavailable with default retry time", async () => {
