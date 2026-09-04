@@ -4,8 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ModelConfig, ModelPricing } from "@workglow/ai";
+import type { ModelConfig } from "@workglow/ai";
 import { downloadModel } from "@workglow/ai";
+import { getAnthropicModelPricing } from "@workglow/anthropic/ai";
+import { getDeepSeekModelPricing } from "@workglow/deepseek/ai";
+import { getGeminiModelPricing } from "@workglow/google-gemini/ai";
+import { getOpenAiModelPricing } from "@workglow/openai/ai";
+import { getXaiModelPricing } from "@workglow/xai/ai";
 import { ggufCacheDir } from "./config";
 import { hfAuthHeaders } from "./hf/auth";
 import { sanitizeHubRepoId } from "./hf/ids";
@@ -13,166 +18,6 @@ import { sanitizeHubRepoId } from "./hf/ids";
 export type EvalKind = "classify" | "similarity" | "extract";
 
 const GGUF_PREFIX = "gguf:";
-
-/**
- * Per-million-token rate card, maintained here rather than in the library: a
- * comparison harness is where a human keeps rates current and where a stale
- * entry is visible, instead of every downstream consumer inheriting it.
- *
- * These figures are hand-entered and are NOT fetched from any provider, so
- * check them against each vendor's own pricing page before trusting a cost
- * column — several entries here have not been verified against a live rate.
- * A model with no entry is left `undefined` so `estimateCost` reports nothing
- * rather than a wrong number.
- */
-const ANTHROPIC_PRICING: Record<string, ModelPricing | undefined> = {
-  "claude-haiku-4-5": {
-    currency: "USD",
-    input: 1,
-    output: 5,
-    cached: 0.1,
-    cacheWrite: 1.25,
-    cacheStoragePerHour: undefined,
-  },
-  "claude-sonnet-5": {
-    currency: "USD",
-    input: 2,
-    output: 10,
-    cached: 0.2,
-    cacheWrite: 2.5,
-    cacheStoragePerHour: undefined,
-  },
-  "claude-opus-5": {
-    currency: "USD",
-    input: 15,
-    output: 75,
-    cached: 1.5,
-    cacheWrite: 18.75,
-    cacheStoragePerHour: undefined,
-  },
-};
-
-/**
- * OpenAI's prompt cache is automatic (no separate write charge to price).
- *
- * The 5.6 family is priced per variant — `sol` / `terra` / `luna` — and OpenAI
- * publishes no rate for a bare `gpt-5.6`, so that id stays unpriced rather than
- * borrowing a sibling's number.
- */
-const OPENAI_PRICING: Record<string, ModelPricing | undefined> = {
-  "gpt-5.6-sol": {
-    currency: "USD",
-    input: 5,
-    output: 30,
-    cached: 0.5,
-    cacheWrite: undefined,
-    cacheStoragePerHour: undefined,
-  },
-  "gpt-5.6-terra": {
-    currency: "USD",
-    input: 2,
-    output: 12,
-    cached: 0.2,
-    cacheWrite: undefined,
-    cacheStoragePerHour: undefined,
-  },
-  "gpt-5.6-luna": {
-    currency: "USD",
-    input: 0.2,
-    output: 1.2,
-    cached: 0.02,
-    cacheWrite: undefined,
-    cacheStoragePerHour: undefined,
-  },
-  "gpt-5.5": {
-    currency: "USD",
-    input: 5,
-    output: 15,
-    cached: 2.5,
-    cacheWrite: undefined,
-    cacheStoragePerHour: undefined,
-  },
-  "gpt-5.4-mini": {
-    currency: "USD",
-    input: 0.4,
-    output: 1.6,
-    cached: 0.2,
-    cacheWrite: undefined,
-    cacheStoragePerHour: undefined,
-  },
-  "text-embedding-3-small": {
-    currency: "USD",
-    input: 0.02,
-    output: undefined,
-    cached: undefined,
-    cacheWrite: undefined,
-    cacheStoragePerHour: undefined,
-  },
-};
-
-const GEMINI_PRICING: Record<string, ModelPricing | undefined> = {
-  "gemini-3.1-pro-preview": {
-    currency: "USD",
-    input: 2.5,
-    output: 10,
-    cached: 0.625,
-    cacheWrite: undefined,
-    cacheStoragePerHour: 4.5,
-  },
-  "gemini-3-flash-preview": {
-    currency: "USD",
-    input: 0.3,
-    output: 2.5,
-    cached: 0.075,
-    cacheWrite: undefined,
-    cacheStoragePerHour: 1,
-  },
-};
-
-const XAI_GROK_4_PRICING: ModelPricing = {
-  currency: "USD",
-  input: 2,
-  output: 6,
-  cached: 0.5,
-  cacheWrite: undefined,
-  cacheStoragePerHour: undefined,
-};
-
-const XAI_PRICING: Record<string, ModelPricing | undefined> = {
-  "grok-4.6": XAI_GROK_4_PRICING,
-  // Same rate card as 4.6. Both are live ids in the provider's fallback list,
-  // and a model the search offers but the table cannot price drops out of the
-  // cost comparison the harness exists to produce.
-  "grok-4.5": XAI_GROK_4_PRICING,
-};
-
-/** Cache-miss input price — every extraction section is a distinct prompt. */
-const DEEPSEEK_PRICING: Record<string, ModelPricing | undefined> = {
-  "deepseek-v4-flash": {
-    currency: "USD",
-    input: 0.14,
-    output: 0.28,
-    cached: 0.014,
-    cacheWrite: undefined,
-    cacheStoragePerHour: undefined,
-  },
-  "deepseek-v4-pro": {
-    currency: "USD",
-    input: 0.56,
-    output: 1.68,
-    cached: 0.07,
-    cacheWrite: undefined,
-    cacheStoragePerHour: undefined,
-  },
-  "deepseek-v4-pro-0813": {
-    currency: "USD",
-    input: 0.435,
-    output: 0.87,
-    cached: 0.0435,
-    cacheWrite: undefined,
-    cacheStoragePerHour: undefined,
-  },
-};
 
 /**
  * Map a model id string to an inline {@link ModelConfig} by its shape, so any
@@ -230,31 +75,35 @@ export function resolveModelConfig(id: string, kind: EvalKind): ModelConfig {
     return {
       provider: "ANTHROPIC",
       provider_config: { model_name: id },
-      pricing: ANTHROPIC_PRICING[id],
+      pricing: getAnthropicModelPricing(id),
     };
   }
   if (/^(?:gpt-|o\d|chatgpt-|text-embedding-)/.test(id)) {
     return {
       provider: "OPENAI",
       provider_config: { model_name: id },
-      pricing: OPENAI_PRICING[id],
+      pricing: getOpenAiModelPricing(id),
     };
   }
   if (/^gemini-/.test(id)) {
     return {
       provider: "GOOGLE_GEMINI",
       provider_config: { model_name: id },
-      pricing: GEMINI_PRICING[id],
+      pricing: getGeminiModelPricing(id),
     };
   }
   if (/^grok-/.test(id)) {
-    return { provider: "XAI", provider_config: { model_name: id }, pricing: XAI_PRICING[id] };
+    return {
+      provider: "XAI",
+      provider_config: { model_name: id },
+      pricing: getXaiModelPricing(id),
+    };
   }
   if (/^deepseek-/.test(id)) {
     return {
       provider: "DEEPSEEK",
       provider_config: { model_name: id },
-      pricing: DEEPSEEK_PRICING[id],
+      pricing: getDeepSeekModelPricing(id),
     };
   }
   throw new Error(

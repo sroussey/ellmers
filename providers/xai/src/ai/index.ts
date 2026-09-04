@@ -15,6 +15,7 @@ export * from "./common/Xai_Constants";
 export { xaiEffortPolicy } from "./common/Xai_EffortPolicy";
 export * from "./common/Xai_ModelSchema";
 export * from "./common/Xai_ModelSearch";
+export * from "./common/Xai_Pricing";
 export * from "./registerXai";
 
 import { XAI_RUN_FN_SPECS } from "./common/Xai_Capabilities";

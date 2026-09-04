@@ -14,4 +14,5 @@ export {
 export * from "./common/Xai_Constants";
 export { xaiEffortPolicy } from "./common/Xai_EffortPolicy";
 export * from "./common/Xai_ModelSchema";
+export * from "./common/Xai_Pricing";
 export * from "./registerXai";

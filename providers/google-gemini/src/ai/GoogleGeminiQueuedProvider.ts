@@ -7,6 +7,7 @@
 import type {
   Capability,
   ModelEffortPolicy,
+  ModelPricing,
   ModelRecord,
   SessionDisposalResult,
 } from "@workglow/ai";
@@ -19,6 +20,7 @@ import { geminiWorkerRunFnSpecs, inferGeminiCapabilities } from "./common/Gemini
 import { GOOGLE_GEMINI } from "./common/Gemini_Constants";
 import { geminiEffortPolicy } from "./common/Gemini_EffortPolicy";
 import type { GeminiModelConfig } from "./common/Gemini_ModelSchema";
+import { getGeminiModelPricing } from "./common/Gemini_Pricing";
 
 /**
  * Narrows the collected `finish` payload to a real {@link SessionDisposalResult}.
@@ -54,6 +56,11 @@ export class GoogleGeminiQueuedProvider extends createCloudProviderClass<GeminiM
 
   override effortPolicy(model: GeminiModelConfig): ModelEffortPolicy | undefined {
     return geminiEffortPolicy(model);
+  }
+
+  override modelPricing(model: GeminiModelConfig): ModelPricing | undefined {
+    const modelName = (model.provider_config?.model_name as string | undefined) ?? model.model_id;
+    return getGeminiModelPricing(modelName);
   }
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {

@@ -21,10 +21,8 @@ describe("Gemini cache storage cost", () => {
     };
     const estimate = estimateCost(usage, {
       currency: "USD",
-      input: undefined,
-      output: undefined,
-      cached: undefined,
-      cacheWrite: undefined,
+      input: 0,
+      output: 0,
       cacheStoragePerHour: 1,
     });
 

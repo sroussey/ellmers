@@ -14,6 +14,7 @@ export * from "./model/InMemoryModelRepository";
 export * from "./model/ModelRegistry";
 export * from "./model/ModelRepository";
 export * from "./model/ModelSchema";
+export * from "./model/ModelPricing";
 
 export * from "./errors/ImageGenerationErrors";
 

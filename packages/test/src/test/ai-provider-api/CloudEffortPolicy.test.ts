@@ -64,7 +64,7 @@ describe("anthropicEffortPolicy", () => {
 
 describe("geminiEffortPolicy", () => {
   it("treats text gemini models as all six with default none", () => {
-    expect(geminiEffortPolicy(cfg(GOOGLE_GEMINI, "gemini-3.5-flash"))).toEqual({
+    expect(geminiEffortPolicy(cfg(GOOGLE_GEMINI, "gemini-3.8-flash"))).toEqual({
       supported: [...MODEL_EFFORTS],
       default: "none",
     });

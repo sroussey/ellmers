@@ -14,6 +14,7 @@ import { normalizedModelSearchQuery } from "@workglow/ai/provider-utils";
 import { stampEffortOptions } from "@workglow/ai/worker";
 import { GOOGLE_GEMINI } from "./Gemini_Constants";
 import { geminiEffortPolicy } from "./Gemini_EffortPolicy";
+import { getGeminiModelPricing } from "./Gemini_Pricing";
 
 interface GeminiModelEntry {
   readonly label: string;
@@ -22,7 +23,7 @@ interface GeminiModelEntry {
 }
 
 export const GEMINI_FALLBACK_MODELS: readonly GeminiModelEntry[] = [
-  { label: "gemini-3.5-flash", value: "gemini-3.5-flash" },
+  { label: "gemini-3.8-flash", value: "gemini-3.8-flash" },
   { label: "gemini-3.1-pro-preview", value: "gemini-3.1-pro-preview" },
   { label: "gemini-3.1-flash-lite", value: "gemini-3.1-flash-lite" },
   // Embedding models
@@ -83,6 +84,7 @@ function mapGeminiModel(model: GeminiApiModel): ModelSearchResultItem {
         capabilities: capabilitiesForGeminiApiModel(model, id),
         provider_config: { model_name: id },
         metadata: {},
+        pricing: getGeminiModelPricing(id),
       },
       geminiEffortPolicy({
         provider: GOOGLE_GEMINI,

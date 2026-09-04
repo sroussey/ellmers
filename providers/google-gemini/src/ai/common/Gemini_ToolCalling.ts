@@ -13,6 +13,7 @@ import type {
 } from "@workglow/ai";
 import { createUsageSnapshotEmitter } from "@workglow/ai/provider-utils";
 import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
+import { coerceGeminiToolArgs } from "./Gemini_Schema";
 import {
   buildGeminiFunctionDeclarations,
   buildGeminiPrefixedContents,
@@ -250,6 +251,17 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
       }
       if (part.functionCall) {
         const id = `call_${callIndex++}`;
+        const toolName = part.functionCall.name ?? "";
+        const rawArgs = (part.functionCall.args as Record<string, unknown>) ?? {};
+        // The wire schema stringifies non-string enums for Gemini (see
+        // sanitizeSchemaForGemini), so map values back to the original tool
+        // schema types before validation/dispatch. Upstream never sees the
+        // stringified form.
+        const coercedArgs = coerceGeminiToolArgs(
+          toolName,
+          sanitizeToolArgs(rawArgs) as Record<string, unknown>,
+          input.tools
+        );
         // Defence-in-depth: drop tool calls whose name isn't in the
         // declared tool set before emitting. Gemini's tool API respects
         // `input.tools` but a stray response that hallucinates a function
@@ -258,10 +270,8 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
           [
             {
               id,
-              name: part.functionCall.name ?? "",
-              input: sanitizeToolArgs(
-                (part.functionCall.args as Record<string, unknown>) ?? {}
-              ) as Record<string, unknown>,
+              name: toolName,
+              input: coercedArgs,
               // Carry the opaque thinking-model signature so the consumer can
               // replay it on the next turn (see buildGeminiContents).
               ...(part.thoughtSignature ? { providerSignature: part.thoughtSignature } : {}),

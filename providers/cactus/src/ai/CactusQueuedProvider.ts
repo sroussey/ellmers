@@ -9,9 +9,10 @@ import type {
   AiProviderRunFnRegistration,
   Capability,
   ModelConfig,
+  ModelPricing,
   ModelRecord,
 } from "@workglow/ai";
-import { QueuedAiProvider } from "@workglow/ai";
+import { FREE_LOCAL_PRICING, QueuedAiProvider } from "@workglow/ai";
 import { cactusWorkerRunFnSpecs, inferCactusCapabilities } from "./common/Cactus_Capabilities";
 import { LOCAL_CACTUS } from "./common/Cactus_Constants";
 import type { CactusModelConfig } from "./common/Cactus_ModelSchema";
@@ -34,6 +35,13 @@ export class CactusQueuedProvider extends QueuedAiProvider<CactusModelConfig> {
 
   override inferCapabilities(model: ModelRecord): readonly Capability[] {
     return inferCactusCapabilities(model);
+  }
+
+  override modelPricing(model?: ModelConfig): ModelPricing | undefined {
+    if (model && model.provider !== this.name) {
+      return undefined;
+    }
+    return FREE_LOCAL_PRICING;
   }
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {

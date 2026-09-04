@@ -4,11 +4,42 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ModelPricing } from "@workglow/ai";
-import { getGlobalModelRepository } from "@workglow/ai";
+import type { ModelPricing, ModelRecord } from "@workglow/ai";
+import { FREE_LOCAL_PRICING, getAiProviderRegistry, getGlobalModelRepository } from "@workglow/ai";
+import { getAnthropicModelPricing } from "@workglow/anthropic/ai";
+import { getDeepSeekModelPricing } from "@workglow/deepseek/ai";
+import { getGeminiModelPricing } from "@workglow/google-gemini/ai";
+import { getOpenAiModelPricing } from "@workglow/openai/ai";
+import { getXaiModelPricing } from "@workglow/xai/ai";
 
 const cache = new Map<string, ModelPricing | undefined>();
 const inflight = new Map<string, Promise<ModelPricing | undefined>>();
+
+function resolveFallbackPricing(modelId: string, record?: ModelRecord): ModelPricing | undefined {
+  if (record?.provider) {
+    const provider = getAiProviderRegistry().getProvider(record.provider);
+    const pricing = provider?.modelPricing(record);
+    if (pricing) return pricing;
+  }
+  if (modelId.startsWith("gguf:") || modelId.startsWith("onnx:") || modelId.endsWith(".gguf")) {
+    return FREE_LOCAL_PRICING;
+  }
+  for (const provider of getAiProviderRegistry().getProviders().values()) {
+    const pricing = provider.modelPricing({
+      model_id: modelId,
+      provider: provider.name,
+      provider_config: { model_name: modelId },
+    });
+    if (pricing) return pricing;
+  }
+  return (
+    getAnthropicModelPricing(modelId) ??
+    getOpenAiModelPricing(modelId) ??
+    getGeminiModelPricing(modelId) ??
+    getXaiModelPricing(modelId) ??
+    getDeepSeekModelPricing(modelId)
+  );
+}
 
 /**
  * Resolve a model's declared rate card from the global repository.
@@ -28,15 +59,16 @@ export async function lookupModelPricing(
     pending = getGlobalModelRepository()
       .findByName(modelId)
       .then((record) => {
-        const pricing = record?.pricing;
+        const pricing = record?.pricing ?? resolveFallbackPricing(modelId, record);
         cache.set(modelId, pricing);
         inflight.delete(modelId);
         return pricing;
       })
       .catch(() => {
-        cache.set(modelId, undefined);
+        const pricing = resolveFallbackPricing(modelId);
+        cache.set(modelId, pricing);
         inflight.delete(modelId);
-        return undefined;
+        return pricing;
       });
     inflight.set(modelId, pending);
   }

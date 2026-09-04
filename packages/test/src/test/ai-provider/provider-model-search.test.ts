@@ -88,7 +88,7 @@ describe("provider model search samples", () => {
     const { results } = (await collectStream(
       await runFnToIterable(Gemini_ModelSearch, { query: "" })
     )) as { results: Array<{ id: string; record?: { effort_options?: string[] } }> };
-    const flash = results.find((r) => r.id === "gemini-3.5-flash");
+    const flash = results.find((r) => r.id === "gemini-3.8-flash");
     const embedding = results.find((r) => r.id === "gemini-embedding-2");
     expect(flash?.record?.effort_options).toEqual([...MODEL_EFFORTS]);
     expect(embedding?.record?.effort_options).toEqual([]);

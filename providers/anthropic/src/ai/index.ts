@@ -11,6 +11,7 @@ export * from "./common/Anthropic_Constants";
 export { anthropicEffortPolicy } from "./common/Anthropic_EffortPolicy";
 export * from "./common/Anthropic_ModelSchema";
 export * from "./common/Anthropic_ModelSearch";
+export * from "./common/Anthropic_Pricing";
 export * from "./registerAnthropic";
 
 import { AnthropicQueuedProvider } from "./AnthropicQueuedProvider";

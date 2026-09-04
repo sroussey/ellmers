@@ -30,6 +30,16 @@ export type {
   ModelEffortPolicyFn,
 } from "./ModelEffort";
 
+import {
+  FREE_LOCAL_PRICING,
+  ModelPricingSchema,
+  type ModelPricing,
+  type ModelPricingBase,
+  type ModelPricingTier,
+} from "./ModelPricing";
+export { FREE_LOCAL_PRICING, ModelPricingSchema };
+export type { ModelPricing, ModelPricingBase, ModelPricingTier };
+
 /**
  * A model configuration suitable for task/job inputs.
  *
@@ -74,21 +84,7 @@ export const ModelConfigSchema = {
       default: {},
     },
     metadata: { type: "object", default: {}, "x-ui-hidden": true },
-    pricing: {
-      type: "object",
-      description: "Per-million-token rates. Declared by the caller; the library ships none.",
-      properties: {
-        currency: { type: "string", default: "USD" },
-        input: { type: "number" },
-        output: { type: "number" },
-        cached: { type: "number" },
-        cacheWrite: { type: "number" },
-        cacheStoragePerHour: { type: "number" },
-      },
-      required: ["currency"],
-      additionalProperties: false,
-      "x-ui-hidden": true,
-    },
+    pricing: ModelPricingSchema,
   },
   required: ["provider", "provider_config"],
   format: "model",
@@ -115,26 +111,6 @@ export const ModelRecordSchema = {
   format: "model",
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
-
-/**
- * Per-million-token rates for one model, declared by the caller.
- *
- * Rates are per 1,000,000 tokens because that is how providers publish them, so
- * a rate card transcribes without arithmetic. There is deliberately no
- * `reasoning` rate: no provider charges one, and `output` already contains
- * reasoning tokens, so pricing them separately would double-charge.
- *
- * `cacheStoragePerHour` prices a provider-side cache billed by token-hours
- * (Gemini CachedContent) rather than by a one-off write.
- */
-export interface ModelPricing {
-  readonly currency: string;
-  readonly input: number | undefined;
-  readonly output: number | undefined;
-  readonly cached: number | undefined;
-  readonly cacheWrite: number | undefined;
-  readonly cacheStoragePerHour: number | undefined;
-}
 
 /**
  * Rebinds a `pricing` property inferred from `FromSchema` to the hand-written

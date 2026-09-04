@@ -12,9 +12,10 @@ import type {
   Capability,
   IAiExecutionStrategy,
   ModelConfig,
+  ModelPricing,
   ModelRecord,
 } from "@workglow/ai";
-import { QueuedAiProvider } from "@workglow/ai";
+import { FREE_LOCAL_PRICING, QueuedAiProvider } from "@workglow/ai";
 import { hftWorkerRunFnSpecs, inferHftCapabilities } from "./common/HFT_Capabilities";
 import { HF_TRANSFORMERS_ONNX, HF_TRANSFORMERS_ONNX_CPU } from "./common/HFT_Constants";
 import type { HfTransformersOnnxModelConfig } from "./common/HFT_ModelSchema";
@@ -79,6 +80,13 @@ export class HuggingFaceTransformersQueuedProvider extends QueuedAiProvider<HfTr
 
   override inferCapabilities(model: ModelRecord): readonly Capability[] {
     return inferHftCapabilities(model);
+  }
+
+  override modelPricing(model?: ModelConfig): ModelPricing | undefined {
+    if (model && model.provider !== this.name && !model.model_id?.startsWith("onnx:")) {
+      return undefined;
+    }
+    return FREE_LOCAL_PRICING;
   }
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {

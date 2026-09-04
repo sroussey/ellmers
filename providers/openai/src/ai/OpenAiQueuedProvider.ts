@@ -4,13 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Capability, ModelEffortPolicy, ModelRecord } from "@workglow/ai";
+import type { Capability, ModelEffortPolicy, ModelPricing, ModelRecord } from "@workglow/ai";
 import { AiProvider } from "@workglow/ai";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
 import { inferOpenAiCapabilities, openAiWorkerRunFnSpecs } from "./common/OpenAI_Capabilities";
 import { OPENAI } from "./common/OpenAI_Constants";
 import { openaiEffortPolicy } from "./common/OpenAI_EffortPolicy";
 import type { OpenAiModelConfig } from "./common/OpenAI_ModelSchema";
+import { getOpenAiModelPricing } from "./common/OpenAI_Pricing";
 
 /**
  * Main-thread registration shell for OpenAI. Used both for inline mode
@@ -28,6 +29,11 @@ export class OpenAiQueuedProvider extends createCloudProviderClass<OpenAiModelCo
 
   override effortPolicy(model: OpenAiModelConfig): ModelEffortPolicy | undefined {
     return openaiEffortPolicy(model);
+  }
+
+  override modelPricing(model: OpenAiModelConfig): ModelPricing | undefined {
+    const modelName = (model.provider_config?.model_name as string | undefined) ?? model.model_id;
+    return getOpenAiModelPricing(modelName);
   }
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {

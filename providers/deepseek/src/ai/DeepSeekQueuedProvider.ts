@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Capability, ModelEffortPolicy, ModelRecord } from "@workglow/ai";
+import type { Capability, ModelEffortPolicy, ModelPricing, ModelRecord } from "@workglow/ai";
 import { AiProvider } from "@workglow/ai";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
 import {
@@ -14,6 +14,7 @@ import {
 import { DEEPSEEK } from "./common/DeepSeek_Constants";
 import { deepseekEffortPolicy } from "./common/DeepSeek_EffortPolicy";
 import type { DeepSeekModelConfig } from "./common/DeepSeek_ModelSchema";
+import { getDeepSeekModelPricing } from "./common/DeepSeek_Pricing";
 
 /**
  * Main-thread registration shell for DeepSeek. Used both for inline mode
@@ -34,6 +35,11 @@ export class DeepSeekQueuedProvider extends createCloudProviderClass<DeepSeekMod
 
   override effortPolicy(model: DeepSeekModelConfig): ModelEffortPolicy | undefined {
     return deepseekEffortPolicy(model);
+  }
+
+  override modelPricing(model: DeepSeekModelConfig): ModelPricing | undefined {
+    const modelName = (model.provider_config?.model_name as string | undefined) ?? model.model_id;
+    return getDeepSeekModelPricing(modelName);
   }
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {

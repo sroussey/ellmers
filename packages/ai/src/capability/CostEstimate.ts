@@ -71,7 +71,17 @@ export function estimateCost(
       if (tokens > 0) unpriced.push(field);
       continue;
     }
-    amount += (tokens * rate) / PER_MILLION;
+    const unitRate =
+      typeof rate === "number"
+        ? rate
+        : typeof rate === "object" && rate !== null
+          ? (rate.cacheWrite5m ?? rate.cacheWrite1h)
+          : undefined;
+    if (unitRate === undefined) {
+      if (tokens > 0) unpriced.push(field);
+      continue;
+    }
+    amount += (tokens * unitRate) / PER_MILLION;
     priced = true;
   }
 

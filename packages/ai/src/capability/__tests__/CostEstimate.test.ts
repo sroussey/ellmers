@@ -72,14 +72,34 @@ describe("estimateCost", () => {
   it("prices cache storage from token-hours in extra", () => {
     const storage: ModelPricing = {
       currency: "USD",
-      input: undefined,
-      output: undefined,
+      input: 0,
+      output: 0,
       cached: undefined,
       cacheWrite: undefined,
       cacheStoragePerHour: 1,
     };
     const estimate = estimateCost(usage({ extra: { cacheStorageTokenHours: 2_000_000 } }), storage);
     expect(estimate?.amount).toBeCloseTo(2, 10);
+  });
+
+  it("prices cacheWrite from split cacheWrite5m or cacheWrite1h object", () => {
+    const splitPricing: ModelPricing = {
+      currency: "USD",
+      input: 3,
+      output: 15,
+      cached: 0.3,
+      cacheWrite: {
+        cacheWrite5m: 3.75,
+        cacheWrite1h: 6,
+      },
+      cacheStoragePerHour: undefined,
+    };
+    const estimate = estimateCost(
+      usage({ input: 1_000_000, output: 1_000_000, cached: 1_000_000, cacheWrite: 1_000_000 }),
+      splitPricing
+    );
+    expect(estimate?.amount).toBeCloseTo(3 + 15 + 0.3 + 3.75, 10);
+    expect(estimate?.unpriced).toEqual([]);
   });
 });
 
