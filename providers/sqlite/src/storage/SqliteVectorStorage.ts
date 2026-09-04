@@ -95,13 +95,23 @@ export class SqliteVectorStorage<
   }
 
   /**
-   * Deserialize vector from JSON string
-   * Defaults to Float32Array for compatibility with typical embedding vectors
+   * The stored vector as a TypedArray, from whichever form the read produced.
+   *
+   * SQLite holds it as a JSON string, but the tabular read this class inherits
+   * already decodes a `TypedArraySchema` column back to a TypedArray — so by
+   * the time a row reaches `similaritySearch` the column is usually decoded
+   * and occasionally not (a row written by an older release, a caller handing
+   * back a raw row). Accepting both is what makes this correct in either case
+   * rather than in whichever one the read layer happens to do today.
    */
-  private deserializeVector(vectorJson: string): TypedArray {
-    const array = JSON.parse(vectorJson);
-    // Default to Float32Array for typical use case (embeddings)
-    return new this.vectorCtor(array);
+  private toVector(stored: unknown): TypedArray {
+    if (typeof stored === "string") {
+      return new this.vectorCtor(JSON.parse(stored) as number[]);
+    }
+    if (Array.isArray(stored)) {
+      return new this.vectorCtor(stored);
+    }
+    return stored as TypedArray;
   }
 
   /**
@@ -135,9 +145,7 @@ export class SqliteVectorStorage<
     const allEntities = (await this.getAll()) || [];
 
     for (const entity of allEntities) {
-      // SQLite stores vectors as JSON strings, need to deserialize
-      const vectorRaw = entity[this.vectorPropertyName] as unknown as string;
-      const vector = this.deserializeVector(vectorRaw);
+      const vector = this.toVector(entity[this.vectorPropertyName]);
       const metadata = this.metadataPropertyName
         ? (entity[this.metadataPropertyName] as Metadata)
         : ({} as Metadata);
