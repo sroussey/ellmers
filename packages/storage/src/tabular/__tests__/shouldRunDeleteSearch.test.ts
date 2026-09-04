@@ -64,6 +64,22 @@ describe("shouldRunDeleteSearch", () => {
     expect(shouldRunDeleteSearch<Row>({ status: emptyIn })).toBe(true);
   });
 
+  it("counts a key whose value is `undefined` as narrowing, so the guard stays quiet", () => {
+    // A caller spreading an optional filter — `{ ...maybeTenant, excluded }`
+    // where `maybeTenant` is `{ tenant: undefined }` — puts `tenant` in
+    // `Object.keys` with no value, and that is enough to keep this from
+    // reading as a match-all. Deliberate: `undefined` is an ordinary equality
+    // criterion everywhere else in the stack (see the note on
+    // `matchesEqualityCriterion`), and teaching only this guard to discount it
+    // would make it disagree with the delete it is guarding.
+    //
+    // The delete that follows is narrow, not table-wide, on every backend —
+    // `tenant = NULL` matches nothing on SQL, and "tenant is absent" on the
+    // JS-side ones — so what escapes the guard is not a full-table delete.
+    expect(shouldRunDeleteSearch<Row>({ tenant: undefined, status: notIn([]) })).toBe(true);
+    expect(shouldRunDeleteSearch<Row>({ tenant: undefined })).toBe(true);
+  });
+
   it("runs for ordinary criteria", () => {
     expect(shouldRunDeleteSearch<Row>({ tenant: "acme" })).toBe(true);
     expect(shouldRunDeleteSearch<Row>({ value: { value: 5, operator: "<" } })).toBe(true);

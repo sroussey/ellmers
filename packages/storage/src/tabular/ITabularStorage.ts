@@ -237,6 +237,18 @@ export type NormalizedCriterion<T> =
  * create" never found its own row when any column in the tuple was null, so it
  * created a duplicate on every call; the in-memory backend agreed with the
  * broken SQL behavior, so tests could not see it.
+ *
+ * **`undefined` is not `null` here, and the backends do not agree on it.** A
+ * criterion of `undefined` — which is what a spread optional filter leaves
+ * behind, `{ ...maybe }` where `maybe` is `{ col: undefined }` — gets no
+ * rewrite. It stays an ordinary equality, and an ordinary equality against
+ * `undefined` reads as "this column is absent" here, matches nothing on the
+ * SQL backends (the driver binds NULL, and `col = NULL` is never true), and is
+ * skipped outright by {@link HuggingFaceTabularStorage}. Three answers to one
+ * criterion, so do not build criteria by spreading an optional: omit the key,
+ * or pass `null` and mean IS NULL. The divergence predates the `not-in` work
+ * and is pinned by tests rather than papered over, since every way of picking
+ * one answer changes behavior somewhere.
  */
 export function matchesEqualityCriterion(columnValue: unknown, criterionValue: unknown): boolean {
   if (criterionValue === null) return columnValue === null || columnValue === undefined;

@@ -143,6 +143,27 @@ describe("PredicateBuilder operator allow-list (L-MAIN-01)", () => {
       expect(result.params).toEqual([forged]);
     });
 
+    it("binds an `undefined` criterion as a parameter rather than rewriting it", () => {
+      // The `= NULL` → `IS NULL` rewrite above is deliberately NOT extended to
+      // `undefined`: a key present with no value is indistinguishable from a
+      // filter the caller meant to omit, and guessing would trade a visible
+      // bug for an invisible one. So it stays an ordinary equality — which the
+      // driver binds as NULL, making `col = NULL` match no row.
+      //
+      // The JS-side backends read the same criterion as "column is absent" and
+      // DO return rows for it. That divergence is pre-existing and is pinned
+      // here so a change to either side is a deliberate one.
+      const result = buildSearchWhere<Row>(
+        SqliteDialect,
+        { id: undefined } as never,
+        schemaProps,
+        passthroughConvert
+      );
+      expect(result.whereClause).toBe("`id` = ?");
+      expect(result.params).toHaveLength(1);
+      expect(result.params[0]).toBeUndefined();
+    });
+
     it("throws when the column is not present in the schema", () => {
       expect(() =>
         buildSearchWhere<Row>(

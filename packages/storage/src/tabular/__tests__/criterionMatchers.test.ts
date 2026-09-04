@@ -42,6 +42,16 @@ describe("criterion matchers", () => {
       expect(matchesInequalityCriterion(null, "x")).toBe(false);
     });
 
+    it("`!=` between two non-null values is the ordinary inequality", () => {
+      // The branch the null rules above exist to carve out of: once neither
+      // side is null there is no three-valued logic left and SQL, JS and this
+      // matcher all agree.
+      expect(matchesInequalityCriterion("x", "y")).toBe(true);
+      expect(matchesInequalityCriterion("x", "x")).toBe(false);
+      expect(matchesEqualityCriterion("x", "x")).toBe(true);
+      expect(matchesEqualityCriterion("x", "y")).toBe(false);
+    });
+
     it("a list criterion gets no such rewrite, so null columns fall out of both", () => {
       // There is no `IN`-flavoured spelling of IS NULL: `NULL IN (…)` and
       // `NULL NOT IN (…)` are both UNKNOWN. This is why `{ operator: "=",
@@ -50,6 +60,35 @@ describe("criterion matchers", () => {
         expect(matchesInCriterion(columnValue, [1, 2])).toBe(false);
         expect(matchesNotInCriterion(columnValue, [1, 2])).toBe(false);
       }
+    });
+  });
+
+  describe("an `undefined` criterion value, which is not the same as null", () => {
+    // A criterion of `undefined` reaches these matchers whenever a caller
+    // spreads an optional filter — `{ ...maybeTenant }` where `maybeTenant` is
+    // `{ tenant: undefined }` puts the key in `Object.keys` with no value. The
+    // predicate builder deliberately does not fold it into its `= NULL` → `IS
+    // NULL` rewrite (it cannot tell that apart from "caller omitted this
+    // filter"), so it is an ordinary equality against `undefined` — and these
+    // are the answers that equality gives. Pinned as documentation of a sharp
+    // pre-existing edge, not as an endorsement: see the note on
+    // `matchesEqualityCriterion` for why the backends do not agree here.
+
+    it("matches a column that is absent, since both read back undefined", () => {
+      expect(matchesEqualityCriterion(undefined, undefined)).toBe(true);
+    });
+
+    it("does NOT match a column holding null, unlike a null criterion would", () => {
+      // The asymmetry that makes `undefined` its own case: `{ col: null }`
+      // matches null AND absent, `{ col: undefined }` matches only absent.
+      expect(matchesEqualityCriterion(null, undefined)).toBe(false);
+      expect(matchesEqualityCriterion(null, null)).toBe(true);
+    });
+
+    it("does not match a column holding a value", () => {
+      expect(matchesEqualityCriterion("x", undefined)).toBe(false);
+      expect(matchesInequalityCriterion("x", undefined)).toBe(true);
+      expect(matchesInequalityCriterion(undefined, undefined)).toBe(false);
     });
   });
 
