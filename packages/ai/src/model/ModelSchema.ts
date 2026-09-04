@@ -35,10 +35,11 @@ import {
   ModelPricingSchema,
   type ModelPricing,
   type ModelPricingBase,
-  type ModelPricingTier,
+  type ModelTimingTier,
+  type ModelUsageTier,
 } from "./ModelPricing";
 export { FREE_LOCAL_PRICING, ModelPricingSchema };
-export type { ModelPricing, ModelPricingBase, ModelPricingTier };
+export type { ModelPricing, ModelPricingBase, ModelTimingTier, ModelUsageTier };
 
 /**
  * A model configuration suitable for task/job inputs.

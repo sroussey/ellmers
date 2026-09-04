@@ -6,6 +6,7 @@
 
 import type { Usage } from "@workglow/task-graph";
 import type { ModelPricing } from "../model/ModelSchema";
+import { resolveEffectiveRates } from "../model/ModelPricing";
 
 /** Per-token-hour counter a provider-side cache accrues while it lives. */
 export const CACHE_STORAGE_TOKEN_HOURS_KEY = "cacheStorageTokenHours";
@@ -25,6 +26,29 @@ const PRICED_FIELDS = ["input", "output", "cached", "cacheWrite"] as const;
 const PER_MILLION = 1_000_000;
 
 /**
+ * The whole prompt this request sent, which is what a provider's context
+ * threshold measures: plain input, cache reads and cache writes are disjoint
+ * counters that together make up one prompt. `undefined` when none of the three
+ * was reported, so a usage that says nothing about its prompt selects no tier
+ * rather than the smallest one.
+ */
+function promptTokens(usage: Usage): number | undefined {
+  if (usage.input === undefined && usage.cached === undefined && usage.cacheWrite === undefined) {
+    return undefined;
+  }
+  return (usage.input ?? 0) + (usage.cached ?? 0) + (usage.cacheWrite ?? 0);
+}
+
+export interface EstimateCostOptions {
+  /**
+   * When the request ran, for a rate card with a time-of-day tier. Defaults to
+   * now — right for a live run, wrong for one replayed from a log, so pass the
+   * request's own instant when pricing after the fact.
+   */
+  readonly at?: Date | number;
+}
+
+/**
  * Estimate what one {@link Usage} cost under a model's declared rates.
  *
  * Returns `undefined` — never `0` — when nothing can be priced, so a missing
@@ -39,10 +63,15 @@ const PER_MILLION = 1_000_000;
  * A usage whose counters are heuristic estimates (`usage.estimated`) is not
  * priced at all: a dollar figure derived from a character count reads exactly
  * like one derived from billed tokens, and nothing downstream distinguishes them.
+ *
+ * Usage and timing tiers are resolved first, so the rates charged are the ones
+ * that applied to this request rather than the card's headline numbers. See
+ * {@link resolveEffectiveRates}.
  */
 export function estimateCost(
   usage: Usage,
-  pricing: ModelPricing | undefined
+  pricing: ModelPricing | undefined,
+  options: EstimateCostOptions = {}
 ): CostEstimate | undefined {
   if (usage.estimated) return undefined;
   // A stated fact beats a derived one: OpenRouter reports credits actually
@@ -59,6 +88,11 @@ export function estimateCost(
 
   if (!pricing) return undefined;
 
+  const rates = resolveEffectiveRates(pricing, {
+    inputTokens: promptTokens(usage),
+    at: options.at,
+  });
+
   let amount = 0;
   let priced = false;
   const unpriced: string[] = [];
@@ -66,7 +100,7 @@ export function estimateCost(
   for (const field of PRICED_FIELDS) {
     const tokens = usage[field];
     if (tokens === undefined) continue;
-    const rate = pricing[field];
+    const rate = rates[field];
     if (rate === undefined) {
       if (tokens > 0) unpriced.push(field);
       continue;
@@ -87,10 +121,10 @@ export function estimateCost(
 
   const tokenHours = usage.extra?.[CACHE_STORAGE_TOKEN_HOURS_KEY];
   if (typeof tokenHours === "number" && Number.isFinite(tokenHours)) {
-    if (pricing.cacheStoragePerHour === undefined) {
+    if (rates.cacheStoragePerHour === undefined) {
       if (tokenHours > 0) unpriced.push(CACHE_STORAGE_TOKEN_HOURS_KEY);
     } else {
-      amount += (tokenHours * pricing.cacheStoragePerHour) / PER_MILLION;
+      amount += (tokenHours * rates.cacheStoragePerHour) / PER_MILLION;
       priced = true;
     }
   }

@@ -5,7 +5,12 @@
  */
 
 import { describe, expectTypeOf, it } from "vitest";
-import type { ModelPricing, ModelPricingBase, ModelPricingTier } from "../ModelSchema";
+import type {
+  ModelPricing,
+  ModelPricingBase,
+  ModelTimingTier,
+  ModelUsageTier,
+} from "../ModelSchema";
 
 /**
  * Compile-time guard that `ModelPricing` has the expected type structure,
@@ -31,8 +36,8 @@ describe("ModelPricing", () => {
           };
       cacheStoragePerHour?: number;
       batch?: ModelPricingBase;
-      offPeak?: ModelPricingBase;
-      tiers?: ModelPricingTier[];
+      usageTiers?: ModelUsageTier[];
+      timingTiers?: ModelTimingTier[];
     }>();
   });
 

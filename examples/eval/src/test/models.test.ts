@@ -27,11 +27,9 @@ describe("resolveModelConfig", () => {
       input: 1.32,
       output: 3.96,
       cached: 0.044,
-      offPeak: {
-        input: 0.66,
-        output: 1.98,
-        cached: 0.022,
-      },
+      timingTiers: [
+        { start: "16:30", end: "00:30", pricing: { input: 0.66, output: 1.98, cached: 0.022 } },
+      ],
     });
   });
 
