@@ -42,6 +42,23 @@ export { FREE_LOCAL_PRICING, ModelPricingSchema };
 export type { ModelPricing, ModelPricingBase, ModelTimingTier, ModelUsageTier };
 
 /**
+ * {@link ModelPricingSchema} under a deliberately shallow type.
+ *
+ * The runtime value is the rate-card schema itself, so validation and the model
+ * form still see every rate property. Only the static type is widened, because
+ * every provider derives its model type with `FromSchema` over a spread of
+ * these properties and then discards the derived `pricing` again through
+ * {@link WithModelPricing}. Letting `FromSchema` walk the full card — nested
+ * rate objects, an `anyOf`, two tier arrays — built a type nobody reads, at
+ * ~45k instantiations per provider across ~19 of them. This is a widening, not
+ * a cast: an annotation TypeScript checks, so it cannot drift from the schema.
+ *
+ * Read the schema through `ModelPricingSchema` when you want its shape; the
+ * property here is the same object.
+ */
+const PricingProperty: { readonly type: "object" } = ModelPricingSchema;
+
+/**
  * A model configuration suitable for task/job inputs.
  *
  * @remarks
@@ -85,7 +102,7 @@ export const ModelConfigSchema = {
       default: {},
     },
     metadata: { type: "object", default: {}, "x-ui-hidden": true },
-    pricing: ModelPricingSchema,
+    pricing: PricingProperty,
   },
   required: ["provider", "provider_config"],
   format: "model",

@@ -16,9 +16,11 @@ import { ModelConfigSchema, ModelRecordSchema } from "../ModelSchema";
 
 describe("model pricing", () => {
   it("is present in the schema, requires currency, but is never required on the model itself", () => {
-    const pricingSchema = ModelConfigSchema.properties.pricing;
-    expect(pricingSchema).toBeDefined();
-    expect(pricingSchema.required).toEqual(["currency"]);
+    // The model schema carries the rate card by reference and types the
+    // property shallowly, so assert identity here and the shape on the card.
+    expect(ModelConfigSchema.properties.pricing).toBe(ModelPricingSchema);
+    expect(ModelRecordSchema.properties.pricing).toBe(ModelPricingSchema);
+    expect(ModelPricingSchema.required).toEqual(["currency"]);
     expect(ModelConfigSchema.required).not.toContain("pricing");
     expect(ModelRecordSchema.required).not.toContain("pricing");
   });
