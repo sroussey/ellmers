@@ -437,7 +437,16 @@ export class HuggingFaceTabularStorage<
 
     const whereConditions: string[] = [];
     for (const [k, v] of Object.entries(criteria)) {
-      if (v === undefined || v === null) continue;
+      // An `undefined` criterion matches no row on any other backend — it
+      // binds as NULL and `col = NULL` is never true — so the whole query is
+      // empty. `/filter` cannot say that, but this can: skipping the term (as
+      // this did) silently widened the result to every row the other criteria
+      // allowed, which is the wrong answer in the direction nobody checks.
+      if (v === undefined) return undefined;
+      // A `null` criterion means IS NULL, which `/filter` also cannot express.
+      // Still skipped, and still wrong for the same reason — a separate
+      // pre-existing gap, left alone here rather than folded into this change.
+      if (v === null) continue;
       const normalized = normalizeCriterion<unknown>(v);
       // The /filter endpoint takes `col=value` terms only — it has no IN form,
       // nor its negation. Refusing is the honest answer; falling through would

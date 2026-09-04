@@ -387,6 +387,47 @@ export function runGenericTabularStorageTests(
         expect(setMatches?.map((r) => r.id)).toEqual(["set-kind"]);
       });
 
+      it("matches nothing for an `undefined` criterion, on every backend", async () => {
+        // What a spread optional filter leaves behind: `{ ...maybe }` where
+        // `maybe` is `{ kind: undefined }` puts the key in `Object.keys` with
+        // no value. It is NOT read as "no filter" — the SQL backends bind it
+        // as NULL and `col = NULL` is never true, so no row matches, and the
+        // JS-side backends agree. They did not always: read as a plain `===`,
+        // an `undefined` criterion returned exactly the rows whose column was
+        // absent, which is the answer no database gives.
+        const now = new Date().toISOString();
+        await searchableRepo.put({
+          id: "no-kind",
+          category: "electronics",
+          subcategory: "phones",
+          value: 100,
+          createdAt: now,
+          updatedAt: now,
+        });
+        await searchableRepo.put({
+          id: "with-kind",
+          category: "electronics",
+          subcategory: "phones",
+          kind: "premium",
+          value: 200,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        const ids = async (criteria: unknown): Promise<string[]> =>
+          ((await searchableRepo.query(criteria as never)) ?? []).map((r) => r.id).sort();
+
+        // Alone, and mixed with a criterion that would otherwise match.
+        expect(await ids({ kind: undefined })).toEqual([]);
+        expect(await ids({ category: "electronics", kind: undefined })).toEqual([]);
+        // `!=` does not invert it into a no-op: `col != NULL` is UNKNOWN too.
+        expect(await ids({ kind: { value: undefined, operator: "!=" } })).toEqual([]);
+        // `null` remains the way to ask for the rows without a kind.
+        expect(await ids({ kind: null })).toEqual(["no-kind"]);
+        // And an ordinary criterion is untouched.
+        expect(await ids({ kind: "premium" })).toEqual(["with-kind"]);
+      });
+
       it("never matches a NULL column with an `in` list, whatever the list holds", async () => {
         // SQL reads `NULL IN (…)` as UNKNOWN and drops the row, and listing
         // `null` does not rescue it — `x IN (NULL)` is UNKNOWN too. The SQL

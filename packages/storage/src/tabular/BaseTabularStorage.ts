@@ -62,6 +62,7 @@ import {
   toIndexTuples,
 } from "./tabularSchemaSetup";
 import {
+  criteriaMatchNoRow,
   shouldRunDeleteSearch,
   validateGetAllOptions,
   validateOrderBy,
@@ -474,6 +475,14 @@ export abstract class BaseTabularStorage<
    */
   protected shouldRunDeleteSearch(criteria: DeleteSearchCriteria<Entity>): boolean {
     return shouldRunDeleteSearch(criteria);
+  }
+
+  /**
+   * Whether `criteria` name no row, for the backends that would otherwise ask
+   * a peer a question the wire cannot carry. See {@link criteriaMatchNoRow}.
+   */
+  protected criteriaMatchNoRow(criteria: DeleteSearchCriteria<Entity> | undefined): boolean {
+    return criteriaMatchNoRow(criteria);
   }
 
   /**

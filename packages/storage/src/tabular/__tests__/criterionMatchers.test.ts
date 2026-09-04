@@ -64,31 +64,36 @@ describe("criterion matchers", () => {
   });
 
   describe("an `undefined` criterion value, which is not the same as null", () => {
-    // A criterion of `undefined` reaches these matchers whenever a caller
-    // spreads an optional filter — `{ ...maybeTenant }` where `maybeTenant` is
-    // `{ tenant: undefined }` puts the key in `Object.keys` with no value. The
-    // predicate builder deliberately does not fold it into its `= NULL` → `IS
-    // NULL` rewrite (it cannot tell that apart from "caller omitted this
-    // filter"), so it is an ordinary equality against `undefined` — and these
-    // are the answers that equality gives. Pinned as documentation of a sharp
-    // pre-existing edge, not as an endorsement: see the note on
-    // `matchesEqualityCriterion` for why the backends do not agree here.
+    // Reaches these matchers whenever a caller spreads an optional filter:
+    // `{ ...maybe }` where `maybe` is `{ col: undefined }` leaves the key in
+    // `Object.keys` with no value. The predicate builder does not fold that
+    // into its `= NULL` → `IS NULL` rewrite — a key present with no value
+    // cannot be told apart from a filter the caller meant to omit — so the SQL
+    // backends bind it as NULL and match nothing. These matchers now say the
+    // same, which they did not before: read as a plain `===`, an `undefined`
+    // criterion matched rows whose column was absent.
 
-    it("matches a column that is absent, since both read back undefined", () => {
-      expect(matchesEqualityCriterion(undefined, undefined)).toBe(true);
+    it("matches nothing, whatever the column holds", () => {
+      for (const columnValue of [undefined, null, "x", 0, false]) {
+        expect(matchesEqualityCriterion(columnValue, undefined)).toBe(false);
+        expect(matchesInequalityCriterion(columnValue, undefined)).toBe(false);
+      }
     });
 
-    it("does NOT match a column holding null, unlike a null criterion would", () => {
-      // The asymmetry that makes `undefined` its own case: `{ col: null }`
-      // matches null AND absent, `{ col: undefined }` matches only absent.
-      expect(matchesEqualityCriterion(null, undefined)).toBe(false);
+    it("is not interchangeable with a null criterion, which does match", () => {
+      // The whole reason `undefined` needs its own rule: `null` means IS NULL
+      // and matches the null and absent rows, `undefined` means nothing at all.
       expect(matchesEqualityCriterion(null, null)).toBe(true);
+      expect(matchesEqualityCriterion(undefined, null)).toBe(true);
+      expect(matchesEqualityCriterion(null, undefined)).toBe(false);
+      expect(matchesEqualityCriterion(undefined, undefined)).toBe(false);
     });
 
-    it("does not match a column holding a value", () => {
-      expect(matchesEqualityCriterion("x", undefined)).toBe(false);
-      expect(matchesInequalityCriterion("x", undefined)).toBe(true);
-      expect(matchesInequalityCriterion(undefined, undefined)).toBe(false);
+    it("leaves `!=` empty too, rather than inverting to match everything", () => {
+      // `col != NULL` is UNKNOWN, so an exclusion built from a spread optional
+      // excludes nothing AND matches nothing — it does not become a no-op.
+      expect(matchesInequalityCriterion("x", undefined)).toBe(false);
+      expect(matchesInequalityCriterion("x", null)).toBe(true);
     });
   });
 

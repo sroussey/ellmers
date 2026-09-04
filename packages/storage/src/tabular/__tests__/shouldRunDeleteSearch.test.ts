@@ -73,9 +73,9 @@ describe("shouldRunDeleteSearch", () => {
     // `matchesEqualityCriterion`), and teaching only this guard to discount it
     // would make it disagree with the delete it is guarding.
     //
-    // The delete that follows is narrow, not table-wide, on every backend —
-    // `tenant = NULL` matches nothing on SQL, and "tenant is absent" on the
-    // JS-side ones — so what escapes the guard is not a full-table delete.
+    // The delete that follows deletes nothing at all on every backend, since
+    // an `undefined` criterion matches no row — so what escapes the guard is
+    // the opposite of a full-table delete.
     expect(shouldRunDeleteSearch<Row>({ tenant: undefined, status: notIn([]) })).toBe(true);
     expect(shouldRunDeleteSearch<Row>({ tenant: undefined })).toBe(true);
   });

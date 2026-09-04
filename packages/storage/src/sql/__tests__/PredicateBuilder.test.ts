@@ -150,9 +150,9 @@ describe("PredicateBuilder operator allow-list (L-MAIN-01)", () => {
       // bug for an invisible one. So it stays an ordinary equality — which the
       // driver binds as NULL, making `col = NULL` match no row.
       //
-      // The JS-side backends read the same criterion as "column is absent" and
-      // DO return rows for it. That divergence is pre-existing and is pinned
-      // here so a change to either side is a deliberate one.
+      // The driver binds it as NULL, so this matches no row — and the JS-side
+      // matchers now answer the same, so the criterion means one thing on
+      // every backend.
       const result = buildSearchWhere<Row>(
         SqliteDialect,
         { id: undefined } as never,

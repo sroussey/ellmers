@@ -1361,7 +1361,11 @@ export class IndexedDbTabularStorage<
           if (c.value === null) break;
           prefix.push(c.value);
         } else {
-          if (c === null) break;
+          // `undefined` breaks alongside `null`: it matches no row at all, and
+          // pushing it would hand `IDBKeyRange` a value that is not a valid
+          // key. Stopping here lets the in-cursor filter return the empty
+          // answer the SQL backends give.
+          if (c === null || c === undefined) break;
           prefix.push(c);
         }
       }

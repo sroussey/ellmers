@@ -886,6 +886,31 @@ that — SQL reads `NULL IN (…)` and `x IN (NULL)` alike as UNKNOWN. Ask for n
 rows with `{ operator: "=", value: null }`, which the predicate builder rewrites
 to `IS NULL`.
 
+##### `undefined` is not `null`, and matches nothing
+
+⚠️ A criterion of `undefined` — what a spread optional filter leaves behind,
+`{ ...maybe }` where `maybe` is `{ col: undefined }` — is **not** read as "no
+filter". It gets no `IS NULL` rewrite, since a key present with no value cannot
+be told apart from one the caller meant to omit; it binds as NULL, and
+`col = NULL` is never true. So the query returns **zero rows**, on every
+backend, silently:
+
+```typescript
+// Returns nothing — not "every user", and not "users with no tenant".
+await repo.query({ tenant: maybeTenant });   // where maybeTenant === undefined
+
+// Omit the key when you mean no filter:
+await repo.query(tenant === undefined ? { active: true } : { active: true, tenant });
+
+// Pass null when you mean IS NULL:
+await repo.query({ tenant: null });
+```
+
+Backends that hand criteria to something else decide this locally rather than
+sending it, because the meaning does not survive the trip: `JSON.stringify`
+drops an `undefined`-valued key entirely, and a PostgREST filter would carry
+the literal text `undefined`.
+
 **Backend limits.** Postgres binds the whole list as a single array parameter
 (`= ANY($1)`), so list length is unbounded. SQLite and DuckDB expand one
 placeholder per value and remain subject to their statement parameter cap

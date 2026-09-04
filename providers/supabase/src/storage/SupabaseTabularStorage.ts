@@ -738,29 +738,17 @@ export class SupabaseTabularStorage<
    * the answer this backend's own, so it agrees with every other backend
    * whichever way PostgREST would have parsed it.
    *
+   * An `undefined` compare value is in the shared rule for the same reason,
+   * and matters here specifically: PostgREST takes its filters as URL text, so
+   * `.eq(col, undefined)` would travel as the literal string `undefined`
+   * rather than as the NULL every other backend binds.
+   *
    * An empty `not-in` list is deliberately NOT a short circuit: excluding
    * nothing excludes nothing, so it matches every row. {@link applyNotInFilter}
    * renders it as a tautology instead.
    */
   private matchesNoRow(criteria: SearchCriteria<Entity> | undefined): boolean {
-    if (!criteria) return false;
-    for (const column of Object.keys(criteria) as Array<keyof Entity>) {
-      const normalized = normalizeCriterion<Entity[keyof Entity]>(criteria[column]);
-      // `[].every` is vacuously true, so this covers the empty list too.
-      if (
-        normalized.kind === "in" &&
-        normalized.values.every((value) => value === null || value === undefined)
-      ) {
-        return true;
-      }
-      if (
-        normalized.kind === "not-in" &&
-        normalized.values.some((value) => value === null || value === undefined)
-      ) {
-        return true;
-      }
-    }
-    return false;
+    return this.criteriaMatchNoRow(criteria);
   }
 
   /**

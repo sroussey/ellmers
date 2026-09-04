@@ -238,19 +238,23 @@ export type NormalizedCriterion<T> =
  * created a duplicate on every call; the in-memory backend agreed with the
  * broken SQL behavior, so tests could not see it.
  *
- * **`undefined` is not `null` here, and the backends do not agree on it.** A
- * criterion of `undefined` — which is what a spread optional filter leaves
- * behind, `{ ...maybe }` where `maybe` is `{ col: undefined }` — gets no
- * rewrite. It stays an ordinary equality, and an ordinary equality against
- * `undefined` reads as "this column is absent" here, matches nothing on the
- * SQL backends (the driver binds NULL, and `col = NULL` is never true), and is
- * skipped outright by {@link HuggingFaceTabularStorage}. Three answers to one
- * criterion, so do not build criteria by spreading an optional: omit the key,
- * or pass `null` and mean IS NULL. The divergence predates the `not-in` work
- * and is pinned by tests rather than papered over, since every way of picking
- * one answer changes behavior somewhere.
+ * **`undefined` is not `null`, and matches nothing.** A criterion of
+ * `undefined` — what a spread optional filter leaves behind, `{ ...maybe }`
+ * where `maybe` is `{ col: undefined }` — gets no `IS NULL` rewrite, because a
+ * key present with no value cannot be told apart from a filter the caller
+ * meant to omit, and guessing would trade a visible bug for an invisible one.
+ * So it stays an ordinary equality, the SQL backends bind it as NULL, and
+ * `col = NULL` is never true: no row matches, on any backend. The early return
+ * here is what makes that true off SQL as well — read as a plain `===` this
+ * matched rows whose column was absent, which is the answer no database gives.
+ *
+ * The consequence is worth stating plainly, because it is silent: a criteria
+ * bag built by spreading an optional filter returns zero rows rather than
+ * ignoring the filter. Omit the key when you mean "no filter", or pass `null`
+ * when you mean IS NULL.
  */
 export function matchesEqualityCriterion(columnValue: unknown, criterionValue: unknown): boolean {
+  if (criterionValue === undefined) return false;
   if (criterionValue === null) return columnValue === null || columnValue === undefined;
   return columnValue === criterionValue;
 }
@@ -261,6 +265,8 @@ export function matchesEqualityCriterion(columnValue: unknown, criterionValue: u
  * Mirrors {@link matchesEqualityCriterion}, and deliberately follows SQL's
  * three-valued logic rather than JavaScript's `!==`:
  *
+ * - `!= undefined` matches nothing, for the reason given above: it binds as
+ *   NULL, and `col != NULL` is UNKNOWN.
  * - `!= null` means IS NOT NULL — it matches every row holding a value.
  * - `!= <value>` does NOT match a row whose column is null. In SQL
  *   `col != 'x'` is UNKNOWN when `col` is NULL, so the row is excluded, and a
@@ -270,6 +276,7 @@ export function matchesEqualityCriterion(columnValue: unknown, criterionValue: u
  *   `{ operator: "=", value: null }` alongside it to include nulls.
  */
 export function matchesInequalityCriterion(columnValue: unknown, criterionValue: unknown): boolean {
+  if (criterionValue === undefined) return false;
   const isNull = columnValue === null || columnValue === undefined;
   if (criterionValue === null) return !isNull;
   if (isNull) return false;
