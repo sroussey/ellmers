@@ -40,6 +40,29 @@ export class StorageInvalidColumnError extends StorageValidationError {
   }
 }
 
+/**
+ * A `deleteSearch` whose criteria name no rows in particular — every criterion
+ * matches every row, so the statement reduces to `DELETE FROM t`.
+ *
+ * Today that means criteria consisting only of empty `not-in` lists: excluding
+ * nothing is a faithful match-all, and the right answer for `query` and
+ * `count`, but on a delete it is indistinguishable from a filter that went
+ * missing. Exclusion lists are usually built from caller input, so the case
+ * that reads as a bug is the one that empties the table. `deleteAll()` says it
+ * on purpose.
+ */
+export class StorageUnfilteredDeleteError extends StorageValidationError {
+  static override readonly type: string = "StorageUnfilteredDeleteError";
+  constructor(columns: readonly string[]) {
+    super(
+      `deleteSearch criteria match every row (${columns
+        .map((c) => `"${c}"`)
+        .join(", ")} exclude nothing), which would delete the whole table. ` +
+        `Use deleteAll() if that is the intent.`
+    );
+  }
+}
+
 export class StorageUnsupportedError extends StorageError {
   static override readonly type: string = "StorageUnsupportedError";
   constructor(operation: string, backend: string) {

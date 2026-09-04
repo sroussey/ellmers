@@ -7,6 +7,7 @@
 import { describe } from "vitest";
 import { countMatchesQueryBlock } from "./assertions/countMatchesQuery";
 import { inListCriterionBlock } from "./assertions/inListCriterion";
+import { notInListCriterionBlock } from "./assertions/notInListCriterion";
 import { subscribeToChangesBlock } from "./assertions/subscribeToChanges";
 import { vectorColumnFormatBlock } from "./assertions/vectorColumnFormat";
 import { withConnectionTransactionBlock } from "./assertions/withConnectionTransaction";
@@ -21,6 +22,7 @@ export function runTabularStorageContract(opts: TabularStorageContractOpts): voi
     withConnectionTransactionBlock(opts);
     countMatchesQueryBlock(opts);
     inListCriterionBlock(opts);
+    notInListCriterionBlock(opts);
   });
 }
 

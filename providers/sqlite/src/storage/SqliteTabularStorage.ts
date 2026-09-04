@@ -1332,14 +1332,22 @@ export class SqliteTabularStorage<
    * @param criteria - Object with column names as keys and values or SearchConditions
    */
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
+    // Ahead of the write lock: a refused delete has no business queueing
+    // behind other writers, and this is the same first line of
+    // `deleteSearch` every other backend opens with.
+    if (!this.shouldRunDeleteSearch(criteria)) return;
     return this.guardedWrite(() => this._deleteSearchInternal(criteria));
   }
 
   private async _deleteSearchInternal(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
-    const criteriaKeys = Object.keys(criteria) as Array<keyof Entity>;
-    if (criteriaKeys.length === 0) {
-      return;
-    }
+    // Repeated rather than redundant: {@link createTxView}'s Proxy routes
+    // `tx.deleteSearch` straight here by the `_*Internal` naming convention, so
+    // a guard living only on the public method is skipped by every call made
+    // through a transaction handle. Unguarded, `tx.deleteSearch({})` builds
+    // ``DELETE FROM `t` WHERE `` (a syntax error) and criteria that are nothing
+    // but empty `not-in` lists build `WHERE 1 = 1`, emptying the table instead
+    // of raising StorageUnfilteredDeleteError.
+    if (!this.shouldRunDeleteSearch(criteria)) return;
     this.runDeleteSearchOnHandle(criteria);
   }
 

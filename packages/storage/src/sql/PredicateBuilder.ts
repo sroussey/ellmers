@@ -17,10 +17,10 @@ import type { ISqlDialect } from "./Dialect";
  * (without the leading `WHERE` keyword) and its ordered parameters.
  *
  * `params.length` is the number of placeholders consumed, which is no longer
- * the number of criteria columns: an `in` criterion binds one parameter per
- * value on SQLite and exactly one (an array) on Postgres. Callers deriving a
- * next-placeholder index must use `startIndex + params.length`, never the
- * criteria key count.
+ * the number of criteria columns: an `in` / `not-in` criterion binds one
+ * parameter per value on SQLite and exactly one (an array) on Postgres, and an
+ * empty list of either binds none at all. Callers deriving a next-placeholder
+ * index must use `startIndex + params.length`, never the criteria key count.
  */
 export interface BuiltWhereClause {
   readonly whereClause: string;
@@ -32,11 +32,12 @@ export interface BuiltWhereClause {
  * Used by every SQL tabular backend so the operator handling stays consistent.
  *
  * @param dialect       Identifier-quoting, placeholder, and IN-list rules for the target DB.
- * @param criteria      Per-column equality value, comparison condition, or `in` list.
+ * @param criteria      Per-column equality value, comparison condition, or
+ *                      `in` / `not-in` list.
  * @param schemaProps   Schema property bag — unknown columns throw, preventing
  *                      callers from accidentally letting user input pick a column.
  * @param convertValue  Backend-specific JS-to-SQL coercion (e.g. boolean → 0/1).
- *                      Applied per element for an `in` list.
+ *                      Applied per element for a list.
  * @param startIndex    1-based starting parameter index (defaults to 1).
  *                      PostgreSQL callers use this when other params have already
  *                      been bound; SQLite ignores it because placeholders are positional.
@@ -60,15 +61,20 @@ export function buildSearchWhere<Entity>(
     const quotedColumn = dialect.quoteId(String(column));
     const normalized = normalizeCriterion<Entity[keyof Entity]>(criteria[column]);
 
-    if (normalized.kind === "in") {
+    if (normalized.kind === "in" || normalized.kind === "not-in") {
       // Each element goes through the same coercion a scalar value would, so
       // dates and booleans bind identically whether matched by `=` or `IN`.
       const values = normalized.values.map((v) => convertValue(column as string, v));
-      const built = dialect.inPredicate(quotedColumn, values, paramIndex);
+      const built =
+        normalized.kind === "in"
+          ? dialect.inPredicate(quotedColumn, values, paramIndex)
+          : dialect.notInPredicate(quotedColumn, values, paramIndex);
       conditions.push(built.sql);
       params.push(...built.params);
       // Not `+= values.length`: Postgres binds the whole list as one array
-      // parameter, so only the dialect knows how many placeholders it used.
+      // parameter, and an empty list of either kind degenerates to a constant
+      // predicate binding nothing, so only the dialect knows how many
+      // placeholders it used.
       paramIndex += built.params.length;
       continue;
     }

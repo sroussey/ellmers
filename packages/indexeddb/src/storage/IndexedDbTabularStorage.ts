@@ -24,8 +24,11 @@ import {
   HybridSubscriptionManager,
   isSearchCondition,
   isSearchInCondition,
+  isSearchNotInCondition,
   matchesEqualityCriterion,
+  matchesInCriterion,
   matchesInequalityCriterion,
+  matchesNotInCriterion,
   normalizeCriterion,
   pickCoveringIndex,
   safeEmit,
@@ -886,7 +889,14 @@ export class IndexedDbTabularStorage<
       const normalized = normalizeCriterion<Entity[keyof Entity]>(criterion);
       if (normalized.kind === "in") {
         // Strict membership, matching the `=` arm: no coercion.
-        if (!normalized.values.some((candidate) => recordValue === candidate)) return false;
+        if (!matchesInCriterion(recordValue, normalized.values)) return false;
+        continue;
+      }
+      if (normalized.kind === "not-in") {
+        // Carries its own null rules (a null column is excluded, a null in the
+        // list excludes everything), so it must precede the blanket null check
+        // below rather than being folded into it.
+        if (!matchesNotInCriterion(recordValue, normalized.values)) return false;
         continue;
       }
       const { operator, value } = normalized;
@@ -929,10 +939,7 @@ export class IndexedDbTabularStorage<
   }
 
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
-    const criteriaKeys = Object.keys(criteria) as Array<keyof Entity>;
-    if (criteriaKeys.length === 0) {
-      return;
-    }
+    if (!this.shouldRunDeleteSearch(criteria)) return;
 
     const db = await this.getDb();
 
@@ -1067,9 +1074,12 @@ export class IndexedDbTabularStorage<
   ): Entity[keyof Entity] | undefined {
     const criterion = criteria[column];
     if (criterion === undefined) return undefined;
-    // An `in` list is not a single key, so it can't drive an IDB index lookup;
-    // returning undefined sends it to the in-cursor filter instead.
-    if (isSearchInCondition(criterion)) return undefined;
+    // A list criterion is not a single key, so it can't drive an IDB index
+    // lookup; returning undefined sends it to the in-cursor filter instead.
+    // Both list guards must be tested: neither passes `isSearchCondition`, so
+    // an unguarded `not-in` would fall through to the literal-value return at
+    // the bottom and be used as an equality key — silently matching nothing.
+    if (isSearchInCondition(criterion) || isSearchNotInCondition(criterion)) return undefined;
     if (isSearchCondition(criterion)) {
       if (criterion.operator !== "=") return undefined;
       // `null` is not a valid IDB key, so `IDBKeyRange.only`/`bound` would throw
@@ -1265,12 +1275,14 @@ export class IndexedDbTabularStorage<
    * Throws {@link CoveringIndexMissingError} when no registered index can serve
    * the request (i.e. the index does not cover all select + orderBy columns).
    *
-   * A `null` equality criterion on a column of the chosen index is rejected with
-   * {@link StorageUnsupportedError}. IndexedDB omits a record from an index when
-   * its indexed value is null, so those rows exist in no index and a projection
-   * reading values out of `cursor.key` can never produce them — the request
-   * would return silently-empty results rather than the matching rows. Use
-   * {@link query}, which reads whole records and filters them in the cursor.
+   * A criterion on a column of the chosen index that must match null-valued
+   * rows is rejected with {@link StorageUnsupportedError} — a `null` equality,
+   * or an empty `not-in` list, which excludes nothing and so matches every row.
+   * IndexedDB omits a record from an index when its indexed value is null, so
+   * those rows exist in no index and a projection reading values out of
+   * `cursor.key` can never produce them — the request would return
+   * silently-short results rather than the matching rows. Use {@link query},
+   * which reads whole records and filters them in the cursor.
    */
   override async queryIndex<K extends keyof Entity & string>(
     criteria: SearchCriteria<Entity>,
@@ -1298,6 +1310,18 @@ export class IndexedDbTabularStorage<
 
     for (const col of picked.keyPath) {
       const criterion = (criteria as Record<string, unknown>)[col];
+      // An empty exclusion list matches every row, nulls included — the only
+      // criterion besides a null equality that a null-valued column can
+      // satisfy. Rejected for the same reason: those records are in no index,
+      // so an index scan returns a silently short result instead of them.
+      if (isSearchNotInCondition(criterion) && criterion.value.length === 0) {
+        throw new StorageUnsupportedError(
+          `An empty "not-in" criterion on indexed column "${col}" (it matches every ` +
+            `row including null-valued ones, but IndexedDB omits those from an index, ` +
+            `so an index scan can never reach them — use query() instead)`,
+          "IndexedDbTabularStorage"
+        );
+      }
       const isNullEquality = isSearchCondition(criterion)
         ? criterion.operator === "=" && criterion.value === null
         : criterion === null;
@@ -1324,9 +1348,12 @@ export class IndexedDbTabularStorage<
       for (const col of picked.keyPath) {
         const c = (criteria as Record<string, unknown>)[col];
         if (c === undefined && !(col in (criteria as Record<string, unknown>))) break;
-        // An `in` list matches several keys, so it cannot extend a single
-        // equality prefix — stop here and let the in-cursor filter handle it.
-        if (isSearchInCondition(c)) break;
+        // A list criterion matches several keys (or excludes some), so it
+        // cannot extend a single equality prefix — stop here and let the
+        // in-cursor filter handle it. Same reason both guards are needed here
+        // as in `getEqualityCriterionValue`: a `not-in` that reached the
+        // `else` below would be pushed onto the prefix as a raw key.
+        if (isSearchInCondition(c) || isSearchNotInCondition(c)) break;
         if (isSearchCondition(c)) {
           if (c.operator !== "=") break;
           // Defense in depth: the guard above already rejected a null equality
@@ -1334,7 +1361,11 @@ export class IndexedDbTabularStorage<
           if (c.value === null) break;
           prefix.push(c.value);
         } else {
-          if (c === null) break;
+          // `undefined` breaks alongside `null`: it matches no row at all, and
+          // pushing it would hand `IDBKeyRange` a value that is not a valid
+          // key. Stopping here lets the in-cursor filter return the empty
+          // answer the SQL backends give.
+          if (c === null || c === undefined) break;
           prefix.push(c);
         }
       }
@@ -1405,8 +1436,10 @@ export class IndexedDbTabularStorage<
           const normalized = normalizeCriterion<unknown>(crit);
           const ok =
             normalized.kind === "in"
-              ? normalized.values.some((candidate) => valFromKey === candidate)
-              : compareWithOperator(valFromKey, normalized.operator, normalized.value);
+              ? matchesInCriterion(valFromKey, normalized.values)
+              : normalized.kind === "not-in"
+                ? matchesNotInCriterion(valFromKey, normalized.values)
+                : compareWithOperator(valFromKey, normalized.operator, normalized.value);
           if (!ok) {
             matches = false;
             break;

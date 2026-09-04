@@ -717,20 +717,80 @@ export class SupabaseTabularStorage<
   }
 
   /**
-   * Whether `criteria` can match no row at all — i.e. some column carries an
-   * `in` list with no values.
+   * Whether `criteria` can match no row at all — an `in` list with no non-null
+   * value, or a `not-in` list holding a `null`.
    *
    * PostgREST has no always-false filter, and an empty `in.()` is not worth
    * relying on (least of all on a delete path), so every criteria-taking
    * method short-circuits on this instead of issuing a request.
+   *
+   * A list of only nulls counts as empty for `in`: `matchesInCriterion` and
+   * SQL agree that a `null` among the values rescues no row, so such a list
+   * names nothing. Deciding it here rather than sending `in.(null)` keeps the
+   * answer off PostgREST's reading of the bare `null` token, for the reason
+   * below.
+   *
+   * A `null` among `not-in` values is here for a sharper reason. The rule
+   * `matchesNotInCriterion` and the SQL dialects enforce — `col NOT IN (…,
+   * NULL)` is UNKNOWN for every row, so nothing matches — would otherwise rest
+   * on PostgREST reading the bare token `null` inside `not.in.(…)` as SQL NULL
+   * rather than as a literal cast to the column type. Deciding it here makes
+   * the answer this backend's own, so it agrees with every other backend
+   * whichever way PostgREST would have parsed it.
+   *
+   * An `undefined` compare value is in the shared rule for the same reason,
+   * and matters here specifically: PostgREST takes its filters as URL text, so
+   * `.eq(col, undefined)` would travel as the literal string `undefined`
+   * rather than as the NULL every other backend binds.
+   *
+   * An empty `not-in` list is deliberately NOT a short circuit: excluding
+   * nothing excludes nothing, so it matches every row. {@link applyNotInFilter}
+   * renders it as a tautology instead.
    */
   private matchesNoRow(criteria: SearchCriteria<Entity> | undefined): boolean {
-    if (!criteria) return false;
-    for (const column of Object.keys(criteria) as Array<keyof Entity>) {
-      const normalized = normalizeCriterion<Entity[keyof Entity]>(criteria[column]);
-      if (normalized.kind === "in" && normalized.values.length === 0) return true;
+    return this.criteriaMatchNoRow(criteria);
+  }
+
+  /**
+   * Renders one value as a PostgREST list element.
+   *
+   * Only numbers and booleans go in bare. Everything else is double-quoted
+   * with `\` and `"` escaped — always, not only when it holds a delimiter,
+   * because a value carrying a quote would otherwise terminate the list early
+   * and change which rows the filter names.
+   *
+   * `null`/`undefined` renders as PostgREST's bare `null` for completeness
+   * only: {@link matchesNoRow} answers a null-bearing exclusion list without a
+   * request, precisely so nothing depends on how PostgREST reads that token.
+   */
+  private static postgrestListElement(value: unknown): string {
+    if (value === null || value === undefined) return "null";
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
+    return `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  }
+
+  /**
+   * Applies a `not-in` criterion to a filter builder.
+   *
+   * supabase-js has `.in()` but no `.notIn()`, so the negation goes through
+   * `.not(column, "in", "(…)")` with the list literal built here — which is
+   * also why the elements are escaped here rather than by the client.
+   *
+   * An empty list means "exclude nothing", i.e. match every row. Dropping the
+   * filter entirely would express that for `query`, but it would leave
+   * `deleteSearch` issuing an unqualified DELETE when the empty exclusion is
+   * the only criterion — a request shape PostgREST deployments are commonly
+   * configured to refuse, and one no reader can tell apart from a filter that
+   * went missing. `col IS NULL OR col IS NOT NULL` is true for every row of any
+   * column, so it keeps the request well-formed and the intent legible.
+   */
+  private applyNotInFilter<Q>(query: Q, column: string, values: readonly unknown[]): Q {
+    const q = query as any;
+    if (values.length === 0) {
+      return q.or(`${column}.is.null,${column}.not.is.null`) as Q;
     }
-    return false;
+    const list = values.map(SupabaseTabularStorage.postgrestListElement).join(",");
+    return q.not(column, "in", `(${list})`) as Q;
   }
 
   /**
@@ -743,9 +803,21 @@ export class SupabaseTabularStorage<
       const normalized = normalizeCriterion<Entity[keyof Entity]>(criteria[column]);
 
       if (normalized.kind === "in") {
-        // Callers guard an empty list with `matchesNoRow` before reaching
-        // here, so PostgREST never has to render `in.()`.
-        q = q.in(String(column), normalized.values as unknown[]);
+        // Callers guard a list with no non-null value with `matchesNoRow`
+        // before reaching here, so PostgREST never has to render `in.()`. The
+        // nulls left in a mixed list are dropped rather than sent: they match
+        // no row either way, and passing them would rest this backend's answer
+        // on PostgREST reading a bare `null` token as SQL NULL rather than as a
+        // literal — the one thing `matchesNoRow` exists to keep it off.
+        q = q.in(
+          String(column),
+          normalized.values.filter((value) => value !== null && value !== undefined) as unknown[]
+        );
+        continue;
+      }
+
+      if (normalized.kind === "not-in") {
+        q = this.applyNotInFilter(q, String(column), normalized.values);
         continue;
       }
 
@@ -808,59 +880,28 @@ export class SupabaseTabularStorage<
    */
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
     const criteriaKeys = Object.keys(criteria) as Array<keyof Entity>;
-    if (criteriaKeys.length === 0) {
-      return;
-    }
+    if (!this.shouldRunDeleteSearch(criteria)) return;
     if (this.matchesNoRow(criteria)) return;
-
-    // `any` for the same reason as `applyCriteriaToFilter`: the
-    // `PostgrestFilterBuilder` generics are deep enough to be a type-level
-    // hazard. Here it is the null-handling ternaries below that make it bite —
-    // each one yields a UNION of two builder instantiations, which is then
-    // assigned back into this loop variable, so every later `.eq()`/`.neq()`
-    // resolves against a union that compounds each pass. Left typed, this one
-    // function accounted for 63k of the package's 92k instantiations (3.2x its
-    // budget); as `any` the package sits at 29k.
-    let query: any = this.client.from(this.table).delete();
 
     for (const column of criteriaKeys) {
       if (!(column in this.schema.properties)) {
         throw new Error(`Schema must have a ${String(column)} field to use deleteSearch`);
       }
-
-      const normalized = normalizeCriterion<Entity[keyof Entity]>(criteria[column]);
-
-      if (normalized.kind === "in") {
-        query = query.in(String(column), normalized.values as unknown[]);
-        continue;
-      }
-
-      const { operator, value } = normalized;
-
-      switch (operator) {
-        case "=":
-          query = value === null ? query.is(String(column), null) : query.eq(String(column), value);
-          break;
-        case "!=":
-          query =
-            value === null
-              ? query.not(String(column), "is", null)
-              : query.neq(String(column), value);
-          break;
-        case "<":
-          query = query.lt(String(column), value);
-          break;
-        case "<=":
-          query = query.lte(String(column), value);
-          break;
-        case ">":
-          query = query.gt(String(column), value);
-          break;
-        case ">=":
-          query = query.gte(String(column), value);
-          break;
-      }
     }
+
+    // Same operator handling as every read path, from the same place: this
+    // used to be a second copy of `applyCriteriaToFilter`'s switch, which is
+    // one more spot for a new criterion shape to be added to only one of them.
+    // `any` for the reason given on `applyCriteriaToFilter` — the
+    // `PostgrestFilterBuilder` generics are deep enough to be a type-level
+    // hazard, and the null-handling ternaries inside it each yield a UNION of
+    // two builder instantiations that compounds on every pass. Left typed,
+    // this path accounted for 63k of the package's 92k instantiations (3.2x
+    // its budget); as `any` the package sits at 29k.
+    const query: any = this.applyCriteriaToFilter<any>(
+      this.client.from(this.table).delete(),
+      criteria
+    );
 
     const { error } = await query;
 

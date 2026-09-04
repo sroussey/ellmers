@@ -6,6 +6,7 @@
 
 import type {
   CoveringIndexQueryOptions,
+  DeleteSearchCriteria,
   OrderBy,
   PageRequest,
   QueryOptions,
@@ -15,12 +16,15 @@ import {
   ALLOWED_SEARCH_OPERATORS,
   isSearchCondition,
   isSearchInCondition,
+  isSearchNotInCondition,
+  normalizeCriterion,
   SEARCH_OPERATOR_SET,
 } from "./ITabularStorage";
 import {
   StorageEmptyCriteriaError,
   StorageInvalidColumnError,
   StorageInvalidLimitError,
+  StorageUnfilteredDeleteError,
   StorageValidationError,
 } from "./StorageError";
 
@@ -50,6 +54,18 @@ export function validateOrderBy<Entity>(
       );
     }
   }
+}
+
+/**
+ * Whether a criterion claims one of the list operators (`"in"`, `"not-in"`)
+ * without carrying an array. Both are checked in one place so a new list
+ * operator cannot be added to the union and validated for only one of them.
+ */
+function isMalformedListCriterion(criterion: unknown): boolean {
+  if (typeof criterion !== "object" || criterion === null) return false;
+  const operator = (criterion as { operator?: unknown }).operator;
+  if (operator !== "in" && operator !== "not-in") return false;
+  return !isSearchInCondition(criterion) && !isSearchNotInCondition(criterion);
 }
 
 /**
@@ -92,22 +108,89 @@ export function validateQueryParams<Entity>(
             ALLOWED_SEARCH_OPERATORS.join(", ")
         );
       }
-    } else if (
-      typeof criterion === "object" &&
-      criterion !== null &&
-      (criterion as { operator?: unknown }).operator === "in" &&
-      !isSearchInCondition(criterion)
-    ) {
-      // An `in` criterion whose value is not an array passes neither guard,
-      // so it would fall through to `normalizeCriterion` as a literal value
-      // and match nothing. Nobody means that — fail loudly instead.
+    } else if (isMalformedListCriterion(criterion)) {
+      // A list criterion whose value is not an array passes neither guard, so
+      // it would fall through to `normalizeCriterion` as a literal value and
+      // match nothing. Nobody means that — fail loudly instead, and note that
+      // for `not-in` "matches nothing" is the opposite of what was asked for.
+      const operator = (criterion as { operator: string }).operator;
       throw new StorageValidationError(
-        `Criterion for column "${String(column)}" uses operator "in" but its value is not an array`
+        `Criterion for column "${String(column)}" uses operator "${operator}" ` +
+          `but its value is not an array`
       );
     }
   }
 
   validateOrderByFn(options?.orderBy);
+}
+
+/**
+ * Whether `criteria` can match no row at all, decided locally.
+ *
+ * For the backends that hand criteria to something else — an HTTP peer, a
+ * PostgREST URL — where a criterion's meaning would not survive the trip:
+ *
+ * - An `undefined` compare value matches nothing (it binds as NULL, and
+ *   `col = NULL` is never true). `JSON.stringify` drops the key outright, and
+ *   a PostgREST filter would carry the literal text `undefined`, so neither
+ *   peer can be asked the question — but the answer is known without asking.
+ * - An `in` list with no non-null value, and a `not-in` list holding a `null`,
+ *   both name nothing for the reasons on {@link SearchInCondition} and
+ *   {@link SearchNotInCondition}.
+ *
+ * Backends that build their own SQL do not need this: they bind the value and
+ * the database reaches the same answer.
+ */
+export function criteriaMatchNoRow<Entity>(
+  criteria: DeleteSearchCriteria<Entity> | undefined
+): boolean {
+  if (!criteria) return false;
+  for (const column of Object.keys(criteria) as Array<keyof Entity>) {
+    const normalized = normalizeCriterion<Entity[keyof Entity]>(criteria[column]);
+    if (normalized.kind === "compare") {
+      if (normalized.value === undefined) return true;
+      continue;
+    }
+    const nullish = (value: unknown): boolean => value === null || value === undefined;
+    if (normalized.kind === "in" && normalized.values.every(nullish)) return true;
+    if (normalized.kind === "not-in" && normalized.values.some(nullish)) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether a `deleteSearch` should run at all, throwing when its criteria would
+ * take the whole table with them.
+ *
+ * Every backend opens `deleteSearch` with this so the three answers cannot
+ * drift apart between them:
+ *
+ * - **No criteria → `false`**, the long-standing silent no-op. `deleteSearch({})`
+ *   has never been a way to spell `deleteAll()`, and an empty WHERE is the one
+ *   thing it must not become.
+ * - **Criteria that all match every row → throw.** Today that is a set made up
+ *   only of empty `not-in` lists. Excluding nothing is a faithful match-all —
+ *   the SQL backends render it `1 = 1`, and for `query` or `count` it is the
+ *   right answer — but on a delete it reads exactly like a filter that went
+ *   missing, and exclusion lists are usually caller-supplied. A mix is fine:
+ *   `{ tenant: "acme", excluded: { operator: "not-in", value: [] } }` still
+ *   names acme's rows, so it runs.
+ * - **Anything else → `true`.**
+ */
+export function shouldRunDeleteSearch<Entity>(criteria: DeleteSearchCriteria<Entity>): boolean {
+  const columns = Object.keys(criteria) as Array<keyof Entity>;
+  if (columns.length === 0) return false;
+
+  const excludesNothing = (column: keyof Entity): boolean => {
+    const normalized = normalizeCriterion<Entity[keyof Entity]>(criteria[column]);
+    return normalized.kind === "not-in" && normalized.values.length === 0;
+  };
+  // `every` stops at the first column that narrows anything, so the common
+  // case normalizes one criterion rather than all of them and allocates no
+  // intermediate array. Reaching the throw means every column matched, which
+  // is why they can all be named.
+  if (!columns.every(excludesNothing)) return true;
+  throw new StorageUnfilteredDeleteError(columns.map(String));
 }
 
 /** Validates the limit/offset/orderBy of a `getAll` options bag. */

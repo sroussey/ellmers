@@ -167,6 +167,10 @@ export class HttpTabularProxyStorage<
     options?: QueryOptions<Entity>
   ): Promise<Entity[] | undefined> {
     this.validateQueryParams(criteria, options);
+    // Answered here, not over the wire: `JSON.stringify` drops a key whose
+    // value is `undefined`, so the peer would receive different criteria than
+    // the caller wrote — an empty bag where the criterion was the only one.
+    if (this.criteriaMatchNoRow(criteria)) return undefined;
     const { entities } = await this.call<{ entities: Entity[] | null }>("query", {
       criteria,
       options,
@@ -188,6 +192,7 @@ export class HttpTabularProxyStorage<
   }
 
   override async count(criteria?: SearchCriteria<Entity>): Promise<number> {
+    if (this.criteriaMatchNoRow(criteria)) return 0;
     const { count } = await this.call<{ count: number }>("count", { criteria });
     return count;
   }
@@ -198,6 +203,12 @@ export class HttpTabularProxyStorage<
   }
 
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
+    // Locally, as every backend does — the server runs a real backend and would
+    // refuse a match-all anyway, but there is no reason to spend a round trip
+    // learning that, and an empty criteria bag stays the same silent no-op here
+    // as everywhere else instead of becoming a request.
+    if (!this.shouldRunDeleteSearch(criteria)) return;
+    if (this.criteriaMatchNoRow(criteria)) return;
     await this.call<{ ok: true }>("deleteSearch", { criteria });
   }
 
@@ -206,6 +217,7 @@ export class HttpTabularProxyStorage<
     patch: Partial<Entity>
   ): Promise<Entity | undefined> {
     this.assertPatchKeepsPrimaryKey(patch);
+    if (this.criteriaMatchNoRow(match)) return undefined;
     const { entity } = await this.call<{ entity: Entity | null }>("updateWhere", {
       match,
       patch,
@@ -234,6 +246,7 @@ export class HttpTabularProxyStorage<
     request: PageRequest<Entity> = {}
   ): Promise<Page<Entity>> {
     this.validatePageRequest(request);
+    if (this.criteriaMatchNoRow(criteria)) return { items: [], nextCursor: undefined };
     const { page } = await this.call<{ page: Page<Entity> }>("queryPage", {
       criteria,
       request,
@@ -247,6 +260,7 @@ export class HttpTabularProxyStorage<
   ): Promise<Pick<Entity, K>[]> {
     this.validateSelect(options);
     this.validateQueryParams(criteria, options);
+    if (this.criteriaMatchNoRow(criteria)) return [];
     const { entities } = await this.call<{ entities: Pick<Entity, K>[] }>("queryIndex", {
       criteria,
       options,
