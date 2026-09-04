@@ -103,8 +103,17 @@ describe("SqliteVectorStorage similarity search", async () => {
 
   it("emits the similaritySearch event with the results", async () => {
     let seen: readonly { id: string }[] | undefined;
-    storage.on("similaritySearch", (_query, results) => {
-      seen = results as unknown as readonly { id: string }[];
+    // The event belongs to the vector extension of the event surface; the
+    // inherited `on` is typed to the tabular names, so cast at the call site.
+    (
+      storage as unknown as {
+        on: (
+          name: string,
+          fn: (query: unknown, results: readonly { id: string }[]) => void
+        ) => void;
+      }
+    ).on("similaritySearch", (_query, results) => {
+      seen = results;
     });
     await storage.similaritySearch(EAST, { topK: 1 });
     expect(seen?.map((hit) => hit.id)).toEqual(["east"]);
