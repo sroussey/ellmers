@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.8
+
+### Bug Fixes
+
+#### sqlite
+
+- similaritySearch decoded an already-decoded vector (#889)
+
 ## 0.4.7
 
 ### Chores

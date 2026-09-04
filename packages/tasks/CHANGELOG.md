@@ -1,5 +1,11 @@
 # @workglow/tasks
 
+## 0.4.8
+
+### Bug Fixes
+
+- handle Retry-After: 0 and negative values correctly (#888)
+
 ## 0.4.7
 
 ### Chores

@@ -1,5 +1,7 @@
 # @workglow/util
 
+## 0.4.8
+
 ## 0.4.7
 
 ### Chores

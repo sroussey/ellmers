@@ -1,5 +1,26 @@
 # @workglow/test
 
+## 0.4.8
+
+### Features
+
+#### pricing
+
+- refactor model pricing resolution and enhance test coverage
+- enhance model pricing structure and update cost estimation logic
+
+#### tests
+
+- add HFT fetch stall watchdog tests
+
+### Bug Fixes
+
+- handle Retry-After: 0 and negative values correctly (#888)
+
+#### sqlite
+
+- similaritySearch decoded an already-decoded vector (#889)
+
 ## 0.4.7
 
 ### Bug Fixes

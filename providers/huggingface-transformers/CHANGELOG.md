@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.8
+
+### Features
+
+#### pricing
+
+- enhance model pricing structure and update cost estimation logic
+
+#### tests
+
+- add HFT fetch stall watchdog tests
+
 ## 0.4.7
 
 ### Chores

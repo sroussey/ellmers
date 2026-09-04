@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.8
+
+### Features
+
+#### pricing
+
+- refactor model pricing resolution and enhance test coverage
+- enhance model pricing structure and update cost estimation logic
+
 ## 0.4.7
 
 ## 0.4.6
