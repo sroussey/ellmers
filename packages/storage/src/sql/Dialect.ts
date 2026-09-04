@@ -47,10 +47,32 @@ export interface ISqlDialect {
    * is a syntax error in both dialects.
    */
   inPredicate(quotedColumn: string, values: ValueOptionType[], startIndex: number): BuiltPredicate;
+  /**
+   * Render a set-exclusion predicate for an already-quoted column — the
+   * complement of {@link ISqlDialect.inPredicate}, with the same
+   * one-placeholder-per-value vs. one-array-parameter split between dialects.
+   *
+   * An empty list yields an always-TRUE predicate, not an always-false one:
+   * excluding nothing excludes nothing. That is the correct complement of the
+   * empty `IN`, and it is why this cannot share `inPredicate`'s empty case.
+   *
+   * NULL handling is SQL's, deliberately: a NULL column never satisfies a
+   * non-empty `NOT IN`, and a NULL among the values makes the predicate
+   * UNKNOWN for every row. Backends that filter in JS get the same rules from
+   * `matchesNotInCriterion`.
+   */
+  notInPredicate(
+    quotedColumn: string,
+    values: ValueOptionType[],
+    startIndex: number
+  ): BuiltPredicate;
 }
 
 /** Shared always-false predicate for an empty IN list. */
 const NEVER: BuiltPredicate = { sql: "1 = 0", params: [] };
+
+/** Shared always-true predicate for an empty NOT IN list. */
+const ALWAYS: BuiltPredicate = { sql: "1 = 1", params: [] };
 
 export const SqliteDialect: ISqlDialect = {
   name: "sqlite",
@@ -71,6 +93,14 @@ export const SqliteDialect: ISqlDialect = {
     // 3.32, 32766 after) must split the list themselves.
     return { sql: `${quotedColumn} IN (${values.map(() => "?").join(", ")})`, params: values };
   },
+  notInPredicate(
+    quotedColumn: string,
+    values: ValueOptionType[],
+    _startIndex: number
+  ): BuiltPredicate {
+    if (values.length === 0) return ALWAYS;
+    return { sql: `${quotedColumn} NOT IN (${values.map(() => "?").join(", ")})`, params: values };
+  },
 };
 
 export const PostgresDialect: ISqlDialect = {
@@ -88,6 +118,20 @@ export const PostgresDialect: ISqlDialect = {
     // is. The driver infers the array element type from the column.
     return {
       sql: `${quotedColumn} = ANY($${startIndex})`,
+      params: [values as unknown as ValueOptionType],
+    };
+  },
+  notInPredicate(
+    quotedColumn: string,
+    values: ValueOptionType[],
+    startIndex: number
+  ): BuiltPredicate {
+    if (values.length === 0) return ALWAYS;
+    // `<> ALL($n)` is the array-parameter spelling of NOT IN, and carries the
+    // identical three-valued semantics: UNKNOWN — so the row is dropped — when
+    // the column is NULL or any array element is.
+    return {
+      sql: `${quotedColumn} <> ALL($${startIndex})`,
       params: [values as unknown as ValueOptionType],
     };
   },
@@ -112,5 +156,14 @@ export const DuckDbDialect: ISqlDialect = {
     if (values.length === 0) return NEVER;
     const placeholders = values.map((_, i) => `$${startIndex + i}`).join(", ");
     return { sql: `${quotedColumn} IN (${placeholders})`, params: values };
+  },
+  notInPredicate(
+    quotedColumn: string,
+    values: ValueOptionType[],
+    startIndex: number
+  ): BuiltPredicate {
+    if (values.length === 0) return ALWAYS;
+    const placeholders = values.map((_, i) => `$${startIndex + i}`).join(", ");
+    return { sql: `${quotedColumn} NOT IN (${placeholders})`, params: values };
   },
 };

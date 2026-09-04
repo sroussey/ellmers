@@ -15,6 +15,7 @@ import {
   ALLOWED_SEARCH_OPERATORS,
   isSearchCondition,
   isSearchInCondition,
+  isSearchNotInCondition,
   SEARCH_OPERATOR_SET,
 } from "./ITabularStorage";
 import {
@@ -50,6 +51,18 @@ export function validateOrderBy<Entity>(
       );
     }
   }
+}
+
+/**
+ * Whether a criterion claims one of the list operators (`"in"`, `"not-in"`)
+ * without carrying an array. Both are checked in one place so a new list
+ * operator cannot be added to the union and validated for only one of them.
+ */
+function isMalformedListCriterion(criterion: unknown): boolean {
+  if (typeof criterion !== "object" || criterion === null) return false;
+  const operator = (criterion as { operator?: unknown }).operator;
+  if (operator !== "in" && operator !== "not-in") return false;
+  return !isSearchInCondition(criterion) && !isSearchNotInCondition(criterion);
 }
 
 /**
@@ -92,17 +105,15 @@ export function validateQueryParams<Entity>(
             ALLOWED_SEARCH_OPERATORS.join(", ")
         );
       }
-    } else if (
-      typeof criterion === "object" &&
-      criterion !== null &&
-      (criterion as { operator?: unknown }).operator === "in" &&
-      !isSearchInCondition(criterion)
-    ) {
-      // An `in` criterion whose value is not an array passes neither guard,
-      // so it would fall through to `normalizeCriterion` as a literal value
-      // and match nothing. Nobody means that — fail loudly instead.
+    } else if (isMalformedListCriterion(criterion)) {
+      // A list criterion whose value is not an array passes neither guard, so
+      // it would fall through to `normalizeCriterion` as a literal value and
+      // match nothing. Nobody means that — fail loudly instead, and note that
+      // for `not-in` "matches nothing" is the opposite of what was asked for.
+      const operator = (criterion as { operator: string }).operator;
       throw new StorageValidationError(
-        `Criterion for column "${String(column)}" uses operator "in" but its value is not an array`
+        `Criterion for column "${String(column)}" uses operator "${operator}" ` +
+          `but its value is not an array`
       );
     }
   }

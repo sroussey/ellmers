@@ -10,12 +10,16 @@ import {
   DuckDbDialect,
   isSearchCondition,
   isSearchInCondition,
+  isSearchNotInCondition,
+  matchesInCriterion,
+  matchesNotInCriterion,
   normalizeCriterion,
   PostgresDialect,
   SEARCH_OPERATOR_SET,
   SqliteDialect,
   type SearchCondition,
   type SearchInCondition,
+  type SearchNotInCondition,
   type ValueOptionType,
 } from "@workglow/storage";
 import { describe, expect, it } from "vitest";
@@ -265,8 +269,174 @@ describe("PredicateBuilder operator allow-list (L-MAIN-01)", () => {
     });
   });
 
+  describe("not-in-list criteria", () => {
+    const notInCriterion = (values: number[]): SearchNotInCondition<number> => ({
+      value: values,
+      operator: "not-in",
+    });
+
+    it("expands one placeholder per value on SQLite", () => {
+      const result = buildSearchWhere<Row>(
+        SqliteDialect,
+        { value: notInCriterion([1, 2, 3]) },
+        schemaProps,
+        passthroughConvert
+      );
+      expect(result.whereClause).toBe("`value` NOT IN (?, ?, ?)");
+      expect(result.params).toEqual([1, 2, 3]);
+    });
+
+    it("binds the whole list as ONE array parameter on Postgres, via <> ALL", () => {
+      // The mirror of `= ANY($n)`, and for the same reason: an exclusion list
+      // of any length costs one placeholder, so it is not capped at 65535.
+      const result = buildSearchWhere<Row>(
+        PostgresDialect,
+        { value: notInCriterion([1, 2, 3]) },
+        schemaProps,
+        passthroughConvert
+      );
+      expect(result.whereClause).toBe('"value" <> ALL($1)');
+      expect(result.params).toEqual([[1, 2, 3]]);
+    });
+
+    it("expands with $N numbering on DuckDB, whose driver has no array binding", () => {
+      const result = buildSearchWhere<Row>(
+        DuckDbDialect,
+        { value: notInCriterion([1, 2]) },
+        schemaProps,
+        passthroughConvert
+      );
+      expect(result.whereClause).toBe('"value" NOT IN ($1, $2)');
+      expect(result.params).toEqual([1, 2]);
+    });
+
+    it("advances the placeholder index past every value it bound", () => {
+      const pg = buildSearchWhere<Row>(
+        PostgresDialect,
+        { value: notInCriterion([1, 2, 3]), id: "abc" },
+        schemaProps,
+        passthroughConvert
+      );
+      expect(pg.whereClause).toBe('"value" <> ALL($1) AND "id" = $2');
+      expect(pg.params).toEqual([[1, 2, 3], "abc"]);
+
+      const duck = buildSearchWhere<Row>(
+        DuckDbDialect,
+        { value: notInCriterion([1, 2, 3]), id: "abc" },
+        schemaProps,
+        passthroughConvert
+      );
+      expect(duck.whereClause).toBe('"value" NOT IN ($1, $2, $3) AND "id" = $4');
+      expect(duck.params).toEqual([1, 2, 3, "abc"]);
+    });
+
+    it("emits an always-TRUE predicate for an empty list, binding nothing", () => {
+      // The complement of the empty `in` list: excluding nothing excludes
+      // nothing. `1 = 0` here would silently invert the caller's filter.
+      for (const dialect of [SqliteDialect, PostgresDialect, DuckDbDialect]) {
+        const result = buildSearchWhere<Row>(
+          dialect,
+          { value: notInCriterion([]) },
+          schemaProps,
+          passthroughConvert
+        );
+        expect(result.whereClause).toBe("1 = 1");
+        expect(result.params).toEqual([]);
+      }
+    });
+
+    it("does not advance the placeholder index for an empty list", () => {
+      const pg = buildSearchWhere<Row>(
+        PostgresDialect,
+        { value: notInCriterion([]), id: "abc" },
+        schemaProps,
+        passthroughConvert
+      );
+      expect(pg.whereClause).toBe('1 = 1 AND "id" = $1');
+      expect(pg.params).toEqual(["abc"]);
+    });
+
+    it("runs each element through convertValue, like a scalar value", () => {
+      const upper = (_column: string, value: Row[keyof Row]): ValueOptionType =>
+        String(value).toUpperCase();
+      const result = buildSearchWhere<Row>(
+        SqliteDialect,
+        { id: { value: ["a", "b"], operator: "not-in" } as SearchNotInCondition<string> },
+        schemaProps,
+        upper
+      );
+      expect(result.params).toEqual(["A", "B"]);
+    });
+  });
+
+  describe("isSearchNotInCondition", () => {
+    it("accepts a not-in condition with an array value", () => {
+      expect(isSearchNotInCondition({ value: [1, 2], operator: "not-in" })).toBe(true);
+      expect(isSearchNotInCondition({ value: [], operator: "not-in" })).toBe(true);
+    });
+
+    it("rejects a not-in condition whose value is not an array", () => {
+      expect(isSearchNotInCondition({ value: "1,2", operator: "not-in" })).toBe(false);
+      expect(isSearchNotInCondition({ value: 1, operator: "not-in" })).toBe(false);
+    });
+
+    it("keeps `not-in` out of the scalar allow-list and the other two guards", () => {
+      // The same closed-allow-list rule `in` is held to: `not-in` must never
+      // reach the code path that interpolates an operator straight into SQL.
+      expect(SEARCH_OPERATOR_SET.has("not-in" as never)).toBe(false);
+      expect(isSearchCondition({ value: [1], operator: "not-in" })).toBe(false);
+      expect(isSearchInCondition({ value: [1], operator: "not-in" })).toBe(false);
+      expect(isSearchNotInCondition({ value: [1], operator: "in" })).toBe(false);
+    });
+
+    it("rejects a forged operator that only looks like it", () => {
+      expect(isSearchNotInCondition({ value: [1], operator: "not in" })).toBe(false);
+      expect(isSearchNotInCondition({ value: [1], operator: "NOT IN" })).toBe(false);
+      expect(isSearchNotInCondition({ value: [1], operator: "not-in) OR 1=1 --" })).toBe(false);
+    });
+  });
+
+  describe("matchesInCriterion / matchesNotInCriterion", () => {
+    it("agree as complements when neither null nor an empty list is involved", () => {
+      for (const columnValue of [1, 2, 3, "1"]) {
+        expect(matchesNotInCriterion(columnValue, [1, 2])).toBe(
+          !matchesInCriterion(columnValue, [1, 2])
+        );
+      }
+    });
+
+    it("both reject a null or absent column against a non-empty list", () => {
+      // SQL: `NULL IN (…)` and `NULL NOT IN (…)` are both UNKNOWN, so neither
+      // matches. This is the one place the two are NOT complements.
+      for (const columnValue of [null, undefined]) {
+        expect(matchesInCriterion(columnValue, [1, 2])).toBe(false);
+        expect(matchesNotInCriterion(columnValue, [1, 2])).toBe(false);
+      }
+    });
+
+    it("not-in matches nothing when the list itself contains null", () => {
+      // `col NOT IN (1, NULL)` is UNKNOWN for every row SQL has not already
+      // excluded, so no row can satisfy it.
+      expect(matchesNotInCriterion(3, [1, null])).toBe(false);
+      expect(matchesNotInCriterion(1, [1, null])).toBe(false);
+      expect(matchesNotInCriterion(null, [1, null])).toBe(false);
+    });
+
+    it("inverts on the empty list: in matches nothing, not-in matches everything", () => {
+      expect(matchesInCriterion(1, [])).toBe(false);
+      expect(matchesNotInCriterion(1, [])).toBe(true);
+      // Even a null column, since there is no comparison left to be UNKNOWN.
+      expect(matchesNotInCriterion(null, [])).toBe(true);
+    });
+
+    it("is strict about type, like the `=` arm", () => {
+      expect(matchesNotInCriterion("1", [1])).toBe(true);
+      expect(matchesInCriterion("1", [1])).toBe(false);
+    });
+  });
+
   describe("normalizeCriterion", () => {
-    it("resolves all three criterion shapes", () => {
+    it("resolves all four criterion shapes", () => {
       expect(normalizeCriterion(5)).toEqual({ kind: "compare", operator: "=", value: 5 });
       expect(normalizeCriterion({ value: 5, operator: "<" })).toEqual({
         kind: "compare",
@@ -275,6 +445,10 @@ describe("PredicateBuilder operator allow-list (L-MAIN-01)", () => {
       });
       expect(normalizeCriterion({ value: [5, 6], operator: "in" })).toEqual({
         kind: "in",
+        values: [5, 6],
+      });
+      expect(normalizeCriterion({ value: [5, 6], operator: "not-in" })).toEqual({
+        kind: "not-in",
         values: [5, 6],
       });
     });

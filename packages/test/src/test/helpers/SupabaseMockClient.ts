@@ -193,7 +193,106 @@ function mockRenderFilter(f: { column: string; operator: string; value: any }): 
     if (values.length === 0) return "1=0";
     return `"${f.column}" IN (${values.map(mockSqlLiteral).join(", ")})`;
   }
+  if (f.operator === "NOT IN") {
+    const values = (f.value as any[]) ?? [];
+    // The inverse of the empty IN above: excluding nothing excludes nothing.
+    // `SupabaseTabularStorage` renders an empty exclusion as an `.or()`
+    // tautology rather than reaching here, so this is defensive too.
+    if (values.length === 0) return "1=1";
+    return `"${f.column}" NOT IN (${values.map(mockSqlLiteral).join(", ")})`;
+  }
   return `"${f.column}" ${f.operator} ${mockSqlLiteral(f.value)}`;
+}
+
+/**
+ * Parses a PostgREST list literal — `("a","b",3,null)` — back into values.
+ *
+ * The inverse of the encoding `SupabaseTabularStorage` writes for
+ * `.not(col, "in", …)`: strings arrive double-quoted with backslash escapes and
+ * everything else bare, which is how PostgREST spells numbers, booleans and
+ * NULL. A bare token that is none of those stays a string.
+ */
+function parsePostgrestList(literal: string): any[] {
+  const body = literal.trim().replace(/^\(/, "").replace(/\)$/, "");
+  if (body.trim().length === 0) return [];
+  const out: any[] = [];
+  let i = 0;
+  while (i < body.length) {
+    if (body[i] === '"') {
+      i++;
+      let buf = "";
+      while (i < body.length && body[i] !== '"') {
+        if (body[i] === "\\") {
+          i++;
+          buf += body[i] ?? "";
+          i++;
+          continue;
+        }
+        buf += body[i];
+        i++;
+      }
+      i++; // closing quote
+      out.push(buf);
+      while (i < body.length && body[i] !== ",") i++;
+      i++; // comma
+      continue;
+    }
+    let buf = "";
+    while (i < body.length && body[i] !== ",") {
+      buf += body[i];
+      i++;
+    }
+    i++; // comma
+    const token = buf.trim();
+    if (token === "null") out.push(null);
+    else if (token === "true") out.push(true);
+    else if (token === "false") out.push(false);
+    else if (token !== "" && !Number.isNaN(Number(token))) out.push(Number(token));
+    else out.push(token);
+  }
+  return out;
+}
+
+/**
+ * Accumulates a `.not(column, operator, value)` call as a filter.
+ *
+ * Shared by the select, update and delete builders, which each carried a copy
+ * that handled `is null` and silently DROPPED everything else — so an
+ * unsupported negation returned every row instead of failing, which reads as a
+ * broken production filter rather than a gap in the mock. That is why an
+ * unsupported spelling throws here.
+ */
+function mockPushNotFilter(
+  filters: Array<{ column: string; operator: string; value: any }>,
+  column: string,
+  operator: string,
+  value: any
+): void {
+  if (operator === "is" && value === null) {
+    filters.push({ column, operator: "IS NOT", value: "NULL" });
+    return;
+  }
+  if (operator === "in") {
+    filters.push({ column, operator: "NOT IN", value: parsePostgrestList(String(value)) });
+    return;
+  }
+  throw new Error(`Unsupported PostgREST not.${operator} in mock`);
+}
+
+/**
+ * The WHERE body for the accumulated filters, or `undefined` when there are
+ * none. Shared by select, update and delete so an `.or()` group cannot be
+ * honoured on one path and dropped on another — it used to be folded in only
+ * by `executeQuery`, which made an `.or()` on a DELETE silently unfiltered.
+ */
+function mockWhereClause(qb: {
+  _filters: Array<{ column: string; operator: string; value: any }>;
+  _orFilters: string[];
+}): string | undefined {
+  const parts: string[] = [];
+  if (qb._filters.length > 0) parts.push(qb._filters.map(mockRenderFilter).join(" AND "));
+  for (const orFilter of qb._orFilters) parts.push(`(${translatePostgrestFilter(orFilter)})`);
+  return parts.length > 0 ? parts.join(" AND ") : undefined;
 }
 
 export function createSupabaseMockClient(): IClosableSupabaseClient {
@@ -488,10 +587,7 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
               })
               .join(", ");
 
-          const buildWhereClause = (): string =>
-            queryBuilder._filters.length > 0
-              ? queryBuilder._filters.map(mockRenderFilter).join(" AND ")
-              : "1=1";
+          const buildWhereClause = (): string => mockWhereClause(queryBuilder) ?? "1=1";
 
           // Only rows matching every accumulated filter are updated, mirroring
           // PostgREST's `UPDATE ... WHERE <eq/lt/lte/gt/gte AND ...>` semantics.
@@ -514,10 +610,12 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
               queryBuilder._filters.push({ column, operator: "IS", value: null });
               return updateBuilder;
             },
+            or: (filter: string) => {
+              queryBuilder._orFilters.push(filter);
+              return updateBuilder;
+            },
             not: (column: string, operator: string, value: any) => {
-              if (operator === "is" && value === null) {
-                queryBuilder._filters.push({ column, operator: "IS NOT", value: "NULL" });
-              }
+              mockPushNotFilter(queryBuilder._filters, column, operator, value);
               return updateBuilder;
             },
             neq: (column: string, value: any) => {
@@ -617,10 +715,12 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
               queryBuilder._filters.push({ column, operator: ">=", value });
               return deleteBuilder;
             },
+            or: (filter: string) => {
+              queryBuilder._orFilters.push(filter);
+              return deleteBuilder;
+            },
             not: (column: string, operator: string, value: any) => {
-              if (operator === "is" && value === null) {
-                queryBuilder._filters.push({ column, operator: "IS NOT", value: "NULL" });
-              }
+              mockPushNotFilter(queryBuilder._filters, column, operator, value);
               return deleteBuilder;
             },
             then: async (resolve: any, reject: any) => {
@@ -643,9 +743,7 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
           return queryBuilder;
         },
         not: (column: string, operator: string, value: any) => {
-          if (operator === "is" && value === null) {
-            queryBuilder._filters.push({ column, operator: "IS NOT", value: "NULL" });
-          }
+          mockPushNotFilter(queryBuilder._filters, column, operator, value);
           return queryBuilder;
         },
         in: (column: string, values: any[]) => {
@@ -731,8 +829,8 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
         try {
           let query = `DELETE FROM "${queryBuilder._table}"`;
 
-          if (queryBuilder._filters.length > 0) {
-            const whereClause = queryBuilder._filters.map(mockRenderFilter).join(" AND ");
+          const whereClause = mockWhereClause(queryBuilder);
+          if (whereClause !== undefined) {
             query += ` WHERE ${whereClause}`;
           }
 
@@ -780,10 +878,12 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
           queryBuilder._filters.push({ column, operator: ">=", value });
           return deleteBuilder;
         },
+        or: (filter: string) => {
+          queryBuilder._orFilters.push(filter);
+          return deleteBuilder;
+        },
         not: (column: string, operator: string, value: any) => {
-          if (operator === "is" && value === null) {
-            queryBuilder._filters.push({ column, operator: "IS NOT", value: "NULL" });
-          }
+          mockPushNotFilter(queryBuilder._filters, column, operator, value);
           return deleteBuilder;
         },
         then: async (resolve: any, reject: any) => {
@@ -800,16 +900,9 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
         try {
           let query = `SELECT ${queryBuilder._select} FROM "${queryBuilder._table}"`;
 
-          const whereParts: string[] = [];
-          if (queryBuilder._filters.length > 0) {
-            const whereClause = queryBuilder._filters.map(mockRenderFilter).join(" AND ");
-            whereParts.push(whereClause);
-          }
-          for (const orFilter of queryBuilder._orFilters) {
-            whereParts.push(`(${translatePostgrestFilter(orFilter)})`);
-          }
-          if (whereParts.length > 0) {
-            query += ` WHERE ${whereParts.join(" AND ")}`;
+          const whereClause = mockWhereClause(queryBuilder);
+          if (whereClause !== undefined) {
+            query += ` WHERE ${whereClause}`;
           }
 
           if (queryBuilder._order.length > 0) {

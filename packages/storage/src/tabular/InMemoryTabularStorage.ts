@@ -32,7 +32,9 @@ import type {
 } from "./ITabularStorage";
 import {
   matchesEqualityCriterion,
+  matchesInCriterion,
   matchesInequalityCriterion,
+  matchesNotInCriterion,
   normalizeCriterion,
 } from "./ITabularStorage";
 import { StorageError } from "./StorageError";
@@ -61,7 +63,15 @@ function matchesCriteria<Entity>(
     if (normalized.kind === "in") {
       // Strict membership, matching the `=` arm below: no coercion, so a
       // string "1" never matches a numeric 1 on any backend.
-      if (!normalized.values.some((candidate) => columnValue === candidate)) return false;
+      if (!matchesInCriterion(columnValue, normalized.values)) return false;
+      continue;
+    }
+
+    if (normalized.kind === "not-in") {
+      // Not `!matchesInCriterion`: SQL's three-valued logic makes NOT IN
+      // exclude rows the complement would keep. The shared helper is what
+      // keeps this backend agreeing with the SQL ones.
+      if (!matchesNotInCriterion(columnValue, normalized.values)) return false;
       continue;
     }
 

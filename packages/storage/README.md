@@ -823,23 +823,31 @@ The `deleteSearch` method accepts a criteria object that supports multiple colum
 
 ```typescript
 // Type definitions
-type SearchOperator = "=" | "<" | "<=" | ">" | ">=";
+type SearchOperator = "=" | "!=" | "<" | "<=" | ">" | ">=";
 
 interface SearchCondition<T> {
   readonly value: T;
   readonly operator: SearchOperator;
 }
 
-// Set membership takes a list, so it is a separate shape rather than a
+// The set operators take a list, so they are separate shapes rather than a
 // widened `SearchCondition["value"]`.
 interface SearchInCondition<T> {
   readonly value: readonly T[];
   readonly operator: "in";
 }
 
+interface SearchNotInCondition<T> {
+  readonly value: readonly T[];
+  readonly operator: "not-in";
+}
+
 type DeleteSearchCriteria<Entity> = {
   readonly [K in keyof Entity]?:
-    Entity[K] | SearchCondition<Entity[K]> | SearchInCondition<Entity[K]>;
+    | Entity[K]
+    | SearchCondition<Entity[K]>
+    | SearchInCondition<Entity[K]>
+    | SearchNotInCondition<Entity[K]>;
 };
 
 // Usage examples
@@ -880,6 +888,36 @@ placeholder per value and remain subject to their statement parameter cap
 list longer than that yourself. `HuggingFaceTabularStorage` throws
 `StorageUnsupportedError` because its `/filter` endpoint has no IN form, and
 `FsFolderTabularStorage` does not implement `query` at all.
+
+##### Set exclusion (`not-in`)
+
+The complement of `in`, accepted everywhere `in` is:
+
+```typescript
+// Everything except these ids, in one round trip
+const rows = await repo.query({ observation_id: { value: [1, 2, 3], operator: "not-in" } });
+
+// ANDs with the other columns as usual
+await repo.deleteSearch({ tenant: "acme", status: { value: ["published"], operator: "not-in" } });
+```
+
+Three cases follow SQL's three-valued logic rather than JavaScript's `!includes`,
+so the same criterion returns the same rows on Postgres and on the in-memory
+backend:
+
+- **A null (or absent) column never matches a non-empty list.** `NULL NOT IN (1, 2)`
+  is UNKNOWN, so SQL drops the row — the same rule `!=` follows. Add a separate
+  `{ operator: "=", value: null }` pass if you want those rows too.
+- **A `null` anywhere in the list matches nothing at all**, since
+  `col NOT IN (1, NULL)` is UNKNOWN for every row `1` has not already excluded.
+- **An empty list matches everything** — the exact inverse of the empty `in`
+  list. ⚠️ On `deleteSearch` that is a full-table delete, so guard a
+  caller-supplied exclusion list before passing it.
+
+**Backend limits** are the `in` list's, with the same spellings negated:
+`<> ALL($1)` on Postgres (one array parameter), `NOT IN (…)` with expanded
+placeholders on SQLite and DuckDB, `not.in.()` on Supabase.
+`HuggingFaceTabularStorage` throws `StorageUnsupportedError`.
 
 ## Examples
 

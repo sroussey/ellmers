@@ -439,11 +439,15 @@ export class HuggingFaceTabularStorage<
     for (const [k, v] of Object.entries(criteria)) {
       if (v === undefined || v === null) continue;
       const normalized = normalizeCriterion<unknown>(v);
-      // The /filter endpoint takes `col=value` terms only — it has no IN form.
-      // Refusing is the honest answer; falling through would stringify the
-      // condition object into the `where` string and quietly match nothing.
-      if (normalized.kind === "in") {
-        throw new StorageUnsupportedError(`Operator "in" in query`, "HuggingFaceTabularStorage");
+      // The /filter endpoint takes `col=value` terms only — it has no IN form,
+      // nor its negation. Refusing is the honest answer; falling through would
+      // stringify the condition object into the `where` string and quietly
+      // match nothing.
+      if (normalized.kind === "in" || normalized.kind === "not-in") {
+        throw new StorageUnsupportedError(
+          `Operator "${normalized.kind}" in query`,
+          "HuggingFaceTabularStorage"
+        );
       }
       if (normalized.operator !== "=") {
         throw new StorageUnsupportedError(

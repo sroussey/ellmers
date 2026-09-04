@@ -40,7 +40,7 @@ import type {
   TabularSubscribeOptions,
   ValueOptionType,
 } from "./ITabularStorage";
-import { isSearchCondition, isSearchInCondition } from "./ITabularStorage";
+import { isSearchCondition, isSearchInCondition, isSearchNotInCondition } from "./ITabularStorage";
 import type { KeysetPageDeps } from "./keysetPage";
 import {
   applyKeysetFilter,
@@ -545,10 +545,15 @@ export abstract class BaseTabularStorage<
   protected deleteIdentity(criteria: DeleteSearchCriteria<Entity>): Partial<Entity> {
     const identity: Record<string, unknown> = {};
     for (const [column, criterion] of Object.entries(criteria)) {
-      // An `in` list identifies no single value, so it is dropped for the same
-      // reason a comparison condition is — otherwise the raw condition object
-      // would be emitted as if it were the column's value.
-      if (!isSearchCondition(criterion) && !isSearchInCondition(criterion)) {
+      // A list criterion identifies no single value, so it is dropped for the
+      // same reason a comparison condition is — otherwise the raw condition
+      // object would be emitted as if it were the column's value. Both list
+      // guards are required: `not-in` passes neither of the other two.
+      if (
+        !isSearchCondition(criterion) &&
+        !isSearchInCondition(criterion) &&
+        !isSearchNotInCondition(criterion)
+      ) {
         identity[column] = criterion;
       }
     }

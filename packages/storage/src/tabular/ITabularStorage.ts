@@ -116,6 +116,11 @@ export type SearchOperator = "=" | "!=" | "<" | "<=" | ">" | ">=";
  * must update in lockstep so SQL builders cannot accidentally accept a value
  * outside the union (defense in depth at the JSON trust boundary used by
  * HTTP-proxied storage backends).
+ *
+ * The list operators (`"in"`, `"not-in"`) are deliberately absent: they take a
+ * list rather than a scalar and are rendered by dedicated dialect methods, so
+ * neither may reach the code path that interpolates an operator raw into SQL.
+ * See {@link isSearchInCondition} / {@link isSearchNotInCondition}.
  */
 export const ALLOWED_SEARCH_OPERATORS = ["=", "!=", "<", "<=", ">", ">="] as const;
 
@@ -142,9 +147,38 @@ export interface SearchInCondition<T> {
 }
 
 /**
+ * Set-exclusion criterion — `column NOT IN (…)`, the complement of
+ * {@link SearchInCondition}. Separate for the same reason: it takes a list,
+ * not a scalar.
+ *
+ * Three behaviours follow SQL's three-valued logic rather than JavaScript's,
+ * for the reason spelled out on {@link matchesInequalityCriterion} — the same
+ * criterion must return the same rows on Postgres and on the in-memory
+ * backend:
+ *
+ * - **A null (or absent) column never matches a non-empty list.** `NULL NOT IN
+ *   (1, 2)` is UNKNOWN, so SQL excludes the row. Add an explicit
+ *   `{ operator: "=", value: null }` on another pass if you want those rows.
+ * - **A `null` anywhere in the list matches nothing at all.** `col NOT IN (1,
+ *   NULL)` is UNKNOWN for every row that isn't already excluded by `1`, so no
+ *   row can satisfy it. This is SQL's most notorious footgun; it is reproduced
+ *   rather than papered over, because a backend that silently dropped the null
+ *   would disagree with the database it is standing in for.
+ * - **An empty `value` matches everything**, being a vacuously true conjunction
+ *   of zero comparisons — the exact complement of the empty `in` list, which
+ *   matches nothing. Beware on `deleteSearch`: an empty exclusion list is a
+ *   full-table delete, so guard it if the list is caller-supplied.
+ */
+export interface SearchNotInCondition<T> {
+  readonly value: readonly T[];
+  readonly operator: "not-in";
+}
+
+/**
  * Criteria for query/deleteSearch operations supporting multiple columns.
  * Each column can have a direct value (equality), a {@link SearchCondition}
- * with a comparison operator, or a {@link SearchInCondition} list.
+ * with a comparison operator, or a {@link SearchInCondition} /
+ * {@link SearchNotInCondition} list.
  *
  * @example
  * // Equality match
@@ -156,6 +190,9 @@ export interface SearchInCondition<T> {
  * // Set membership — one round trip instead of one query per id
  * { observation_id: { value: [1, 2, 3], operator: "in" } }
  *
+ * // Set exclusion — everything but these ids
+ * { observation_id: { value: [1, 2, 3], operator: "not-in" } }
+ *
  * // Multiple columns
  * { category: "electronics", createdAt: { value: date, operator: "<" } }
  */
@@ -163,7 +200,8 @@ export type DeleteSearchCriteria<Entity> = {
   readonly [K in keyof Entity]?:
     | Entity[K]
     | SearchCondition<Entity[K]>
-    | SearchInCondition<Entity[K]>;
+    | SearchInCondition<Entity[K]>
+    | SearchNotInCondition<Entity[K]>;
 };
 
 export type SearchCriteria<Entity> = DeleteSearchCriteria<Entity>;
@@ -175,7 +213,8 @@ export type SearchCriteria<Entity> = DeleteSearchCriteria<Entity>;
  */
 export type NormalizedCriterion<T> =
   | { readonly kind: "compare"; readonly operator: SearchOperator; readonly value: T }
-  | { readonly kind: "in"; readonly values: readonly T[] };
+  | { readonly kind: "in"; readonly values: readonly T[] }
+  | { readonly kind: "not-in"; readonly values: readonly T[] };
 
 /**
  * Whether a stored column value equals a criterion value, for the `=` operator.
@@ -219,17 +258,57 @@ export function matchesInequalityCriterion(columnValue: unknown, criterionValue:
 }
 
 /**
- * Resolves a raw criterion — bare value, {@link SearchCondition}, or
- * {@link SearchInCondition} — into a {@link NormalizedCriterion}.
+ * Whether a stored column value satisfies an `in` criterion.
+ *
+ * Strict membership, matching {@link matchesEqualityCriterion}'s `===`: no
+ * coercion, so a string `"1"` never matches a numeric `1` on any backend.
+ *
+ * One case diverges from SQL, and predates this helper being extracted: a null
+ * column against a list containing `null` matches here, where SQL's
+ * `NULL IN (NULL)` is UNKNOWN and does not. The SQL backends bind the list
+ * straight to `IN` / `= ANY`, so they follow SQL and this reading disagrees
+ * with them. {@link matchesNotInCriterion} has no such gap.
+ */
+export function matchesInCriterion(columnValue: unknown, values: readonly unknown[]): boolean {
+  return values.some((candidate) => columnValue === candidate);
+}
+
+/**
+ * Whether a stored column value satisfies a `not-in` criterion.
+ *
+ * The complement of {@link matchesInCriterion} only for rows where SQL's
+ * three-valued logic yields a definite answer, which is the whole reason this
+ * is a shared helper rather than a `!` in each backend. See
+ * {@link SearchNotInCondition} for why each rule is what it is:
+ *
+ * - Empty list → true (a vacuous conjunction of zero `<>` tests).
+ * - Null or absent column, non-empty list → false (UNKNOWN, so SQL drops it).
+ * - `null` present in the list → false for every row (UNKNOWN again).
+ * - Otherwise → true when the value equals no listed value.
+ */
+export function matchesNotInCriterion(columnValue: unknown, values: readonly unknown[]): boolean {
+  if (values.length === 0) return true;
+  if (columnValue === null || columnValue === undefined) return false;
+  if (values.some((candidate) => candidate === null || candidate === undefined)) return false;
+  return !values.some((candidate) => columnValue === candidate);
+}
+
+/**
+ * Resolves a raw criterion — bare value, {@link SearchCondition},
+ * {@link SearchInCondition}, or {@link SearchNotInCondition} — into a
+ * {@link NormalizedCriterion}.
  *
  * Every backend should route through this rather than testing the guards
- * itself: a backend that only checks `isSearchCondition` treats an `in`
+ * itself: a backend that only checks `isSearchCondition` treats a list
  * criterion as a literal `{value, operator}` object and silently matches
  * nothing, which is the worst possible failure for a filter.
  */
 export function normalizeCriterion<T>(criterion: unknown): NormalizedCriterion<T> {
   if (isSearchInCondition<T>(criterion)) {
     return { kind: "in", values: criterion.value };
+  }
+  if (isSearchNotInCondition<T>(criterion)) {
+    return { kind: "not-in", values: criterion.value };
   }
   if (isSearchCondition<T>(criterion)) {
     return { kind: "compare", operator: criterion.operator, value: criterion.value };
@@ -345,6 +424,28 @@ export function isSearchInCondition<T>(value: unknown): value is SearchInConditi
   if (!("value" in value) || !("operator" in value)) return false;
   if ((value as SearchInCondition<T>).operator !== "in") return false;
   return Array.isArray((value as SearchInCondition<T>).value);
+}
+
+/**
+ * Type guard for {@link SearchNotInCondition}.
+ *
+ * Held to the same rule as {@link isSearchInCondition}, and for the same
+ * threat: `"not-in"` stays out of {@link ALLOWED_SEARCH_OPERATORS} so a forged
+ * criterion crossing the HTTP JSON boundary cannot smuggle it into the raw
+ * operator interpolation in `buildSearchWhere`, and the array shape is checked
+ * here so a forged `{operator: "not-in", value: "…"}` cannot reach a dialect
+ * method that assumes a list.
+ *
+ * A criterion that fails the array check is NOT silently downgraded to a
+ * literal — {@link validateQueryParams} rejects it, because a `not-in` quietly
+ * read as an equality against a condition object matches nothing, which is the
+ * wrong answer in the dangerous direction for an exclusion filter.
+ */
+export function isSearchNotInCondition<T>(value: unknown): value is SearchNotInCondition<T> {
+  if (typeof value !== "object" || value === null) return false;
+  if (!("value" in value) || !("operator" in value)) return false;
+  if ((value as SearchNotInCondition<T>).operator !== "not-in") return false;
+  return Array.isArray((value as SearchNotInCondition<T>).value);
 }
 
 /**

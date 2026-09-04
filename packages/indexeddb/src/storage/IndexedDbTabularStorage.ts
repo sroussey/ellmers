@@ -24,8 +24,11 @@ import {
   HybridSubscriptionManager,
   isSearchCondition,
   isSearchInCondition,
+  isSearchNotInCondition,
   matchesEqualityCriterion,
+  matchesInCriterion,
   matchesInequalityCriterion,
+  matchesNotInCriterion,
   normalizeCriterion,
   pickCoveringIndex,
   safeEmit,
@@ -886,7 +889,14 @@ export class IndexedDbTabularStorage<
       const normalized = normalizeCriterion<Entity[keyof Entity]>(criterion);
       if (normalized.kind === "in") {
         // Strict membership, matching the `=` arm: no coercion.
-        if (!normalized.values.some((candidate) => recordValue === candidate)) return false;
+        if (!matchesInCriterion(recordValue, normalized.values)) return false;
+        continue;
+      }
+      if (normalized.kind === "not-in") {
+        // Carries its own null rules (a null column is excluded, a null in the
+        // list excludes everything), so it must precede the blanket null check
+        // below rather than being folded into it.
+        if (!matchesNotInCriterion(recordValue, normalized.values)) return false;
         continue;
       }
       const { operator, value } = normalized;
@@ -1067,9 +1077,12 @@ export class IndexedDbTabularStorage<
   ): Entity[keyof Entity] | undefined {
     const criterion = criteria[column];
     if (criterion === undefined) return undefined;
-    // An `in` list is not a single key, so it can't drive an IDB index lookup;
-    // returning undefined sends it to the in-cursor filter instead.
-    if (isSearchInCondition(criterion)) return undefined;
+    // A list criterion is not a single key, so it can't drive an IDB index
+    // lookup; returning undefined sends it to the in-cursor filter instead.
+    // Both list guards must be tested: neither passes `isSearchCondition`, so
+    // an unguarded `not-in` would fall through to the literal-value return at
+    // the bottom and be used as an equality key — silently matching nothing.
+    if (isSearchInCondition(criterion) || isSearchNotInCondition(criterion)) return undefined;
     if (isSearchCondition(criterion)) {
       if (criterion.operator !== "=") return undefined;
       // `null` is not a valid IDB key, so `IDBKeyRange.only`/`bound` would throw
@@ -1324,9 +1337,12 @@ export class IndexedDbTabularStorage<
       for (const col of picked.keyPath) {
         const c = (criteria as Record<string, unknown>)[col];
         if (c === undefined && !(col in (criteria as Record<string, unknown>))) break;
-        // An `in` list matches several keys, so it cannot extend a single
-        // equality prefix — stop here and let the in-cursor filter handle it.
-        if (isSearchInCondition(c)) break;
+        // A list criterion matches several keys (or excludes some), so it
+        // cannot extend a single equality prefix — stop here and let the
+        // in-cursor filter handle it. Same reason both guards are needed here
+        // as in `getEqualityCriterionValue`: a `not-in` that reached the
+        // `else` below would be pushed onto the prefix as a raw key.
+        if (isSearchInCondition(c) || isSearchNotInCondition(c)) break;
         if (isSearchCondition(c)) {
           if (c.operator !== "=") break;
           // Defense in depth: the guard above already rejected a null equality
@@ -1405,8 +1421,10 @@ export class IndexedDbTabularStorage<
           const normalized = normalizeCriterion<unknown>(crit);
           const ok =
             normalized.kind === "in"
-              ? normalized.values.some((candidate) => valFromKey === candidate)
-              : compareWithOperator(valFromKey, normalized.operator, normalized.value);
+              ? matchesInCriterion(valFromKey, normalized.values)
+              : normalized.kind === "not-in"
+                ? matchesNotInCriterion(valFromKey, normalized.values)
+                : compareWithOperator(valFromKey, normalized.operator, normalized.value);
           if (!ok) {
             matches = false;
             break;

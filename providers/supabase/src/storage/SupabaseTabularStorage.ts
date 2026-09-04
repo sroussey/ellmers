@@ -723,6 +723,10 @@ export class SupabaseTabularStorage<
    * PostgREST has no always-false filter, and an empty `in.()` is not worth
    * relying on (least of all on a delete path), so every criteria-taking
    * method short-circuits on this instead of issuing a request.
+   *
+   * An empty `not-in` list is deliberately NOT a short circuit: excluding
+   * nothing excludes nothing, so it matches every row. {@link applyNotInFilter}
+   * renders it as a tautology instead.
    */
   private matchesNoRow(criteria: SearchCriteria<Entity> | undefined): boolean {
     if (!criteria) return false;
@@ -731,6 +735,45 @@ export class SupabaseTabularStorage<
       if (normalized.kind === "in" && normalized.values.length === 0) return true;
     }
     return false;
+  }
+
+  /**
+   * Renders one value as a PostgREST list element.
+   *
+   * Only numbers and booleans go in bare; `null` (and `undefined`, which the
+   * matchers treat alike) becomes PostgREST's bare `null`. Everything else is
+   * double-quoted with `\` and `"` escaped — always, not only when it holds a
+   * delimiter, because a value carrying a quote would otherwise terminate the
+   * list early and change which rows the filter names.
+   */
+  private static postgrestListElement(value: unknown): string {
+    if (value === null || value === undefined) return "null";
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
+    return `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  }
+
+  /**
+   * Applies a `not-in` criterion to a filter builder.
+   *
+   * supabase-js has `.in()` but no `.notIn()`, so the negation goes through
+   * `.not(column, "in", "(…)")` with the list literal built here — which is
+   * also why the elements are escaped here rather than by the client.
+   *
+   * An empty list means "exclude nothing", i.e. match every row. Dropping the
+   * filter entirely would express that for `query`, but it would leave
+   * `deleteSearch` issuing an unqualified DELETE when the empty exclusion is
+   * the only criterion — a request shape PostgREST deployments are commonly
+   * configured to refuse, and one no reader can tell apart from a filter that
+   * went missing. `col IS NULL OR col IS NOT NULL` is true for every row of any
+   * column, so it keeps the request well-formed and the intent legible.
+   */
+  private applyNotInFilter<Q>(query: Q, column: string, values: readonly unknown[]): Q {
+    const q = query as any;
+    if (values.length === 0) {
+      return q.or(`${column}.is.null,${column}.not.is.null`) as Q;
+    }
+    const list = values.map(SupabaseTabularStorage.postgrestListElement).join(",");
+    return q.not(column, "in", `(${list})`) as Q;
   }
 
   /**
@@ -746,6 +789,11 @@ export class SupabaseTabularStorage<
         // Callers guard an empty list with `matchesNoRow` before reaching
         // here, so PostgREST never has to render `in.()`.
         q = q.in(String(column), normalized.values as unknown[]);
+        continue;
+      }
+
+      if (normalized.kind === "not-in") {
+        q = this.applyNotInFilter(q, String(column), normalized.values);
         continue;
       }
 
@@ -832,6 +880,11 @@ export class SupabaseTabularStorage<
 
       if (normalized.kind === "in") {
         query = query.in(String(column), normalized.values as unknown[]);
+        continue;
+      }
+
+      if (normalized.kind === "not-in") {
+        query = this.applyNotInFilter(query, String(column), normalized.values);
         continue;
       }
 

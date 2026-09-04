@@ -33,7 +33,8 @@ export type TabularStorageContractAssertion =
   | "withTransactionRollback"
   | "withConnectionTransaction"
   | "countMatchesQuery"
-  | "inListCriterion";
+  | "inListCriterion"
+  | "notInListCriterion";
 
 interface TabularStorageContractBaseOpts {
   readonly name: string;
