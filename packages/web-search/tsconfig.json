@@ -9,22 +9,16 @@
   "include": ["src/**/*"],
   "references": [
     {
-      "path": "../../packages/util"
+      "path": "../util"
     },
     {
-      "path": "../../packages/task-graph"
+      "path": "../task-graph"
     },
     {
-      "path": "../../packages/storage"
+      "path": "../job-queue"
     },
     {
-      "path": "../../packages/job-queue"
-    },
-    {
-      "path": "../../packages/ai"
-    },
-    {
-      "path": "../../packages/web-search"
+      "path": "../tasks"
     }
   ],
   "exclude": ["dist", "node_modules", "src/**/__tests__/**", "src/**/*.test.ts"]

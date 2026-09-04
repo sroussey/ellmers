@@ -1,0 +1,59 @@
+{
+  "name": "@workglow/web-search",
+  "type": "module",
+  "version": "0.3.48",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/workglow-dev/libs.git",
+    "directory": "packages/web-search"
+  },
+  "bugs": {
+    "url": "https://github.com/workglow-dev/libs/issues"
+  },
+  "description": "Web-search task for Workglow with pluggable providers (Brave, Tavily, SearXNG; grounded providers ship in vendor packages).",
+  "homepage": "https://workglow.dev",
+  "scripts": {
+    "watch": "concurrently -c 'auto' 'bun:watch-*'",
+    "watch-js": "bun run watch-browser && bun run watch-node",
+    "watch-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
+    "watch-node": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
+    "watch-types": "tsc --watch --preserveWatchOutput",
+    "build-package": "bun run build-js && bun run build-types",
+    "build-js": "bun run build-browser && bun run build-node",
+    "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
+    "build-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
+    "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
+    "build-types": "rm -f tsconfig.tsbuildinfo && tsc",
+    "test": "vitest run --config ../../vitest.config.ts --project web-search"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/node.d.ts",
+      "browser": {
+        "types": "./dist/browser.d.ts",
+        "import": "./dist/browser.js"
+      },
+      "import": "./dist/node.js"
+    }
+  },
+  "peerDependencies": {
+    "@workglow/task-graph": "workspace:*",
+    "@workglow/util": "workspace:*",
+    "@workglow/tasks": "workspace:*",
+    "@workglow/job-queue": "workspace:*"
+  },
+  "devDependencies": {
+    "@workglow/task-graph": "workspace:*",
+    "@workglow/util": "workspace:*",
+    "@workglow/tasks": "workspace:*",
+    "@workglow/job-queue": "workspace:*"
+  },
+  "files": [
+    "dist",
+    "src/**/*.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
