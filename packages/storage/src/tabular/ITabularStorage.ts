@@ -302,8 +302,16 @@ export function matchesInCriterion(columnValue: unknown, values: readonly unknow
 export function matchesNotInCriterion(columnValue: unknown, values: readonly unknown[]): boolean {
   if (values.length === 0) return true;
   if (columnValue === null || columnValue === undefined) return false;
-  if (values.some((candidate) => candidate === null || candidate === undefined)) return false;
-  return !values.some((candidate) => columnValue === candidate);
+  // One pass, not two `some` scans: this runs per row on the in-memory and
+  // IndexedDB filters, so the list is walked once. It cannot stop at the first
+  // match either — a `null` later in the list makes the whole predicate
+  // UNKNOWN and outranks a match already found.
+  let excluded = false;
+  for (const candidate of values) {
+    if (candidate === null || candidate === undefined) return false;
+    if (columnValue === candidate) excluded = true;
+  }
+  return !excluded;
 }
 
 /**

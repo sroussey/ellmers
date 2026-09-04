@@ -189,5 +189,39 @@ export function notInListCriterionBlock(opts: TabularStorageContractOpts): void 
       },
       opts.timeout
     );
+
+    // The SQL backends hand `fn` a Proxy that routes `tx.<method>` to the
+    // private `_<method>Internal`, so a guard placed only on the public
+    // `deleteSearch` is skipped by every call made through `tx`.
+    describe.skipIf(!opts.capabilities.supportsTransactions)("through a transaction handle", () => {
+      itImpl(
+        "refuses an empty exclusion there too",
+        async () => {
+          // Unguarded this renders `WHERE 1 = 1` and empties the table.
+          await expect(
+            storage.withTransaction(async (tx) => {
+              await tx.deleteSearch({ option: { value: [], operator: "not-in" } });
+            })
+          ).rejects.toThrow(/delete the whole table/);
+          const left = (await storage.getAll()) ?? [];
+          expect(names(left)).toEqual(["a", "b", "c", "d"]);
+        },
+        opts.timeout
+      );
+
+      itImpl(
+        "keeps empty criteria a no-op there too",
+        async () => {
+          // The other half of the same bypass: unguarded this builds
+          // `DELETE FROM t WHERE ` and fails with a SQL syntax error.
+          await storage.withTransaction(async (tx) => {
+            await tx.deleteSearch({});
+          });
+          const left = (await storage.getAll()) ?? [];
+          expect(names(left)).toEqual(["a", "b", "c", "d"]);
+        },
+        opts.timeout
+      );
+    });
   });
 }

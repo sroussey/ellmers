@@ -1222,6 +1222,14 @@ export class DuckDbTabularStorage<
   }
 
   private async _deleteSearchInternal(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
+    // Repeated rather than redundant: {@link createTxView}'s Proxy routes
+    // `tx.deleteSearch` straight here by the `_*Internal` naming convention, so
+    // a guard living only on the public method is skipped by every call made
+    // through a transaction handle. Unguarded, `tx.deleteSearch({})` builds
+    // `DELETE FROM "t" WHERE ` (a syntax error) and criteria that are nothing
+    // but empty `not-in` lists build `WHERE 1 = 1`, emptying the table instead
+    // of raising StorageUnfilteredDeleteError.
+    if (!this.shouldRunDeleteSearch(criteria)) return;
     const db = await this.getDb();
     const { whereClause, params } = this.buildDeleteSearchWhere(criteria);
     await db.query(`DELETE FROM "${this.table}" WHERE ${whereClause}`, params);

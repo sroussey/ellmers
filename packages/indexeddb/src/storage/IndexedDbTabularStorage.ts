@@ -1275,12 +1275,14 @@ export class IndexedDbTabularStorage<
    * Throws {@link CoveringIndexMissingError} when no registered index can serve
    * the request (i.e. the index does not cover all select + orderBy columns).
    *
-   * A `null` equality criterion on a column of the chosen index is rejected with
-   * {@link StorageUnsupportedError}. IndexedDB omits a record from an index when
-   * its indexed value is null, so those rows exist in no index and a projection
-   * reading values out of `cursor.key` can never produce them — the request
-   * would return silently-empty results rather than the matching rows. Use
-   * {@link query}, which reads whole records and filters them in the cursor.
+   * A criterion on a column of the chosen index that must match null-valued
+   * rows is rejected with {@link StorageUnsupportedError} — a `null` equality,
+   * or an empty `not-in` list, which excludes nothing and so matches every row.
+   * IndexedDB omits a record from an index when its indexed value is null, so
+   * those rows exist in no index and a projection reading values out of
+   * `cursor.key` can never produce them — the request would return
+   * silently-short results rather than the matching rows. Use {@link query},
+   * which reads whole records and filters them in the cursor.
    */
   override async queryIndex<K extends keyof Entity & string>(
     criteria: SearchCriteria<Entity>,
@@ -1308,6 +1310,18 @@ export class IndexedDbTabularStorage<
 
     for (const col of picked.keyPath) {
       const criterion = (criteria as Record<string, unknown>)[col];
+      // An empty exclusion list matches every row, nulls included — the only
+      // criterion besides a null equality that a null-valued column can
+      // satisfy. Rejected for the same reason: those records are in no index,
+      // so an index scan returns a silently short result instead of them.
+      if (isSearchNotInCondition(criterion) && criterion.value.length === 0) {
+        throw new StorageUnsupportedError(
+          `An empty "not-in" criterion on indexed column "${col}" (it matches every ` +
+            `row including null-valued ones, but IndexedDB omits those from an index, ` +
+            `so an index scan can never reach them — use query() instead)`,
+          "IndexedDbTabularStorage"
+        );
+      }
       const isNullEquality = isSearchCondition(criterion)
         ? criterion.operator === "=" && criterion.value === null
         : criterion === null;

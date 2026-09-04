@@ -924,7 +924,10 @@ backend:
 
 **Backend limits** are the `in` list's, with the same spellings negated:
 `<> ALL($1)` on Postgres (one array parameter), `NOT IN (…)` with expanded
-placeholders on SQLite and DuckDB, `not.in.()` on Supabase.
+placeholders on SQLite and DuckDB, `not.in.(…)` on Supabase — where neither
+degenerate case is left to PostgREST to decide: an empty list goes out as an
+always-true `.or()` group instead of an exclusion filter, and a list holding
+`null` is answered as "no rows" with no request at all.
 `HuggingFaceTabularStorage` throws `StorageUnsupportedError`.
 
 ## Examples

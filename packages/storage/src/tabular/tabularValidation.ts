@@ -147,14 +147,16 @@ export function shouldRunDeleteSearch<Entity>(criteria: DeleteSearchCriteria<Ent
   const columns = Object.keys(criteria) as Array<keyof Entity>;
   if (columns.length === 0) return false;
 
-  const matchAll = columns.filter((column) => {
+  const excludesNothing = (column: keyof Entity): boolean => {
     const normalized = normalizeCriterion<Entity[keyof Entity]>(criteria[column]);
     return normalized.kind === "not-in" && normalized.values.length === 0;
-  });
-  if (matchAll.length === columns.length) {
-    throw new StorageUnfilteredDeleteError(matchAll.map(String));
-  }
-  return true;
+  };
+  // `every` stops at the first column that narrows anything, so the common
+  // case normalizes one criterion rather than all of them and allocates no
+  // intermediate array. Reaching the throw means every column matched, which
+  // is why they can all be named.
+  if (!columns.every(excludesNothing)) return true;
+  throw new StorageUnfilteredDeleteError(columns.map(String));
 }
 
 /** Validates the limit/offset/orderBy of a `getAll` options bag. */
