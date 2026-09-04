@@ -274,11 +274,7 @@
         "@workglow/job-queue": "workspace:*",
         "@workglow/storage": "workspace:*",
         "@workglow/util": "workspace:*",
-        "vitest": "catalog:",
       },
-      "optionalPeers": [
-        "vitest",
-      ],
     },
     "packages/tasks": {
       "name": "@workglow/tasks",

@@ -57,8 +57,7 @@
   "peerDependencies": {
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
-    "@workglow/util": "workspace:*",
-    "vitest": "catalog:"
+    "@workglow/util": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@workglow/job-queue": {
@@ -69,9 +68,6 @@
     },
     "@workglow/util": {
       "optional": false
-    },
-    "vitest": {
-      "optional": true
     }
   },
   "devDependencies": {
