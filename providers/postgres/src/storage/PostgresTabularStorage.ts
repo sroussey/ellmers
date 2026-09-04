@@ -1681,14 +1681,14 @@ export class PostgresTabularStorage<
    * @param criteria - Object with column names as keys and values or SearchConditions
    */
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
+    // Ahead of the write lock: a refused delete has no business queueing
+    // behind other writers, and this is the same first line of
+    // `deleteSearch` every other backend opens with.
+    if (!this.shouldRunDeleteSearch(criteria)) return;
     return this.guardedWrite(() => this._deleteSearchInternal(criteria));
   }
 
   private async _deleteSearchInternal(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
-    const criteriaKeys = Object.keys(criteria) as Array<keyof Entity>;
-    if (criteriaKeys.length === 0) {
-      return;
-    }
     return this.runDeleteSearchOnHandle(criteria);
   }
 

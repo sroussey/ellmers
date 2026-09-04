@@ -939,10 +939,7 @@ export class IndexedDbTabularStorage<
   }
 
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
-    const criteriaKeys = Object.keys(criteria) as Array<keyof Entity>;
-    if (criteriaKeys.length === 0) {
-      return;
-    }
+    if (!this.shouldRunDeleteSearch(criteria)) return;
 
     const db = await this.getDb();
 

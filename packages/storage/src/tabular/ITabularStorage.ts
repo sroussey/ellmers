@@ -140,6 +140,11 @@ export interface SearchCondition<T> {
  *
  * An empty `value` matches nothing (`IN ()` is a syntax error in SQL, so
  * backends emit an always-false predicate instead).
+ *
+ * A null or absent column never matches, and listing `null` does not change
+ * that: SQL reads `NULL IN (…)` and `x IN (NULL)` alike as UNKNOWN. Ask for
+ * null rows with `{ operator: "=", value: null }`, which the predicate builder
+ * rewrites to `IS NULL`.
  */
 export interface SearchInCondition<T> {
   readonly value: readonly T[];
@@ -166,8 +171,10 @@ export interface SearchInCondition<T> {
  *   would disagree with the database it is standing in for.
  * - **An empty `value` matches everything**, being a vacuously true conjunction
  *   of zero comparisons — the exact complement of the empty `in` list, which
- *   matches nothing. Beware on `deleteSearch`: an empty exclusion list is a
- *   full-table delete, so guard it if the list is caller-supplied.
+ *   matches nothing. That is the right answer for `query` and `count`; on
+ *   `deleteSearch` it would be a full-table delete, so criteria that reduce to
+ *   nothing but empty exclusions are refused there with a
+ *   {@link StorageUnfilteredDeleteError}. Use `deleteAll()` to mean it.
  */
 export interface SearchNotInCondition<T> {
   readonly value: readonly T[];
@@ -263,23 +270,29 @@ export function matchesInequalityCriterion(columnValue: unknown, criterionValue:
  * Strict membership, matching {@link matchesEqualityCriterion}'s `===`: no
  * coercion, so a string `"1"` never matches a numeric `1` on any backend.
  *
- * One case diverges from SQL, and predates this helper being extracted: a null
- * column against a list containing `null` matches here, where SQL's
- * `NULL IN (NULL)` is UNKNOWN and does not. The SQL backends bind the list
- * straight to `IN` / `= ANY`, so they follow SQL and this reading disagrees
- * with them. {@link matchesNotInCriterion} has no such gap.
+ * A null or absent column never matches, whatever the list holds — including a
+ * list containing `null`. SQL reads `NULL IN (…)` as UNKNOWN and drops the row,
+ * and the SQL backends bind the list straight to `IN` / `= ANY`, so a JS-native
+ * `null === null` here would have made the same criterion return different rows
+ * on Postgres and in memory. This is the one rule `=` does NOT share: a `null`
+ * *criterion* under {@link matchesEqualityCriterion} deliberately does match a
+ * null column, because SQL spells that `IS NULL` and the predicate builder
+ * rewrites it. A list has no such rewrite — `IN (NULL)` stays UNKNOWN — so
+ * `{ operator: "=", value: null }` remains the only way to ask for null rows.
  */
 export function matchesInCriterion(columnValue: unknown, values: readonly unknown[]): boolean {
+  if (columnValue === null || columnValue === undefined) return false;
   return values.some((candidate) => columnValue === candidate);
 }
 
 /**
  * Whether a stored column value satisfies a `not-in` criterion.
  *
- * The complement of {@link matchesInCriterion} only for rows where SQL's
- * three-valued logic yields a definite answer, which is the whole reason this
- * is a shared helper rather than a `!` in each backend. See
- * {@link SearchNotInCondition} for why each rule is what it is:
+ * NOT the negation of {@link matchesInCriterion}: SQL's three-valued logic
+ * drops a row from both when the comparison is UNKNOWN, so a null column fails
+ * `in` and `not-in` alike. That is the whole reason this is a shared helper
+ * rather than a `!` in each backend. See {@link SearchNotInCondition} for why
+ * each rule is what it is:
  *
  * - Empty list → true (a vacuous conjunction of zero `<>` tests).
  * - Null or absent column, non-empty list → false (UNKNOWN, so SQL drops it).

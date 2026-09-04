@@ -414,6 +414,19 @@ describe("PredicateBuilder operator allow-list (L-MAIN-01)", () => {
       }
     });
 
+    it("a null column stays unmatched even by a list containing null", () => {
+      // `x IN (NULL)` is UNKNOWN too, so listing null rescues nothing. The JS
+      // side used to answer this with `null === null` and return rows every
+      // SQL backend drops.
+      for (const columnValue of [null, undefined]) {
+        expect(matchesInCriterion(columnValue, [null])).toBe(false);
+        expect(matchesInCriterion(columnValue, [undefined])).toBe(false);
+        expect(matchesInCriterion(columnValue, [1, null])).toBe(false);
+      }
+      // And an empty `in` list still matches nothing, null column or not.
+      expect(matchesInCriterion(null, [])).toBe(false);
+    });
+
     it("not-in matches nothing when the list itself contains null", () => {
       // `col NOT IN (1, NULL)` is UNKNOWN for every row SQL has not already
       // excluded, so no row can satisfy it.

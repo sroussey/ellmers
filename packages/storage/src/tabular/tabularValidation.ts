@@ -6,6 +6,7 @@
 
 import type {
   CoveringIndexQueryOptions,
+  DeleteSearchCriteria,
   OrderBy,
   PageRequest,
   QueryOptions,
@@ -16,12 +17,14 @@ import {
   isSearchCondition,
   isSearchInCondition,
   isSearchNotInCondition,
+  normalizeCriterion,
   SEARCH_OPERATOR_SET,
 } from "./ITabularStorage";
 import {
   StorageEmptyCriteriaError,
   StorageInvalidColumnError,
   StorageInvalidLimitError,
+  StorageUnfilteredDeleteError,
   StorageValidationError,
 } from "./StorageError";
 
@@ -119,6 +122,39 @@ export function validateQueryParams<Entity>(
   }
 
   validateOrderByFn(options?.orderBy);
+}
+
+/**
+ * Whether a `deleteSearch` should run at all, throwing when its criteria would
+ * take the whole table with them.
+ *
+ * Every backend opens `deleteSearch` with this so the three answers cannot
+ * drift apart between them:
+ *
+ * - **No criteria → `false`**, the long-standing silent no-op. `deleteSearch({})`
+ *   has never been a way to spell `deleteAll()`, and an empty WHERE is the one
+ *   thing it must not become.
+ * - **Criteria that all match every row → throw.** Today that is a set made up
+ *   only of empty `not-in` lists. Excluding nothing is a faithful match-all —
+ *   the SQL backends render it `1 = 1`, and for `query` or `count` it is the
+ *   right answer — but on a delete it reads exactly like a filter that went
+ *   missing, and exclusion lists are usually caller-supplied. A mix is fine:
+ *   `{ tenant: "acme", excluded: { operator: "not-in", value: [] } }` still
+ *   names acme's rows, so it runs.
+ * - **Anything else → `true`.**
+ */
+export function shouldRunDeleteSearch<Entity>(criteria: DeleteSearchCriteria<Entity>): boolean {
+  const columns = Object.keys(criteria) as Array<keyof Entity>;
+  if (columns.length === 0) return false;
+
+  const matchAll = columns.filter((column) => {
+    const normalized = normalizeCriterion<Entity[keyof Entity]>(criteria[column]);
+    return normalized.kind === "not-in" && normalized.values.length === 0;
+  });
+  if (matchAll.length === columns.length) {
+    throw new StorageUnfilteredDeleteError(matchAll.map(String));
+  }
+  return true;
 }
 
 /** Validates the limit/offset/orderBy of a `getAll` options bag. */

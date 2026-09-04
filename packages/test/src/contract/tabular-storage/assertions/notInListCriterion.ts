@@ -129,14 +129,32 @@ export function notInListCriterionBlock(opts: TabularStorageContractOpts): void 
     );
 
     itImpl(
-      "deleteSearch with an empty list deletes everything",
+      "deleteSearch refuses criteria that reduce to an empty exclusion",
       async () => {
-        // Documented consequence of the empty list matching every row, and the
-        // reason a caller-supplied exclusion list wants a guard. Asserted so
-        // the hazard is visible rather than discovered in production.
-        await storage.deleteSearch({ option: { value: [], operator: "not-in" } });
+        // The empty list matches every row, so this delete would empty the
+        // table — and an exclusion list is usually built from caller input, so
+        // the shape that reads as a bug is the one that destroys everything.
+        // `query` and `count` still answer it; only the delete refuses.
+        await expect(
+          storage.deleteSearch({ option: { value: [], operator: "not-in" } })
+        ).rejects.toThrow(/delete the whole table/);
         const left = (await storage.getAll()) ?? [];
-        expect(left).toEqual([]);
+        expect(names(left)).toEqual(["a", "b", "c", "d"]);
+      },
+      opts.timeout
+    );
+
+    itImpl(
+      "deleteSearch still runs when another column narrows the empty exclusion",
+      async () => {
+        // The refusal is about criteria that name no rows in particular, not
+        // about the empty list itself: `type` still restricts this one.
+        await storage.deleteSearch({
+          type: "u",
+          option: { value: [], operator: "not-in" },
+        });
+        const left = (await storage.getAll()) ?? [];
+        expect(names(left)).toEqual(["a", "b", "c"]);
       },
       opts.timeout
     );

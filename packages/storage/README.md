@@ -881,6 +881,11 @@ await repo.deleteSearch({ tenant: "acme", status: { value: ["draft", "void"], op
 An **empty list matches nothing** (`IN ()` is a syntax error in SQL, so backends
 emit an always-false predicate or skip the round trip entirely).
 
+A **null or absent column never matches**, and listing `null` does not change
+that — SQL reads `NULL IN (…)` and `x IN (NULL)` alike as UNKNOWN. Ask for null
+rows with `{ operator: "=", value: null }`, which the predicate builder rewrites
+to `IS NULL`.
+
 **Backend limits.** Postgres binds the whole list as a single array parameter
 (`= ANY($1)`), so list length is unbounded. SQLite and DuckDB expand one
 placeholder per value and remain subject to their statement parameter cap
@@ -911,8 +916,11 @@ backend:
 - **A `null` anywhere in the list matches nothing at all**, since
   `col NOT IN (1, NULL)` is UNKNOWN for every row `1` has not already excluded.
 - **An empty list matches everything** — the exact inverse of the empty `in`
-  list. ⚠️ On `deleteSearch` that is a full-table delete, so guard a
-  caller-supplied exclusion list before passing it.
+  list. That is the right answer for `query` and `count`; on `deleteSearch` it
+  would empty the table, so criteria that reduce to nothing but empty
+  exclusions are refused with a `StorageUnfilteredDeleteError`. A mix still
+  runs: `{ tenant: "acme", excluded: { operator: "not-in", value: [] } }`
+  deletes acme's rows. Use `deleteAll()` to clear a table on purpose.
 
 **Backend limits** are the `in` list's, with the same spellings negated:
 `<> ALL($1)` on Postgres (one array parameter), `NOT IN (…)` with expanded

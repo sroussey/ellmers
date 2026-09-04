@@ -454,9 +454,7 @@ export class InMemoryTabularStorage<
 
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
     const criteriaKeys = Object.keys(criteria) as Array<keyof Entity>;
-    if (criteriaKeys.length === 0) {
-      return;
-    }
+    if (!this.shouldRunDeleteSearch(criteria)) return;
 
     // Materialize entries first so we don't iterate a Map while mutating it.
     const entries = Array.from(this.values.entries());

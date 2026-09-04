@@ -198,6 +198,11 @@ export class HttpTabularProxyStorage<
   }
 
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
+    // Locally, as every backend does — the server runs a real backend and would
+    // refuse a match-all anyway, but there is no reason to spend a round trip
+    // learning that, and an empty criteria bag stays the same silent no-op here
+    // as everywhere else instead of becoming a request.
+    if (!this.shouldRunDeleteSearch(criteria)) return;
     await this.call<{ ok: true }>("deleteSearch", { criteria });
   }
 

@@ -387,6 +387,56 @@ export function runGenericTabularStorageTests(
         expect(setMatches?.map((r) => r.id)).toEqual(["set-kind"]);
       });
 
+      it("never matches a NULL column with an `in` list, whatever the list holds", async () => {
+        // SQL reads `NULL IN (…)` as UNKNOWN and drops the row, and listing
+        // `null` does not rescue it — `x IN (NULL)` is UNKNOWN too. The SQL
+        // backends get this free by binding the list to `IN` / `= ANY`; the
+        // JS-side backends used to answer a listed `null` with a JS-native
+        // `null === null` and return the null rows the SQL backends dropped.
+        // Runs on `kind` (unindexed, so every backend scans) and `tag`
+        // (indexed, so the index planner sees it too).
+        const now = new Date().toISOString();
+        await searchableRepo.put({
+          id: "null-both",
+          category: "electronics",
+          subcategory: "phones",
+          value: 100,
+          createdAt: now,
+          updatedAt: now,
+        });
+        await searchableRepo.put({
+          id: "set-both",
+          category: "electronics",
+          subcategory: "phones",
+          kind: "premium",
+          tag: "a",
+          value: 200,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        const ids = async (criteria: unknown): Promise<string[]> =>
+          ((await searchableRepo.query(criteria as never)) ?? []).map((r) => r.id).sort();
+
+        for (const column of ["kind", "tag"] as const) {
+          const listed = column === "kind" ? "premium" : "a";
+          // A list of only null names no row at all.
+          expect(await ids({ [column]: { value: [null], operator: "in" } })).toEqual([]);
+          // Adding null to a list that does match changes nothing.
+          expect(await ids({ [column]: { value: [listed], operator: "in" } })).toEqual([
+            "set-both",
+          ]);
+          expect(await ids({ [column]: { value: [listed, null], operator: "in" } })).toEqual([
+            "set-both",
+          ]);
+          // A null column is excluded from `not-in` as well — both sides are
+          // UNKNOWN, so the row falls out of each rather than one of them.
+          expect(await ids({ [column]: { value: [listed], operator: "not-in" } })).toEqual([]);
+          // The way to ask for the null rows, unchanged.
+          expect(await ids({ [column]: null })).toEqual(["null-both"]);
+        }
+      });
+
       it("matches NULL on an indexed column with a null criterion", async () => {
         // The same rule as above, but on a column the backend has an index for.
         // That is the path the previous test never reached: it used `kind`,

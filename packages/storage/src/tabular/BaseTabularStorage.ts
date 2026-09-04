@@ -62,6 +62,7 @@ import {
   toIndexTuples,
 } from "./tabularSchemaSetup";
 import {
+  shouldRunDeleteSearch,
   validateGetAllOptions,
   validateOrderBy,
   validatePageRequest,
@@ -464,6 +465,15 @@ export abstract class BaseTabularStorage<
 
   protected validateGetAllOptions(options?: QueryOptions<Entity>): void {
     validateGetAllOptions(options, (orderBy) => this.validateOrderBy(orderBy));
+  }
+
+  /**
+   * The first line of every backend's `deleteSearch`: false when there is
+   * nothing to do, a throw when the criteria would take the whole table.
+   * See {@link shouldRunDeleteSearch}.
+   */
+  protected shouldRunDeleteSearch(criteria: DeleteSearchCriteria<Entity>): boolean {
+    return shouldRunDeleteSearch(criteria);
   }
 
   /**

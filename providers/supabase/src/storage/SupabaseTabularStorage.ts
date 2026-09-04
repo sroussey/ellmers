@@ -856,9 +856,7 @@ export class SupabaseTabularStorage<
    */
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
     const criteriaKeys = Object.keys(criteria) as Array<keyof Entity>;
-    if (criteriaKeys.length === 0) {
-      return;
-    }
+    if (!this.shouldRunDeleteSearch(criteria)) return;
     if (this.matchesNoRow(criteria)) return;
 
     // `any` for the same reason as `applyCriteriaToFilter`: the
