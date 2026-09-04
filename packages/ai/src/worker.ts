@@ -25,6 +25,7 @@ export * from "./task/ToolCallingUtils";
 export * from "./task/MessageConversion";
 
 export * from "./model/ModelSchema";
+export * from "./model/ModelPricing";
 
 // Capability vocabulary — needed by provider subclasses overriding
 // `inferCapabilities` and `workerRunFnSpecs` from the worker barrel.

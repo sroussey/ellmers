@@ -30,6 +30,34 @@ export type {
   ModelEffortPolicyFn,
 } from "./ModelEffort";
 
+import {
+  FREE_LOCAL_PRICING,
+  ModelPricingSchema,
+  type ModelPricing,
+  type ModelPricingBase,
+  type ModelTimingTier,
+  type ModelUsageTier,
+} from "./ModelPricing";
+export { FREE_LOCAL_PRICING, ModelPricingSchema };
+export type { ModelPricing, ModelPricingBase, ModelTimingTier, ModelUsageTier };
+
+/**
+ * {@link ModelPricingSchema} under a deliberately shallow type.
+ *
+ * The runtime value is the rate-card schema itself, so validation and the model
+ * form still see every rate property. Only the static type is widened, because
+ * every provider derives its model type with `FromSchema` over a spread of
+ * these properties and then discards the derived `pricing` again through
+ * {@link WithModelPricing}. Letting `FromSchema` walk the full card — nested
+ * rate objects, an `anyOf`, two tier arrays — built a type nobody reads, at
+ * ~45k instantiations per provider across ~19 of them. This is a widening, not
+ * a cast: an annotation TypeScript checks, so it cannot drift from the schema.
+ *
+ * Read the schema through `ModelPricingSchema` when you want its shape; the
+ * property here is the same object.
+ */
+const PricingProperty: { readonly type: "object" } = ModelPricingSchema;
+
 /**
  * A model configuration suitable for task/job inputs.
  *
@@ -74,21 +102,7 @@ export const ModelConfigSchema = {
       default: {},
     },
     metadata: { type: "object", default: {}, "x-ui-hidden": true },
-    pricing: {
-      type: "object",
-      description: "Per-million-token rates. Declared by the caller; the library ships none.",
-      properties: {
-        currency: { type: "string", default: "USD" },
-        input: { type: "number" },
-        output: { type: "number" },
-        cached: { type: "number" },
-        cacheWrite: { type: "number" },
-        cacheStoragePerHour: { type: "number" },
-      },
-      required: ["currency"],
-      additionalProperties: false,
-      "x-ui-hidden": true,
-    },
+    pricing: PricingProperty,
   },
   required: ["provider", "provider_config"],
   format: "model",
@@ -115,26 +129,6 @@ export const ModelRecordSchema = {
   format: "model",
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
-
-/**
- * Per-million-token rates for one model, declared by the caller.
- *
- * Rates are per 1,000,000 tokens because that is how providers publish them, so
- * a rate card transcribes without arithmetic. There is deliberately no
- * `reasoning` rate: no provider charges one, and `output` already contains
- * reasoning tokens, so pricing them separately would double-charge.
- *
- * `cacheStoragePerHour` prices a provider-side cache billed by token-hours
- * (Gemini CachedContent) rather than by a one-off write.
- */
-export interface ModelPricing {
-  readonly currency: string;
-  readonly input: number | undefined;
-  readonly output: number | undefined;
-  readonly cached: number | undefined;
-  readonly cacheWrite: number | undefined;
-  readonly cacheStoragePerHour: number | undefined;
-}
 
 /**
  * Rebinds a `pricing` property inferred from `FromSchema` to the hand-written

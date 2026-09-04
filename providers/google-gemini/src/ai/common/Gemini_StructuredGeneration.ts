@@ -56,7 +56,11 @@ export const Gemini_StructuredGeneration_Stream: AiProviderRunFn<
 
   const schema = input.outputSchema ?? outputSchema;
   const rewritten = rewriteNullableUnionsForStrict(schema);
-  const sanitizedSchema = sanitizeSchemaForGemini(rewritten as Record<string, unknown>);
+  // `stringifyEnums: false`: the finished object is re-validated against the
+  // caller's original schema, which has no inverse for a stringified member.
+  const sanitizedSchema = sanitizeSchemaForGemini(rewritten as Record<string, unknown>, {
+    stringifyEnums: false,
+  });
 
   // When a budget is set (native or via model.effort), resolveThinkingConfig pads
   // maxTokens so thinking + JSON both fit; otherwise the caller's maxTokens passes through.

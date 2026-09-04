@@ -9,9 +9,15 @@ import type {
   AiProviderRunFnRegistration,
   Capability,
   ModelConfig,
+  ModelPricing,
   ModelRecord,
 } from "@workglow/ai";
-import { getAiProviderRegistry, noopEmit, QueuedAiProvider } from "@workglow/ai";
+import {
+  FREE_LOCAL_PRICING,
+  getAiProviderRegistry,
+  noopEmit,
+  QueuedAiProvider,
+} from "@workglow/ai";
 import type { TaskInput } from "@workglow/task-graph";
 import {
   inferLlamaCppCapabilities,
@@ -38,6 +44,18 @@ export class LlamaCppQueuedProvider extends QueuedAiProvider<LlamaCppModelConfig
 
   override inferCapabilities(model: ModelRecord): readonly Capability[] {
     return inferLlamaCppCapabilities(model);
+  }
+
+  override modelPricing(model?: ModelConfig): ModelPricing | undefined {
+    if (
+      model &&
+      model.provider !== this.name &&
+      !model.model_id?.startsWith("gguf:") &&
+      !model.model_id?.endsWith(".gguf")
+    ) {
+      return undefined;
+    }
+    return FREE_LOCAL_PRICING;
   }
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {

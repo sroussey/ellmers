@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Capability, ModelRecord } from "@workglow/ai";
-import { AiProvider } from "@workglow/ai";
+import type { Capability, ModelConfig, ModelPricing, ModelRecord } from "@workglow/ai";
+import { AiProvider, FREE_LOCAL_PRICING } from "@workglow/ai";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
 import {
   inferLlamaCppServerCapabilities,
@@ -26,6 +26,13 @@ export class LlamaCppServerQueuedProvider extends createCloudProviderClass<Llama
 ) {
   override inferCapabilities(model: ModelRecord): readonly Capability[] {
     return inferLlamaCppServerCapabilities(model);
+  }
+
+  override modelPricing(model?: ModelConfig): ModelPricing | undefined {
+    if (model && model.provider !== this.name) {
+      return undefined;
+    }
+    return FREE_LOCAL_PRICING;
   }
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {

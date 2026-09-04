@@ -23,7 +23,7 @@ import {
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 
 export { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
-export { sanitizeSchemaForGemini } from "./Gemini_Schema";
+export { coerceGeminiToolArgs, sanitizeSchemaForGemini } from "./Gemini_Schema";
 
 import { Gemini_CacheCheckpoint_Stream } from "./Gemini_CacheCheckpoint";
 import { Gemini_CountTokens_Preview, Gemini_CountTokens_Stream } from "./Gemini_CountTokens";

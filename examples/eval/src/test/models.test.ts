@@ -24,11 +24,12 @@ describe("resolveModelConfig", () => {
     const config = resolveModelConfig("deepseek-v4-pro-0813", "extract");
     expect(config.pricing).toEqual({
       currency: "USD",
-      input: 0.435,
-      output: 0.87,
-      cached: 0.0435,
-      cacheWrite: undefined,
-      cacheStoragePerHour: undefined,
+      input: 1.32,
+      output: 3.96,
+      cached: 0.044,
+      timingTiers: [
+        { start: "16:30", end: "00:30", pricing: { input: 0.66, output: 1.98, cached: 0.022 } },
+      ],
     });
   });
 

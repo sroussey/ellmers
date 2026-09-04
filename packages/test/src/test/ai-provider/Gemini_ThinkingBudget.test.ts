@@ -12,7 +12,7 @@ const { resolveThinkingConfig } = _testOnly;
 function model(extra: Record<string, unknown> = {}) {
   return {
     provider: GOOGLE_GEMINI,
-    provider_config: { model_name: "gemini-3.5-flash" },
+    provider_config: { model_name: "gemini-3.8-flash" },
     ...extra,
   } as never;
 }
@@ -37,7 +37,7 @@ describe("resolveThinkingConfig", () => {
       resolveThinkingConfig(
         model({
           effort: "ultra",
-          provider_config: { model_name: "gemini-3.5-flash", thinking_budget: 0 },
+          provider_config: { model_name: "gemini-3.8-flash", thinking_budget: 0 },
         }),
         1000
       )

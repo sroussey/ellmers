@@ -25,7 +25,7 @@ const RUN = !!process.env.GOOGLE_API_KEY || !!process.env.GEMINI_API_KEY;
 // thoughts against maxOutputTokens, so without the budget padding the
 // fixture's small maxTokens is consumed by thinking and the model returns
 // MAX_TOKENS with no visible text (or tool call) at all.
-const MODEL_ID = "gemini:gemini-3.5-flash";
+const MODEL_ID = "gemini:gemini-3.8-flash";
 const EMBED_MODEL_ID = "gemini:gemini-embedding-001";
 
 runAiProviderConformance({
@@ -45,7 +45,7 @@ runAiProviderConformance({
         description: "Google Gemini 3.5 Flash",
         capabilities: ["text.generation", "text.rewriter", "text.summary", "tool-use", "json-mode"],
         provider: GOOGLE_GEMINI as typeof GOOGLE_GEMINI,
-        provider_config: { model_name: "gemini-3.5-flash", thinking_budget: 1024 },
+        provider_config: { model_name: "gemini-3.8-flash", thinking_budget: 1024 },
         metadata: {},
       });
       await getGlobalModelRepository().addModel({

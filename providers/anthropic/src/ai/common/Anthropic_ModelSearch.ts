@@ -15,6 +15,7 @@ import { stampEffortOptions } from "@workglow/ai/worker";
 import { getClient } from "./Anthropic_Client";
 import { ANTHROPIC } from "./Anthropic_Constants";
 import { anthropicEffortPolicy } from "./Anthropic_EffortPolicy";
+import { getAnthropicModelPricing } from "./Anthropic_Pricing";
 
 interface AnthropicModelListItem {
   readonly label: string;
@@ -66,6 +67,7 @@ function mapModelList(models: AnthropicModelListItem[]): ModelSearchResultItem[]
         capabilities: [],
         provider_config: { model_name: m.value },
         metadata: {},
+        pricing: getAnthropicModelPricing(m.value),
       },
       anthropicEffortPolicy({
         provider: ANTHROPIC,

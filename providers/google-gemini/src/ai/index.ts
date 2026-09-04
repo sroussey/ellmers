@@ -11,6 +11,7 @@ export { geminiEffortPolicy } from "./common/Gemini_EffortPolicy";
 export * from "./common/Gemini_ImageValidation";
 export * from "./common/Gemini_ModelSchema";
 export * from "./common/Gemini_ModelSearch";
+export * from "./common/Gemini_Pricing";
 export * from "./registerGemini";
 
 import { GEMINI_RUN_FN_SPECS } from "./common/Gemini_Capabilities";

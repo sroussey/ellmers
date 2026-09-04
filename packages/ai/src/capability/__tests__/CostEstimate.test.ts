@@ -70,6 +70,8 @@ describe("estimateCost", () => {
   });
 
   it("prices cache storage from token-hours in extra", () => {
+    // Every token rate absent, so only `cacheStoragePerHour` can make this
+    // priced at all — a zero rate would price it either way.
     const storage: ModelPricing = {
       currency: "USD",
       input: undefined,
@@ -80,6 +82,98 @@ describe("estimateCost", () => {
     };
     const estimate = estimateCost(usage({ extra: { cacheStorageTokenHours: 2_000_000 } }), storage);
     expect(estimate?.amount).toBeCloseTo(2, 10);
+  });
+
+  it("prices cacheWrite from split cacheWrite5m or cacheWrite1h object", () => {
+    const splitPricing: ModelPricing = {
+      currency: "USD",
+      input: 3,
+      output: 15,
+      cached: 0.3,
+      cacheWrite: {
+        cacheWrite5m: 3.75,
+        cacheWrite1h: 6,
+      },
+      cacheStoragePerHour: undefined,
+    };
+    const estimate = estimateCost(
+      usage({ input: 1_000_000, output: 1_000_000, cached: 1_000_000, cacheWrite: 1_000_000 }),
+      splitPricing
+    );
+    expect(estimate?.amount).toBeCloseTo(3 + 15 + 0.3 + 3.75, 10);
+    expect(estimate?.unpriced).toEqual([]);
+  });
+});
+
+describe("estimateCost and pricing tiers", () => {
+  const discounted: ModelPricing = {
+    currency: "USD",
+    input: 3,
+    output: 15,
+    cached: undefined,
+    cacheWrite: undefined,
+    cacheStoragePerHour: undefined,
+    timingTiers: [{ start: "16:30", end: "00:30", pricing: { input: 1.5, output: 7.5 } }],
+  };
+
+  it("charges the timing tier's rates for a request inside the window", () => {
+    const estimate = estimateCost(usage({ input: 1_000_000, output: 1_000_000 }), discounted, {
+      at: new Date("2026-09-04T18:00:00Z"),
+    });
+    expect(estimate?.amount).toBeCloseTo(1.5 + 7.5, 10);
+  });
+
+  it("charges the base rates for the same request outside the window", () => {
+    const estimate = estimateCost(usage({ input: 1_000_000, output: 1_000_000 }), discounted, {
+      at: new Date("2026-09-04T12:00:00Z"),
+    });
+    expect(estimate?.amount).toBeCloseTo(3 + 15, 10);
+  });
+
+  it("selects a usage tier from the whole prompt, cache reads included", () => {
+    const tiered: ModelPricing = {
+      currency: "USD",
+      input: 3,
+      output: 15,
+      cached: 0.3,
+      cacheWrite: undefined,
+      cacheStoragePerHour: undefined,
+      usageTiers: [
+        { maxInputTokens: 200_000, pricing: { input: 3, cached: 0.3 } },
+        { minInputTokens: 200_000, pricing: { input: 6, cached: 0.6 } },
+      ],
+    };
+    // 150K plain + 100K cache reads is a 250K prompt, so the surcharge applies
+    // even though the plain-input counter alone is under the threshold.
+    const estimate = estimateCost(usage({ input: 150_000, cached: 100_000 }), tiered);
+    expect(estimate?.amount).toBeCloseTo((150_000 * 6 + 100_000 * 0.6) / 1_000_000, 10);
+  });
+
+  it("reports a counter as unpriced when the tier that applies drops its rate", () => {
+    const dropsCache: ModelPricing = {
+      currency: "USD",
+      input: 3,
+      output: undefined,
+      cached: undefined,
+      cacheWrite: undefined,
+      cacheStoragePerHour: undefined,
+      timingTiers: [{ start: "00:00", end: "12:00", pricing: { input: 1.5 } }],
+    };
+    const estimate = estimateCost(usage({ input: 1_000_000, cached: 500_000 }), dropsCache, {
+      at: new Date("2026-09-04T06:00:00Z"),
+    });
+    expect(estimate?.amount).toBeCloseTo(1.5, 10);
+    expect(estimate?.unpriced).toEqual(["cached"]);
+  });
+
+  it("still prefers a provider-stated cost over any tier", () => {
+    const estimate = estimateCost(
+      usage({ input: 1_000_000, extra: { cost: 0.00042 } }),
+      discounted,
+      { at: new Date("2026-09-04T18:00:00Z") }
+    );
+    expect(estimate?.amount).toBe(0.00042);
+    expect(estimate?.stated).toBe(true);
   });
 });
 

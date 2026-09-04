@@ -12,6 +12,7 @@ export { openaiEffortPolicy } from "./common/OpenAI_EffortPolicy";
 export * from "./common/OpenAI_ImageValidation";
 export * from "./common/OpenAI_ModelSchema";
 export * from "./common/OpenAI_ModelSearch";
+export * from "./common/OpenAI_Pricing";
 export * from "./registerOpenAi";
 
 import { OPENAI_RUN_FN_SPECS } from "./common/OpenAI_Capabilities";

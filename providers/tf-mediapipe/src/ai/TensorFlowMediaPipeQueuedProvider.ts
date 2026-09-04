@@ -8,9 +8,11 @@ import type {
   AiProviderPreviewRunFn,
   AiProviderRunFnRegistration,
   Capability,
+  ModelConfig,
+  ModelPricing,
   ModelRecord,
 } from "@workglow/ai";
-import { AiProvider } from "@workglow/ai";
+import { AiProvider, FREE_LOCAL_PRICING } from "@workglow/ai";
 import { inferTfmpCapabilities, tfmpWorkerRunFnSpecs } from "./common/TFMP_Capabilities";
 import { TENSORFLOW_MEDIAPIPE } from "./common/TFMP_Constants";
 import type { TFMPModelConfig } from "./common/TFMP_ModelSchema";
@@ -32,6 +34,13 @@ export class TensorFlowMediaPipeQueuedProvider extends AiProvider<TFMPModelConfi
 
   override inferCapabilities(model: ModelRecord): readonly Capability[] {
     return inferTfmpCapabilities(model);
+  }
+
+  override modelPricing(model?: ModelConfig): ModelPricing | undefined {
+    if (model && model.provider !== this.name) {
+      return undefined;
+    }
+    return FREE_LOCAL_PRICING;
   }
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {

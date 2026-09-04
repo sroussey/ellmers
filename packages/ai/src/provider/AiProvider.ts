@@ -8,7 +8,7 @@ import type { WorkerServerBase as WorkerServer } from "@workglow/util/worker";
 import { globalServiceRegistry, WORKER_MANAGER } from "@workglow/util/worker";
 import type { Capability } from "../capability/Capabilities";
 import type { ModelEffortPolicy } from "../model/ModelEffort";
-import type { ModelConfig, ModelRecord } from "../model/ModelSchema";
+import type { ModelConfig, ModelPricing, ModelRecord } from "../model/ModelSchema";
 import type {
   AiProviderPreviewRunFn,
   AiProviderRunFnRegistration,
@@ -170,6 +170,14 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
    * provider's pure `*EffortPolicy` helper instead of this method.
    */
   effortPolicy(_model: ModelConfig): ModelEffortPolicy | undefined {
+    return undefined;
+  }
+
+  /**
+   * Default rate card for `model` when not overridden in the model's own record.
+   * `undefined` means this provider publishes no list pricing for the model.
+   */
+  modelPricing(_model: ModelConfig): ModelPricing | undefined {
     return undefined;
   }
 
