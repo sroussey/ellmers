@@ -16,7 +16,7 @@
 import type { CachePolicy, IExecuteContext } from "@workglow/task-graph";
 import { Dataflow, Task, TaskGraph } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
-import { bench, describe } from "vitest";
+import { test } from "vitest";
 
 interface CounterInput {
   readonly n: number;
@@ -65,14 +65,14 @@ function buildDeepGraph(depth: number): TaskGraph {
   return graph;
 }
 
-describe("deep-graph chain", () => {
-  bench("50-deep chain", async () => {
+test("deep-graph chain", async ({ bench }) => {
+  await bench("50-deep chain", async () => {
     const graph = buildDeepGraph(50);
     await graph.run();
-  });
+  }).run();
 
-  bench("200-deep chain", async () => {
+  await bench("200-deep chain", async () => {
     const graph = buildDeepGraph(200);
     await graph.run();
-  });
+  }).run();
 });

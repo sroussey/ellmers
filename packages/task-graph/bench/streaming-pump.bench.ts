@@ -16,7 +16,7 @@
 import type { CachePolicy, IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import { Dataflow, Task, TaskGraph } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
-import { bench, describe } from "vitest";
+import { test } from "vitest";
 
 interface PromptInput {
   readonly deltas: number;
@@ -109,14 +109,14 @@ function buildStreamingGraph(deltas: number): TaskGraph {
   return graph;
 }
 
-describe("streaming-pump throughput", () => {
-  bench("500 deltas", async () => {
+test("streaming-pump throughput", async ({ bench }) => {
+  await bench("500 deltas", async () => {
     const graph = buildStreamingGraph(500);
     await graph.run();
-  });
+  }).run();
 
-  bench("2000 deltas", async () => {
+  await bench("2000 deltas", async () => {
     const graph = buildStreamingGraph(2000);
     await graph.run();
-  });
+  }).run();
 });
