@@ -5,6 +5,7 @@
  */
 
 import type { ModelPricing } from "@workglow/ai";
+import { resolveModelPricingFromTable } from "@workglow/ai";
 
 /**
  * Public list pricing for DeepSeek models (USD per 1M tokens).
@@ -38,22 +39,9 @@ export const DEEPSEEK_PRICING: Record<string, ModelPricing> = {
   "deepseek-reasoner": { currency: "USD", input: 0.55, output: 2.19, cached: 0.14 },
 };
 
-const SUBSTRING_MATCH_KEYS = Object.keys(DEEPSEEK_PRICING).sort((a, b) => b.length - a.length);
-
 /**
  * Resolve list pricing for a DeepSeek model id.
  */
 export function getDeepSeekModelPricing(modelId: string | undefined): ModelPricing | undefined {
-  if (!modelId) return undefined;
-  let id = modelId.trim().toLowerCase();
-  if (id.startsWith("deepseek/")) id = id.slice("deepseek/".length);
-
-  if (DEEPSEEK_PRICING[modelId]) return DEEPSEEK_PRICING[modelId];
-  if (DEEPSEEK_PRICING[id]) return DEEPSEEK_PRICING[id];
-
-  for (const key of SUBSTRING_MATCH_KEYS) {
-    if (id.includes(key)) return DEEPSEEK_PRICING[key];
-  }
-
-  return undefined;
+  return resolveModelPricingFromTable(DEEPSEEK_PRICING, modelId, ["deepseek/"]);
 }

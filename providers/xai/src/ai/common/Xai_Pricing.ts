@@ -5,6 +5,7 @@
  */
 
 import type { ModelPricing } from "@workglow/ai";
+import { resolveModelPricingFromTable } from "@workglow/ai";
 
 /**
  * Public list pricing for xAI Grok models (USD per 1M tokens).
@@ -19,22 +20,9 @@ export const XAI_PRICING: Record<string, ModelPricing> = {
   "grok-2-vision": { currency: "USD", input: 2, output: 10, cached: 0.5 },
 };
 
-const SUBSTRING_MATCH_KEYS = Object.keys(XAI_PRICING).sort((a, b) => b.length - a.length);
-
 /**
  * Resolve list pricing for an xAI Grok model id.
  */
 export function getXaiModelPricing(modelId: string | undefined): ModelPricing | undefined {
-  if (!modelId) return undefined;
-  let id = modelId.trim().toLowerCase();
-  if (id.startsWith("xai/")) id = id.slice("xai/".length);
-
-  if (XAI_PRICING[modelId]) return XAI_PRICING[modelId];
-  if (XAI_PRICING[id]) return XAI_PRICING[id];
-
-  for (const key of SUBSTRING_MATCH_KEYS) {
-    if (id.includes(key)) return XAI_PRICING[key];
-  }
-
-  return undefined;
+  return resolveModelPricingFromTable(XAI_PRICING, modelId, ["xai/"]);
 }

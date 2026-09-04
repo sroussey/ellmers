@@ -70,10 +70,12 @@ describe("estimateCost", () => {
   });
 
   it("prices cache storage from token-hours in extra", () => {
+    // Every token rate absent, so only `cacheStoragePerHour` can make this
+    // priced at all — a zero rate would price it either way.
     const storage: ModelPricing = {
       currency: "USD",
-      input: 0,
-      output: 0,
+      input: undefined,
+      output: undefined,
       cached: undefined,
       cacheWrite: undefined,
       cacheStoragePerHour: 1,

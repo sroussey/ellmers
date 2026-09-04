@@ -15,6 +15,16 @@ import { getXaiModelPricing } from "@workglow/xai/ai";
 const cache = new Map<string, ModelPricing | undefined>();
 const inflight = new Map<string, Promise<ModelPricing | undefined>>();
 
+/**
+ * Rate card for a model the repository does not price.
+ *
+ * A record names its provider, so that provider answers for it. A bare id does
+ * NOT get offered to every registered provider in turn: a local provider
+ * answers `FREE_LOCAL_PRICING` for anything it is asked about, so the first one
+ * registered (the CLI always registers HuggingFace Transformers at startup)
+ * would price every cloud model at zero. Without a record the id's own shape is
+ * the only honest signal — local prefixes, then each cloud vendor's list table.
+ */
 function resolveFallbackPricing(modelId: string, record?: ModelRecord): ModelPricing | undefined {
   if (record?.provider) {
     const provider = getAiProviderRegistry().getProvider(record.provider);
@@ -23,14 +33,6 @@ function resolveFallbackPricing(modelId: string, record?: ModelRecord): ModelPri
   }
   if (modelId.startsWith("gguf:") || modelId.startsWith("onnx:") || modelId.endsWith(".gguf")) {
     return FREE_LOCAL_PRICING;
-  }
-  for (const provider of getAiProviderRegistry().getProviders().values()) {
-    const pricing = provider.modelPricing({
-      model_id: modelId,
-      provider: provider.name,
-      provider_config: { model_name: modelId },
-    });
-    if (pricing) return pricing;
   }
   return (
     getAnthropicModelPricing(modelId) ??

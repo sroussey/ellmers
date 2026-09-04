@@ -87,6 +87,38 @@ describe("sanitizeSchemaForGemini", () => {
     expect(collectKeys(sanitized)).not.toContain("additionalProperties");
   });
 
+  it("leaves enums alone when stringifyEnums is off (responseSchema path)", () => {
+    const sanitized = sanitizeSchemaForGemini(
+      {
+        type: "object",
+        properties: { angle: { type: "integer", enum: [90, 180, 270] } },
+      },
+      { stringifyEnums: false }
+    );
+    const props = sanitized["properties"] as Record<string, Record<string, unknown>>;
+    expect(props["angle"]!["enum"]).toEqual([90, 180, 270]);
+    expect(props["angle"]!["type"]).toBe("integer");
+  });
+
+  it("keeps property names that collide with stripped keywords", () => {
+    const sanitized = sanitizeSchemaForGemini({
+      type: "object",
+      properties: {
+        if: { type: "string" },
+        else: { type: "string" },
+        additionalProperties: { type: "boolean" },
+        "x-offset": { type: "integer" },
+        description: { type: "string" },
+      },
+      required: ["if"],
+    });
+    const props = sanitized["properties"] as Record<string, unknown>;
+    expect(Object.keys(props).sort()).toEqual(
+      ["additionalProperties", "description", "else", "if", "x-offset"].sort()
+    );
+    expect(props["description"]).toEqual({ type: "string" });
+  });
+
   it("does not mutate the original schema", () => {
     const original = {
       type: "object",

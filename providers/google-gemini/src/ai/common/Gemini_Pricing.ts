@@ -5,6 +5,7 @@
  */
 
 import type { ModelPricing } from "@workglow/ai";
+import { resolveModelPricingFromTable } from "@workglow/ai";
 
 /**
  * Public list pricing for Google Gemini models (USD per 1M tokens).
@@ -101,24 +102,13 @@ export const GEMINI_PRICING: Record<string, ModelPricing> = {
   "imagen-4.0-generate-001": { currency: "USD", input: 0.03, output: 0.03 },
 };
 
-const SUBSTRING_MATCH_KEYS = Object.keys(GEMINI_PRICING).sort((a, b) => b.length - a.length);
-
 /**
  * Resolve list pricing for a Google Gemini model id.
  */
 export function getGeminiModelPricing(modelId: string | undefined): ModelPricing | undefined {
-  if (!modelId) return undefined;
-  let id = modelId.trim().toLowerCase();
-  if (id.startsWith("google/")) id = id.slice("google/".length);
-  if (id.startsWith("google-gemini/")) id = id.slice("google-gemini/".length);
-  if (id.startsWith("models/")) id = id.slice("models/".length);
-
-  if (GEMINI_PRICING[modelId]) return GEMINI_PRICING[modelId];
-  if (GEMINI_PRICING[id]) return GEMINI_PRICING[id];
-
-  for (const key of SUBSTRING_MATCH_KEYS) {
-    if (id.includes(key)) return GEMINI_PRICING[key];
-  }
-
-  return undefined;
+  return resolveModelPricingFromTable(GEMINI_PRICING, modelId, [
+    "google-gemini/",
+    "google/",
+    "models/",
+  ]);
 }

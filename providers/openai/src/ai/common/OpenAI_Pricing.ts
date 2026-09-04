@@ -5,6 +5,7 @@
  */
 
 import type { ModelPricing } from "@workglow/ai";
+import { resolveModelPricingFromTable } from "@workglow/ai";
 
 /**
  * Public list pricing for OpenAI models (USD per 1M tokens).
@@ -35,22 +36,9 @@ export const OPENAI_PRICING: Record<string, ModelPricing> = {
   "text-embedding-3-large": { currency: "USD", input: 0.13, output: 0 },
 };
 
-const SUBSTRING_MATCH_KEYS = Object.keys(OPENAI_PRICING).sort((a, b) => b.length - a.length);
-
 /**
  * Resolve list pricing for an OpenAI model id.
  */
 export function getOpenAiModelPricing(modelId: string | undefined): ModelPricing | undefined {
-  if (!modelId) return undefined;
-  let id = modelId.trim().toLowerCase();
-  if (id.startsWith("openai/")) id = id.slice("openai/".length);
-
-  if (OPENAI_PRICING[modelId]) return OPENAI_PRICING[modelId];
-  if (OPENAI_PRICING[id]) return OPENAI_PRICING[id];
-
-  for (const key of SUBSTRING_MATCH_KEYS) {
-    if (id.includes(key)) return OPENAI_PRICING[key];
-  }
-
-  return undefined;
+  return resolveModelPricingFromTable(OPENAI_PRICING, modelId, ["openai/"]);
 }

@@ -51,6 +51,64 @@ export const FREE_LOCAL_PRICING: ModelPricing = {
 };
 
 /**
+ * Characters that may precede a table key inside a longer model id: vendor
+ * namespaces (`anthropic.claude-…`, `bedrock/claude-…`) and separators.
+ */
+const KEY_PREFIX_BOUNDARY = new Set(["-", "_", ":", "/", "@", ".", "|"]);
+
+/**
+ * Characters that may follow a table key inside a longer model id. `.` is
+ * deliberately absent: a dot after a key marks a different point release with
+ * its own rate card (`gpt-5.6` is not `gpt-5`), while a dash marks a dated or
+ * sized variant of the same one (`gpt-4o-2024-08-06` is `gpt-4o`).
+ */
+const KEY_SUFFIX_BOUNDARY = new Set(["-", "_", ":", "/", "@"]);
+
+/**
+ * Resolve a model id against a provider's static list-pricing table.
+ *
+ * Exact id wins; otherwise the longest key that appears in the id on both a
+ * leading and trailing segment boundary wins. A model the table does not name
+ * stays unpriced so cost estimation reports nothing rather than a wrong
+ * number borrowed from a sibling.
+ *
+ * `vendorPrefixes` are stripped (lower-cased, longest first is the caller's
+ * responsibility) before matching, so `anthropic/claude-sonnet-5` resolves the
+ * same as the bare id.
+ */
+export function resolveModelPricingFromTable(
+  table: Readonly<Record<string, ModelPricing>>,
+  modelId: string | undefined,
+  vendorPrefixes: readonly string[] = []
+): ModelPricing | undefined {
+  if (!modelId) return undefined;
+  let id = modelId.trim().toLowerCase();
+  for (const prefix of vendorPrefixes) {
+    if (id.startsWith(prefix)) {
+      id = id.slice(prefix.length);
+      break;
+    }
+  }
+
+  // `Object.hasOwn`, not truthiness: a bare index would hand back
+  // `Object.prototype.constructor` for a model literally named "constructor".
+  if (Object.hasOwn(table, modelId)) return table[modelId];
+  if (Object.hasOwn(table, id)) return table[id];
+
+  let best: string | undefined;
+  for (const key of Object.keys(table)) {
+    if (best !== undefined && key.length <= best.length) continue;
+    const at = id.indexOf(key);
+    if (at < 0) continue;
+    if (at > 0 && !KEY_PREFIX_BOUNDARY.has(id[at - 1]!)) continue;
+    const after = id[at + key.length];
+    if (after !== undefined && !KEY_SUFFIX_BOUNDARY.has(after)) continue;
+    best = key;
+  }
+  return best === undefined ? undefined : table[best];
+}
+
+/**
  * JSON schema for per-million-token model pricing rates.
  */
 export const ModelPricingSchema = {

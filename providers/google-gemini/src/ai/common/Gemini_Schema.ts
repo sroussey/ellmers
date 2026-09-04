@@ -27,12 +27,23 @@
  *   Use {@link coerceGeminiToolArgs} on the inbound `functionCall.args` to map
  *   values back to the original types — upstream validation and execution only
  *   ever see the original schema.
+ *
+ * Pass `stringifyEnums: false` where no such inverse exists on the way back —
+ * `responseSchema` for structured generation, whose object is re-validated
+ * against the caller's original schema, so a stringified `90` would fail
+ * validation and burn the task's retries.
  */
-export function sanitizeSchemaForGemini(schema: Record<string, unknown>): Record<string, unknown> {
-  return sanitizeSchemaNode(schema);
+export function sanitizeSchemaForGemini(
+  schema: Record<string, unknown>,
+  options?: { readonly stringifyEnums?: boolean }
+): Record<string, unknown> {
+  return sanitizeSchemaNode(schema, options?.stringifyEnums !== false);
 }
 
-function sanitizeSchemaNode(node: Record<string, unknown>): Record<string, unknown> {
+function sanitizeSchemaNode(
+  node: Record<string, unknown>,
+  stringifyEnums: boolean
+): Record<string, unknown> {
   const enumLabels =
     node["x-ui-enum-labels"] && typeof node["x-ui-enum-labels"] === "object"
       ? (node["x-ui-enum-labels"] as Record<string, unknown>)
@@ -45,7 +56,7 @@ function sanitizeSchemaNode(node: Record<string, unknown>): Record<string, unkno
     if (key.startsWith("x-")) continue;
     if (key === "additionalProperties") continue;
     if (key === "if" || key === "then" || key === "else") continue;
-    result[key] = sanitizeSchemaValue(value, key);
+    result[key] = sanitizeSchemaValue(value, key, stringifyEnums);
   }
 
   // Fold an enum-label map into the description before it is dropped so the
@@ -70,7 +81,7 @@ function sanitizeSchemaNode(node: Record<string, unknown>): Record<string, unkno
   // Stringify non-string enums for Gemini's string-only enum support.
   // Primitives use String(); objects/arrays use JSON so distinct members stay
   // distinct on the wire (String() would collapse them all to "[object Object]").
-  if (Array.isArray(result["enum"])) {
+  if (stringifyEnums && Array.isArray(result["enum"])) {
     const enums = result["enum"] as unknown[];
     if (enums.some((v) => typeof v !== "string")) {
       result["enum"] = enums.map((v) => (typeof v === "string" ? v : stringifyEnumMember(v)));
@@ -88,15 +99,36 @@ function sanitizeSchemaNode(node: Record<string, unknown>): Record<string, unkno
   return result;
 }
 
-function sanitizeSchemaValue(value: unknown, key?: string): unknown {
+/**
+ * Keywords whose value is a map of *names* to subschemas, not a subschema
+ * itself. Their keys are author-chosen property names, so a field called `if`,
+ * `else`, `additionalProperties` or `x-offset` must survive verbatim instead of
+ * being read as a keyword and dropped.
+ */
+const SCHEMA_MAP_KEYWORDS = new Set(["properties", "patternProperties", "$defs", "definitions"]);
+
+function sanitizeSchemaValue(
+  value: unknown,
+  key: string | undefined,
+  stringifyEnums: boolean
+): unknown {
   if (Array.isArray(value)) {
     // `enum` arrays are stringified by the parent node handler; other arrays
     // (e.g. `anyOf`, `required`, `type`) just need recursive sanitization.
     if (key === "enum") return value;
-    return value.map((v) => sanitizeSchemaValue(v));
+    return value.map((v) => sanitizeSchemaValue(v, undefined, stringifyEnums));
   }
   if (isSchemaObject(value)) {
-    return sanitizeSchemaNode(value);
+    if (key !== undefined && SCHEMA_MAP_KEYWORDS.has(key)) {
+      const out: Record<string, unknown> = {};
+      for (const [name, sub] of Object.entries(value)) {
+        out[name] = isSchemaObject(sub)
+          ? sanitizeSchemaNode(sub, stringifyEnums)
+          : sanitizeSchemaValue(sub, undefined, stringifyEnums);
+      }
+      return out;
+    }
+    return sanitizeSchemaNode(value, stringifyEnums);
   }
   return value;
 }

@@ -5,6 +5,7 @@
  */
 
 import type { ModelPricing } from "@workglow/ai";
+import { resolveModelPricingFromTable } from "@workglow/ai";
 
 /**
  * Public list pricing for Anthropic Claude models (USD per 1M tokens).
@@ -275,21 +276,5 @@ export const ANTHROPIC_PRICING: Record<string, ModelPricing> = {
  * Resolve list pricing for an Anthropic Claude model id.
  */
 export function getAnthropicModelPricing(modelId: string | undefined): ModelPricing | undefined {
-  if (!modelId) return undefined;
-  let id = modelId.trim().toLowerCase();
-  if (id.startsWith("anthropic/")) id = id.slice("anthropic/".length);
-
-  if (ANTHROPIC_PRICING[modelId]) return ANTHROPIC_PRICING[modelId];
-  if (ANTHROPIC_PRICING[id]) return ANTHROPIC_PRICING[id];
-
-  for (const [key, pricing] of Object.entries(ANTHROPIC_PRICING)) {
-    if (id.includes(key)) return pricing;
-  }
-
-  if (/opus/i.test(id)) return ANTHROPIC_PRICING["claude-opus-5"];
-  if (/sonnet-5/i.test(id)) return ANTHROPIC_PRICING["claude-sonnet-5"];
-  if (/sonnet/i.test(id)) return ANTHROPIC_PRICING["claude-sonnet-4-6"];
-  if (/haiku/i.test(id)) return ANTHROPIC_PRICING["claude-haiku-4-5"];
-
-  return undefined;
+  return resolveModelPricingFromTable(ANTHROPIC_PRICING, modelId, ["anthropic/"]);
 }

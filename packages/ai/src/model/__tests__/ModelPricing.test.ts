@@ -5,7 +5,12 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { FREE_LOCAL_PRICING, ModelPricingSchema } from "../ModelPricing";
+import type { ModelPricing } from "../ModelPricing";
+import {
+  FREE_LOCAL_PRICING,
+  ModelPricingSchema,
+  resolveModelPricingFromTable,
+} from "../ModelPricing";
 import { ModelConfigSchema, ModelRecordSchema } from "../ModelSchema";
 
 describe("model pricing", () => {
@@ -41,5 +46,40 @@ describe("model pricing", () => {
       cacheWrite: 0,
       cacheStoragePerHour: undefined,
     });
+  });
+});
+
+describe("resolveModelPricingFromTable", () => {
+  const table: Record<string, ModelPricing> = {
+    "gpt-5": { currency: "USD", input: 2.5, output: 10 },
+    "gpt-5-mini": { currency: "USD", input: 0.15, output: 0.6 },
+    "gpt-4o": { currency: "USD", input: 2.5, output: 10 },
+    o1: { currency: "USD", input: 15, output: 60 },
+  };
+
+  it("matches an exact id and strips a vendor prefix", () => {
+    expect(resolveModelPricingFromTable(table, "gpt-4o")).toBe(table["gpt-4o"]);
+    expect(resolveModelPricingFromTable(table, "OpenAI/GPT-4o", ["openai/"])).toBe(table["gpt-4o"]);
+  });
+
+  it("resolves a dated or sized variant to its family, longest key first", () => {
+    expect(resolveModelPricingFromTable(table, "gpt-4o-2024-08-06")).toBe(table["gpt-4o"]);
+    expect(resolveModelPricingFromTable(table, "gpt-5-mini-2026-01-01")).toBe(table["gpt-5-mini"]);
+  });
+
+  it("leaves a sibling point release unpriced rather than borrowing a rate", () => {
+    // The dot marks a different rate card; "gpt-5.6" must not become "gpt-5".
+    expect(resolveModelPricingFromTable(table, "gpt-5.6")).toBeUndefined();
+    expect(resolveModelPricingFromTable(table, "gpt-5.6-terra")).toBeUndefined();
+  });
+
+  it("does not match a short key mid-token", () => {
+    expect(resolveModelPricingFromTable(table, "o1-preview")).toBe(table["o1"]);
+    expect(resolveModelPricingFromTable(table, "mono1-chat")).toBeUndefined();
+  });
+
+  it("never returns an Object.prototype member for a prototype-named id", () => {
+    expect(resolveModelPricingFromTable(table, "constructor")).toBeUndefined();
+    expect(resolveModelPricingFromTable(table, "toString")).toBeUndefined();
   });
 });

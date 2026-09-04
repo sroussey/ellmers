@@ -8,9 +8,17 @@ import { getGlobalModelRepository } from "@workglow/ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { clearModelPricingCache, lookupModelPricing } from "../ui/rows/lookupModelPricing";
 
+const TEST_MODEL_ID = "test-explicit-pricing-model";
+
 describe("lookupModelPricing", () => {
-  afterEach(() => {
+  // The model repository is a process-wide singleton, so a record added here
+  // outlives the file unless it is removed again.
+  afterEach(async () => {
     clearModelPricingCache();
+    // `removeModel` throws when the id is absent, which most cases here are.
+    await getGlobalModelRepository()
+      .removeModel(TEST_MODEL_ID)
+      .catch(() => {});
   });
 
   it("returns undefined for empty or undefined modelId", async () => {
@@ -20,12 +28,12 @@ describe("lookupModelPricing", () => {
 
   it("returns repository pricing when a model record defines pricing", async () => {
     await getGlobalModelRepository().addModel({
-      model_id: "test-explicit-pricing-model",
+      model_id: TEST_MODEL_ID,
       title: "custom",
       description: "custom pricing",
       provider: "ANTHROPIC",
       capabilities: ["text.generation"],
-      provider_config: { model_name: "test-explicit-pricing-model" },
+      provider_config: { model_name: TEST_MODEL_ID },
       metadata: {},
       pricing: {
         currency: "USD",
@@ -34,7 +42,7 @@ describe("lookupModelPricing", () => {
       },
     });
 
-    const pricing = await lookupModelPricing("test-explicit-pricing-model");
+    const pricing = await lookupModelPricing(TEST_MODEL_ID);
     expect(pricing).toEqual({
       currency: "USD",
       input: 99,
@@ -42,7 +50,7 @@ describe("lookupModelPricing", () => {
     });
   });
 
-  it("falls back to list pricing from @workglow/ai when unconfigured in repository", async () => {
+  it("falls back to provider list pricing when unconfigured in the repository", async () => {
     const sonnet = await lookupModelPricing("claude-sonnet-5");
     expect(sonnet).toBeDefined();
     expect(sonnet?.currency).toBe("USD");
