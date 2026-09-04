@@ -96,6 +96,12 @@ const projects = listTestProjects(discovered).map((p) => {
     .filter((f) => f.runner === "bun" && f.path.startsWith(root + "/"))
     .map((f) => f.path.slice(root.length + 1));
   return {
+    // Vitest 5 defaults this to `true`, which folds the root config into every
+    // project. Nothing here wants that: `shared` above is the whole of what a
+    // project is meant to inherit, spelled out so a reader can see it, and the
+    // root block holds only `projects` itself and the coverage settings that
+    // are read from the root anyway.
+    extends: false,
     test: {
       ...shared,
       name: p.name,

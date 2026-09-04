@@ -1,10 +1,14 @@
 # task-graph benchmarks
 
 Micro-benchmarks for the `@workglow/task-graph` execution engine, written with
-[Vitest's built-in `bench` API](https://vitest.dev/api/#bench). Each file builds
-and runs **real** `TaskGraph` instances (real `Task` subclasses, real
-`Dataflow` edges) — nothing is stubbed — so the numbers reflect the actual
-scheduler, edge materializer, and stream pump.
+[Vitest's built-in benchmarking API](https://vitest.dev/guide/benchmarking).
+Vitest 5 removed the top-level `bench()` export: a benchmark is now a `test()`
+that takes the `bench` fixture off its context and awaits `.run()` on each
+scenario.
+
+Each file builds and runs **real** `TaskGraph` instances (real `Task`
+subclasses, real `Dataflow` edges) — nothing is stubbed — so the numbers
+reflect the actual scheduler, edge materializer, and stream pump.
 
 ## Scenarios
 

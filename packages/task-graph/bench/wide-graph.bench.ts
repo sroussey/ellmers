@@ -16,7 +16,7 @@
 import type { CachePolicy, IExecuteContext } from "@workglow/task-graph";
 import { Dataflow, Task, TaskGraph } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
-import { bench, describe } from "vitest";
+import { test } from "vitest";
 
 interface CounterInput {
   readonly n: number;
@@ -65,14 +65,14 @@ function buildWideGraph(width: number): TaskGraph {
   return graph;
 }
 
-describe("wide-graph fan-out", () => {
-  bench("50 parallel leaves", async () => {
+test("wide-graph fan-out", async ({ bench }) => {
+  await bench("50 parallel leaves", async () => {
     const graph = buildWideGraph(50);
     await graph.run();
-  });
+  }).run();
 
-  bench("200 parallel leaves", async () => {
+  await bench("200 parallel leaves", async () => {
     const graph = buildWideGraph(200);
     await graph.run();
-  });
+  }).run();
 });
