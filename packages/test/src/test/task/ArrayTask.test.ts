@@ -391,7 +391,9 @@ describe("ArrayTask", () => {
     const task = new MultiplyRunTask({
       defaults: { a: 4, b: 5 },
     });
-    // @ts-expect-error - we are testing the protected method
+    // `executeTaskChildren` is protected; Vitest 5's `spyOn` overloads reach it
+    // without a suppression, so the `@ts-expect-error` that used to sit here is
+    // now itself an error under `tsc`.
     // For plain tasks (not array mode), executeTaskChildren should not be called
     const executeTaskChildrenSpy = spyOn(task.runner, "executeTaskChildren");
     const results = await task.run();
