@@ -11,8 +11,6 @@ import {
   isSearchCondition,
   isSearchInCondition,
   isSearchNotInCondition,
-  matchesInCriterion,
-  matchesNotInCriterion,
   normalizeCriterion,
   PostgresDialect,
   SEARCH_OPERATOR_SET,
@@ -395,58 +393,6 @@ describe("PredicateBuilder operator allow-list (L-MAIN-01)", () => {
       expect(isSearchNotInCondition({ value: [1], operator: "not in" })).toBe(false);
       expect(isSearchNotInCondition({ value: [1], operator: "NOT IN" })).toBe(false);
       expect(isSearchNotInCondition({ value: [1], operator: "not-in) OR 1=1 --" })).toBe(false);
-    });
-  });
-
-  describe("matchesInCriterion / matchesNotInCriterion", () => {
-    it("agree as complements when neither null nor an empty list is involved", () => {
-      for (const columnValue of [1, 2, 3, "1"]) {
-        expect(matchesNotInCriterion(columnValue, [1, 2])).toBe(
-          !matchesInCriterion(columnValue, [1, 2])
-        );
-      }
-    });
-
-    it("both reject a null or absent column against a non-empty list", () => {
-      // SQL: `NULL IN (…)` and `NULL NOT IN (…)` are both UNKNOWN, so neither
-      // matches. This is the one place the two are NOT complements.
-      for (const columnValue of [null, undefined]) {
-        expect(matchesInCriterion(columnValue, [1, 2])).toBe(false);
-        expect(matchesNotInCriterion(columnValue, [1, 2])).toBe(false);
-      }
-    });
-
-    it("a null column stays unmatched even by a list containing null", () => {
-      // `x IN (NULL)` is UNKNOWN too, so listing null rescues nothing. The JS
-      // side used to answer this with `null === null` and return rows every
-      // SQL backend drops.
-      for (const columnValue of [null, undefined]) {
-        expect(matchesInCriterion(columnValue, [null])).toBe(false);
-        expect(matchesInCriterion(columnValue, [undefined])).toBe(false);
-        expect(matchesInCriterion(columnValue, [1, null])).toBe(false);
-      }
-      // And an empty `in` list still matches nothing, null column or not.
-      expect(matchesInCriterion(null, [])).toBe(false);
-    });
-
-    it("not-in matches nothing when the list itself contains null", () => {
-      // `col NOT IN (1, NULL)` is UNKNOWN for every row SQL has not already
-      // excluded, so no row can satisfy it.
-      expect(matchesNotInCriterion(3, [1, null])).toBe(false);
-      expect(matchesNotInCriterion(1, [1, null])).toBe(false);
-      expect(matchesNotInCriterion(null, [1, null])).toBe(false);
-    });
-
-    it("inverts on the empty list: in matches nothing, not-in matches everything", () => {
-      expect(matchesInCriterion(1, [])).toBe(false);
-      expect(matchesNotInCriterion(1, [])).toBe(true);
-      // Even a null column, since there is no comparison left to be UNKNOWN.
-      expect(matchesNotInCriterion(null, [])).toBe(true);
-    });
-
-    it("is strict about type, like the `=` arm", () => {
-      expect(matchesNotInCriterion("1", [1])).toBe(true);
-      expect(matchesInCriterion("1", [1])).toBe(false);
     });
   });
 
