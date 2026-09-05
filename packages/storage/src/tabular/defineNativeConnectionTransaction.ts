@@ -53,7 +53,10 @@
  * writing through the pool and committing at once. Their rows survive this
  * transaction's ROLLBACK, so `ownsSession: false` narrows deferral to writers
  * that actually joined it, which is the same ALS-scoped question that arm's
- * routing already asks.
+ * routing already asks. That arm also chains on its own client rather than on
+ * the pool, so two transactions over one participant are legitimately open at
+ * once and the store is what tells their buffers apart — see
+ * {@link deferralBufferFor}. It never runs in a browser, so it always has one.
  *
  * ## The innermost store is not the only store
  *
@@ -225,6 +228,13 @@ export function defineNativeConnectionTransaction(
      */
     deferring: boolean;
     readonly ownsSession: boolean;
+    /**
+     * The store this buffer was armed under, or `undefined` when there was
+     * none. Only the `ownsSession: false` arm reads it, and only to tell its
+     * own buffer from a concurrent transaction's — see
+     * {@link deferralBufferFor}.
+     */
+    readonly ctx: AlsContext | undefined;
     readonly entities: unknown[];
   }
 
@@ -234,16 +244,48 @@ export function defineNativeConnectionTransaction(
   }
 
   /**
-   * Innermost-first buffers per participant. A stack rather than a single slot
+   * Buffers per participant, innermost last. A stack rather than a single slot
    * because {@link runInTransactionOnConnection} runs an enlisted owner's
    * nested transaction inline to surface a clearer downstream error, and the
-   * inner one's drain must not take the outer one's queue with it.
+   * inner one's drain must not take the outer one's queue with it — and
+   * because a pooled backend opens several concurrent transactions over one
+   * participant by design. {@link deferralBufferFor} decides which entry a
+   * given caller is in.
    */
   const deferralStacks = new WeakMap<object, DeferralBuffer[]>();
 
-  function currentDeferralBuffer(owner: object): DeferralBuffer | undefined {
+  /**
+   * The buffer a `put` on `owner` belongs in, or `undefined` when this caller
+   * is in no transaction over it.
+   *
+   * On a single-session backend the connection chain admits one transaction
+   * over a participant at a time, so the innermost buffer IS this caller's and
+   * no store has to be consulted — which is what keeps deferral working under
+   * the browser shim, whose store is gone by the body's first `await`.
+   *
+   * A real `pg.Pool` transaction takes its own checked-out client and chains
+   * on THAT, so several transactions over one participant are open at once by
+   * design. Innermost-wins would then hand a participant's `put` to whichever
+   * of them armed last: a concurrent transaction's ROLLBACK would discard a
+   * committed row's event, and its COMMIT would publish a row still free to
+   * roll back. That arm therefore picks the buffer whose store this caller is
+   * actually inside, the same question its query routing asks. `active` is not
+   * consulted — the flush pass runs after deactivation, on this very store.
+   */
+  function deferralBufferFor(owner: object): DeferralBuffer | undefined {
     const stack = deferralStacks.get(owner);
-    return stack === undefined ? undefined : stack[stack.length - 1];
+    if (stack === undefined) return undefined;
+    const innermost = stack[stack.length - 1];
+    if (innermost === undefined || innermost.ownsSession) return innermost;
+    for (let i = stack.length - 1; i >= 0; i--) {
+      const buffer = stack[i];
+      if (buffer === undefined) continue;
+      const armedUnder = buffer.ctx;
+      if (armedUnder !== undefined && findStore((ctx) => ctx === armedUnder) !== undefined) {
+        return buffer;
+      }
+    }
+    return undefined;
   }
 
   function removeDeferralBuffer(owner: object, buffer: DeferralBuffer): void {
@@ -260,7 +302,14 @@ export function defineNativeConnectionTransaction(
   ): DeferralScope {
     const buffers = new Map<object, DeferralBuffer>();
     for (const participant of participants) {
-      const buffer: DeferralBuffer = { deferring: true, ownsSession, entities: [] };
+      const buffer: DeferralBuffer = {
+        deferring: true,
+        ownsSession,
+        // Armed from inside the ALS scope, so this is this transaction's own
+        // store on any runtime that has one.
+        ctx: getAlsStore(),
+        entities: [],
+      };
       buffers.set(participant, buffer);
       const stack = deferralStacks.get(participant);
       if (stack === undefined) deferralStacks.set(participant, [buffer]);
@@ -442,7 +491,7 @@ export function defineNativeConnectionTransaction(
   }
 
   function enqueueDeferredPut(owner: object, entity: unknown): boolean {
-    const buffer = currentDeferralBuffer(owner);
+    const buffer = deferralBufferFor(owner);
     if (buffer === undefined || !buffer.deferring) return false;
     if (!buffer.ownsSession && !isEnlistedInConnectionTx(owner)) return false;
     buffer.entities.push(entity);
@@ -451,7 +500,7 @@ export function defineNativeConnectionTransaction(
 
   /** Drains the post-commit queue; runs after deactivation, so it ignores `deferring`. */
   function takeDeferredPuts(owner: object): unknown[] {
-    const buffer = currentDeferralBuffer(owner);
+    const buffer = deferralBufferFor(owner);
     if (buffer === undefined) return [];
     removeDeferralBuffer(owner, buffer);
     return buffer.entities;
@@ -459,7 +508,7 @@ export function defineNativeConnectionTransaction(
 
   /** Drops the queue after ROLLBACK; runs after deactivation, so it ignores `deferring`. */
   function discardDeferredPuts(owner: object): void {
-    const buffer = currentDeferralBuffer(owner);
+    const buffer = deferralBufferFor(owner);
     if (buffer !== undefined) removeDeferralBuffer(owner, buffer);
   }
 
