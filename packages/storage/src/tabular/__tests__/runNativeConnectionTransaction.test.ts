@@ -68,8 +68,21 @@ function makeParticipant(handle: object, table: string): AnyTabularStorage & Rec
   return participant;
 }
 
+/**
+ * A latch two transaction bodies use to interleave. `open()` is idempotent, so
+ * both sides may call it to mean "I have arrived".
+ */
+function gate(): { readonly reached: Promise<void>; readonly open: () => void } {
+  let open!: () => void;
+  const reached = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { reached, open };
+}
+
 interface RunOptions {
   readonly handle: object;
+  readonly chainHandle?: object;
   readonly participants: readonly AnyTabularStorage[];
   readonly fn: () => Promise<unknown>;
   readonly onDeactivate?: () => void;
@@ -82,6 +95,7 @@ interface RunOptions {
 function run(options: RunOptions): Promise<unknown> {
   return runNativeConnectionTransaction({
     handle: options.handle,
+    chainHandle: options.chainHandle,
     participants: options.participants,
     ownsSession: options.ownsSession ?? true,
     begin: options.begin ?? ((): void => {}),
@@ -428,6 +442,100 @@ describe("put deferral when the transaction does not own the session", () => {
     release();
     await tx;
     expect(participant.observed).toEqual(["outsider", "enlisted"]);
+  });
+});
+
+/**
+ * A real `pg.Pool` transaction chains on its own checked-out client, not on the
+ * pool, so two transactions over the SAME participant are open at once by
+ * design — `withConnectionTransaction` documents that a merely overlapping
+ * caller is not refused. Deferral must therefore keep each one's queue to
+ * itself: picking the most recently armed buffer instead sends an enlisted
+ * `put` into a stranger's transaction, where its COMMIT publishes a row that
+ * may still roll back and its ROLLBACK drops a row that committed.
+ */
+describe("put deferral across concurrent transactions that share a participant", () => {
+  beforeEach(() => {
+    __resetAlsForTesting();
+  });
+
+  afterEach(() => {
+    __resetAlsForTesting();
+  });
+
+  /** Two pooled transactions over one participant, each on its own client. */
+  function poolTransaction(
+    pool: object,
+    participant: AnyTabularStorage,
+    fn: () => Promise<void>
+  ): Promise<unknown> {
+    return run({
+      handle: pool,
+      // A fresh checkout per transaction, exactly as `pool.connect()` hands out.
+      chainHandle: {},
+      participants: [participant],
+      ownsSession: false,
+      fn,
+      afterCommit: () => flushDeferredPuts([participant]),
+      afterRollback: () => discardAllDeferredPuts([participant]),
+    });
+  }
+
+  it("does not let a concurrent ROLLBACK swallow a committed put", async () => {
+    const pool = {};
+    const participant = makeParticipant(pool, "table_a");
+    const bothOpen = gate();
+    const written = gate();
+    const otherDone = gate();
+
+    const committing = poolTransaction(pool, participant, async () => {
+      bothOpen.open();
+      await bothOpen.reached;
+      participant.emitPut("row-1");
+      written.open();
+      await otherDone.reached;
+    });
+
+    const rollingBack = poolTransaction(pool, participant, async () => {
+      bothOpen.open();
+      await written.reached;
+      throw new Error("boom");
+    });
+
+    await expect(rollingBack).rejects.toThrow("boom");
+    otherDone.open();
+    await committing;
+
+    expect(participant.observed).toEqual(["row-1"]);
+  });
+
+  it("does not let a concurrent COMMIT publish a put that then rolls back", async () => {
+    const pool = {};
+    const participant = makeParticipant(pool, "table_a");
+    const bothOpen = gate();
+    const written = gate();
+    const otherDone = gate();
+
+    const rollingBack = poolTransaction(pool, participant, async () => {
+      bothOpen.open();
+      await bothOpen.reached;
+      participant.emitPut("row-1");
+      written.open();
+      await otherDone.reached;
+      throw new Error("boom");
+    });
+
+    await poolTransaction(pool, participant, async () => {
+      bothOpen.open();
+      await written.reached;
+    });
+
+    const afterOtherCommitted = [...participant.observed];
+    otherDone.open();
+    await expect(rollingBack).rejects.toThrow("boom");
+
+    expect(afterOtherCommitted).toEqual([]);
+    expect(participant.observed).toEqual([]);
   });
 });
 
