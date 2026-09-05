@@ -45,11 +45,7 @@ import type {
   ValueOptionType,
 } from "./ITabularStorage";
 import { runHashJoin } from "./hashJoin";
-import {
-  isSearchCondition,
-  isSearchInCondition,
-  isSearchNotInCondition,
-} from "./ITabularStorage";
+import { isSearchCondition, isSearchInCondition, isSearchNotInCondition } from "./ITabularStorage";
 import type { KeysetPageDeps } from "./keysetPage";
 import {
   applyKeysetFilter,
