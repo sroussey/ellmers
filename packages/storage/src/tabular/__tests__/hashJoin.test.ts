@@ -273,7 +273,7 @@ describe("runHashJoin", () => {
       }
     );
     expect(ids(rows).sort()).toEqual(["p1:a1", "p2:a1", "p6:a1"]);
-    const criteria = rightQuery.mock.calls[0][0] as { id: { value: string[] } };
+    const criteria = rightQuery.mock.calls[0][0] as { id: { value: readonly string[] } };
     // a3 is in the caller's list but no left row references it; a2 is
     // referenced but excluded by the caller. Neither should be fetched.
     expect([...criteria.id.value].sort()).toEqual(["a1"]);
