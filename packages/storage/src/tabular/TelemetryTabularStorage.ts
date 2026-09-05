@@ -17,6 +17,9 @@ import type {
   DeleteSearchCriteria,
   InsertEntity,
   ITabularStorage,
+  JoinedRow,
+  JoinSpec,
+  JoinType,
   Page,
   PageRequest,
   QueryOptions,
@@ -147,6 +150,18 @@ export class TelemetryTabularStorage<
   ): Promise<Pick<Entity, K>[]> {
     return traced("workglow.storage.tabular.queryIndex", this.storageName, () =>
       this.inner.queryIndex(criteria, options)
+    );
+  }
+
+  join<R, T extends JoinType>(
+    spec: JoinSpec<Entity, R, T>,
+    right: ITabularStorage<any, any, R, any, any>
+  ): Promise<JoinedRow<Entity, R, T>[]> {
+    // Hand the inner storage the other side's inner too, so two traced SQL
+    // storages on one connection still take the single-statement path.
+    const target = right instanceof TelemetryTabularStorage ? right.inner : right;
+    return traced("workglow.storage.tabular.join", this.storageName, () =>
+      this.inner.join(spec, target)
     );
   }
 

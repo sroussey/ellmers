@@ -9,6 +9,9 @@ import type {
   CoveringIndexQueryOptions,
   DeleteSearchCriteria,
   ITabularStorage,
+  JoinedRow,
+  JoinSpec,
+  JoinType,
   Page,
   PageCursor,
   PageRequest,
@@ -180,6 +183,38 @@ export class ScopedTabularStorage<
       options as any
     );
     return (rows as any[]).map((r) => this.strip(r)) as Pick<Entity, K>[];
+  }
+
+  /**
+   * Scopes both sides: this storage's `kb_id` on the left, and — when the
+   * right side is also scoped — its own `kb_id` on the right, applied in the
+   * join condition so a LEFT JOIN keeps its unmatched rows. The inner
+   * storages are handed to the join directly so a shared SQL connection can
+   * still run it as one statement.
+   */
+  async join<R, T extends JoinType>(
+    spec: JoinSpec<Entity, R, T>,
+    right: ITabularStorage<any, any, R, any, any>
+  ): Promise<JoinedRow<Entity, R, T>[]> {
+    const rightScoped = right instanceof ScopedTabularStorage ? right : undefined;
+    const scoped: JoinSpec<any, any, T> = {
+      ...spec,
+      where: {
+        left: { ...(spec.where?.left as any), kb_id: this.kbId },
+        right:
+          rightScoped === undefined
+            ? spec.where?.right
+            : { ...(spec.where?.right as any), kb_id: rightScoped.kbId },
+      },
+    };
+    const rows = await this.inner.join(
+      scoped,
+      rightScoped === undefined ? right : rightScoped.inner
+    );
+    return rows.map((row) => ({
+      left: this.strip(row.left),
+      right: rightScoped !== undefined && row.right ? rightScoped.strip(row.right) : row.right,
+    })) as JoinedRow<Entity, R, T>[];
   }
 
   async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {

@@ -530,6 +530,39 @@ await repo.setupDatabase(); // applies pending migrations
 
 See `docs/superpowers/specs/2026-05-07-unified-tabular-migrations-design.md` for the full design and `docs/superpowers/plans/2026-05-07-unified-tabular-migrations.md` for implementation notes.
 
+## Joins
+
+`join(spec, right)` pairs rows of one storage (the left side) with rows of another. Every
+backend supports it: the default is an application-side hash join built on `query` and the
+`in` criterion, and the SQL backends (SQLite, PostgreSQL, DuckDB) run one `JOIN` statement
+when both storages share a connection and dialect.
+
+```typescript
+const rows = await posts.join(
+  {
+    type: "left", // or "inner"
+    on: [{ left: "author_id", right: "id" }], // several pairs make a compound key
+    where: { left: { views: { value: 10, operator: ">" } }, right: { country: "US" } },
+    orderBy: [{ side: "right", column: "name", direction: "ASC" }],
+    limit: 20,
+    offset: 0,
+  },
+  authors
+);
+// rows: Array<{ left: Post; right: Author | undefined }>
+```
+
+- Rows stay nested as `{ left, right }`, so same-named columns never collide. Under a
+  `left` join an unmatched left row has `right: undefined`; under `inner` it is dropped.
+- `where.right` is part of the join condition, not a filter over the result: a `left` join
+  keeps its unmatched rows however the right side is filtered.
+- A join key that is `null` on either side never matches, as in SQL.
+- `orderBy` under `ASC` puts nulls (and unmatched right sides) first, under `DESC` last, on
+  every backend.
+- Returns `[]` when nothing matches, and emits no event of its own.
+- `FsFolderTabularStorage` and `HuggingFaceTabularStorage` throw `StorageUnsupportedError`,
+  since neither can run the `in` query the hash join needs.
+
 ## Events
 
 All implementations emit events:

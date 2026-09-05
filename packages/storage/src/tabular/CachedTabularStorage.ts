@@ -22,6 +22,9 @@ import type {
   DeleteSearchCriteria,
   InsertEntity,
   ITabularStorage,
+  JoinedRow,
+  JoinSpec,
+  JoinType,
   QueryOptions,
   SearchCriteria,
   SimplifyPrimaryKey,
@@ -223,6 +226,19 @@ export class CachedTabularStorage<
   ): Promise<Pick<Entity, K>[]> {
     await this.initializeCache();
     return await this.cache.queryIndex(criteria, options);
+  }
+
+  /**
+   * Joins read the durable side, not the cache: durable is the source of
+   * truth, and it is the side that can push the join into one SQL statement.
+   */
+  override async join<R, T extends JoinType>(
+    spec: JoinSpec<Entity, R, T>,
+    right: ITabularStorage<any, any, R, any, any>
+  ): Promise<JoinedRow<Entity, R, T>[]> {
+    await this.initializeCache();
+    const target = right instanceof CachedTabularStorage ? right.durable : right;
+    return await this.durable.join(spec, target);
   }
 
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {

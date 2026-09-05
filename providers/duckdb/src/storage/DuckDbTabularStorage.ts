@@ -41,6 +41,7 @@ import {
   SqlTabularMigrationApplier,
   TYPED_ARRAY_CTORS,
 } from "@workglow/storage";
+import type { SqlJoinDialect } from "@workglow/storage";
 import { createServiceToken, uuid4 } from "@workglow/util";
 import type {
   DataPortSchemaObject,
@@ -1191,6 +1192,14 @@ export class DuckDbTabularStorage<
   ): Promise<Page<Entity>> {
     this.validateQueryParams(criteria, undefined);
     return this.runSqlPage(criteria, request, this.duckDbDialect());
+  }
+
+  protected override sqlJoinDialect(): SqlJoinDialect {
+    return {
+      dialect: DuckDbDialect,
+      executeRaw: async (sql, params) =>
+        (await (await this.getDb()).query(sql, params)).rows as Record<string, unknown>[],
+    };
   }
 
   private duckDbDialect() {

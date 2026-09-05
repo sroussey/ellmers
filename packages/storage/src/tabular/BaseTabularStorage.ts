@@ -26,6 +26,9 @@ import type {
   DeleteSearchCriteria,
   InsertEntity,
   ITabularStorage,
+  JoinedRow,
+  JoinSpec,
+  JoinType,
   OrderBy,
   Page,
   PageRequest,
@@ -40,7 +43,12 @@ import type {
   TabularSubscribeOptions,
   ValueOptionType,
 } from "./ITabularStorage";
-import { isSearchCondition, isSearchInCondition, isSearchNotInCondition } from "./ITabularStorage";
+import { runHashJoin } from "./hashJoin";
+import {
+  isSearchCondition,
+  isSearchInCondition,
+  isSearchNotInCondition,
+} from "./ITabularStorage";
 import type { KeysetPageDeps } from "./keysetPage";
 import {
   applyKeysetFilter,
@@ -65,6 +73,7 @@ import {
   criteriaMatchNoRow,
   shouldRunDeleteSearch,
   validateGetAllOptions,
+  validateJoinSpec,
   validateOrderBy,
   validatePageRequest,
   validateQueryParams,
@@ -301,6 +310,43 @@ export abstract class BaseTabularStorage<
       ...options.select.map(String),
     ];
     throw new CoveringIndexMissingError(this.constructor.name, requiredColumns, []);
+  }
+
+  /**
+   * Default join: an application-side hash join over `query` and the `in`
+   * criterion (see {@link runHashJoin}). Every backend inherits it; the SQL
+   * backends override it with a single `JOIN` statement when both tables sit
+   * on one connection. The callbacks are bound to `this`, so a subclass's own
+   * `query` / `getAll` (mutex, transaction routing) still runs underneath.
+   */
+  async join<R, T extends JoinType>(
+    spec: JoinSpec<Entity, R, T>,
+    right: ITabularStorage<any, any, R, any, any>
+  ): Promise<JoinedRow<Entity, R, T>[]> {
+    this.validateJoinSpec(spec, right);
+    return runHashJoin<Entity, R, T>(
+      {
+        leftQuery: (criteria, options) => this.query(criteria, options),
+        leftGetAll: (options) => this.getAll(options),
+        rightQuery: (criteria) => right.query(criteria),
+      },
+      spec
+    );
+  }
+
+  /**
+   * Validates a join spec against this schema and, when the right storage
+   * exposes one, against its schema too.
+   */
+  protected validateJoinSpec<R>(
+    spec: JoinSpec<Entity, R>,
+    right: ITabularStorage<any, any, R, any, any>
+  ): void {
+    const rightProperties =
+      right instanceof BaseTabularStorage
+        ? (right.schema.properties as Record<string, unknown>)
+        : undefined;
+    validateJoinSpec(this.schema.properties as Record<string, unknown>, rightProperties, spec);
   }
 
   abstract getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined>;

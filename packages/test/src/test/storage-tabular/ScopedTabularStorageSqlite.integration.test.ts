@@ -97,4 +97,42 @@ describe("ScopedTabularStorage over SqliteTabularStorage", () => {
       }
     });
   });
+
+  describe("join", () => {
+    test("scopes each side to its own kb and runs a same-table join as one statement", async () => {
+      await scopeA.put({ doc_id: "j1", data: "A-j1" });
+      await scopeA.put({ doc_id: "j2", data: "A-j2" });
+      await scopeB.put({ doc_id: "j1", data: "B-j1" });
+      const innerQuery = vi.spyOn(sharedStorage, "query");
+      const on = [{ left: "doc_id", right: "doc_id" }] as const;
+      const where = { left: { doc_id: { value: ["j1", "j2"], operator: "in" as const } } };
+      const orderBy = [{ side: "left" as const, column: "doc_id", direction: "ASC" as const }];
+
+      try {
+        // Same scope on both sides: kb-b's "j1" must not pair with kb-a's.
+        const same = await scopeA.join({ type: "inner", on, where, orderBy }, scopeA);
+        expect(same.map((r: any) => `${r.left.data}|${r.right.data}`)).toEqual([
+          "A-j1|A-j1",
+          "A-j2|A-j2",
+        ]);
+        expect(
+          same.every((r: any) => r.left.kb_id === undefined && r.right.kb_id === undefined)
+        ).toBe(true);
+
+        // Different scopes: the right side is scoped to ITS kb, and a LEFT
+        // JOIN keeps the kb-a row kb-b has no counterpart for.
+        const cross = await scopeA.join({ type: "left", on, where, orderBy }, scopeB);
+        expect(cross.map((r: any) => `${r.left.data}|${r.right?.data ?? "-"}`)).toEqual([
+          "A-j1|B-j1",
+          "A-j2|-",
+        ]);
+
+        // Both inner storages are the one SQLite table, so neither join
+        // needed the hash path's right-side query.
+        expect(innerQuery).not.toHaveBeenCalled();
+      } finally {
+        innerQuery.mockRestore();
+      }
+    });
+  });
 });

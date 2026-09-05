@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { FsFolderTabularStorage } from "@workglow/storage";
+import { FsFolderTabularStorage, StorageUnsupportedError } from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import { getTestingLogger } from "@workglow/util/test";
 import { mkdirSync, rmSync, writeFileSync } from "fs";
@@ -145,5 +145,17 @@ describe("FsFolderTabularStorage", () => {
     },
     usesPolling: true,
     pollingIntervalMs: 50,
+  });
+});
+
+describe("FsFolderTabularStorage join", () => {
+  test("is unsupported, like query", async () => {
+    const storage = new FsFolderTabularStorage<
+      typeof CompoundSchema,
+      typeof CompoundPrimaryKeyNames
+    >(`${testDir}/join_${uuid4()}`, CompoundSchema, CompoundPrimaryKeyNames);
+    await expect(
+      storage.join({ type: "inner", on: [{ left: "name", right: "name" }] }, storage)
+    ).rejects.toBeInstanceOf(StorageUnsupportedError);
   });
 });

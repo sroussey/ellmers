@@ -17,6 +17,13 @@ import {
   VectorItemPrimaryKeyNames,
   VectorItemSchema,
 } from "../../contract/tabular-storage/runTabularStorageContract";
+import {
+  AuthorPrimaryKeyNames,
+  AuthorSchema,
+  PostPrimaryKeyNames,
+  PostSchema,
+  runGenericTabularJoinTests,
+} from "./genericTabularJoinTests";
 import { runGenericTabularStorageSubscriptionTests } from "./genericTabularStorageSubscriptionTests";
 import {
   AllTypesPrimaryKeyNames,
@@ -717,4 +724,24 @@ describe("IndexedDbTabularStorage", () => {
       return storage;
     },
   });
+});
+
+describe("IndexedDbTabularStorage join", () => {
+  const joinDb = `idx_join_${uuid4().replace(/-/g, "_")}`;
+  runGenericTabularJoinTests(
+    async () =>
+      new IndexedDbTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+        `${joinDb}_posts`,
+        PostSchema,
+        PostPrimaryKeyNames,
+        [["author_id"]]
+      ),
+    async () =>
+      new IndexedDbTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+        `${joinDb}_authors`,
+        AuthorSchema,
+        AuthorPrimaryKeyNames
+      ),
+    { expectSqlPushdown: false }
+  );
 });

@@ -376,6 +376,69 @@ export interface CoveringIndexQueryOptions<Entity, K extends keyof Entity & stri
   readonly offset?: number;
 }
 
+export const JoinTypes = { inner: "inner", left: "left" } as const;
+export type JoinType = (typeof JoinTypes)[keyof typeof JoinTypes];
+
+/**
+ * Set form of {@link JoinTypes} for O(1) allow-list checks. The join type is
+ * interpolated raw into SQL (`LEFT JOIN` / `INNER JOIN`), so it is re-verified
+ * at the JSON trust boundary the same way {@link SEARCH_OPERATOR_SET} is.
+ */
+export const JOIN_TYPE_SET: ReadonlySet<string> = new Set(Object.values(JoinTypes));
+
+export const JoinSides = { left: "left", right: "right" } as const;
+export type JoinSide = (typeof JoinSides)[keyof typeof JoinSides];
+
+/** Set form of {@link JoinSides} for O(1) allow-list checks. */
+export const JOIN_SIDE_SET: ReadonlySet<string> = new Set(Object.values(JoinSides));
+
+/** One equality pair of the join condition: `left.<left> = right.<right>`. */
+export interface JoinOn<L, R> {
+  readonly left: keyof L & string;
+  readonly right: keyof R & string;
+}
+
+/** An {@link OrderBy} that also names which side of the join the column is on. */
+export interface JoinOrderBy {
+  readonly side: JoinSide;
+  readonly column: string;
+  readonly direction: SortDirection;
+}
+
+/**
+ * Per-side filters. `right` is applied as part of the join condition rather
+ * than after it, so under a `left` join an unmatched left row survives a
+ * right-side filter instead of being dropped by it.
+ */
+export interface JoinWhere<L, R> {
+  readonly left?: SearchCriteria<L>;
+  readonly right?: SearchCriteria<R>;
+}
+
+/**
+ * Describes a two-table join. `on` pairs are AND-ed; a compound key is several
+ * pairs. A join key that is `null` (or absent) on either side never matches,
+ * as in SQL. `orderBy`, `limit` and `offset` apply to the joined rows.
+ */
+export interface JoinSpec<L, R, T extends JoinType = JoinType> {
+  readonly type: T;
+  readonly on: ReadonlyArray<JoinOn<L, R>>;
+  readonly where?: JoinWhere<L, R>;
+  readonly orderBy?: ReadonlyArray<JoinOrderBy>;
+  readonly limit?: number;
+  readonly offset?: number;
+}
+
+/**
+ * One row of a join result. The two sides stay nested rather than being
+ * flattened, so same-named columns never collide and an unmatched left row
+ * under a `left` join is an honest `right: undefined`.
+ */
+export interface JoinedRow<L, R, T extends JoinType = JoinType> {
+  readonly left: L;
+  readonly right: T extends "left" ? R | undefined : R;
+}
+
 /**
  * Request for a cursor-paginated read.
  *
@@ -703,6 +766,22 @@ export interface ITabularStorage<
   ): Promise<Pick<Entity, K>[]>;
 
   /**
+   * Joins this storage (the left side) to `right`. Every backend supports it:
+   * the default is an application-side hash join over `query` and the `in`
+   * criterion, and the SQL backends run one `JOIN` statement when both
+   * storages sit on the same connection.
+   *
+   * Rows come back nested as `{ left, right }`; under a `left` join an
+   * unmatched left row carries `right: undefined`. A `null` join key never
+   * matches. Returns `[]` (never `undefined`) when nothing matches. Emits no
+   * event of its own.
+   */
+  join<R, T extends JoinType>(
+    spec: JoinSpec<Entity, R, T>,
+    right: ITabularStorage<any, any, R, any, any>
+  ): Promise<JoinedRow<Entity, R, T>[]>;
+
+  /**
    * Subscribes to changes in the repository (including remote changes).
    * @returns Unsubscribe function.
    */
@@ -809,8 +888,9 @@ export interface ITabularStorage<
 
 export type AnyTabularStorage = Omit<
   ITabularStorage<any, any, any, any, any>,
-  "queryIndex" | "withTransaction"
+  "queryIndex" | "withTransaction" | "join"
 > & {
   queryIndex(criteria: any, options: any): Promise<any[]>;
   withTransaction<T>(fn: (tx: any) => Promise<T>): Promise<T>;
+  join(spec: any, right: any): Promise<any[]>;
 };

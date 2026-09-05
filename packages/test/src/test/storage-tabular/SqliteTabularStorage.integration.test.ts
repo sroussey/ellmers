@@ -7,6 +7,7 @@
 import { Sqlite, SqliteTabularStorage } from "@workglow/sqlite/storage";
 import {
   ConnectionReentryError,
+  InMemoryTabularStorage,
   NestedConnectionTransactionError,
   StorageValidationError,
   withConnectionTransaction,
@@ -14,12 +15,19 @@ import {
 import { setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { getTestingLogger } from "@workglow/util/test";
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   runTabularStorageContract,
   VectorItemPrimaryKeyNames,
   VectorItemSchema,
 } from "../../contract/tabular-storage/runTabularStorageContract";
+import {
+  AuthorPrimaryKeyNames,
+  AuthorSchema,
+  PostPrimaryKeyNames,
+  PostSchema,
+  runGenericTabularJoinTests,
+} from "./genericTabularJoinTests";
 import { runSqlBulkPutTests } from "./genericSqlBulkPutTests";
 import {
   AllTypesPrimaryKeyNames,
@@ -875,4 +883,66 @@ describe("SqliteTabularStorage entity prototypes", () => {
       storage.destroy();
     }
   });
+});
+
+describe("SqliteTabularStorage join", () => {
+  let shared: Sqlite.Database;
+  beforeAll(async () => {
+    await Sqlite.init();
+    shared = new Sqlite.Database(":memory:");
+  });
+
+  // Two tables on one handle: the join runs as a single statement.
+  runGenericTabularJoinTests(
+    async () =>
+      new SqliteTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+        shared,
+        `join_posts_${uuid4().replace(/-/g, "_")}`,
+        PostSchema,
+        PostPrimaryKeyNames
+      ),
+    async () =>
+      new SqliteTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+        shared,
+        `join_authors_${uuid4().replace(/-/g, "_")}`,
+        AuthorSchema,
+        AuthorPrimaryKeyNames
+      ),
+    { expectSqlPushdown: true }
+  );
+
+  // A right side elsewhere: the hash join, with the in-list chunking it does
+  // against a real SQLite left side.
+  runGenericTabularJoinTests(
+    async () =>
+      new SqliteTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+        ":memory:",
+        `join_posts_${uuid4().replace(/-/g, "_")}`,
+        PostSchema,
+        PostPrimaryKeyNames
+      ),
+    async () =>
+      new InMemoryTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+        AuthorSchema,
+        AuthorPrimaryKeyNames
+      ),
+    { expectSqlPushdown: false }
+  );
+
+  // The mirror image: a SQLite right side answering an InMemory left's in-list.
+  runGenericTabularJoinTests(
+    async () =>
+      new InMemoryTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+        PostSchema,
+        PostPrimaryKeyNames
+      ),
+    async () =>
+      new SqliteTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+        ":memory:",
+        `join_authors_${uuid4().replace(/-/g, "_")}`,
+        AuthorSchema,
+        AuthorPrimaryKeyNames
+      ),
+    { expectSqlPushdown: false }
+  );
 });

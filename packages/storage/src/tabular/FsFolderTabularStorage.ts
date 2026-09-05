@@ -31,6 +31,10 @@ import type {
   CoveringIndexQueryOptions,
   DeleteSearchCriteria,
   InsertEntity,
+  ITabularStorage,
+  JoinedRow,
+  JoinSpec,
+  JoinType,
   QueryOptions,
   SearchCriteria,
   SimplifyPrimaryKey,
@@ -420,6 +424,13 @@ export class FsFolderTabularStorage<
     _options: CoveringIndexQueryOptions<Entity, K>
   ): Promise<Pick<Entity, K>[]> {
     throw new StorageUnsupportedError("queryIndex", "FsFolderTabularStorage");
+  }
+
+  override async join<R, T extends JoinType>(
+    _spec: JoinSpec<Entity, R, T>,
+    _right: ITabularStorage<any, any, R, any, any>
+  ): Promise<JoinedRow<Entity, R, T>[]> {
+    throw new StorageUnsupportedError("join", "FsFolderTabularStorage");
   }
 
   async deleteSearch(_criteria: DeleteSearchCriteria<Entity>): Promise<void> {

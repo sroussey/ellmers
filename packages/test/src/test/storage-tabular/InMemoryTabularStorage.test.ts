@@ -19,6 +19,13 @@ import {
   VectorItemPrimaryKeyNames,
   VectorItemSchema,
 } from "../../contract/tabular-storage/runTabularStorageContract";
+import {
+  AuthorPrimaryKeyNames,
+  AuthorSchema,
+  PostPrimaryKeyNames,
+  PostSchema,
+  runGenericTabularJoinTests,
+} from "./genericTabularJoinTests";
 import { runGenericTabularStorageSubscriptionTests } from "./genericTabularStorageSubscriptionTests";
 import {
   AllTypesPrimaryKeyNames,
@@ -415,4 +422,20 @@ describe("updateWhere (InMemory)", () => {
       ((await repo.get({ id: "a" } as never)) as { category?: string } | undefined)?.category
     ).toBe("y");
   });
+});
+
+describe("InMemoryTabularStorage join", () => {
+  runGenericTabularJoinTests(
+    async () =>
+      new InMemoryTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+        PostSchema,
+        PostPrimaryKeyNames
+      ),
+    async () =>
+      new InMemoryTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+        AuthorSchema,
+        AuthorPrimaryKeyNames
+      ),
+    { expectSqlPushdown: false }
+  );
 });

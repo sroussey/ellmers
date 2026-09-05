@@ -8,6 +8,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { PostgresTabularStorage } from "@workglow/postgres/storage";
 import {
   ConnectionReentryError,
+  InMemoryTabularStorage,
   NestedConnectionTransactionError,
   StorageValidationError,
   withConnectionTransaction,
@@ -22,6 +23,13 @@ import {
   VectorItemPrimaryKeyNames,
   VectorItemSchema,
 } from "../../contract/tabular-storage/runTabularStorageContract";
+import {
+  AuthorPrimaryKeyNames,
+  AuthorSchema,
+  PostPrimaryKeyNames,
+  PostSchema,
+  runGenericTabularJoinTests,
+} from "./genericTabularJoinTests";
 import { runSqlBulkPutTests } from "./genericSqlBulkPutTests";
 import {
   AllTypesPrimaryKeyNames,
@@ -909,4 +917,48 @@ describe("PostgresTabularStorage regressions", () => {
     // that the tuple limit exists to bound.
     expect(selects[0]).not.toMatch(/IN \(\(/);
   });
+});
+
+describe("PostgresTabularStorage join", () => {
+  const joinDb = new PGlite() as unknown as Pool;
+  afterAll(async () => {
+    await (joinDb as unknown as PGlite).close();
+  });
+
+  // Two tables on one session: the join runs as a single statement.
+  runGenericTabularJoinTests(
+    async () =>
+      new PostgresTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+        joinDb,
+        `join_posts_${uuid4().replace(/-/g, "_")}`,
+        PostSchema,
+        PostPrimaryKeyNames
+      ),
+    async () =>
+      new PostgresTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+        joinDb,
+        `join_authors_${uuid4().replace(/-/g, "_")}`,
+        AuthorSchema,
+        AuthorPrimaryKeyNames
+      ),
+    { expectSqlPushdown: true }
+  );
+
+  // A right side elsewhere: the hash join, with `= ANY($n)` array binding on
+  // the Postgres side.
+  runGenericTabularJoinTests(
+    async () =>
+      new InMemoryTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+        PostSchema,
+        PostPrimaryKeyNames
+      ),
+    async () =>
+      new PostgresTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+        joinDb,
+        `join_authors_${uuid4().replace(/-/g, "_")}`,
+        AuthorSchema,
+        AuthorPrimaryKeyNames
+      ),
+    { expectSqlPushdown: false }
+  );
 });
