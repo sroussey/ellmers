@@ -331,6 +331,48 @@ describe("runHashJoin", () => {
     expect(ids(rows)).toEqual(["p1:a1", "p6:a1", "p3:a2"]);
   });
 
+  it("emits one row per matching right row when the right side is one-to-many", async () => {
+    const { deps, authors } = await fixtures();
+    // Two authors share a tenant, so joining on `tenant` alone makes the right
+    // side one-to-many: every left row fans out across its matches.
+    const rows = await runHashJoin(deps, {
+      type: "inner",
+      on: [{ left: "tenant", right: "tenant" }],
+      where: { left: { id: "p1" } },
+      orderBy: [{ side: "right", column: "id", direction: "ASC" }],
+    });
+    expect(ids(rows)).toEqual(["p1:a1", "p1:a2"]);
+    // The same left row is reported once per match, not collapsed to one.
+    expect(rows.map((r) => r.left.id)).toEqual(["p1", "p1"]);
+    void authors;
+  });
+
+  it("falls back to the whole budget when no column needs an in-list", () => {
+    expect(joinInChunkSize(0)).toBe(900);
+    expect(joinInChunkSize(-1)).toBe(900);
+  });
+
+  it("reports an unorderable column as a join error, not a pagination-cursor one", async () => {
+    const { deps } = await fixtures();
+    // `compareKeyValues` is the cursor comparator and refuses bigint and
+    // non-primitives in cursor vocabulary; a join never paginated, so the
+    // error has to name the column and the join instead.
+    const bigintDeps = {
+      ...deps,
+      rightQuery: async () =>
+        [
+          { id: "a1", tenant: "t1", name: 10n as unknown as string, country: null },
+        ] as unknown as Author[],
+    };
+    await expect(
+      runHashJoin(bigintDeps, {
+        type: "inner",
+        on,
+        orderBy: [{ side: "right", column: "name", direction: "ASC" }],
+      })
+    ).rejects.toThrow(/Cannot order a join by right column "name"/);
+  });
+
   it("returns [] for an inner join with no left rows", async () => {
     const { deps, posts } = await fixtures();
     await posts.deleteAll();
