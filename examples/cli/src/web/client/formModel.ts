@@ -67,6 +67,30 @@ export function toInvocation(
   return Object.keys(config).length > 0 ? { path, args, options, config } : { path, args, options };
 }
 
+/**
+ * The inverse of {@link toInvocation}: an invocation read back into the form.
+ *
+ * Arguments are positional, so they fill the argument fields in declared
+ * order; options and config land by key. Whatever the invocation does not
+ * mention keeps the field's own default, so a partially specified invocation
+ * fills what it knows and leaves the rest as the form would have opened.
+ */
+export function valuesFromInvocation(
+  fields: readonly WebField[],
+  invocation: WebInvocation
+): FormValues {
+  const values = initialValues(fields);
+  fields
+    .filter((field) => field.source === "argument")
+    .forEach((field, index) => {
+      const value = invocation.args[index];
+      if (value !== undefined) values[field.key] = value;
+    });
+  for (const [key, value] of Object.entries(invocation.options)) values[key] = value;
+  for (const [key, value] of Object.entries(invocation.config ?? {})) values[key] = value;
+  return values;
+}
+
 export function formErrors(fields: readonly WebField[], values: FormValues): string[] {
   const errors: string[] = [];
   for (const field of fields) {

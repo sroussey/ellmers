@@ -6,12 +6,25 @@
  */
 
 import type { JSX } from "preact";
-import type { PanelData } from "../../extensions";
+import type { PanelData, PanelRowAction } from "../../extensions";
+import type { WebInvocation } from "../../argv";
 import type { RunSummary } from "../api";
 import type { RunViewState } from "../state";
 
-function Panel({ data }: { data: PanelData }): JSX.Element {
+function Panel({
+  data,
+  onAction,
+}: {
+  data: PanelData;
+  onAction?: (invocation: WebInvocation) => void;
+}): JSX.Element {
   if (data.kind === "table") {
+    // The action column exists only where a row actually carries one, so a
+    // table without actions renders exactly as it always has.
+    const actions: readonly (readonly PanelRowAction[] | undefined)[] | undefined =
+      onAction && data.rowActions?.some((row) => row && row.length > 0)
+        ? data.rowActions
+        : undefined;
     return (
       <>
         <div className="tblwrap">
@@ -21,6 +34,7 @@ function Panel({ data }: { data: PanelData }): JSX.Element {
                 {data.columns.map((column) => (
                   <th key={column}>{column}</th>
                 ))}
+                {actions ? <th scope="col">action</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -32,6 +46,23 @@ function Panel({ data }: { data: PanelData }): JSX.Element {
                   {row.map((cell, cellIndex) => (
                     <td key={cellIndex}>{cell}</td>
                   ))}
+                  {actions ? (
+                    <td>
+                      <div className="rowacts">
+                        {(actions[index] ?? []).map((action) => (
+                          <button
+                            key={action.label}
+                            type="button"
+                            className="btn sm"
+                            title={action.title}
+                            onClick={() => onAction?.(action.invocation)}
+                          >
+                            {action.label}
+                          </button>
+                        ))}
+                      </div>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>
@@ -98,10 +129,17 @@ export function ResultTab({
   run,
   state,
   panels,
+  onAction,
 }: {
   run: RunSummary;
   state: RunViewState;
   panels: readonly { id: string; title: string; source: string; data: PanelData }[];
+  /**
+   * Carries one row into the command it is an argument for: the console
+   * selects that command and fills its form, leaving the run attached so the
+   * table behind the button is still there for the next row.
+   */
+  onAction?: (invocation: WebInvocation) => void;
 }): JSX.Element {
   return (
     <div className="wrap">
@@ -145,7 +183,7 @@ export function ResultTab({
               <span>{panel.title}</span>
               <span className="badge ext">{panel.source}</span>
             </h5>
-            <Panel data={panel.data} />
+            <Panel data={panel.data} onAction={onAction} />
           </div>
         </div>
       ))}

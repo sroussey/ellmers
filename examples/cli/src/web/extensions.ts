@@ -17,6 +17,30 @@ import type { WebInvocation } from "./argv";
  * is a new {@link PanelData} kind, which is one shared change rather than a
  * plugin loader.
  */
+/**
+ * The command one row of a table is an argument for.
+ *
+ * A worklist is only half of the work: a table of suggested aliases is read to
+ * decide which ones to record, and recording one means copying two values out
+ * of the table and typing them into another command's form. This carries that
+ * command with the row instead.
+ *
+ * The console FILLS the form and switches to it; it does not run it. The rows
+ * that have an action are the ones a human is being asked to judge, and the
+ * command behind the button is usually one that writes.
+ */
+export interface PanelRowAction {
+  /** Button text. Short — it sits inside a table cell. */
+  readonly label: string;
+  /**
+   * The button's tooltip. A cell has room for `Add →` and not for what the
+   * arrow points at, so the sentence saying which value survives goes here.
+   */
+  readonly title?: string;
+  /** The command to select, and the values to fill its form with. */
+  readonly invocation: WebInvocation;
+}
+
 export type PanelData =
   | {
       readonly kind: "table";
@@ -28,6 +52,16 @@ export type PanelData =
        * the panel exists to save.
        */
       readonly rowTones?: readonly (WebTone | undefined)[];
+      /**
+       * Per-row actions, positionally aligned with `rows`. Rendered as one
+       * extra column, present only when some row carries an action.
+       *
+       * A list rather than one action, because a row is not always a single
+       * decision: a suggested alias is a pair of names and which of the two
+       * survives is exactly what the reader is being asked, so that row offers
+       * the merge in both directions.
+       */
+      readonly rowActions?: readonly (readonly PanelRowAction[] | undefined)[];
       /** Footnote under the table: what was truncated, what a column means. */
       readonly note?: string;
     }

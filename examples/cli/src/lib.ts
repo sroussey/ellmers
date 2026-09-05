@@ -55,6 +55,7 @@ export {
   registerWebStatusReadCleanup,
   registerWebStatusWidget,
   type PanelData,
+  type PanelRowAction,
   type WebFieldWidget,
   type WebFieldWidgetContext,
   type WebFieldWidgetItem,

@@ -551,6 +551,19 @@ textarea {
   opacity: 0.45;
   cursor: not-allowed;
 }
+/* Sized to sit inside a table cell without growing the row. */
+.btn.sm {
+  padding: 2px 8px;
+  font-size: var(--fs-11);
+  white-space: nowrap;
+}
+
+/* Several actions on one row stay on one line, and wrap only when narrow. */
+.rowacts {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
 .kbd {
   font-family: var(--mono);
   font-size: 10px;

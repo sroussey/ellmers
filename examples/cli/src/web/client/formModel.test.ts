@@ -6,7 +6,13 @@
 
 import { describe, expect, it } from "vitest";
 import type { WebField } from "../commandFields";
-import { formErrors, initialValues, splitFields, toInvocation } from "./formModel";
+import {
+  formErrors,
+  initialValues,
+  splitFields,
+  toInvocation,
+  valuesFromInvocation,
+} from "./formModel";
 
 const field = (over: Partial<WebField> & { key: string }): WebField => ({
   label: over.key,
@@ -32,6 +38,50 @@ const fields: readonly WebField[] = [
 describe("initialValues", () => {
   it("seeds defaults and leaves everything else unset", () => {
     expect(initialValues(fields)).toEqual({ model: "claude-sonnet-5", "dry-run": false });
+  });
+});
+
+describe("valuesFromInvocation", () => {
+  const aliasFields: readonly WebField[] = [
+    field({ key: "from", source: "argument", required: true }),
+    field({ key: "into", source: "argument", required: true }),
+    field({ key: "reason", source: "option" }),
+    field({ key: "format", source: "option", defaultValue: "text" }),
+  ];
+
+  it("fills arguments in declared order and options by key", () => {
+    expect(
+      valuesFromInvocation(aliasFields, {
+        path: ["review", "aliases", "company", "add"],
+        args: ["ACME CORP", "ACME CORP."],
+        options: { reason: "EDGAR carried both" },
+      })
+    ).toEqual({
+      from: "ACME CORP",
+      into: "ACME CORP.",
+      reason: "EDGAR carried both",
+      format: "text",
+    });
+  });
+
+  it("round-trips an invocation the form composed", () => {
+    const invocation = toInvocation(
+      aliasFields,
+      { from: "A", into: "B", reason: "typo", format: "text" },
+      ["review", "aliases", "company", "add"]
+    );
+    const values = valuesFromInvocation(aliasFields, invocation);
+    expect(toInvocation(aliasFields, values, invocation.path)).toEqual(invocation);
+  });
+
+  it("leaves a field the invocation does not mention at its default", () => {
+    expect(
+      valuesFromInvocation(aliasFields, {
+        path: ["review", "aliases", "company", "add"],
+        args: ["A"],
+        options: {},
+      })
+    ).toEqual({ from: "A", format: "text" });
   });
 });
 

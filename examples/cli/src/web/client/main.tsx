@@ -9,7 +9,7 @@ import type { JSX } from "preact";
 import { render } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { RunEvent } from "../../run-events/RunEventTypes";
-import { renderCliLine } from "../argv";
+import { renderCliLine, type WebInvocation } from "../argv";
 import type { WebField } from "../commandFields";
 import { findCommandNode, type WebCommandNode } from "../commandTree";
 import type { PanelData, WebStatusItem } from "../extensions";
@@ -27,7 +27,13 @@ import {
   startRun,
   type RunSummary,
 } from "./api";
-import { formErrors, initialValues, toInvocation, type FormValues } from "./formModel";
+import {
+  formErrors,
+  initialValues,
+  toInvocation,
+  valuesFromInvocation,
+  type FormValues,
+} from "./formModel";
 import {
   HEARTBEAT_MS,
   HEARTBEAT_TIMEOUT_MS,
@@ -221,6 +227,35 @@ function App(): JSX.Element {
         .catch((cause: Error) => setError(cause.message));
     },
     [detachRun, node]
+  );
+
+  /**
+   * Carries one row of a result panel into the command it is an argument for:
+   * selects that command and fills its form from the invocation the panel
+   * attached to the row.
+   *
+   * Fills, and stops there — the row is a suggestion someone is being asked to
+   * judge, and the command behind it usually writes. The run stays attached on
+   * purpose, so the table the button was clicked in is still on the Result tab
+   * for the next row; that table is a worklist, and detaching would close it
+   * after one.
+   */
+  const prefillFrom = useCallback(
+    (invocation: WebInvocation) => {
+      const owner = findCommandNode(commands, invocation.path);
+      if (!owner) return;
+      setNode(owner);
+      setPane(stackedPane("select"));
+      setTab("options");
+      setOpen((current) => new Set([...current, ...openPathsFor(owner.path)]));
+      void getFields(owner.path, invocation.args)
+        .then((result) => {
+          setFields(result.fields);
+          setValues(valuesFromInvocation(result.fields, invocation));
+        })
+        .catch((cause: Error) => setError(cause.message));
+    },
+    [commands]
   );
 
   /** An argument decides which schema applies, so changing one re-asks. */
@@ -583,7 +618,9 @@ function App(): JSX.Element {
               }}
             />
           ) : null}
-          {tab === "result" && run ? <ResultTab run={run} state={view} panels={panels} /> : null}
+          {tab === "result" && run ? (
+            <ResultTab run={run} state={view} panels={panels} onAction={prefillFrom} />
+          ) : null}
         </div>
 
         <footer className="statusbar">
