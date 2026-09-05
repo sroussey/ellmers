@@ -134,5 +134,21 @@ describe("ScopedTabularStorage over SqliteTabularStorage", () => {
         innerQuery.mockRestore();
       }
     });
+
+    test("refuses an unscoped right side rather than joining across every kb", async () => {
+      await scopeA.put({ doc_id: "leak", data: "A-leak" });
+      await scopeB.put({ doc_id: "leak", data: "B-leak" });
+
+      // The shared table is the inner storage both scopes wrap, and the KB
+      // layer holds it right next to them. Joining against it directly would
+      // put no kb_id filter on the right side, so kb-a's "leak" would pair
+      // with kb-b's and come back carrying kb_id.
+      await expect(
+        scopeA.join(
+          { type: "inner", on: [{ left: "doc_id", right: "doc_id" }] },
+          sharedStorage as any
+        )
+      ).rejects.toThrow(/requires a scoped right side/);
+    });
   });
 });

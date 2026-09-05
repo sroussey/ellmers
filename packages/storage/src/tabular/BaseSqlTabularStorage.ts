@@ -629,6 +629,15 @@ export abstract class BaseSqlTabularStorage<
     return null;
   }
 
+  /** Memoized {@link sqlJoinDialect}: the bag is per-instance and immutable. */
+  private _joinDialectCache: SqlJoinDialect | null | undefined;
+  private cachedSqlJoinDialect(): SqlJoinDialect | null {
+    if (this._joinDialectCache === undefined) {
+      this._joinDialectCache = this.sqlJoinDialect();
+    }
+    return this._joinDialectCache;
+  }
+
   /**
    * Decides whether `right` can be joined in one statement: it must be a SQL
    * storage speaking the same dialect on the same connection. The dialect is
@@ -636,8 +645,8 @@ export abstract class BaseSqlTabularStorage<
    */
   private planSqlJoin(right: unknown): SqlJoinPlan | null {
     if (!(right instanceof BaseSqlTabularStorage)) return null;
-    const mine = this.sqlJoinDialect();
-    const theirs = right.sqlJoinDialect();
+    const mine = this.cachedSqlJoinDialect();
+    const theirs = right.cachedSqlJoinDialect();
     if (mine === null || theirs === null || mine.dialect !== theirs.dialect) return null;
     const handle = this.sharedConnectionHandle();
     if (handle === null || handle !== right.sharedConnectionHandle()) return null;
@@ -646,22 +655,31 @@ export abstract class BaseSqlTabularStorage<
 
   /**
    * Runs the join as one `JOIN` statement when {@link planSqlJoin} allows it,
-   * otherwise falls back to the hash join. The decision is made before the
-   * mutex is taken: the fallback goes through the public `query`, which takes
-   * the mutex itself.
+   * otherwise falls back to the hash join.
+   *
+   * The plan is computed ONCE and the pushdown runs from it directly. Taking
+   * the mutex and then re-planning would let the hash-join fallback run while
+   * this instance's lock is held, and that fallback reaches the public
+   * `query`/`getAll`, which take the same non-reentrant lock — a deadlock that
+   * wedges the instance for every later call. So the only thing that may run
+   * under the lock here is the pushdown, which touches the driver directly.
    */
   override async join<R, T extends JoinType>(
     spec: JoinSpec<Entity, R, T>,
     right: ITabularStorage<any, any, R, any, any>
   ): Promise<JoinedRow<Entity, R, T>[]> {
-    if (this.planSqlJoin(right) === null) return super.join(spec, right);
-    return this.mutex(() => this._joinInternal(spec, right));
+    const plan = this.planSqlJoin(right);
+    if (plan === null) return super.join(spec, right);
+    return this.mutex(() => this.runSqlJoin(spec, plan.right, plan.dialect));
   }
 
   /**
-   * Mutex-free body of {@link join}. The `_*Internal` name is load-bearing:
-   * each backend's transaction proxy routes `tx.join()` here so a join inside
-   * `withTransaction` does not wait on the lock the transaction holds.
+   * Transaction-proxy entry point for {@link join}. The `_*Internal` name is
+   * load-bearing: each backend's `createTxView` routes `tx.join()` here, bound
+   * to the proxy, so the call bypasses the lock `withTransaction` is holding.
+   * Re-planning (and falling back) is safe here precisely because no lock is
+   * held on this path — `super.join`'s `query`/`getAll` re-enter the proxy and
+   * route to `_queryInternal`/`_getAllInternal`.
    */
   protected async _joinInternal<R, T extends JoinType>(
     spec: JoinSpec<Entity, R, T>,

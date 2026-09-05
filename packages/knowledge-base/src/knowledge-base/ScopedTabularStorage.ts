@@ -186,34 +186,42 @@ export class ScopedTabularStorage<
   }
 
   /**
-   * Scopes both sides: this storage's `kb_id` on the left, and — when the
-   * right side is also scoped — its own `kb_id` on the right, applied in the
-   * join condition so a LEFT JOIN keeps its unmatched rows. The inner
-   * storages are handed to the join directly so a shared SQL connection can
-   * still run it as one statement.
+   * Scopes both sides: this storage's `kb_id` on the left and the right
+   * side's own on the right, both applied in the join condition so a LEFT
+   * JOIN keeps its unmatched rows. The inner storages are handed to the join
+   * directly, so a shared SQL connection can still run it as one statement.
+   *
+   * The right side MUST be scoped. Joining against a raw shared storage would
+   * put no `kb_id` filter on that side and strip nothing from it, so one
+   * scope's rows would pair with every other scope's and the returned rows
+   * would carry the `kb_id` this wrapper exists to hide. Refusing is the only
+   * safe answer: the caller cannot see the difference in the result type
+   * (`JoinedRow.right` is `R` either way), so a silent unscoped join is
+   * undetectable at the call site.
    */
   async join<R, T extends JoinType>(
     spec: JoinSpec<Entity, R, T>,
     right: ITabularStorage<any, any, R, any, any>
   ): Promise<JoinedRow<Entity, R, T>[]> {
-    const rightScoped = right instanceof ScopedTabularStorage ? right : undefined;
+    if (!(right instanceof ScopedTabularStorage)) {
+      throw new StorageValidationError(
+        `ScopedTabularStorage.join requires a scoped right side; got ` +
+          `${(right as object).constructor.name}. Joining an unscoped storage would ` +
+          `match rows across every kb_id and return them with kb_id attached.`
+      );
+    }
+    const rightScoped = right as ScopedTabularStorage<any, any, any, any, any>;
     const scoped: JoinSpec<any, any, T> = {
       ...spec,
       where: {
         left: { ...(spec.where?.left as any), kb_id: this.kbId },
-        right:
-          rightScoped === undefined
-            ? spec.where?.right
-            : { ...(spec.where?.right as any), kb_id: rightScoped.kbId },
+        right: { ...(spec.where?.right as any), kb_id: rightScoped.kbId },
       },
     };
-    const rows = await this.inner.join(
-      scoped,
-      rightScoped === undefined ? right : rightScoped.inner
-    );
+    const rows = await this.inner.join(scoped, rightScoped.inner);
     return rows.map((row) => ({
       left: this.strip(row.left),
-      right: rightScoped !== undefined && row.right ? rightScoped.strip(row.right) : row.right,
+      right: row.right ? rightScoped.strip(row.right) : row.right,
     })) as JoinedRow<Entity, R, T>[];
   }
 

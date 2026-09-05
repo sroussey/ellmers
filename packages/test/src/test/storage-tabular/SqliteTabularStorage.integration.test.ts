@@ -885,6 +885,69 @@ describe("SqliteTabularStorage entity prototypes", () => {
   });
 });
 
+describe("SqliteTabularStorage join inside a transaction", () => {
+  // `_joinInternal` exists solely so `createTxView` routes `tx.join()` past
+  // the lock `withTransaction` holds. If that routing ever breaks, the join
+  // waits on a lock its own caller owns and this test hangs rather than
+  // failing on a value — which is why it is worth pinning on both paths.
+  it("runs a pushed-down join through the tx proxy without deadlocking", async () => {
+    await Sqlite.init();
+    const db = new Sqlite.Database(":memory:");
+    const posts = new SqliteTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+      db,
+      `tx_posts_${uuid4().replace(/-/g, "_")}`,
+      PostSchema,
+      PostPrimaryKeyNames
+    );
+    const authors = new SqliteTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+      db,
+      `tx_authors_${uuid4().replace(/-/g, "_")}`,
+      AuthorSchema,
+      AuthorPrimaryKeyNames
+    );
+    await posts.setupDatabase();
+    await authors.setupDatabase();
+    await authors.put({ id: "a1", tenant: "t", name: "Ann", country: null });
+    await posts.put({ id: "p1", tenant: "t", author_id: "a1", title: "one", views: 1 });
+
+    const rows = await posts.withTransaction(async (tx) => {
+      return await tx.join({ type: "inner", on: [{ left: "author_id", right: "id" }] }, authors);
+    });
+
+    expect(rows.map((r) => `${r.left.id}:${r.right.id}`)).toEqual(["p1:a1"]);
+    posts.destroy?.();
+    authors.destroy?.();
+  });
+
+  it("falls back to the hash join through the tx proxy without deadlocking", async () => {
+    await Sqlite.init();
+    const posts = new SqliteTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+      ":memory:",
+      `tx_posts_${uuid4().replace(/-/g, "_")}`,
+      PostSchema,
+      PostPrimaryKeyNames
+    );
+    // A right side on another connection forces the fallback, whose
+    // leftQuery/leftGetAll re-enter this storage — through the proxy, so they
+    // must reach `_queryInternal` rather than queue behind the transaction.
+    const authors = new InMemoryTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+      AuthorSchema,
+      AuthorPrimaryKeyNames
+    );
+    await posts.setupDatabase();
+    await authors.put({ id: "a1", tenant: "t", name: "Ann", country: null });
+    await posts.put({ id: "p1", tenant: "t", author_id: "a1", title: "one", views: 1 });
+    await posts.put({ id: "p2", tenant: "t", author_id: null, title: "anon", views: 2 });
+
+    const rows = await posts.withTransaction(async (tx) => {
+      return await tx.join({ type: "left", on: [{ left: "author_id", right: "id" }] }, authors);
+    });
+
+    expect(rows.map((r) => `${r.left.id}:${r.right?.id ?? "-"}`).sort()).toEqual(["p1:a1", "p2:-"]);
+    posts.destroy?.();
+  });
+});
+
 describe("SqliteTabularStorage join", () => {
   let shared: Sqlite.Database;
   beforeAll(async () => {
