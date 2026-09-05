@@ -1,5 +1,17 @@
 # @workglow/web
 
+## 0.4.9
+
+### Chores
+
+- update dependencies
+
+### Updated Dependencies
+
+- `@codemirror/state`: 6.7.4
+- `@codemirror/view`: 6.43.11
+- `@types/react-dom`: ^19.2.7
+
 ## 0.4.8
 
 ## 0.4.7

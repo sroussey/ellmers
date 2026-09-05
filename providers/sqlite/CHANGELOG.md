@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.9
+
+### Bug Fixes
+
+#### storage
+
+- restore the deleteSearch guard on the transaction path
+- align `in` with SQL on nulls, refuse a table-wide deleteSearch
+
 ## 0.4.8
 
 ### Bug Fixes

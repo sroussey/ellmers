@@ -1,5 +1,17 @@
 # @workglow/task-graph
 
+## 0.4.9
+
+### Bug Fixes
+
+- not sure why vitest peerdep on taskgraph
+
+### Chores
+
+#### deps
+
+- upgrade Vitest to 5
+
 ## 0.4.8
 
 ## 0.4.7
