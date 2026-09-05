@@ -532,10 +532,10 @@ See `docs/superpowers/specs/2026-05-07-unified-tabular-migrations-design.md` for
 
 ## Joins
 
-`join(spec, right)` pairs rows of one storage (the left side) with rows of another. Every
-backend supports it: the default is an application-side hash join built on `query` and the
-`in` criterion, and the SQL backends (SQLite, PostgreSQL, DuckDB) run one `JOIN` statement
-when both storages share a connection and dialect.
+`join(spec, right)` pairs rows of one storage (the left side) with rows of another. The
+default is an application-side hash join built on `query` and the `in` criterion, and the
+SQL backends (SQLite, PostgreSQL, DuckDB) run one `JOIN` statement when both storages share
+a connection and dialect. Two backends cannot do either — see the last bullet below.
 
 ```typescript
 const rows = await posts.join(
@@ -560,8 +560,15 @@ const rows = await posts.join(
 - `orderBy` under `ASC` puts nulls (and unmatched right sides) first, under `DESC` last, on
   every backend.
 - Returns `[]` when nothing matches, and emits no event of its own.
+- Rows are not copies on the hash-join path — they are the objects `query`/`getAll`
+  returned, matching those methods. The SQL path builds fresh objects. Do not mutate them.
+- `join` is the one read on `CachedTabularStorage` that bypasses the cache: it reads the
+  durable store on both sides, so it can return a row `query()` does not yet see.
+- `ScopedTabularStorage` requires a scoped right side and refuses anything else, rather
+  than joining unscoped across every `kb_id`.
 - `FsFolderTabularStorage` and `HuggingFaceTabularStorage` throw `StorageUnsupportedError`,
-  since neither can run the `in` query the hash join needs.
+  since neither can run the `in` query the hash join needs. Used as the RIGHT side they
+  surface their own `query` error instead, since that is the call the hash join makes.
 
 ## Events
 

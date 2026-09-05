@@ -35,6 +35,7 @@ export * from "./tabular/HuggingFaceTabularStorage";
 export * from "./tabular/InMemoryTabularMigrationApplier";
 export * from "./tabular/InMemoryTabularStorage";
 export * from "./tabular/ITabularStorage";
+export * from "./tabular/joinDelegate";
 export * from "./tabular/sqlMigrationDdl";
 export * from "./tabular/SqlTabularMigrationApplier";
 export * from "./tabular/StorageError";

@@ -13,7 +13,9 @@ import type {
   QueryOptions,
   SearchCriteria,
 } from "./ITabularStorage";
+import { isSearchInCondition } from "./ITabularStorage";
 import { pkFingerprint } from "./pkFingerprint";
+import { StorageValidationError } from "./StorageError";
 
 /**
  * How many distinct left-side key tuples one right-side `in` query carries.
@@ -21,7 +23,19 @@ import { pkFingerprint } from "./pkFingerprint";
  * `SQLITE_MAX_VARIABLE_NUMBER`; the same cap keeps an HTTP-proxied query body
  * a sane size.
  */
-export const JOIN_IN_CHUNK_SIZE = 500;
+export const JOIN_IN_PARAM_BUDGET = 900;
+
+/**
+ * How many distinct key tuples one right-side `in` fetch may carry, given how
+ * many join columns still need an `in` list. Each free column contributes its
+ * own list, so the budget is divided between them — a flat cap would bind
+ * `columns x tuples` parameters and blow the limit it exists to respect.
+ * Mirrors the per-column division `SqliteTabularStorage.getBulk` already uses.
+ */
+export function joinInChunkSize(freeColumnCount: number): number {
+  if (freeColumnCount <= 0) return JOIN_IN_PARAM_BUDGET;
+  return Math.max(1, Math.floor(JOIN_IN_PARAM_BUDGET / freeColumnCount));
+}
 
 /**
  * Callbacks {@link runHashJoin} needs from the two storages. Bound to the
@@ -37,6 +51,12 @@ export interface HashJoinDeps<L, R> {
   ) => Promise<L[] | undefined>;
   readonly leftGetAll: (options?: QueryOptions<L>) => Promise<L[] | undefined>;
   readonly rightQuery: (criteria: SearchCriteria<R>) => Promise<R[] | undefined>;
+  /**
+   * Whether a left column may hold null. Governs whether an `orderBy` can be
+   * pushed into the left query, since the backends disagree with this module
+   * on where nulls sort. Absent, no order is pushed down.
+   */
+  readonly leftColumnIsNullable?: (column: string) => boolean;
 }
 
 /**
@@ -72,7 +92,19 @@ export function sortJoinedRows<L, R, T extends JoinType>(
   };
   rows.sort((a, b) => {
     for (const o of orderBy) {
-      const cmp = compareKeyValues(valueOf(a, o), valueOf(b, o));
+      let cmp: number;
+      try {
+        cmp = compareKeyValues(valueOf(a, o), valueOf(b, o));
+      } catch (error) {
+        // `compareKeyValues` is the cursor comparator and refuses bigint and
+        // non-primitive values in cursor vocabulary. A join never paginated,
+        // so say what the caller actually did wrong.
+        throw new StorageValidationError(
+          `Cannot order a join by ${o.side} column "${o.column}": its values are not ` +
+            `comparable (bigint, binary and object columns are not orderable). ` +
+            `Underlying reason: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
       if (cmp !== 0) return o.direction === "ASC" ? cmp : -cmp;
     }
     return 0;
@@ -97,16 +129,36 @@ export async function runHashJoin<L, R, T extends JoinType>(
   spec: JoinSpec<L, R, T>
 ): Promise<JoinedRow<L, R, T>[]> {
   const orderBy = spec.orderBy ?? [];
-  const pushLeftOrder = orderBy.length > 0 && orderBy.every((o) => o.side === "left");
+  // A pushed-down order is served by the backend's own ORDER BY, and neither
+  // SQLite's nor Postgres's single-table read emits a NULLS clause — so the
+  // backend default applies (Postgres puts nulls LAST for ASC) and contradicts
+  // the nulls-first-for-ASC rule both the SQL join and the in-memory sort
+  // below follow. Push the order down only when no ordered column can be null,
+  // which is the case where the two agree.
+  const pushLeftOrder =
+    orderBy.length > 0 &&
+    orderBy.every((o) => o.side === "left" && deps.leftColumnIsNullable?.(o.column) !== true);
   const leftOptions: QueryOptions<L> | undefined = pushLeftOrder
     ? { orderBy: orderBy.map((o) => ({ column: o.column as keyof L, direction: o.direction })) }
     : undefined;
 
+  // A left join emits at least one row per left row, in left order, so the
+  // first `offset + limit` joined rows can only come from the first
+  // `offset + limit` left rows — the read can stop there. This is exact only
+  // for a left join whose order is fully pushed down: an inner join drops
+  // unmatched left rows, so bounding its left read would under-produce.
+  // (Over-production against a one-to-many right side is harmless; the slice
+  // at the end trims it.)
+  const boundedLeft =
+    pushLeftOrder && spec.type === "left" && spec.limit !== undefined
+      ? { ...leftOptions, limit: (spec.offset ?? 0) + spec.limit }
+      : leftOptions;
+
   const leftWhere = spec.where?.left;
   const leftRows =
     (leftWhere !== undefined && Object.keys(leftWhere).length > 0
-      ? await deps.leftQuery(leftWhere, leftOptions)
-      : await deps.leftGetAll(leftOptions)) ?? [];
+      ? await deps.leftQuery(leftWhere, boundedLeft)
+      : await deps.leftGetAll(boundedLeft)) ?? [];
 
   const leftColumns = spec.on.map((o) => o.left as string);
   const rightColumns = spec.on.map((o) => o.right as string);
@@ -130,13 +182,24 @@ export async function runHashJoin<L, R, T extends JoinType>(
     const rightWhere = (spec.where?.right ?? {}) as Record<string, unknown>;
     // A caller's own criterion on a join column is kept as written; the
     // tuple post-filter below still makes the result exact.
+    // A join column the caller also filters cannot carry two criteria at once.
+    // When theirs is an `in` the two lists are intersected, which keeps the key
+    // restriction; for any other operator theirs wins and this column stops
+    // narrowing the fetch (the tuple post-filter still makes the result exact).
+    const callerInList = (column: string): readonly unknown[] | undefined => {
+      const criterion = rightWhere[column];
+      return isSearchInCondition(criterion) ? criterion.value : undefined;
+    };
     const freeColumns = rightColumns
       .map((column, index) => ({ column, index }))
-      .filter(({ column }) => !(column in rightWhere));
+      .filter(
+        ({ column }) => !Object.hasOwn(rightWhere, column) || callerInList(column) !== undefined
+      );
     const tupleList = [...tuples.entries()];
     // With no free join column there is nothing to chunk by: one fetch serves
     // every tuple.
-    const chunkSize = freeColumns.length === 0 ? tupleList.length : JOIN_IN_CHUNK_SIZE;
+    const chunkSize =
+      freeColumns.length === 0 ? tupleList.length : joinInChunkSize(freeColumns.length);
 
     for (let start = 0; start < tupleList.length; start += chunkSize) {
       const chunk = tupleList.slice(start, start + chunkSize);
@@ -144,7 +207,10 @@ export async function runHashJoin<L, R, T extends JoinType>(
       const criteria: Record<string, unknown> = { ...rightWhere };
       for (const { column, index } of freeColumns) {
         const distinct = new Set(chunk.map(([, tuple]) => tuple[index]));
-        criteria[column] = { value: [...distinct], operator: "in" };
+        const callers = callerInList(column);
+        const values =
+          callers === undefined ? [...distinct] : [...distinct].filter((v) => callers.includes(v));
+        criteria[column] = { value: values, operator: "in" };
       }
       const rows = (await deps.rightQuery(criteria as SearchCriteria<R>)) ?? [];
       for (const row of rows) {

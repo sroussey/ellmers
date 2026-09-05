@@ -17,6 +17,7 @@ import type {
   RunTabularMigrationsOptions,
 } from "../migrations";
 import { runTabularMigrations } from "../migrations";
+import { isNullableSchema } from "./columnConstraints";
 import { CoveringIndexMissingError } from "./CoveringIndexMissingError";
 import type { CursorPayload, PageCursor } from "./Cursor";
 import type {
@@ -329,9 +330,22 @@ export abstract class BaseTabularStorage<
         leftQuery: (criteria, options) => this.query(criteria, options),
         leftGetAll: (options) => this.getAll(options),
         rightQuery: (criteria) => right.query(criteria),
+        leftColumnIsNullable: (column) => this.columnIsNullable(column),
       },
       spec
     );
+  }
+
+  /**
+   * Whether `column` may hold null — either it is absent from `required` or
+   * its schema admits the null type.
+   */
+  protected columnIsNullable(column: string): boolean {
+    const typeDef = this.schema.properties[column];
+    if (typeDef === undefined) return true;
+    const required = this.schema.required;
+    if (!Array.isArray(required) || !required.includes(column)) return true;
+    return isNullableSchema(typeDef);
   }
 
   /**

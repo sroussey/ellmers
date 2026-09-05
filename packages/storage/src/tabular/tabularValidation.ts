@@ -197,12 +197,20 @@ export function validateJoinSpec<L, R>(
   }
 }
 
-/** A column name must be a string, and must exist in the schema when one is known. */
+/**
+ * A column name must be a string, and must exist in the schema when one is
+ * known. Membership is `Object.hasOwn`, not `in`: a schema's `properties` is a
+ * plain object, so `in` also answers true for every `Object.prototype` key, and
+ * a join spec arriving over the HTTP-proxy JSON boundary can name `constructor`
+ * or `toString` as a column. Those passed validation and reached the SQL
+ * builder, where they became a driver error instead of the intended
+ * {@link StorageInvalidColumnError}.
+ */
 function assertColumn(properties: SchemaProperties | undefined, column: unknown): void {
   if (typeof column !== "string") {
     throw new StorageInvalidColumnError(String(column));
   }
-  if (properties !== undefined && !(column in properties)) {
+  if (properties !== undefined && !Object.hasOwn(properties, column)) {
     throw new StorageInvalidColumnError(column);
   }
 }

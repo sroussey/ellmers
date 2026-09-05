@@ -7,7 +7,7 @@
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { describe, expect, it, vi } from "vitest";
 import type { HashJoinDeps } from "../hashJoin";
-import { JOIN_IN_CHUNK_SIZE, joinKeyFingerprint, runHashJoin, sortJoinedRows } from "../hashJoin";
+import { joinInChunkSize, joinKeyFingerprint, runHashJoin, sortJoinedRows } from "../hashJoin";
 import { InMemoryTabularStorage } from "../InMemoryTabularStorage";
 import type { JoinedRow, JoinSpec } from "../ITabularStorage";
 
@@ -221,7 +221,7 @@ describe("runHashJoin", () => {
       AuthorSchema,
       AuthorPk
     );
-    const n = JOIN_IN_CHUNK_SIZE * 2 + 1;
+    const n = joinInChunkSize(1) * 2 + 1;
     await authors.putBulk(
       Array.from({ length: n }, (_, i) => ({ id: `a${i}`, tenant: "t", name: `n${i}` }))
     );
@@ -245,6 +245,90 @@ describe("runHashJoin", () => {
     expect(rows).toHaveLength(n);
     expect(rightQuery).toHaveBeenCalledTimes(3);
     expect(rows.every((r) => r.right.id === r.left.author_id)).toBe(true);
+  });
+
+  it("divides the parameter budget between the columns of a compound key", () => {
+    // Each free join column contributes its own `in` list to the same
+    // statement, so a flat cap would bind columns x tuples parameters and blow
+    // the limit it exists to respect.
+    expect(joinInChunkSize(1)).toBe(900);
+    expect(joinInChunkSize(2)).toBe(450);
+    expect(joinInChunkSize(3)).toBe(300);
+    for (const columns of [1, 2, 3, 7]) {
+      expect(joinInChunkSize(columns) * columns).toBeLessThanOrEqual(900);
+    }
+  });
+
+  it("intersects the caller's in-list on a join column instead of dropping the key restriction", async () => {
+    const { deps } = await fixtures();
+    const rightQuery = vi.fn(deps.rightQuery);
+    const rows = await runHashJoin(
+      { ...deps, rightQuery },
+      {
+        type: "inner",
+        on,
+        // Both this and the left-derived key list constrain `id`; the two are
+        // intersected rather than the caller's simply winning.
+        where: { right: { id: { value: ["a1", "a3"], operator: "in" } } },
+      }
+    );
+    expect(ids(rows).sort()).toEqual(["p1:a1", "p2:a1", "p6:a1"]);
+    const criteria = rightQuery.mock.calls[0][0] as { id: { value: string[] } };
+    // a3 is in the caller's list but no left row references it; a2 is
+    // referenced but excluded by the caller. Neither should be fetched.
+    expect([...criteria.id.value].sort()).toEqual(["a1"]);
+  });
+
+  it("does not push an orderBy down when the ordered column can be null", async () => {
+    const { deps } = await fixtures();
+    const leftGetAll = vi.fn(deps.leftGetAll);
+    await runHashJoin(
+      { ...deps, leftGetAll, leftColumnIsNullable: (c) => c === "author_id" },
+      { type: "left", on, orderBy: [{ side: "left", column: "author_id", direction: "ASC" }] }
+    );
+    // Pushed down, the backend's own NULL placement would apply and disagree
+    // with this module's; so the order stays in memory.
+    expect(leftGetAll).toHaveBeenCalledWith(undefined);
+  });
+
+  it("bounds the left read for a left join with a pushed-down order and a limit", async () => {
+    const { deps } = await fixtures();
+    const leftGetAll = vi.fn(deps.leftGetAll);
+    const rows = await runHashJoin(
+      { ...deps, leftGetAll },
+      {
+        type: "left",
+        on,
+        orderBy: [{ side: "left", column: "views", direction: "DESC" }],
+        offset: 1,
+        limit: 2,
+      }
+    );
+    expect(leftGetAll).toHaveBeenCalledWith({
+      orderBy: [{ column: "views", direction: "DESC" }],
+      limit: 3,
+    });
+    expect(ids(rows)).toEqual(["p6:a1", "p3:a2"]);
+  });
+
+  it("does not bound the left read for an inner join, which drops unmatched rows", async () => {
+    const { deps } = await fixtures();
+    const leftGetAll = vi.fn(deps.leftGetAll);
+    const rows = await runHashJoin(
+      { ...deps, leftGetAll },
+      {
+        type: "inner",
+        on,
+        orderBy: [{ side: "left", column: "views", direction: "DESC" }],
+        limit: 3,
+      }
+    );
+    // p4 and p5 have no author; bounding the left read to 3 would have
+    // returned only 2 joined rows.
+    expect(leftGetAll).toHaveBeenCalledWith({
+      orderBy: [{ column: "views", direction: "DESC" }],
+    });
+    expect(ids(rows)).toEqual(["p1:a1", "p6:a1", "p3:a2"]);
   });
 
   it("returns [] for an inner join with no left rows", async () => {

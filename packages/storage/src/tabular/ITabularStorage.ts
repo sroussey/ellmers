@@ -766,10 +766,14 @@ export interface ITabularStorage<
   ): Promise<Pick<Entity, K>[]>;
 
   /**
-   * Joins this storage (the left side) to `right`. Every backend supports it:
-   * the default is an application-side hash join over `query` and the `in`
-   * criterion, and the SQL backends run one `JOIN` statement when both
-   * storages sit on the same connection.
+   * Joins this storage (the left side) to `right`. The default is an
+   * application-side hash join over `query` and the `in` criterion, and the
+   * SQL backends run one `JOIN` statement when both storages sit on the same
+   * connection. A backend that cannot express the underlying reads throws
+   * {@link StorageUnsupportedError} — today `FsFolderTabularStorage`, whose
+   * `query` throws, and `HuggingFaceTabularStorage`, whose remote filter has
+   * no `in` form. Either one used as the RIGHT side surfaces its own `query`
+   * error instead, since that is the call the hash join actually makes.
    *
    * Rows come back nested as `{ left, right }`; under a `left` join an
    * unmatched left row carries `right: undefined`. A `null` join key never

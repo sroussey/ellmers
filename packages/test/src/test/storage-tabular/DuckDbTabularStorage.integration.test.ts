@@ -22,6 +22,7 @@ import {
   VectorItemPrimaryKeyNames,
   VectorItemSchema,
 } from "../../contract/tabular-storage/runTabularStorageContract";
+import { runSqlBulkPutTests } from "./genericSqlBulkPutTests";
 import {
   AuthorPrimaryKeyNames,
   AuthorSchema,
@@ -29,7 +30,6 @@ import {
   PostSchema,
   runGenericTabularJoinTests,
 } from "./genericTabularJoinTests";
-import { runSqlBulkPutTests } from "./genericSqlBulkPutTests";
 import {
   AllTypesPrimaryKeyNames,
   AllTypesSchema,
