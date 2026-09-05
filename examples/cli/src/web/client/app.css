@@ -125,11 +125,62 @@ textarea {
 
 /* ---------- shell ---------- */
 .app {
+  /* Both rail widths are drag state, written back as inline custom properties
+     on this element. The values here are the fallback for a first paint that
+     happens before the script sets them. */
+  --rail-l: 266px;
+  --rail-r: 248px;
   display: grid;
-  grid-template-columns: 266px minmax(0, 1fr) 248px;
+  grid-template-columns: var(--rail-l) minmax(0, 1fr) var(--rail-r);
   grid-template-areas: "rail main status";
   height: 100dvh;
   min-height: 560px;
+  /* Containing block for the two resize handles, which sit on the seams rather
+     than inside the rails (the status rail scrolls; a child of it would ride
+     the scroll instead of holding the edge). */
+  position: relative;
+}
+
+/* ---------- resize handles ---------- */
+.resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 9px;
+  z-index: 5;
+  cursor: col-resize;
+  /* Without this a touch drag scrolls the page instead of moving the seam. */
+  touch-action: none;
+}
+.resizer-l {
+  left: calc(var(--rail-l) - 4px);
+}
+.resizer-r {
+  right: calc(var(--rail-r) - 4px);
+}
+/* The seam itself is the rail's existing 1px border; this paints over it on
+   hover and while dragging so the target is visible without adding a gutter
+   that would be there all the time. */
+.resizer::after {
+  content: "";
+  position: absolute;
+  inset: 0 3px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+.resizer:hover::after,
+.resizer:focus-visible::after,
+.resizer[data-dragging="true"]::after {
+  background: var(--accent);
+}
+.resizer:focus-visible {
+  outline: none;
+}
+/* While a seam is being dragged the cursor must not flicker to a text caret
+   over the panes it passes. */
+.app:has(.resizer[data-dragging="true"]) {
+  cursor: col-resize;
+  user-select: none;
 }
 .rail {
   background: var(--panel);
@@ -478,11 +529,6 @@ textarea {
 .crumb .dim {
   color: var(--ink-3);
 }
-.crumb .cmd-d {
-  margin-left: 8px;
-  min-width: 0;
-  flex: 1;
-}
 .spacer {
   flex: 1;
 }
@@ -664,6 +710,11 @@ h2.sec::after {
   background: var(--line-2);
 }
 h2.sec:first-child {
+  margin-top: 0;
+}
+/* The command description leads the options pane; the first section under it
+   does not need the full inter-section gap on top of the lede's own. */
+.lede + h2.sec {
   margin-top: 0;
 }
 
@@ -1786,7 +1837,7 @@ pre.json .n {
 }
 @media (max-width: 1080px) {
   .app {
-    grid-template-columns: 266px minmax(0, 1fr);
+    grid-template-columns: var(--rail-l) minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
     grid-template-areas:
       "rail main"
@@ -1798,8 +1849,17 @@ pre.json .n {
     border-top: 1px solid var(--line);
     max-height: 40dvh;
   }
+  /* Status stacks under the commands here, so its width is no longer its own
+     to drag — it shares the rail column. */
+  .resizer-r {
+    display: none;
+  }
 }
 @media (max-width: 820px) {
+  /* One column, one pane at a time: there is no seam to drag. */
+  .resizer {
+    display: none;
+  }
   .app {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:

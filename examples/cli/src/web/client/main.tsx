@@ -41,6 +41,7 @@ import {
   reduceHeartbeat,
   type CliLiveness,
 } from "./heartbeat";
+import { loadRailWidths, saveRailWidths, type RailSide, type RailWidths } from "./railWidths";
 import {
   applyRecord,
   emptyRunView,
@@ -53,6 +54,7 @@ import {
 import { CommandTree } from "./views/CommandTree";
 import { HumanPrompt } from "./views/HumanPrompt";
 import { OptionsForm } from "./views/OptionsForm";
+import { RailResizer } from "./views/RailResizer";
 import { ResultTab } from "./views/ResultTab";
 import { RunConsole } from "./views/RunConsole";
 
@@ -148,6 +150,8 @@ function App(): JSX.Element {
   >(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [theme, setTheme] = useState<"light" | "auto" | "dark">("auto");
+  /** Rail widths, restored from the last session and dragged by the seams. */
+  const [rails, setRails] = useState<RailWidths>(loadRailWidths);
   const closeStreamRef = useRef<(() => void) | undefined>(undefined);
 
   const running = run !== undefined && view.state === "running";
@@ -378,6 +382,14 @@ function App(): JSX.Element {
     else document.documentElement.dataset.theme = theme;
   }, [theme]);
 
+  useEffect(() => {
+    saveRailWidths(rails);
+  }, [rails]);
+
+  const resizeRail = useCallback((side: RailSide, width: number): void => {
+    setRails((current) => (current[side] === width ? current : { ...current, [side]: width }));
+  }, []);
+
   useEffect(() => () => closeStreamRef.current?.(), []);
 
   useEffect(() => {
@@ -407,7 +419,11 @@ function App(): JSX.Element {
   const crumbs = node ? [binaryName, ...node.path] : [binaryName];
 
   return (
-    <div className="app" data-pane={pane}>
+    <div
+      className="app"
+      data-pane={pane}
+      style={`--rail-l:${rails.left}px;--rail-r:${rails.right}px`}
+    >
       <aside className="rail rail-l" aria-label="Commands">
         <div className="brand">
           <div className="mark">w</div>
@@ -440,6 +456,13 @@ function App(): JSX.Element {
           onSelect={selectNode}
         />
       </aside>
+
+      <RailResizer
+        side="left"
+        width={rails.left}
+        otherWidth={rails.right}
+        onResize={(width) => resizeRail("left", width)}
+      />
 
       {pendingRun ? (
         <div
@@ -498,7 +521,6 @@ function App(): JSX.Element {
                 )}
               </>
             ))}
-            {node ? <span className="cmd-d">{node.description}</span> : null}
           </div>
           <div className="spacer" />
           <div className="ctl">
@@ -582,6 +604,7 @@ function App(): JSX.Element {
             <OptionsForm
               binaryName={binaryName}
               path={node.path}
+              description={node.description}
               fields={fields}
               values={values}
               errors={errors}
@@ -642,6 +665,13 @@ function App(): JSX.Element {
           <span>No page reloads — the document is mounted once and patched per event</span>
         </footer>
       </main>
+
+      <RailResizer
+        side="right"
+        width={rails.right}
+        otherWidth={rails.left}
+        onResize={(width) => resizeRail("right", width)}
+      />
 
       {/* Status lives on its own rail so the command tree keeps the left one:
           runs first, then whatever the CLI contributed (fetch state, database

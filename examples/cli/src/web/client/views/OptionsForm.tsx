@@ -195,6 +195,7 @@ function FieldRows({
 export function OptionsForm({
   binaryName,
   path,
+  description,
   fields,
   values,
   errors,
@@ -206,6 +207,12 @@ export function OptionsForm({
 }: {
   binaryName: string;
   path: readonly string[];
+  /**
+   * The command's one-line help. It reads here rather than in the breadcrumb:
+   * the crumb clips it to whatever the topbar has left over, and this is the
+   * pane where someone is deciding what the command does before running it.
+   */
+  description?: string;
   fields: readonly FieldWithWidget[];
   values: FormValues;
   errors: readonly string[];
@@ -233,6 +240,7 @@ export function OptionsForm({
 
   return (
     <div className="wrap">
+      {description ? <p className="lede">{description}</p> : null}
       {hasBadges || note ? (
         <div className={`cnote${badges?.includes("destructive") ? " danger" : ""}`}>
           <CommandBadges badges={badges} />
