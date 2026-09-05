@@ -19,8 +19,8 @@
   },
   "dependencies": {
     "@codemirror/lang-json": "^6.0.2",
-    "@codemirror/state": "6.7.2",
-    "@codemirror/view": "6.43.10",
+    "@codemirror/state": "6.7.4",
+    "@codemirror/view": "6.43.11",
     "@codemirror/language": "6.12.4",
     "@lezer/common": "1.5.2",
     "@lezer/highlight": "1.2.3",
@@ -53,7 +53,7 @@
   },
   "devDependencies": {
     "@types/react": "catalog:",
-    "@types/react-dom": "^19.2.5",
+    "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
     "@tailwindcss/vite": "^4.3.3",
     "tailwindcss": "^4.3.3",
