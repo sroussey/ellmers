@@ -182,8 +182,13 @@ export function validateJoinSpec<L, R>(
           Object.values(JoinSides).join(", ")
       );
     }
-    assertColumn(side === JoinSides.left ? leftProperties : rightProperties, column);
-    if (direction !== "ASC" && direction !== "DESC") {
+    const properties = side === JoinSides.left ? leftProperties : rightProperties;
+    // The column check has to run even when that side's schema is unknown, so
+    // it stays here; the rest is exactly the single-table rule.
+    assertColumn(properties, column);
+    if (properties !== undefined) {
+      validateOrderBy(properties, [{ column: column as never, direction }]);
+    } else if (direction !== "ASC" && direction !== "DESC") {
       throw new StorageValidationError(
         `Invalid sort direction "${direction}". Must be "ASC" or "DESC"`
       );

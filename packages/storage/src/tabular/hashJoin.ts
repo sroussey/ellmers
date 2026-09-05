@@ -230,7 +230,7 @@ export async function runHashJoin<L, R, T extends JoinType>(
   leftRows.forEach((left, i) => {
     const fp = leftKeys[i];
     const matches = fp === undefined ? undefined : rightByKey.get(fp);
-    if (matches !== undefined && matches.length > 0) {
+    if (matches !== undefined) {
       for (const right of matches) {
         joined.push({ left, right } as JoinedRow<L, R, T>);
       }
