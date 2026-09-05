@@ -373,6 +373,24 @@ describe("runHashJoin", () => {
     ).rejects.toThrow(/Cannot order a join by right column "name"/);
   });
 
+  it("never matches a right row whose own join key is null", async () => {
+    const { deps } = await fixtures();
+    // The left-side rule is covered above (p5 has a null author_id); this is
+    // its mirror. A right row with a null key must not pair with anything —
+    // SQL never matches on NULL — even though the left rows here do have keys.
+    const nullKeyedRight = {
+      ...deps,
+      rightQuery: async () =>
+        [
+          { id: null, tenant: "t1", name: "No id", country: null },
+          { id: "a1", tenant: "t1", name: "Ann", country: "US" },
+        ] as unknown as Author[],
+    };
+    const rows = await runHashJoin(nullKeyedRight, { type: "left", on });
+    // Only the real a1 pairs; the null-keyed row matches no left row at all.
+    expect(ids(rows).sort()).toEqual(["p1:a1", "p2:a1", "p3:-", "p4:-", "p5:-", "p6:a1"]);
+  });
+
   it("returns [] for an inner join with no left rows", async () => {
     const { deps, posts } = await fixtures();
     await posts.deleteAll();
