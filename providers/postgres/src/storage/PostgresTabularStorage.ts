@@ -49,6 +49,7 @@ import {
   TYPED_ARRAY_CTORS,
   type VectorIndexOptions,
 } from "@workglow/storage";
+import type { SqlJoinDialect } from "@workglow/storage";
 import { createServiceToken } from "@workglow/util";
 import type {
   DataPortSchemaObject,
@@ -1628,6 +1629,15 @@ export class PostgresTabularStorage<
         return `ON CONFLICT (${pkList}) DO UPDATE SET ${assignments}`;
       },
       mintUuidClientSide: false,
+    };
+  }
+
+  protected override sqlJoinDialect(): SqlJoinDialect {
+    return {
+      dialect: PostgresDialect,
+      // `db` resolves to the transaction-bound client inside `withTransaction`.
+      executeRaw: async (sql, params) =>
+        ((await this.db.query(sql, params as unknown[])).rows ?? []) as Record<string, unknown>[],
     };
   }
 

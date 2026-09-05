@@ -17,6 +17,13 @@ import {
   VectorItemPrimaryKeyNames,
   VectorItemSchema,
 } from "../../contract/tabular-storage/runTabularStorageContract";
+import {
+  AuthorPrimaryKeyNames,
+  AuthorSchema,
+  PostPrimaryKeyNames,
+  PostSchema,
+  runGenericTabularJoinTests,
+} from "./genericTabularJoinTests";
 import { CompoundPrimaryKeyNames, CompoundSchema } from "./genericTabularStorageTests";
 
 const TestSchema = {
@@ -92,6 +99,24 @@ describe("TelemetryTabularStorage", () => {
     expect(startSpanSpy).toHaveBeenCalledWith("workglow.storage.tabular.query", expect.anything());
   });
 
+  it("should forward join, unwrap a traced right side, and create a span", async () => {
+    const authorsInner = new InMemoryTabularStorage(TestSchema, TestPK);
+    const authors = new TelemetryTabularStorage("test-authors", authorsInner);
+    const innerJoin = vi.spyOn(inner, "join");
+    await inner.put({ name: "Ann" });
+    await authorsInner.put({ name: "Ann" });
+
+    const rows = await wrapped.join(
+      { type: "inner", on: [{ left: "name", right: "name" }] },
+      authors
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].right.name).toBe("Ann");
+    expect(innerJoin).toHaveBeenCalledWith(expect.anything(), authorsInner);
+    expect(startSpanSpy).toHaveBeenCalledWith("workglow.storage.tabular.join", expect.anything());
+  });
+
   it("should forward size and create a span", async () => {
     await inner.put({ name: "A" });
     expect(await wrapped.size()).toBe(1);
@@ -136,4 +161,25 @@ runTabularStorageContract({
       inner
     );
   },
+});
+
+describe("TelemetryTabularStorage join", () => {
+  runGenericTabularJoinTests(
+    async () =>
+      new TelemetryTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+        "join-posts",
+        new InMemoryTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+          PostSchema,
+          PostPrimaryKeyNames
+        )
+      ),
+    async () =>
+      new TelemetryTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+        "join-authors",
+        new InMemoryTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+          AuthorSchema,
+          AuthorPrimaryKeyNames
+        )
+      )
+  );
 });

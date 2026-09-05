@@ -13,6 +13,13 @@ import {
   VectorItemPrimaryKeyNames,
   VectorItemSchema,
 } from "../../contract/tabular-storage/runTabularStorageContract";
+import {
+  AuthorPrimaryKeyNames,
+  AuthorSchema,
+  PostPrimaryKeyNames,
+  PostSchema,
+  runGenericTabularJoinTests,
+} from "./genericTabularJoinTests";
 import { runGenericTabularStorageSubscriptionTests } from "./genericTabularStorageSubscriptionTests";
 import {
   CompoundPrimaryKeyNames,
@@ -743,4 +750,65 @@ runTabularStorageContract({
       VectorItemPrimaryKeyNames
     );
   },
+});
+
+describe("CachedTabularStorage join", () => {
+  runGenericTabularJoinTests(
+    async () =>
+      new CachedTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+        new InMemoryTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+          PostSchema,
+          PostPrimaryKeyNames
+        ),
+        undefined,
+        PostSchema,
+        PostPrimaryKeyNames
+      ),
+    async () =>
+      new CachedTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+        new InMemoryTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+          AuthorSchema,
+          AuthorPrimaryKeyNames
+        ),
+        undefined,
+        AuthorSchema,
+        AuthorPrimaryKeyNames
+      )
+  );
+
+  it("reads the durable side, not the cache, and unwraps a cached right side", async () => {
+    const durablePosts = new InMemoryTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+      PostSchema,
+      PostPrimaryKeyNames
+    );
+    const durableAuthors = new InMemoryTabularStorage<
+      typeof AuthorSchema,
+      typeof AuthorPrimaryKeyNames
+    >(AuthorSchema, AuthorPrimaryKeyNames);
+    const posts = new CachedTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+      durablePosts,
+      undefined,
+      PostSchema,
+      PostPrimaryKeyNames
+    );
+    const authors = new CachedTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+      durableAuthors,
+      undefined,
+      AuthorSchema,
+      AuthorPrimaryKeyNames
+    );
+    await authors.put({ id: "a1", tenant: "t", name: "Ann", country: null });
+    await posts.put({ id: "p1", tenant: "t", author_id: "a1", title: "cached", views: 1 });
+    // Written behind the cache's back: only a read of the durable side sees it.
+    await durablePosts.put({ id: "p2", tenant: "t", author_id: "a1", title: "direct", views: 2 });
+    const durableJoin = spyOn(durablePosts, "join");
+
+    const rows = await posts.join(
+      { type: "inner", on: [{ left: "author_id", right: "id" }] },
+      authors
+    );
+
+    expect(rows.map((r) => r.left.id).sort()).toEqual(["p1", "p2"]);
+    expect(durableJoin).toHaveBeenCalledWith(expect.anything(), durableAuthors);
+  });
 });

@@ -7,6 +7,7 @@
 import type {
   CoveringIndexQueryOptions,
   DeleteSearchCriteria,
+  JoinSpec,
   OrderBy,
   PageRequest,
   QueryOptions,
@@ -17,6 +18,10 @@ import {
   isSearchCondition,
   isSearchInCondition,
   isSearchNotInCondition,
+  JOIN_SIDE_SET,
+  JOIN_TYPE_SET,
+  JoinSides,
+  JoinTypes,
   normalizeCriterion,
   SEARCH_OPERATOR_SET,
 } from "./ITabularStorage";
@@ -93,7 +98,21 @@ export function validateQueryParams<Entity>(
     throw new StorageValidationError(`Query offset must be non-negative, got ${options.offset}`);
   }
 
-  for (const column of criteriaKeys) {
+  validateCriteriaColumns(schemaProperties, criteria);
+
+  validateOrderByFn(options?.orderBy);
+}
+
+/**
+ * Validates the columns and operators of a criteria bag without requiring it
+ * to be non-empty — the per-column half of {@link validateQueryParams}, shared
+ * with join specs whose per-side filters are optional.
+ */
+export function validateCriteriaColumns<Entity>(
+  schemaProperties: SchemaProperties,
+  criteria: SearchCriteria<Entity>
+): void {
+  for (const column of Object.keys(criteria) as Array<keyof Entity>) {
     if (!(column in schemaProperties)) {
       throw new StorageInvalidColumnError(String(column));
     }
@@ -120,8 +139,85 @@ export function validateQueryParams<Entity>(
       );
     }
   }
+}
 
-  validateOrderByFn(options?.orderBy);
+/**
+ * Validates a {@link JoinSpec} before any of it is quoted into SQL. The spec
+ * crosses the same JSON trust boundary as query criteria (HTTP-proxied
+ * storages), so `type`, `side` and `direction` are checked against their
+ * allow-lists rather than trusted from the static type.
+ *
+ * `rightProperties` is `undefined` when the right storage does not expose its
+ * schema (a third-party wrapper); its own `query` still validates whatever the
+ * hash join hands it, and the SQL path always has both schemas in hand.
+ */
+export function validateJoinSpec<L, R>(
+  leftProperties: SchemaProperties,
+  rightProperties: SchemaProperties | undefined,
+  spec: JoinSpec<L, R>
+): void {
+  if (!JOIN_TYPE_SET.has(spec.type)) {
+    throw new StorageValidationError(
+      `Invalid join type "${String(spec.type)}". Must be one of: ` +
+        Object.values(JoinTypes).join(", ")
+    );
+  }
+  if (!Array.isArray(spec.on) || spec.on.length === 0) {
+    throw new StorageValidationError("Join spec must name at least one column pair in `on`");
+  }
+  for (const pair of spec.on) {
+    assertColumn(leftProperties, pair.left);
+    assertColumn(rightProperties, pair.right);
+  }
+  if (spec.where?.left !== undefined) {
+    validateCriteriaColumns(leftProperties, spec.where.left);
+  }
+  if (spec.where?.right !== undefined && rightProperties !== undefined) {
+    validateCriteriaColumns(rightProperties, spec.where.right);
+  }
+  for (const { side, column, direction } of spec.orderBy ?? []) {
+    if (!JOIN_SIDE_SET.has(side)) {
+      throw new StorageValidationError(
+        `Invalid join side "${String(side)}". Must be one of: ` +
+          Object.values(JoinSides).join(", ")
+      );
+    }
+    const properties = side === JoinSides.left ? leftProperties : rightProperties;
+    // The column check has to run even when that side's schema is unknown, so
+    // it stays here; the rest is exactly the single-table rule.
+    assertColumn(properties, column);
+    if (properties !== undefined) {
+      validateOrderBy(properties, [{ column: column as never, direction }]);
+    } else if (direction !== "ASC" && direction !== "DESC") {
+      throw new StorageValidationError(
+        `Invalid sort direction "${direction}". Must be "ASC" or "DESC"`
+      );
+    }
+  }
+  if (spec.limit !== undefined && (!Number.isInteger(spec.limit) || spec.limit <= 0)) {
+    throw new StorageInvalidLimitError(spec.limit);
+  }
+  if (spec.offset !== undefined && (!Number.isInteger(spec.offset) || spec.offset < 0)) {
+    throw new StorageValidationError(`Query offset must be non-negative, got ${spec.offset}`);
+  }
+}
+
+/**
+ * A column name must be a string, and must exist in the schema when one is
+ * known. Membership is `Object.hasOwn`, not `in`: a schema's `properties` is a
+ * plain object, so `in` also answers true for every `Object.prototype` key, and
+ * a join spec arriving over the HTTP-proxy JSON boundary can name `constructor`
+ * or `toString` as a column. Those passed validation and reached the SQL
+ * builder, where they became a driver error instead of the intended
+ * {@link StorageInvalidColumnError}.
+ */
+function assertColumn(properties: SchemaProperties | undefined, column: unknown): void {
+  if (typeof column !== "string") {
+    throw new StorageInvalidColumnError(String(column));
+  }
+  if (properties !== undefined && !Object.hasOwn(properties, column)) {
+    throw new StorageInvalidColumnError(column);
+  }
 }
 
 /**

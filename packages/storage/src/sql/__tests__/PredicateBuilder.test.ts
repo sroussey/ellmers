@@ -445,3 +445,72 @@ describe("PredicateBuilder operator allow-list (L-MAIN-01)", () => {
     });
   });
 });
+
+describe("qualifier", () => {
+  it("prefixes every column with the quoted alias on SQLite", () => {
+    const result = buildSearchWhere<Row>(
+      SqliteDialect,
+      { id: "abc", value: { value: 1, operator: ">" } },
+      schemaProps,
+      passthroughConvert,
+      1,
+      "r"
+    );
+    expect(result.whereClause).toBe("`r`.`id` = ? AND `r`.`value` > ?");
+    expect(result.params).toEqual(["abc", 1]);
+  });
+
+  it("keeps the one-array-parameter rule for an in-list on Postgres", () => {
+    const result = buildSearchWhere<Row>(
+      PostgresDialect,
+      { value: { value: [1, 2], operator: "in" } },
+      schemaProps,
+      passthroughConvert,
+      3,
+      "r"
+    );
+    expect(result.whereClause).toBe('"r"."value" = ANY($3)');
+    expect(result.params).toEqual([[1, 2]]);
+  });
+
+  it("qualifies the IS NULL rewrite and binds nothing for it", () => {
+    const result = buildSearchWhere<Row>(
+      PostgresDialect,
+      { id: null as unknown as string, value: 2 },
+      schemaProps,
+      passthroughConvert,
+      1,
+      "l"
+    );
+    expect(result.whereClause).toBe('"l"."id" IS NULL AND "l"."value" = $1');
+    expect(result.params).toEqual([2]);
+  });
+
+  it("quotes an alias that needs escaping", () => {
+    const result = buildSearchWhere<Row>(
+      SqliteDialect,
+      { id: "x" },
+      schemaProps,
+      passthroughConvert,
+      1,
+      "we`ird"
+    );
+    expect(result.whereClause).toBe("`we``ird`.`id` = ?");
+  });
+
+  it("is byte-identical to the unqualified output when omitted", () => {
+    const criteria = { id: "abc", value: { value: [1, 2, 3], operator: "in" as const } };
+    for (const dialect of [SqliteDialect, PostgresDialect, DuckDbDialect]) {
+      const plain = buildSearchWhere<Row>(dialect, criteria, schemaProps, passthroughConvert, 2);
+      const explicit = buildSearchWhere<Row>(
+        dialect,
+        criteria,
+        schemaProps,
+        passthroughConvert,
+        2,
+        undefined
+      );
+      expect(explicit).toEqual(plain);
+    }
+  });
+});

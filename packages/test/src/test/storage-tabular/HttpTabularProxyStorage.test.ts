@@ -11,6 +11,13 @@ import {
   InMemoryTabularStorage,
 } from "@workglow/storage";
 import { describe, expect, it } from "vitest";
+import {
+  AuthorPrimaryKeyNames,
+  AuthorSchema,
+  PostPrimaryKeyNames,
+  PostSchema,
+  runGenericTabularJoinTests,
+} from "./genericTabularJoinTests";
 
 const TestSchema = {
   type: "object",
@@ -649,4 +656,36 @@ describe("HttpTabularProxyStorage — generic contract (CompoundSchema/SearchSch
     });
   };
   runGenericTabularStorageTests(makeCompound, makeSearch, makeAllTypes);
+});
+
+describe("HttpTabularProxyStorage join", () => {
+  // Both sides behind the proxy: the hash join runs over the wire with the
+  // existing `getAll` / `query` ops, and needs no op of its own.
+  runGenericTabularJoinTests(
+    async () => {
+      const backing = new InMemoryTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+        PostSchema,
+        PostPrimaryKeyNames
+      );
+      return new HttpTabularProxyStorage<typeof PostSchema, typeof PostPrimaryKeyNames>({
+        fetch: makeFakeServer(backing),
+        table: "posts",
+        schema: PostSchema,
+        primaryKey: PostPrimaryKeyNames,
+      });
+    },
+    async () => {
+      const backing = new InMemoryTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+        AuthorSchema,
+        AuthorPrimaryKeyNames
+      );
+      return new HttpTabularProxyStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>({
+        fetch: makeFakeServer(backing),
+        table: "authors",
+        schema: AuthorSchema,
+        primaryKey: AuthorPrimaryKeyNames,
+      });
+    },
+    { expectSqlPushdown: false }
+  );
 });

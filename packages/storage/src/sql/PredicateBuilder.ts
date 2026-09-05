@@ -41,13 +41,17 @@ export interface BuiltWhereClause {
  * @param startIndex    1-based starting parameter index (defaults to 1).
  *                      PostgreSQL callers use this when other params have already
  *                      been bound; SQLite ignores it because placeholders are positional.
+ * @param qualifier     Table alias to prefix every column with (`"l"."col"`), for
+ *                      statements that name more than one table. Omitted, the
+ *                      output is exactly what a single-table caller gets today.
  */
 export function buildSearchWhere<Entity>(
   dialect: ISqlDialect,
   criteria: DeleteSearchCriteria<Entity>,
   schemaProps: Record<string, unknown>,
   convertValue: (column: string, value: Entity[keyof Entity]) => ValueOptionType,
-  startIndex: number = 1
+  startIndex: number = 1,
+  qualifier?: string
 ): BuiltWhereClause {
   const conditions: string[] = [];
   const params: ValueOptionType[] = [];
@@ -58,7 +62,10 @@ export function buildSearchWhere<Entity>(
       throw new Error(`Schema must have a "${String(column)}" field to use it in search criteria`);
     }
 
-    const quotedColumn = dialect.quoteId(String(column));
+    const quotedColumn =
+      qualifier === undefined
+        ? dialect.quoteId(String(column))
+        : `${dialect.quoteId(qualifier)}.${dialect.quoteId(String(column))}`;
     const normalized = normalizeCriterion<Entity[keyof Entity]>(criteria[column]);
 
     if (normalized.kind === "in" || normalized.kind === "not-in") {

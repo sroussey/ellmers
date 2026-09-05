@@ -7,6 +7,7 @@
 import { Sqlite, SqliteTabularStorage } from "@workglow/sqlite/storage";
 import {
   ConnectionReentryError,
+  InMemoryTabularStorage,
   NestedConnectionTransactionError,
   StorageValidationError,
   withConnectionTransaction,
@@ -14,13 +15,20 @@ import {
 import { setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { getTestingLogger } from "@workglow/util/test";
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   runTabularStorageContract,
   VectorItemPrimaryKeyNames,
   VectorItemSchema,
 } from "../../contract/tabular-storage/runTabularStorageContract";
 import { runSqlBulkPutTests } from "./genericSqlBulkPutTests";
+import {
+  AuthorPrimaryKeyNames,
+  AuthorSchema,
+  PostPrimaryKeyNames,
+  PostSchema,
+  runGenericTabularJoinTests,
+} from "./genericTabularJoinTests";
 import {
   AllTypesPrimaryKeyNames,
   AllTypesSchema,
@@ -875,4 +883,183 @@ describe("SqliteTabularStorage entity prototypes", () => {
       storage.destroy();
     }
   });
+});
+
+describe("SqliteTabularStorage join inside a transaction", () => {
+  // `_joinInternal` exists solely so `createTxView` routes `tx.join()` past
+  // the lock `withTransaction` holds. If that routing ever breaks, the join
+  // waits on a lock its own caller owns and this test hangs rather than
+  // failing on a value — which is why it is worth pinning on both paths.
+  it("runs a pushed-down join through the tx proxy without deadlocking", async () => {
+    await Sqlite.init();
+    const db = new Sqlite.Database(":memory:");
+    const posts = new SqliteTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+      db,
+      `tx_posts_${uuid4().replace(/-/g, "_")}`,
+      PostSchema,
+      PostPrimaryKeyNames
+    );
+    const authors = new SqliteTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+      db,
+      `tx_authors_${uuid4().replace(/-/g, "_")}`,
+      AuthorSchema,
+      AuthorPrimaryKeyNames
+    );
+    await posts.setupDatabase();
+    await authors.setupDatabase();
+    await authors.put({ id: "a1", tenant: "t", name: "Ann", country: null });
+    await posts.put({ id: "p1", tenant: "t", author_id: "a1", title: "one", views: 1 });
+
+    const rows = await posts.withTransaction(async (tx) => {
+      return await tx.join({ type: "inner", on: [{ left: "author_id", right: "id" }] }, authors);
+    });
+
+    expect(rows.map((r) => `${r.left.id}:${r.right.id}`)).toEqual(["p1:a1"]);
+    posts.destroy?.();
+    authors.destroy?.();
+  });
+
+  it("falls back to the hash join through the tx proxy without deadlocking", async () => {
+    await Sqlite.init();
+    const posts = new SqliteTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+      ":memory:",
+      `tx_posts_${uuid4().replace(/-/g, "_")}`,
+      PostSchema,
+      PostPrimaryKeyNames
+    );
+    // A right side on another connection forces the fallback, whose
+    // leftQuery/leftGetAll re-enter this storage — through the proxy, so they
+    // must reach `_queryInternal` rather than queue behind the transaction.
+    const authors = new InMemoryTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+      AuthorSchema,
+      AuthorPrimaryKeyNames
+    );
+    await posts.setupDatabase();
+    await authors.put({ id: "a1", tenant: "t", name: "Ann", country: null });
+    await posts.put({ id: "p1", tenant: "t", author_id: "a1", title: "one", views: 1 });
+    await posts.put({ id: "p2", tenant: "t", author_id: null, title: "anon", views: 2 });
+
+    const rows = await posts.withTransaction(async (tx) => {
+      return await tx.join({ type: "left", on: [{ left: "author_id", right: "id" }] }, authors);
+    });
+
+    expect(rows.map((r) => `${r.left.id}:${r.right?.id ?? "-"}`).sort()).toEqual(["p1:a1", "p2:-"]);
+    posts.destroy?.();
+  });
+});
+
+describe("SqliteTabularStorage join vs. an open transaction on the right side", () => {
+  it("waits for a concurrent transaction instead of reading rows it rolls back", async () => {
+    await Sqlite.init();
+    const db = new Sqlite.Database(":memory:");
+    const posts = new SqliteTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+      db,
+      `iso_posts_${uuid4().replace(/-/g, "_")}`,
+      PostSchema,
+      PostPrimaryKeyNames
+    );
+    const authors = new SqliteTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+      db,
+      `iso_authors_${uuid4().replace(/-/g, "_")}`,
+      AuthorSchema,
+      AuthorPrimaryKeyNames
+    );
+    await posts.setupDatabase();
+    await authors.setupDatabase();
+    await posts.put({ id: "p1", tenant: "t", author_id: "ghost", title: "one", views: 1 });
+
+    // Both tables share one Database, so an uncommitted INSERT is visible to
+    // any statement issued on that connection. The pushdown would read the
+    // right table holding only the LEFT's lock and pick the row up; the join
+    // must instead serialize on the right's lock and see the rolled-back state.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const txDone = authors
+      .withTransaction(async (tx) => {
+        await tx.put({ id: "ghost", tenant: "t", name: "Rolled back", country: null });
+        await gate;
+        throw new Error("rollback");
+      })
+      .catch((err: unknown) => err);
+
+    // Let the transaction open and write before the join is issued.
+    await new Promise((r) => setTimeout(r, 20));
+    const joinPromise = posts.join(
+      { type: "left", on: [{ left: "author_id", right: "id" }] },
+      authors
+    );
+
+    release();
+    expect(await txDone).toBeInstanceOf(Error);
+    const joined = await joinPromise;
+
+    expect(joined.map((r) => `${r.left.id}:${r.right?.id ?? "-"}`)).toEqual(["p1:-"]);
+    expect(await authors.get({ id: "ghost" })).toBeUndefined();
+    posts.destroy?.();
+    authors.destroy?.();
+  });
+});
+
+describe("SqliteTabularStorage join", () => {
+  let shared: Sqlite.Database;
+  beforeAll(async () => {
+    await Sqlite.init();
+    shared = new Sqlite.Database(":memory:");
+  });
+
+  // Two tables on one handle: the join runs as a single statement.
+  runGenericTabularJoinTests(
+    async () =>
+      new SqliteTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+        shared,
+        `join_posts_${uuid4().replace(/-/g, "_")}`,
+        PostSchema,
+        PostPrimaryKeyNames
+      ),
+    async () =>
+      new SqliteTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+        shared,
+        `join_authors_${uuid4().replace(/-/g, "_")}`,
+        AuthorSchema,
+        AuthorPrimaryKeyNames
+      ),
+    { expectSqlPushdown: true }
+  );
+
+  // A right side elsewhere: the hash join, with the in-list chunking it does
+  // against a real SQLite left side.
+  runGenericTabularJoinTests(
+    async () =>
+      new SqliteTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+        ":memory:",
+        `join_posts_${uuid4().replace(/-/g, "_")}`,
+        PostSchema,
+        PostPrimaryKeyNames
+      ),
+    async () =>
+      new InMemoryTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+        AuthorSchema,
+        AuthorPrimaryKeyNames
+      ),
+    { expectSqlPushdown: false }
+  );
+
+  // The mirror image: a SQLite right side answering an InMemory left's in-list.
+  runGenericTabularJoinTests(
+    async () =>
+      new InMemoryTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+        PostSchema,
+        PostPrimaryKeyNames
+      ),
+    async () =>
+      new SqliteTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+        ":memory:",
+        `join_authors_${uuid4().replace(/-/g, "_")}`,
+        AuthorSchema,
+        AuthorPrimaryKeyNames
+      ),
+    { expectSqlPushdown: false }
+  );
 });

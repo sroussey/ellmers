@@ -12,6 +12,13 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import { runTabularStorageContract } from "../../contract/tabular-storage/runTabularStorageContract";
 import { createSupabaseMockClient } from "../helpers/SupabaseMockClient";
 import {
+  AuthorPrimaryKeyNames,
+  AuthorSchema,
+  PostPrimaryKeyNames,
+  PostSchema,
+  runGenericTabularJoinTests,
+} from "./genericTabularJoinTests";
+import {
   AllTypesPrimaryKeyNames,
   AllTypesSchema,
   CompoundPrimaryKeyNames,
@@ -31,6 +38,26 @@ describe("SupabaseTabularStorage", () => {
   afterAll(async () => {
     await client.close();
   });
+
+  // PostgREST has no raw-SQL path, so a Supabase pair always takes the hash
+  // join; what this pins is the `in` filter and the null handling on it.
+  runGenericTabularJoinTests(
+    async () =>
+      new SupabaseTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+        client,
+        `join_posts_${uuid4().replace(/-/g, "_")}`,
+        PostSchema,
+        PostPrimaryKeyNames
+      ),
+    async () =>
+      new SupabaseTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+        client,
+        `join_authors_${uuid4().replace(/-/g, "_")}`,
+        AuthorSchema,
+        AuthorPrimaryKeyNames
+      ),
+    { expectSqlPushdown: false }
+  );
 
   runGenericTabularStorageTests(
     async () =>

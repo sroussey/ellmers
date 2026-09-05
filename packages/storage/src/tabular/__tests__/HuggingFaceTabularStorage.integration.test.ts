@@ -231,6 +231,13 @@ describe("HuggingFaceTabularStorage", () => {
       );
     });
 
+    it("does not support join, since the filter endpoint has no in-list form", async () => {
+      await expect(
+        storage.join({ type: "inner", on: [{ left: "id", right: "id" }] }, storage)
+      ).rejects.toThrow(/join is not supported/);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it("should get entity by primary key", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

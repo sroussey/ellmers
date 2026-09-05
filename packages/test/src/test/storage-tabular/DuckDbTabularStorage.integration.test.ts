@@ -5,20 +5,31 @@
  */
 
 import { DuckDb, DuckDbTabularStorage } from "@workglow/duckdb/storage";
-import { NestedConnectionTransactionError, withConnectionTransaction } from "@workglow/storage";
+import {
+  InMemoryTabularStorage,
+  NestedConnectionTransactionError,
+  withConnectionTransaction,
+} from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { getTestingLogger } from "@workglow/util/test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   runTabularStorageContract,
   VectorItemPrimaryKeyNames,
   VectorItemSchema,
 } from "../../contract/tabular-storage/runTabularStorageContract";
 import { runSqlBulkPutTests } from "./genericSqlBulkPutTests";
+import {
+  AuthorPrimaryKeyNames,
+  AuthorSchema,
+  PostPrimaryKeyNames,
+  PostSchema,
+  runGenericTabularJoinTests,
+} from "./genericTabularJoinTests";
 import {
   AllTypesPrimaryKeyNames,
   AllTypesSchema,
@@ -674,4 +685,51 @@ describe("DuckDbTabularStorage.withTransaction", () => {
     const ext = await storage.get({ name: "external-row", type: "x" });
     expect(ext?.option).toEqual("external");
   });
+});
+
+describe("DuckDbTabularStorage join", () => {
+  let shared: Awaited<ReturnType<typeof DuckDb.open>>;
+  beforeAll(async () => {
+    shared = await DuckDb.open(":memory:");
+  });
+  afterAll(async () => {
+    await shared.close();
+  });
+
+  // Two tables on one database: the join runs as a single statement.
+  runGenericTabularJoinTests(
+    async () =>
+      new DuckDbTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+        shared,
+        `join_posts_${uuid4().replace(/-/g, "_")}`,
+        PostSchema,
+        PostPrimaryKeyNames
+      ),
+    async () =>
+      new DuckDbTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+        shared,
+        `join_authors_${uuid4().replace(/-/g, "_")}`,
+        AuthorSchema,
+        AuthorPrimaryKeyNames
+      ),
+    { expectSqlPushdown: true }
+  );
+
+  // A right side elsewhere: the hash join, with expanded `$N` in-lists on the
+  // DuckDB side.
+  runGenericTabularJoinTests(
+    async () =>
+      new InMemoryTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+        PostSchema,
+        PostPrimaryKeyNames
+      ),
+    async () =>
+      new DuckDbTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+        shared,
+        `join_authors_${uuid4().replace(/-/g, "_")}`,
+        AuthorSchema,
+        AuthorPrimaryKeyNames
+      ),
+    { expectSqlPushdown: false }
+  );
 });
