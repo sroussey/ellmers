@@ -5,6 +5,7 @@
  */
 
 import type { JoinSide, JoinSpec, ValueOptionType } from "../tabular/ITabularStorage";
+import { StorageValidationError } from "../tabular/StorageError";
 import type { ISqlDialect } from "./Dialect";
 import { buildSearchWhere } from "./PredicateBuilder";
 
@@ -12,12 +13,21 @@ export const JOIN_LEFT_ALIAS = "l";
 export const JOIN_RIGHT_ALIAS = "r";
 
 /**
- * The output column name a joined SELECT gives `column` of `side`. Both
- * tables' columns land in one flat result row, so each is prefixed with its
- * side to keep same-named columns apart.
+ * The output column name a joined SELECT gives the column at `index` of
+ * `side`. Both tables' columns land in one flat result row, so each carries
+ * its side to keep same-named columns apart.
+ *
+ * The alias is built from the column's POSITION, not its name, because
+ * PostgreSQL truncates identifiers at 63 bytes: a name-derived alias over a
+ * 61-character column would come back truncated and every lookup against it
+ * would miss, silently yielding `undefined` cells — and, when the truncated
+ * column is part of the right primary key, turning every matched row of an
+ * inner join into an unmatched one. Both the SELECT list and the hydration
+ * walk the same `columns` array in the same order, so the position is a
+ * stable key that is also cheaper than rebuilding a string per cell.
  */
-export function joinColumnAlias(side: JoinSide, column: string): string {
-  return `${side === "left" ? JOIN_LEFT_ALIAS : JOIN_RIGHT_ALIAS}__${column}`;
+export function joinColumnAlias(side: JoinSide, index: number): string {
+  return `${side === "left" ? JOIN_LEFT_ALIAS : JOIN_RIGHT_ALIAS}${index}`;
 }
 
 /** What {@link buildJoinSelect} needs to know about one side of the join. */
@@ -59,8 +69,8 @@ export function buildJoinSelect(
   let index = 1;
 
   const selectList = [
-    ...left.columns.map((c) => `${lq}.${q(c)} AS ${q(joinColumnAlias("left", c))}`),
-    ...right.columns.map((c) => `${rq}.${q(c)} AS ${q(joinColumnAlias("right", c))}`),
+    ...left.columns.map((c, i) => `${lq}.${q(c)} AS ${q(joinColumnAlias("left", i))}`),
+    ...right.columns.map((c, i) => `${rq}.${q(c)} AS ${q(joinColumnAlias("right", i))}`),
   ].join(", ");
 
   const onParts = spec.on.map((o) => `${lq}.${q(String(o.left))} = ${rq}.${q(String(o.right))}`);
@@ -103,6 +113,15 @@ export function buildJoinSelect(
     // Same NULL placement the single-table page path uses: SQLite and
     // Postgres disagree by default, and the in-memory join sorts this way too.
     const orderClauses = spec.orderBy.map((o) => {
+      // Defense in depth, exactly as `buildSearchWhere` re-checks its operator:
+      // this is where the direction is interpolated raw into SQL, and this
+      // builder is exported, so it cannot rely on a validator in another module
+      // having run first.
+      if (o.direction !== "ASC" && o.direction !== "DESC") {
+        throw new StorageValidationError(
+          `Invalid sort direction "${String(o.direction)}". Must be "ASC" or "DESC"`
+        );
+      }
       const alias = o.side === "left" ? lq : rq;
       const nulls = o.direction === "ASC" ? "NULLS FIRST" : "NULLS LAST";
       return `${alias}.${q(o.column)} ${o.direction} ${nulls}`;
@@ -122,7 +141,6 @@ export function buildJoinSelect(
     }
     sql += ` OFFSET ${dialect.placeholder(index)}`;
     params.push(spec.offset);
-    index++;
   }
 
   return { sql, params };

@@ -38,13 +38,37 @@ const authors: SqlJoinSide = {
 };
 
 const SELECT_PG =
-  'SELECT "l"."id" AS "l__id", "l"."author_id" AS "l__author_id", "l"."views" AS "l__views", ' +
-  '"r"."id" AS "r__id", "r"."name" AS "r__name" FROM "posts" AS "l"';
+  'SELECT "l"."id" AS "l0", "l"."author_id" AS "l1", "l"."views" AS "l2", ' +
+  '"r"."id" AS "r0", "r"."name" AS "r1" FROM "posts" AS "l"';
 
 describe("joinColumnAlias", () => {
-  it("prefixes with the side", () => {
-    expect(joinColumnAlias("left", "id")).toBe("l__id");
-    expect(joinColumnAlias("right", "id")).toBe("r__id");
+  it("keys by side and position, not by column name", () => {
+    expect(joinColumnAlias("left", 0)).toBe("l0");
+    expect(joinColumnAlias("right", 0)).toBe("r0");
+    expect(joinColumnAlias("left", 12)).toBe("l12");
+  });
+
+  it("stays well under Postgres's 63-byte identifier limit for any column name", () => {
+    // A name-derived alias over a 61-character column produced a 64-byte
+    // identifier, which Postgres silently truncates — every hydration lookup
+    // against it then missed.
+    const longColumn = "a".repeat(61);
+    const side: SqlJoinSide = {
+      table: "t",
+      alias: "l",
+      columns: [longColumn, "id"],
+      schemaProps: { [longColumn]: {}, id: {} },
+      convertValue: passthrough,
+    };
+    const { sql } = buildJoinSelect(
+      PostgresDialect,
+      { type: "inner", on: [{ left: "id", right: "id" }] },
+      side,
+      authors
+    );
+    for (const alias of sql.matchAll(/ AS "([^"]+)"/g)) {
+      expect(alias[1].length).toBeLessThanOrEqual(63);
+    }
   });
 });
 
@@ -123,8 +147,8 @@ describe("buildJoinSelect", () => {
     };
     const { sql, params } = buildJoinSelect(SqliteDialect, spec, posts, authors);
     expect(sql).toBe(
-      "SELECT `l`.`id` AS `l__id`, `l`.`author_id` AS `l__author_id`, `l`.`views` AS `l__views`, " +
-        "`r`.`id` AS `r__id`, `r`.`name` AS `r__name` FROM `posts` AS `l`" +
+      "SELECT `l`.`id` AS `l0`, `l`.`author_id` AS `l1`, `l`.`views` AS `l2`, " +
+        "`r`.`id` AS `r0`, `r`.`name` AS `r1` FROM `posts` AS `l`" +
         " LEFT JOIN `authors` AS `r` ON `l`.`author_id` = `r`.`id`" +
         " WHERE `l`.`views` = ? ORDER BY `l`.`views` ASC NULLS FIRST LIMIT ? OFFSET ?"
     );

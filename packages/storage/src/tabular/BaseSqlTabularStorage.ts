@@ -650,6 +650,16 @@ export abstract class BaseSqlTabularStorage<
     if (mine === null || theirs === null || mine.dialect !== theirs.dialect) return null;
     const handle = this.sharedConnectionHandle();
     if (handle === null || handle !== right.sharedConnectionHandle()) return null;
+    // The pushdown reads the RIGHT table while holding only the LEFT's lock,
+    // so it never queues behind a transaction the right side has open. On a
+    // shared connection that would read rows a pending ROLLBACK is about to
+    // erase; on a real pool it would run on a different client from the one
+    // the right side is enlisted on and miss its uncommitted rows entirely.
+    // The hash fallback goes through `right.query()`, which does serialize on
+    // the right's own lock and does resolve its enlisted client, so hand this
+    // case to it. `this.inTransaction` means the join is already inside that
+    // transaction, where reading its own uncommitted rows is correct.
+    if (right.inTransaction && !this.inTransaction) return null;
     return { right, dialect: mine };
   }
 
@@ -704,31 +714,29 @@ export abstract class BaseSqlTabularStorage<
     const { sql, params } = buildJoinSelect(dialect.dialect, spec, leftSide, rightSide);
     const rows = await dialect.executeRaw(sql, params);
 
+    // Built once for the whole result rather than per cell: the alias depends
+    // only on the side and the column's position.
+    const leftAliases = leftSide.columns.map((_, i) => joinColumnAlias("left", i));
+    const rightAliases = rightSide.columns.map((_, i) => joinColumnAlias("right", i));
     // Primary-key columns are NOT NULL, so a right side whose key columns all
     // came back NULL is the NULL-extended half of an unmatched LEFT JOIN row.
-    const rightKeyAliases = (right.primaryKeyColumns() as string[]).map((c) =>
-      joinColumnAlias("right", c)
+    const rightKeyAliases = (right.primaryKeyColumns() as string[]).map((column) =>
+      joinColumnAlias("right", rightSide.columns.indexOf(column))
     );
     return rows.map((row) => {
       const left: Record<string, unknown> = {};
-      for (const column of leftSide.columns) {
-        left[column] = this.sqlToJsValue(
-          column,
-          row[joinColumnAlias("left", column)] as ValueOptionType
-        );
-      }
+      leftSide.columns.forEach((column, i) => {
+        left[column] = this.sqlToJsValue(column, row[leftAliases[i]] as ValueOptionType);
+      });
       const matched = rightKeyAliases.every(
         (alias) => row[alias] !== null && row[alias] !== undefined
       );
       let rightRow: Record<string, unknown> | undefined;
       if (matched) {
         rightRow = {};
-        for (const column of rightSide.columns) {
-          rightRow[column] = right.sqlToJsValue(
-            column,
-            row[joinColumnAlias("right", column)] as ValueOptionType
-          );
-        }
+        rightSide.columns.forEach((column, i) => {
+          rightRow![column] = right.sqlToJsValue(column, row[rightAliases[i]] as ValueOptionType);
+        });
       }
       return { left, right: rightRow } as unknown as JoinedRow<Entity, R, T>;
     });

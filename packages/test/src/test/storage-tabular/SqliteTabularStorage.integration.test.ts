@@ -948,6 +948,60 @@ describe("SqliteTabularStorage join inside a transaction", () => {
   });
 });
 
+describe("SqliteTabularStorage join vs. an open transaction on the right side", () => {
+  it("waits for a concurrent transaction instead of reading rows it rolls back", async () => {
+    await Sqlite.init();
+    const db = new Sqlite.Database(":memory:");
+    const posts = new SqliteTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+      db,
+      `iso_posts_${uuid4().replace(/-/g, "_")}`,
+      PostSchema,
+      PostPrimaryKeyNames
+    );
+    const authors = new SqliteTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+      db,
+      `iso_authors_${uuid4().replace(/-/g, "_")}`,
+      AuthorSchema,
+      AuthorPrimaryKeyNames
+    );
+    await posts.setupDatabase();
+    await authors.setupDatabase();
+    await posts.put({ id: "p1", tenant: "t", author_id: "ghost", title: "one", views: 1 });
+
+    // Both tables share one Database, so an uncommitted INSERT is visible to
+    // any statement issued on that connection. The pushdown would read the
+    // right table holding only the LEFT's lock and pick the row up; the join
+    // must instead serialize on the right's lock and see the rolled-back state.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const txDone = authors
+      .withTransaction(async (tx) => {
+        await tx.put({ id: "ghost", tenant: "t", name: "Rolled back", country: null });
+        await gate;
+        throw new Error("rollback");
+      })
+      .catch((err: unknown) => err);
+
+    // Let the transaction open and write before the join is issued.
+    await new Promise((r) => setTimeout(r, 20));
+    const joinPromise = posts.join(
+      { type: "left", on: [{ left: "author_id", right: "id" }] },
+      authors
+    );
+
+    release();
+    expect(await txDone).toBeInstanceOf(Error);
+    const joined = await joinPromise;
+
+    expect(joined.map((r) => `${r.left.id}:${r.right?.id ?? "-"}`)).toEqual(["p1:-"]);
+    expect(await authors.get({ id: "ghost" })).toBeUndefined();
+    posts.destroy?.();
+    authors.destroy?.();
+  });
+});
+
 describe("SqliteTabularStorage join", () => {
   let shared: Sqlite.Database;
   beforeAll(async () => {
