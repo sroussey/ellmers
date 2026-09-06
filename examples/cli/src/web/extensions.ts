@@ -236,15 +236,38 @@ export function listWebStatusWidgets(): readonly WebStatusWidget[] {
   return [...statusWidgets];
 }
 
-/** Reads every status widget, dropping any that cannot answer right now. */
-export async function readWebStatusWidgets(): Promise<
-  readonly {
-    readonly id: string;
-    readonly title: string;
-    readonly source: string;
-    readonly items: readonly WebStatusItem[];
-  }[]
-> {
+export interface WebStatusWidgetReading {
+  readonly id: string;
+  readonly title: string;
+  readonly source: string;
+  readonly items: readonly WebStatusItem[];
+}
+
+let statusReadInFlight: Promise<readonly WebStatusWidgetReading[]> | undefined;
+
+/**
+ * Reads every status widget, dropping any that cannot answer right now.
+ *
+ * Callers overlapping in time share one pass. The rail is polled on a bare
+ * interval by every open tab and served concurrently, so two reads can be in
+ * progress at once — and the cleanups below close resources the widgets share
+ * (a database connection, typically). Run under each other, the first read's
+ * teardown closes the connection the second is still querying: that read's
+ * widgets throw, get dropped as unanswerable, and the rows vanish from the rail
+ * with nothing logged. Sharing the pass also means the cleanups run once per
+ * pass rather than once per caller.
+ *
+ * The in-flight promise is only cleared after the cleanups have finished, so a
+ * read that starts later never overlaps an earlier one's teardown either.
+ */
+export function readWebStatusWidgets(): Promise<readonly WebStatusWidgetReading[]> {
+  statusReadInFlight ??= readStatusWidgetsOnce().finally(() => {
+    statusReadInFlight = undefined;
+  });
+  return statusReadInFlight;
+}
+
+async function readStatusWidgetsOnce(): Promise<readonly WebStatusWidgetReading[]> {
   try {
     const results = await Promise.all(
       statusWidgets.map(async (widget) => {

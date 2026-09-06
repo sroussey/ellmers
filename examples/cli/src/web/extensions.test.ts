@@ -180,4 +180,78 @@ describe("status widgets", () => {
     await readWebStatusWidgets();
     expect(closed).toBe(1);
   });
+
+  // Two open browser tabs poll `/api/status-widgets` on their own intervals and
+  // the server answers both at once. The cleanups tear down state the widgets
+  // share, so a second read running under the first sees its connection closed
+  // mid-query: its widgets throw, get dropped as unanswerable, and rows vanish
+  // from that tab's rail with nothing logged anywhere.
+  describe("concurrent reads", () => {
+    function deferred(): { readonly promise: Promise<void>; resolve: () => void } {
+      let resolve = (): void => {};
+      const promise = new Promise<void>((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    }
+
+    it("does not tear down a shared connection under an overlapping read", async () => {
+      // The connection the widget needs, closed by the cleanup that follows
+      // whichever read finishes first.
+      const connection = { open: true };
+      const overlapping = deferred();
+      const firstFinished = deferred();
+      let reads = 0;
+
+      registerWebStatusReadCleanup(async () => {
+        connection.open = false;
+      });
+      registerWebStatusWidget({
+        id: "db",
+        title: "Database",
+        source: "test",
+        read: async () => {
+          // The first query waits for a second read to be under way; a second
+          // query (which only happens without a shared pass) is still in flight
+          // when the first read's cleanup lands.
+          reads += 1;
+          await (reads === 1 ? overlapping.promise : firstFinished.promise);
+          if (!connection.open) throw new Error("connection closed");
+          return [{ kind: "text" as const, label: "backend", value: "postgres" }];
+        },
+      });
+
+      const first = readWebStatusWidgets();
+      const second = readWebStatusWidgets();
+      overlapping.resolve();
+      const a = await first;
+      firstFinished.resolve();
+      const b = await second;
+
+      expect(reads).toBe(1);
+      expect(a.map((w) => w.id)).toEqual(["db"]);
+      expect(b.map((w) => w.id)).toEqual(["db"]);
+    });
+
+    it("runs the cleanups once for a shared pass, and again for the next one", async () => {
+      let closed = 0;
+      registerWebStatusReadCleanup(async () => {
+        closed += 1;
+      });
+      registerWebStatusWidget({
+        id: "db",
+        title: "Database",
+        source: "test",
+        read: async () => [{ kind: "text", label: "backend", value: "postgres" }],
+      });
+
+      await Promise.all([readWebStatusWidgets(), readWebStatusWidgets()]);
+      expect(closed).toBe(1);
+
+      // A read that starts after the pass settled is a pass of its own: the
+      // cleanups have already run, so nothing is torn down underneath it.
+      await readWebStatusWidgets();
+      expect(closed).toBe(2);
+    });
+  });
 });
