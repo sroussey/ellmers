@@ -1378,6 +1378,13 @@ export class SqliteTabularStorage<
     match: SearchCriteria<Entity>,
     patch: Partial<Entity>
   ): Promise<Entity | undefined> {
+    // Repeated rather than redundant, exactly as `deleteSearch` is:
+    // {@link createTxView}'s Proxy routes `tx.updateWhere` straight here by the
+    // `_*Internal` naming convention, so a guard living only on the public
+    // method is skipped by every call made through a transaction handle.
+    // Unguarded, `tx.updateWhere({ id: "a" }, { id: "b" })` rewrites the row's
+    // identity in place instead of raising StorageValidationError.
+    this.assertPatchKeepsPrimaryKey(patch);
     const patchKeys = Object.keys(patch) as Array<keyof Entity>;
     if (patchKeys.length === 0) return undefined;
     return this.runUpdateWhereOnHandle(match, patch, patchKeys);
