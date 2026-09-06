@@ -6,7 +6,7 @@
 
 import type { Usage } from "@workglow/task-graph";
 import type { ModelPricing } from "../model/ModelSchema";
-import type { CostEstimate } from "./CostEstimate";
+import type { CostEstimate, EstimateCostOptions } from "./CostEstimate";
 import { estimateCost } from "./CostEstimate";
 
 /**
@@ -103,15 +103,22 @@ function formatCostAmount(amount: number): string {
  *
  * Heuristic counters get a `~` and no cost figure: they are worth showing as
  * live feedback, but a reader must not mistake them for what was billed.
+ *
+ * `options.at` is the instant the request ran, forwarded to
+ * {@link estimateCost}. A caller that re-renders — every live UI — should pass
+ * it: without one, a card with a time-of-day tier prices against the render
+ * clock, so a finished run's cost changes on screen as the clock crosses the
+ * discount boundary.
  */
 export function formatUsageWithCost(
   usage: Usage | undefined,
   detail: UsageDetail,
-  pricing: ModelPricing | undefined
+  pricing: ModelPricing | undefined,
+  options: EstimateCostOptions = {}
 ): string {
   const tokens = formatUsage(usage, detail);
   if (!tokens || tokens === "cached") return tokens;
   if (usage?.estimated) return `~${tokens}`;
-  const cost = formatCost(estimateCost(usage!, pricing));
+  const cost = formatCost(estimateCost(usage!, pricing, options));
   return cost ? `${tokens} ${cost}` : tokens;
 }

@@ -308,6 +308,12 @@ const CLOCK_TIME_PATTERN = "^([01][0-9]|2[0-3]):[0-5][0-9]$";
 
 /**
  * JSON schema for per-million-token model pricing rates.
+ *
+ * A model record carries a card only as a deliberate override — a negotiated
+ * rate, or a model no provider table names. Absent is the ordinary case, and
+ * the provider's own table answers instead: a rate correction there then
+ * reaches every model already added, rather than being shadowed by whatever
+ * the published rates were on the day the model was added.
  */
 export const ModelPricingSchema = {
   type: "object",

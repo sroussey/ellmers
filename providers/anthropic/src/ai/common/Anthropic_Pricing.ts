@@ -9,6 +9,10 @@ import { resolveModelPricingFromTable } from "@workglow/ai";
 
 /**
  * Public list pricing for Anthropic Claude models (USD per 1M tokens).
+ *
+ * No card carries a long-context tier, and that is not an omission: the
+ * 1M-context models bill a long prompt at these same rates, and every other
+ * model here has a 200K window, so no prompt size could select one.
  */
 export const ANTHROPIC_PRICING: Record<string, ModelPricing> = {
   "claude-fable-5-1": {

@@ -14,7 +14,6 @@ import { normalizedModelSearchQuery } from "@workglow/ai/provider-utils";
 import { stampEffortOptions } from "@workglow/ai/worker";
 import { GOOGLE_GEMINI } from "./Gemini_Constants";
 import { geminiEffortPolicy } from "./Gemini_EffortPolicy";
-import { getGeminiModelPricing } from "./Gemini_Pricing";
 
 interface GeminiModelEntry {
   readonly label: string;
@@ -84,7 +83,6 @@ function mapGeminiModel(model: GeminiApiModel): ModelSearchResultItem {
         capabilities: capabilitiesForGeminiApiModel(model, id),
         provider_config: { model_name: id },
         metadata: {},
-        pricing: getGeminiModelPricing(id),
       },
       geminiEffortPolicy({
         provider: GOOGLE_GEMINI,

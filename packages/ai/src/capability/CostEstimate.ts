@@ -43,9 +43,12 @@ export interface EstimateCostOptions {
   /**
    * When the request ran, for a rate card with a time-of-day tier. Defaults to
    * now — right for a live run, wrong for one replayed from a log, so pass the
-   * request's own instant when pricing after the fact.
+   * request's own instant when pricing after the fact. A figure rendered
+   * repeatedly (a footer, a report) must pass one: priced against the render
+   * clock, the same usage costs a different amount once the clock crosses a
+   * discount boundary.
    */
-  readonly at?: Date | number;
+  readonly at?: Date | number | undefined;
 }
 
 /**

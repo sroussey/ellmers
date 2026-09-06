@@ -9,6 +9,12 @@ import { resolveModelPricingFromTable } from "@workglow/ai";
 
 /**
  * Public list pricing for Google Gemini models (USD per 1M tokens).
+ *
+ * Pro models bill a prompt over 200K tokens at a higher rate, so their cards
+ * carry both published rows as usage tiers. The `≤200K` tier restates the base
+ * rates rather than being left implicit, which is what puts a prompt of exactly
+ * 200K on the lower row: tiers resolve in declared order. Tiers restate `input`
+ * and `output` only, so the card's own cache rates keep applying.
  */
 export const GEMINI_PRICING: Record<string, ModelPricing> = {
   "gemini-3.8-flash-lite": {
@@ -59,6 +65,10 @@ export const GEMINI_PRICING: Record<string, ModelPricing> = {
     output: 12,
     cached: 0.5,
     cacheStoragePerHour: 4.5,
+    usageTiers: [
+      { maxInputTokens: 200_000, pricing: { input: 2, output: 12 } },
+      { minInputTokens: 200_000, pricing: { input: 4, output: 18 } },
+    ],
   },
   "gemini-3.1-pro": {
     currency: "USD",
@@ -94,6 +104,10 @@ export const GEMINI_PRICING: Record<string, ModelPricing> = {
     output: 10,
     cached: 0.3125,
     cacheStoragePerHour: 4.5,
+    usageTiers: [
+      { maxInputTokens: 200_000, pricing: { input: 1.25, output: 10 } },
+      { minInputTokens: 200_000, pricing: { input: 2.5, output: 15 } },
+    ],
   },
   "gemini-embedding-2": { currency: "USD", input: 0.04, output: 0 },
   "text-embedding-004": { currency: "USD", input: 0.025, output: 0 },

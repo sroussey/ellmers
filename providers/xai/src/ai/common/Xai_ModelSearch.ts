@@ -15,7 +15,6 @@ import { stampEffortOptions } from "@workglow/ai/worker";
 import { getClient } from "./Xai_Client";
 import { XAI } from "./Xai_Constants";
 import { xaiEffortPolicy } from "./Xai_EffortPolicy";
-import { getXaiModelPricing } from "./Xai_Pricing";
 
 interface XaiModelListItem {
   readonly label: string;
@@ -70,7 +69,6 @@ function mapModelList(models: XaiModelListItem[]): ModelSearchResultItem[] {
           capabilities: imageEntry?.capabilities ?? [],
           provider_config: { model_name: m.value },
           metadata: {},
-          pricing: getXaiModelPricing(m.value),
         },
         xaiEffortPolicy({ provider: XAI, provider_config: { model_name: m.value } })
       ),

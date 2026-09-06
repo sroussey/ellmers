@@ -91,7 +91,10 @@ export function useTaskUsageLine(task: ITask): string {
   const { usage, modelId } = useTaskUsage(task);
   const pricing = useModelPricing(modelId);
 
-  const usageText = formatUsageWithCost(usage, "directional", pricing);
+  // Priced at the execution's own instant, not the render clock: a row that
+  // re-renders four times a second must not restate what a finished request
+  // cost when a time-of-day rate changes underneath it.
+  const usageText = formatUsageWithCost(usage, "directional", pricing, { at: task.startedAt });
   const needsTick = usageLineNeedsTick(usageText, task);
   const nowMs = useSyncExternalStore(
     needsTick ? subscribeToClock : subscribeIdle,
