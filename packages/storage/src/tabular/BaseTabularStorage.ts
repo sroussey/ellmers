@@ -46,6 +46,7 @@ import type {
 } from "./ITabularStorage";
 import { runHashJoin } from "./hashJoin";
 import { isSearchCondition, isSearchInCondition, isSearchNotInCondition } from "./ITabularStorage";
+import { resolveJoinDelegate } from "./joinDelegate";
 import type { KeysetPageDeps } from "./keysetPage";
 import {
   applyKeysetFilter,
@@ -315,17 +316,24 @@ export abstract class BaseTabularStorage<
    * backends override it with a single `JOIN` statement when both tables sit
    * on one connection. The callbacks are bound to `this`, so a subclass's own
    * `query` / `getAll` (mutex, transaction routing) still runs underneath.
+   *
+   * The right side is unwrapped through any chain of delegating wrappers
+   * ({@link resolveJoinDelegate}) before anything reads it, so a join whose
+   * left side is a plain storage and whose right side is wrapped still reads
+   * both halves from the same place. A wrapper that must stay in the path —
+   * one that scopes what the join may see — does not delegate, and survives.
    */
   async join<R, T extends JoinType>(
     spec: JoinSpec<Entity, R, T>,
     right: ITabularStorage<any, any, R, any, any>
   ): Promise<JoinedRow<Entity, R, T>[]> {
-    this.validateJoinSpec(spec, right);
+    const target = resolveJoinDelegate(right) as ITabularStorage<any, any, R, any, any>;
+    this.validateJoinSpec(spec, target);
     return runHashJoin<Entity, R, T>(
       {
         leftQuery: (criteria, options) => this.query(criteria, options),
         leftGetAll: (options) => this.getAll(options),
-        rightQuery: (criteria) => right.query(criteria),
+        rightQuery: (criteria) => target.query(criteria),
         leftColumnIsNullable: (column) => this.columnIsNullable(column),
       },
       spec

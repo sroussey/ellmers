@@ -311,7 +311,7 @@ describe("runHashJoin", () => {
     expect(ids(rows)).toEqual(["p6:a1", "p3:a2"]);
   });
 
-  it("does not bound the left read for an inner join, which drops unmatched rows", async () => {
+  it("bounds the left read for an inner join whose first prefix already fills the limit", async () => {
     const { deps } = await fixtures();
     const leftGetAll = vi.fn(deps.leftGetAll);
     const rows = await runHashJoin(
@@ -323,12 +323,60 @@ describe("runHashJoin", () => {
         limit: 3,
       }
     );
-    // p4 and p5 have no author; bounding the left read to 3 would have
-    // returned only 2 joined rows.
-    expect(leftGetAll).toHaveBeenCalledWith({
-      orderBy: [{ column: "views", direction: "DESC" }],
-    });
+    // p1, p6 and p3 are the three highest-viewed posts and all three match, so
+    // three left rows are all this join ever has to read.
+    expect(leftGetAll.mock.calls).toEqual([
+      [{ orderBy: [{ column: "views", direction: "DESC" }], limit: 3 }],
+    ]);
     expect(ids(rows)).toEqual(["p1:a1", "p6:a1", "p3:a2"]);
+  });
+
+  it("widens the left read for an inner join until the limit is filled", async () => {
+    const { deps } = await fixtures();
+    const leftGetAll = vi.fn(deps.leftGetAll);
+    const rows = await runHashJoin(
+      { ...deps, leftGetAll },
+      {
+        type: "inner",
+        on,
+        // Ascending by views puts the two unmatched posts (p4 views 1 with a
+        // dangling author, p5 views 3 with a null key) first, so a read bounded
+        // at the limit yields only one joined row and has to widen.
+        orderBy: [{ side: "left", column: "views", direction: "ASC" }],
+        limit: 3,
+      }
+    );
+    expect(leftGetAll.mock.calls).toEqual([
+      [{ orderBy: [{ column: "views", direction: "ASC" }], limit: 3 }],
+      [{ orderBy: [{ column: "views", direction: "ASC" }], limit: 12 }],
+    ]);
+    expect(ids(rows)).toEqual(["p2:a1", "p3:a2", "p6:a1"]);
+  });
+
+  it("reads the whole left side when the order can only be applied in memory", async () => {
+    const { deps } = await fixtures();
+    const leftGetAll = vi.fn(deps.leftGetAll);
+    const rows = await runHashJoin(
+      { ...deps, leftGetAll },
+      {
+        type: "inner",
+        on,
+        // A right-side order is decided after the pairing, so no prefix of the
+        // left side can be known to hold the first `limit` rows.
+        orderBy: [{ side: "right", column: "name", direction: "ASC" }],
+        limit: 2,
+      }
+    );
+    expect(leftGetAll.mock.calls).toEqual([[undefined]]);
+    expect(rows).toHaveLength(2);
+  });
+
+  it("bounds an unordered join, whose result order is unspecified either way", async () => {
+    const { deps } = await fixtures();
+    const leftGetAll = vi.fn(deps.leftGetAll);
+    const rows = await runHashJoin({ ...deps, leftGetAll }, { type: "left", on, limit: 2 });
+    expect(leftGetAll.mock.calls).toEqual([[{ limit: 2 }]]);
+    expect(rows).toHaveLength(2);
   });
 
   it("emits one row per matching right row when the right side is one-to-many", async () => {

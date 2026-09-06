@@ -36,6 +36,7 @@ import type {
   SimplifyPrimaryKey,
   ValueOptionType,
 } from "./ITabularStorage";
+import { resolveJoinDelegate } from "./joinDelegate";
 import { pkFingerprint } from "./pkFingerprint";
 
 /**
@@ -84,10 +85,10 @@ export interface SqlJoinDialect {
   ) => Promise<Record<string, unknown>[]>;
 }
 
-/** The two storages and dialect a pushed-down join runs against. */
+/** The right-hand storage and SQL dialect a pushed-down join runs against. */
 interface SqlJoinPlan {
   readonly right: BaseSqlTabularStorage<any, any, any, any, any, any>;
-  readonly dialect: SqlJoinDialect;
+  readonly dialect: ISqlDialect;
 }
 
 /**
@@ -629,24 +630,21 @@ export abstract class BaseSqlTabularStorage<
     return null;
   }
 
-  /** Memoized {@link sqlJoinDialect}: the bag is per-instance and immutable. */
-  private _joinDialectCache: SqlJoinDialect | null | undefined;
-  private cachedSqlJoinDialect(): SqlJoinDialect | null {
-    if (this._joinDialectCache === undefined) {
-      this._joinDialectCache = this.sqlJoinDialect();
-    }
-    return this._joinDialectCache;
-  }
-
   /**
    * Decides whether `right` can be joined in one statement: it must be a SQL
    * storage speaking the same dialect on the same connection. The dialect is
    * compared by identity, not name — DuckDB's reports itself as Postgres.
+   *
+   * Only the SQL dialect is carried into the plan. The executor is resolved
+   * again at execution time from whatever receiver runs the join, because a
+   * backend's `executeRaw` closes over the connection its `this` names — and
+   * inside `withTransaction` that receiver is the transaction proxy, whose
+   * connection is the transaction's, not the instance's.
    */
   private planSqlJoin(right: unknown): SqlJoinPlan | null {
     if (!(right instanceof BaseSqlTabularStorage)) return null;
-    const mine = this.cachedSqlJoinDialect();
-    const theirs = right.cachedSqlJoinDialect();
+    const mine = this.sqlJoinDialect();
+    const theirs = right.sqlJoinDialect();
     if (mine === null || theirs === null || mine.dialect !== theirs.dialect) return null;
     const handle = this.sharedConnectionHandle();
     if (handle === null || handle !== right.sharedConnectionHandle()) return null;
@@ -660,7 +658,7 @@ export abstract class BaseSqlTabularStorage<
     // case to it. `this.inTransaction` means the join is already inside that
     // transaction, where reading its own uncommitted rows is correct.
     if (right.inTransaction && !this.inTransaction) return null;
-    return { right, dialect: mine };
+    return { right, dialect: mine.dialect };
   }
 
   /**
@@ -678,8 +676,9 @@ export abstract class BaseSqlTabularStorage<
     spec: JoinSpec<Entity, R, T>,
     right: ITabularStorage<any, any, R, any, any>
   ): Promise<JoinedRow<Entity, R, T>[]> {
-    const plan = this.planSqlJoin(right);
-    if (plan === null) return super.join(spec, right);
+    const target = resolveJoinDelegate(right) as ITabularStorage<any, any, R, any, any>;
+    const plan = this.planSqlJoin(target);
+    if (plan === null) return super.join(spec, target);
     return this.mutex(() => this.runSqlJoin(spec, plan.right, plan.dialect));
   }
 
@@ -695,24 +694,37 @@ export abstract class BaseSqlTabularStorage<
     spec: JoinSpec<Entity, R, T>,
     right: ITabularStorage<any, any, R, any, any>
   ): Promise<JoinedRow<Entity, R, T>[]> {
-    const plan = this.planSqlJoin(right);
-    if (plan === null) return super.join(spec, right);
+    const target = resolveJoinDelegate(right) as ITabularStorage<any, any, R, any, any>;
+    const plan = this.planSqlJoin(target);
+    if (plan === null) return super.join(spec, target);
     return this.runSqlJoin(spec, plan.right, plan.dialect);
   }
 
-  /** Builds, executes and hydrates a pushed-down join. */
+  /**
+   * Builds, executes and hydrates a pushed-down join.
+   *
+   * The executor comes from `this.sqlJoinDialect()` here rather than from the
+   * plan: a backend binds `executeRaw` to the connection its `this` names, so
+   * resolving it anywhere but the receiver that runs the statement can send it
+   * down a connection that has since been released, or past an open
+   * transaction whose uncommitted rows the join is supposed to see.
+   */
   protected async runSqlJoin<R, T extends JoinType>(
     spec: JoinSpec<Entity, R, T>,
     right: BaseSqlTabularStorage<any, any, any, any, any, any>,
-    dialect: SqlJoinDialect
+    dialect: ISqlDialect
   ): Promise<JoinedRow<Entity, R, T>[]> {
+    const executor = this.sqlJoinDialect();
+    if (executor === null) {
+      throw new Error(`${this.constructor.name} cannot execute a pushed-down join.`);
+    }
     // The right schema is always in hand here, so every column named by the
     // spec is checked before anything is quoted into SQL.
     this.validateJoinSpec(spec, right);
     const leftSide = this.sqlJoinSide(JOIN_LEFT_ALIAS);
     const rightSide = right.sqlJoinSide(JOIN_RIGHT_ALIAS);
-    const { sql, params } = buildJoinSelect(dialect.dialect, spec, leftSide, rightSide);
-    const rows = await dialect.executeRaw(sql, params);
+    const { sql, params } = buildJoinSelect(dialect, spec, leftSide, rightSide);
+    const rows = await executor.executeRaw(sql, params);
 
     // Built once for the whole result rather than per cell: the alias depends
     // only on the side and the column's position.

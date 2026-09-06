@@ -779,6 +779,19 @@ export interface ITabularStorage<
    * unmatched left row carries `right: undefined`. A `null` join key never
    * matches. Returns `[]` (never `undefined`) when nothing matches. Emits no
    * event of its own.
+   *
+   * **What the fallback reads.** The single-statement path is bounded by the
+   * database. The hash join is not, by default: `limit` and `offset` are
+   * applied to the joined rows, so a bounded join can still be a whole-table
+   * read. It bounds the left read — and stops early — only when the joined
+   * rows come back in their final order, meaning `orderBy` is absent or names
+   * only left columns the left query can order by. An `orderBy` touching the
+   * right side, or a left column that may be null, is sorted in memory
+   * instead, and that sort needs every joined row: such a join reads the whole
+   * left table and every right row matching it, however small its `limit`.
+   * Over a remote backend (HTTP proxy, Supabase) that is the whole table on
+   * the wire, so prefer a `where.left` that narrows it, or an `orderBy` the
+   * left side can serve.
    */
   join<R, T extends JoinType>(
     spec: JoinSpec<Entity, R, T>,
