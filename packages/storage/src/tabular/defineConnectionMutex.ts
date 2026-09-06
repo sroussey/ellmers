@@ -61,6 +61,20 @@ import type { Als, AlsContext } from "./connectionAls.shared";
  * difference between the runtimes, and it is gated to the runtime that has no
  * better option.
  *
+ * Queueing an unrelated caller rather than refusing it is what makes a second
+ * connection reachable from inside an open transaction — nesting a transaction
+ * on a DIFFERENT connection inside one is legal — and that in turn makes a
+ * classic lock-order cycle expressible: two tasks each holding one connection
+ * and each waiting for the other's. Nothing times a chain slot out, and the
+ * waiter installs itself as `state.chain` before awaiting, so such a pair would
+ * hang forever AND leave both connections unusable to everyone after them.
+ * {@link HandleState.waitingOn} records what the holder of each slot is blocked
+ * on, and every queueing caller walks that wait-for graph before taking a slot:
+ * a wait that would close a cycle back onto a handle this async context already
+ * holds is refused with {@link ConnectionDeadlockError} instead. The refusal
+ * lands on whichever task arrives second, before any slot is replaced, so the
+ * loser unwinds and the winner proceeds.
+ *
  * KNOWN LIMIT of the store-based classification: carrying the store proves a
  * descendant, but *lacking* it does not prove the opposite. A descendant whose
  * continuation is resumed by a scheduler created outside the transaction (a
@@ -90,6 +104,14 @@ interface HandleState {
   chain: Promise<void>;
   txOwners: Set<object> | null;
   txId: symbol | null;
+  /**
+   * The handle whoever currently holds this slot is itself blocked acquiring,
+   * or `null` when the holder is running. Only a caller that already holds a
+   * slot writes here, so the field always names the holder's own wait — the one
+   * edge `assertNoWaitCycle` needs to walk the wait-for graph. See
+   * {@link ConnectionDeadlockError}.
+   */
+  waitingOn: object | null;
 }
 
 export type TransactionOwners = object | readonly object[];
@@ -180,8 +202,67 @@ export class ConnectionReentryError extends Error {
   }
 }
 
+/**
+ * Thrown when taking a connection's chain slot would close a wait-for cycle:
+ * this async context holds a slot on one connection, the connection it is
+ * asking for is held by a task that is itself blocked on a connection this one
+ * holds. Neither side can make progress and neither ever will — there is no
+ * timeout on the chain — so the acquisition is refused before the slot is
+ * taken, leaving both connections usable.
+ *
+ * Nesting a transaction on a DIFFERENT connection inside an open one is legal
+ * and stays legal; what is not safe is two tasks doing it in opposite orders
+ * at the same time. The refusal falls on whichever of them arrives second, and
+ * only while the cycle is real.
+ *
+ * The supported refactors, in order of preference:
+ *
+ *   1. **Acquire connections in one consistent order** across every task that
+ *      spans two databases — the ordinary lock-ordering discipline.
+ *   2. **Finish the outer transaction before opening the inner one**, if the
+ *      two units of work do not have to commit together (and across two
+ *      databases they cannot commit atomically anyway).
+ *   3. **Move the participants onto one connection**, so a single
+ *      `withConnectionTransaction` covers them.
+ */
+export class ConnectionDeadlockError extends Error {
+  constructor(readonly blockedTable: string | undefined) {
+    const blocked = blockedTable ?? "a storage instance";
+    super(
+      [
+        "Deadlock acquiring a shared database connection.",
+        `${blocked} waited for a connection held by a task that is itself waiting for a connection this one already holds.`,
+        "",
+        "Supported refactors:",
+        "  (a) Acquire the connections in the SAME order in every task that spans two databases.",
+        "  (b) Complete the outer transaction before opening one on the other connection — two databases cannot commit atomically together anyway.",
+        "  (c) Put the participants on one connection so a single withConnectionTransaction covers them.",
+      ].join("\n")
+    );
+    this.name = "ConnectionDeadlockError";
+  }
+}
+
 export interface ConnectionMutexApi {
   readonly runOnConnection: <T>(handle: object, owner: object, fn: () => Promise<T>) => Promise<T>;
+  /**
+   * {@link ConnectionMutexApi.runOnConnection} for a read.
+   *
+   * Differs in exactly one case: a descendant of an open transaction body whose
+   * owner the transaction never enlisted runs INLINE instead of being refused.
+   * The sibling-op refusal exists because such a caller's WRITE would land
+   * inside a `BEGIN` it can neither commit nor roll back; a read commits
+   * nothing, and refusing it would break every transaction body that reads from
+   * a storage its participant list happens not to name. An unrelated concurrent
+   * reader still queues on the chain, which is the whole point: on a
+   * single-session backend it would otherwise run on the same session inside
+   * the open `BEGIN` and return rows a ROLLBACK is about to erase.
+   */
+  readonly runReadOnConnection: <T>(
+    handle: object,
+    owner: object,
+    fn: () => Promise<T>
+  ) => Promise<T>;
   readonly runInTransactionOnConnection: <T>(
     handle: object,
     owner: TransactionOwners,
@@ -203,7 +284,7 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
   function getState(handle: object): HandleState {
     let state = handleStates.get(handle);
     if (state === undefined) {
-      state = { chain: Promise.resolve(), txOwners: null, txId: null };
+      state = { chain: Promise.resolve(), txOwners: null, txId: null, waitingOn: null };
       handleStates.set(handle, state);
     }
     return state;
@@ -289,6 +370,97 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
   }
 
   /**
+   * The handles whose chain slot this async context already holds.
+   *
+   * Only a transaction holds a slot across arbitrary user code, and a
+   * transaction installs a store — so the store chain is the whole answer. It
+   * is empty under the synchronous shim once the body has awaited, which is
+   * why deadlock detection is a Node/Bun property and the shim keeps the
+   * conservative refusals it already makes.
+   */
+  function heldHandles(store: Als): Set<object> {
+    const held = new Set<object>();
+    for (let ctx = store.getStore(); ctx !== undefined; ctx = ctx.parent) {
+      if (ctx.active) held.add(ctx.handle);
+    }
+    return held;
+  }
+
+  /**
+   * Refuses to wait on `target` when doing so would close a wait-for cycle.
+   *
+   * Walks the wait-for graph from `target`: the holder of a slot records what
+   * it is itself blocked on in {@link HandleState.waitingOn}, so following
+   * that field is following "who is this task waiting for". Reaching a handle
+   * `held` contains means the far end is waiting, transitively, on us.
+   *
+   * The whole check plus the {@link markWaiting} that follows it is
+   * synchronous, so of two tasks forming a cycle the second to arrive always
+   * observes the first's marker — one of them is always refused, never both
+   * and never neither. Refusing here, before the chain slot is replaced, is
+   * what keeps the connection usable: the loser unwinds and releases the slot
+   * it does hold, and the winner proceeds.
+   */
+  function assertNoWaitCycle(target: object, held: ReadonlySet<object>, owner: object): void {
+    if (held.size === 0) return;
+    const seen = new Set<object>();
+    let next: object | undefined = target;
+    while (next !== undefined) {
+      if (held.has(next)) throw new ConnectionDeadlockError(connectionOwnerLabel(owner));
+      // A cycle that does not run through us belongs to the tasks in it; they
+      // have already refused each other, and following it further would spin.
+      if (seen.has(next)) return;
+      seen.add(next);
+      next = handleStates.get(next)?.waitingOn ?? undefined;
+    }
+  }
+
+  /**
+   * Records (or clears) what the holder of each `held` slot is waiting for.
+   *
+   * Last writer wins, which matters only for a context that waits on two
+   * connections at once from one held slot: the edge then names whichever wait
+   * started last, so a cycle through the other one can go unseen. That costs a
+   * missed detection, never a false one — the check can only refuse a wait it
+   * can prove circular.
+   */
+  function markWaiting(held: ReadonlySet<object>, target: object | null): void {
+    for (const handle of held) {
+      const state = handleStates.get(handle);
+      if (state !== undefined) state.waitingOn = target;
+    }
+  }
+
+  /**
+   * Takes `handle`'s chain slot, returning the release callback.
+   *
+   * Every queueing caller goes through here so the deadlock check and the
+   * wait-for bookkeeping cannot be applied to one entry point and forgotten on
+   * the other.
+   */
+  async function acquireChainSlot(
+    state: HandleState,
+    handle: object,
+    owner: object,
+    store: Als
+  ): Promise<() => void> {
+    const held = heldHandles(store);
+    assertNoWaitCycle(handle, held, owner);
+    markWaiting(held, handle);
+    const prev = state.chain;
+    let release!: () => void;
+    state.chain = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      await prev;
+    } finally {
+      markWaiting(held, null);
+    }
+    return release;
+  }
+
+  /**
    * Runs `fn` in a chain shared across every caller bound to `handle`.
    *
    * An enlisted descendant of an open transaction body runs `fn` inline —
@@ -305,36 +477,40 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
    * dies at the body's first `await`, falls back to handle state and refuses
    * every un-enlisted owner while a transaction is open — the conservative
    * side of a distinction it cannot make.
+   *
+   * `refuseUnenlistedDescendant` is the one knob: reads pass `false` through
+   * {@link runReadOnConnection}, because a read commits nothing and so has no
+   * write to strand outside the `BEGIN`. Nothing else should.
    */
   async function runOnConnection<T>(
     handle: object,
     owner: object,
-    fn: () => Promise<T>
+    fn: () => Promise<T>,
+    refuseUnenlistedDescendant: boolean = true
   ): Promise<T> {
     const state = getState(handle);
     const store = als.ensureAls();
     const { decision, enlisted } = classifyReentry(state, new Set([owner]), handle, store);
-    if (decision === "throw") {
+    if (decision === "throw" && refuseUnenlistedDescendant) {
       throw new ConnectionReentryError(
         connectionOwnerLabel(enlisted !== undefined ? leadOwner(enlisted) : owner),
         connectionOwnerLabel(owner),
         "sibling-op"
       );
     }
-    if (decision === "inline") {
+    if (decision !== "chain") {
       return fn();
     }
-    const prev = state.chain;
-    let release!: () => void;
-    state.chain = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await prev;
+    const release = await acquireChainSlot(state, handle, owner, store);
     try {
       return await fn();
     } finally {
       release();
     }
+  }
+
+  function runReadOnConnection<T>(handle: object, owner: object, fn: () => Promise<T>): Promise<T> {
+    return runOnConnection(handle, owner, fn, false);
   }
 
   /**
@@ -397,12 +573,7 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
       // downstream error instead of deadlocking here.
       return fn();
     }
-    const prev = state.chain;
-    let release!: () => void;
-    state.chain = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await prev;
+    const release = await acquireChainSlot(state, handle, lead, store);
     const txId = Symbol("connection-tx");
     state.txId = txId;
     state.txOwners = owners;
@@ -437,7 +608,8 @@ export function defineConnectionMutex(als: ConnectionAlsApi): ConnectionMutexApi
   }
 
   return {
-    runOnConnection,
+    runOnConnection: (handle, owner, fn) => runOnConnection(handle, owner, fn),
+    runReadOnConnection,
     runInTransactionOnConnection,
     getAlsStore: () => als.ensureAls().getStore(),
     isSynchronousAls: () => als.ensureAls().synchronousOnly === true,

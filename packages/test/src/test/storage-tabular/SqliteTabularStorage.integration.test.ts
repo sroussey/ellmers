@@ -529,16 +529,28 @@ describe("SqliteTabularStorage shared-connection safety", () => {
         siblingErr = err;
       });
 
+    // An unrelated concurrent READ on the same connection, also queued rather
+    // than run: it would otherwise execute on the same session inside the open
+    // BEGIN and report whatever the transaction has written so far.
+    let readSettled = false;
+    const concurrentRead = b.get({ name: "sibling-row", type: "x" }).then((row) => {
+      readSettled = true;
+      return row;
+    });
+
     await new Promise((resolve) => setTimeout(resolve, 20));
-    // Neither refused nor slipped inside the open BEGIN: reads do not take the
-    // chain, so this observes the row's absence directly.
+    // Neither refused nor slipped inside the open BEGIN. The sibling write has
+    // not landed, and the sibling read has not answered.
     expect(siblingErr).toBeUndefined();
     expect(order).toEqual([]);
-    expect(await b.get({ name: "sibling-row", type: "x" })).toBeUndefined();
+    expect(readSettled).toBe(false);
 
     releaseInner();
     await txPromise;
     await sibling;
+    // The read ran after COMMIT released the connection, so it sees the
+    // sibling write that was queued ahead of it.
+    expect(await concurrentRead).toBeDefined();
 
     expect(siblingErr).toBeUndefined();
     expect(order).toEqual(["TX-BODY-END", "SIBLING-WRITE"]);

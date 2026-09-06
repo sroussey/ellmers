@@ -7,10 +7,11 @@
 import { ensureAls, __resetAlsForTesting as resetAlsForTesting } from "./connectionAls.browser";
 import { defineConnectionMutex } from "./defineConnectionMutex";
 
-export { ConnectionReentryError } from "./defineConnectionMutex";
+export { ConnectionDeadlockError, ConnectionReentryError } from "./defineConnectionMutex";
 
 export const {
   runOnConnection,
+  runReadOnConnection,
   runInTransactionOnConnection,
   getAlsStore,
   isSynchronousAls,

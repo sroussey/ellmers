@@ -8,11 +8,13 @@
 
 export * from "./common";
 
-// Connection-mutex seam. Everything below except `ConnectionReentryError` is a
+// Connection-mutex seam. Everything below except the error classes
+// (`ConnectionReentryError`, `ConnectionDeadlockError`) is a
 // provider-package internal, versioned in lockstep with this package rather
 // than covered by semver. Application code should use
 // `withConnectionTransaction` instead.
 export {
+  ConnectionDeadlockError,
   ConnectionReentryError,
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   getAlsStore,
@@ -20,6 +22,8 @@ export {
   runInTransactionOnConnection,
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   runOnConnection,
+  /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
+  runReadOnConnection,
 } from "./tabular/ConnectionMutex.browser";
 
 export { _internal } from "./tabular/connectionMutexTestSeam.browser";

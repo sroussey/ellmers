@@ -168,6 +168,59 @@ export function withConnectionTransactionBlock(opts: TabularStorageContractOpts)
     );
 
     itImpl(
+      "does not show uncommitted rows to a concurrent reader",
+      async () => {
+        // A connection transaction takes the CONNECTION's chain slot and flags
+        // its participants; reads used to take only the per-instance mutex,
+        // which the transaction never holds. The two locks never intersected,
+        // so on a single-session backend a concurrent read ran on the very
+        // session sitting inside the open BEGIN and returned rows the ROLLBACK
+        // below erases — a caller could act on a ban, a balance or a lock that
+        // never existed.
+        //
+        // How a backend keeps the reader honest is its business: the
+        // single-session ones queue the read behind COMMIT, a real pool hands
+        // it another client and answers at once. Both must report the
+        // committed value, which is the pre-transaction one here.
+        await primary.put({ name: "iso", type: "x", option: "before", success: true });
+
+        let releaseBody: () => void = () => {};
+        const bodyCanFinish = new Promise<void>((resolve) => {
+          releaseBody = resolve;
+        });
+        let signalStarted: () => void = () => {};
+        const bodyStarted = new Promise<void>((resolve) => {
+          signalStarted = resolve;
+        });
+
+        let rollbackError: unknown;
+        const txPromise = withConnectionTransaction([primary, sibling], async () => {
+          await primary.put({ name: "iso", type: "x", option: "dirty", success: true });
+          signalStarted();
+          await bodyCanFinish;
+          throw new Error("forced rollback");
+        }).catch((err: unknown) => {
+          rollbackError = err;
+        });
+        await bodyStarted;
+
+        // Issued from the test's own task, so it is not an async descendant of
+        // the body — the caller the transaction is supposed to be invisible to.
+        const readPromise = primary.get({ name: "iso", type: "x" });
+        // Long enough that a read which is NOT held back has finished.
+        await new Promise((resolve) => setTimeout(resolve, 25));
+
+        releaseBody();
+        await txPromise;
+        expect((rollbackError as Error | undefined)?.message).toBe("forced rollback");
+
+        expect(await readPromise).toMatchObject({ option: "before" });
+        expect(await primary.get({ name: "iso", type: "x" })).toMatchObject({ option: "before" });
+      },
+      opts.timeout
+    );
+
+    itImpl(
       "throws sibling-op for a storage that was not enlisted",
       async () => {
         let error: unknown;
