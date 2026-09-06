@@ -8,10 +8,15 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { IWebSearchProvider, WebSearchCapabilities } from "../IWebSearchProvider";
 import { WebSearchProviderRegistry } from "../WebSearchProviderRegistry";
 
-function provider(name: string, caps: Partial<WebSearchCapabilities>): IWebSearchProvider {
+function provider(
+  name: string,
+  caps: Partial<WebSearchCapabilities>,
+  acceptsCredentialKey = true
+): IWebSearchProvider {
   return {
     name,
     endpoint: `https://${name}.example`,
+    acceptsCredentialKey,
     capabilities: {
       answer: false,
       content: false,
@@ -115,6 +120,27 @@ describe("WebSearchProviderRegistry", () => {
     WebSearchProviderRegistry.register(provider("brave", {}));
     expect(() => WebSearchProviderRegistry.require("nope")).toThrow(/nope/);
     expect(() => WebSearchProviderRegistry.require("nope")).toThrow(/brave/);
+  });
+
+  it("refuses a credential key named for nothing registered, listing what is", () => {
+    WebSearchProviderRegistry.register(provider("brave", {}));
+    WebSearchProviderRegistry.register(provider("tavily", {}));
+    expect(() => WebSearchProviderRegistry.assertCredentialKeyUsable("Tavily")).toThrow(/Tavily/);
+    expect(() => WebSearchProviderRegistry.assertCredentialKeyUsable("Tavily")).toThrow(
+      /Registered: brave, tavily/
+    );
+  });
+
+  it("refuses a credential key named for a provider that never receives one", () => {
+    WebSearchProviderRegistry.register(provider("anthropic", {}, false));
+    expect(() => WebSearchProviderRegistry.assertCredentialKeyUsable("anthropic")).toThrow(
+      /never receives a credential-store key/
+    );
+  });
+
+  it("accepts a credential key named for a provider that does receive one", () => {
+    WebSearchProviderRegistry.register(provider("tavily", {}));
+    expect(() => WebSearchProviderRegistry.assertCredentialKeyUsable("tavily")).not.toThrow();
   });
 
   it("replaces a same-named provider rather than shadowing it", () => {

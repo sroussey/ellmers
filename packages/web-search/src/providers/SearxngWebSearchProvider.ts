@@ -31,6 +31,8 @@ interface SearxngResult {
 export class SearxngWebSearchProvider implements IWebSearchProvider {
   public readonly name = "searxng";
   public readonly endpoint: string;
+  /** A self-hosted instance is unauthenticated; nothing here sends a key. */
+  public readonly acceptsCredentialKey = false;
   public readonly capabilities: WebSearchCapabilities = {
     answer: false,
     content: false,

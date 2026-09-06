@@ -62,7 +62,8 @@ describe("AnthropicWebSearchProvider", () => {
               type: "web_search_result",
               title: "Cats",
               url: "https://en.wikipedia.org/wiki/Cat",
-              page_age: "2026-01-02",
+              // What the tool actually reports: a date written for a reader.
+              page_age: "January 2, 2026",
             },
           ],
         },
@@ -79,13 +80,38 @@ describe("AnthropicWebSearchProvider", () => {
         url: "https://en.wikipedia.org/wiki/Cat",
         snippet: undefined,
         content: undefined,
-        publishedDate: "2026-01-02",
+        publishedDate: "2026-01-02T00:00:00.000Z",
         score: undefined,
         favicon: undefined,
       },
     ]);
     expect(out.answer).toBe("Cats are domestic animals.");
     expect(out.usage).toEqual({ inputTokens: 10, outputTokens: 20 });
+  });
+
+  it("leaves publishedDate absent when page_age is not a date", async () => {
+    const { client } = clientReturning(
+      messageWith([
+        {
+          type: "web_search_tool_result",
+          content: [
+            {
+              type: "web_search_result",
+              title: "Cats",
+              url: "https://en.wikipedia.org/wiki/Cat",
+              page_age: "3 days ago",
+            },
+          ],
+        },
+      ])
+    );
+    const out = await new AnthropicWebSearchProvider({ client: client as never }).search(
+      { query: "cats" },
+      context
+    );
+    // Through an ISO-8601 port this becomes an Invalid Date in any recency
+    // filter downstream, which drops or keeps every Anthropic row silently.
+    expect(out.results[0].publishedDate).toBeUndefined();
   });
 
   it("omits the answer when the caller did not ask for one", async () => {

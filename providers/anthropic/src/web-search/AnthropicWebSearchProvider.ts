@@ -14,7 +14,7 @@ import type {
   WebSearchRequest,
   WebSearchResponse,
 } from "@workglow/web-search";
-import { limitResults } from "@workglow/web-search";
+import { limitResults, toIsoPublishedDate } from "@workglow/web-search";
 
 /**
  * Dynamic-filtering web search, available on Opus 5/4.8/4.7/4.6 and Sonnet 5/4.6.
@@ -27,6 +27,12 @@ const MAX_PAUSE_RESUMES = 4;
 
 export interface AnthropicWebSearchOptions {
   readonly client?: Anthropic | undefined;
+  /**
+   * Key handed to the SDK. Left unset it reads `ANTHROPIC_API_KEY`, which is
+   * the only other place this adapter looks — a credential-store key named for
+   * it in the task's `credential_keys` is refused rather than sent.
+   */
+  readonly apiKey?: string | undefined;
   readonly model?: string | undefined;
   readonly maxTokens?: number | undefined;
   /**
@@ -42,6 +48,7 @@ interface AnthropicSearchResultBlock {
   readonly type?: string;
   readonly title?: string;
   readonly url?: string;
+  /** Display text — "April 30, 2025", sometimes a relative phrase. */
   readonly page_age?: string;
 }
 
@@ -49,6 +56,8 @@ export class AnthropicWebSearchProvider implements IWebSearchProvider {
   public readonly name = "anthropic";
   /** No endpoint: this adapter reaches Anthropic through the vendor SDK. */
   public readonly endpoint = undefined;
+  /** The SDK carries the key; `credentialKey` never reaches this request. */
+  public readonly acceptsCredentialKey = false;
   public readonly capabilities: WebSearchCapabilities = {
     answer: true,
     content: false,
@@ -67,7 +76,9 @@ export class AnthropicWebSearchProvider implements IWebSearchProvider {
   private readonly maxUses: number | undefined;
 
   constructor(options: AnthropicWebSearchOptions = {}) {
-    this.client = options.client ?? new Anthropic();
+    this.client =
+      options.client ??
+      (options.apiKey === undefined ? new Anthropic() : new Anthropic({ apiKey: options.apiKey }));
     this.model = options.model ?? DEFAULT_MODEL;
     this.maxTokens = options.maxTokens ?? 16000;
     this.maxUses = options.maxUses;
@@ -182,7 +193,7 @@ export class AnthropicWebSearchProvider implements IWebSearchProvider {
           url: entry.url ?? "",
           snippet: undefined,
           content: undefined,
-          publishedDate: entry.page_age,
+          publishedDate: toIsoPublishedDate(entry.page_age),
           score: undefined,
           favicon: undefined,
         });

@@ -29,6 +29,7 @@ interface TavilyResult {
 export class TavilyWebSearchProvider implements IWebSearchProvider {
   public readonly name = "tavily";
   public readonly endpoint = TAVILY_ENDPOINT;
+  public readonly acceptsCredentialKey = true;
   public readonly capabilities: WebSearchCapabilities = {
     answer: true,
     content: true,

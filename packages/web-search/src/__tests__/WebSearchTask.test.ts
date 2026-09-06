@@ -21,6 +21,7 @@ function fake(
   return {
     name,
     endpoint: `https://${name}.example`,
+    acceptsCredentialKey: true,
     capabilities: {
       answer: false,
       content: false,
@@ -174,13 +175,16 @@ describe("WebSearchTask", () => {
     expect(seen).toHaveBeenCalledWith(expect.objectContaining({ credentialKey: undefined }));
   });
 
-  it("sends no credential to a routed provider none was named for", async () => {
+  it("sends no credential to a provider none was named for", async () => {
     const seen = vi.fn();
     WebSearchProviderRegistry.register(fake("brave", {}, seen));
+    WebSearchProviderRegistry.register(fake("tavily", {}));
 
+    // A key issued for one vendor arriving at another is not recoverable by
+    // rotating anything but that key, so the map is the only thing consulted.
     await new WebSearchTask().run({
       query: "cats",
-      provider: "auto",
+      provider: "brave",
       credential_keys: { tavily: "tavily-key" },
     });
 
@@ -208,10 +212,64 @@ describe("WebSearchTask", () => {
     expect(seen).toHaveBeenCalledWith(expect.objectContaining({ credentialKey: "tavily-key" }));
   });
 
+  it("refuses a credential key named for a provider that is not registered", async () => {
+    WebSearchProviderRegistry.register(fake("brave", {}));
+    WebSearchProviderRegistry.register(fake("tavily", {}));
+
+    // The capitalisation is the whole bug: the entry matches nothing, routing
+    // is unchanged by it, and the run used to reach Brave unauthenticated and
+    // report Brave's own 401 — nothing pointing at the name that was wrong.
+    await expect(
+      new WebSearchTask().run({
+        query: "cats",
+        provider: "auto",
+        credential_keys: { Tavily: "tavily-key" },
+      })
+    ).rejects.toThrow(/"Tavily".*Registered: brave, tavily/s);
+  });
+
+  it("refuses a credential key named for a provider that never receives one", async () => {
+    const seen = vi.fn();
+    WebSearchProviderRegistry.register(fake("brave", {}, seen));
+    WebSearchProviderRegistry.register({
+      ...fake("anthropic", { answer: true }),
+      acceptsCredentialKey: false,
+    });
+
+    // Naming a key moves anthropic to the front of routing, and the adapter
+    // then authenticates from its own client — so the key is neither used nor
+    // reported, and the search is billed to whatever that client resolved.
+    await expect(
+      new WebSearchTask().run({
+        query: "cats",
+        provider: "auto",
+        includeAnswer: true,
+        credential_keys: { anthropic: "anthropic-prod" },
+      })
+    ).rejects.toThrow(/never receives a credential-store key/);
+    expect(seen).not.toHaveBeenCalled();
+  });
+
+  it("refuses a bare credential_key pinned to a provider that never receives one", async () => {
+    WebSearchProviderRegistry.register({
+      ...fake("anthropic", {}),
+      acceptsCredentialKey: false,
+    });
+
+    await expect(
+      new WebSearchTask().run({
+        query: "cats",
+        provider: "anthropic",
+        credential_key: "anthropic-prod",
+      })
+    ).rejects.toThrow(/never receives a credential-store key/);
+  });
+
   it("reports zero results as success, not failure", async () => {
     WebSearchProviderRegistry.register({
       name: "empty",
       endpoint: undefined,
+      acceptsCredentialKey: false,
       capabilities: {
         answer: false,
         content: false,

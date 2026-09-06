@@ -91,7 +91,8 @@ const inputSchema = {
       description:
         "Credential-store keys by provider name. The key sent is the one named for the " +
         "provider that runs, so a key issued for one vendor never reaches another, and " +
-        "routing prefers a provider a key is named for.",
+        "routing prefers a provider a key is named for. A name matching no registered " +
+        "provider, or one that authenticates through its own vendor client, is refused.",
       "x-ui-hidden": true,
     },
   },
@@ -244,11 +245,19 @@ export class WebSearchTask extends Task<WebSearchTaskInput, WebSearchTaskOutput>
       includeContent: input.includeContent,
     };
 
+    // Before routing, so a key named for a provider that never receives one is
+    // reported as what it is rather than as the vendor error of whatever
+    // provider ran instead.
+    for (const named of Object.keys(input.credential_keys ?? {})) {
+      WebSearchProviderRegistry.assertCredentialKeyUsable(named);
+    }
+
     const provider = this.resolveProvider(input, baseRequest);
-    const request = this.adaptRequest(provider, {
-      ...baseRequest,
-      credentialKey: credentialKeyFor(provider.name, input),
-    });
+    const credentialKey = credentialKeyFor(provider.name, input);
+    if (credentialKey !== undefined) {
+      WebSearchProviderRegistry.assertCredentialKeyUsable(provider.name);
+    }
+    const request = this.adaptRequest(provider, { ...baseRequest, credentialKey });
 
     await context.updateProgress(undefined, `Searching via ${provider.name}`);
     const response = await provider.search(request, context);

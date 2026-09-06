@@ -11,6 +11,22 @@ Even where it could, the API key would be readable by any visitor.
 The browser build therefore registers the **task** (so a builder UI can render
 and validate the node) but **no providers**. Execution happens on a server.
 
+## Registering providers
+
+Importing this package registers the **task class** and nothing else. Which
+providers exist — and so which one `"auto"` may bill you for — is the host's
+decision, stated with a call:
+
+```ts
+import { registerBuiltInWebSearchProviders } from "@workglow/web-search";
+
+registerBuiltInWebSearchProviders(); // brave, tavily, and searxng when a base URL is set
+```
+
+Nothing registers itself on import, which is what lets a vendor adapter pull
+this package in for `registerWebSearchProvider` without quietly adding three
+providers ahead of the one the host asked for.
+
 ## Providers
 
 | provider     | auth                   | answer | content | domain filter            | date filter |
@@ -20,7 +36,7 @@ and validate the node) but **no providers**. Execution happens on a server.
 | `searxng`    | none (self-hosted)     | no     | no      | via `site:`              | no          |
 | `anthropic`  | vendor SDK             | yes    | no      | native, **one list**     | no          |
 | `openai`     | vendor SDK             | yes    | no      | native, **include only** | no          |
-| `openrouter` | vendor SDK             | yes    | yes     | native                   | no          |
+| `openrouter` | vendor SDK             | yes    | no      | native                   | no          |
 | `gemini`     | vendor SDK             | yes    | no      | **none**                 | **yes**     |
 
 The four grounded providers ship in their vendor packages and must be registered
@@ -45,7 +61,9 @@ with `format=json` enabled.
 ## Usage
 
 ```ts
-import { WebSearchTask } from "@workglow/web-search";
+import { registerBuiltInWebSearchProviders, WebSearchTask } from "@workglow/web-search";
+
+registerBuiltInWebSearchProviders();
 
 const out = await new WebSearchTask().run({
   query: "transformer architecture",
@@ -86,6 +104,14 @@ The key sent is the one named for the provider that actually runs, so a key
 issued for one vendor cannot reach another; routing prefers a provider a key is
 named for, and a provider none was named for is simply searched unauthenticated.
 
+A name in `credential_keys` that matches no registered provider is refused, not
+ignored — a typo or a missing `register…()` call otherwise surfaces as an
+authentication error from whichever provider ran instead. So is a name matching
+a grounded provider: those authenticate through their own vendor client, which
+never sees this key. Give them theirs at registration
+(`registerAnthropicWebSearchProvider({ apiKey })`) or in the vendor's own
+environment variable.
+
 ## Adding a provider
 
 Implement `IWebSearchProvider` and register it:
@@ -98,7 +124,14 @@ registerWebSearchProvider(myProvider);
 
 Declare capabilities honestly — `domainFilter: "query-operator"` means the task
 rewrites the query with `site:`, and `dateFilter: false` means a date-bounded
-request is refused rather than approximated by dropping results.
+request is refused rather than approximated by dropping results. Set
+`acceptsCredentialKey` to `true` only if `request.credentialKey` actually
+reaches the request; a provider holding its own client sets `false`, and a
+credential key named for it is then refused rather than dropped.
+
+`publishedDate` is an ISO-8601 string or absent. Run a provider's own value
+through `toIsoPublishedDate` — several engines report display text ("3 days
+ago") that a downstream date comparison turns into an Invalid Date.
 
 ## License
 
