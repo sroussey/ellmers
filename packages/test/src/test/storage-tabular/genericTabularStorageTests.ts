@@ -1239,6 +1239,36 @@ export function runGenericTabularStorageTests(
         expect(await repository.get({ id: "pk2" } as never)).toBeUndefined();
       });
 
+      it("rejects a primary-key patch made through the transaction handle", async () => {
+        // The `tx` handle a backend hands its `withTransaction` callback is a
+        // Proxy that routes each method straight to its unlocked internal
+        // implementation, so a guard sitting only on the public method is
+        // skipped by every call made through `tx`. On the SQL backends that
+        // built an `UPDATE ... SET id = ?` and rewrote the row's identity —
+        // silently, or as a mid-transaction UNIQUE violation — while the same
+        // call outside a transaction threw. The guard belongs on the path both
+        // spellings share.
+        const ts = new Date().toISOString();
+        await repository.put({
+          id: "txpk1",
+          category: "a",
+          subcategory: "s",
+          value: 1,
+          createdAt: ts,
+          updatedAt: ts,
+        } as never);
+
+        await expect(
+          repository.withTransaction(async (tx) => {
+            await tx.updateWhere({ id: "txpk1" } as never, { id: "txpk2" } as never);
+          })
+        ).rejects.toThrow(/primary-key column/);
+
+        // Identity untouched: neither renamed in place nor duplicated.
+        expect(await repository.get({ id: "txpk1" } as never)).toBeDefined();
+        expect(await repository.get({ id: "txpk2" } as never)).toBeUndefined();
+      });
+
       it("is CAS under a raced update on the same match", async () => {
         // Two updateWhere calls with the same before-value predicate race for a
         // single row. A genuine CAS implementation must let exactly one win —
