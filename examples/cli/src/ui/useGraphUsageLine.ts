@@ -16,6 +16,22 @@ function usageIsSpend(usage: Usage): boolean {
 }
 
 /**
+ * When the run started, for rate cards with a time-of-day tier. The earliest
+ * execution on the graph, so the footer keeps stating what the run cost instead
+ * of re-pricing a finished total every time the clock crosses a discount
+ * boundary. `undefined` until something has started, which is the one case
+ * where "now" is the right instant.
+ */
+function runInstant(graph: TaskGraph): Date | undefined {
+  let earliest: Date | undefined;
+  for (const task of graph.getTasks()) {
+    const started = task.startedAt;
+    if (started && (earliest === undefined || started < earliest)) earliest = started;
+  }
+  return earliest;
+}
+
+/**
  * Run-total usage line for a graph footer. Costs are summed per model (a blend
  * across rate cards would mis-price), and a missing rate on any contributing
  * model marks the figure partial (`~`).
@@ -39,10 +55,11 @@ export function useGraphUsageLine(graph: TaskGraph): string {
 
       const estimates: CostEstimate[] = [];
       let missingModel = false;
+      const at = runInstant(graph);
       for (const [key, usage] of graph.usageAggregator.byModel()) {
         const modelId = typeof key === "string" ? key : undefined;
         const pricing = await lookupModelPricing(modelId);
-        const estimate = estimateCost(usage, pricing);
+        const estimate = estimateCost(usage, pricing, { at });
         if (estimate) estimates.push(estimate);
         else if (usageIsSpend(usage)) missingModel = true;
       }

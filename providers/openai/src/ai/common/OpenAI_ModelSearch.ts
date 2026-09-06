@@ -15,7 +15,6 @@ import { stampEffortOptions } from "@workglow/ai/worker";
 import { getClient } from "./OpenAI_Client";
 import { OPENAI } from "./OpenAI_Constants";
 import { openaiEffortPolicy } from "./OpenAI_EffortPolicy";
-import { getOpenAiModelPricing } from "./OpenAI_Pricing";
 
 interface OpenAiModelListItem {
   readonly label: string;
@@ -82,7 +81,6 @@ function mapModelList(models: OpenAiModelListItem[]): ModelSearchResultItem[] {
           capabilities: imageEntry?.capabilities ?? [],
           provider_config: { model_name: m.value },
           metadata: {},
-          pricing: getOpenAiModelPricing(m.value),
         },
         openaiEffortPolicy({ provider: OPENAI, provider_config: { model_name: m.value } })
       ),

@@ -15,7 +15,6 @@ import { stampEffortOptions } from "@workglow/ai/worker";
 import { getClient } from "./DeepSeek_Client";
 import { DEEPSEEK } from "./DeepSeek_Constants";
 import { deepseekEffortPolicy } from "./DeepSeek_EffortPolicy";
-import { getDeepSeekModelPricing } from "./DeepSeek_Pricing";
 
 interface DeepSeekModelListItem {
   readonly label: string;
@@ -56,7 +55,6 @@ function mapModelList(models: DeepSeekModelListItem[]): ModelSearchResultItem[] 
         capabilities: [],
         provider_config: { model_name: m.value },
         metadata: {},
-        pricing: getDeepSeekModelPricing(m.value),
       },
       deepseekEffortPolicy({
         provider: DEEPSEEK,

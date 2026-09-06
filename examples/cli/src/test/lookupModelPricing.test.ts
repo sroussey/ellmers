@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { clearModelPricingCache, lookupModelPricing } from "../ui/rows/lookupModelPricing";
 
 const TEST_MODEL_ID = "test-explicit-pricing-model";
+const TABLE_MODEL_ID = "claude-sonnet-5";
 
 describe("lookupModelPricing", () => {
   // The model repository is a process-wide singleton, so a record added here
@@ -16,9 +17,11 @@ describe("lookupModelPricing", () => {
   afterEach(async () => {
     clearModelPricingCache();
     // `removeModel` throws when the id is absent, which most cases here are.
-    await getGlobalModelRepository()
-      .removeModel(TEST_MODEL_ID)
-      .catch(() => {});
+    for (const id of [TEST_MODEL_ID, TABLE_MODEL_ID]) {
+      await getGlobalModelRepository()
+        .removeModel(id)
+        .catch(() => {});
+    }
   });
 
   it("returns undefined for empty or undefined modelId", async () => {
@@ -48,6 +51,25 @@ describe("lookupModelPricing", () => {
       input: 99,
       output: 199,
     });
+  });
+
+  it("prices a model added from a search result off the provider's current table", async () => {
+    // This is the record `model add` / `model find` write: what the search
+    // result carried, with no rate card of its own. Nothing persisted can then
+    // shadow the table, so a corrected rate reaches a model added months ago.
+    await getGlobalModelRepository().addModel({
+      model_id: TABLE_MODEL_ID,
+      title: TABLE_MODEL_ID,
+      description: "",
+      provider: "ANTHROPIC",
+      capabilities: [],
+      provider_config: { model_name: TABLE_MODEL_ID },
+      metadata: {},
+    });
+
+    const pricing = await lookupModelPricing(TABLE_MODEL_ID);
+    expect(pricing?.input).toBe(2);
+    expect(pricing?.output).toBe(10);
   });
 
   it("falls back to provider list pricing when unconfigured in the repository", async () => {

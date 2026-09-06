@@ -170,4 +170,53 @@ describe("formatUsageWithCost", () => {
       )
     ).toBe("~↑100 ↓20");
   });
+
+  // A row on screen is re-rendered constantly, so pricing it against the render
+  // clock means a finished request's cost changes as the clock crosses a
+  // discount window — the same tokens, two different totals. The window here is
+  // built from the current time so the test cannot pass by accident whichever
+  // hour it runs in: `at` is inside it and "now" is an hour past its end.
+  describe("time-of-day rates", () => {
+    const HOUR_MS = 3_600_000;
+    const now = Date.now();
+    const requestedAt = new Date(now - 2 * HOUR_MS);
+
+    const utcClock = (ms: number): string => {
+      const at = new Date(ms);
+      const hh = String(at.getUTCHours()).padStart(2, "0");
+      const mm = String(at.getUTCMinutes()).padStart(2, "0");
+      return `${hh}:${mm}`;
+    };
+
+    const discounted: ModelPricing = {
+      ...pricing,
+      timingTiers: [
+        {
+          start: utcClock(now - 3 * HOUR_MS),
+          end: utcClock(now - HOUR_MS),
+          pricing: { input: 1.5, output: 7.5 },
+        },
+      ],
+    };
+
+    const spend = usage({ input: 1_000_000, output: 1_000_000 });
+
+    it("prices at the instant the request ran when one is given", () => {
+      expect(formatUsageWithCost(spend, "cumulative", discounted, { at: requestedAt })).toBe(
+        "↑1,000,000 ↓1,000,000 $9.0000"
+      );
+    });
+
+    it("accepts the instant as epoch milliseconds", () => {
+      expect(
+        formatUsageWithCost(spend, "cumulative", discounted, { at: requestedAt.getTime() })
+      ).toBe("↑1,000,000 ↓1,000,000 $9.0000");
+    });
+
+    it("falls back to the current clock when no instant is given", () => {
+      expect(formatUsageWithCost(spend, "cumulative", discounted)).toBe(
+        "↑1,000,000 ↓1,000,000 $18.0000"
+      );
+    });
+  });
 });

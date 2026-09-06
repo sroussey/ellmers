@@ -46,10 +46,15 @@ export interface SweepOptions {
  * An unreported counter is stored as `null`, never `0` — the database has to
  * keep the distinction the in-memory type protects, or a model that never
  * mentions caching becomes indistinguishable from one that cached nothing.
+ *
+ * `at` is when the request ran, which is what a time-of-day rate is charged
+ * against. A batch that straddles the boundary of one must not have its rows
+ * priced by whenever the sweep happened to reach the write.
  */
 export function usageColumns(
   usage: Usage | undefined,
-  pricing: ModelPricing | undefined
+  pricing: ModelPricing | undefined,
+  at: Date | undefined
 ): {
   input_tokens: number | null;
   output_tokens: number | null;
@@ -59,7 +64,7 @@ export function usageColumns(
   cost: number | null;
   currency: string | null;
 } {
-  const estimate = usage ? estimateCost(usage, pricing) : undefined;
+  const estimate = usage ? estimateCost(usage, pricing, { at }) : undefined;
   return {
     input_tokens: usage?.input ?? null,
     output_tokens: usage?.output ?? null,
@@ -139,6 +144,7 @@ export async function runSweep(
 
     for (const { record, row, parseError } of parsedRows) {
       const t0 = performance.now();
+      const requestedAt = new Date();
       let outcome: SweepOutcome;
       let outcomeUsage: Usage | undefined;
       if (!executor) {
@@ -173,7 +179,7 @@ export async function runSweep(
         model: modelId,
         row_index: record.row_index,
         latency_ms: Math.round(latency * 100) / 100,
-        ...usageColumns(outcomeUsage, modelPricing),
+        ...usageColumns(outcomeUsage, modelPricing, requestedAt),
         ...outcome,
       });
       done++;

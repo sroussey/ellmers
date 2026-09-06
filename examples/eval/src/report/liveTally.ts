@@ -48,7 +48,11 @@ export class LiveTally {
         tally.usage?.output === undefined
           ? ""
           : ` ${Math.round(tally.usage.output / elapsedSec)} tok/s`;
-      const cost = tally.usage ? formatCost(estimateCost(tally.usage, this.pricing(model))) : "";
+      // Priced at the sweep's start, so a redraw does not restate the same
+      // rows at a different rate once a time-of-day discount window opens.
+      const cost = tally.usage
+        ? formatCost(estimateCost(tally.usage, this.pricing(model), { at: this.startedAt }))
+        : "";
       lines.push(
         `  ${model}  ${tally.ok}/${tally.rows} ok  ` +
           `${formatUsage(tally.usage, "detailed")}${tps}${cost ? `  ${cost}` : ""}`
