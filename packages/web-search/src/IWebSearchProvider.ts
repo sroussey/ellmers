@@ -117,5 +117,14 @@ export interface IWebSearchProvider {
    * URL this package controls.
    */
   readonly endpoint: string | undefined;
+  /**
+   * Whether {@link WebSearchRequest.credentialKey} reaches this provider's
+   * request. True for one whose fetch this package owns, where the owned
+   * `FetchUrlTask` resolves the key and attaches it. False for an adapter that
+   * authenticates through a vendor client, and for an unauthenticated instance
+   * — both ignore the field, so naming a key for one is refused rather than
+   * dropped in silence.
+   */
+  readonly acceptsCredentialKey: boolean;
   search(request: WebSearchRequest, context: IExecuteContext): Promise<WebSearchResponse>;
 }

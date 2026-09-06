@@ -41,10 +41,14 @@ export class OpenRouterWebSearchProvider implements IWebSearchProvider {
   public readonly name = "openrouter";
   /** Reached through the OpenAI-compatible SDK, not a fetch this package owns. */
   public readonly endpoint = undefined;
+  /** The SDK carries the key; `credentialKey` never reaches this request. */
+  public readonly acceptsCredentialKey = false;
   public readonly capabilities: WebSearchCapabilities = {
     answer: true,
-    // Each url_citation carries the excerpt handed to the model.
-    content: true,
+    // A url_citation carries the short excerpt handed to the model, which is
+    // not the page text this port promises. Declaring it would win `"auto"`
+    // routing for an includeContent request and answer it with a snippet.
+    content: false,
     domainFilter: "native",
     dateFilter: false,
     maxResultsCap: undefined,
@@ -122,7 +126,7 @@ export class OpenRouterWebSearchProvider implements IWebSearchProvider {
         title: citation.title ?? citation.url,
         url: citation.url,
         snippet: citation.content,
-        content: request.includeContent === true ? citation.content : undefined,
+        content: undefined,
         publishedDate: undefined,
         score: undefined,
         favicon: undefined,

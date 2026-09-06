@@ -21,6 +21,7 @@ export * from "./providers/BraveWebSearchProvider";
 export * from "./providers/httpSearch";
 export * from "./providers/SearxngWebSearchProvider";
 export * from "./providers/TavilyWebSearchProvider";
+export * from "./publishedDate";
 export * from "./queryOperators";
 export * from "./urlText";
 export * from "./WebSearchProviderRegistry";

@@ -8,6 +8,15 @@ import { TaskConfigurationError } from "@workglow/task-graph";
 import { unhonorableOptions } from "./capabilityCheck";
 import type { IWebSearchProvider, WebSearchRequest } from "./IWebSearchProvider";
 
+/**
+ * What to do about an empty registry. Importing the package registers the task
+ * class but no provider, so the missing step is always a call rather than an
+ * import.
+ */
+const NOTHING_REGISTERED_HINT =
+  "Call registerBuiltInWebSearchProviders() for Brave/Tavily/SearXNG, or " +
+  "registerWebSearchProvider() with your own.";
+
 class Registry {
   private readonly providers = new Map<string, IWebSearchProvider>();
 
@@ -35,9 +44,39 @@ class Registry {
     throw new TaskConfigurationError(
       known.length === 0
         ? `WebSearchTask: provider ${JSON.stringify(name)} is not registered, and neither is any ` +
-            "other. Import @workglow/web-search from a server runtime to register the built-in providers."
+            `other. ${NOTHING_REGISTERED_HINT}`
         : `WebSearchTask: unknown provider ${JSON.stringify(name)}. Registered: ${known.join(", ")}.`
     );
+  }
+
+  /**
+   * Refuses a credential key named for a provider that cannot receive one.
+   *
+   * Two names are refused: one matching nothing registered, which would
+   * otherwise change nothing and be reported nowhere while the request goes out
+   * unauthenticated; and one matching an adapter that authenticates through its
+   * own vendor client, which moves that provider to the front of routing for a
+   * key it then ignores.
+   */
+  assertCredentialKeyUsable(name: string): void {
+    const provider = this.providers.get(name);
+    if (provider === undefined) {
+      const known = this.list().map((p) => p.name);
+      throw new TaskConfigurationError(
+        `WebSearchTask: credential_keys names ${JSON.stringify(name)}, which is not a ` +
+          (known.length === 0
+            ? `registered provider — none is registered. ${NOTHING_REGISTERED_HINT}`
+            : `registered provider. Registered: ${known.join(", ")}.`)
+      );
+    }
+    if (!provider.acceptsCredentialKey) {
+      throw new TaskConfigurationError(
+        `WebSearchTask: provider ${JSON.stringify(name)} never receives a credential-store ` +
+          "key — it authenticates through its own client, or not at all. Configure its key " +
+          "where the provider is registered, or in the vendor's own environment variable, and " +
+          "drop it from credential_keys."
+      );
+    }
   }
 
   /**
@@ -62,8 +101,7 @@ class Registry {
     const candidates = this.list();
     if (candidates.length === 0) {
       throw new TaskConfigurationError(
-        "WebSearchTask: No web-search providers are registered. Import @workglow/web-search " +
-          "from a server runtime, or register one with registerWebSearchProvider()."
+        `WebSearchTask: No web-search providers are registered. ${NOTHING_REGISTERED_HINT}`
       );
     }
     const ordered =

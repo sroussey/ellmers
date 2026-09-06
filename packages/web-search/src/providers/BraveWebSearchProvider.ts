@@ -14,6 +14,7 @@ import type {
   WebSearchResponse,
 } from "../IWebSearchProvider";
 import { limitResults } from "../limitResults";
+import { toIsoPublishedDate } from "../publishedDate";
 import { fetchSearchJson } from "./httpSearch";
 
 const BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
@@ -22,7 +23,10 @@ interface BraveResult {
   readonly title?: string;
   readonly url?: string;
   readonly description?: string;
+  /** Display text — "3 days ago". Only a date when the page carried no timestamp. */
   readonly age?: string;
+  /** The timestamp, when Brave resolved one. */
+  readonly page_age?: string;
   readonly meta_url?: { readonly favicon?: string };
 }
 
@@ -50,6 +54,7 @@ function freshnessParam(range: WebSearchDateRange): string | undefined {
 export class BraveWebSearchProvider implements IWebSearchProvider {
   public readonly name = "brave";
   public readonly endpoint = BRAVE_ENDPOINT;
+  public readonly acceptsCredentialKey = true;
   public readonly capabilities: WebSearchCapabilities = {
     answer: false,
     content: false,
@@ -87,7 +92,9 @@ export class BraveWebSearchProvider implements IWebSearchProvider {
       url: r.url ?? "",
       snippet: r.description,
       content: undefined,
-      publishedDate: r.age,
+      // `page_age` first: `age` is the relative phrase Brave renders, and only
+      // sometimes a date. Either way the result has to parse as one.
+      publishedDate: toIsoPublishedDate(r.page_age ?? r.age),
       score: undefined,
       favicon: r.meta_url?.favicon,
     }));

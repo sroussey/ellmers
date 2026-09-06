@@ -37,6 +37,8 @@ export class OpenAiWebSearchProvider implements IWebSearchProvider {
   public readonly name = "openai";
   /** Reached through the vendor SDK, not a fetch this package owns. */
   public readonly endpoint = undefined;
+  /** The SDK carries the key; `credentialKey` never reaches this request. */
+  public readonly acceptsCredentialKey = false;
   public readonly capabilities: WebSearchCapabilities = {
     answer: true,
     content: false,

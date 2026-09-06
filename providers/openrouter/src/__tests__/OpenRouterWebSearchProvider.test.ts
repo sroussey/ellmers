@@ -46,12 +46,16 @@ function clientReturning(payload: unknown, spy?: (body: unknown) => void) {
 }
 
 describe("OpenRouterWebSearchProvider", () => {
-  it("declares native domain filtering, answers and content", () => {
+  it("declares native domain filtering and answers, but not content", () => {
     const c = new OpenRouterWebSearchProvider({ client: clientReturning(PAYLOAD).client })
       .capabilities;
     expect(c.domainFilter).toBe("native");
     expect(c.answer).toBe(true);
-    expect(c.content).toBe(true);
+    // A url_citation carries the excerpt the model was shown, not the page
+    // text `content` promises. Declared true, "auto" routing wins an
+    // includeContent request from a provider that returns the real thing and
+    // answers it with a ~200-character snippet, with nothing saying so.
+    expect(c.content).toBe(false);
     expect(c.dateFilter).toBe(false);
   });
 
@@ -91,7 +95,7 @@ describe("OpenRouterWebSearchProvider", () => {
     expect(out.usage).toEqual({ inputTokens: 11, outputTokens: 22 });
   });
 
-  it("gates answer and content on the caller asking", async () => {
+  it("gates the answer on the caller asking, and never reports the excerpt as content", async () => {
     const { client } = clientReturning(PAYLOAD);
     const bare = await new OpenRouterWebSearchProvider({ client }).search({ query: "t" }, context);
     expect(bare.answer).toBeUndefined();
@@ -103,7 +107,10 @@ describe("OpenRouterWebSearchProvider", () => {
       context
     );
     expect(full.answer).toBe("Transformers are a neural network architecture.");
-    expect(full.results[0].content).toBe("We propose a new simple network architecture...");
+    // The excerpt is reported as what it is — a snippet — on both ports it
+    // could occupy, so a caller cannot mistake it for full page text.
+    expect(full.results[0].snippet).toBe("We propose a new simple network architecture...");
+    expect(full.results[0].content).toBeUndefined();
   });
 
   it("passes a configured engine through", async () => {

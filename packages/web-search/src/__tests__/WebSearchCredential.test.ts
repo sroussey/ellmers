@@ -16,6 +16,7 @@ import {
 } from "@workglow/util";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { BraveWebSearchProvider } from "../providers/BraveWebSearchProvider";
+import { SearxngWebSearchProvider } from "../providers/SearxngWebSearchProvider";
 import { TavilyWebSearchProvider } from "../providers/TavilyWebSearchProvider";
 import { WebSearchProviderRegistry } from "../WebSearchProviderRegistry";
 import { WebSearchTask } from "../WebSearchTask";
@@ -167,19 +168,52 @@ describe("WebSearchTask credential forwarding", () => {
     }
   });
 
-  it("sends no key at all when routing lands on a provider none was named for", async () => {
+  it("sends no key at all when the provider that runs is not the one named", async () => {
     WebSearchProviderRegistry.register(new BraveWebSearchProvider());
+    WebSearchProviderRegistry.register(new TavilyWebSearchProvider());
     const registry = await credentialRegistry();
 
     const out = await new WebSearchTask().run(
-      { query: "cats", provider: "auto", credential_keys: { tavily: STORE_KEY } },
+      { query: "cats", provider: "brave", credential_keys: { tavily: STORE_KEY } },
       { registry }
     );
 
     // An unauthenticated search that fails is recoverable; the Tavily secret
-    // arriving at Brave is not.
+    // arriving at Brave is not. Tavily is registered here because a key named
+    // for nothing at all is a separate, reported error.
     expect(out.provider).toBe("brave");
     expect(JSON.stringify(mockFetch.mock.calls.at(-1))).not.toContain(SECRET);
+  });
+
+  it("names the unregistered provider a credential key was issued for", async () => {
+    WebSearchProviderRegistry.register(new BraveWebSearchProvider());
+    WebSearchProviderRegistry.register(new TavilyWebSearchProvider());
+    const registry = await credentialRegistry();
+
+    // Capitalised, so it matches nothing: routing is unchanged, the search goes
+    // out unauthenticated, and the only signal an operator gets is a 401 naming
+    // a provider they never configured a key for.
+    await expect(
+      new WebSearchTask().run(
+        { query: "cats", provider: "auto", credential_keys: { Tavily: STORE_KEY } },
+        { registry }
+      )
+    ).rejects.toThrow(/"Tavily"/);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("refuses a key named for SearXNG, which forwards no credential", async () => {
+    WebSearchProviderRegistry.register(new BraveWebSearchProvider());
+    WebSearchProviderRegistry.register(new SearxngWebSearchProvider("https://searx.example"));
+    const registry = await credentialRegistry();
+
+    await expect(
+      new WebSearchTask().run(
+        { query: "cats", provider: "auto", credential_keys: { searxng: STORE_KEY } },
+        { registry }
+      )
+    ).rejects.toThrow(/never receives a credential-store key/);
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it("refuses a bare credential_key alongside provider 'auto'", async () => {

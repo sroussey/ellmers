@@ -15,7 +15,9 @@ const BRAVE_PAYLOAD = {
         title: "Attention Is All You Need",
         url: "https://arxiv.org/abs/1706.03762",
         description: "The transformer paper.",
-        age: "2017-06-12T00:00:00Z",
+        // What Brave actually sends: `age` is display text, `page_age` the timestamp.
+        age: "8 years ago",
+        page_age: "2017-06-12T00:00:00Z",
         meta_url: { favicon: "https://arxiv.org/favicon.ico" },
       },
       { title: "No description", url: "https://example.com/b" },
@@ -53,12 +55,25 @@ describe("BraveWebSearchProvider", () => {
       title: "Attention Is All You Need",
       url: "https://arxiv.org/abs/1706.03762",
       snippet: "The transformer paper.",
-      publishedDate: "2017-06-12T00:00:00Z",
+      publishedDate: "2017-06-12T00:00:00.000Z",
       favicon: "https://arxiv.org/favicon.ico",
       content: undefined,
       score: undefined,
     });
     expect(out.results[1].snippet).toBeUndefined();
+  });
+
+  it("leaves publishedDate absent when Brave reports only a relative age", async () => {
+    const p = new BraveWebSearchProvider();
+    const out = await p.search(
+      { query: "transformers" },
+      contextWithResponse({
+        web: { results: [{ title: "T", url: "https://x.example/a", age: "3 days ago" }] },
+      })
+    );
+    // "3 days ago" through an ISO-8601 port becomes an Invalid Date in any
+    // recency filter downstream; absent is the honest answer.
+    expect(out.results[0].publishedDate).toBeUndefined();
   });
 
   it("sends the credential as the X-Subscription-Token header", async () => {
