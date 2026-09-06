@@ -36,6 +36,7 @@ import {
   pickCoveringIndex,
   runInTransactionOnConnection,
   runOnConnection,
+  runReadOnConnection,
   runSingleSessionConnectionTransaction,
   safeEmit,
   SqlTabularMigrationApplier,
@@ -191,6 +192,28 @@ export class DuckDbTabularStorage<
    */
   private guardedWrite<T>(fn: () => Promise<T>): Promise<T> {
     return runOnConnection(this.connectionHandle(), this, () => this.mutex(fn));
+  }
+
+  /**
+   * Runs a read through the cross-instance connection chain and then this
+   * instance's own mutex — the same order {@link guardedWrite} uses, so a read
+   * and a write cannot take the two locks in opposite orders.
+   *
+   * The chain, not the per-instance mutex, is what a connection-scoped
+   * transaction holds. A read that took only the mutex therefore ran on the
+   * shared session BETWEEN the transaction's `BEGIN` and its `COMMIT` and
+   * returned rows a `ROLLBACK` was about to erase. Going through the chain
+   * makes it queue instead, exactly as an instance `withTransaction` already
+   * makes reads on that instance queue.
+   *
+   * `runReadOnConnection`, not `runOnConnection`: a descendant of an open
+   * transaction body still runs inline even when the transaction never
+   * enlisted this storage. A read commits nothing, so it has no write to
+   * strand outside the `BEGIN`, and refusing it would break every transaction
+   * body that reads from a storage its participant list happens not to name.
+   */
+  private guardedRead<T>(fn: () => Promise<T>): Promise<T> {
+    return runReadOnConnection(this.connectionHandle(), this, () => this.mutex(fn));
   }
 
   /**
@@ -884,7 +907,7 @@ export class DuckDbTabularStorage<
    * @emits "get" event with the key when successful
    */
   async get(key: PrimaryKey): Promise<Entity | undefined> {
-    return this.mutex(() => this._getInternal(key));
+    return this.guardedRead(() => this._getInternal(key));
   }
 
   private async _getInternal(key: PrimaryKey): Promise<Entity | undefined> {
@@ -922,12 +945,12 @@ export class DuckDbTabularStorage<
     const chunkSize = Math.max(1, Math.floor(30000 / pkColCount));
     let rows: Entity[];
     if (keys.length <= chunkSize) {
-      rows = await this.mutex(() => this._getBulkInternal(keys));
+      rows = await this.guardedRead(() => this._getBulkInternal(keys));
     } else {
       rows = [];
       for (let i = 0; i < keys.length; i += chunkSize) {
         const chunk = keys.slice(i, i + chunkSize);
-        const chunkRows = await this.mutex(() => this._getBulkInternal(chunk));
+        const chunkRows = await this.guardedRead(() => this._getBulkInternal(chunk));
         rows.push(...chunkRows);
       }
     }
@@ -999,7 +1022,7 @@ export class DuckDbTabularStorage<
    * @returns Promise resolving to an array of entries or undefined if not found
    */
   async getAll(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
-    return this.mutex(() => this._getAllInternal(options));
+    return this.guardedRead(() => this._getAllInternal(options));
   }
 
   /**
@@ -1060,7 +1083,7 @@ export class DuckDbTabularStorage<
    * Returns the total number of rows in the database.
    */
   async size(): Promise<number> {
-    return this.mutex(() => this._sizeInternal());
+    return this.guardedRead(() => this._sizeInternal());
   }
 
   private async _sizeInternal(): Promise<number> {
@@ -1075,7 +1098,7 @@ export class DuckDbTabularStorage<
    * Counts rows matching the specified search criteria.
    */
   override async count(criteria?: SearchCriteria<Entity>): Promise<number> {
-    return this.mutex(() => this._countInternal(criteria));
+    return this.guardedRead(() => this._countInternal(criteria));
   }
 
   private async _countInternal(criteria?: SearchCriteria<Entity>): Promise<number> {
@@ -1100,7 +1123,7 @@ export class DuckDbTabularStorage<
    * @returns Array of entities or undefined if no records found
    */
   async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
-    return this.mutex(() => this._getOffsetPageInternal(offset, limit));
+    return this.guardedRead(() => this._getOffsetPageInternal(offset, limit));
   }
 
   private async _getOffsetPageInternal(
@@ -1166,12 +1189,12 @@ export class DuckDbTabularStorage<
   /**
    * Cursor-paginated read with keyset predicates pushed into SQL.
    *
-   * Goes through the per-instance mutex so a `getPage` call issued while a
-   * `withTransaction` is in flight queues behind the transaction instead of
-   * running between its `BEGIN` and `COMMIT` on the shared connection.
+   * Goes through {@link guardedRead} so a `getPage` call issued while a
+   * transaction is in flight queues behind it instead of running between that
+   * transaction's `BEGIN` and `COMMIT` on the shared connection.
    */
   override async getPage(request: PageRequest<Entity> = {}): Promise<Page<Entity>> {
-    return this.mutex(() => this._getPageInternal(request));
+    return this.guardedRead(() => this._getPageInternal(request));
   }
 
   private async _getPageInternal(request: PageRequest<Entity> = {}): Promise<Page<Entity>> {
@@ -1182,7 +1205,7 @@ export class DuckDbTabularStorage<
     criteria: SearchCriteria<Entity>,
     request: PageRequest<Entity> = {}
   ): Promise<Page<Entity>> {
-    return this.mutex(() => this._queryPageInternal(criteria, request));
+    return this.guardedRead(() => this._queryPageInternal(criteria, request));
   }
 
   private async _queryPageInternal(
@@ -1295,7 +1318,7 @@ export class DuckDbTabularStorage<
     criteria: SearchCriteria<Entity>,
     options?: QueryOptions<Entity>
   ): Promise<Entity[] | undefined> {
-    return this.mutex(() => this._queryInternal(criteria, options));
+    return this.guardedRead(() => this._queryInternal(criteria, options));
   }
 
   private async _queryInternal(
@@ -1347,7 +1370,7 @@ export class DuckDbTabularStorage<
     criteria: SearchCriteria<Entity>,
     options: CoveringIndexQueryOptions<Entity, K>
   ): Promise<Pick<Entity, K>[]> {
-    return this.mutex(() => this._queryIndexInternal(criteria, options));
+    return this.guardedRead(() => this._queryIndexInternal(criteria, options));
   }
 
   private async _queryIndexInternal<K extends keyof Entity & string>(

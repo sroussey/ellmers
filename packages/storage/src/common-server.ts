@@ -8,13 +8,15 @@
 
 export * from "./common";
 
-// Connection-mutex seam. Everything below except `ConnectionReentryError` and
-// `NestedConnectionTransactionError` is a provider-package internal: the
+// Connection-mutex seam. Everything below except the error classes
+// (`ConnectionReentryError`, `ConnectionDeadlockError`,
+// `NestedConnectionTransactionError`) is a provider-package internal: the
 // vendor storages (`@workglow/sqlite`, `@workglow/postgres`,
 // `@workglow/duckdb`) build their `withConnectionTransaction` support on it
 // and are versioned in lockstep with this package. Application code should use
 // `withConnectionTransaction` instead; these names are not covered by semver.
 export {
+  ConnectionDeadlockError,
   ConnectionReentryError,
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   getAlsStore,
@@ -22,6 +24,8 @@ export {
   runInTransactionOnConnection,
   /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
   runOnConnection,
+  /** @internal — provider-package seam for withConnectionTransaction; not covered by semver. */
+  runReadOnConnection,
 } from "./tabular/ConnectionMutex.server";
 
 export { _internal } from "./tabular/connectionMutexTestSeam.server";

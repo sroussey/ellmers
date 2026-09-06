@@ -34,6 +34,7 @@ import {
   pickCoveringIndex,
   runInTransactionOnConnection,
   runOnConnection,
+  runReadOnConnection,
   runSingleSessionConnectionTransaction,
   safeEmit,
   SqliteDialect,
@@ -102,6 +103,32 @@ export class SqliteTabularStorage<
     const handle = this.connectionHandle();
     if (handle !== null) {
       return runOnConnection(handle, this, () => this.mutex(fn));
+    }
+    return this.mutex(fn);
+  }
+
+  /**
+   * Runs a read through the cross-instance connection chain and then this
+   * instance's own mutex — the same order {@link guardedWrite} uses, so a read
+   * and a write cannot take the two locks in opposite orders.
+   *
+   * The chain, not the per-instance mutex, is what a connection-scoped
+   * transaction holds. A read that took only the mutex therefore ran on the
+   * shared session BETWEEN the transaction's `BEGIN` and its `COMMIT` and
+   * returned rows a `ROLLBACK` was about to erase. Going through the chain
+   * makes it queue instead, exactly as an instance `withTransaction` already
+   * makes reads on that instance queue.
+   *
+   * `runReadOnConnection`, not `runOnConnection`: a descendant of an open
+   * transaction body still runs inline even when the transaction never
+   * enlisted this storage. A read commits nothing, so it has no write to
+   * strand outside the `BEGIN`, and refusing it would break every transaction
+   * body that reads from a storage its participant list happens not to name.
+   */
+  protected guardedRead<T>(fn: () => Promise<T>): Promise<T> {
+    const handle = this.connectionHandle();
+    if (handle !== null) {
+      return runReadOnConnection(handle, this, () => this.mutex(fn));
     }
     return this.mutex(fn);
   }
@@ -963,7 +990,7 @@ export class SqliteTabularStorage<
    * @emits 'get' event when successful
    */
   async get(key: PrimaryKey): Promise<Entity | undefined> {
-    return this.mutex(() => this._getInternal(key));
+    return this.guardedRead(() => this._getInternal(key));
   }
 
   private async _getInternal(key: PrimaryKey): Promise<Entity | undefined> {
@@ -1008,12 +1035,12 @@ export class SqliteTabularStorage<
     const chunkSize = Math.max(1, Math.floor(900 / pkColCount));
     let rows: Entity[];
     if (keys.length <= chunkSize) {
-      rows = await this.mutex(() => this._getBulkInternal(keys));
+      rows = await this.guardedRead(() => this._getBulkInternal(keys));
     } else {
       rows = [];
       for (let i = 0; i < keys.length; i += chunkSize) {
         const chunk = keys.slice(i, i + chunkSize);
-        const chunkRows = await this.mutex(() => this._getBulkInternal(chunk));
+        const chunkRows = await this.guardedRead(() => this._getBulkInternal(chunk));
         rows.push(...chunkRows);
       }
     }
@@ -1084,7 +1111,7 @@ export class SqliteTabularStorage<
    * @returns Promise resolving to an array of entries or undefined if not found
    */
   async getAll(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
-    return this.mutex(() => this._getAllInternal(options));
+    return this.guardedRead(() => this._getAllInternal(options));
   }
 
   private async _getAllInternal(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
@@ -1147,7 +1174,7 @@ export class SqliteTabularStorage<
    * @returns The count of entries
    */
   async size(): Promise<number> {
-    return this.mutex(() => this._sizeInternal());
+    return this.guardedRead(() => this._sizeInternal());
   }
 
   private async _sizeInternal(): Promise<number> {
@@ -1162,7 +1189,7 @@ export class SqliteTabularStorage<
    * Counts rows matching the specified search criteria.
    */
   override async count(criteria?: SearchCriteria<Entity>): Promise<number> {
-    return this.mutex(() => this._countInternal(criteria));
+    return this.guardedRead(() => this._countInternal(criteria));
   }
 
   private async _countInternal(criteria?: SearchCriteria<Entity>): Promise<number> {
@@ -1186,7 +1213,7 @@ export class SqliteTabularStorage<
    * @returns Array of entities or undefined if no records found
    */
   async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
-    return this.mutex(() => this._getOffsetPageInternal(offset, limit));
+    return this.guardedRead(() => this._getOffsetPageInternal(offset, limit));
   }
 
   private async _getOffsetPageInternal(
@@ -1222,16 +1249,16 @@ export class SqliteTabularStorage<
    * `LIMIT N` plus a row-value-style WHERE so the database returns at most
    * one page worth of rows regardless of table size.
    *
-   * Goes through the per-instance mutex so a `getPage` call issued while a
-   * `withTransaction` is in flight queues behind the transaction instead of
-   * firing a `prepare`/`stmt.all` against the shared connection between the
+   * Goes through {@link guardedRead} so a `getPage` call issued while a
+   * transaction is in flight queues behind it instead of firing a
+   * `prepare`/`stmt.all` against the shared connection between that
    * transaction's `BEGIN` and `COMMIT`. The proxy returned by
    * {@link createTxView} routes back to {@link _getPageInternal} directly,
-   * so calls made *through* the `tx` handle bypass the mutex (which the
-   * transaction already holds) and run on the same connection.
+   * so calls made *through* the `tx` handle bypass both locks and run on the
+   * same connection.
    */
   override async getPage(request: PageRequest<Entity> = {}): Promise<Page<Entity>> {
-    return this.mutex(() => this._getPageInternal(request));
+    return this.guardedRead(() => this._getPageInternal(request));
   }
 
   private async _getPageInternal(request: PageRequest<Entity>): Promise<Page<Entity>> {
@@ -1242,7 +1269,7 @@ export class SqliteTabularStorage<
     criteria: SearchCriteria<Entity>,
     request: PageRequest<Entity> = {}
   ): Promise<Page<Entity>> {
-    return this.mutex(() => this._queryPageInternal(criteria, request));
+    return this.guardedRead(() => this._queryPageInternal(criteria, request));
   }
 
   private async _queryPageInternal(
@@ -1422,7 +1449,7 @@ export class SqliteTabularStorage<
     criteria: SearchCriteria<Entity>,
     options?: QueryOptions<Entity>
   ): Promise<Entity[] | undefined> {
-    return this.mutex(() => this._queryInternal(criteria, options));
+    return this.guardedRead(() => this._queryInternal(criteria, options));
   }
 
   private async _queryInternal(
@@ -1484,7 +1511,7 @@ export class SqliteTabularStorage<
     criteria: SearchCriteria<Entity>,
     options: CoveringIndexQueryOptions<Entity, K>
   ): Promise<Pick<Entity, K>[]> {
-    return this.mutex(() => this._queryIndexInternal(criteria, options));
+    return this.guardedRead(() => this._queryIndexInternal(criteria, options));
   }
 
   private async _queryIndexInternal<K extends keyof Entity & string>(

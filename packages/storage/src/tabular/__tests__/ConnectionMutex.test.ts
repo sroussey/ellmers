@@ -5,12 +5,23 @@
  */
 
 import {
+  ConnectionDeadlockError,
   ConnectionReentryError,
   runInTransactionOnConnection,
   runOnConnection,
+  runReadOnConnection,
 } from "@workglow/storage";
 import { __resetAlsForTesting } from "@workglow/storage/test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+/** A promise plus the function that resolves it, for ordering assertions. */
+function latch(): readonly [Promise<void>, () => void] {
+  let open: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return [gate, open] as const;
+}
 
 describe("ConnectionMutex F1: re-entry is classified from the async context", () => {
   afterEach(() => {
@@ -662,5 +673,209 @@ describe("ConnectionMutex F2: ConnectionReentryError message and mode", () => {
     expect(casted.blockedTable).toBeUndefined();
     expect(casted.message).toContain("another storage instance");
     expect(casted.message).toContain("an unlabeled storage instance");
+  });
+});
+
+describe("ConnectionMutex F3: cross-connection wait cycles fail loudly", () => {
+  afterEach(() => {
+    __resetAlsForTesting();
+  });
+
+  it("still allows a transaction on a DIFFERENT connection to nest inside an open one", async () => {
+    // The legal case the deadlock check must not break: two connections, one
+    // task, acquired one after the other. Nothing else holds either slot, so
+    // there is no cycle to find and the inner call simply runs.
+    const h1 = {};
+    const h2 = {};
+    const a = { table: "table_a" };
+    const b = { table: "table_b" };
+
+    const order: string[] = [];
+    await runInTransactionOnConnection(h1, a, async () => {
+      order.push("outer");
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      await runInTransactionOnConnection(h2, b, async () => {
+        order.push("inner");
+      });
+      order.push("outer-end");
+    });
+
+    expect(order).toEqual(["outer", "inner", "outer-end"]);
+  });
+
+  it("refuses the second of two tasks that nest two connections in opposite orders", async () => {
+    // Task 1 holds h1 and asks for h2; task 2 holds h2 and asks for h1. Each
+    // classifies the other's connection as "chain" — neither is an async
+    // descendant of the other — so both would wait forever, with no timeout
+    // and no error. Worse, a waiter installs itself as the handle's chain slot
+    // BEFORE awaiting, so both connections would stay poisoned for every later
+    // caller as well.
+    //
+    // One of the two must therefore be refused. Which one is a race the test
+    // does not pin: it asserts exactly one deadlock error, and that whichever
+    // side survived committed.
+    const h1 = {};
+    const h2 = {};
+    const a = { table: "table_a" };
+    const b = { table: "table_b" };
+
+    const [t1Ready, t1Started] = latch();
+    const [t2Ready, t2Started] = latch();
+    const done: string[] = [];
+
+    const t1 = runInTransactionOnConnection(h1, a, async () => {
+      t1Started();
+      await t2Ready;
+      await runInTransactionOnConnection(h2, b, async () => {
+        done.push("t1-inner");
+      });
+    });
+    const t2 = runInTransactionOnConnection(h2, b, async () => {
+      t2Started();
+      await t1Ready;
+      await runInTransactionOnConnection(h1, a, async () => {
+        done.push("t2-inner");
+      });
+    });
+
+    const settled = await Promise.race([
+      Promise.allSettled([t1, t2]),
+      new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 2000)),
+    ]);
+    expect(settled).not.toBe("hung");
+
+    const results = settled as PromiseSettledResult<void>[];
+    const rejections = results.filter((r) => r.status === "rejected");
+    expect(rejections).toHaveLength(1);
+    expect((rejections[0] as PromiseRejectedResult).reason).toBeInstanceOf(ConnectionDeadlockError);
+    // The winner really ran its inner body rather than being unwound too.
+    expect(done).toHaveLength(1);
+  });
+
+  it("leaves both connections usable after refusing the cycle", async () => {
+    // The refusal happens BEFORE the chain slot is replaced, so the loser
+    // poisons nothing. Both handles must still serve an ordinary transaction
+    // afterwards — the property the silent hang destroyed permanently.
+    const h1 = {};
+    const h2 = {};
+    const a = { table: "table_a" };
+    const b = { table: "table_b" };
+
+    const [t1Ready, t1Started] = latch();
+    const [t2Ready, t2Started] = latch();
+
+    await Promise.allSettled([
+      runInTransactionOnConnection(h1, a, async () => {
+        t1Started();
+        await t2Ready;
+        await runInTransactionOnConnection(h2, b, async () => undefined);
+      }),
+      runInTransactionOnConnection(h2, b, async () => {
+        t2Started();
+        await t1Ready;
+        await runInTransactionOnConnection(h1, a, async () => undefined);
+      }),
+    ]);
+
+    await expect(runInTransactionOnConnection(h1, a, async () => "h1-ok")).resolves.toBe("h1-ok");
+    await expect(runInTransactionOnConnection(h2, b, async () => "h2-ok")).resolves.toBe("h2-ok");
+  });
+
+  it("does not refuse a wait on a busy connection that is not waiting back", async () => {
+    // The check is a wait-for CYCLE, not "never wait while holding". Task 1
+    // holds h1 and wants h2; h2 is busy with a task that wants nothing from
+    // h1, so the wait terminates on its own and must be allowed.
+    const h1 = {};
+    const h2 = {};
+    const a = { table: "table_a" };
+    const b = { table: "table_b" };
+
+    const [h2Busy, h2Started] = latch();
+    const [releaseH2, openH2] = latch();
+    const order: string[] = [];
+
+    const holder = runInTransactionOnConnection(h2, b, async () => {
+      h2Started();
+      await releaseH2;
+      order.push("holder-end");
+    });
+    await h2Busy;
+
+    const nesting = runInTransactionOnConnection(h1, a, async () => {
+      await runInTransactionOnConnection(h2, b, async () => {
+        order.push("nested");
+      });
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(order).toEqual([]);
+    openH2();
+    await holder;
+    await nesting;
+
+    expect(order).toEqual(["holder-end", "nested"]);
+  });
+});
+
+describe("ConnectionMutex F4: reads take the chain but are never refused as siblings", () => {
+  afterEach(() => {
+    __resetAlsForTesting();
+  });
+
+  it("runs an un-enlisted DESCENDANT read inline where a write would be refused", async () => {
+    // A read commits nothing, so there is no write to strand outside the open
+    // BEGIN — the hazard the sibling-op refusal exists for. Refusing reads
+    // would break every transaction body that reads from a storage its
+    // participant list happens not to name.
+    const handle = {};
+    const enlisted = { table: "enlisted" };
+    const outsider = { table: "outsider" };
+
+    let readResult: string | undefined;
+    let writeError: unknown;
+    await runInTransactionOnConnection(handle, enlisted, async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      readResult = await runReadOnConnection(handle, outsider, async () => "read-ran");
+      try {
+        await runOnConnection(handle, outsider, async () => "unreachable");
+      } catch (err) {
+        writeError = err;
+      }
+    });
+
+    expect(readResult).toBe("read-ran");
+    expect(writeError).toBeInstanceOf(ConnectionReentryError);
+  });
+
+  it("queues an UNRELATED concurrent read behind the open transaction", async () => {
+    // The single-session hazard: without the chain this read runs on the very
+    // session the BEGIN is open on and reports rows a ROLLBACK is about to
+    // erase.
+    const handle = {};
+    const owner = { table: "table_a" };
+    const reader = { table: "table_b" };
+
+    const [bodyRunning, bodyStarted] = latch();
+    const [bodyCanFinish, releaseBody] = latch();
+    const order: string[] = [];
+
+    const tx = runInTransactionOnConnection(handle, owner, async () => {
+      bodyStarted();
+      await bodyCanFinish;
+      order.push("commit");
+    });
+    await bodyRunning;
+
+    const read = runReadOnConnection(handle, reader, async () => {
+      order.push("read");
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(order).toEqual([]);
+
+    releaseBody();
+    await tx;
+    await read;
+    expect(order).toEqual(["commit", "read"]);
   });
 });
