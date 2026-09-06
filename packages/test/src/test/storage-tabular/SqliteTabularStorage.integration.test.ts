@@ -10,6 +10,7 @@ import {
   InMemoryTabularStorage,
   NestedConnectionTransactionError,
   StorageValidationError,
+  TelemetryTabularStorage,
   withConnectionTransaction,
 } from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
@@ -1062,4 +1063,42 @@ describe("SqliteTabularStorage join", () => {
       ),
     { expectSqlPushdown: false }
   );
+});
+
+describe("SqliteTabularStorage join with a wrapped right side", () => {
+  it("still runs one statement when the right side arrives behind a wrapper", async () => {
+    await Sqlite.init();
+    const db = new Sqlite.Database(":memory:");
+    const posts = new SqliteTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+      db,
+      `wrapped_posts_${uuid4().replace(/-/g, "_")}`,
+      PostSchema,
+      PostPrimaryKeyNames
+    );
+    const authorsInner = new SqliteTabularStorage<
+      typeof AuthorSchema,
+      typeof AuthorPrimaryKeyNames
+    >(db, `wrapped_authors_${uuid4().replace(/-/g, "_")}`, AuthorSchema, AuthorPrimaryKeyNames);
+    await posts.setupDatabase();
+    await authorsInner.setupDatabase();
+    await authorsInner.put({ id: "a1", tenant: "t", name: "Ann", country: null });
+    await posts.put({ id: "p1", tenant: "t", author_id: "a1", title: "one", views: 1 });
+
+    // The left side is a plain storage: it is the join itself, not a wrapper
+    // in the call chain, that has to see past the telemetry layer.
+    const authors = new TelemetryTabularStorage("wrapped-authors", authorsInner);
+    const rightQuery = vi.spyOn(authorsInner, "query");
+
+    const rows = await posts.join(
+      { type: "inner", on: [{ left: "author_id", right: "id" }] },
+      authors
+    );
+
+    expect(rows.map((r) => `${r.left.id}:${r.right.id}`)).toEqual(["p1:a1"]);
+    // One statement over both tables reads the right side through the join,
+    // never through its own `query`.
+    expect(rightQuery).not.toHaveBeenCalled();
+    posts.destroy?.();
+    authorsInner.destroy?.();
+  });
 });

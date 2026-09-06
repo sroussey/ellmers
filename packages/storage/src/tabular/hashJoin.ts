@@ -113,6 +113,14 @@ export function sortJoinedRows<L, R, T extends JoinType>(
 }
 
 /**
+ * How much wider each successive left-side read is than the one before, when a
+ * bounded join has not yet produced enough rows. Growing geometrically keeps
+ * the number of round trips logarithmic in how selective the join turns out to
+ * be, while a join that matches everything still reads only what it returns.
+ */
+const LEFT_READ_GROWTH = 4;
+
+/**
  * Application-side hash join: read the left rows, fetch the right rows whose
  * key is among them in one `in` query per chunk, and pair them up in memory.
  * This is the join every backend gets for free; SQL backends replace it with
@@ -123,6 +131,14 @@ export function sortJoinedRows<L, R, T extends JoinType>(
  * rows: pushing them to the left query would under-produce under an inner
  * join (unmatched left rows drop out) and over-produce against a one-to-many
  * right side.
+ *
+ * A bounded join reads the left side in **growing prefixes** of that same
+ * ordering and stops as soon as `offset + limit` joined rows exist, so a
+ * `limit: 20` join does not have to materialise a million-row table first. It
+ * can only do that when the joined rows are already in their final order — the
+ * left query served the order, or none was asked for. An `orderBy` naming the
+ * right side, or one the left query could not serve, is sorted here instead,
+ * and that sort needs every row: such a join reads the whole left table.
  */
 export async function runHashJoin<L, R, T extends JoinType>(
   deps: HashJoinDeps<L, R>,
@@ -142,27 +158,73 @@ export async function runHashJoin<L, R, T extends JoinType>(
     ? { orderBy: orderBy.map((o) => ({ column: o.column as keyof L, direction: o.direction })) }
     : undefined;
 
-  // A left join emits at least one row per left row, in left order, so the
-  // first `offset + limit` joined rows can only come from the first
-  // `offset + limit` left rows — the read can stop there. This is exact only
-  // for a left join whose order is fully pushed down: an inner join drops
-  // unmatched left rows, so bounding its left read would under-produce.
-  // (Over-production against a one-to-many right side is harmless; the slice
-  // at the end trims it.)
-  const boundedLeft =
-    pushLeftOrder && spec.type === "left" && spec.limit !== undefined
-      ? { ...leftOptions, limit: (spec.offset ?? 0) + spec.limit }
-      : leftOptions;
+  const offset = spec.offset ?? 0;
+  const needed = spec.limit === undefined ? undefined : offset + spec.limit;
+  // The joined rows are already in their final order — so the first `needed`
+  // of them are the answer, and the read can stop once it has them — exactly
+  // when nothing is sorted here afterwards.
+  const boundLeftRead = needed !== undefined && (pushLeftOrder || orderBy.length === 0);
 
   const leftWhere = spec.where?.left;
-  const leftRows =
-    (leftWhere !== undefined && Object.keys(leftWhere).length > 0
-      ? await deps.leftQuery(leftWhere, boundedLeft)
-      : await deps.leftGetAll(boundedLeft)) ?? [];
+  const hasLeftWhere = leftWhere !== undefined && Object.keys(leftWhere).length > 0;
+  const readLeft = async (options: QueryOptions<L> | undefined): Promise<L[]> =>
+    (hasLeftWhere
+      ? await deps.leftQuery(leftWhere as SearchCriteria<L>, options)
+      : await deps.leftGetAll(options)) ?? [];
 
   const leftColumns = spec.on.map((o) => o.left as string);
   const rightColumns = spec.on.map((o) => o.right as string);
+  const joined: JoinedRow<L, R, T>[] = [];
 
+  if (!boundLeftRead) {
+    const leftRows = await readLeft(leftOptions);
+    await appendJoinedRows(deps, spec, leftRows, leftColumns, rightColumns, joined);
+  } else {
+    const target = needed as number;
+    // Each pass joins one left read whole, so what it produces is exactly what
+    // the same unbounded join would have produced from that prefix — a widened
+    // pass replaces the narrower one rather than extending it, which is what
+    // keeps the result independent of how the backend broke ties in the
+    // narrower read. A left join emits at least one row per left row, so its
+    // first pass always suffices; an inner join drops unmatched left rows and
+    // may have to widen.
+    let batchLimit = target;
+    let previousRead = -1;
+    while (true) {
+      const rows = await readLeft({ ...leftOptions, limit: batchLimit });
+      joined.length = 0;
+      await appendJoinedRows(deps, spec, rows, leftColumns, rightColumns, joined);
+      // `rows.length <= previousRead` also covers a backend that ignores
+      // `limit`: widening then reads no more than the pass before it did.
+      if (joined.length >= target || rows.length < batchLimit || rows.length <= previousRead) {
+        break;
+      }
+      previousRead = rows.length;
+      batchLimit *= LEFT_READ_GROWTH;
+    }
+  }
+
+  if (!pushLeftOrder && orderBy.length > 0) {
+    sortJoinedRows(joined, orderBy);
+  }
+
+  if (offset === 0 && spec.limit === undefined) return joined;
+  return joined.slice(offset, spec.limit === undefined ? undefined : offset + spec.limit);
+}
+
+/**
+ * Fetches the right rows matching `leftRows` and appends the pairs to
+ * `joined`, in left order. Under a `left` join an unmatched left row is
+ * appended NULL-extended.
+ */
+async function appendJoinedRows<L, R, T extends JoinType>(
+  deps: HashJoinDeps<L, R>,
+  spec: JoinSpec<L, R, T>,
+  leftRows: readonly L[],
+  leftColumns: readonly string[],
+  rightColumns: readonly string[],
+  joined: JoinedRow<L, R, T>[]
+): Promise<void> {
   // Distinct key tuples, in first-seen order, and each left row's fingerprint.
   const tuples = new Map<string, unknown[]>();
   const leftKeys = leftRows.map((row) => {
@@ -226,7 +288,6 @@ export async function runHashJoin<L, R, T extends JoinType>(
     }
   }
 
-  const joined: JoinedRow<L, R, T>[] = [];
   leftRows.forEach((left, i) => {
     const fp = leftKeys[i];
     const matches = fp === undefined ? undefined : rightByKey.get(fp);
@@ -238,12 +299,4 @@ export async function runHashJoin<L, R, T extends JoinType>(
       joined.push({ left, right: undefined } as JoinedRow<L, R, T>);
     }
   });
-
-  if (!pushLeftOrder && orderBy.length > 0) {
-    sortJoinedRows(joined, orderBy);
-  }
-
-  const offset = spec.offset ?? 0;
-  if (offset === 0 && spec.limit === undefined) return joined;
-  return joined.slice(offset, spec.limit === undefined ? undefined : offset + spec.limit);
 }

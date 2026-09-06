@@ -1635,7 +1635,10 @@ export class PostgresTabularStorage<
   protected override sqlJoinDialect(): SqlJoinDialect {
     return {
       dialect: PostgresDialect,
-      // `db` resolves to the transaction-bound client inside `withTransaction`.
+      // `db` is read through whatever receiver this was called on: the pool for
+      // the instance, and the transaction-bound client when the call arrived
+      // through the `withTransaction` proxy. Holding onto the returned bag past
+      // the call that made it would pin whichever of the two came first.
       executeRaw: async (sql, params) =>
         ((await this.db.query(sql, params as unknown[])).rows ?? []) as Record<string, unknown>[],
     };

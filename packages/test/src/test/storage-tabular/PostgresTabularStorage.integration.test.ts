@@ -962,3 +962,97 @@ describe("PostgresTabularStorage join", () => {
     { expectSqlPushdown: false }
   );
 });
+
+describe("PostgresTabularStorage join and the connection it runs on", () => {
+  // A real `pg.Pool` hands `withTransaction` a dedicated client and releases it
+  // when the transaction ends; PGlite, being one session with no `connect()`,
+  // never takes that path. This double gives PGlite the shape of a pool: its
+  // `connect()` returns a client that refuses to work once released, and every
+  // JOIN statement records which of the two it was issued on.
+  function poolOver(pg: PGlite): { pool: Pool; joins: string[] } {
+    const joins: string[] = [];
+    const run = async (via: string, sql: string, params?: unknown[]): Promise<unknown> => {
+      if (sql.includes("JOIN")) joins.push(via);
+      return await pg.query(sql, params as unknown[]);
+    };
+    const pool = {
+      query: (sql: string, params?: unknown[]) => run("pool", sql, params),
+      connect: async () => {
+        let released = false;
+        return {
+          query: (sql: string, params?: unknown[]) => {
+            if (released) throw new Error("Cannot use a pooled client after release");
+            return run("client", sql, params);
+          },
+          release: () => {
+            released = true;
+          },
+        };
+      },
+    };
+    return { pool: pool as unknown as Pool, joins };
+  }
+
+  const spec = { type: "inner", on: [{ left: "author_id", right: "id" }] } as const;
+  const pair = (r: { left: { id: string }; right?: { id: string } }): string =>
+    `${r.left.id}:${r.right?.id ?? "-"}`;
+
+  async function fixture() {
+    const pg = new PGlite();
+    const { pool, joins } = poolOver(pg);
+    const posts = new PostgresTabularStorage<typeof PostSchema, typeof PostPrimaryKeyNames>(
+      pool,
+      `pooled_posts_${uuid4().replace(/-/g, "_")}`,
+      PostSchema,
+      PostPrimaryKeyNames
+    );
+    const authors = new PostgresTabularStorage<typeof AuthorSchema, typeof AuthorPrimaryKeyNames>(
+      pool,
+      `pooled_authors_${uuid4().replace(/-/g, "_")}`,
+      AuthorSchema,
+      AuthorPrimaryKeyNames
+    );
+    await posts.setupDatabase();
+    await authors.setupDatabase();
+    await authors.put({ id: "a1", tenant: "t1", name: "Ann", country: null });
+    await posts.put({ id: "p1", tenant: "t1", author_id: "a1", title: "one", views: 1 });
+    return { pg, joins, posts, authors };
+  }
+
+  it("goes back to the pool for a join issued after one ran inside a transaction", async () => {
+    const { pg, joins, posts, authors } = await fixture();
+    try {
+      const inside = await posts.withTransaction(async (tx) => await tx.join(spec, authors));
+      expect(inside.map(pair)).toEqual(["p1:a1"]);
+
+      // The transaction's client has been released by now. Anything still
+      // holding it either throws or, once the pool re-hands it out, runs this
+      // SELECT on somebody else's connection.
+      const outside = await posts.join(spec, authors);
+      expect(outside.map(pair)).toEqual(["p1:a1"]);
+      expect(joins).toEqual(["client", "pool"]);
+    } finally {
+      await pg.close();
+    }
+  });
+
+  it("uses the transaction's client for a join issued after one ran on the pool", async () => {
+    const { pg, joins, posts, authors } = await fixture();
+    try {
+      expect((await posts.join(spec, authors)).map(pair)).toEqual(["p1:a1"]);
+
+      const inside = await posts.withTransaction(async (tx) => {
+        await tx.put({ id: "p2", tenant: "t1", author_id: "a1", title: "two", views: 2 });
+        return await tx.join(spec, authors);
+      });
+
+      // A join that ran on the pool here would be looking at a different
+      // client from the one holding the open transaction, and could neither
+      // see p2 nor be sure of not blocking on the locks it holds.
+      expect(inside.map(pair).sort()).toEqual(["p1:a1", "p2:a1"]);
+      expect(joins).toEqual(["pool", "client"]);
+    } finally {
+      await pg.close();
+    }
+  });
+});
